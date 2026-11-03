@@ -56,9 +56,11 @@ class InboxServiceTest {
                 lastMessageId, 42L, now.minusSeconds(60), 40L);
         when(memberRepository.findInboxConversations(userId)).thenReturn(List.of(row));
 
-        InboxMemberView me = new InboxMemberView(conversationId, userId, "Me", "+84901111111", null);
+        InboxMemberView me = new InboxMemberView(
+                conversationId, userId, "Me", "+84901111111", null, ConversationMember.Role.ADMIN);
         InboxMemberView partner = new InboxMemberView(
-                conversationId, partnerId, "Partner", "+84902222222", "/api/v1/files/avatars/x.png");
+                conversationId, partnerId, "Partner", "+84902222222", "/api/v1/files/avatars/x.png",
+                ConversationMember.Role.MEMBER);
         when(memberRepository.findInboxMemberViews(List.of(conversationId)))
                 .thenReturn(List.of(me, partner));
 

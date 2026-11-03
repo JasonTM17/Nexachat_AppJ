@@ -739,7 +739,7 @@ device" là bắt buộc trước khi tag release.
 bật airplane mode → gửi tin → bubble hiện SENDING (pending) ngay → tắt
 airplane mode → **~15s sau WS tự reconnect và outbox tự flush**, tin chuyển
 SENT đúng thứ tự seq, không nhân đôi (Room `outbox` rỗng, message có seq
-server). Sáu lỗi thật tiếp theo chỉ lộ trên device / trong spec-gap review
+server). Bảy lỗi thật tiếp theo chỉ lộ trên device / trong spec-gap review
 (gồm cả hai lỗi tìm ra bằng adversarial review + probe on-device, không qua
 UI bug trực tiếp):
 
@@ -751,6 +751,7 @@ UI bug trực tiếp):
 | Socket chết lặng khi app ở background → app "Offline" vĩnh viễn | Retry loop **thoát hẳn** sau `MAX_ATTEMPTS`; regain listener chỉ bắn khi network *toggle* — socket chết giữa chừng (server restart, idle TCP, doze) khi mạng vẫn tốt thì không ai re-arm | Reconnect loop **park chứ không exit**: sau hết budget nó chờ `merge(networkMonitor.regained, rearmRequests)`; `ensureConnected()` (user action + send path) và `ProcessLifecycleOwner.onStart` → `onAppForeground()` (gate `!isOpen && hasValidRefresh`) đánh thức. Verify on-device: background → `docker restart` server (WS chết, network không đổi) → foreground → tự reconnect → push + typing indicator sống lại |
 | Loop "park" nhưng thực ra **spin** khi park trong lúc mạng vẫn tốt | `networkMonitor.regained` là **cold** callbackFlow — mỗi collector `registerNetworkCallback` riêng và Android bắn `onAvailable` NGAY cho network đã kết nối → parked-merge subscribe = nhận "regain" giả ngay → wake → fail → park → lặp vô hạn (mỗi ~25s một chu kỳ retry vô nghĩa; đã quan trắc trên device: nhiều collector hash khác nhau emit liên tiếp khi server down) | `regained` → `SharedFlow` qua `shareIn(scope, Lazily, replay=0)` — đúng 1 registration cả đời app; collector đến sau chỉ thấy regain THẬT. Verify: `docker stop` → park → `docker start` → 60s+ server healthy nhưng app vẫn Offline (không spin-reconnect) → mở chat → `ensureConnected` wake → resync → tin về đúng. Kèm `ensureConnected` trong send path (user gửi tin = tín hiệu muốn online mạnh nhất) |
 | Read receipt "Đã xem" (FR-C4, P0) đã có watermark + wire nhưng **không render** trên bubble của người gửi | `MessageRepository._readEvents` route MESSAGE_READ vào một SharedFlow **không ai collect** — UI không có consumer nào; `DeliveryStatus.SENT -> Unit` | Room v4: `conversations.peerReadSeq` (client-only, bump đơn điệu bằng MESSAGE_READ, bỏ qua echo của chính mình; refresh REST merge-preserve để không xóa) → `ChatViewModel.peerReadSeq` → bubble mình gửi hiển thị "Đã xem"/"Seen" khi `seq <= peerReadSeq`, chỉ DIRECT. Verify 2-device: A gửi → B đọc → "Seen" hiện trên A; force-stop + reopen vẫn còn; chiều ngược lại trên B cũng "Seen" |
+| Admin không thấy nút Remove/Add member/Rename trong group info — chức năng quản lý member không thể dùng từ UI | Server `InboxEntry.Member` không trả `role` (DTO "chưa cần"); client `ConversationMemberDto.role` nullable chấp nhận thiếu field → `iAmAdmin` luôn false → mọi affordance admin ẩn vĩnh viễn | Server thêm `role` vào `InboxMemberView` + `InboxEntry.Member` (client không cần đổi — DTO đã tolerate). Verify release APK: sheet hiện badge "Admin", nút Remove trên từng member, Add member, Rename — remove Chi qua dialog confirm → server mất row member + SYSTEM "An removed Chi" hiện sau resync; add lại qua picker |
 
 Regression test mới: `RealtimeSessionReArmTest` (8 case — regain re-arm
 parked loop, `ensureConnected` wake không cần network, `onAppForeground`
@@ -775,7 +776,12 @@ watermark → MESSAGE_READ → A bump `peerReadSeq` → bubble của A hiển th
 "Seen" ngay; force-stop + mở lại vẫn còn (Room persist, không chỉ flow);
 chiều ngược lại bubble của B cũng "Seen" (watermark hai phía đồng loạt
 679). Unread badge lifecycle: tin mới tới inbox B tăng badge, mở chat
-badge về 0 và watermark server tiến 677→678.
+badge về 0 và watermark server tiến 677→678. **History paging verified**
+trên chính conversation này: scroll qua toàn bộ ~680 messages tới seq 1
+("Bình ơi, họp lúc 3 giờ chiều đúng không?") mượt, không lỗi.
+**Rotation** giữ draft + conversation state qua portrait↔landscape.
+**Group admin qua UI**: remove Chi (dialog confirm) + re-add qua member
+picker; SYSTEM message "An removed Chi" render sau resync.
 
 ### 13.5. Tái hiện / Reproduce
 

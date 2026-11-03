@@ -78,7 +78,9 @@ public class InboxService {
     }
 
     private static InboxEntry.Member toMember(InboxMemberView view) {
-        return new InboxEntry.Member(view.userId(), view.displayName(), view.phone(), view.avatarUrl());
+        return new InboxEntry.Member(
+                view.userId(), view.displayName(), view.phone(), view.avatarUrl(),
+                view.role().name());
     }
 
     private static InboxEntry.LastMessage toLastMessage(MessageRow row) {

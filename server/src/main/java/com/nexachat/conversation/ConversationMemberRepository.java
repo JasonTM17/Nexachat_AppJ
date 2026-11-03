@@ -103,7 +103,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     /** Batch member fetch for the inbox — one IN query, no N+1. */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxMemberView(
-                       m.conversation.id, u.id, u.displayName, u.phone, u.avatarUrl)
+                       m.conversation.id, u.id, u.displayName, u.phone, u.avatarUrl, m.role)
             FROM ConversationMember m JOIN m.user u
             WHERE m.conversation.id IN :conversationIds
             ORDER BY u.id

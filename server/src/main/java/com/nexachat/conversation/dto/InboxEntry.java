@@ -19,12 +19,13 @@ public record InboxEntry(
         long lastReadSeq
 ) {
 
-    /** Member as the client needs it for headers/avatars. */
+    /** Member as the client needs it for headers/avatars plus admin gating. */
     public record Member(
             UUID userId,
             String displayName,
             String phone,
-            String avatarUrl
+            String avatarUrl,
+            String role
     ) {
     }
 

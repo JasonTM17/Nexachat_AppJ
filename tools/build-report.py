@@ -900,7 +900,7 @@ def build():
               "Picker (IMAGE/png byte-identical) → tạo group 3 người qua "
               "FAB (SYSTEM event render) → search SĐT + add contact → "
               "message user mới tạo direct conv.")
-    para(doc, "(c) Tám lỗi thật chỉ phát hiện được trên device / trong "
+    para(doc, "(c) Chín lỗi thật chỉ phát hiện được trên device / trong "
               "spec-gap review (một lỗi bằng adversarial review + probe, "
               "không qua UI):")
     table(doc,
@@ -959,7 +959,17 @@ def build():
             "merge-preserve) → ChatViewModel → bubble mình gửi hiển thị "
             "\"Đã xem\"/\"Seen\" khi seq <= peerReadSeq, chỉ DIRECT. "
             "Verify 2-device: A gửi→B đọc→\"Seen\" trên A; sống qua "
-            "force-stop; chiều ngược lại trên B cũng \"Seen\""]])
+            "force-stop; chiều ngược lại trên B cũng \"Seen\""],
+           ["Admin không thấy nút Remove/Add member/Rename — quản lý "
+            "member không dùng được từ UI",
+            "Server InboxEntry.Member không trả role; client "
+            "ConversationMemberDto.role nullable chấp nhận thiếu field → "
+            "iAmAdmin luôn false → affordance admin ẩn vĩnh viễn",
+            "Server thêm role vào InboxMemberView + InboxEntry.Member "
+            "(client không đổi — DTO đã tolerate). Verify release APK: "
+            "badge \"Admin\", Remove trên từng member, Add member, "
+            "Rename hiện; remove Chi qua confirm → server mất row + "
+            "SYSTEM \"An removed Chi\"; add lại qua picker"]])
     para(doc, "(d) Offline outbox + auto-reconnect (airplane-mode E2E): bật "
               "airplane mode → gửi tin → bubble hiện SENDING ngay → tắt "
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "
@@ -983,7 +993,10 @@ def build():
               "ngay, sống qua force-stop + reopen; chiều ngược lại trên B "
               "cũng \"Seen\" (watermark hai phía đồng loạt). Unread badge "
               "lifecycle: push tới inbox tăng badge, mở chat badge về 0 và "
-              "watermark server tiến.")
+              "watermark server tiến. History paging: scroll qua ~680 "
+              "messages tới seq 1 mượt. Rotation giữ draft + conversation "
+              "state. Group admin qua UI: remove Chi (confirm) + re-add "
+              "qua picker; SYSTEM \"An removed Chi\" sau resync.")
     h2(doc, "13.5. Tái hiện / Reproduce")
     code_box(doc,
         "# Server: Postgres that roi verify (unit + IT)\n"

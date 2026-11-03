@@ -1,5 +1,7 @@
 package com.nexachat.conversation.dto;
 
+import com.nexachat.conversation.ConversationMember;
+
 import java.util.UUID;
 
 /**
@@ -12,6 +14,7 @@ public record InboxMemberView(
         UUID userId,
         String displayName,
         String phone,
-        String avatarUrl
+        String avatarUrl,
+        ConversationMember.Role role
 ) {
 }
