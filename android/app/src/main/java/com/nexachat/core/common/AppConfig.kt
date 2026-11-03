@@ -1,15 +1,17 @@
 package com.nexachat.core.common
 
+import com.nexachat.BuildConfig
+
 /**
- * Temporary compile-time app configuration.
+ * Compile-time app configuration.
  *
- * TODO: replace [API_BASE_URL] with a `BuildConfig.API_BASE_URL` field once the
- * field is declared in `app/build.gradle.kts` per build type/product flavor.
- *
- * Dev-only note: `10.0.2.2` is the Android emulator's loopback alias to the
- * host machine, so this points the app at a backend running on the developer's
- * workstation. Cleartext HTTP is allowed by `network_security_config.xml`.
+ * [API_BASE_URL] is baked in at build time from `local.properties`
+ * (`API_BASE_URL=...`) or `-PapiBaseUrl=...` — for a LAN demo set the dev
+ * machine's IP there and rebuild; no source edit needed. The default,
+ * `10.0.2.2`, is the emulator's loopback alias to the host machine.
+ * Cleartext HTTP is permitted by the debug-source-set
+ * `network_security_config.xml`; release builds are HTTPS-only.
  */
 object AppConfig {
-    const val API_BASE_URL = "http://10.0.2.2:8080"
+    const val API_BASE_URL = BuildConfig.API_BASE_URL
 }

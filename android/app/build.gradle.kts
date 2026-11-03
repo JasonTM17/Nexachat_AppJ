@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +7,15 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
+
+// Backend base URL for BuildConfig.API_BASE_URL — local.properties
+// (`API_BASE_URL=...`) beats the default; -PapiBaseUrl beats both.
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }
+        ?.inputStream()?.use { load(it) }
+}
+val apiBaseUrl = providers.gradleProperty("apiBaseUrl")
+    .orElse(localProps.getProperty("API_BASE_URL") ?: "http://10.0.2.2:8080")
 
 android {
     namespace = "com.nexachat"
@@ -18,6 +29,10 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Backend base URL — override in local.properties (LAN demo) or via
+        // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
+        buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 
     buildTypes {

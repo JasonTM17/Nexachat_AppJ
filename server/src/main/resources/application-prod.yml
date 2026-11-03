@@ -1,8 +1,34 @@
 # Production overrides. Everything not listed here inherits from application.yml.
-# JWT_SECRET has no default: startup fails fast when the environment variable is unset.
+#
+# TLS / WSS
+# ---------
+# TLS is terminated at the reverse proxy in front of this service
+# (nginx / Caddy / Traefik). The app itself serves plain HTTP + ws:// inside the
+# trusted network; `server.forward-headers-strategy=framework` makes Spring
+# honor X-Forwarded-Proto/Host so redirects and generated URLs use https/wss.
+#
+# DEV-ONLY: `adb reverse tcp:8080 tcp:8080` and plain ws:// to a LAN IP are
+# development/demo conveniences (see docs/demo-runbook.md). Never expose this
+# service without TLS in a real deployment.
+#
+# Secrets
+# -------
+# JWT_SECRET has no default here: startup fails fast when it is unset.
+# datasource and storage come from the environment (compose injects
+# SPRING_DATASOURCE_*; the DATABASE_* names below match .env.example).
+
+server:
+  forward-headers-strategy: framework
+
 logging:
   level:
     root: INFO
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://db:5432/nexachat}
+    username: ${DATABASE_USER:nexachat}
+    password: ${DATABASE_PASSWORD:nexachat}
 
 nexachat:
   jwt:

@@ -15,5 +15,35 @@ services:
       timeout: 5s
       retries: 5
 
+  # Backend API + WebSocket server. Local-dev `up -d db` is unaffected; the app
+  # container talks to Postgres over the compose network at db:5432 (the host
+  # 5433 mapping is only for tools/ITs on the developer machine).
+  app:
+    build: ./server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/nexachat
+      SPRING_DATASOURCE_USERNAME: nexachat
+      SPRING_DATASOURCE_PASSWORD: nexachat
+      # Passthrough: export JWT_SECRET for anything real; the fallback is the
+      # same dev secret as application.yml so a fresh clone still boots.
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-at-least-64-chars-long-0123456789}
+      STORAGE_ROOT: /app/data/uploads
+    ports:
+      - "8080:8080"
+    volumes:
+      - app-uploads:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
 volumes:
   pgdata: {}
+  app-uploads: {}

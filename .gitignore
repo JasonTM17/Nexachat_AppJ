@@ -48,6 +48,7 @@ Thumbs.db
 logs/
 *.log
 server/uploads/
+demo/backups/
 
 # ---- Kit/workspace internals (never in submission) ----
 .agentkit/
