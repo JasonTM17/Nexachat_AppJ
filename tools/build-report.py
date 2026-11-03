@@ -866,7 +866,10 @@ def build():
               "SplashViewModelTest, ContactsViewModelTest, "
               "CreateGroupViewModelTest, GroupDetailViewModelTest, "
               "MediaViewerViewModelTest, ProfileViewModelTest, "
-              "AppLocaleManagerTest.")
+              "AppLocaleManagerTest, WsEndpointUrlTest (wsUrl derivation + "
+              "StompClient constructor crash guard), "
+              "RealtimeSessionReArmTest (network-regain re-arm, logged-out / "
+              "already-open no-op).")
     h2(doc, "13.4. Live E2E & on-device verification")
     para(doc, "Unit/IT coverage không đủ để chứng minh hệ thống chạy thật — "
               "phần này kiểm chứng artifact đã đóng gói trên stack "

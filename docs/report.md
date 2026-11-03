@@ -689,7 +689,9 @@ Android (143 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
 `MessageRepositoryTest`, `AttachmentRepositoryTest`, `AuthViewModelTest`,
 `SplashViewModelTest`, `ContactsViewModelTest`, `CreateGroupViewModelTest`,
 `GroupDetailViewModelTest`, `MediaViewerViewModelTest`, `ProfileViewModelTest`,
-`AppLocaleManagerTest`.
+`AppLocaleManagerTest`, `WsEndpointUrlTest` (wsUrl derivation + constructor
+crash guard), `RealtimeSessionReArmTest` (network-regain re-arm, logged-out /
+already-open no-op).
 
 ### 13.4. Live E2E & on-device verification
 
