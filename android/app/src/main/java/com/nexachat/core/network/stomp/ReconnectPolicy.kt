@@ -6,7 +6,8 @@ import kotlin.random.Random
 /**
  * Reconnect backoff calculator (plan §11.3.5): 1s, 2s, 4s, 8s, 16s capped,
  * ±20% jitter, at most [MAX_ATTEMPTS] consecutive attempts before the caller
- * switches to "offline mode" (manual re-arm via the next user action).
+ * switches to "offline mode" — re-armed by the next user action or by a
+ * validated network regain (NetworkMonitor → RealtimeSession).
  *
  * Deliberately a pure, stateless value object — the reconnect LOOP is
  * caller-owned (RealtimeSession) so lifecycle, cancellation, and the resync

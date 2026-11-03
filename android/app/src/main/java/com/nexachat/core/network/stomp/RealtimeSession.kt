@@ -1,5 +1,6 @@
 package com.nexachat.core.network.stomp
 
+import com.nexachat.core.network.NetworkMonitor
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.PinUpdateDto
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -101,7 +103,9 @@ sealed interface ChatEvent {
  * owned here (caller-owned per the StompClient contract) and driven by
  * [ReconnectPolicy]; after [ReconnectPolicy.MAX_ATTEMPTS] failures the session
  * reports `Failed(OFFLINE)` and is re-armed by [ensureConnected] from the next
- * user-driven repository call.
+ * user-driven repository call — or automatically when [NetworkMonitor]
+ * reports a validated network regain (queued outbox rows should flush the
+ * moment connectivity returns, not wait for the user to navigate).
  *
  * Fan-in: every frame lands in [events] as a typed [ChatEvent] — repositories
  * filter by conversation, so per-screen subscription bookkeeping is just
@@ -118,6 +122,7 @@ class RealtimeSession @Inject constructor(
     private val tokenRefresher: TokenRefresher,
     private val moshi: Moshi,
     private val reconnectPolicy: ReconnectPolicy,
+    private val networkMonitor: NetworkMonitor,
     private val scope: CoroutineScope,
 ) {
 
@@ -163,6 +168,7 @@ class RealtimeSession @Inject constructor(
         wantedSubscriptions += USER_INBOX_DESTINATION
         wantedSubscriptions += USER_ERRORS_DESTINATION
         scope.launch { observeTokens() }
+        scope.launch { observeNetworkRegain() }
         scope.launch { collectFrames() }
     }
 
@@ -189,6 +195,20 @@ class RealtimeSession @Inject constructor(
 
     /** Re-arms the loop after OFFLINE — called by repositories on user actions. */
     fun ensureConnected() = launchConnectionLoop()
+
+    /**
+     * Auto re-arm on connectivity regain. Gated on a live refresh token so a
+     * logged-out app never spins up a loop, and on `!isOpen` so a healthy
+     * socket (e.g. wifi→cell handover still in-flight) is left alone;
+     * [launchConnectionLoop] itself dedups an already-running loop.
+     */
+    private suspend fun observeNetworkRegain() {
+        networkMonitor.regained.collect {
+            if (!_isOpen.value && tokenStore.hasValidRefresh.first()) {
+                launchConnectionLoop()
+            }
+        }
+    }
 
     private suspend fun runConnectionLoop() {
         var failures = 0

@@ -1,7 +1,11 @@
 package com.nexachat.core.network.stomp
 
+import com.nexachat.core.storage.TokenStore
+import io.mockk.mockk
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 /**
@@ -36,5 +40,14 @@ class WsEndpointUrlTest {
     fun `preserves nested base paths`() {
         val url = wsEndpointUrl("http://example.com/api/v1")
         assertEquals("http://example.com/api/v1/ws", url.toString())
+    }
+
+    @Test
+    fun `StompClient constructs without throwing — DI-init crash regression`() {
+        // The wsUrl field initializer runs in the constructor; the ws-scheme
+        // bug threw IllegalArgumentException here and killed the app at
+        // startup. Constructing the real client with inert deps covers it.
+        val client = StompClient(OkHttpClient(), mockk<TokenStore>(relaxed = true))
+        assertNotNull(client)
     }
 }

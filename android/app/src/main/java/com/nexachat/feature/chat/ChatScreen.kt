@@ -118,6 +118,20 @@ fun ChatScreen(
         }
     }
 
+    /**
+     * reverseLayout anchors the viewport to a visible item — arrivals at
+     * index 0 (own send, push, outbox flush) stay below the fold once the
+     * user drifts off the bottom edge (e.g. keyboard open). Follow the tail
+     * when near it, and always jump for our own send.
+     */
+    val newest = state.messages.lastOrNull()
+    LaunchedEffect(state.messages.size) {
+        if (state.messages.isEmpty()) return@LaunchedEffect
+        if (newest?.mine == true || listState.firstVisibleItemIndex <= 1) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     // Picker results are identical for direct and group chat — one path.
     val visualPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_VISUAL_PICK),
