@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,8 +29,10 @@ import okhttp3.WebSocketListener
 /**
  * Raw OkHttp WebSocket + STOMP 1.2 client (plan §11.1 — no SockJS).
  *
- * Endpoint: `{API_BASE_URL}` with the `http` scheme swapped to `ws` (https →
- * wss), path `/ws`. Authentication rides inside the STOMP CONNECT frame as
+ * Endpoint: `{API_BASE_URL}` + path `/ws`. The request keeps the `http(s)`
+ * scheme — OkHttp's WebSocket upgrade is driven by the `newWebSocket` call,
+ * not a `ws://` URL (OkHttp's HttpUrl rejects `ws`/`wss` outright).
+ * Authentication rides inside the STOMP CONNECT frame as
  * `Authorization: Bearer <at>` (the plan rejected query-param tokens because
  * they leak into access logs); the AuthInterceptor additionally stamps the
  * HTTP upgrade request, which is harmless.
@@ -89,10 +92,7 @@ class StompClient @Inject constructor(
     private val subscriptionIds = ConcurrentHashMap<String, String>()
     private val subscriptionCounter = AtomicInteger()
 
-    private val wsUrl = AppConfig.API_BASE_URL.toHttpUrl().newBuilder()
-        .scheme(if (AppConfig.API_BASE_URL.startsWith("https")) "wss" else "ws")
-        .addPathSegment("ws")
-        .build()
+    private val wsUrl = wsEndpointUrl(AppConfig.API_BASE_URL)
 
     /**
      * Opens a socket, sends CONNECT, and reports the attempt lifecycle until
@@ -312,3 +312,15 @@ class StompClient @Inject constructor(
         private const val HTTP_FORBIDDEN = 403
     }
 }
+
+/**
+ * Builds the WebSocket upgrade URL for [baseUrl] (`{base}/ws`). The scheme is
+ * left as `http`/`https` on purpose: OkHttp's `HttpUrl` rejects `ws`/`wss`,
+ * and [OkHttpClient.newWebSocket] performs the upgrade on a plain request.
+ * `https` transparently means `wss` (TLS) during the upgrade.
+ */
+internal fun wsEndpointUrl(baseUrl: String): HttpUrl =
+    baseUrl.toHttpUrl()
+        .newBuilder()
+        .addPathSegment("ws")
+        .build()

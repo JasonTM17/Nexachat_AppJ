@@ -5,6 +5,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import com.nexachat.core.common.AppLocaleManager
 import com.nexachat.core.ui.AppNavHost
 import com.nexachat.core.ui.theme.NexaChatTheme
@@ -31,7 +35,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NexaChatTheme {
-                AppNavHost()
+                // Root Surface paints colorScheme.background behind every
+                // destination — without it the window's splash-colored
+                // windowBackground bleeds into Scaffold-less screens (login).
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    AppNavHost()
+                }
             }
         }
     }
