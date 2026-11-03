@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -158,6 +159,12 @@ class RealtimeSession @Inject constructor(
     )
     val resyncRequests: SharedFlow<Unit> = _resyncRequests.asSharedFlow()
 
+    /** Wake-ups for a connection loop parked after retry-budget exhaustion. */
+    private val rearmRequests = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     /** Destinations that must be (re-)subscribed on every Open. */
     private val wantedSubscriptions = ConcurrentHashMap.newKeySet<String>()
 
@@ -211,20 +218,32 @@ class RealtimeSession @Inject constructor(
         }
     }
 
-    /** Re-arms the loop after OFFLINE — called by repositories on user actions. */
-    fun ensureConnected() = launchConnectionLoop()
+    /**
+     * Re-arms the loop — called by repositories on user actions. Starts the
+     * job if it died (e.g. never launched), and wakes it if it is parked
+     * after exhausting retries.
+     */
+    fun ensureConnected() {
+        launchConnectionLoop()
+        rearmRequests.tryEmit(Unit)
+    }
+
+    /** App-foreground re-arm: a socket that died while backgrounded reconnects on resume. */
+    fun onAppForeground() {
+        scope.launch {
+            if (!_isOpen.value && tokenStore.hasValidRefresh.first()) ensureConnected()
+        }
+    }
 
     /**
      * Auto re-arm on connectivity regain. Gated on a live refresh token so a
      * logged-out app never spins up a loop, and on `!isOpen` so a healthy
-     * socket (e.g. wifi→cell handover still in-flight) is left alone;
-     * [launchConnectionLoop] itself dedups an already-running loop
-     * atomically.
+     * socket (e.g. wifi→cell handover still in-flight) is left alone.
      */
     private suspend fun observeNetworkRegain() {
         networkMonitor.regained.collect {
             if (!_isOpen.value && tokenStore.hasValidRefresh.first()) {
-                launchConnectionLoop()
+                ensureConnected()
             }
         }
     }
@@ -257,7 +276,13 @@ class RealtimeSession @Inject constructor(
             failures++
             if (!reconnectPolicy.shouldRetry(failures)) {
                 _state.value = StompClient.State.Failed(StompClient.REASON_OFFLINE)
-                return
+                // Park (the job stays alive and cancellable) until a re-arm
+                // signal: network regain, a user action, or app foreground.
+                // A socket can die while connectivity never toggled — exiting
+                // here left the app permanently offline until navigation.
+                merge(networkMonitor.regained, rearmRequests).first()
+                failures = 0
+                continue
             }
             delay(reconnectPolicy.delayMillis(failures))
         }

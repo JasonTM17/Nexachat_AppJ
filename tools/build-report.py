@@ -277,7 +277,7 @@ def build():
            ["R4", "Chức năng sáng tạo", "5", "OK",
             "Message Interactions: reply/react/pin — V3__interactions.sql, ReactionController, PinController, InteractionFlowIT"],
            ["R5", "Giao diện rõ ràng + toàn bộ unit test pass", "15", "OK",
-            "Server 284 tests green (258 unit + 26 IT); Android 146 tests green; CI gate .github/workflows/ci.yml"],
+            "Server 284 tests green (258 unit + 26 IT); Android 149 tests green; CI gate .github/workflows/ci.yml"],
            ["R6", "Thuyết trình, demo, vấn đáp", "40", "OK",
             "docs/demo-runbook.md (kịch bản 8 phút + fallback), 18 câu vấn đáp, mỗi quyết định kèm \"vì sao\""]],
           widths=[1, 5.5, 1, 1, 7], font_size=8.5)
@@ -342,7 +342,7 @@ def build():
            ["NFR-5", "Maintainability", "Package-by-feature; không trả entity ra API; không logic trong Controller/Composable",
             "com.nexachat.<feature> server; feature/* + data/ + core/ Android"],
            ["NFR-6", "Testability", "Toàn bộ unit test pass ở CI; mỗi service authZ có negative test",
-            "284 + 146 tests; 21 negative tests ở quality phase"],
+            "284 + 149 tests; 21 negative tests ở quality phase"],
            ["NFR-7", "Portability", "minSdk 26, targetSdk 35; emulator + máy thật LAN",
             "build.gradle.kts; BuildConfig.API_BASE_URL"],
            ["NFR-8", "Observability", "Log không chứa password/token/file body; /actuator/health",
@@ -832,7 +832,7 @@ def build():
           [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "258", "green"],
            ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "26", "green"],
            ["Server tổng", "mvn -B verify", "284", "green"],
-           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "146", "green"]],
+           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "149", "green"]],
           widths=[3.2, 7.5, 1.8, 2.5], font_size=9)
     para(doc, "CI (.github/workflows/ci.yml): job server-test (postgres:16 "
               "service + mvn -B verify với IT_DB_* env) + android-test + "
@@ -857,7 +857,7 @@ def build():
               "ContactServiceTest (12), PhoneNormalizerTest (11 — E.164), "
               "UserServiceTest (11), TokenServiceTest (10 — rotation/reuse), "
               "ConversationServiceTest (10), ReactionServiceTest (7)…")
-    para(doc, "Android (146 test, 17 lớp): ChatViewModelTest (optimistic "
+    para(doc, "Android (149 test, 17 lớp): ChatViewModelTest (optimistic "
               "send, dedup theo clientMessageId, retry), "
               "TokenAuthenticatorTest (single-flight 401→refresh), "
               "StompCodecTest (frame parse/build), TokenStoreTest, "
@@ -868,8 +868,9 @@ def build():
               "MediaViewerViewModelTest, ProfileViewModelTest, "
               "AppLocaleManagerTest, WsEndpointUrlTest (wsUrl derivation + "
               "StompClient constructor crash guard), "
-              "RealtimeSessionReArmTest (network-regain re-arm, logged-out / "
-              "already-open no-op, concurrent re-arm single-loop).")
+              "RealtimeSessionReArmTest (parked-loop re-arm: network-regain, "
+              "ensureConnected + foreground wake, logged-out no-ops, "
+              "concurrent single-loop).")
     h2(doc, "13.4. Live E2E & on-device verification")
     para(doc, "Unit/IT coverage không đủ để chứng minh hệ thống chạy thật — "
               "phần này kiểm chứng artifact đã đóng gói trên stack "
@@ -899,7 +900,7 @@ def build():
               "Picker (IMAGE/png byte-identical) → tạo group 3 người qua "
               "FAB (SYSTEM event render) → search SĐT + add contact → "
               "message user mới tạo direct conv.")
-    para(doc, "(c) Bốn lỗi thật chỉ phát hiện được trên device:")
+    para(doc, "(c) Sáu lỗi thật chỉ phát hiện được trên device:")
     table(doc,
           ["Lỗi", "Nguyên nhân gốc", "Fix"],
           [["Crash unexpected scheme: ws ~2s sau cold start",
@@ -927,7 +928,16 @@ def build():
             "snapshot REST một lần — add từ màn search chỉ cập nhật "
             "instance của search",
             "ContactsRepository.contactsFlow — StateFlow cache dùng chung "
-            "cho mọi fetch/add/alias/remove (a066e56)"]])
+            "cho mọi fetch/add/alias/remove (a066e56)"],
+           ["Socket chết lặng khi app ở background → Offline vĩnh viễn",
+            "Retry loop thoát hẳn sau MAX_ATTEMPTS; regain listener chỉ "
+            "bắn khi network toggle — socket chết giữa chừng (server "
+            "restart, idle TCP) khi mạng vẫn tốt thì không ai re-arm",
+            "Loop park chứ không exit: chờ merge(regained, rearmRequests); "
+            "ensureConnected + ProcessLifecycleOwner.onStart → "
+            "onAppForeground đánh thức (gate !isOpen && hasValidRefresh). "
+            "Verify: docker restart khi background → foreground → tự "
+            "reconnect → push + typing sống lại"]])
     para(doc, "(d) Offline outbox + auto-reconnect (airplane-mode E2E): bật "
               "airplane mode → gửi tin → bubble hiện SENDING ngay → tắt "
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "
@@ -946,7 +956,7 @@ def build():
         "cd server && mvn -B verify       # 284 tests\n"
         "\n"
         "# Android unit tests\n"
-        "cd android && ./gradlew testDebugUnitTest   # 146 tests")
+        "cd android && ./gradlew testDebugUnitTest   # 149 tests")
     para(doc, "Manual E2E: docs/demo-runbook.md §5 — 10 bước demo ~8 phút "
               "(2 máy chat 1-1, 3 máy nhóm, offline send, media, "
               "interactions, i18n+rotation, CI xanh).")
@@ -1064,7 +1074,7 @@ def build():
               "100% parity, rotation an toàn, và creative feature Message "
               "Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.")
     para(doc, "Chất lượng được chứng minh bằng số liệu thật: 284 test server "
-              "(258 unit + 26 integration trên Postgres thật) và 146 test "
+              "(258 unit + 26 integration trên Postgres thật) và 149 test "
               "Android, CI gate xanh trên mọi PR; deploy một lệnh "
               "docker compose up; demo LAN có runbook + fallback. Các hạn "
               "chế được khai báo trung thực (không E2E, SimpleBroker 1 node, "

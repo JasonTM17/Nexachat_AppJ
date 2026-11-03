@@ -81,7 +81,7 @@ class RealtimeSessionReArmTest {
         }
 
     @Test
-    fun `network regain re-arms a dead connection loop`() = runTest {
+    fun `network regain re-arms a parked connection loop`() = runTest {
         val regain = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         val monitor = mockk<NetworkMonitor> { every { regained } returns regain }
         // Every attempt fails fast; ReconnectPolicy budget = 5.
@@ -92,8 +92,60 @@ class RealtimeSessionReArmTest {
 
         regain.emit(Unit)
         advanceUntilIdle()
-        // Re-arm ran another full retry cycle — the loop is alive again.
+        // Regain wakes the parked loop — another full retry cycle runs.
         verify(atLeast = ReconnectPolicy.MAX_ATTEMPTS + 1) { stompClient.connect() }
+    }
+
+    @Test
+    fun `ensureConnected wakes a parked loop without network regain`() = runTest {
+        // The defect found on the release build: socket died while the app
+        // sat backgrounded — network never toggled, so no regain callback.
+        // ensureConnected (user action / navigation) must still re-arm.
+        val monitor = mockk<NetworkMonitor> {
+            every { regained } returns MutableSharedFlow()
+        }
+        val stompClient = stompClientStub { flowOf(StompClient.State.Failed("boom")) }
+        val s = session(stompClient, loggedInStore(), monitor, CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+        advanceUntilIdle()
+        verify(exactly = ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
+
+        s.ensureConnected()
+        advanceUntilIdle()
+        verify(exactly = 2 * ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
+    }
+
+    @Test
+    fun `onAppForeground wakes a parked loop while logged in`() = runTest {
+        val monitor = mockk<NetworkMonitor> {
+            every { regained } returns MutableSharedFlow()
+        }
+        val stompClient = stompClientStub { flowOf(StompClient.State.Failed("boom")) }
+        val s = session(stompClient, loggedInStore(), monitor, CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+        advanceUntilIdle()
+        verify(exactly = ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
+
+        s.onAppForeground()
+        advanceUntilIdle()
+        verify(exactly = 2 * ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
+    }
+
+    @Test
+    fun `onAppForeground while logged out does nothing`() = runTest {
+        val monitor = mockk<NetworkMonitor> {
+            every { regained } returns MutableSharedFlow()
+        }
+        val stompClient = stompClientStub { flowOf(StompClient.State.Failed("boom")) }
+        val s = session(
+            stompClient,
+            TokenStore(FakeDataStore(), PassThroughCipher()),
+            monitor,
+            CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+        )
+        advanceUntilIdle()
+
+        s.onAppForeground()
+        advanceUntilIdle()
+        verify(exactly = 0) { stompClient.connect() }
     }
 
     @Test

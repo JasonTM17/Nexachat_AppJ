@@ -1,11 +1,30 @@
 package com.nexachat
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import com.nexachat.core.network.stomp.RealtimeSession
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 /**
  * Application entry point. Hilt's generated [Hilt_NexaChatApp] component lives
  * here; modules under `core/` and `data/` contribute bindings.
  */
 @HiltAndroidApp
-class NexaChatApp : Application()
+class NexaChatApp : Application() {
+
+    @Inject
+    lateinit var realtimeSession: RealtimeSession
+
+    override fun onCreate() {
+        super.onCreate()
+        // Foreground re-arm: a socket that died while the app was
+        // backgrounded (idle TCP close, doze, server restart) reconnects on
+        // resume — connectivity never toggled, so the regain callback can't.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = realtimeSession.onAppForeground()
+        })
+    }
+}
