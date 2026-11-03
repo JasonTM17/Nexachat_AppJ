@@ -5,15 +5,22 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.database.ConversationDao
 import com.nexachat.core.database.MessageDao
 import com.nexachat.core.database.MessageEntity
+import com.nexachat.core.database.MessageReactionEntity
 import com.nexachat.core.database.OutboxDao
 import com.nexachat.core.database.OutboxEntity
 import com.nexachat.core.database.OutboxState
+import com.nexachat.core.database.PinDao
+import com.nexachat.core.database.PinnedMessageEntity
+import com.nexachat.core.database.ReactionDao
 import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
+import com.nexachat.core.network.dto.PinRequest
+import com.nexachat.core.network.dto.ReactionRequest
+import com.nexachat.core.network.dto.ReactionSummaryDto
 import com.nexachat.core.network.dto.ReadRequest
 import com.nexachat.core.network.dto.SendMessageRequest
 import com.nexachat.core.network.safeApiCall
@@ -42,6 +49,16 @@ import kotlinx.coroutines.launch
 enum class DeliveryStatus { SENT, SENDING, FAILED }
 
 /**
+ * Reaction chip under a bubble — aggregated from `message_reactions`
+ * ([reactedByMe] resolves `reactedByMe ?: userIds.contains(myId)` at ingest).
+ */
+data class ReactionChip(
+    val emoji: String,
+    val count: Int,
+    val reactedByMe: Boolean,
+)
+
+/**
  * Message as the feature layer sees it — merges the Room row (SENT) and the
  * outbox row (SENDING/FAILED) into one shape, [mine] already resolved.
  */
@@ -55,12 +72,17 @@ data class ChatMessage(
     val type: String,
     val content: String?,
     val replyToId: String?,
+    /** Embedded `replyTo` preview columns — survive the original being unloaded. */
+    val replyToSenderName: String?,
+    val replyToSnippet: String?,
     val createdAtEpochMs: Long,
     val clientMessageId: String?,
     val status: DeliveryStatus,
     val mine: Boolean,
     /** Parsed `attachmentsJson` — empty for TEXT-only bubbles. */
     val attachments: List<AttachmentDto> = emptyList(),
+    /** Aggregated emoji chips rendered under the bubble. */
+    val reactions: List<ReactionChip> = emptyList(),
 )
 
 /** Peer-is-typing signal forwarded to the open chat screen (5s TTL applied there). */
@@ -97,6 +119,8 @@ class MessageRepository @Inject constructor(
     private val messageDao: MessageDao,
     private val conversationDao: ConversationDao,
     private val outboxDao: OutboxDao,
+    private val reactionDao: ReactionDao,
+    private val pinDao: PinDao,
     private val session: RealtimeSession,
     private val tokenStore: TokenStore,
     private val sessionEvents: SessionEvents,
@@ -122,9 +146,25 @@ class MessageRepository @Inject constructor(
     )
     val readEvents: SharedFlow<ReadEvent> = _readEvents.asSharedFlow()
 
+    /**
+     * Reaction/pin action failures (403, PIN_LIMIT, offline) surfaced for a
+     * snackbar — same pattern as [typingEvents]; Room writes already reverted.
+     */
+    private val _interactionEvents = MutableSharedFlow<ApiError>(
+        extraBufferCapacity = EVENT_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val interactionEvents: SharedFlow<ApiError> = _interactionEvents.asSharedFlow()
+
     private val attachmentsAdapter = moshi.adapter<List<AttachmentDto>>(
         Types.newParameterizedType(List::class.java, AttachmentDto::class.java),
     )
+
+    /** Loose JSON → Map/List/String for the pins endpoint's variant shapes. */
+    private val anyAdapter = moshi.adapter(Any::class.java)
+
+    /** Embedded `message` objects inside `GET /pins` entries. */
+    private val messageAdapter = moshi.adapter(MessageDto::class.java)
 
     @Volatile
     private var tokenToUser: Pair<String, String>? = null
@@ -146,13 +186,47 @@ class MessageRepository @Inject constructor(
     fun messagesFlow(conversationId: String): Flow<List<ChatMessage>> = combine(
         messageDao.messagesForConversation(conversationId),
         outboxDao.pendingOrdered(),
-    ) { messages, pending ->
+        reactionDao.reactionsForConversation(conversationId),
+    ) { messages, pending, reactions ->
         val myId = currentUserId()
-        val sent = messages.map { it.toChatMessage(myId) }
+        val chips = reactions.groupBy({ it.messageId }) { it.toChip() }
+        val sent = messages.map { it.toChatMessage(myId, chips[it.id].orEmpty()) }
         val queued = pending
             .filter { it.conversationId == conversationId }
             .map { it.toChatMessage() }
         sent + queued
+    }
+
+    /**
+     * Pinned messages for the banner — pin rows resolved against stored
+     * messages, newest pin first. Messages not yet in local history still
+     * appear (id-only stub) so the banner count matches the server.
+     */
+    fun pinsFlow(conversationId: String): Flow<List<ChatMessage>> = combine(
+        pinDao.pinnedFor(conversationId),
+        messageDao.messagesForConversation(conversationId),
+    ) { pins, messages ->
+        val myId = currentUserId()
+        val byId = messages.associateBy { it.id }
+        pins.map { pin ->
+            byId[pin.messageId]?.toChatMessage(myId)
+                ?: ChatMessage(
+                    id = pin.messageId,
+                    conversationId = pin.conversationId,
+                    seq = null,
+                    senderId = "",
+                    senderDisplayName = null,
+                    type = MessageDto.TYPE_TEXT,
+                    content = null,
+                    replyToId = null,
+                    replyToSenderName = null,
+                    replyToSnippet = null,
+                    createdAtEpochMs = pin.pinnedAt,
+                    clientMessageId = null,
+                    status = DeliveryStatus.SENT,
+                    mine = false,
+                )
+        }
     }
 
     // ---- conversation lifecycle ----
@@ -168,6 +242,7 @@ class MessageRepository @Inject constructor(
         session.watchConversation(conversationId)
         sendRead(conversationId, messageDao.maxSeq(conversationId))
         flushOutbox()
+        refreshPins(conversationId)
     }
 
     fun closeConversation(conversationId: String) {
@@ -186,13 +261,35 @@ class MessageRepository @Inject constructor(
     ): Result<MessagePageDto> =
         when (val result = call { messageApi.getMessages(conversationId, beforeSeq) }) {
             is Result.Success -> {
-                messageDao.upsertAll(
-                    result.value.items.mapNotNull { it.toEntity(conversationId) },
-                )
+                storeHistoryItems(conversationId, result.value.items)
                 Result.Success(result.value)
             }
             is Result.Failure -> result
         }
+
+    /**
+     * Write-through shared by history paging and reconnect resync: message
+     * rows upsert by id, and per-message `reactions` summaries replace
+     * wholesale — but ONLY for messages that actually carried the field
+     * (`null` = absent, must not wipe local state).
+     */
+    private suspend fun storeHistoryItems(conversationId: String, items: List<MessageDto>) {
+        messageDao.upsertAll(items.mapNotNull { it.toEntity(conversationId) })
+        val myId = currentUserId()
+        val reactionRows = mutableListOf<MessageReactionEntity>()
+        val reactionOwnerIds = mutableListOf<String>()
+        for (dto in items) {
+            val summaries = dto.reactions ?: continue
+            // Same resolution as MessageEntity.toEntity — the row's
+            // conversationId must match the message's or the flow misses it.
+            val resolvedConversationId = dto.conversationId ?: conversationId
+            reactionOwnerIds += dto.id
+            summaries.mapNotNullTo(reactionRows) {
+                it.toEntity(dto.id, resolvedConversationId, myId)
+            }
+        }
+        reactionDao.replaceForMessages(reactionOwnerIds, reactionRows)
+    }
 
     // ---- send pipeline ----
 
@@ -306,6 +403,8 @@ class MessageRepository @Inject constructor(
                 is ChatEvent.SendRejected -> event.clientMessageId?.let { clientId ->
                     outboxDao.updateState(clientId, OutboxState.FAILED)
                 }
+                is ChatEvent.ReactionUpdated -> onReactionUpdated(event)
+                is ChatEvent.PinUpdated -> onPinUpdated(event)
                 else -> Unit
             }
         }
@@ -351,6 +450,174 @@ class MessageRepository @Inject constructor(
             activeConversation.value?.let { conversationId ->
                 resyncForward(conversationId)
                 sendRead(conversationId, messageDao.maxSeq(conversationId))
+                refreshPins(conversationId)
+            }
+        }
+    }
+
+    /**
+     * `REACTION_UPDATED` → wholesale summary replace for the message. The
+     * event may land before the message itself (out-of-order fan-out) — the
+     * rows are keyed by messageId and join at render, so order doesn't matter.
+     */
+    private suspend fun onReactionUpdated(event: ChatEvent.ReactionUpdated) {
+        val messageId = event.messageId ?: return
+        val conversationId = event.conversationId ?: return
+        val myId = currentUserId()
+        reactionDao.replaceForMessage(
+            messageId,
+            event.reactions.mapNotNull { it.toEntity(messageId, conversationId, myId) },
+        )
+    }
+
+    /** `PIN_UPDATED` → upsert on `pinned=true`, delete on `pinned=false`. */
+    private suspend fun onPinUpdated(event: ChatEvent.PinUpdated) {
+        val messageId = event.messageId ?: return
+        val conversationId = event.conversationId ?: return
+        when (event.pinned) {
+            true -> pinDao.upsert(
+                PinnedMessageEntity(
+                    conversationId = conversationId,
+                    messageId = messageId,
+                    pinnedAt = System.currentTimeMillis(),
+                ),
+            )
+            false -> pinDao.delete(conversationId, messageId)
+            null -> Unit
+        }
+    }
+
+    // ---- reactions ----
+
+    /**
+     * Toggle [emoji] on [messageId]: optimistic Room write first so the chip
+     * flips instantly, then the REST toggle — the response (or the
+     * REACTION_UPDATED broadcast) reconciles. Any failure restores the exact
+     * prior snapshot and surfaces on [interactionEvents].
+     */
+    suspend fun toggleReaction(messageId: String, conversationId: String, emoji: String) {
+        val before = reactionDao.forMessage(messageId)
+        val optimistic = toggledCopy(before, messageId, conversationId, emoji)
+        reactionDao.replaceForMessage(messageId, optimistic)
+        when (
+            val result = call { messageApi.toggleReaction(messageId, ReactionRequest(emoji)) }
+        ) {
+            is Result.Success -> {
+                val myId = currentUserId()
+                // 204 (the shipped server contract) reaches here as a `Unit`
+                // body cast to the DTO type — dereferencing `.reactions`
+                // throws ClassCastException, so read it inside runCatching.
+                // Absent body leaves the optimistic write; the broadcast
+                // reconciles.
+                runCatching { result.value.reactions }.getOrNull()
+                    ?.takeIf { it.isNotEmpty() }?.let { summaries ->
+                        reactionDao.replaceForMessage(
+                            messageId,
+                            summaries.mapNotNull { it.toEntity(messageId, conversationId, myId) },
+                        )
+                    }
+            }
+            is Result.Failure -> {
+                // Restore only if nothing fresher landed during the flight —
+                // a REACTION_UPDATED from another member wins over the
+                // stale snapshot.
+                if (reactionDao.forMessage(messageId) == optimistic) {
+                    reactionDao.replaceForMessage(messageId, before)
+                }
+                _interactionEvents.tryEmit(result.error)
+            }
+        }
+    }
+
+    /** Optimistic set-copy of [before] with [emoji] flipped for me. */
+    private fun toggledCopy(
+        before: List<MessageReactionEntity>,
+        messageId: String,
+        conversationId: String,
+        emoji: String,
+    ): List<MessageReactionEntity> {
+        val existing = before.firstOrNull { it.emoji == emoji }
+        return if (existing?.reactedByMe == true) {
+            val remaining = existing.count - 1
+            if (remaining <= 0) {
+                before - existing
+            } else {
+                before.map {
+                    if (it.emoji == emoji) it.copy(count = remaining, reactedByMe = false) else it
+                }
+            }
+        } else {
+            val updated = existing?.copy(count = existing.count + 1, reactedByMe = true)
+                ?: MessageReactionEntity(
+                    messageId = messageId,
+                    conversationId = conversationId,
+                    emoji = emoji,
+                    count = 1,
+                    reactedByMe = true,
+                )
+            before.filterNot { it.emoji == emoji } + updated
+        }
+    }
+
+    // ---- pins ----
+
+    /**
+     * `GET /pins` write-through — the resync source of truth between
+     * PIN_UPDATED pushes. Tolerant of every documented response spelling.
+     */
+    suspend fun refreshPins(conversationId: String): Result<Unit> =
+        when (val result = call { messageApi.getPins(conversationId) }) {
+            is Result.Success -> {
+                val body = runCatching { result.value.string() }.getOrNull()
+                    ?: return Result.Failure(ApiError.Network("body read failed"))
+                val (pins, embedded) = parsePinsBody(conversationId, body)
+                // Pinned messages outside the loaded window still render:
+                // the server embeds full message rows (PinnedMessageView),
+                // so persist them before the banner resolves.
+                if (embedded.isNotEmpty()) {
+                    messageDao.upsertAll(embedded.mapNotNull { it.toEntity(conversationId) })
+                }
+                pinDao.replaceForConversation(conversationId, pins)
+                Result.Success(Unit)
+            }
+            is Result.Failure -> result
+        }
+
+    /** Optimistic pin — revert + signal on failure (403 non-admin, PIN_LIMIT). */
+    suspend fun pinMessage(conversationId: String, messageId: String) {
+        val entry = PinnedMessageEntity(
+            conversationId = conversationId,
+            messageId = messageId,
+            pinnedAt = System.currentTimeMillis(),
+        )
+        pinDao.upsert(entry)
+        when (val result = call { messageApi.pinMessage(conversationId, PinRequest(messageId)) }) {
+            is Result.Success -> Unit
+            is Result.Failure -> {
+                // Remove our optimistic row only if it is still ours — a
+                // PIN_UPDATED or refresh landing in flight wins over the
+                // stale delete.
+                if (pinDao.find(conversationId, messageId) == entry) {
+                    pinDao.delete(conversationId, messageId)
+                }
+                _interactionEvents.tryEmit(result.error)
+            }
+        }
+    }
+
+    /** Optimistic unpin — restore the removed row + signal on failure. */
+    suspend fun unpinMessage(conversationId: String, messageId: String) {
+        val before = pinDao.find(conversationId, messageId)
+        pinDao.delete(conversationId, messageId)
+        when (val result = call { messageApi.unpinMessage(conversationId, messageId) }) {
+            is Result.Success -> Unit
+            is Result.Failure -> {
+                // Restore only while the row is still absent — fresher
+                // server state wins over the stale snapshot.
+                if (pinDao.find(conversationId, messageId) == null) {
+                    before?.let { pinDao.upsert(it) }
+                }
+                _interactionEvents.tryEmit(result.error)
             }
         }
     }
@@ -369,8 +636,8 @@ class MessageRepository @Inject constructor(
         while (true) {
             val result = call { messageApi.getMessages(conversationId, afterSeq = afterSeq) }
             val page = (result as? Result.Success)?.value ?: return
+            storeHistoryItems(conversationId, page.items)
             val entities = page.items.mapNotNull { it.toEntity(conversationId) }
-            messageDao.upsertAll(entities)
             val lastSeq = entities.maxOfOrNull { it.seq } ?: return
             if (!page.hasMore || lastSeq <= afterSeq) return
             afterSeq = lastSeq
@@ -384,6 +651,8 @@ class MessageRepository @Inject constructor(
                 messageDao.deleteAll()
                 conversationDao.clear()
                 outboxDao.clear()
+                reactionDao.clear()
+                pinDao.clear()
                 lastMarkedRead.clear()
                 activeConversation.value = null
                 tokenToUser = null
@@ -407,7 +676,10 @@ class MessageRepository @Inject constructor(
 
     // ---- mappers ----
 
-    private fun MessageEntity.toChatMessage(myId: String?): ChatMessage = ChatMessage(
+    private fun MessageEntity.toChatMessage(
+        myId: String?,
+        reactions: List<ReactionChip> = emptyList(),
+    ): ChatMessage = ChatMessage(
         id = id,
         conversationId = conversationId,
         seq = seq,
@@ -416,11 +688,14 @@ class MessageRepository @Inject constructor(
         type = type,
         content = content,
         replyToId = replyToId,
+        replyToSenderName = replyToSenderName,
+        replyToSnippet = replyToSnippet,
         createdAtEpochMs = createdAt,
         clientMessageId = clientMessageId,
         status = DeliveryStatus.SENT,
         mine = senderId == myId,
         attachments = attachments(),
+        reactions = reactions,
     )
 
     private fun OutboxEntity.toChatMessage(): ChatMessage = ChatMessage(
@@ -432,6 +707,8 @@ class MessageRepository @Inject constructor(
         type = type,
         content = content,
         replyToId = replyToId,
+        replyToSenderName = null,
+        replyToSnippet = null,
         createdAtEpochMs = createdAt,
         clientMessageId = clientMessageId,
         status = if (state == OutboxState.FAILED) DeliveryStatus.FAILED else DeliveryStatus.SENDING,
@@ -451,6 +728,8 @@ class MessageRepository @Inject constructor(
             content = content,
             clientMessageId = clientMessageId,
             replyToId = resolvedReplyToId,
+            replyToSenderName = replyTo?.resolvedSenderName,
+            replyToSnippet = replyTo?.resolvedSnippet,
             createdAt = isoToEpochMs(createdAt),
             attachmentsJson = attachments
                 .takeIf { it.isNotEmpty() }
@@ -467,6 +746,80 @@ class MessageRepository @Inject constructor(
         attachmentsJson.takeIf { it.isNotBlank() }
             ?.let { runCatching { attachmentsAdapter.fromJson(it) }.getOrNull() }
             .orEmpty()
+
+    /**
+     * `REACTION_UPDATED`/`POST /reactions` summary → Room row. `reactedByMe`
+     * resolves the explicit REST field first, else falls back to the WS
+     * `userIds` list; summaries with no usable emoji are dropped.
+     */
+    private fun ReactionSummaryDto.toEntity(
+        messageId: String,
+        conversationId: String,
+        myId: String?,
+    ): MessageReactionEntity? {
+        val usableEmoji = emoji?.takeIf { it.isNotBlank() } ?: return null
+        return MessageReactionEntity(
+            messageId = messageId,
+            conversationId = conversationId,
+            emoji = usableEmoji,
+            count = (count ?: userIds.size).coerceAtLeast(0),
+            reactedByMe = reactedByMe ?: byMe ?: (myId != null && userIds.contains(myId)),
+        )
+    }
+
+    private fun MessageReactionEntity.toChip(): ReactionChip =
+        ReactionChip(emoji = emoji, count = count, reactedByMe = reactedByMe)
+
+    // ---- pins body parsing ----
+
+    /**
+     * `GET /pins` tolerant parse — every documented spelling reduces to a
+     * pin row: `["m-1"]`, `[{messageId}]`, `[{id}]`, `[{message:{id}}]`, or an
+     * envelope (`items`/`pins`/`messageIds`). Wire order is preserved by
+     * decreasing `pinnedAt` so the banner's "latest" slot is deterministic.
+     */
+    private fun parsePinsBody(
+        conversationId: String,
+        body: String,
+    ): Pair<List<PinnedMessageEntity>, List<MessageDto>> {
+        val parsed = runCatching { anyAdapter.fromJson(body) }.getOrNull()
+            ?: return emptyList<PinnedMessageEntity>() to emptyList()
+        val entries: List<Any?> = when (parsed) {
+            is List<*> -> parsed
+            is Map<*, *> -> PIN_LIST_KEYS
+                .firstNotNullOfOrNull { parsed[it] as? List<*> }
+                ?: parsed.values.firstNotNullOfOrNull { it as? List<*> }
+                ?: return emptyList<PinnedMessageEntity>() to emptyList()
+            else -> return emptyList<PinnedMessageEntity>() to emptyList()
+        }
+        val now = System.currentTimeMillis()
+        val pins = ArrayList<PinnedMessageEntity>(entries.size)
+        val embedded = ArrayList<MessageDto>(entries.size)
+        entries.forEachIndexed { index, entry ->
+            pinMessageIdOf(entry)?.let { id ->
+                pins += PinnedMessageEntity(
+                    conversationId = conversationId,
+                    messageId = id,
+                    pinnedAt = now - index,
+                )
+            }
+            (entry as? Map<*, *>)?.get("message")?.let { raw ->
+                runCatching { messageAdapter.fromJsonValue(raw) }.getOrNull()
+                    ?.let { embedded += it }
+            }
+        }
+        return pins to embedded
+    }
+
+    /** `entry` is a bare id string or an object carrying the message id. */
+    private fun pinMessageIdOf(entry: Any?): String? = when (entry) {
+        is String -> entry.takeIf { it.isNotBlank() }
+        is Map<*, *> -> (entry["messageId"] as? String)
+            ?: (entry["id"] as? String)
+            ?: ((entry["message"] as? Map<*, *>)?.get("id") as? String)
+            ?: ((entry["message"] as? Map<*, *>)?.get("messageId") as? String)
+        else -> null
+    }
 
     // ---- internals ----
 
@@ -497,6 +850,9 @@ class MessageRepository @Inject constructor(
 
     private companion object {
         const val EVENT_BUFFER = 32
+
+        /** Envelope keys `GET /pins` may wrap the id list in. */
+        val PIN_LIST_KEYS = listOf("items", "pins", "messageIds", "pinnedMessageIds")
     }
 }
 

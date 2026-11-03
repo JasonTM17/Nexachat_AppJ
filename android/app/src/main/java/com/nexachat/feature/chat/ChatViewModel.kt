@@ -54,6 +54,15 @@ class ChatViewModel @Inject constructor(
     private val conversationId: String =
         savedStateHandle.get<String>("conversationId").orEmpty()
 
+    /** Reply draft — the message a swipe/Reply action is answering (phase-10). */
+    data class ReplyTarget(
+        /** Server message id — pending rows can never be reply targets. */
+        val messageId: String,
+        val senderName: String?,
+        /** Content snippet rendered in the preview bar. */
+        val snippet: String?,
+    )
+
     data class UiState(
         val loading: Boolean = true,
         /** Room messages (SENT) merged with pending outbox rows (SENDING/FAILED). */
@@ -70,7 +79,14 @@ class ChatViewModel @Inject constructor(
         val error: ApiError? = null,
         /** In-flight uploads staged above the input bar (phase-09 preview strip). */
         val pendingAttachments: List<PendingAttachment> = emptyList(),
-    )
+        /** Non-null while the composer is answering a message (phase-10). */
+        val replyTarget: ReplyTarget? = null,
+        /** Pinned messages, newest pin first — drives the banner. */
+        val pins: List<ChatMessage> = emptyList(),
+    ) {
+        /** O(1) "is this message pinned" for the long-press menu. */
+        fun isPinned(messageId: String): Boolean = pins.any { it.id == messageId }
+    }
 
     /**
      * Draft text — SavedStateHandle-backed so it survives process death, not
@@ -82,6 +98,7 @@ class ChatViewModel @Inject constructor(
     private val peerTyping = MutableStateFlow(false)
     private val hasMore = MutableStateFlow(false)
     private val pendingAttachments = MutableStateFlow<List<PendingAttachment>>(emptyList())
+    private val replyTarget = MutableStateFlow<ReplyTarget?>(null)
 
     /** Upload job per strip row — the remove-X cancels through this map. */
     private val uploadJobs = mutableMapOf<String, Job>()
@@ -113,6 +130,10 @@ class ChatViewModel @Inject constructor(
         .combine(pendingAttachments) { state, pending ->
             state.copy(pendingAttachments = pending)
         }
+        .combine(replyTarget) { state, reply -> state.copy(replyTarget = reply) }
+        .combine(messageRepository.pinsFlow(conversationId)) { state, pins ->
+            state.copy(pins = pins)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState())
 
     init {
@@ -126,6 +147,11 @@ class ChatViewModel @Inject constructor(
         }
         viewModelScope.launch { observeIncomingReads() }
         viewModelScope.launch { observeTyping() }
+        // Reaction/pin failures surface in the same inline error slot as
+        // history failures — one render path for all chat errors.
+        viewModelScope.launch {
+            messageRepository.interactionEvents.collect { error.value = it }
+        }
     }
 
     /** Marks the newest incoming seq read while the screen is open. */
@@ -171,15 +197,63 @@ class ChatViewModel @Inject constructor(
     fun send() {
         val text = input.value.trim()
         if (text.isEmpty()) return
+        val replyToId = replyTarget.value?.messageId
         savedStateHandle[KEY_INPUT] = ""
+        replyTarget.value = null
         viewModelScope.launch {
-            messageRepository.send(conversationId, text)
+            messageRepository.send(conversationId, text, replyToId = replyToId)
         }
     }
 
     /** Tap a FAILED bubble → requeue and dispatch. */
     fun retryFailed(clientMessageId: String) {
         viewModelScope.launch { messageRepository.retry(clientMessageId) }
+    }
+
+    // ---- interactions (phase-10) ----
+
+    /**
+     * Swipe-right or the Reply menu item → preview bar above the composer.
+     * Only SENT messages qualify — a pending row's clientMessageId is
+     * meaningless to the server's `replyToId` field.
+     */
+    fun setReplyTarget(message: ChatMessage) {
+        if (message.status != DeliveryStatus.SENT) return
+        replyTarget.value = ReplyTarget(
+            messageId = message.id,
+            senderName = message.senderDisplayName,
+            snippet = message.content ?: message.type,
+        )
+    }
+
+    fun clearReplyTarget() {
+        replyTarget.value = null
+    }
+
+    /** Emoji tap in the bar or on a chip — repository optimises + reconciles. */
+    fun toggleReaction(message: ChatMessage, emoji: String) {
+        if (message.status != DeliveryStatus.SENT) return
+        viewModelScope.launch {
+            messageRepository.toggleReaction(message.id, conversationId, emoji)
+        }
+    }
+
+    /**
+     * Pin/Unpin menu item. Offered unconditionally: DIRECT allows any member
+     * and GROUP requires ADMIN, but my role is not exposed on the chat
+     * screen's data path (ConversationEntity has no member rows) — the
+     * server's 403 lands on [interactionEvents] as a snackbar instead. This
+     * matches the GroupDetail "server is the real boundary" convention.
+     */
+    fun togglePin(message: ChatMessage) {
+        if (message.status != DeliveryStatus.SENT) return
+        viewModelScope.launch {
+            if (uiState.value.isPinned(message.id)) {
+                messageRepository.unpinMessage(conversationId, message.id)
+            } else {
+                messageRepository.pinMessage(conversationId, message.id)
+            }
+        }
     }
 
     // ---- attachments (phase-09) ----

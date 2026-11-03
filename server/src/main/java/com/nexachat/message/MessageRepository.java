@@ -1,6 +1,7 @@
 package com.nexachat.message;
 
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.ReplyRefRow;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -46,7 +47,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.sender.id = :senderId AND m.clientMessageId = :clientMessageId
             """)
@@ -62,7 +63,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
@@ -80,7 +81,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq > :afterSeq
@@ -94,9 +95,22 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
             """)
     List<MessageRow> findRowsByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Batch reply-target fetch for the {@code replyTo} preview (phase-10):
+     * one IN query hydrates every {@code replyToId} on a message page — same
+     * projection discipline as the {@link MessageRow} queries.
+     */
+    @Query("""
+            SELECT new com.nexachat.message.dto.ReplyRefRow(
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+            FROM Message m JOIN m.sender u
+            WHERE m.id IN :ids
+            """)
+    List<ReplyRefRow> findReplyRefsByIdIn(@Param("ids") Collection<UUID> ids);
 }

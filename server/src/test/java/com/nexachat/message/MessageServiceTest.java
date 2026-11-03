@@ -46,6 +46,8 @@ class MessageServiceTest {
     @Mock
     private MessageAttachmentRepository attachmentRepository;
     @Mock
+    private MessageReactionRepository reactionRepository;
+    @Mock
     private ConversationRepository conversationRepository;
     @Mock
     private ConversationMemberRepository memberRepository;
@@ -63,16 +65,18 @@ class MessageServiceTest {
     @BeforeEach
     void setUp() {
         messageService = new MessageService(
-                messageRepository, attachmentRepository, conversationRepository,
-                memberRepository, storageService, eventPublisher);
+                messageRepository, attachmentRepository, reactionRepository,
+                conversationRepository, memberRepository, storageService, eventPublisher);
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
+        lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
+        lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
         lenient().when(storageService.resolveUrl(anyString())).thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
     }
 
     private MessageRow row(long seq) {
         return new MessageRow(
                 UUID.randomUUID(), conversationId, seq, senderId, "Sender Name",
-                Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null);
+                Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null, null);
     }
 
     private SendMessageRequest request() {
@@ -193,7 +197,7 @@ class MessageServiceTest {
         memberOk();
         MessageRow foreign = new MessageRow(
                 UUID.randomUUID(), UUID.randomUUID() /* other conv */, 41L, senderId,
-                "Sender", Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null);
+                "Sender", Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null, null);
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(0);
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))

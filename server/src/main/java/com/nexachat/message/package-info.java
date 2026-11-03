@@ -1,4 +1,5 @@
 /**
- * Messages: chat messages, sequencing, delivery, and edit/delete state.
+ * Messages: chat messages, sequencing, delivery, edit/delete state, and the
+ * phase-10 interactions (emoji reactions, pinned messages, reply previews).
  */
 package com.nexachat.message;

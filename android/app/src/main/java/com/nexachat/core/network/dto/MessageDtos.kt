@@ -25,6 +25,12 @@ data class MessageDto(
     val content: String? = null,
     val replyTo: ReplyRefDto? = null,
     val replyToId: String? = null,
+    /**
+     * Embedded reaction summaries (phase-10). Nullable — `null` means the
+     * field was absent and callers must NOT wipe locally-known summaries;
+     * an explicit empty list means "no reactions".
+     */
+    val reactions: List<ReactionSummaryDto>? = null,
     val attachments: List<AttachmentDto> = emptyList(),
     /** ISO-8601 instant, e.g. `2026-11-03T09:12:04Z`. */
     val createdAt: String? = null,
@@ -51,12 +57,23 @@ data class SenderRefDto(
     val displayName: String? = null,
 )
 
+/**
+ * Embedded `replyTo` preview (phase-10 contract: `{id, senderId, senderName,
+ * snippet}`). The earlier `{id, senderDisplayName, content}` spelling stays
+ * tolerated — resolve through the getters.
+ */
 @JsonClass(generateAdapter = true)
 data class ReplyRefDto(
     val id: String? = null,
+    val senderId: String? = null,
+    val senderName: String? = null,
     val senderDisplayName: String? = null,
+    val snippet: String? = null,
     val content: String? = null,
-)
+) {
+    val resolvedSenderName: String? get() = senderName ?: senderDisplayName
+    val resolvedSnippet: String? get() = snippet ?: content
+}
 
 /** `GET /conversations/{id}/messages` cursor page (plan §10.3). */
 @JsonClass(generateAdapter = true)

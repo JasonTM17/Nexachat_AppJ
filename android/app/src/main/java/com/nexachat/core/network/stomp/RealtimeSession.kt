@@ -2,6 +2,9 @@ package com.nexachat.core.network.stomp
 
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.network.dto.MessageDto
+import com.nexachat.core.network.dto.PinUpdateDto
+import com.nexachat.core.network.dto.ReactionSummaryDto
+import com.nexachat.core.network.dto.ReactionUpdateDto
 import com.nexachat.core.network.dto.SendMessageRequest
 import com.nexachat.core.network.stomp.dto.ReadUpdateDto
 import com.nexachat.core.network.stomp.dto.SendErrorDto
@@ -29,8 +32,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Typed realtime events decoded from the WS envelope (plan §11.2). Event
- * types the client does not consume yet (MESSAGE_UPDATED, REACTION_UPDATED,
- * presence, …) collapse into [Unknown] — forward-compatible by design.
+ * types the client does not consume yet (MESSAGE_UPDATED, presence, …)
+ * collapse into [Unknown] — forward-compatible by design.
  */
 sealed interface ChatEvent {
     val conversationId: String?
@@ -55,6 +58,24 @@ sealed interface ChatEvent {
 
     data class ConversationUpdated(
         override val conversationId: String?,
+    ) : ChatEvent
+
+    /**
+     * `REACTION_UPDATED` (phase-10): the message's full summary set —
+     * `{messageId, reactions: [{emoji, count, userIds}]}`. Repositories
+     * replace the stored set wholesale; an empty [reactions] list clears it.
+     */
+    data class ReactionUpdated(
+        override val conversationId: String?,
+        val messageId: String?,
+        val reactions: List<ReactionSummaryDto>,
+    ) : ChatEvent
+
+    /** `PIN_UPDATED` (phase-10): `{messageId, pinned}` — add/remove flag. */
+    data class PinUpdated(
+        override val conversationId: String?,
+        val messageId: String?,
+        val pinned: Boolean?,
     ) : ChatEvent
 
     /** `/user/queue/errors` — a SEND was rejected server-side. */
@@ -106,6 +127,8 @@ class RealtimeSession @Inject constructor(
     private val typingAdapter = moshi.adapter(TypingSignalDto::class.java)
     private val readAdapter = moshi.adapter(ReadUpdateDto::class.java)
     private val sendErrorAdapter = moshi.adapter(SendErrorDto::class.java)
+    private val reactionAdapter = moshi.adapter(ReactionUpdateDto::class.java)
+    private val pinAdapter = moshi.adapter(PinUpdateDto::class.java)
     private val mapAdapter = moshi.adapter<Map<String, Any?>>(
         Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java),
     )
@@ -296,6 +319,24 @@ class RealtimeSession @Inject constructor(
         }
         EVENT_CONVERSATION_UPDATED ->
             ChatEvent.ConversationUpdated(envelope.conversationId)
+        EVENT_REACTION_UPDATED -> {
+            val update = envelope.payloadJson()
+                ?.let { runCatching { reactionAdapter.fromJson(it) }.getOrNull() }
+            ChatEvent.ReactionUpdated(
+                conversationId = envelope.conversationId,
+                messageId = update?.messageId,
+                reactions = update?.reactions.orEmpty(),
+            )
+        }
+        EVENT_PIN_UPDATED -> {
+            val update = envelope.payloadJson()
+                ?.let { runCatching { pinAdapter.fromJson(it) }.getOrNull() }
+            ChatEvent.PinUpdated(
+                conversationId = envelope.conversationId,
+                messageId = update?.messageId,
+                pinned = update?.pinned,
+            )
+        }
         else -> ChatEvent.Unknown(envelope.eventType, envelope.conversationId)
     }
 
@@ -317,6 +358,8 @@ class RealtimeSession @Inject constructor(
         const val EVENT_USER_TYPING = "USER_TYPING"
         const val EVENT_MESSAGE_READ = "MESSAGE_READ"
         const val EVENT_CONVERSATION_UPDATED = "CONVERSATION_UPDATED"
+        const val EVENT_REACTION_UPDATED = "REACTION_UPDATED"
+        const val EVENT_PIN_UPDATED = "PIN_UPDATED"
 
         private const val NORMAL_CODE = 1000
         private const val EVENTS_BUFFER = 128

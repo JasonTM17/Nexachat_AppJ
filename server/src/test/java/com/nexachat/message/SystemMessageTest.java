@@ -42,6 +42,8 @@ class SystemMessageTest {
     @Mock
     private MessageAttachmentRepository attachmentRepository;
     @Mock
+    private MessageReactionRepository reactionRepository;
+    @Mock
     private ConversationRepository conversationRepository;
     @Mock
     private ConversationMemberRepository memberRepository;
@@ -58,9 +60,11 @@ class SystemMessageTest {
     @BeforeEach
     void setUp() {
         messageService = new MessageService(
-                messageRepository, attachmentRepository, conversationRepository,
-                memberRepository, storageService, eventPublisher);
+                messageRepository, attachmentRepository, reactionRepository,
+                conversationRepository, memberRepository, storageService, eventPublisher);
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
+        lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
+        lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
     }
 
     @Test
@@ -72,7 +76,7 @@ class SystemMessageTest {
         MessageRow stored = new MessageRow(
                 UUID.randomUUID(), conversationId, 77L, actorId, "Admin",
                 Message.Type.SYSTEM, "Admin added Bob", UUID.randomUUID(),
-                null, Instant.now(), null);
+                null, Instant.now(), null, null);
         when(messageRepository.findRowBySenderAndClientMessageId(eq(actorId), any()))
                 .thenReturn(Optional.of(stored));
 

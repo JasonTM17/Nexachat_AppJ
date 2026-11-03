@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -108,4 +109,89 @@ interface OutboxDao {
 
     @Query("DELETE FROM outbox")
     suspend fun clear()
+}
+
+/**
+ * Reaction summaries. The summary row for one (message, emoji) is
+ * authoritative — every writer (REST embed, `REACTION_UPDATED`, optimistic
+ * toggle) replaces the message's whole set at once via [replaceForMessage] /
+ * [replaceForMessages], never merges partial rows.
+ */
+@Dao
+interface ReactionDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(reactions: List<MessageReactionEntity>)
+
+    /** Whole conversation — the chat UI groups by `messageId` itself. */
+    @Query("SELECT * FROM message_reactions WHERE conversationId = :conversationId")
+    fun reactionsForConversation(conversationId: String): Flow<List<MessageReactionEntity>>
+
+    /** Snapshot for the optimistic toggle's revert path. */
+    @Query("SELECT * FROM message_reactions WHERE messageId = :messageId")
+    suspend fun forMessage(messageId: String): List<MessageReactionEntity>
+
+    @Query("DELETE FROM message_reactions WHERE messageId = :messageId")
+    suspend fun deleteForMessage(messageId: String)
+
+    @Query("DELETE FROM message_reactions WHERE messageId IN (:messageIds)")
+    suspend fun deleteForMessages(messageIds: List<String>)
+
+    @Query("DELETE FROM message_reactions")
+    suspend fun clear()
+
+    /** Atomic set-replace for one message — the WS event and REST response path. */
+    @Transaction
+    suspend fun replaceForMessage(messageId: String, reactions: List<MessageReactionEntity>) {
+        deleteForMessage(messageId)
+        upsertAll(reactions)
+    }
+
+    /**
+     * Batch variant for history pages: only messages that actually carried a
+     * `reactions` field belong in [messageIds] (an absent field must not wipe
+     * locally-known summaries).
+     */
+    @Transaction
+    suspend fun replaceForMessages(
+        messageIds: List<String>,
+        reactions: List<MessageReactionEntity>,
+    ) {
+        if (messageIds.isEmpty()) return
+        deleteForMessages(messageIds)
+        upsertAll(reactions)
+    }
+}
+
+/** Conversation pins — latest pin first for the banner projection. */
+@Dao
+interface PinDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(pin: PinnedMessageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(pins: List<PinnedMessageEntity>)
+
+    @Query("SELECT * FROM pinned_messages WHERE conversationId = :conversationId ORDER BY pinnedAt DESC")
+    fun pinnedFor(conversationId: String): Flow<List<PinnedMessageEntity>>
+
+    @Query("SELECT * FROM pinned_messages WHERE conversationId = :conversationId AND messageId = :messageId")
+    suspend fun find(conversationId: String, messageId: String): PinnedMessageEntity?
+
+    @Query("DELETE FROM pinned_messages WHERE conversationId = :conversationId AND messageId = :messageId")
+    suspend fun delete(conversationId: String, messageId: String)
+
+    @Query("DELETE FROM pinned_messages WHERE conversationId = :conversationId")
+    suspend fun deleteForConversation(conversationId: String)
+
+    @Query("DELETE FROM pinned_messages")
+    suspend fun clear()
+
+    /** `GET /pins` is authoritative — full-set replace per conversation. */
+    @Transaction
+    suspend fun replaceForConversation(conversationId: String, pins: List<PinnedMessageEntity>) {
+        deleteForConversation(conversationId)
+        upsertAll(pins)
+    }
 }

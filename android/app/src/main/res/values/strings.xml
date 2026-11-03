@@ -83,6 +83,17 @@
     <string name="cd_remove_attachment">Remove attachment</string>
     <string name="cd_open_attachment">Open attachment</string>
 
+    <!-- Message interactions -->
+    <string name="action_reply">Reply</string>
+    <string name="action_pin">Pin</string>
+    <string name="action_unpin">Unpin</string>
+    <string name="pinned_title">Pinned</string>
+    <string name="pinned_count">%1$d/%2$d</string>
+    <string name="reply_unavailable">Message unavailable</string>
+    <string name="cd_cancel_reply">Cancel reply</string>
+    <string name="cd_pinned">Pinned message</string>
+    <string name="error_pin_limit">Pinned-message limit reached</string>
+
     <!-- Media / attachments -->
     <string name="media_pick_visual">Photo or video</string>
     <string name="media_pick_document">File or audio</string>

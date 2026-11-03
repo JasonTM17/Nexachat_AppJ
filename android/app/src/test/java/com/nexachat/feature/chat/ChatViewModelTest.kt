@@ -54,6 +54,8 @@ class ChatViewModelTest {
     private val conversationFlow = MutableStateFlow<ConversationSummary?>(null)
     private val typingFlow = MutableSharedFlow<TypingEvent>(extraBufferCapacity = 8)
     private val isOpenFlow = MutableStateFlow(true)
+    private val pinsFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
+    private val interactionFlow = MutableSharedFlow<ApiError>(extraBufferCapacity = 8)
 
     private lateinit var viewModel: ChatViewModel
 
@@ -82,6 +84,8 @@ class ChatViewModelTest {
         type = "TEXT",
         content = "hello $id",
         replyToId = null,
+        replyToSenderName = null,
+        replyToSnippet = null,
         createdAtEpochMs = 1_700_000_000_000L,
         clientMessageId = clientMessageId,
         status = status,
@@ -92,6 +96,8 @@ class ChatViewModelTest {
     fun setUp() {
         every { messageRepository.messagesFlow(any()) } returns messagesFlow
         every { messageRepository.typingEvents } returns typingFlow
+        every { messageRepository.pinsFlow(any()) } returns pinsFlow
+        every { messageRepository.interactionEvents } returns interactionFlow
         every { messageRepository.closeConversation(any()) } just Runs
         coEvery { messageRepository.openConversation(any()) } returns Unit
         coEvery { messageRepository.refreshHistory(any(), any()) } returns
@@ -99,6 +105,9 @@ class ChatViewModelTest {
         coEvery { messageRepository.sendRead(any(), any()) } returns Unit
         coEvery { messageRepository.send(any(), any(), any(), any(), any()) } returns Unit
         coEvery { messageRepository.retry(any()) } returns Unit
+        coEvery { messageRepository.toggleReaction(any(), any(), any()) } returns Unit
+        coEvery { messageRepository.pinMessage(any(), any()) } returns Unit
+        coEvery { messageRepository.unpinMessage(any(), any()) } returns Unit
         coEvery { attachmentRepository.describe(any()) } answers {
             LocalAttachment(
                 uri = firstArg(),
@@ -392,5 +401,88 @@ class ChatViewModelTest {
         runCurrent()
 
         assertTrue(viewModel.uiState.value.pendingAttachments.isEmpty())
+    }
+
+    // ---- phase-10 interactions ----
+
+    @Test
+    fun `reply draft passes replyToId into send then clears`() = runTest {
+        observeUi()
+        runCurrent()
+
+        viewModel.setReplyTarget(message(id = "m-5", seq = 5, mine = false))
+        runCurrent()
+        assertEquals("m-5", viewModel.uiState.value.replyTarget?.messageId)
+
+        viewModel.onInputChange("đồng ý")
+        viewModel.send()
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            messageRepository.send(CONVERSATION_ID, "đồng ý", "m-5")
+        }
+        assertEquals(null, viewModel.uiState.value.replyTarget)
+    }
+
+    @Test
+    fun `pending messages cannot become a reply target`() = runTest {
+        observeUi()
+        runCurrent()
+
+        viewModel.setReplyTarget(
+            message(id = "cm-1", seq = null, mine = true, status = DeliveryStatus.SENDING),
+        )
+        runCurrent()
+
+        assertEquals(null, viewModel.uiState.value.replyTarget)
+    }
+
+    @Test
+    fun `cancel clears the reply draft without sending`() = runTest {
+        observeUi()
+        runCurrent()
+
+        viewModel.setReplyTarget(message(id = "m-5", seq = 5, mine = false))
+        runCurrent()
+        viewModel.clearReplyTarget()
+        runCurrent()
+
+        assertEquals(null, viewModel.uiState.value.replyTarget)
+    }
+
+    @Test
+    fun `togglePin pins when unpinned and unpins when pinned`() = runTest {
+        observeUi()
+        runCurrent()
+        val target = message(id = "m-1", seq = 1, mine = false)
+
+        viewModel.togglePin(target)
+        coVerify(exactly = 1) { messageRepository.pinMessage(CONVERSATION_ID, "m-1") }
+
+        pinsFlow.value = listOf(target)
+        runCurrent()
+
+        viewModel.togglePin(target)
+        coVerify(exactly = 1) { messageRepository.unpinMessage(CONVERSATION_ID, "m-1") }
+    }
+
+    @Test
+    fun `toggleReaction delegates the emoji toggle to the repository`() = runTest {
+        viewModel.toggleReaction(message(id = "m-3", seq = 3, mine = false), "👍")
+
+        coVerify(exactly = 1) {
+            messageRepository.toggleReaction("m-3", CONVERSATION_ID, "👍")
+        }
+    }
+
+    @Test
+    fun `pin failures surface in ui error state`() = runTest {
+        observeUi()
+        runCurrent()
+
+        interactionFlow.emit(ApiError.Unknown("PIN_LIMIT"))
+        runCurrent()
+
+        assertEquals(ApiError.Unknown("PIN_LIMIT"), viewModel.uiState.value.error)
     }
 }

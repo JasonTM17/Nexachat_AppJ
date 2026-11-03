@@ -7,7 +7,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,22 +26,31 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,6 +106,18 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showMediaPicker by rememberSaveable { mutableStateOf(false) }
+    /** Bubble whose long-press menu is open; null = closed. */
+    var menuMessageId by remember { mutableStateOf<String?>(null) }
+    /** Pin the banner currently shows — each tap cycles to the next pin. */
+    var pinIndex by rememberSaveable { mutableIntStateOf(0) }
+
+    /** Scrolls the list to a loaded message id (reply quote / pin banner tap). */
+    fun jumpToMessage(messageId: String) {
+        val index = state.messages.asReversed().indexOfFirst { it.id == messageId }
+        if (index >= 0) {
+            scope.launch { listState.animateScrollToItem(index) }
+        }
+    }
 
     // Picker results are identical for direct and group chat — one path.
     val visualPicker = rememberLauncherForActivityResult(
@@ -169,6 +192,18 @@ fun ChatScreen(
                 .padding(innerPadding)
                 .imePadding(),
         ) {
+            if (state.pins.isNotEmpty()) {
+                PinnedBanner(
+                    pins = state.pins,
+                    index = pinIndex,
+                    onJump = {
+                        state.pins.getOrNull(pinIndex % state.pins.size)?.let { pin ->
+                            jumpToMessage(pin.id)
+                        }
+                        pinIndex++
+                    },
+                )
+            }
             if (!state.connected) {
                 Text(
                     text = stringResource(R.string.chat_offline),
@@ -188,14 +223,35 @@ fun ChatScreen(
                     items = state.messages.asReversed(),
                     key = { it.id },
                 ) { message ->
-                    MessageBubble(
+                    MessageItem(
                         message = message,
                         showSender = state.isGroup && !message.mine,
+                        pinned = state.isPinned(message.id),
+                        menuOpen = menuMessageId == message.id,
                         formatTime = { timeFormat.format(Date(it)) },
                         onRetry = viewModel::retryFailed,
                         imageLoader = imageLoader,
                         onOpenMedia = onOpenMedia,
                         onOpenFile = ::openFile,
+                        resolveOriginal = { id ->
+                            state.messages.firstOrNull { it.id == id }
+                        },
+                        onSwipeReply = { viewModel.setReplyTarget(message) },
+                        onLongPress = { menuMessageId = message.id },
+                        onDismissMenu = { menuMessageId = null },
+                        onReply = {
+                            viewModel.setReplyTarget(message)
+                            menuMessageId = null
+                        },
+                        onReaction = { emoji ->
+                            viewModel.toggleReaction(message, emoji)
+                            menuMessageId = null
+                        },
+                        onTogglePin = {
+                            viewModel.togglePin(message)
+                            menuMessageId = null
+                        },
+                        onJumpTo = ::jumpToMessage,
                     )
                 }
                 if (state.hasMore) {
@@ -235,6 +291,9 @@ fun ChatScreen(
                 imageLoader = imageLoader,
                 onRemove = viewModel::removePendingAttachment,
             )
+            state.replyTarget?.let { target ->
+                ReplyPreviewBar(target = target, onCancel = viewModel::clearReplyTarget)
+            }
             MessageInputBar(
                 input = state.input,
                 onInputChange = viewModel::onInputChange,
@@ -248,6 +307,134 @@ fun ChatScreen(
 private const val MAX_VISUAL_PICK = 10
 private val PICK_VISUAL_REQUEST = PickVisualMediaRequest(PickVisualMedia.ImageAndVideo)
 
+/**
+ * One list row: swipe-right-to-reply around the bubble, the long-press
+ * interaction menu anchored on it, and the aggregated reaction chips below.
+ * Pending (SENDING/FAILED) rows can't be swiped — they have no server id.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MessageItem(
+    message: ChatMessage,
+    showSender: Boolean,
+    pinned: Boolean,
+    menuOpen: Boolean,
+    formatTime: (Long) -> String,
+    onRetry: (String) -> Unit,
+    imageLoader: coil.ImageLoader,
+    onOpenMedia: (AttachmentDto) -> Unit,
+    onOpenFile: (AttachmentDto) -> Unit,
+    resolveOriginal: (String) -> ChatMessage?,
+    onSwipeReply: () -> Unit,
+    onLongPress: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onReply: () -> Unit,
+    onReaction: (String) -> Unit,
+    onTogglePin: () -> Unit,
+    onJumpTo: (String) -> Unit,
+) {
+    val mine = message.mine
+    val replyable = message.status == DeliveryStatus.SENT
+    val swipeState = rememberSwipeToDismissBoxState(
+        // Never actually dismiss — settle always snaps back. The swipe is a
+        // pure "reply" affordance: confirm fires past the threshold only.
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.StartToEnd && replyable) onSwipeReply()
+            false
+        },
+        positionalThreshold = { distance -> distance * SWIPE_REPLY_THRESHOLD },
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SwipeToDismissBox(
+            state = swipeState,
+            enableDismissFromStartToEnd = replyable,
+            enableDismissFromEndToStart = false,
+            backgroundContent = {
+                if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(start = 20.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = stringResource(R.string.action_reply),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+            ) {
+                Box {
+                    MessageBubble(
+                        message = message,
+                        showSender = showSender,
+                        formatTime = formatTime,
+                        onRetry = onRetry,
+                        imageLoader = imageLoader,
+                        onOpenMedia = onOpenMedia,
+                        onOpenFile = onOpenFile,
+                        resolveOriginal = resolveOriginal,
+                        onLongPress = onLongPress,
+                        onJumpTo = onJumpTo,
+                    )
+                    // Interaction menu: reaction bar + reply + pin/unpin.
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = onDismissMenu,
+                    ) {
+                        // Reaction bar only on SENT rows — like reply/pin,
+                        // pending outbox rows can't take a reaction.
+                        if (replyable) {
+                            ReactionBarRow(onPick = onReaction)
+                            HorizontalDivider()
+                        }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_reply)) },
+                            leadingIcon = {
+                                Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null)
+                            },
+                            onClick = onReply,
+                            enabled = replyable,
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (pinned) R.string.action_unpin else R.string.action_pin,
+                                    ),
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Filled.PushPin, contentDescription = null)
+                            },
+                            onClick = onTogglePin,
+                            enabled = replyable,
+                        )
+                    }
+                }
+            }
+        }
+        if (message.reactions.isNotEmpty()) {
+            ReactionChipsRow(
+                reactions = message.reactions,
+                mine = mine,
+                onToggle = onReaction,
+            )
+        }
+    }
+}
+
+private const val SWIPE_REPLY_THRESHOLD = 0.35f
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -257,40 +444,53 @@ private fun MessageBubble(
     imageLoader: coil.ImageLoader,
     onOpenMedia: (AttachmentDto) -> Unit,
     onOpenFile: (AttachmentDto) -> Unit,
+    resolveOriginal: (String) -> ChatMessage?,
+    onLongPress: () -> Unit,
+    onJumpTo: (String) -> Unit,
 ) {
     val mine = message.mine
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 3.dp),
-        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+    Surface(
+        color = if (mine) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        shape = RoundedCornerShape(
+            topStart = 16.dp,
+            topEnd = 16.dp,
+            bottomStart = if (mine) 16.dp else 4.dp,
+            bottomEnd = if (mine) 4.dp else 16.dp,
+        ),
+        modifier = Modifier.combinedClickable(
+            onClick = {},
+            onLongClick = onLongPress,
+        ),
     ) {
-        Surface(
-            color = if (mine) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (mine) 16.dp else 4.dp,
-                bottomEnd = if (mine) 4.dp else 16.dp,
-            ),
+        Column(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                // GROUP chats name the sender above incoming bubbles.
-                if (showSender && !message.senderDisplayName.isNullOrBlank()) {
-                    Text(
-                        text = message.senderDisplayName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+            // GROUP chats name the sender above incoming bubbles.
+            if (showSender && !message.senderDisplayName.isNullOrBlank()) {
+                Text(
+                    text = message.senderDisplayName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            // Reply quote — embedded preview first, loaded message as fallback.
+            message.replyToId?.let { replyId ->
+                val original = resolveOriginal(replyId)
+                val snippet = message.replyToSnippet ?: original?.content
+                val senderName = message.replyToSenderName ?: original?.senderDisplayName
+                ReplyQuoteBlock(
+                    senderName = senderName,
+                    snippet = snippet,
+                    resolved = original != null || snippet != null || senderName != null,
+                    onJump = { onJumpTo(replyId) },
+                )
+            }
                 if (message.attachments.isNotEmpty() &&
                     message.type != MessageDto.TYPE_TEXT
                 ) {
@@ -325,7 +525,6 @@ private fun MessageBubble(
             }
         }
     }
-}
 
 /** Send-state indicator: spinner for SENDING, tappable "!" for FAILED. */
 @Composable

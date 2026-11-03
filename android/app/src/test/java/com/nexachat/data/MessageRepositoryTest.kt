@@ -1,18 +1,27 @@
 package com.nexachat.data
 
 import app.cash.turbine.test
+import com.nexachat.core.common.ApiError
 import com.nexachat.core.database.ConversationDao
 import com.nexachat.core.database.ConversationEntity
 import com.nexachat.core.database.MessageDao
 import com.nexachat.core.database.MessageEntity
+import com.nexachat.core.database.MessageReactionEntity
 import com.nexachat.core.database.OutboxDao
 import com.nexachat.core.database.OutboxEntity
 import com.nexachat.core.database.OutboxState
+import com.nexachat.core.database.PinDao
+import com.nexachat.core.database.PinnedMessageEntity
+import com.nexachat.core.database.ReactionDao
 import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
+import com.nexachat.core.network.dto.ReactionRequest
+import com.nexachat.core.network.dto.ReactionSummaryDto
+import com.nexachat.core.network.dto.ReactionUpdateDto
+import com.nexachat.core.network.dto.ReplyRefDto
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
@@ -182,11 +191,103 @@ class MessageRepositoryTest {
         }
     }
 
+    /** Keyed by (messageId, emoji) — mirroring the real PK. */
+    private class FakeReactionDao : ReactionDao {
+        val rows = LinkedHashMap<Pair<String, String>, MessageReactionEntity>()
+        private val flows = MutableStateFlow(0)
+
+        private fun bump() {
+            flows.value++
+        }
+
+        override suspend fun upsertAll(reactions: List<MessageReactionEntity>) {
+            reactions.forEach { rows[it.messageId to it.emoji] = it }
+            bump()
+        }
+
+        override fun reactionsForConversation(
+            conversationId: String,
+        ): Flow<List<MessageReactionEntity>> = kotlinx.coroutines.flow.flow {
+            flows.collect {
+                emit(rows.values.filter { it.conversationId == conversationId })
+            }
+        }
+
+        override suspend fun forMessage(messageId: String): List<MessageReactionEntity> =
+            rows.values.filter { it.messageId == messageId }
+
+        override suspend fun deleteForMessage(messageId: String) {
+            rows.keys.removeAll { it.first == messageId }
+            bump()
+        }
+
+        override suspend fun deleteForMessages(messageIds: List<String>) {
+            rows.keys.removeAll { it.first in messageIds }
+            bump()
+        }
+
+        override suspend fun clear() {
+            rows.clear()
+            bump()
+        }
+    }
+
+    /** Keyed by (conversationId, messageId) — mirroring the real PK. */
+    private class FakePinDao : PinDao {
+        val rows = LinkedHashMap<Pair<String, String>, PinnedMessageEntity>()
+        private val flows = MutableStateFlow(0)
+
+        private fun bump() {
+            flows.value++
+        }
+
+        override suspend fun upsert(pin: PinnedMessageEntity) {
+            rows[pin.conversationId to pin.messageId] = pin
+            bump()
+        }
+
+        override suspend fun upsertAll(pins: List<PinnedMessageEntity>) {
+            pins.forEach { rows[it.conversationId to it.messageId] = it }
+            bump()
+        }
+
+        override fun pinnedFor(conversationId: String): Flow<List<PinnedMessageEntity>> =
+            kotlinx.coroutines.flow.flow {
+                flows.collect {
+                    emit(
+                        rows.values
+                            .filter { it.conversationId == conversationId }
+                            .sortedByDescending { it.pinnedAt },
+                    )
+                }
+            }
+
+        override suspend fun find(conversationId: String, messageId: String): PinnedMessageEntity? =
+            rows[conversationId to messageId]
+
+        override suspend fun delete(conversationId: String, messageId: String) {
+            rows.remove(conversationId to messageId)
+            bump()
+        }
+
+        override suspend fun deleteForConversation(conversationId: String) {
+            rows.keys.removeAll { it.first == conversationId }
+            bump()
+        }
+
+        override suspend fun clear() {
+            rows.clear()
+            bump()
+        }
+    }
+
     // ---- collaborators ----
 
     private val messageDao = FakeMessageDao()
     private val outboxDao = FakeOutboxDao()
     private val conversationDao = FakeConversationDao()
+    private val reactionDao = FakeReactionDao()
+    private val pinDao = FakePinDao()
     private val messageApi: MessageApi = mockk()
     private val session: RealtimeSession = mockk()
     private val tokenStore: TokenStore = mockk()
@@ -245,6 +346,8 @@ class MessageRepositoryTest {
             messageDao = messageDao,
             conversationDao = conversationDao,
             outboxDao = outboxDao,
+            reactionDao = reactionDao,
+            pinDao = pinDao,
             session = session,
             tokenStore = tokenStore,
             sessionEvents = sessionEvents,
@@ -404,6 +507,8 @@ class MessageRepositoryTest {
                 content = "old",
                 clientMessageId = null,
                 replyToId = null,
+                replyToSenderName = null,
+                replyToSnippet = null,
                 createdAt = 1L,
                 attachmentsJson = null,
             ),
@@ -506,6 +611,7 @@ class MessageRepositoryTest {
                     id = "m-$seq", conversationId = CONVERSATION_ID, seq = seq.toLong(),
                     senderId = "u-other", senderDisplayName = null, type = "TEXT",
                     content = "old", clientMessageId = null, replyToId = null,
+                    replyToSenderName = null, replyToSnippet = null,
                     createdAt = seq.toLong(), attachmentsJson = null,
                 ),
             )
@@ -539,6 +645,177 @@ class MessageRepositoryTest {
         // All five missed rows landed — the gap is closed, not just the newest page.
         assertEquals(105, messageDao.rows.size)
         coVerify { messageApi.getMessages(CONVERSATION_ID, null, 103L, any()) }
+    }
+
+    // ---- phase-10 interactions ----
+
+    @Test
+    fun `REACTION_UPDATED replaces the stored summary for the message`() = runTest {
+        eventsFlow.emit(
+            ChatEvent.ReactionUpdated(
+                conversationId = CONVERSATION_ID,
+                messageId = "m-1",
+                reactions = listOf(
+                    ReactionSummaryDto(emoji = "👍", count = 2, userIds = listOf("me-1", "u-2")),
+                    ReactionSummaryDto(emoji = "❤️", count = 1, userIds = listOf("u-3")),
+                ),
+            ),
+        )
+
+        val like = reactionDao.rows["m-1" to "👍"]
+        assertEquals(2, like?.count)
+        assertEquals(true, like?.reactedByMe)
+        val heart = reactionDao.rows["m-1" to "❤️"]
+        assertEquals(1, heart?.count)
+        assertEquals(false, heart?.reactedByMe)
+
+        // A second event replaces the whole set — stale emojis are gone.
+        eventsFlow.emit(
+            ChatEvent.ReactionUpdated(
+                conversationId = CONVERSATION_ID,
+                messageId = "m-1",
+                reactions = listOf(ReactionSummaryDto(emoji = "🔥", count = 1)),
+            ),
+        )
+        assertEquals(
+            setOf("🔥"),
+            reactionDao.rows.keys.filter { it.first == "m-1" }.map { it.second }.toSet(),
+        )
+    }
+
+    @Test
+    fun `PIN_UPDATED pins then unpins the message in pinsFlow`() = runTest {
+        messageDao.upsert(
+            MessageEntity(
+                id = "m-9", conversationId = CONVERSATION_ID, seq = 9,
+                senderId = "u-other", senderDisplayName = "Lan", type = "TEXT",
+                content = "pin me", clientMessageId = null, replyToId = null,
+                replyToSenderName = null, replyToSnippet = null,
+                createdAt = 9L, attachmentsJson = null,
+            ),
+        )
+
+        repository.pinsFlow(CONVERSATION_ID).test {
+            assertTrue(awaitItem().isEmpty())
+
+            eventsFlow.emit(ChatEvent.PinUpdated(CONVERSATION_ID, "m-9", true))
+            val pinned = awaitItem()
+            assertEquals(listOf("m-9"), pinned.map { it.id })
+            assertEquals("pin me", pinned.single().content)
+
+            eventsFlow.emit(ChatEvent.PinUpdated(CONVERSATION_ID, "m-9", false))
+            assertTrue(awaitItem().isEmpty())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `toggleReaction writes optimistically then applies the server summary`() = runTest {
+        var optimisticAtCall: MessageReactionEntity? = null
+        var captured: ReactionRequest? = null
+        coEvery { messageApi.toggleReaction("m-1", any()) } answers {
+            optimisticAtCall = reactionDao.rows["m-1" to "👍"]
+            captured = secondArg()
+            Response.success(
+                ReactionUpdateDto(
+                    messageId = "m-1",
+                    reactions = listOf(
+                        ReactionSummaryDto(emoji = "👍", count = 5, reactedByMe = true),
+                    ),
+                ),
+            )
+        }
+
+        repository.toggleReaction("m-1", CONVERSATION_ID, "👍")
+
+        // Optimistic write landed BEFORE the REST response.
+        assertEquals(1, optimisticAtCall?.count)
+        assertEquals(true, optimisticAtCall?.reactedByMe)
+        assertEquals("👍", captured?.emoji)
+        // …then the authoritative summary reconciled it.
+        val final = reactionDao.rows["m-1" to "👍"]
+        assertEquals(5, final?.count)
+        assertEquals(true, final?.reactedByMe)
+    }
+
+    @Test
+    fun `failed toggleReaction restores the prior summary and signals an error`() = runTest {
+        reactionDao.upsertAll(
+            listOf(
+                MessageReactionEntity(
+                    messageId = "m-1",
+                    conversationId = CONVERSATION_ID,
+                    emoji = "👍",
+                    count = 3,
+                    reactedByMe = false,
+                ),
+            ),
+        )
+        coEvery { messageApi.toggleReaction(any(), any()) } returns
+            Response.error(403, "".toResponseBody())
+
+        repository.interactionEvents.test {
+            repository.toggleReaction("m-1", CONVERSATION_ID, "👍")
+
+            val restored = reactionDao.rows["m-1" to "👍"]
+            assertEquals(3, restored?.count)
+            assertEquals(false, restored?.reactedByMe)
+            assertTrue(awaitItem() is ApiError.Unknown)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `history refresh stores embedded reactions and the reply preview`() = runTest {
+        val replyDto = MessageDto(
+            id = "m-2",
+            seq = 2,
+            conversationId = CONVERSATION_ID,
+            senderId = "u-other",
+            type = "TEXT",
+            content = "answer",
+            replyTo = ReplyRefDto(id = "m-1", senderName = "Lan", snippet = "question"),
+            reactions = listOf(ReactionSummaryDto(emoji = "👍", count = 2, reactedByMe = false)),
+            createdAt = "2026-11-03T09:12:04Z",
+        )
+        coEvery { messageApi.getMessages(CONVERSATION_ID, null, null, any()) } returns
+            Response.success(MessagePageDto(items = listOf(replyDto), hasMore = false))
+
+        repository.refreshHistory(CONVERSATION_ID)
+
+        assertEquals("Lan", messageDao.rows["m-2"]?.replyToSenderName)
+        assertEquals("question", messageDao.rows["m-2"]?.replyToSnippet)
+        val chip = reactionDao.rows["m-2" to "👍"]
+        assertEquals(2, chip?.count)
+        assertEquals(false, chip?.reactedByMe)
+    }
+
+    @Test
+    fun `refreshPins replaces the conversation pin set from the REST list`() = runTest {
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "stale", pinnedAt = 1L))
+        coEvery { messageApi.getPins(CONVERSATION_ID) } returns
+            Response.success("[\"m-1\",\"m-2\"]".toResponseBody())
+
+        repository.refreshPins(CONVERSATION_ID)
+
+        assertEquals(
+            setOf("m-1", "m-2"),
+            pinDao.rows.keys.filter { it.first == CONVERSATION_ID }.map { it.second }.toSet(),
+        )
+    }
+
+    @Test
+    fun `pin failure removes the optimistic row and signals an error`() = runTest {
+        coEvery { messageApi.pinMessage(CONVERSATION_ID, any()) } returns
+            Response.error(409, "".toResponseBody())
+
+        repository.interactionEvents.test {
+            repository.pinMessage(CONVERSATION_ID, "m-1")
+
+            assertTrue(pinDao.rows.isEmpty())
+            assertTrue(awaitItem() is ApiError.Unknown)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     private companion object {

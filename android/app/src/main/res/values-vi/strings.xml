@@ -81,6 +81,17 @@
     <string name="cd_remove_attachment">Xóa tệp đính kèm</string>
     <string name="cd_open_attachment">Mở tệp đính kèm</string>
 
+    <!-- Message interactions -->
+    <string name="action_reply">Trả lời</string>
+    <string name="action_pin">Ghim</string>
+    <string name="action_unpin">Bỏ ghim</string>
+    <string name="pinned_title">Đã ghim</string>
+    <string name="pinned_count">%1$d/%2$d</string>
+    <string name="reply_unavailable">Tin nhắn không khả dụng</string>
+    <string name="cd_cancel_reply">Hủy trả lời</string>
+    <string name="cd_pinned">Tin nhắn đã ghim</string>
+    <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
+
     <!-- Media / attachments -->
     <string name="media_pick_visual">Ảnh hoặc video</string>
     <string name="media_pick_document">Tệp hoặc âm thanh</string>

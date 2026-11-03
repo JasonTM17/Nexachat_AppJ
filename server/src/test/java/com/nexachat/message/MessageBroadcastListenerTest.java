@@ -48,7 +48,8 @@ class MessageBroadcastListenerTest {
     void messageCreated_broadcastsToTopicAndEveryMemberInbox() {
         MessageResponse message = new MessageResponse(
                 UUID.randomUUID(), conversationId, 7L, memberA, "A", "TEXT",
-                "hi", UUID.randomUUID(), null, List.of(), Instant.now(), null);
+                "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
+                Instant.now(), null, null);
         when(memberRepository.findMemberUserIds(conversationId))
                 .thenReturn(List.of(memberA, memberB));
 

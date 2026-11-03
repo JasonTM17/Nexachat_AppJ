@@ -21,6 +21,7 @@ public record MessageRow(
         UUID clientMessageId,
         UUID replyToId,
         Instant createdAt,
-        Instant editedAt
+        Instant editedAt,
+        Instant deletedAt
 ) {
 }

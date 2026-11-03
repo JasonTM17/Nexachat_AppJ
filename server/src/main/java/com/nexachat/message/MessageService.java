@@ -9,7 +9,11 @@ import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.ReactionRow;
+import com.nexachat.message.dto.ReactionView;
 import com.nexachat.message.dto.ReadRequest;
+import com.nexachat.message.dto.ReplyRefResponse;
+import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,9 +22,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -60,6 +68,7 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final MessageAttachmentRepository attachmentRepository;
+    private final MessageReactionRepository reactionRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final StorageService storageService;
@@ -67,12 +76,14 @@ public class MessageService {
 
     public MessageService(MessageRepository messageRepository,
                           MessageAttachmentRepository attachmentRepository,
+                          MessageReactionRepository reactionRepository,
                           ConversationRepository conversationRepository,
                           ConversationMemberRepository memberRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
         this.attachmentRepository = attachmentRepository;
+        this.reactionRepository = reactionRepository;
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.storageService = storageService;
@@ -172,8 +183,18 @@ public class MessageService {
                                 a -> a.getMessage().getId(),
                                 Collectors.mapping(this::toAttachmentResponse, Collectors.toList())));
 
+        // Phase-10 hydration, same one-IN-query-per-facet style: reaction
+        // summaries (viewer = the reader) and reply-target previews.
+        Map<UUID, List<ReactionView>> reactionsByMessage =
+                reactionsByMessage(page.stream().map(MessageRow::id).toList(), userId);
+        Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(
+                page.stream().map(MessageRow::replyToId).filter(Objects::nonNull).toList());
+
         List<MessageResponse> items = page.stream()
-                .map(row -> toResponse(row, attachmentsByMessage.getOrDefault(row.id(), List.of())))
+                .map(row -> toResponse(row,
+                        attachmentsByMessage.getOrDefault(row.id(), List.of()),
+                        reactionsByMessage.getOrDefault(row.id(), List.of()),
+                        row.replyToId() == null ? null : replyRefsById.get(row.replyToId())))
                 .toList();
         Long nextBeforeSeq = (afterSeq != null || items.isEmpty())
                 ? null : items.get(items.size() - 1).seq();
@@ -397,20 +418,86 @@ public class MessageService {
         return Math.min(limit, MAX_PAGE_LIMIT);
     }
 
+    /**
+     * Single-row assembly for the send/system paths. The viewer for
+     * {@code byMe} is the message's own sender — the REST send response goes
+     * back to that user, and a fresh {@code MESSAGE_CREATED} broadcast carries
+     * no reactions yet anyway.
+     */
     MessageResponse toResponse(MessageRow row) {
+        return toResponse(row, row.senderId());
+    }
+
+    /**
+     * Single-row assembly for an arbitrary viewer (e.g. {@link PinService}
+     * re-uses it for the pinned list — {@code byMe} must reflect the caller,
+     * not the message author).
+     */
+    MessageResponse toResponse(MessageRow row, UUID viewerId) {
         List<AttachmentResponse> attachments = attachmentRepository
                 .findByMessage_IdIn(List.of(row.id()))
                 .stream()
                 .map(this::toAttachmentResponse)
                 .toList();
-        return toResponse(row, attachments);
+        List<ReactionView> reactions = reactionsByMessage(List.of(row.id()), viewerId)
+                .getOrDefault(row.id(), List.of());
+        ReplyRefResponse replyTo = row.replyToId() == null
+                ? null
+                : replyRefsById(List.of(row.replyToId())).get(row.replyToId());
+        return toResponse(row, attachments, reactions, replyTo);
     }
 
-    private static MessageResponse toResponse(MessageRow row, List<AttachmentResponse> attachments) {
+    private static MessageResponse toResponse(MessageRow row,
+                                              List<AttachmentResponse> attachments,
+                                              List<ReactionView> reactions,
+                                              ReplyRefResponse replyTo) {
         return new MessageResponse(
                 row.id(), row.conversationId(), row.seq(), row.senderId(), row.senderDisplayName(),
                 row.type().name(), row.content(), row.clientMessageId(), row.replyToId(),
-                attachments, row.createdAt(), row.editedAt());
+                replyTo, attachments, reactions, row.createdAt(), row.editedAt(), row.deletedAt());
+    }
+
+    /**
+     * One IN query → per-message emoji summaries, ordered by emoji for a
+     * stable wire array. {@code byMe} is computed against {@code viewerId}.
+     */
+    private Map<UUID, List<ReactionView>> reactionsByMessage(Collection<UUID> messageIds,
+                                                           UUID viewerId) {
+        if (messageIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, Map<String, List<UUID>>> grouped = new LinkedHashMap<>();
+        for (ReactionRow row : reactionRepository.findRowsByMessageIdIn(messageIds)) {
+            grouped.computeIfAbsent(row.messageId(), k -> new TreeMap<>())
+                    .computeIfAbsent(row.emoji(), k -> new ArrayList<>())
+                    .add(row.userId());
+        }
+        Map<UUID, List<ReactionView>> result = new LinkedHashMap<>();
+        grouped.forEach((messageId, byEmoji) -> result.put(messageId,
+                byEmoji.entrySet().stream()
+                        .map(e -> new ReactionView(
+                                e.getKey(), e.getValue().size(), e.getValue().contains(viewerId)))
+                        .toList()));
+        return result;
+    }
+
+    /**
+     * One IN query → reply-target previews. A soft-deleted target keeps its
+     * id and sender but loses its content ({@code deleted=true} renders the
+     * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6).
+     */
+    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds) {
+        if (replyToIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, ReplyRefResponse> result = new LinkedHashMap<>();
+        for (ReplyRefRow row : messageRepository.findReplyRefsByIdIn(replyToIds)) {
+            boolean deleted = row.deletedAt() != null;
+            result.put(row.id(), new ReplyRefResponse(
+                    row.id(), row.senderId(), row.senderDisplayName(), row.type().name(),
+                    deleted ? null : row.content(), deleted));
+        }
+        return result;
     }
 
     private AttachmentResponse toAttachmentResponse(MessageAttachment attachment) {

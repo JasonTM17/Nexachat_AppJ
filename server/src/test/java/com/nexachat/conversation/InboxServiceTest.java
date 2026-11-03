@@ -64,7 +64,7 @@ class InboxServiceTest {
 
         MessageRow lastMessage = new MessageRow(
                 lastMessageId, conversationId, 42L, partnerId, "Partner",
-                Message.Type.TEXT, "latest message", UUID.randomUUID(), null, now, null);
+                Message.Type.TEXT, "latest message", UUID.randomUUID(), null, now, null, null);
         when(messageRepository.findRowsByIdIn(List.of(lastMessageId)))
                 .thenReturn(List.of(lastMessage));
 
@@ -115,7 +115,7 @@ class InboxServiceTest {
         when(messageRepository.findRowsByIdIn(List.of(lastMessageId))).thenReturn(List.of(
                 new MessageRow(lastMessageId, conversationId, 5L, partnerId, "P",
                         Message.Type.TEXT, longContent, UUID.randomUUID(), null,
-                        Instant.now(), null)));
+                        Instant.now(), null, null)));
 
         InboxEntry entry = inboxService.listInbox(userId).get(0);
 

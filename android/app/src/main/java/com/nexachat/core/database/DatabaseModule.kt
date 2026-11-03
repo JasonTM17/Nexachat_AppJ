@@ -21,7 +21,7 @@ object DatabaseModule {
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
 
     @Provides
@@ -36,6 +36,14 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideOutboxDao(database: AppDatabase): OutboxDao = database.outboxDao()
+
+    @Provides
+    @Singleton
+    fun provideReactionDao(database: AppDatabase): ReactionDao = database.reactionDao()
+
+    @Provides
+    @Singleton
+    fun providePinDao(database: AppDatabase): PinDao = database.pinDao()
 
     private const val DATABASE_NAME = "nexachat.db"
 }

@@ -26,6 +26,13 @@ data class MessageEntity(
     val content: String?,
     val clientMessageId: String?,
     val replyToId: String?,
+    /**
+     * Denormalized embedded `replyTo` preview (phase-10 quote render) — kept
+     * so the quote block still shows sender/snippet when the original
+     * message is outside the loaded history window.
+     */
+    val replyToSenderName: String?,
+    val replyToSnippet: String?,
     /** Epoch milliseconds (DTO `createdAt` ISO instant, converted at ingest). */
     val createdAt: Long,
     /** Re-encoded `attachments` array JSON; null when empty. */
@@ -81,3 +88,39 @@ object OutboxState {
     const val SENDING = "SENDING"
     const val FAILED = "FAILED"
 }
+
+/**
+ * Aggregated reaction summary per (message, emoji) — the shape BOTH wire
+ * variants reduce to: REST embeds `{emoji, count, reactedByMe}` on the
+ * message, `REACTION_UPDATED` pushes `{emoji, count, userIds}` (resolved to
+ * `reactedByMe` at ingest). Stored pre-aggregated rather than per-user rows
+ * because the REST summary cannot be decomposed back into user rows.
+ * `conversationId` is denormalized so the chat flow queries without a join.
+ */
+@Entity(
+    tableName = "message_reactions",
+    primaryKeys = ["messageId", "emoji"],
+    indices = [Index(value = ["conversationId"])],
+)
+data class MessageReactionEntity(
+    val messageId: String,
+    val conversationId: String,
+    val emoji: String,
+    val count: Int,
+    val reactedByMe: Boolean,
+)
+
+/**
+ * One pinned message per conversation (phase-10). `pinnedAt` is the
+ * client-side write clock — it only orders the pin list (latest pin first
+ * in the banner), never message history.
+ */
+@Entity(
+    tableName = "pinned_messages",
+    primaryKeys = ["conversationId", "messageId"],
+)
+data class PinnedMessageEntity(
+    val conversationId: String,
+    val messageId: String,
+    val pinnedAt: Long,
+)

@@ -10,6 +10,10 @@ import java.util.UUID;
  * Canonical message wire shape (plan §10.3) — returned by the REST send/read
  * endpoints and carried inside the {@code MESSAGE_CREATED} WS envelope, so
  * client parsing is single-format.
+ *
+ * <p>{@code replyTo} is the embedded quote preview ({@link ReplyRefResponse})
+ * for {@code replyToId}; {@code reactions} is the per-emoji summary,
+ * viewer-relative via {@link ReactionView#byMe()}.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record MessageResponse(
@@ -22,8 +26,11 @@ public record MessageResponse(
         String content,
         UUID clientMessageId,
         UUID replyToId,
+        ReplyRefResponse replyTo,
         List<AttachmentResponse> attachments,
+        List<ReactionView> reactions,
         Instant createdAt,
-        Instant editedAt
+        Instant editedAt,
+        Instant deletedAt
 ) {
 }

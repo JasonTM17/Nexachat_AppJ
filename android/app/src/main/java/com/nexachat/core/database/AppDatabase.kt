@@ -17,20 +17,28 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  *
  * v2: `outbox.attachmentsJson` — pending attachment sends must survive a
  * process restart with their id list intact (phase-09 multimedia).
+ *
+ * v3: phase-10 message interactions — `message_reactions` (aggregated
+ * per-emoji summaries), `pinned_messages` (conversation pins), and the
+ * denormalized `replyTo` preview columns on `messages`.
  */
 @Database(
     entities = [
         MessageEntity::class,
         ConversationEntity::class,
         OutboxEntity::class,
+        MessageReactionEntity::class,
+        PinnedMessageEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun conversationDao(): ConversationDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun reactionDao(): ReactionDao
+    abstract fun pinDao(): PinDao
 
     companion object {
         /**
@@ -41,6 +49,44 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE outbox ADD COLUMN attachmentsJson TEXT NOT NULL DEFAULT ''",
+                )
+            }
+        }
+
+        /**
+         * All additive: two nullable preview columns on `messages` plus the
+         * two new interaction tables. Index names must match Room's
+         * `index_<table>_<columns>` convention or schema validation fails.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN replyToSenderName TEXT")
+                db.execSQL("ALTER TABLE messages ADD COLUMN replyToSnippet TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `message_reactions` (
+                        `messageId` TEXT NOT NULL,
+                        `conversationId` TEXT NOT NULL,
+                        `emoji` TEXT NOT NULL,
+                        `count` INTEGER NOT NULL,
+                        `reactedByMe` INTEGER NOT NULL,
+                        PRIMARY KEY(`messageId`, `emoji`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_message_reactions_conversationId` " +
+                        "ON `message_reactions` (`conversationId`)",
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `pinned_messages` (
+                        `conversationId` TEXT NOT NULL,
+                        `messageId` TEXT NOT NULL,
+                        `pinnedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`conversationId`, `messageId`)
+                    )
+                    """.trimIndent(),
                 )
             }
         }
