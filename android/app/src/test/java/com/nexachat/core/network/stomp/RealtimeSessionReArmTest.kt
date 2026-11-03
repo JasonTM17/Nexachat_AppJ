@@ -9,6 +9,9 @@ import com.nexachat.core.storage.TokenStore
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -122,6 +125,34 @@ class RealtimeSessionReArmTest {
         verify { stompClient.frames }
         verify { monitor.regained }
         verify { stompClient.connect() }
+    }
+
+    /**
+     * The check-and-launch in `launchConnectionLoop` must be atomic: token
+     * restore, a regain callback, and a user action can all fire at once on
+     * different threads. Without the lock, two callers can both pass the
+     * `isActive` check and orphan a second loop (two sockets, duplicate
+     * subscriptions). Hammering `ensureConnected` from real dispatcher
+     * threads after the loop dies must start exactly ONE new retry cycle.
+     * Every backoff delay is >0 so the winning job stays parked-active on
+     * the test scheduler while the losers arrive — deterministic.
+     */
+    @Test
+    fun `concurrent re-arm calls launch a single connection loop`() = runTest {
+        val regain = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val monitor = mockk<NetworkMonitor> { every { regained } returns regain }
+        val stompClient = stompClientStub { flowOf(StompClient.State.Failed("boom")) }
+        val s = session(stompClient, loggedInStore(), monitor, CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
+        advanceUntilIdle()
+        verify(exactly = ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
+
+        coroutineScope {
+            repeat(50) {
+                launch(Dispatchers.Default) { s.ensureConnected() }
+            }
+        }
+        advanceUntilIdle()
+        verify(exactly = 2 * ReconnectPolicy.MAX_ATTEMPTS) { stompClient.connect() }
     }
 
     @Test

@@ -164,6 +164,13 @@ class RealtimeSession @Inject constructor(
     @Volatile
     private var connectionJob: Job? = null
 
+    /**
+     * Guards check-and-launch in [launchConnectionLoop] and the logout
+     * cancel — declared before `init` because the launched observers can
+     * reach it immediately.
+     */
+    private val connectionJobLock = Any()
+
     init {
         wantedSubscriptions += USER_INBOX_DESTINATION
         wantedSubscriptions += USER_ERRORS_DESTINATION
@@ -180,17 +187,28 @@ class RealtimeSession @Inject constructor(
                 launchConnectionLoop()
             } else {
                 // Logout: stop the loop and hang up so nothing lingers.
-                connectionJob?.cancel()
-                connectionJob = null
+                // Same lock as the launch path — a regain re-arm can't
+                // slip between the cancel and the null-out.
+                synchronized(connectionJobLock) {
+                    connectionJob?.cancel()
+                    connectionJob = null
+                }
                 stompClient.close()
                 _isOpen.value = false
             }
         }
     }
 
+    /**
+     * Check-and-launch must be atomic: token restore, a network regain, and a
+     * user action can all fire near-simultaneously, and a lost race orphans a
+     * second connection loop (two sockets, duplicate subscriptions).
+     */
     private fun launchConnectionLoop() {
-        if (connectionJob?.isActive == true) return
-        connectionJob = scope.launch { runConnectionLoop() }
+        synchronized(connectionJobLock) {
+            if (connectionJob?.isActive == true) return
+            connectionJob = scope.launch { runConnectionLoop() }
+        }
     }
 
     /** Re-arms the loop after OFFLINE — called by repositories on user actions. */
@@ -200,7 +218,8 @@ class RealtimeSession @Inject constructor(
      * Auto re-arm on connectivity regain. Gated on a live refresh token so a
      * logged-out app never spins up a loop, and on `!isOpen` so a healthy
      * socket (e.g. wifi→cell handover still in-flight) is left alone;
-     * [launchConnectionLoop] itself dedups an already-running loop.
+     * [launchConnectionLoop] itself dedups an already-running loop
+     * atomically.
      */
     private suspend fun observeNetworkRegain() {
         networkMonitor.regained.collect {
