@@ -12,9 +12,12 @@ import java.util.UUID;
  * {@code POST /conversations/{id}/messages}.
  *
  * <p>{@code clientMessageId} is the idempotency key (client-generated UUID);
- * {@code attachmentIds} reserves the phase-8 binding flow — currently every
- * {@code message_attachments} row is bound at insert time, so a non-empty list
- * can only reference already-bound rows and is rejected.
+ * {@code attachmentIds} references unbound uploads the caller created via
+ * {@code POST /api/v1/attachments} — each id must exist, be owned by the
+ * sender, and still be unbound; the send transaction claims them (phase-09,
+ * max 10).
+ * TEXT takes an empty/absent list; media types require at least one id whose
+ * sniffed MIME matches the declared type.
  */
 public record SendMessageRequest(
         @NotNull UUID clientMessageId,

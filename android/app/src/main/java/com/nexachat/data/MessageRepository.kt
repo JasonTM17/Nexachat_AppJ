@@ -59,6 +59,8 @@ data class ChatMessage(
     val clientMessageId: String?,
     val status: DeliveryStatus,
     val mine: Boolean,
+    /** Parsed `attachmentsJson` — empty for TEXT-only bubbles. */
+    val attachments: List<AttachmentDto> = emptyList(),
 )
 
 /** Peer-is-typing signal forwarded to the open chat screen (5s TTL applied there). */
@@ -197,16 +199,31 @@ class MessageRepository @Inject constructor(
     /**
      * Optimistic send (FR-C5): the outbox row appears in [messagesFlow]
      * immediately as SENDING; delivery resolves asynchronously.
+     *
+     * [type]/[attachments] carry the media send (phase-09): the dto list is
+     * persisted on the outbox row so retries after restart still re-derive the
+     * `attachmentIds` wire field, and the pending bubble renders the same
+     * attachment model a SENT row would.
      */
-    suspend fun send(conversationId: String, content: String, replyToId: String? = null) {
+    suspend fun send(
+        conversationId: String,
+        content: String,
+        replyToId: String? = null,
+        type: String = MessageDto.TYPE_TEXT,
+        attachments: List<AttachmentDto> = emptyList(),
+    ) {
         val entry = OutboxEntity(
             clientMessageId = UUID.randomUUID().toString(),
             conversationId = conversationId,
-            type = MessageDto.TYPE_TEXT,
+            type = type,
             content = content,
             replyToId = replyToId,
             state = OutboxState.SENDING,
             createdAt = System.currentTimeMillis(),
+            attachmentsJson = attachments
+                .takeIf { it.isNotEmpty() }
+                ?.let { runCatching { attachmentsAdapter.toJson(it) }.getOrNull() }
+                .orEmpty(),
         )
         outboxDao.insert(entry)
         dispatchOutbox(entry)
@@ -231,6 +248,8 @@ class MessageRepository @Inject constructor(
             type = entry.type,
             content = entry.content,
             replyToId = entry.replyToId,
+            // WS SEND and the REST fallback both carry the same ids (plan §11.2).
+            attachmentIds = entry.attachments().mapNotNull { it.id },
         )
         if (session.sendMessage(entry.conversationId, request)) {
             return // ack arrives as MESSAGE_CREATED → onMessageCreated
@@ -401,6 +420,7 @@ class MessageRepository @Inject constructor(
         clientMessageId = clientMessageId,
         status = DeliveryStatus.SENT,
         mine = senderId == myId,
+        attachments = attachments(),
     )
 
     private fun OutboxEntity.toChatMessage(): ChatMessage = ChatMessage(
@@ -416,6 +436,7 @@ class MessageRepository @Inject constructor(
         clientMessageId = clientMessageId,
         status = if (state == OutboxState.FAILED) DeliveryStatus.FAILED else DeliveryStatus.SENDING,
         mine = true,
+        attachments = attachments(),
     )
 
     private fun MessageDto.toEntity(conversationIdFallback: String?): MessageEntity? {
@@ -436,6 +457,16 @@ class MessageRepository @Inject constructor(
                 ?.let { runCatching { attachmentsAdapter.toJson(it) }.getOrNull() },
         )
     }
+
+    /** `attachmentsJson` → dto list on both entities; null/blank/corrupt → empty. */
+    private fun MessageEntity.attachments(): List<AttachmentDto> =
+        attachmentsJson?.let { runCatching { attachmentsAdapter.fromJson(it) }.getOrNull() }
+            .orEmpty()
+
+    private fun OutboxEntity.attachments(): List<AttachmentDto> =
+        attachmentsJson.takeIf { it.isNotBlank() }
+            ?.let { runCatching { attachmentsAdapter.fromJson(it) }.getOrNull() }
+            .orEmpty()
 
     // ---- internals ----
 

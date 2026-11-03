@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
@@ -47,6 +48,8 @@ public class LocalStorageService implements StorageService {
             Map.entry("audio/ogg", ".ogg"),
             Map.entry("application/pdf", ".pdf"),
             Map.entry("text/plain", ".txt"),
+            Map.entry("text/csv", ".csv"),
+            Map.entry("text/markdown", ".md"),
             Map.entry("application/zip", ".zip"),
             Map.entry("application/msword", ".doc"),
             Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
@@ -75,7 +78,13 @@ public class LocalStorageService implements StorageService {
             throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
         }
         String sniffed = MagicBytes.sniff(bytes);
-        if (!MagicBytes.isAllowed(bytes)) {
+        if (sniffed == null) {
+            // Text formats carry no magic bytes — verify the content instead:
+            // the declared type must be textual AND the payload must decode as
+            // strict UTF-8 (a renamed binary fails the decode and still 415s).
+            sniffed = sniffTextContent(contentTypeDeclared, bytes);
+        }
+        if (sniffed == null || !MagicBytes.ALLOWED_MIMES.contains(sniffed)) {
             throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
         }
         String storageKey = safeSubdir(subdir) + "/" + UUID.randomUUID() + extensionFor(sniffed);
@@ -93,9 +102,53 @@ public class LocalStorageService implements StorageService {
     }
 
     @Override
+    public byte[] read(String storageKey) {
+        if (storageKey == null || storageKey.isBlank()
+                || storageKey.contains("..") || storageKey.contains("\\")) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        Path target = root.resolve(storageKey).normalize();
+        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        try {
+            return Files.readAllBytes(target);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    @Override
     public String resolveUrl(String storageKey) {
         return "/api/v1/files/" + storageKey;
     }
+
+    /**
+     * Declared-mime acceptance for un-sniffable text types. The bytes must
+     * decode under a strict UTF-8 decoder; anything binary (e.g. an .exe
+     * renamed .txt) throws {@link java.nio.charset.CharacterCodingException}
+     * and is rejected. Returns the declared mime or {@code null}.
+     */
+    private static String sniffTextContent(String contentTypeDeclared, byte[] bytes) {
+        if (contentTypeDeclared == null
+                || !TEXT_FALLBACK_MIMES.contains(contentTypeDeclared)) {
+            return null;
+        }
+        try {
+            java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes));
+            return contentTypeDeclared;
+        } catch (java.nio.charset.CharacterCodingException ex) {
+            return null;
+        }
+    }
+
+    private static final java.util.Set<String> TEXT_FALLBACK_MIMES =
+            java.util.Set.of("text/plain", "text/markdown", "text/csv");
 
     private static String safeSubdir(String subdir) {
         if (subdir == null || subdir.isBlank()

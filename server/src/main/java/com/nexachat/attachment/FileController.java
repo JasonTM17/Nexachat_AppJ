@@ -1,21 +1,17 @@
 package com.nexachat.attachment;
 
 import com.nexachat.common.MagicBytes;
+import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.HandlerMapping;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
 
 /**
  * Serves stored files from {@code ${nexachat.storage.root}} as inline content.
@@ -25,34 +21,38 @@ import java.nio.file.Path;
  * a crafted key cannot escape the upload directory. The response Content-Type
  * is re-sniffed from the stored bytes — the same sniff the store path applied
  * — with {@code application/octet-stream} as the final fallback.</p>
+ *
+ * <p><b>Authorization (phase-09 fix):</b> before serving, the key is checked
+ * against {@code message_attachments} via
+ * {@link AttachmentService#assertStorageKeyReadable}: a key belonging to a
+ * message attachment is served only to its owner or to a member of the bound
+ * conversation (unbound uploads are owner-only). Keys with no attachment row —
+ * avatars and other profile-public files — keep working for any authenticated
+ * user, since they carry no membership concept.
  */
 @RestController
 public class FileController {
 
     private static final String FILES_PREFIX = "/api/v1/files/";
 
-    private final Path root;
+    private final StorageService storageService;
+    private final AttachmentService attachmentService;
 
-    public FileController(
-            @Value("${nexachat.storage.root:./data/uploads}") String rootDir) {
-        this.root = Path.of(rootDir).toAbsolutePath().normalize();
+    public FileController(StorageService storageService, AttachmentService attachmentService) {
+        this.storageService = storageService;
+        this.attachmentService = attachmentService;
     }
 
     @GetMapping("/api/v1/files/**")
-    public ResponseEntity<byte[]> serve(HttpServletRequest request) {
+    public ResponseEntity<byte[]> serve(HttpServletRequest request,
+                                        @AuthenticationPrincipal JwtPrincipal principal) {
+        if (principal == null) {
+            throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
+        }
         String storageKey = extractKey(request);
-        Path target = root.resolve(storageKey).normalize();
-        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        }
-        byte[] bytes;
-        try {
-            bytes = Files.readAllBytes(target);
-        } catch (NoSuchFileException ex) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        } catch (IOException ex) {
-            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
-        }
+        // Member-check fires only for keys bound to a message attachment row.
+        attachmentService.assertStorageKeyReadable(storageKey, principal.userId());
+        byte[] bytes = storageService.read(storageKey);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(sniffedOrOctetStream(bytes)))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
+import com.nexachat.data.AttachmentRepository
 
 /**
  * [ApiError] → user-facing strings for the chat/inbox surfaces. Same variant
@@ -16,5 +17,9 @@ internal fun chatErrorMessage(error: ApiError): String = when (error) {
     ApiError.PhoneExists -> stringResource(R.string.error_phone_exists)
     ApiError.RateLimited -> stringResource(R.string.error_rate_limited)
     is ApiError.Network -> stringResource(R.string.error_network)
-    is ApiError.Unknown -> stringResource(R.string.error_generic)
+    is ApiError.Unknown -> if (error.code == AttachmentRepository.ERROR_TOO_LARGE) {
+        stringResource(R.string.error_attachment_too_large)
+    } else {
+        stringResource(R.string.error_generic)
+    }
 }

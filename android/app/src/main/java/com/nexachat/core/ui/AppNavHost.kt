@@ -1,5 +1,6 @@
 package com.nexachat.core.ui
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -11,6 +12,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.SessionEventsEntryPoint
+import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.feature.auth.LoginScreen
 import com.nexachat.feature.auth.RegisterScreen
 import com.nexachat.feature.chat.ChatScreen
@@ -19,6 +21,7 @@ import com.nexachat.feature.contacts.UserSearchScreen
 import com.nexachat.feature.group.CreateGroupScreen
 import com.nexachat.feature.group.GroupDetailScreen
 import com.nexachat.feature.inbox.InboxScreen
+import com.nexachat.feature.media.MediaViewerScreen
 import com.nexachat.feature.profile.ProfileScreen
 import com.nexachat.feature.splash.SplashScreen
 import dagger.hilt.android.EntryPointAccessors
@@ -39,9 +42,16 @@ object Routes {
     const val CHAT = "chat/{conversationId}"
     const val GROUP_CREATE = "group/create"
     const val GROUP_DETAIL = "group/{conversationId}/detail"
+    const val MEDIA_VIEWER = "media/{attachmentId}?name={name}&mime={mime}"
 
     fun chat(conversationId: String): String = "chat/$conversationId"
     fun groupDetail(conversationId: String): String = "group/$conversationId/detail"
+
+    /** Viewer args ride the query string — names/mimes can carry `/` and spaces. */
+    fun mediaViewer(attachment: AttachmentDto): String =
+        "media/${attachment.id}" +
+            "?name=${Uri.encode(attachment.originalName.orEmpty())}" +
+            "&mime=${Uri.encode(attachment.mimeType.orEmpty())}"
 }
 
 @Composable
@@ -147,7 +157,28 @@ fun AppNavHost() {
                 onOpenDetail = { conversationId ->
                     navController.navigate(Routes.groupDetail(conversationId))
                 },
+                onOpenMedia = { attachment ->
+                    navController.navigate(Routes.mediaViewer(attachment))
+                },
             )
+        }
+        composable(
+            route = Routes.MEDIA_VIEWER,
+            arguments = listOf(
+                navArgument("attachmentId") { type = NavType.StringType },
+                navArgument("name") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("mime") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) {
+            MediaViewerScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.GROUP_CREATE) {
             CreateGroupScreen(

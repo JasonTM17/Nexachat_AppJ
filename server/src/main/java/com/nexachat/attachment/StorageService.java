@@ -24,6 +24,21 @@ public interface StorageService {
     StoredFile store(String subdir, String originalFilename, String contentTypeDeclared, byte[] bytes);
 
     /**
+     * Reads back the bytes stored under {@code storageKey}.
+     *
+     * <p>Implementations must apply the same traversal guard as {@link #store}:
+     * the key is normalized and required to stay inside the storage root before
+     * any read.</p>
+     *
+     * @param storageKey key returned by {@link #store}
+     * @return raw file content
+     * @throws com.nexachat.common.error.ApiException {@code FILE_NOT_FOUND}
+     *                                                when the key resolves to
+     *                                                no stored file
+     */
+    byte[] read(String storageKey);
+
+    /**
      * Resolves the public URL path for a key returned by {@link #store}.
      *
      * @param storageKey storage key

@@ -1,11 +1,14 @@
 package com.nexachat.core.network
 
+import android.content.Context
+import coil.ImageLoader
 import com.nexachat.BuildConfig
 import com.nexachat.core.common.AppConfig
 import com.squareup.moshi.Moshi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
@@ -34,7 +37,8 @@ object NetworkModule {
     ): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(15, TimeUnit.SECONDS)
+        // 60s write window: attachment uploads may stream up to 25 MB.
+        .writeTimeout(60, TimeUnit.SECONDS)
         .addInterceptor(authInterceptor)
         .authenticator(tokenAuthenticator)
         .apply {
@@ -75,4 +79,23 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideGroupApi(retrofit: Retrofit): GroupApi = retrofit.create(GroupApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAttachmentApi(retrofit: Retrofit): AttachmentApi =
+        retrofit.create(AttachmentApi::class.java)
+
+    /**
+     * Coil loader wired to the auth-intercepted OkHttp client — attachment
+     * content endpoints require `Authorization`, which the default loader
+     * cannot supply. Inject/pass explicitly wherever media bytes are fetched.
+     */
+    @Provides
+    @Singleton
+    fun provideImageLoader(
+        @ApplicationContext context: Context,
+        okHttpClient: OkHttpClient,
+    ): ImageLoader = ImageLoader.Builder(context)
+        .okHttpClient(okHttpClient)
+        .build()
 }

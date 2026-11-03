@@ -10,6 +10,7 @@ import com.nexachat.core.database.OutboxEntity
 import com.nexachat.core.database.OutboxState
 import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.SessionEvents
+import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
 import com.nexachat.core.network.stomp.ChatEvent
@@ -450,6 +451,50 @@ class MessageRepositoryTest {
 
         // FAILED rows are not retried by the flush; SENDING go oldest-first.
         assertEquals(listOf("first", "second"), sentContents)
+    }
+
+    @Test
+    fun `send with attachments persists them on the outbox and sends attachmentIds`() = runTest {
+        val attachment = AttachmentDto(id = "att-1", mimeType = "image/png", originalName = "pic.png")
+        var captured: SendMessageRequest? = null
+        every { session.sendMessage(any(), any()) } answers {
+            captured = secondArg()
+            true
+        }
+
+        repository.send(
+            CONVERSATION_ID,
+            "pic.png",
+            type = "IMAGE",
+            attachments = listOf(attachment),
+        )
+
+        val row = outboxDao.rows.values.single()
+        assertEquals("IMAGE", row.type)
+        assertTrue(row.attachmentsJson.isNotBlank())
+        assertEquals(listOf("att-1"), captured?.attachmentIds)
+
+        // The pending bubble carries the same attachment model a SENT row would.
+        repository.messagesFlow(CONVERSATION_ID).test {
+            val pending = awaitItem().single()
+            assertEquals(DeliveryStatus.SENDING, pending.status)
+            assertEquals(listOf(attachment), pending.attachments)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `text sends carry no attachmentIds`() = runTest {
+        var captured: SendMessageRequest? = null
+        every { session.sendMessage(any(), any()) } answers {
+            captured = secondArg()
+            true
+        }
+
+        repository.send(CONVERSATION_ID, "plain")
+
+        assertEquals(emptyList<String>(), captured?.attachmentIds)
+        assertEquals("", outboxDao.rows.values.single().attachmentsJson)
     }
 
     @Test

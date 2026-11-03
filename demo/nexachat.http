@@ -96,3 +96,44 @@ Content-Type: application/json
     client.global.set("token", response.body.accessToken);
     client.global.set("refreshToken", response.body.refreshToken);
 %}
+
+### 10. File upload/download -----------------------------------------------
+### Create the fixture first (repo root): a tiny valid PDF. Plain text has NO
+### magic signature, so hello.txt would be rejected 415 by the byte sniff.
+###   printf '%%PDF-1.4\n%%%%EOF\n' > demo/fixtures/hello.pdf
+### (or drop any small PDF/PNG there under that name).
+POST http://localhost:8080/api/v1/attachments
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="hello.pdf"
+Content-Type: application/pdf
+
+< ./demo/fixtures/hello.pdf
+--WebAppBoundary--
+
+> {%
+    client.global.set("attId", response.body.id);
+%}
+
+### 11. Send a FILE message that references the uploaded attachment ----------
+POST http://localhost:8080/api/v1/conversations/{{conversationId}}/messages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "clientMessageId": "5c1f9a2e-7b3d-4c8a-9e1f-2a3b4c5d6e7f",
+  "type": "FILE",
+  "content": "hello.pdf",
+  "attachmentIds": ["{{attId}}"]
+}
+
+### 12. Download the attachment bytes --------------------------------------
+GET http://localhost:8080/api/v1/attachments/{{attId}}/content
+Authorization: Bearer {{token}}
+
+### Error demos ------------------------------------------------------------
+### Uploading a file larger than 25MB  -> 413 FILE_TOO_LARGE
+### Uploading wrong magic bytes        -> 415 MIME_NOT_ALLOWED
+### (an .exe renamed .png, or plain-text hello.txt)

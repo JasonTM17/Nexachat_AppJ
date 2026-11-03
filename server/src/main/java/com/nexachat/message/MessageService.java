@@ -55,6 +55,9 @@ public class MessageService {
     static final int MAX_PAGE_LIMIT = 100;
     static final int DEFAULT_PAGE_LIMIT = 30;
 
+    /** Cap on {@code attachmentIds} per send (phase-09) — bounds the bind work per message. */
+    static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
     private final MessageRepository messageRepository;
     private final MessageAttachmentRepository attachmentRepository;
     private final ConversationRepository conversationRepository;
@@ -98,6 +101,8 @@ public class MessageService {
         requireMember(conversationId, senderId);
         validatePayload(request);
         Message.Type type = parseType(request.type());
+        List<UUID> attachmentIds = distinctIds(request.attachmentIds());
+        validateAttachmentContract(type, attachmentIds);
         String content = normalizedContent(type, request.content());
         UUID replyToId = resolveReplyTo(conversationId, request.replyToId());
 
@@ -122,7 +127,7 @@ public class MessageService {
             conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
             // You have trivially "read" what you sent — keep your own unread at 0.
             memberRepository.advanceReadWatermark(conversationId, senderId, row.seq());
-            validateAttachmentBindings(row.id(), request.attachmentIds());
+            bindAttachments(row.id(), senderId, type, attachmentIds);
             log.info("Message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, senderId);
         }
 
@@ -298,28 +303,88 @@ public class MessageService {
         return replyToId;
     }
 
+    private static List<UUID> distinctIds(List<UUID> attachmentIds) {
+        if (attachmentIds == null) {
+            return List.of();
+        }
+        return attachmentIds.stream().filter(Objects::nonNull).distinct().toList();
+    }
+
     /**
-     * Phase-8 binding hook: every attachment id must resolve AND either be
-     * unbound or already bound to THIS message. Because {@code message_id} is
-     * NOT NULL, unbound rows cannot exist yet — so until the upload flow lands,
-     * any non-empty list resolves to rows bound elsewhere and is rejected as a
-     * client error rather than silently dropped.
+     * Static type contract (phase-09): TEXT carries no attachments; every
+     * media type (IMAGE/VIDEO/AUDIO/FILE) carries at least one — a media
+     * message with nothing to render is a client bug, not a state the API
+     * stores. The list is capped so one send cannot fan out into unbounded
+     * bind work. Runs BEFORE the insert so bad payloads fail fast.
      */
-    private void validateAttachmentBindings(UUID messageId, List<UUID> attachmentIds) {
-        if (attachmentIds == null || attachmentIds.isEmpty()) {
+    private static void validateAttachmentContract(Message.Type type, List<UUID> attachmentIds) {
+        if (type == Message.Type.TEXT) {
+            if (!attachmentIds.isEmpty()) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "TEXT messages do not carry attachments");
+            }
             return;
         }
-        List<UUID> distinctIds = attachmentIds.stream().filter(Objects::nonNull).distinct().toList();
-        List<MessageAttachment> found = attachmentRepository.findAllById(distinctIds);
-        if (found.size() != distinctIds.size()) {
+        // SYSTEM never reaches here — parseType already rejected it.
+        if (attachmentIds.isEmpty()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    type.name() + " messages require attachmentIds");
+        }
+        if (attachmentIds.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Too many attachments (max " + MAX_ATTACHMENTS_PER_MESSAGE + ")");
+        }
+    }
+
+    /**
+     * Phase-09 binding: claims each uploaded attachment for the freshly
+     * inserted message inside the same transaction. A claimable row must
+     * exist, be owned by the sender, and still be unbound
+     * ({@code message_id IS NULL} since V2) — anything else is a client error,
+     * never silently dropped. The sniffed MIME must also agree with the
+     * declared message type (a PDF cannot ride out as IMAGE).
+     *
+     * <p>Skipped on the dedup path: the original send already bound its rows
+     * and {@link #toResponse} re-reads them.</p>
+     */
+    private void bindAttachments(UUID messageId, UUID senderId, Message.Type type,
+                                 List<UUID> attachmentIds) {
+        if (attachmentIds.isEmpty()) {
+            return;
+        }
+        List<MessageAttachment> found = attachmentRepository.findAllById(attachmentIds);
+        if (found.size() != attachmentIds.size()) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND, "Attachment not found");
         }
+        Message target = messageRepository.getReferenceById(messageId);
         for (MessageAttachment attachment : found) {
-            if (!messageId.equals(attachment.getMessage().getId())) {
+            if (!senderId.equals(attachment.getOwner().getId())) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                        "Attachment is already bound to another message");
+                        "Attachment is owned by another user");
             }
+            if (attachment.getMessage() != null) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Attachment is already bound to a message");
+            }
+            if (!mimeMatchesType(type, attachment.getMimeType())) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Attachment content does not match message type " + type.name());
+            }
+            attachment.bindTo(target);
         }
+    }
+
+    /** IMAGE/VIDEO/AUDIO accept only their own sniffed family; FILE is the catch-all. */
+    private static boolean mimeMatchesType(Message.Type type, String mimeType) {
+        if (mimeType == null) {
+            return false;
+        }
+        return switch (type) {
+            case IMAGE -> mimeType.startsWith("image/");
+            case VIDEO -> mimeType.startsWith("video/");
+            case AUDIO -> mimeType.startsWith("audio/");
+            default -> true; // FILE accepts any whitelisted sniff
+        };
     }
 
     private static int normalizeLimit(Integer limit) {

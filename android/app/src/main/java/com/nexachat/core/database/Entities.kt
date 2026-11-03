@@ -69,6 +69,12 @@ data class OutboxEntity(
     val state: String,
     /** Client clock — only used to order the pending queue, never to sort history. */
     val createdAt: Long,
+    /**
+     * Re-encoded `attachments` JSON array ([com.nexachat.core.network.dto.AttachmentDto]),
+     * empty string when none. Persisted so a retry/flush can re-derive both the
+     * `attachmentIds` wire field and the bubble's render model after restart.
+     */
+    val attachmentsJson: String = "",
 )
 
 object OutboxState {

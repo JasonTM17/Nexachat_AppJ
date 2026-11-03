@@ -51,6 +51,8 @@ public final class MagicBytes {
             "audio/ogg",
             "application/pdf",
             "text/plain",
+            "text/csv",
+            "text/markdown",
             "application/zip",
             "application/msword",
             OOXML_PREFIX,

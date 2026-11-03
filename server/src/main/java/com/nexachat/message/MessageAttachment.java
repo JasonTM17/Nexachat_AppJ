@@ -1,5 +1,6 @@
 package com.nexachat.message;
 
+import com.nexachat.user.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -15,13 +16,22 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Maps {@code message_attachments} (V1__init.sql): one stored file bound to a
- * message. {@code storage_key} is the server-generated path under the storage
- * root (never the client filename — traversal-safe per §13) and is UNIQUE.
+ * Maps {@code message_attachments} (V1__init.sql + V2__attachments.sql): one
+ * stored file plus its message binding.
  *
- * <p>{@code message_id} is NOT NULL in the DDL, so rows only exist once bound to
- * a message — the phase-8 upload flow is responsible for producing rows the
- * send path can then claim via {@code attachmentIds}.
+ * <p><b>Lifecycle (V2, phase-09 multimedia):</b> uploads exist BEFORE a
+ * message references them — {@code POST /api/v1/attachments} inserts a row
+ * with {@code owner_id} = uploader and {@code message_id = NULL};
+ * {@code MessageService.send()} then claims the row by setting
+ * {@code message_id} inside the send transaction (owner-checked, single-use —
+ * an already-bound row cannot be re-attached). This single-table design was
+ * chosen over a separate staging table: no row is copied or moved on bind, the
+ * entity stays one shape, and orphaned unbound uploads are harmless
+ * (owner-private until bound, GC-able later).
+ *
+ * <p>{@code storage_key} is the server-generated path under the storage root
+ * (never the client filename — traversal-safe per §13) and is UNIQUE.
+ * {@code original_name} is sanitized display metadata only.
  */
 @Entity
 @Table(name = "message_attachments")
@@ -32,10 +42,18 @@ public class MessageAttachment {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    /** LAZY per plan §9.3.7. */
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "message_id", nullable = false)
+    /**
+     * LAZY per plan §9.3.7. NULL until the row is bound by a send — V2 dropped
+     * the NOT NULL constraint so uploads can precede their message.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "message_id")
     private Message message;
+
+    /** The uploader; the only principal allowed to bind or read an unbound row. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
 
     @Column(name = "storage_key", nullable = false, length = 120, unique = true)
     private String storageKey;
@@ -66,6 +84,34 @@ public class MessageAttachment {
         // JPA only
     }
 
+    /**
+     * Creates an UNBOUND upload row owned by {@code owner}; it becomes visible
+     * to conversation members only after {@link #bindTo(Message)}.
+     */
+    public static MessageAttachment upload(User owner, String storageKey, String originalName,
+                                           String mimeType, long sizeBytes,
+                                           Integer width, Integer height, Integer durationMs) {
+        MessageAttachment attachment = new MessageAttachment();
+        attachment.owner = owner;
+        attachment.storageKey = storageKey;
+        attachment.originalName = originalName;
+        attachment.mimeType = mimeType;
+        attachment.sizeBytes = sizeBytes;
+        attachment.width = width;
+        attachment.height = height;
+        attachment.durationMs = durationMs;
+        return attachment;
+    }
+
+    /**
+     * Claims this upload for {@code message}. Callers must first verify the
+     * row is still unbound ({@code getMessage() == null}) and owned by the
+     * sender — {@link MessageService} enforces both in the send transaction.
+     */
+    public void bindTo(Message message) {
+        this.message = message;
+    }
+
     @PrePersist
     void onPrePersist() {
         if (createdAt == null) {
@@ -77,8 +123,13 @@ public class MessageAttachment {
         return id;
     }
 
+    /** @return the bound message, or {@code null} while the upload is unclaimed */
     public Message getMessage() {
         return message;
+    }
+
+    public User getOwner() {
+        return owner;
     }
 
     public String getStorageKey() {

@@ -1,16 +1,23 @@
 package com.nexachat.feature.chat
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import com.nexachat.MainDispatcherRule
+import com.nexachat.core.common.ApiError
+import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessagePageDto
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.common.Result
+import com.nexachat.data.AttachmentRepository
+import com.nexachat.data.AttachmentUploadEvent
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.ConversationRepository
 import com.nexachat.data.ConversationSummary
 import com.nexachat.data.DeliveryStatus
+import com.nexachat.data.LocalAttachment
 import com.nexachat.data.MessageRepository
 import com.nexachat.data.TypingEvent
+import com.nexachat.feature.media.PendingAttachment
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -40,6 +47,7 @@ class ChatViewModelTest {
 
     private val messageRepository: MessageRepository = mockk()
     private val conversationRepository: ConversationRepository = mockk()
+    private val attachmentRepository: AttachmentRepository = mockk()
     private val session: RealtimeSession = mockk()
 
     private val messagesFlow = MutableStateFlow<List<ChatMessage>>(emptyList())
@@ -51,6 +59,12 @@ class ChatViewModelTest {
 
     private companion object {
         const val CONVERSATION_ID = "c-1"
+        val ATTACHMENT = AttachmentDto(
+            id = "att-1",
+            originalName = "pic.png",
+            mimeType = "image/png",
+            sizeBytes = 12L,
+        )
     }
 
     private fun message(
@@ -83,8 +97,22 @@ class ChatViewModelTest {
         coEvery { messageRepository.refreshHistory(any(), any()) } returns
             Result.Success(MessagePageDto())
         coEvery { messageRepository.sendRead(any(), any()) } returns Unit
-        coEvery { messageRepository.send(any(), any(), any()) } returns Unit
+        coEvery { messageRepository.send(any(), any(), any(), any(), any()) } returns Unit
         coEvery { messageRepository.retry(any()) } returns Unit
+        coEvery { attachmentRepository.describe(any()) } answers {
+            LocalAttachment(
+                uri = firstArg(),
+                displayName = "pic.png",
+                mimeType = "image/png",
+                sizeBytes = 12L,
+                type = "IMAGE",
+            )
+        }
+        every { attachmentRepository.upload(any(), any()) } returns
+            kotlinx.coroutines.flow.flowOf(
+                AttachmentUploadEvent.Progress(0.4f),
+                AttachmentUploadEvent.Uploaded(ATTACHMENT),
+            )
         coEvery { messageRepository.isMine(any()) } answers { firstArg<String?>() == "me-1" }
         every { conversationRepository.conversationFlow(any()) } returns conversationFlow
         every { session.isOpen } returns isOpenFlow
@@ -94,6 +122,7 @@ class ChatViewModelTest {
             savedStateHandle = SavedStateHandle(mapOf("conversationId" to CONVERSATION_ID)),
             messageRepository = messageRepository,
             conversationRepository = conversationRepository,
+            attachmentRepository = attachmentRepository,
             session = session,
         )
     }
@@ -251,5 +280,92 @@ class ChatViewModelTest {
         runCurrent()
 
         coVerify(exactly = 0) { messageRepository.sendRead(CONVERSATION_ID, 10) }
+    }
+
+    // ---- attachments (phase-09) ----
+
+    private val uri: Uri = mockk()
+
+    @Test
+    fun `sendAttachments stages a pending row then sends with attachmentIds`() = runTest {
+        observeUi()
+        runCurrent()
+
+        viewModel.sendAttachments(listOf(uri))
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            messageRepository.send(
+                conversationId = CONVERSATION_ID,
+                content = "pic.png",
+                replyToId = null,
+                type = "IMAGE",
+                attachments = listOf(ATTACHMENT),
+            )
+        }
+        // Upload finished — the strip row is gone.
+        assertTrue(viewModel.uiState.value.pendingAttachments.isEmpty())
+    }
+
+    @Test
+    fun `in-flight upload shows a pending row with progress`() = runTest {
+        every { attachmentRepository.upload(any(), any()) } returns
+            kotlinx.coroutines.flow.flow {
+                emit(AttachmentUploadEvent.Progress(0.3f))
+                kotlinx.coroutines.awaitCancellation()
+            }
+        observeUi()
+        runCurrent()
+
+        viewModel.sendAttachments(listOf(uri))
+        runCurrent()
+
+        val row = viewModel.uiState.value.pendingAttachments.single()
+        assertEquals(PendingAttachment.PendingState.UPLOADING, row.state)
+        assertEquals(0.3f, row.progress, 0.0001f)
+        assertEquals("pic.png", row.displayName)
+        coVerify(exactly = 0) {
+            messageRepository.send(any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `failed upload marks the row FAILED and never sends`() = runTest {
+        every { attachmentRepository.upload(any(), any()) } returns
+            kotlinx.coroutines.flow.flowOf(
+                AttachmentUploadEvent.Progress(0.2f),
+                AttachmentUploadEvent.Failed(ApiError.Network("down")),
+            )
+        observeUi()
+        runCurrent()
+
+        viewModel.sendAttachments(listOf(uri))
+        runCurrent()
+
+        val row = viewModel.uiState.value.pendingAttachments.single()
+        assertEquals(PendingAttachment.PendingState.FAILED, row.state)
+        coVerify(exactly = 0) {
+            messageRepository.send(any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `remove-X drops the pending row`() = runTest {
+        every { attachmentRepository.upload(any(), any()) } returns
+            kotlinx.coroutines.flow.flow {
+                emit(AttachmentUploadEvent.Progress(0.1f))
+                kotlinx.coroutines.awaitCancellation()
+            }
+        observeUi()
+        runCurrent()
+
+        viewModel.sendAttachments(listOf(uri))
+        runCurrent()
+        val row = viewModel.uiState.value.pendingAttachments.single()
+
+        viewModel.removePendingAttachment(row.localId)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.pendingAttachments.isEmpty())
     }
 }

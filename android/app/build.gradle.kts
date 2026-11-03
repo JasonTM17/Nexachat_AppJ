@@ -85,6 +85,7 @@ dependencies {
 
     // Image loading (avatars, media messages)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.compose.material.icons.extended)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

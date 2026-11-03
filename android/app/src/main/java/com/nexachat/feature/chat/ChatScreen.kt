@@ -1,5 +1,12 @@
 package com.nexachat.feature.chat
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,27 +40,44 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.network.dto.AttachmentDto
+import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.DeliveryStatus
+import com.nexachat.feature.media.MediaPickerSheet
+import com.nexachat.feature.media.MessageAttachmentContent
+import com.nexachat.feature.media.PendingAttachmentStrip
+import com.nexachat.feature.media.rememberAuthedImageLoader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 /**
- * Direct-chat screen (plan §12.1 feature/chat, FR-C1..C7). Everything renders
- * from [ChatViewModel.UiState] — Room is the render source, so the list is
- * already correct on rotation/restart without any fetch.
+ * Direct and group chat (plan §12.1, FR-C1..C7 + phase-09 media). Everything
+ * renders from [ChatViewModel.UiState] — Room is the render source, so the
+ * list is already correct on rotation/restart without any fetch.
  *
  * `reverseLayout` puts seq 0-indexed newest at the bottom; the "hasMore" item
  * sits at the visual top and auto-loads the next cursor page when composed.
+ * Attach flow: the attach button opens [MediaPickerSheet]; picked items stage in
+ * [PendingAttachmentStrip] until each upload completes and the outbox bubble
+ * takes over. IMAGE/VIDEO/AUDIO bubbles navigate to the media viewer; FILE
+ * bubbles download to cache and hand off to ACTION_VIEW.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,11 +85,57 @@ fun ChatScreen(
     conversationId: String,
     onBack: () -> Unit,
     onOpenDetail: (String) -> Unit = {},
+    onOpenMedia: (AttachmentDto) -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val imageLoader = rememberAuthedImageLoader()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showMediaPicker by rememberSaveable { mutableStateOf(false) }
+
+    // Picker results are identical for direct and group chat — one path.
+    val visualPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_VISUAL_PICK),
+    ) { uris -> viewModel.sendAttachments(uris) }
+    val documentPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> viewModel.sendAttachments(uris) }
+
+    fun openFile(attachment: AttachmentDto) {
+        scope.launch {
+            val file = viewModel.attachmentFile(attachment)
+            if (file == null) {
+                Toast.makeText(context, R.string.error_attachment_open, Toast.LENGTH_SHORT)
+                    .show()
+                return@launch
+            }
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file,
+            )
+            val intent = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, attachment.mimeType ?: "*/*")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try {
+                context.startActivity(intent)
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, R.string.error_attachment_open, Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+    }
+
+    if (showMediaPicker) {
+        MediaPickerSheet(
+            onPickVisual = { visualPicker.launch(PICK_VISUAL_REQUEST) },
+            onPickDocument = { documentPicker.launch(arrayOf("*/*")) },
+            onDismiss = { showMediaPicker = false },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -122,6 +193,9 @@ fun ChatScreen(
                         showSender = state.isGroup && !message.mine,
                         formatTime = { timeFormat.format(Date(it)) },
                         onRetry = viewModel::retryFailed,
+                        imageLoader = imageLoader,
+                        onOpenMedia = onOpenMedia,
+                        onOpenFile = ::openFile,
                     )
                 }
                 if (state.hasMore) {
@@ -156,14 +230,23 @@ fun ChatScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
+            PendingAttachmentStrip(
+                items = state.pendingAttachments,
+                imageLoader = imageLoader,
+                onRemove = viewModel::removePendingAttachment,
+            )
             MessageInputBar(
                 input = state.input,
                 onInputChange = viewModel::onInputChange,
                 onSend = viewModel::send,
+                onAttach = { showMediaPicker = true },
             )
         }
     }
 }
+
+private const val MAX_VISUAL_PICK = 10
+private val PICK_VISUAL_REQUEST = PickVisualMediaRequest(PickVisualMedia.ImageAndVideo)
 
 @Composable
 private fun MessageBubble(
@@ -171,6 +254,9 @@ private fun MessageBubble(
     showSender: Boolean,
     formatTime: (Long) -> String,
     onRetry: (String) -> Unit,
+    imageLoader: coil.ImageLoader,
+    onOpenMedia: (AttachmentDto) -> Unit,
+    onOpenFile: (AttachmentDto) -> Unit,
 ) {
     val mine = message.mine
     Row(
@@ -205,10 +291,21 @@ private fun MessageBubble(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text(
-                    text = message.content ?: message.type,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
+                if (message.attachments.isNotEmpty() &&
+                    message.type != MessageDto.TYPE_TEXT
+                ) {
+                    MessageAttachmentContent(
+                        message = message,
+                        imageLoader = imageLoader,
+                        onOpenMedia = onOpenMedia,
+                        onOpenFile = onOpenFile,
+                    )
+                } else {
+                    Text(
+                        text = message.content ?: message.type,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 Row(
                     modifier = Modifier
                         .align(Alignment.End)
@@ -253,6 +350,7 @@ private fun MessageInputBar(
     input: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onAttach: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -260,6 +358,12 @@ private fun MessageInputBar(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        IconButton(onClick = onAttach) {
+            Icon(
+                imageVector = Icons.Filled.AttachFile,
+                contentDescription = stringResource(R.string.cd_attach),
+            )
+        }
         OutlinedTextField(
             value = input,
             onValueChange = onInputChange,

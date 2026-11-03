@@ -38,6 +38,10 @@ data class MessageDto(
 
     companion object {
         const val TYPE_TEXT = "TEXT"
+        const val TYPE_IMAGE = "IMAGE"
+        const val TYPE_VIDEO = "VIDEO"
+        const val TYPE_AUDIO = "AUDIO"
+        const val TYPE_FILE = "FILE"
     }
 }
 
@@ -52,19 +56,6 @@ data class ReplyRefDto(
     val id: String? = null,
     val senderDisplayName: String? = null,
     val content: String? = null,
-)
-
-@JsonClass(generateAdapter = true)
-data class AttachmentDto(
-    val id: String? = null,
-    val storageKey: String? = null,
-    val originalName: String? = null,
-    val mimeType: String? = null,
-    val sizeBytes: Long? = null,
-    val width: Int? = null,
-    val height: Int? = null,
-    val durationMs: Long? = null,
-    val url: String? = null,
 )
 
 /** `GET /conversations/{id}/messages` cursor page (plan §10.3). */

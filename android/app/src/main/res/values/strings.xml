@@ -70,6 +70,16 @@
     <string name="cd_send">Send</string>
     <string name="cd_retry">Retry</string>
     <string name="cd_group_info">Group info</string>
+    <string name="cd_attach">Attach</string>
+    <string name="cd_remove_attachment">Remove attachment</string>
+    <string name="cd_open_attachment">Open attachment</string>
+
+    <!-- Media / attachments -->
+    <string name="media_pick_visual">Photo or video</string>
+    <string name="media_pick_document">File or audio</string>
+    <string name="media_attachment">Attachment</string>
+    <string name="error_attachment_open">No app can open this file</string>
+    <string name="error_attachment_too_large">File exceeds the 25 MB limit</string>
 
     <!-- Group -->
     <string name="group_create_title">New group</string>

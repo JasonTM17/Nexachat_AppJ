@@ -107,6 +107,8 @@ class GroupFlowIT {
         String like = "phone LIKE '+8491%'";
         jdbcTemplate.update(
                 "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
         jdbcTemplate.update("DELETE FROM users WHERE " + like);
         String tag = "ITG" + System.nanoTime();
         alice = registerUser(tag + " Alice");
