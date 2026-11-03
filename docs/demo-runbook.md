@@ -108,7 +108,7 @@ must be WSS/HTTPS anyway. So the LAN demo needs **only** the
 |---|---|---|---|
 | 1 | Mở app: splash → session restore vào thẳng inbox (nói: token refresh ngầm) | 30s | R2, R6 |
 | 2 | Lan tìm Minh bằng SĐT → thêm contact → tạo direct chat | 60s | R2 (search, add phone) |
-| 3 | Chat 1-1 realtime hai chiều; **airplane mode** máy B (wifi-off alone keeps cellular), gửi tin → bubble pending (spinner) → bật mạng lại → ~15s WS tự reconnect + outbox flush → tin tới SENT (offline + idempotency, không cần navigate) | 90s | R2, demo kỹ thuật |
+| 3 | Chat 1-1 realtime hai chiều; **airplane mode** máy B (wifi-off alone keeps cellular), gửi tin → bubble pending (spinner) → bật mạng lại → ~15s WS tự reconnect + outbox flush → tin tới SENT (offline + idempotency, không cần navigate). Socket chết lặng trong background cũng tự hồi khi app foreground — reconnect loop park chứ không exit | 90s | R2, demo kỹ thuật |
 | 4 | Read receipt "Đã xem"; unread badge inbox | 30s | R2 |
 | 5 | Tạo nhóm 3 người, chat nhóm, thêm/xóa member (máy bị xóa không nhận tin) | 90s | R2 (group + authZ) |
 | 6 | Gửi ảnh (Photo Picker), video (ExoPlayer), PDF (mở app ngoài) + progress upload | 60s | R3 media |
