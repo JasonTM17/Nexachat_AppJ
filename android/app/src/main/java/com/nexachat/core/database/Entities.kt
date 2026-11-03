@@ -57,6 +57,13 @@ data class ConversationEntity(
     val unreadCount: Int,
     val otherUserName: String?,
     val otherUserAvatar: String?,
+    /**
+     * Highest OTHER member's read watermark, pushed via MESSAGE_READ events.
+     * Client-only — no REST field feeds it, so refresh upserts must merge-
+     * preserve rather than overwrite (see ConversationRepository). Renders
+     * "Đã xem"/"Seen" on DIRECT bubbles where `seq <= peerReadSeq` (§FR-C4).
+     */
+    val peerReadSeq: Long = 0,
 )
 
 /**

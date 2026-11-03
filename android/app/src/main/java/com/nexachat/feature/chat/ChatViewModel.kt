@@ -83,6 +83,8 @@ class ChatViewModel @Inject constructor(
         val replyTarget: ReplyTarget? = null,
         /** Pinned messages, newest pin first — drives the banner. */
         val pins: List<ChatMessage> = emptyList(),
+        /** Other members' max read watermark — DIRECT bubbles show "Đã xem" at/below it. */
+        val peerReadSeq: Long = 0,
     ) {
         /** O(1) "is this message pinned" for the long-press menu. */
         fun isPinned(messageId: String): Boolean = pins.any { it.id == messageId }
@@ -122,6 +124,7 @@ class ChatViewModel @Inject constructor(
             peerTyping = typing,
             peerName = conversation?.displayName?.takeIf { it.isNotBlank() },
             isGroup = conversation?.isGroup == true,
+            peerReadSeq = conversation?.peerReadSeq ?: 0L,
             error = err,
         )
     }.combine(session.isOpen) { state, open -> state.copy(connected = open) }

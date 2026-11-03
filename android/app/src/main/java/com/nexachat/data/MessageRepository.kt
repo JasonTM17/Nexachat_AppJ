@@ -402,6 +402,16 @@ class MessageRepository @Inject constructor(
                 }
                 is ChatEvent.MessageRead -> event.conversationId?.let { convId ->
                     _readEvents.tryEmit(ReadEvent(convId, event.userId, event.upToSeq))
+                    // Persist OTHER members' watermarks onto the conversation
+                    // row — that's what renders "Đã xem" on my bubbles (FR-C4).
+                    // My own read echoes back over the topic and must not
+                    // count as a peer receipt.
+                    val upToSeq = event.upToSeq
+                    if (upToSeq != null && event.userId != null &&
+                        event.userId != currentUserId()
+                    ) {
+                        conversationDao.bumpPeerReadSeq(convId, upToSeq)
+                    }
                 }
                 is ChatEvent.SendRejected -> event.clientMessageId?.let { clientId ->
                     outboxDao.updateState(clientId, OutboxState.FAILED)

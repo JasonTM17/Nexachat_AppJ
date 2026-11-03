@@ -239,6 +239,10 @@ fun ChatScreen(
                     MessageItem(
                         message = message,
                         showSender = state.isGroup && !message.mine,
+                        // FR-C4 — 1-1 "Đã xem" only: a group watermark can't
+                        // attribute the reader, so no receipt text there.
+                        seen = !state.isGroup && message.mine &&
+                            (message.seq ?: Long.MAX_VALUE) <= state.peerReadSeq,
                         pinned = state.isPinned(message.id),
                         menuOpen = menuMessageId == message.id,
                         formatTime = { timeFormat.format(Date(it)) },
@@ -330,6 +334,7 @@ private val PICK_VISUAL_REQUEST = PickVisualMediaRequest(PickVisualMedia.ImageAn
 private fun MessageItem(
     message: ChatMessage,
     showSender: Boolean,
+    seen: Boolean,
     pinned: Boolean,
     menuOpen: Boolean,
     formatTime: (Long) -> String,
@@ -389,6 +394,7 @@ private fun MessageItem(
                     MessageBubble(
                         message = message,
                         showSender = showSender,
+                        seen = seen,
                         formatTime = formatTime,
                         onRetry = onRetry,
                         imageLoader = imageLoader,
@@ -452,6 +458,7 @@ private const val SWIPE_REPLY_THRESHOLD = 0.35f
 private fun MessageBubble(
     message: ChatMessage,
     showSender: Boolean,
+    seen: Boolean,
     formatTime: (Long) -> String,
     onRetry: (String) -> Unit,
     imageLoader: coil.ImageLoader,
@@ -544,7 +551,7 @@ private fun MessageBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (mine) {
-                        DeliveryMark(message = message)
+                        DeliveryMark(message = message, seen = seen)
                     }
                 }
             }
@@ -554,7 +561,7 @@ private fun MessageBubble(
 /** Send-state indicator: spinner for SENDING, "!" mark for FAILED — the
  *  bubble itself carries the retry tap action (see [MessageBubble]). */
 @Composable
-private fun DeliveryMark(message: ChatMessage) {
+private fun DeliveryMark(message: ChatMessage, seen: Boolean) {
     when (message.status) {
         DeliveryStatus.SENDING -> CircularProgressIndicator(
             modifier = Modifier.size(10.dp),
@@ -565,7 +572,14 @@ private fun DeliveryMark(message: ChatMessage) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.error,
         )
-        DeliveryStatus.SENT -> Unit
+        // FR-C4 — "Đã xem"/"Seen" once the peer's watermark passes this seq.
+        DeliveryStatus.SENT -> if (seen) {
+            Text(
+                text = stringResource(R.string.msg_seen),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 

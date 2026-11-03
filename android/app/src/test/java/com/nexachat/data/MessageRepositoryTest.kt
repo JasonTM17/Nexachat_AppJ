@@ -157,6 +157,14 @@ class MessageRepositoryTest {
 
         override suspend fun byId(conversationId: String): ConversationEntity? = rows[conversationId]
 
+        override suspend fun byIds(ids: List<String>): List<ConversationEntity> =
+            ids.mapNotNull { rows[it] }
+
+        override suspend fun bumpPeerReadSeq(conversationId: String, seq: Long) {
+            val row = rows[conversationId] ?: return
+            rows[conversationId] = row.copy(peerReadSeq = maxOf(row.peerReadSeq, seq))
+        }
+
         override suspend fun clearUnread(conversationId: String) {
             rows[conversationId] = rows[conversationId]?.copy(unreadCount = 0) ?: return
         }
@@ -508,6 +516,53 @@ class MessageRepositoryTest {
         assertEquals(CONVERSATION_ID to 1, conversationDao.unreadBumps.single())
         assertEquals(1, conversationDao.rows[CONVERSATION_ID]?.unreadCount)
         assertEquals(7L, conversationDao.rows[CONVERSATION_ID]?.lastMessageSeq)
+    }
+
+    @Test
+    fun `peer MESSAGE_READ advances peerReadSeq but my own echo does not`() = runTest {
+        conversationDao.upsert(
+            ConversationEntity(
+                id = CONVERSATION_ID,
+                type = "DIRECT",
+                title = null,
+                lastMessageSeq = 0,
+                lastMessageContent = null,
+                lastMessageSenderName = null,
+                lastMessageAt = null,
+                unreadCount = 0,
+                otherUserName = "Lan",
+                otherUserAvatar = null,
+            ),
+        )
+
+        // My own watermark echoing back over the topic must not count as a peer receipt.
+        eventsFlow.emit(
+            ChatEvent.MessageRead(
+                conversationId = CONVERSATION_ID,
+                userId = "me-1",
+                upToSeq = 99,
+            ),
+        )
+        assertEquals(0L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
+
+        // The peer's watermark persists monotonically — stale replays can't rewind it.
+        eventsFlow.emit(
+            ChatEvent.MessageRead(
+                conversationId = CONVERSATION_ID,
+                userId = "u-other",
+                upToSeq = 42,
+            ),
+        )
+        assertEquals(42L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
+
+        eventsFlow.emit(
+            ChatEvent.MessageRead(
+                conversationId = CONVERSATION_ID,
+                userId = "u-other",
+                upToSeq = 10,
+            ),
+        )
+        assertEquals(42L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
     }
 
     @Test

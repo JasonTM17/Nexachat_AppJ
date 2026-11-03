@@ -75,6 +75,7 @@
     <!-- Chat -->
     <string name="chat_input_hint">Message</string>
     <string name="chat_typing">typing…</string>
+    <string name="msg_seen">Seen</string>
     <string name="chat_offline">Offline</string>
     <string name="cd_send">Send</string>
     <string name="cd_retry">Retry</string>

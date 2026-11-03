@@ -73,6 +73,7 @@
     <!-- Chat -->
     <string name="chat_input_hint">Nhắn tin</string>
     <string name="chat_typing">đang nhập…</string>
+    <string name="msg_seen">Đã xem</string>
     <string name="chat_offline">Ngoại tuyến</string>
     <string name="cd_send">Gửi</string>
     <string name="cd_retry">Thử lại</string>

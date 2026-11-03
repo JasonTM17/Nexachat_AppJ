@@ -47,6 +47,8 @@ data class ConversationSummary(
     val unreadCount: Int,
     val otherUserName: String?,
     val otherUserAvatar: String?,
+    /** Highest other-member read watermark (MESSAGE_READ) — DIRECT "seen" receipts. */
+    val peerReadSeq: Long = 0,
 ) {
     val displayName: String get() = title ?: otherUserName ?: ""
 
@@ -154,7 +156,7 @@ class ConversationRepository @Inject constructor(
         val myId = currentUserId()
         return when (val result = fetchInboxItems()) {
             is Result.Success -> {
-                conversationDao.upsertAll(result.value.mapNotNull { it.toEntity(myId) })
+                upsertPreservingClientColumns(result.value.mapNotNull { it.toEntity(myId) })
                 Result.Success(Unit)
             }
             is Result.Failure -> result
@@ -181,7 +183,7 @@ class ConversationRepository @Inject constructor(
             is Result.Success -> {
                 // The 201 ConversationResponse carries no title — keep the
                 // requested one so the fresh chat/inbox row renders correctly.
-                conversationDao.upsert(result.value.toEntity(fallbackTitle = trimmed))
+                upsertPreservingClientColumns(listOf(result.value.toEntity(fallbackTitle = trimmed)))
                 Result.Success(result.value.id)
             }
             is Result.Failure -> result
@@ -201,7 +203,7 @@ class ConversationRepository @Inject constructor(
                 val myId = currentUserId()
                 val inbox = result.value.firstOrNull { it.id == conversationId }
                     ?: return Result.Failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
-                conversationDao.upsert(inbox.toEntity(myId))
+                upsertPreservingClientColumns(listOf(inbox.toEntity(myId)))
                 Result.Success(
                     GroupDetail(
                         title = inbox.title,
@@ -330,9 +332,22 @@ class ConversationRepository @Inject constructor(
         unreadCount = unreadCount,
         otherUserName = otherUserName,
         otherUserAvatar = otherUserAvatar,
+        peerReadSeq = peerReadSeq,
     )
 
     // ---- internals ----
+
+    /**
+     * `peerReadSeq` is accumulated client-side from MESSAGE_READ events —
+     * REST payloads never carry it. The REPLACE upsert would wipe it on
+     * every refresh, so each write merges the stored value back in.
+     */
+    private suspend fun upsertPreservingClientColumns(rows: List<ConversationEntity>) {
+        if (rows.isEmpty()) return
+        val prior = conversationDao.byIds(rows.map { it.id })
+            .associate { it.id to it.peerReadSeq }
+        conversationDao.upsertAll(rows.map { it.copy(peerReadSeq = prior[it.id] ?: 0L) })
+    }
 
     /**
      * Shared fetch+parse behind [refreshInbox] and [groupDetail]: pulls the

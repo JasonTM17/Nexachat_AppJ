@@ -52,6 +52,20 @@ interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     suspend fun byId(conversationId: String): ConversationEntity?
 
+    /** For the refresh merge — reads client-only columns the REPLACE upsert would wipe. */
+    @Query("SELECT * FROM conversations WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<String>): List<ConversationEntity>
+
+    /**
+     * Monotonic peer watermark — only ever advances (MAX guard) so a stale
+     * or replayed MESSAGE_READ can never rewind a visible receipt.
+     */
+    @Query(
+        "UPDATE conversations SET peerReadSeq = MAX(peerReadSeq, :seq) " +
+            "WHERE id = :conversationId",
+    )
+    suspend fun bumpPeerReadSeq(conversationId: String, seq: Long)
+
     @Query("UPDATE conversations SET unreadCount = 0 WHERE id = :conversationId")
     suspend fun clearUnread(conversationId: String)
 
