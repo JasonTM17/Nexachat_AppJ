@@ -125,9 +125,9 @@ must be WSS/HTTPS anyway. So the LAN demo needs **only** the
 | `app` container unhealthy | DB not healthy yet, or bad `JWT_SECRET` env | `docker compose logs app`; Flyway runs on boot — first start takes ~30–60 s |
 | Phone browser can't open `…:8080/actuator/health` | Firewall or different subnet | Windows firewall rule (§3.3); confirm same Wi-Fi; try hotspot fallback |
 | WS won't connect (REST works) | Wrong IP in `API_BASE_URL`, stale token, or proxy stripping `Upgrade` | Re-check `AppConfig.kt`; re-login to refresh JWT; `docker compose logs app` shows STOMP handshake |
-| Cleartext HTTP blocked on physical phone | `network_security_config.xml` only exempts `10.0.2.2` | Add the LAN IP (or `127.0.0.1` for adb reverse) — see §2 |
+| Cleartext HTTP blocked on physical phone | A release (non-debug) build — release keeps the restrictive `10.0.2.2`-only config | Rebuild `assembleDebug` — debug builds permit cleartext to any host (§2) |
 | Emulator can't reach backend | — | Default `10.0.2.2` already maps to host `localhost`; verify `docker compose ps` and host `curl localhost:8080/actuator/health` |
-| Seeded users "wrong password" | Old seed (`demo@1234`) rows still present | `DELETE FROM users WHERE phone LIKE '+8490000%';` then re-apply `demo/seed.sql` |
+| Seeded users "wrong password" | Rows from a pre-`password123` seed still present (an old draft used `demo@1234`) | `DELETE FROM users WHERE phone LIKE '+8490000%';` then re-apply `demo/seed.sql` |
 | Messages don't sync after DB rebuild | Stale server-side clock/volume | `docker compose down -v && docker compose up -d db app` then re-seed (< 2 min total) |
 
 ## 7. Fallbacks during the show (risk register RK-3, RK-11, RK-12)

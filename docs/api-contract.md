@@ -49,10 +49,10 @@
 | `ALREADY_CONTACT` | 409 | Contact already present |
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
 | `NOT_MEMBER` | 403 | Caller is not a member of the conversation |
-| `NOT_ADMIN` | 403 | Group role check (reserved for group phase) |
+| `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin) |
 | `MESSAGE_NOT_FOUND` | 404 | Reply target message missing |
 | `FILE_NOT_FOUND` | 404 | Stored file / attachment key missing |
-| `PIN_LIMIT` | 409 | Unused (future pin feature) |
+| `PIN_LIMIT` | 409 | Conversation already has the maximum 3 pinned messages |
 | `MIME_NOT_ALLOWED` | 415 | Uploaded bytes failed the magic-byte sniff |
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
 | `RATE_LIMITED` | 429 | Per-user/IP rate limit exceeded |
@@ -211,11 +211,44 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative global seq, watermark is monotonic | `204` empty (broadcasts `MESSAGE_READ`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
-`ConversationResponse` = `{id, type ("DIRECT"), members: [{userId, displayName, phone}], createdAt}`.
+`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
 `InboxEntry` = `{id, type, title, members[], lastMessage?{seq, type, contentSnippet, senderId, createdAt}, unreadCount, lastReadSeq}`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page.
-`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, attachments[], createdAt, editedAt}` (null fields omitted).
+`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (null fields omitted).
+`replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
 `SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns the stored row (idempotent); reusing it in a different conversation is `VALIDATION_FAILED`.
+
+## Groups — `/api/v1/conversations` (type `GROUP`)
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /conversations/group` | Bearer | `{name, memberIds[]?}` | `201` `ConversationResponse` (creator = ADMIN) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
+| `PATCH /conversations/{conversationId}` | Bearer ADMIN | `{name?}` | `200` `ConversationUpdatePayload` (broadcasts `CONVERSATION_UPDATED` + SYSTEM message) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/members` | Bearer ADMIN | `{userIds[]}` | `204` (SYSTEM `MEMBER_ADDED` message broadcast) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `USER_NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
+| `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
+
+## Attachments — `/api/v1/attachments`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /attachments` | Bearer | `multipart/form-data`, field `file` — upload-first: the attachment is bound to a message later via `SendMessageRequest.attachmentIds` | `201` `AttachmentResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+| `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, sniffed `Content-Type` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `FILE_NOT_FOUND` 404 |
+
+`AttachmentResponse` = `{id, ownerId, messageId?, storageKey, originalName, mimeType, sizeBytes, width?, height?, durationMs?, createdAt}`.
+Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`).
+
+## Interactions — reactions `/api/v1/messages`, pins `/api/v1/conversations/{id}/pins`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 chars) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/pins` | Bearer member | — | `200` `PinnedMessageView[]` oldest-first | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `PIN_LIMIT` 409 |
+| `DELETE /conversations/{conversationId}/pins/{messageId}` | same as POST | — | `204` (broadcasts `PIN_UPDATED {pinned:false}`; idempotent no-op) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 |
+
+`PinnedMessageView` = `{messageId, pinnedBy, pinnedAt, message: MessageResponse}`.
+Pin limit serializes under a `FOR UPDATE` lock on the conversation row.
 
 ## Files — `/api/v1/files`
 
@@ -223,8 +256,9 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 |---|---|---|---|---|
 | `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root | `200` raw bytes, sniffed `Content-Type`, `Content-Disposition: inline` | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
 
-There is no generic multipart upload endpoint yet: only the avatar upload above
-writes files; every stored object is read back through this endpoint.
+Generic uploads go through `POST /api/v1/attachments` above (upload-first,
+bound to a message on send); this endpoint serves every stored object —
+attachment keys are checked against the caller's conversation membership.
 
 ## WebSocket / STOMP
 

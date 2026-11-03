@@ -50,6 +50,11 @@ logs/
 server/uploads/
 demo/backups/
 
+# ---- Release artifacts (local packaging — never committed/shipped) ----
+# Signing keystore, signing.properties, built APKs and submission zips all
+# live here. See tools/README-release.md.
+release/
+
 # ---- Kit/workspace internals (never in submission) ----
 .agentkit/
 .agents/
