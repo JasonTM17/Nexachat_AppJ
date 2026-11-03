@@ -944,6 +944,42 @@ sync, not a merge with a stranger's cache.
   legally send, and keeping the rows would send them under the next login's
   identity.
 
+### Q5.6 — Offline send → có mạng lại: ai "đánh thức" kết nối?
+
+*A message queued offline stays pending — who wakes the socket when the
+network returns?*
+
+**Model answer.** Three actors, one ownership line. `runConnectionLoop` in
+`RealtimeSession` retries `ReconnectPolicy.MAX_ATTEMPTS` (5) with
+exponential backoff (1s→16s, ±20% jitter) then exits — an unbounded loop
+would burn battery on a dead network. Two re-arm triggers then exist:
+**(a) user action** — `openConversation` calls `ensureConnected()`
+(`data/MessageRepository.kt:241`); **(b) network regain** —
+`NetworkMonitor` registers a `ConnectivityManager` callback on
+`NET_CAPABILITY_INTERNET + VALIDATED` — *validated* matters: a captive
+portal that "connects" without internet must not wake the loop
+(`core/network/NetworkMonitor.kt:29-42`). `observeNetworkRegain` gates the
+re-arm on `!isOpen` and a live refresh token, so a logged-out app never
+spins a loop and a wifi↔cell handover with a healthy socket is a no-op
+(`RealtimeSession.kt:205-211`). On `Open`, `resyncRequests` fires →
+`MessageRepository.flushOutbox()` replays SENDING rows in `createdAt`
+order; the server dedups by `clientMessageId`, so a retried send can never
+double-post (`data/MessageRepository.kt:335-340,447-456`). Proven
+on-device: airplane on → send → pending bubble → airplane off → ~15s →
+SENT, outbox empty, no duplicates (report §13.4(d)).
+
+**Follow-up traps.**
+- *"Why not retry forever instead of re-arm?"* — Infinite retry on a dead
+  network is wasted work; the retry *budget* is for transient blips, the
+  regain signal is for real recovery — two different failure classes.
+- *"Server down but WiFi up?"* — Honest gap: no periodic heartbeat re-arm
+  yet; the next user action re-arms
+  (`docs/known-limitations.md` §4). Network transitions and server health
+  are intentionally separate signals.
+- *"What if the user sends while the loop is dead?"* — `dispatchOutbox`
+  falls back to REST `POST /messages` when `!isOpen` — the outbox is a
+  queue, not a WS-only path (`MessageRepository.kt:354-364`).
+
 ---
 
 ## 6. i18n / state / UX
@@ -1283,9 +1319,9 @@ token store — no API keys are baked into the APK.
 | 2 | Auth & security | Q2.1 – Q2.9 |
 | 3 | Realtime & messaging | Q3.1 – Q3.7 |
 | 4 | Creative (reply/reaction/pin) | Q4.1 – Q4.6 |
-| 5 | Offline & persistence | Q5.1 – Q5.5 |
+| 5 | Offline & persistence | Q5.1 – Q5.6 |
 | 6 | i18n / state / UX | Q6.1 – Q6.5 |
 | 7 | Testing & deployment | Q7.1 – Q7.7 |
 
-**45 Q&A total.** Every claim cites shipped code; where the honest answer is
+**46 Q&A total.** Every claim cites shipped code; where the honest answer is
 "we deferred it", the answer says so and points at `docs/known-limitations.md`.

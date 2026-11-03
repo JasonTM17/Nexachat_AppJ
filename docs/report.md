@@ -736,6 +736,8 @@ server). Hai lỗi thật thứ hai cũng chỉ lộ trên device:
 
 Regression test mới: `RealtimeSessionReArmTest` (4 case — regain re-arm,
 regain khi logout không spin, regain khi socket sống là no-op, probe init).
+Cùng kịch bản airplane-mode được chạy lại trên **release APK đã ký** —
+`relproof` flush → SENT — chứng minh path re-arm sống qua R8/minify.
 
 ### 13.5. Tái hiện / Reproduce
 

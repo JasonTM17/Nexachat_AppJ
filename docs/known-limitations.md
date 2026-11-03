@@ -67,3 +67,9 @@ Paths are repo-relative; `…/` abbreviates `server/src/main/java/com/nexachat/`
   gates the bar (`ChatScreen.kt:337,393-398`) and `toggleReaction` returns early
   otherwise (`ChatViewModel.kt:235`). Pending/outbox rows show no reaction
   affordance.
+- **Server-down-while-network-up does not auto-retry.** The re-arm triggers
+  are a validated network *transition* (`NetworkMonitor`) or a user action
+  (`ensureConnected` from `openConversation`). If the backend is unreachable
+  while the device network stays up (server restart, dead backend), the loop
+  exhausts `MAX_ATTEMPTS` and waits for the next user navigation — no
+  periodic heartbeat re-arm exists yet (`RealtimeSession.kt:196-211`).
