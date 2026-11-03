@@ -1227,7 +1227,7 @@ cleartext caveat verbatim.
 (`.github/workflows/ci.yml`). `server-test`: a `postgres:16` service on
 `:5432` + `mvn -B verify` — the *whole* 284 (258 unit + 26 IT) against real
 Postgres, with `IT_DB_*` pointing the ITs at the service. `android-test`:
-`./gradlew testDebugUnitTest` — the 134 JVM unit tests. `secret-scan`: a
+`./gradlew testDebugUnitTest` — the 138 JVM unit tests. `secret-scan`: a
 grep gate for `BEGIN.*PRIVATE KEY` / `api[_-]?key=<20+ chars>` patterns —
 match found = job fails. All three must be green; the branch-protection
 story in the README ("must stay green to merge") is what the workflow

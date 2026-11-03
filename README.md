@@ -24,7 +24,7 @@ Rubric coverage — the full mapping with test evidence is in
 | R3 — i18n | Full Vi/En parity (86/86 strings), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
 | R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, zero state loss on rotation/process death | `core/database`, `feature/*/ViewModel` |
 | R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin) | `server/message` (V3), `app/feature/chat/ChatInteractions` |
-| R5 — UI + tests | Material 3, ≥48dp touch targets, shared state components; 284 server + 134 Android tests | `core/ui`, `server/src/test`, `app/src/test` |
+| R5 — UI + tests | Material 3, ≥48dp touch targets, shared state components; 284 server + 138 Android tests | `core/ui`, `server/src/test`, `app/src/test` |
 | R6 — presentation | This README, `docs/`, viva question bank | `docs/viva-questions.md` |
 | R1 — submission | Monorepo + packaging checklist | `docs/packaging-checklist.md` |
 
@@ -167,14 +167,14 @@ cd server && mvn verify
 #   unit loop only (faster, skips *IT):
 cd server && mvn test
 
-# Android — 134 JVM unit tests
+# Android — 138 JVM unit tests
 cd android && ./gradlew testDebugUnitTest
 ```
 
 Integration tests (`*IT`, failsafe) run against real PostgreSQL — locally the
 compose DB on `:5433` via `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD` env vars, in CI
 the workflow's postgres service on `:5432` (`.github/workflows/ci.yml`).
-Current counts: **284 server tests + 134 Android tests, all green.** CI runs
+Current counts: **284 server tests + 138 Android tests, all green.** CI runs
 both suites plus a committed-secret scan on every PR and push to
 `main`/`develop` — the suite must stay green to merge.
 

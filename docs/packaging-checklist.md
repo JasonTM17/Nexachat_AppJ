@@ -61,11 +61,19 @@ docker exec -i $(docker compose ps -q db) psql -U nexachat -d nexachat < demo/se
 
 # 4. Full test gates
 cd server && mvn -B verify                          # 284 tests (258 unit + 26 IT)
-cd ../android && ./gradlew testDebugUnitTest        # 134 tests
+cd ../android && ./gradlew testDebugUnitTest        # 138 tests
 ```
 
 ## APK install & demo accounts
 
+- [ ] **Launch gate (mandatory before tagging a release):** install the
+      *signed* APK and confirm it reaches the login screen without a crash:
+      `adb install release/nexachat-*.apk &&
+       adb shell am start -n com.nexachat/com.nexachat.MainActivity &&
+       sleep 5 && adb shell pidof com.nexachat` must print a PID and logcat
+      must show no `FATAL EXCEPTION`. Unit/IT tests cannot see DI-init or
+      theme-window defects — this gate exists because one launch crash
+      (`unexpected scheme: ws`) shipped past 418 green tests.
 - [ ] Install on 2+ devices: `adb -s <device> install app-release.apk`
       (or Gradle `installDebug` for the debug variant).
 - [ ] Point the app at the backend **without source edits**: add
