@@ -398,6 +398,22 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun `send re-arms the connection loop even when the socket looks dead`() = runTest {
+        // Parked-loop wake-up: a user send is the strongest "wants
+        // connectivity" signal — dispatchOutbox must call ensureConnected so
+        // a loop parked after retry exhaustion gets kicked, not left dead
+        // while the REST fallback quietly works.
+        isOpenFlow.value = false
+        every { session.sendMessage(any(), any()) } returns false
+        coEvery { messageApi.sendMessage(any(), any()) } returns
+            Response.error(500, "".toResponseBody(null))
+
+        repository.send(CONVERSATION_ID, "wake the loop")
+
+        verify { session.ensureConnected() }
+    }
+
+    @Test
     fun `send while WS is down falls back to the REST post`() = runTest {
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false

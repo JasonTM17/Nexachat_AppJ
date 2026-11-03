@@ -340,6 +340,9 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun dispatchOutbox(entry: OutboxEntity) {
+        // A send/retry is a user action — re-arm a parked connection loop so
+        // the socket doesn't stay silently dead while REST still works.
+        session.ensureConnected()
         val request = SendMessageRequest(
             clientMessageId = entry.clientMessageId,
             type = entry.type,
