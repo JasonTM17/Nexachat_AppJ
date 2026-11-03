@@ -8,7 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -461,8 +460,20 @@ private fun MessageBubble(
             bottomStart = if (mine) 16.dp else 4.dp,
             bottomEnd = if (mine) 4.dp else 16.dp,
         ),
+        // The whole bubble is the retry target for FAILED messages — a
+        // 48dp+ hit area beats the old tiny "!" mark, and TalkBack announces
+        // the Retry action label instead of a bare "!" glyph.
         modifier = Modifier.combinedClickable(
-            onClick = {},
+            onClick = {
+                if (message.status == DeliveryStatus.FAILED) {
+                    onRetry(message.clientMessageId ?: message.id)
+                }
+            },
+            onClickLabel = if (message.status == DeliveryStatus.FAILED) {
+                stringResource(R.string.action_retry)
+            } else {
+                null
+            },
             onLongClick = onLongPress,
         ),
     ) {
@@ -519,16 +530,17 @@ private fun MessageBubble(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (mine) {
-                        DeliveryMark(message = message, onRetry = onRetry)
+                        DeliveryMark(message = message)
                     }
                 }
             }
         }
     }
 
-/** Send-state indicator: spinner for SENDING, tappable "!" for FAILED. */
+/** Send-state indicator: spinner for SENDING, "!" mark for FAILED — the
+ *  bubble itself carries the retry tap action (see [MessageBubble]). */
 @Composable
-private fun DeliveryMark(message: ChatMessage, onRetry: (String) -> Unit) {
+private fun DeliveryMark(message: ChatMessage) {
     when (message.status) {
         DeliveryStatus.SENDING -> CircularProgressIndicator(
             modifier = Modifier.size(10.dp),
@@ -538,7 +550,6 @@ private fun DeliveryMark(message: ChatMessage, onRetry: (String) -> Unit) {
             text = "!",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.clickable { onRetry(message.clientMessageId ?: message.id) },
         )
         DeliveryStatus.SENT -> Unit
     }

@@ -131,6 +131,40 @@ class LocalStorageServiceTest {
         assertThat(stored.sizeBytes()).isEqualTo(Files.size(written));
     }
 
+    // -------------------------------------------------------------------- read
+
+    @Test
+    void read_returnsStoredBytes() {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        assertThat(newService().read(stored.storageKey())).containsExactly(png);
+    }
+
+    @Test
+    void read_traversalKey_throwsFileNotFound() {
+        // Same rejection set as store: the read side is the last line of
+        // defence behind FileController's key check.
+        for (String hostile : new String[] {"..", "../escape.png", "a/../b.png", "a\\b.png", "  "}) {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> newService().read(hostile));
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> newService().read(null));
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+    }
+
+    @Test
+    void read_missingFile_throwsFileNotFound() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> newService().read("attachments/never-written.png"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+    }
+
     private LocalStorageService newService() {
         return new LocalStorageService(tempDir.toString());
     }

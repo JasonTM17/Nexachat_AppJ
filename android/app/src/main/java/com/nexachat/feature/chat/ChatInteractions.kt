@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nexachat.R
@@ -144,13 +146,24 @@ internal fun ReplyQuoteBlock(
         shape = RoundedCornerShape(8.dp),
         modifier = Modifier
             .padding(bottom = 4.dp)
-            .then(if (resolved) Modifier.clickable(onClick = onJump) else Modifier),
+            .then(
+                if (resolved) {
+                    Modifier.clickable(
+                        onClickLabel = stringResource(R.string.action_jump_to_message),
+                        role = Role.Button,
+                        onClick = onJump,
+                    )
+                } else {
+                    Modifier
+                },
+            ),
     ) {
+        // 48dp accent bar keeps the tappable quote at the minimum hit height.
         Row(modifier = Modifier.widthIn(max = 240.dp)) {
             Box(
                 modifier = Modifier
                     .width(3.dp)
-                    .height(36.dp)
+                    .height(48.dp)
                     .background(MaterialTheme.colorScheme.primary),
             )
             Column(
@@ -249,10 +262,18 @@ internal fun PinnedBanner(
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onJump),
+            .clickable(
+                onClickLabel = stringResource(R.string.action_jump_to_message),
+                role = Role.Button,
+                onClick = onJump,
+            ),
     ) {
+        // ≥48dp row so the whole banner is a comfortable tap target.
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(

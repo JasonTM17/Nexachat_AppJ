@@ -92,6 +92,7 @@
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="cd_pinned">Pinned message</string>
+    <string name="action_jump_to_message">Go to message</string>
     <string name="error_pin_limit">Pinned-message limit reached</string>
 
     <!-- Media / attachments -->

@@ -635,4 +635,24 @@ class GroupServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_ADMIN);
     }
+
+    @Test
+    void updateGroup_notMember_throwsNotMember() {
+        // Membership is checked before the admin role: an outsider patching a
+        // group must see NOT_MEMBER, never NOT_ADMIN (same ordering as the
+        // GroupFlowIT PATCH probe).
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(groupConversation()));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.updateGroup(
+                        adminId, conversationId, new PatchGroupRequest("Hijack", null)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        verify(messageService, never()).postSystemMessage(any(), any(), anyString());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
 }

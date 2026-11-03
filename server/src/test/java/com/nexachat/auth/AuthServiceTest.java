@@ -270,4 +270,41 @@ class AuthServiceTest {
         verify(tokenService).revokeAllForUserExcept(user.getId(), "rt-current");
         verify(tokenService, never()).revokeAllForUser(any());
     }
+
+    @Test
+    void changePassword_unknownUser_throwsUserNotFound404() {
+        UUID ghost = UUID.randomUUID();
+        when(userRepository.findById(ghost)).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.changePassword(ghost, new ChangePasswordRequest("old", "newpass123", null)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.USER_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+        verify(passwordEncoder, never()).matches(anyString(), anyString());
+        verify(tokenService, never()).revokeAllForUser(any());
+    }
+
+    // --------------------------------------------------------------- logout
+
+    @Test
+    void logout_delegatesToOwnershipCheckedRevoke() {
+        UUID userId = UUID.randomUUID();
+
+        // The ownership filter lives in TokenService.revokeIfOwned — a
+        // foreign refresh token must NOT be revoked on someone else's
+        // logout (its negative case is proven in TokenServiceTest).
+        authService.logout(userId, "rt-claimed-by-caller");
+
+        verify(tokenService).revokeIfOwned("rt-claimed-by-caller", userId);
+    }
+
+    @Test
+    void logoutAll_revokesWholeFamily() {
+        UUID userId = UUID.randomUUID();
+
+        authService.logoutAll(userId);
+
+        verify(tokenService).revokeAllForUser(userId);
+    }
 }

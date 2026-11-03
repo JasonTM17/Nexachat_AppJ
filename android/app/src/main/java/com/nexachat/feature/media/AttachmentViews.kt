@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -121,6 +122,7 @@ private fun MediaRow(
     Row(
         modifier = Modifier
             .widthIn(max = 240.dp)
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
@@ -248,16 +250,16 @@ private fun PendingCard(
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
+            // No size() override: the M3 IconButton keeps its 48dp touch
+            // target (a size(22) here clamped it to 22dp).
             IconButton(
                 onClick = { onRemove(item.localId) },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(22.dp),
+                modifier = Modifier.align(Alignment.TopEnd),
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
                     contentDescription = stringResource(R.string.cd_remove_attachment),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }

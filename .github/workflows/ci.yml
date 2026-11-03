@@ -48,9 +48,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      # NOTE: the Gradle wrapper is generated inside android/ by the project
-      # scaffold. If gradlew/gradle-wrapper.jar is absent, this job fails
-      # until the Android skeleton (P1) lands — expected.
+      # The Gradle wrapper (gradlew + gradle-wrapper.jar) is committed.
       - name: Android unit tests
         run: |
           cd android

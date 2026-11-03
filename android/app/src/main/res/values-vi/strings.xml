@@ -90,6 +90,7 @@
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
     <string name="cd_pinned">Tin nhắn đã ghim</string>
+    <string name="action_jump_to_message">Chuyển tới tin nhắn</string>
     <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
 
     <!-- Media / attachments -->

@@ -276,4 +276,63 @@ class PinServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_ADMIN);
         verify(pinRepository, never()).deleteOne(any(), any());
     }
+
+    @Test
+    void unpin_notMember_throwsNotMember() {
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> pinService.unpin(userId, conversationId, messageId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        verify(pinRepository, never()).deleteOne(any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void unpin_messageInOtherConversation_throwsValidation() {
+        // Without the same-conversation check a member could inject a
+        // spurious PIN_UPDATED{pinned:false} frame for a foreign message id.
+        directConversationWith(ConversationMember.Role.MEMBER);
+        when(messageRepository.findById(messageId))
+                .thenReturn(Optional.of(messageIn(UUID.randomUUID())));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> pinService.unpin(userId, conversationId, messageId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(pinRepository, never()).deleteOne(any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    // -------------------------------------------------------------- listPins
+
+    @Test
+    void listPins_notMember_throwsNotMember() {
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> pinService.listPins(userId, conversationId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        verify(pinRepository, never()).findByConversation_IdOrderByPinnedAtAsc(any());
+    }
+
+    @Test
+    void listPins_conversationMissing_throwsConversationNotFound() {
+        when(conversationRepository.existsById(conversationId)).thenReturn(false);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> pinService.listPins(userId, conversationId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.CONVERSATION_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+        // Existence runs before membership — no member lookup on a ghost id.
+        verify(memberRepository, never()).findByConversation_IdAndUser_Id(any(), any());
+    }
 }

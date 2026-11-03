@@ -298,4 +298,32 @@ class AttachmentServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
     }
+
+    @Test
+    void assertStorageKeyReadable_unboundAttachment_nonOwner_forbidden() {
+        // An unbound upload is owner-only on the raw files path too — the
+        // /attachments/{id}/content rule and the /files/** rule must agree.
+        MessageAttachment attachment = attachment(ownerId, "attachments/x.png", false);
+        when(attachmentRepository.findByStorageKey("attachments/x.png"))
+                .thenReturn(Optional.of(attachment));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.assertStorageKeyReadable("attachments/x.png", requesterId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        assertThat(ex.getHttpStatus()).isEqualTo(403);
+        // No bound conversation → the member check is never even consulted.
+        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+    }
+
+    @Test
+    void assertStorageKeyReadable_unboundAttachment_owner_passes() {
+        MessageAttachment attachment = attachment(ownerId, "attachments/x.png", false);
+        when(attachmentRepository.findByStorageKey("attachments/x.png"))
+                .thenReturn(Optional.of(attachment));
+
+        attachmentService.assertStorageKeyReadable("attachments/x.png", ownerId);
+
+        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+    }
 }

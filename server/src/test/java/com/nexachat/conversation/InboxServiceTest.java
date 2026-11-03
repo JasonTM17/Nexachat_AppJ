@@ -123,4 +123,29 @@ class InboxServiceTest {
                 .hasSize(InboxService.SNIPPET_LENGTH + 1)
                 .endsWith("…");
     }
+
+    // --------------------------------------------------------------- authZ
+
+    @Test
+    void listInbox_scopesEveryQueryToCallerUserId() {
+        // The inbox's authorization boundary IS the userId argument: the
+        // conversation rows and the unread counts must both be keyed by the
+        // caller — there is no way to ask for someone else's inbox. (The
+        // HTTP-level guarantee — a non-member's inbox omits the room — is
+        // proven in MessageFlowIT/GroupFlowIT.)
+        InboxConversationRow row = new InboxConversationRow(
+                conversationId, Conversation.Type.DIRECT, null, null,
+                null, null, Instant.now(), 0L);
+        when(memberRepository.findInboxConversations(userId)).thenReturn(List.of(row));
+        when(memberRepository.findInboxMemberViews(List.of(conversationId)))
+                .thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(userId, List.of(conversationId)))
+                .thenReturn(List.of());
+
+        inboxService.listInbox(userId);
+
+        org.mockito.Mockito.verify(memberRepository).findInboxConversations(userId);
+        org.mockito.Mockito.verify(memberRepository)
+                .countUnreadByConversation(userId, List.of(conversationId));
+    }
 }
