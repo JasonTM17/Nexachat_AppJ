@@ -88,7 +88,7 @@ nexachat/
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
 | R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 71 keys mỗi bên (`docs/i18n-audit.md`); `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
-| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **284 tests green** (258 unit + 26 IT); Android **138 tests green**; CI gate `.github/workflows/ci.yml` |
+| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **284 tests green** (258 unit + 26 IT); Android **143 tests green**; CI gate `.github/workflows/ci.yml` |
 | R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 18 câu vấn đáp trong thiết kế, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
@@ -145,7 +145,7 @@ reaction emoji toggle (PK composite = idempotent); pin ≤3/conversation
 | NFR-3 | Security | bcrypt; JWT HS256 secret ≥256-bit từ env; mọi endpoint cần Bearer trừ whitelist; WSS ở prod | `SecurityConfig`, `JwtAuthFilter`, `application-prod.yml` fail-fast khi thiếu `JWT_SECRET` |
 | NFR-4 | Usability | Material 3; mọi màn có Loading/Empty/Error/Retry; touch target ≥48dp | `core/ui/components` shared states; đợt a11y đã sửa vi phạm 48dp thật |
 | NFR-5 | Maintainability | Package-by-feature; không trả JPA entity ra API; không business logic trong Controller/Composable | module `com.nexachat.<feature>` server; `feature/*` + `data/` + `core/` Android |
-| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 284 + 138 tests; 21 negative tests ở quality phase |
+| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 284 + 143 tests; 21 negative tests ở quality phase |
 | NFR-7 | Portability | minSdk 26, targetSdk 35; emulator + máy thật qua LAN | `build.gradle.kts`; `BuildConfig.API_BASE_URL` |
 | NFR-8 | Observability | Log không chứa password/token/file body; `/actuator/health` | log scan sạch (chỉ id/event name) |
 | NFR-9 | Constraints | 1 backend + 1 PostgreSQL; media ≤25MB; demo LAN offline | `docker-compose.yml` |
@@ -654,7 +654,7 @@ lý thuyết:
 | Server unit | JUnit5 + Mockito (`mvn test`, surefire) | **258** | ✅ green |
 | Server integration | `@SpringBootTest` + Postgres thật qua env-JDBC (failsafe, `*IT`) | **26** | ✅ green |
 | **Server tổng** | `mvn -B verify` | **284** | ✅ green |
-| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **138** | ✅ green |
+| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **143** | ✅ green |
 | **Live E2E (prod Docker)** | REST + STOMP smoke script | 12 bước | ✅ green |
 | **On-device (emulator API 35)** | adb-driven manual flow | 12 màn | ✅ green |
 
@@ -683,7 +683,7 @@ Server: `MessageServiceTest` (29 — authZ, idempotency, pagination),
 `UserServiceTest` (11), `TokenServiceTest` (10 — rotation/reuse),
 `ConversationServiceTest` (10), `ReactionServiceTest` (7)…
 
-Android (138 test, 16 lớp): `ChatViewModelTest` (optimistic send, dedup theo
+Android (143 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
 `clientMessageId`, retry), `TokenAuthenticatorTest` (single-flight 401→refresh),
 `StompCodecTest` (frame parse/build), `TokenStoreTest`, `InboxViewModelTest`,
 `MessageRepositoryTest`, `AttachmentRepositoryTest`, `AuthViewModelTest`,
@@ -723,6 +723,20 @@ hình state giữ nguyên** → logout → session restore sau reinstall.
 Bài học ghi vào release checklist: gate "install + launch signed APK trên
 device" là bắt buộc trước khi tag release.
 
+**(d) Offline outbox + auto-reconnect (airplane-mode E2E, fix tại `cb2c5ee`):**
+bật airplane mode → gửi tin → bubble hiện SENDING (pending) ngay → tắt
+airplane mode → **~15s sau WS tự reconnect và outbox tự flush**, tin chuyển
+SENT đúng thứ tự seq, không nhân đôi (Room `outbox` rỗng, message có seq
+server). Hai lỗi thật thứ hai cũng chỉ lộ trên device:
+
+| Lỗi | Nguyên nhân gốc | Fix |
+|---|---|---|
+| Tin pending mãi không gửi sau khi có mạng lại | `runConnectionLoop` thoát vĩnh viễn sau `MAX_ATTEMPTS`; chỉ `openConversation` gọi `ensureConnected()` → không ai re-arm khi mạng về | `NetworkMonitor` (ConnectivityManager, `NET_CAPABILITY_VALIDATED` lọc captive portal) → `observeNetworkRegain` trong `RealtimeSession` re-arm loop khi socket chết và còn refresh token; Open → `resyncRequests` → `flushOutbox` |
+| Tin mới (send/push/flush) không hiện khi user rời đáy danh sách | `reverseLayout` neo viewport vào item đang thấy; mở bàn phím (`imePadding`) làm mất neo cạnh đáy → item index-0 rơi xuống dưới | `ChatScreen` auto-scroll về 0 khi `firstVisibleItemIndex ≤ 1`, luôn scroll cho tin mình gửi; đang đọc history thì không giật |
+
+Regression test mới: `RealtimeSessionReArmTest` (4 case — regain re-arm,
+regain khi logout không spin, regain khi socket sống là no-op, probe init).
+
 ### 13.5. Tái hiện / Reproduce
 
 ```bash
@@ -731,7 +745,7 @@ docker compose up -d db          # postgres:16 @ localhost:5433
 cd server && mvn -B verify       # 284 tests
 
 # Android unit tests
-cd android && ./gradlew testDebugUnitTest   # 138 tests
+cd android && ./gradlew testDebugUnitTest   # 143 tests
 ```
 
 Manual E2E: `docs/demo-runbook.md` §5 — 10 bước demo ~8 phút (2 máy chat 1-1,
@@ -855,7 +869,7 @@ i18n Vi/En 100% parity, rotation an toàn, và creative feature Message
 Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.
 
 Chất lượng được chứng minh bằng số liệu thật: **284 test server** (258 unit +
-26 integration trên Postgres thật) và **138 test Android**, CI gate xanh trên
+26 integration trên Postgres thật) và **143 test Android**, CI gate xanh trên
 mọi PR; deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
 Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, presence
 chưa emit, edit/delete plumb sẵn chưa ship) — mỗi hạn chế kèm hướng phát triển

@@ -61,7 +61,7 @@ docker exec -i $(docker compose ps -q db) psql -U nexachat -d nexachat < demo/se
 
 # 4. Full test gates
 cd server && mvn -B verify                          # 284 tests (258 unit + 26 IT)
-cd ../android && ./gradlew testDebugUnitTest        # 138 tests
+cd ../android && ./gradlew testDebugUnitTest        # 143 tests
 ```
 
 ## APK install & demo accounts
@@ -116,7 +116,7 @@ cd ../android && ./gradlew testDebugUnitTest        # 138 tests
 | Suite | Command | Expected |
 |---|---|---|
 | Server unit + integration | `docker compose up -d db` then `cd server && mvn -B verify` | 284 tests green (258 unit + 26 IT on real Postgres via env-JDBC; local default `localhost:5433`) |
-| Android unit | `cd android && ./gradlew testDebugUnitTest` | 134 tests green |
+| Android unit | `cd android && ./gradlew testDebugUnitTest` | 143 tests green |
 | CI equivalent | `.github/workflows/ci.yml` | server-test (postgres svc `:5432` + `IT_DB_*` env), android-test, secret-scan |
 
 ## User-side TODO (cannot be produced from the repo — do before zipping)
