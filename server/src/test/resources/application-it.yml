@@ -1,0 +1,19 @@
+# "it" profile — integration tests against a real PostgreSQL.
+#
+# Unlike application-test.yml, NOTHING is excluded here: datasource, JPA and
+# Flyway autoconfiguration all run for real, so V1__init.sql is applied on
+# boot. JDBC coordinates come from the test's @DynamicPropertySource
+# (IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD, defaulting to the local docker-compose
+# instance on :5433) — do not hardcode a datasource URL in this file.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+nexachat:
+  jwt:
+    # Fixed HS256 secret (>= 32 bytes) — ITs must not depend on env vars.
+    secret: "it-only-secret-0123456789abcdef-not-for-prod"

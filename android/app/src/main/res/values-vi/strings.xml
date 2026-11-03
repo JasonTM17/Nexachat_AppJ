@@ -5,6 +5,29 @@
     <!-- Splash -->
     <string name="splash_tagline">Đang kết nối…</string>
 
+    <!-- Auth -->
+    <string name="auth_phone_label">Số điện thoại</string>
+    <string name="auth_password_label">Mật khẩu</string>
+    <string name="auth_display_name_label">Tên hiển thị</string>
+    <string name="auth_confirm_password_label">Nhập lại mật khẩu</string>
+    <string name="action_sign_in">Đăng nhập</string>
+    <string name="action_create_account">Tạo tài khoản</string>
+    <string name="action_show">Hiện</string>
+    <string name="action_hide">Ẩn</string>
+
+    <!-- Auth field validation -->
+    <string name="error_phone_required">Nhập số điện thoại</string>
+    <string name="error_password_short">Mật khẩu tối thiểu 8 ký tự</string>
+    <string name="error_display_name_required">Nhập tên hiển thị</string>
+    <string name="error_password_mismatch">Mật khẩu nhập lại không khớp</string>
+
+    <!-- ApiError → user-facing messages -->
+    <string name="error_invalid_credentials">Sai số điện thoại hoặc mật khẩu</string>
+    <string name="error_phone_exists">Số điện thoại này đã được đăng ký</string>
+    <string name="error_rate_limited">Thử quá nhiều lần. Vui lòng thử lại sau</string>
+    <string name="error_network">Không có kết nối. Kiểm tra mạng</string>
+    <string name="error_generic">Có lỗi xảy ra. Vui lòng thử lại</string>
+
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>

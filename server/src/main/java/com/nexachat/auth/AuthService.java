@@ -1,0 +1,186 @@
+package com.nexachat.auth;
+
+import com.nexachat.auth.dto.AuthResponse;
+import com.nexachat.auth.dto.ChangePasswordRequest;
+import com.nexachat.auth.dto.LoginRequest;
+import com.nexachat.auth.dto.RefreshRequest;
+import com.nexachat.auth.dto.RegisterRequest;
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
+import com.nexachat.user.PhoneService;
+import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
+import com.nexachat.user.dto.UserResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+/**
+ * Orchestrates the auth use cases (register/login/refresh/logout/password).
+ *
+ * <p>Anti-enumeration guarantees (§13): login returns the SAME
+ * {@code INVALID_CREDENTIALS} whether the phone is unknown or the password is
+ * wrong — an unparseable phone at login also maps to {@code INVALID_CREDENTIALS}
+ * (unlike register, where bad input honestly returns {@code VALIDATION_FAILED}),
+ * and an unknown account still pays one bcrypt compare against a dummy hash so
+ * response timing does not reveal account existence.
+ *
+ * <p>Transaction note: {@link #refresh} is deliberately NOT {@code @Transactional}
+ * at this level — when {@link TokenService#rotate} reports reuse/expiry, the
+ * family revocation must commit in its own transaction before the 401 is thrown;
+ * rolling it back together with the rotation would silently defeat reuse
+ * detection.
+ */
+@Service
+public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
+    private final UserRepository userRepository;
+    private final PhoneService phoneService;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+    private final TokenService tokenService;
+
+    /** Well-formed bcrypt used to equalize login timing for unknown accounts. */
+    private final String dummyHash;
+
+    public AuthService(UserRepository userRepository,
+                       PhoneService phoneService,
+                       PasswordEncoder passwordEncoder,
+                       JwtService jwtService,
+                       TokenService tokenService) {
+        this.userRepository = userRepository;
+        this.phoneService = phoneService;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+        this.tokenService = tokenService;
+        // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
+        this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
+    }
+
+    @Transactional
+    public AuthResponse register(RegisterRequest request, String deviceLabel) {
+        final String phone = normalizeForRegister(request.phone());
+
+        if (userRepository.existsByPhone(phone)) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        User user = User.create(phone, passwordEncoder.encode(request.password()), request.displayName().trim());
+        try {
+            // saveAndFlush, not save: the INSERT must hit the UNIQUE constraint
+            // NOW — save() alone defers the flush to commit-time, after this
+            // method returns, and the violation would escape the catch.
+            user = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            // Two concurrent registers can both pass existsByPhone — the UNIQUE
+            // constraint is the final arbiter, mapped back to the same contract.
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        log.info("Registered new user id={}", user.getId());
+        return issueSession(user, deviceLabel);
+    }
+
+    @Transactional
+    public AuthResponse login(LoginRequest request, String deviceLabel) {
+        String phone;
+        try {
+            phone = phoneService.toE164(request.phone());
+        } catch (IllegalArgumentException e) {
+            throw invalidCredentials();
+        }
+
+        User user = userRepository.findByPhone(phone).orElse(null);
+        if (user == null) {
+            // Pay one bcrypt compare anyway so unknown vs known users take the same time.
+            passwordEncoder.matches(request.password(), dummyHash);
+            throw invalidCredentials();
+        }
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw invalidCredentials();
+        }
+        return issueSession(user, deviceLabel);
+    }
+
+    /**
+     * Refresh rotation entry point. Not transactional here on purpose — see
+     * class javadoc: the family revocation for a reused/expired token must
+     * commit BEFORE the 401 is raised.
+     */
+    public AuthResponse refresh(RefreshRequest request, String deviceLabel) {
+        TokenService.RotationResult rotation;
+        try {
+            rotation = tokenService.rotate(request.refreshToken(), deviceLabel);
+        } catch (RefreshTokenException e) {
+            if (e.userId() != null) {
+                // Separate transaction → the revocation COMMITS although we then throw.
+                tokenService.revokeAllForUser(e.userId());
+                log.warn("Refresh-token {} detected; revoked all sessions of user {}",
+                        e.errorCode() == ApiErrorCode.TOKEN_REUSED ? "reuse" : "expiry", e.userId());
+            }
+            throw ApiException.of(e.errorCode(), e.getMessage());
+        }
+
+        User user = userRepository.findById(rotation.userId())
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid"));
+        return buildResponse(user, rotation.refreshToken());
+    }
+
+    public void logout(UUID userId, String rawRefreshToken) {
+        tokenService.revokeIfOwned(rawRefreshToken, userId);
+    }
+
+    public void logoutAll(UUID userId) {
+        tokenService.revokeAllForUser(userId);
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+
+        if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
+            throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+        }
+        user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        // "Revoke all other refresh tokens": keep the supplied session token alive
+        // if the client passed one, otherwise revoke every session (FR-A6).
+        if (request.refreshToken() != null && !request.refreshToken().isBlank()) {
+            tokenService.revokeAllForUserExcept(userId, request.refreshToken());
+        } else {
+            tokenService.revokeAllForUser(userId);
+        }
+        log.info("Password changed for user id={}", userId);
+    }
+
+    private AuthResponse issueSession(User user, String deviceLabel) {
+        return buildResponse(user, tokenService.issue(user, deviceLabel));
+    }
+
+    private AuthResponse buildResponse(User user, String refreshToken) {
+        return new AuthResponse(
+                UserResponse.from(user),
+                jwtService.generateAccessToken(user),
+                jwtService.accessTokenExpiresIn(),
+                refreshToken);
+    }
+
+    private String normalizeForRegister(String rawPhone) {
+        try {
+            return phoneService.toE164(rawPhone);
+        } catch (IllegalArgumentException e) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
+        }
+    }
+
+    private static ApiException invalidCredentials() {
+        return ApiException.of(ApiErrorCode.INVALID_CREDENTIALS, "Invalid phone number or password");
+    }
+}

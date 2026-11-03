@@ -13,20 +13,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.nexachat.R
-import kotlinx.coroutines.delay
+import com.nexachat.feature.auth.SplashViewModel
+import kotlinx.coroutines.flow.collectLatest
 
 /**
- * Placeholder splash: shows branding briefly, then hands off.
- * Real work (session check → route to login vs inbox) lands with feature/auth.
+ * Session restore: renders branding + progress while [SplashViewModel] checks
+ * for a stored refresh token and attempts rotation, then emits exactly one nav
+ * event → login or inbox (phase-05 M1).
  */
 @Composable
 fun SplashScreen(
-    onFinished: () -> Unit,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToInbox: () -> Unit,
+    viewModel: SplashViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(Unit) {
-        delay(1_200)
-        onFinished()
+        viewModel.navEvents.collectLatest { event ->
+            when (event) {
+                SplashViewModel.NavEvent.ToLogin -> onNavigateToLogin()
+                SplashViewModel.NavEvent.ToInbox -> onNavigateToInbox()
+            }
+        }
     }
 
     Column(
