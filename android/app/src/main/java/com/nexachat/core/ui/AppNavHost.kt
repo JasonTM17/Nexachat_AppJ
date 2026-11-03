@@ -13,7 +13,7 @@ import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.SessionEventsEntryPoint
 import com.nexachat.feature.auth.LoginScreen
 import com.nexachat.feature.auth.RegisterScreen
-import com.nexachat.feature.contacts.ChatPlaceholderScreen
+import com.nexachat.feature.chat.ChatScreen
 import com.nexachat.feature.contacts.ContactsScreen
 import com.nexachat.feature.contacts.UserSearchScreen
 import com.nexachat.feature.inbox.InboxScreen
@@ -106,6 +106,9 @@ fun AppNavHost() {
             InboxScreen(
                 onNavigateToContacts = { navController.navigate(Routes.CONTACTS) },
                 onNavigateToProfile = { navController.navigate(Routes.PROFILE) },
+                onOpenConversation = { conversationId ->
+                    navController.navigate(Routes.chat(conversationId))
+                },
             )
         }
         composable(Routes.CONTACTS) {
@@ -132,8 +135,7 @@ fun AppNavHost() {
             route = Routes.CHAT,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
         ) { entry ->
-            // Placeholder until the real ChatScreen lands (chat phase).
-            ChatPlaceholderScreen(
+            ChatScreen(
                 conversationId = entry.arguments?.getString("conversationId").orEmpty(),
                 onBack = { navController.popBackStack() },
             )

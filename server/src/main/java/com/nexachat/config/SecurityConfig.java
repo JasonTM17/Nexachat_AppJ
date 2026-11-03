@@ -63,6 +63,11 @@ public class SecurityConfig {
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/error").permitAll()
+                        // WS handshake stays unauthenticated at HTTP level: the
+                        // JWT travels in the STOMP CONNECT header and is checked
+                        // by StompAuthChannelInterceptor, never by this filter
+                        // chain (plan §11.1/§13 — no token-in-URL).
+                        .requestMatchers("/ws", "/ws/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(securityErrorHandler)

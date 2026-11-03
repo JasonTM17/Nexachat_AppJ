@@ -62,4 +62,11 @@
     <!-- Chat placeholder -->
     <string name="chat_title">Trò chuyện</string>
     <string name="chat_placeholder">Trò chuyện %1$s</string>
+
+    <!-- Chat -->
+    <string name="chat_input_hint">Nhắn tin</string>
+    <string name="chat_typing">đang nhập…</string>
+    <string name="chat_offline">Ngoại tuyến</string>
+    <string name="cd_send">Gửi</string>
+    <string name="cd_retry">Thử lại</string>
 </resources>

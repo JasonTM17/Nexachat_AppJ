@@ -4,6 +4,8 @@ import com.nexachat.auth.RefreshTokenRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.message.MessageAttachmentRepository;
+import com.nexachat.message.MessageRepository;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,6 +32,12 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private ConversationMemberRepository conversationMemberRepository;
+
+    @MockitoBean
+    private MessageRepository messageRepository;
+
+    @MockitoBean
+    private MessageAttachmentRepository messageAttachmentRepository;
 
     @Test
     void contextLoads() {

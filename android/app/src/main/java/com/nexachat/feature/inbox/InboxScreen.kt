@@ -1,11 +1,23 @@
 package com.nexachat.feature.inbox
 
+import android.text.format.DateUtils
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Badge
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -14,22 +26,41 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.data.ConversationSummary
+import com.nexachat.feature.chat.chatErrorMessage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Placeholder inbox — conversation list + InboxViewModel land here
- * (plan §12.1 feature/inbox: ConversationListScreen). Top-bar actions route
- * to contacts and profile.
+ * Conversation inbox (plan §12.1 feature/inbox): rows render the Room stream —
+ * avatar letter, resolved name, last-message snippet, unread badge, time.
+ * Row taps route to `chat/{id}` via [onOpenConversation]; top-bar actions keep
+ * their existing contacts/profile routes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxScreen(
     onNavigateToContacts: () -> Unit = {},
     onNavigateToProfile: () -> Unit = {},
+    onOpenConversation: (String) -> Unit = {},
+    viewModel: InboxViewModel = hiltViewModel(),
 ) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dateFormat = remember { SimpleDateFormat("dd/MM", Locale.getDefault()) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -57,11 +88,113 @@ fun InboxScreen(
                 .padding(innerPadding),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = stringResource(R.string.inbox_empty),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            when {
+                state.loading && state.conversations.isEmpty() -> CircularProgressIndicator()
+                state.conversations.isEmpty() -> Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = stringResource(R.string.inbox_empty),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    state.error?.let { error ->
+                        Text(
+                            text = chatErrorMessage(error),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(state.conversations, key = { it.id }) { conversation ->
+                        ConversationRow(
+                            conversation = conversation,
+                            formatTime = { epochMs -> formatInboxTime(epochMs, timeFormat, dateFormat) },
+                            onClick = { onOpenConversation(conversation.id) },
+                        )
+                    }
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun ConversationRow(
+    conversation: ConversationSummary,
+    formatTime: (Long) -> String,
+    onClick: () -> Unit,
+) {
+    val name = conversation.displayName.ifBlank { stringResource(R.string.chat_title) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = name.firstOrNull()?.uppercase() ?: "?",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = conversation.lastMessageContent.orEmpty(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Column(
+            horizontalAlignment = Alignment.End,
+            modifier = Modifier.padding(start = 8.dp),
+        ) {
+            conversation.lastMessageAtEpochMs?.let { at ->
+                Text(
+                    text = formatTime(at),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (conversation.unreadCount > 0) {
+                Badge(modifier = Modifier.padding(top = 4.dp)) {
+                    Text(conversation.unreadCount.toString())
+                }
+            }
+        }
+    }
+}
+
+/** HH:mm for same-day messages, dd/MM for older — no year needed for an inbox. */
+private fun formatInboxTime(
+    epochMs: Long,
+    timeFormat: SimpleDateFormat,
+    dateFormat: SimpleDateFormat,
+): String =
+    if (DateUtils.isToday(epochMs)) {
+        timeFormat.format(Date(epochMs))
+    } else {
+        dateFormat.format(Date(epochMs))
+    }

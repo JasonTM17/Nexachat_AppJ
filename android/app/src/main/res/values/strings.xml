@@ -62,4 +62,11 @@
     <!-- Chat placeholder -->
     <string name="chat_title">Chat</string>
     <string name="chat_placeholder">Chat %1$s</string>
+
+    <!-- Chat -->
+    <string name="chat_input_hint">Message</string>
+    <string name="chat_typing">typing…</string>
+    <string name="chat_offline">Offline</string>
+    <string name="cd_send">Send</string>
+    <string name="cd_retry">Retry</string>
 </resources>
