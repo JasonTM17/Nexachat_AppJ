@@ -277,7 +277,7 @@ def build():
            ["R4", "Chức năng sáng tạo", "5", "OK",
             "Message Interactions: reply/react/pin — V3__interactions.sql, ReactionController, PinController, InteractionFlowIT"],
            ["R5", "Giao diện rõ ràng + toàn bộ unit test pass", "15", "OK",
-            "Server 284 tests green (258 unit + 26 IT); Android 143 tests green; CI gate .github/workflows/ci.yml"],
+            "Server 284 tests green (258 unit + 26 IT); Android 144 tests green; CI gate .github/workflows/ci.yml"],
            ["R6", "Thuyết trình, demo, vấn đáp", "40", "OK",
             "docs/demo-runbook.md (kịch bản 8 phút + fallback), 18 câu vấn đáp, mỗi quyết định kèm \"vì sao\""]],
           widths=[1, 5.5, 1, 1, 7], font_size=8.5)
@@ -342,7 +342,7 @@ def build():
            ["NFR-5", "Maintainability", "Package-by-feature; không trả entity ra API; không logic trong Controller/Composable",
             "com.nexachat.<feature> server; feature/* + data/ + core/ Android"],
            ["NFR-6", "Testability", "Toàn bộ unit test pass ở CI; mỗi service authZ có negative test",
-            "284 + 143 tests; 21 negative tests ở quality phase"],
+            "284 + 144 tests; 21 negative tests ở quality phase"],
            ["NFR-7", "Portability", "minSdk 26, targetSdk 35; emulator + máy thật LAN",
             "build.gradle.kts; BuildConfig.API_BASE_URL"],
            ["NFR-8", "Observability", "Log không chứa password/token/file body; /actuator/health",
@@ -832,7 +832,7 @@ def build():
           [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "258", "green"],
            ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "26", "green"],
            ["Server tổng", "mvn -B verify", "284", "green"],
-           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "143", "green"]],
+           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "144", "green"]],
           widths=[3.2, 7.5, 1.8, 2.5], font_size=9)
     para(doc, "CI (.github/workflows/ci.yml): job server-test (postgres:16 "
               "service + mvn -B verify với IT_DB_* env) + android-test + "
@@ -857,7 +857,7 @@ def build():
               "ContactServiceTest (12), PhoneNormalizerTest (11 — E.164), "
               "UserServiceTest (11), TokenServiceTest (10 — rotation/reuse), "
               "ConversationServiceTest (10), ReactionServiceTest (7)…")
-    para(doc, "Android (143 test, 17 lớp): ChatViewModelTest (optimistic "
+    para(doc, "Android (144 test, 17 lớp): ChatViewModelTest (optimistic "
               "send, dedup theo clientMessageId, retry), "
               "TokenAuthenticatorTest (single-flight 401→refresh), "
               "StompCodecTest (frame parse/build), TokenStoreTest, "
@@ -869,7 +869,7 @@ def build():
               "AppLocaleManagerTest, WsEndpointUrlTest (wsUrl derivation + "
               "StompClient constructor crash guard), "
               "RealtimeSessionReArmTest (network-regain re-arm, logged-out / "
-              "already-open no-op).")
+              "already-open no-op, concurrent re-arm single-loop).")
     h2(doc, "13.4. Live E2E & on-device verification")
     para(doc, "Unit/IT coverage không đủ để chứng minh hệ thống chạy thật — "
               "phần này kiểm chứng artifact đã đóng gói trên stack "
@@ -920,8 +920,12 @@ def build():
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "
               "tin chuyển SENT đúng thứ tự seq, không nhân đôi. Kịch bản "
               "được chạy lại trên release APK đã ký — re-arm sống qua "
-              "R8/minify. Bài học ghi vào release checklist: gate \"install "
-              "+ launch signed APK trên device\" là bắt buộc trước khi tag.")
+              "R8/minify. Review sau fix phát hiện thêm check-then-launch "
+              "của launchConnectionLoop không atomic (token/regain/user "
+              "action đua nhau) → bọc synchronized + regression test 50 "
+              "luồng chỉ mở 1 loop (18b32ca). Bài học ghi vào release "
+              "checklist: gate \"install + launch signed APK trên device\" "
+              "là bắt buộc trước khi tag.")
     h2(doc, "13.5. Tái hiện / Reproduce")
     code_box(doc,
         "# Server: Postgres that roi verify (unit + IT)\n"
@@ -929,7 +933,7 @@ def build():
         "cd server && mvn -B verify       # 284 tests\n"
         "\n"
         "# Android unit tests\n"
-        "cd android && ./gradlew testDebugUnitTest   # 143 tests")
+        "cd android && ./gradlew testDebugUnitTest   # 144 tests")
     para(doc, "Manual E2E: docs/demo-runbook.md §5 — 10 bước demo ~8 phút "
               "(2 máy chat 1-1, 3 máy nhóm, offline send, media, "
               "interactions, i18n+rotation, CI xanh).")
@@ -1047,7 +1051,7 @@ def build():
               "100% parity, rotation an toàn, và creative feature Message "
               "Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.")
     para(doc, "Chất lượng được chứng minh bằng số liệu thật: 284 test server "
-              "(258 unit + 26 integration trên Postgres thật) và 143 test "
+              "(258 unit + 26 integration trên Postgres thật) và 144 test "
               "Android, CI gate xanh trên mọi PR; deploy một lệnh "
               "docker compose up; demo LAN có runbook + fallback. Các hạn "
               "chế được khai báo trung thực (không E2E, SimpleBroker 1 node, "
