@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Pure-Compose app: this XML theme only styles the window shown before the
+      first frame composes (splash window). All in-app colors/typography come
+      from com.nexachat.core.ui.theme.NexaChatTheme (Material3).
+      Parent must be a framework theme — the material-components XML library
+      (Theme.Material3.*) is intentionally not a dependency.
+    -->
+    <style name="Theme.NexaChat" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
+    </style>
+</resources>

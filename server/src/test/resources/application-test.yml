@@ -1,0 +1,15 @@
+# Test profile for the context-load smoke test.
+# The datasource points at the dedicated test database, but all DB-related
+# auto-configuration is excluded so the test passes without a live PostgreSQL.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nexachat_test
+    username: ${DATABASE_USER:nexachat}
+    password: ${DATABASE_PASSWORD:nexachat}
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration

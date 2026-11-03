@@ -1,0 +1,58 @@
+# ---- Build outputs ----
+build/
+**/build/
+target/
+*.class
+*.jar
+*.war
+*.apk
+*.aab
+*.dex
+*.o
+*.so
+
+# ---- Dependencies ----
+node_modules/
+.gradle/
+.cxx/
+.kotlin/
+# gradle-wrapper.jar must be committed despite the *.jar rule above —
+# it is required for reproducible wrapper bootstrap on fresh checkouts.
+!**/gradle-wrapper.jar
+
+# ---- Signing / Secrets (NEVER commit) ----
+*.keystore
+*.jks
+keystore.properties
+.env
+.env.*
+!.env.example
+google-services.json
+secrets.properties
+**/local.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+
+# ---- Runtime / data ----
+# Root-anchored: a bare `data/` would also ignore source packages like
+# android/app/src/main/java/com/nexachat/data/ (repository implementations).
+/data/
+logs/
+*.log
+server/uploads/
+
+# ---- Kit/workspace internals (never in submission) ----
+.agentkit/
+.agents/
+.claude/
+.codex/
+.devin/
+plans/

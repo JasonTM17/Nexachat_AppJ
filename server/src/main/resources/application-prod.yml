@@ -1,0 +1,13 @@
+# Production overrides. Everything not listed here inherits from application.yml.
+# JWT_SECRET has no default: startup fails fast when the environment variable is unset.
+logging:
+  level:
+    root: INFO
+
+nexachat:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-ttl-seconds: 900
+    refresh-ttl-days: 14
+  upload:
+    dir: ${UPLOAD_DIR:./data/uploads}

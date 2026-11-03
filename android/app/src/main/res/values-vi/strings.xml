@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NexaChat</string>
+
+    <!-- Splash -->
+    <string name="splash_tagline">Đang kết nối…</string>
+
+    <!-- Inbox -->
+    <string name="inbox_title">Tin nhắn</string>
+    <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
+</resources>

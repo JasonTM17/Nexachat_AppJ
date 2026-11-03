@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NexaChat</string>
+
+    <!-- Splash -->
+    <string name="splash_tagline">Connecting…</string>
+
+    <!-- Inbox -->
+    <string name="inbox_title">Chats</string>
+    <string name="inbox_empty">No conversations yet</string>
+</resources>
