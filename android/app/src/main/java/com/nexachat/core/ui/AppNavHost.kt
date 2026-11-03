@@ -4,14 +4,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.SessionEventsEntryPoint
 import com.nexachat.feature.auth.LoginScreen
 import com.nexachat.feature.auth.RegisterScreen
+import com.nexachat.feature.contacts.ChatPlaceholderScreen
+import com.nexachat.feature.contacts.ContactsScreen
+import com.nexachat.feature.contacts.UserSearchScreen
 import com.nexachat.feature.inbox.InboxScreen
+import com.nexachat.feature.profile.ProfileScreen
 import com.nexachat.feature.splash.SplashScreen
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.collectLatest
@@ -25,6 +31,12 @@ object Routes {
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val INBOX = "inbox"
+    const val CONTACTS = "contacts"
+    const val SEARCH = "search"
+    const val PROFILE = "profile"
+    const val CHAT = "chat/{conversationId}"
+
+    fun chat(conversationId: String): String = "chat/$conversationId"
 }
 
 @Composable
@@ -91,7 +103,40 @@ fun AppNavHost() {
             )
         }
         composable(Routes.INBOX) {
-            InboxScreen()
+            InboxScreen(
+                onNavigateToContacts = { navController.navigate(Routes.CONTACTS) },
+                onNavigateToProfile = { navController.navigate(Routes.PROFILE) },
+            )
+        }
+        composable(Routes.CONTACTS) {
+            ContactsScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
+                onOpenConversation = { conversationId ->
+                    navController.navigate(Routes.chat(conversationId))
+                },
+            )
+        }
+        composable(Routes.SEARCH) {
+            UserSearchScreen(
+                onBack = { navController.popBackStack() },
+                onOpenConversation = { conversationId ->
+                    navController.navigate(Routes.chat(conversationId))
+                },
+            )
+        }
+        composable(Routes.PROFILE) {
+            ProfileScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = Routes.CHAT,
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+        ) { entry ->
+            // Placeholder until the real ChatScreen lands (chat phase).
+            ChatPlaceholderScreen(
+                conversationId = entry.arguments?.getString("conversationId").orEmpty(),
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 }

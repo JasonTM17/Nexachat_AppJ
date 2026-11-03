@@ -1,20 +1,27 @@
 package com.nexachat.user;
 
-import com.nexachat.common.error.ApiException;
 import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
+import com.nexachat.user.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,6 +31,8 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private PhoneService phoneService;
 
     @InjectMocks
     private UserService userService;
@@ -78,5 +87,89 @@ class UserServiceTest {
 
         assertThat(updated.getDisplayName()).isEqualTo("Old Name");
         verify(userRepository, never()).save(user);
+    }
+
+    // --------------------------------------------------------------- search
+
+    @Test
+    void search_phoneExact_normalizesAndReturnsSingleUser() {
+        UUID callerId = UUID.randomUUID();
+        User found = userWithId("Lan");
+        when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
+        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(found));
+
+        List<UserResponse> results = userService.search(callerId, "0987776655", null);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).id()).isEqualTo(found.getId());
+        assertThat(results.get(0).phone()).isEqualTo("+84912345678");
+        verify(phoneService).toE164("0987776655");
+    }
+
+    @Test
+    void search_phoneUnknown_returnsEmptyListNot404() {
+        when(phoneService.toE164(anyString())).thenReturn("+84900000001");
+        when(userRepository.findByPhone("+84900000001")).thenReturn(Optional.empty());
+
+        List<UserResponse> results = userService.search(UUID.randomUUID(), "0900000001", null);
+
+        assertThat(results).isEmpty();
+    }
+
+    @Test
+    void search_phoneInvalid_throwsValidationFailed() {
+        when(phoneService.toE164(anyString())).thenThrow(new IllegalArgumentException("bad"));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> userService.search(UUID.randomUUID(), "not-a-phone", null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(userRepository, never()).findByPhone(anyString());
+    }
+
+    @Test
+    void search_q_prefixExcludesCallerAndCapsAt20() {
+        UUID callerId = UUID.randomUUID();
+        when(userRepository.searchByDisplayNamePrefix(eq("Lan"), eq(callerId), any(Pageable.class)))
+                .thenReturn(List.of(userWithId("Lan A"), userWithId("Lan B")));
+
+        List<UserResponse> results = userService.search(callerId, null, " Lan ");
+
+        assertThat(results).hasSize(2);
+        ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).searchByDisplayNamePrefix(eq("Lan"), eq(callerId), pageable.capture());
+        // Exactly the 20-row contract cap.
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(20);
+    }
+
+    @Test
+    void search_q_escapesLikeWildcards() {
+        UUID callerId = UUID.randomUUID();
+        when(userRepository.searchByDisplayNamePrefix(anyString(), eq(callerId), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        userService.search(callerId, null, "10%_off");
+
+        // % and _ reach the query as escaped literals, not LIKE wildcards.
+        verify(userRepository).searchByDisplayNamePrefix(
+                eq("10\\%\\_off"), eq(callerId), any(Pageable.class));
+    }
+
+    @Test
+    void search_bothParams_throwsValidationFailed() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> userService.search(UUID.randomUUID(), "+84912345678", "Lan"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(userRepository, never()).findByPhone(anyString());
+    }
+
+    @Test
+    void search_neitherParam_throwsValidationFailed() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> userService.search(UUID.randomUUID(), null, "  "));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(userRepository, never()).findByPhone(anyString());
     }
 }

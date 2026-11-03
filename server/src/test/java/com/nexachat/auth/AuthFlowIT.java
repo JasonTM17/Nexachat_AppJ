@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -62,6 +63,21 @@ class AuthFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    /**
+     * The IT runs against a SHARED dev database (docker-compose :5433), so
+     * previous runs leave their users behind — unlike a hermetic container.
+     * Wipe only the IT phone ranges, in FK-safe order: a user's conversations
+     * first (no cascade on {@code created_by}), then the users themselves.
+     */
+    @BeforeEach
+    void cleanItUsers() {
+        // All IT-generated phones start +8490 except the demo seeds +849000*.
+        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
+        jdbcTemplate.update(
+                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+    }
 
     @Test
     void registerLoginRefreshReuse() throws Exception {

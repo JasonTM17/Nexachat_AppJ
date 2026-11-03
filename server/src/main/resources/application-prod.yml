@@ -9,5 +9,5 @@ nexachat:
     secret: ${JWT_SECRET}
     access-ttl-seconds: 900
     refresh-ttl-days: 14
-  upload:
-    dir: ${UPLOAD_DIR:./data/uploads}
+  storage:
+    root: ${STORAGE_ROOT:./data/uploads}

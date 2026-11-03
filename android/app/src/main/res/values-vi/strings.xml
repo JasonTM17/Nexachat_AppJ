@@ -31,4 +31,35 @@
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
+
+    <!-- Contacts & user search -->
+    <string name="contacts_title">Danh bạ</string>
+    <string name="contacts_empty">Chưa có liên hệ nào</string>
+    <string name="search_title">Tìm kiếm</string>
+    <string name="search_label">SĐT hoặc tên</string>
+    <string name="search_no_results">Không tìm thấy người dùng</string>
+    <string name="add_by_phone_title">Thêm theo SĐT</string>
+    <string name="contact_added">Đã thêm vào danh bạ</string>
+    <string name="contact_alias_label">Tên gợi nhớ</string>
+    <string name="action_search">Tìm kiếm</string>
+    <string name="action_add_contact">Thêm liên hệ</string>
+    <string name="action_remove_contact">Xóa liên hệ</string>
+    <string name="action_message">Nhắn tin</string>
+    <string name="action_save">Lưu</string>
+    <string name="action_cancel">Hủy</string>
+    <string name="action_logout">Đăng xuất</string>
+    <string name="cd_back">Quay lại</string>
+    <string name="cd_edit_name">Sửa tên</string>
+
+    <!-- Contacts errors -->
+    <string name="error_already_contact">Đã có trong danh bạ</string>
+    <string name="error_user_not_found">Không có người dùng với SĐT này</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Hồ sơ</string>
+    <string name="profile_change_password">Đổi mật khẩu</string>
+
+    <!-- Chat placeholder -->
+    <string name="chat_title">Trò chuyện</string>
+    <string name="chat_placeholder">Trò chuyện %1$s</string>
 </resources>

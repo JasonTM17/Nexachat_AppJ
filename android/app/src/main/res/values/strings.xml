@@ -31,4 +31,35 @@
     <!-- Inbox -->
     <string name="inbox_title">Chats</string>
     <string name="inbox_empty">No conversations yet</string>
+
+    <!-- Contacts & user search -->
+    <string name="contacts_title">Contacts</string>
+    <string name="contacts_empty">No contacts yet</string>
+    <string name="search_title">Search</string>
+    <string name="search_label">Phone or name</string>
+    <string name="search_no_results">No users found</string>
+    <string name="add_by_phone_title">Add by phone</string>
+    <string name="contact_added">Added to contacts</string>
+    <string name="contact_alias_label">Alias</string>
+    <string name="action_search">Search</string>
+    <string name="action_add_contact">Add contact</string>
+    <string name="action_remove_contact">Remove contact</string>
+    <string name="action_message">Message</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_logout">Sign out</string>
+    <string name="cd_back">Back</string>
+    <string name="cd_edit_name">Edit name</string>
+
+    <!-- Contacts errors -->
+    <string name="error_already_contact">Already in your contacts</string>
+    <string name="error_user_not_found">No user with this phone number</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Profile</string>
+    <string name="profile_change_password">Change password</string>
+
+    <!-- Chat placeholder -->
+    <string name="chat_title">Chat</string>
+    <string name="chat_placeholder">Chat %1$s</string>
 </resources>
