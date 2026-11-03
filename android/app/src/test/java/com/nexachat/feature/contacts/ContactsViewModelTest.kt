@@ -10,8 +10,10 @@ import com.nexachat.data.Contact
 import com.nexachat.data.ContactsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +30,9 @@ class ContactsViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val repository: ContactsRepository = mockk()
+
+    /** Real flow standing in for the repository's shared contact cache. */
+    private val contactsFlow = MutableStateFlow<List<Contact>?>(null)
     private lateinit var viewModel: ContactsViewModel
 
     private val user = UserDto(
@@ -46,7 +51,9 @@ class ContactsViewModelTest {
     @Before
     fun setUp() {
         // The VM's init block calls loadContacts() → repository.contacts()
-        // immediately; it must be stubbed before construction.
+        // immediately; both it and the shared cache flow must be stubbed
+        // before construction.
+        every { repository.contactsFlow } returns contactsFlow
         coEvery { repository.contacts() } returns Result.Success(emptyList())
         viewModel = ContactsViewModel(SavedStateHandle(), repository)
     }
@@ -152,8 +159,13 @@ class ContactsViewModelTest {
     }
 
     @Test
-    fun `successful add sets addDone and prepends the contact`() = runTest {
-        coEvery { repository.addContact(any()) } returns Result.Success(contact)
+    fun `successful add sets addDone and the shared cache emits the contact`() = runTest {
+        // Mirror the repository contract: a successful add prepends into the
+        // shared cache, which every VM instance observes.
+        coEvery { repository.addContact(any()) } answers {
+            contactsFlow.value = listOf(contact)
+            Result.Success(contact)
+        }
         viewModel.onAddPhoneChange("0912345678")
 
         viewModel.confirmAdd()
@@ -162,6 +174,29 @@ class ContactsViewModelTest {
         assertTrue(state.addDone)
         assertNull(state.addError)
         assertEquals(listOf(contact), state.contacts)
+    }
+
+    @Test
+    fun `contact added by another VM instance appears in this list`() = runTest {
+        // Regression: each nav destination gets its own ViewModel — an add
+        // performed by the search screen's instance previously never reached
+        // the contacts screen until re-entry.
+        ContactsViewModel(SavedStateHandle(), repository)
+
+        contactsFlow.value = listOf(contact)
+
+        assertEquals(listOf(contact), viewModel.uiState.value.contacts)
+    }
+
+    @Test
+    fun `contact removed by another VM instance disappears from this list`() = runTest {
+        ContactsViewModel(SavedStateHandle(), repository)
+        contactsFlow.value = listOf(contact)
+        assertEquals(listOf(contact), viewModel.uiState.value.contacts)
+
+        contactsFlow.value = emptyList()
+
+        assertTrue(viewModel.uiState.value.contacts.isEmpty())
     }
 
     @Test

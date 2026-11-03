@@ -14,6 +14,10 @@ import com.nexachat.core.network.dto.UserDto
 import com.nexachat.core.network.safeApiCall
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Contact as the feature layer sees it — the wire [ContactDto] tolerates two
@@ -44,6 +48,16 @@ class ContactsRepository @Inject constructor(
     private val userApi: UserApi,
 ) {
 
+    /**
+     * Shared, mutation-aware contact cache. Every nav destination gets its
+     * own ViewModel, so per-screen snapshots drifted — a contact added from
+     * the search screen never reached the contacts list until re-entry.
+     * All screens now observe this single source; every successful
+     * fetch/add/alias/remove keeps it current. `null` = not yet loaded.
+     */
+    private val _contacts = MutableStateFlow<List<Contact>?>(null)
+    val contactsFlow: StateFlow<List<Contact>?> = _contacts.asStateFlow()
+
     suspend fun getMe(): Result<UserDto> =
         call { userApi.getMe() }
 
@@ -58,7 +72,9 @@ class ContactsRepository @Inject constructor(
 
     suspend fun contacts(): Result<List<Contact>> =
         when (val result = call { userApi.getContacts() }) {
-            is Result.Success -> Result.Success(result.value.mapNotNull { it.toContact() })
+            is Result.Success ->
+                Result.Success(result.value.mapNotNull { it.toContact() })
+                    .also { _contacts.value = it.value }
             is Result.Failure -> result
         }
 
@@ -75,7 +91,13 @@ class ContactsRepository @Inject constructor(
         ) {
             is Result.Success ->
                 result.value.unwrap().toContact()
-                    ?.let { Result.Success(it) }
+                    ?.let { contact ->
+                        _contacts.update {
+                            (listOf(contact) + (it ?: emptyList()))
+                                .distinctBy(Contact::userId)
+                        }
+                        Result.Success(contact)
+                    }
                     ?: Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
             is Result.Failure -> result
         }
@@ -88,13 +110,23 @@ class ContactsRepository @Inject constructor(
         ) {
             is Result.Success ->
                 result.value.unwrap().toContact()
-                    ?.let { Result.Success(it) }
+                    ?.let { updated ->
+                        _contacts.update { list ->
+                            list?.map { if (it.userId == updated.userId) updated else it }
+                        }
+                        Result.Success(updated)
+                    }
                     ?: Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
             is Result.Failure -> result
         }
 
     suspend fun removeContact(userId: String): Result<Unit> =
         call { userApi.removeContact(userId) }
+            .also { result ->
+                if (result is Result.Success) {
+                    _contacts.update { list -> list?.filterNot { it.userId == userId } }
+                }
+            }
 
     /**
      * Opens (or creates) the direct conversation with [userId] — falling back

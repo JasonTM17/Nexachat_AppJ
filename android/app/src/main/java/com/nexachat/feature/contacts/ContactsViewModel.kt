@@ -12,9 +12,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -68,7 +70,16 @@ class ContactsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(
         UiState(query = savedStateHandle.get<String>(KEY_SEARCH_QUERY).orEmpty()),
     )
-    val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    /**
+     * Contacts come from the repository's shared cache, not per-VM snapshots:
+     * every nav destination owns a separate instance of this VM, so a list
+     * mutated by the search screen's add/alias/remove must surface here too.
+     */
+    val uiState: StateFlow<UiState> =
+        combine(_uiState, contactsRepository.contactsFlow) { state, shared ->
+            state.copy(contacts = shared ?: state.contacts)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
 
     private val _events = Channel<Event>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
@@ -85,8 +96,9 @@ class ContactsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true, error = null) }
             when (val result = contactsRepository.contacts()) {
+                // The shared cache emits the list — only flags flip here.
                 is Result.Success -> _uiState.update {
-                    it.copy(loading = false, contacts = result.value, contactsLoaded = true)
+                    it.copy(loading = false, contactsLoaded = true)
                 }
                 is Result.Failure -> _uiState.update {
                     it.copy(loading = false, error = result.error, contactsLoaded = true)
@@ -174,12 +186,7 @@ class ContactsViewModel @Inject constructor(
             _uiState.update { it.copy(adding = true, addError = null) }
             when (val result = contactsRepository.addContact(phone)) {
                 is Result.Success -> _uiState.update {
-                    it.copy(
-                        adding = false,
-                        addDone = true,
-                        contacts = (listOf(result.value) + it.contacts)
-                            .distinctBy(Contact::userId),
-                    )
+                    it.copy(adding = false, addDone = true)
                 }
                 is Result.Failure -> _uiState.update {
                     it.copy(adding = false, addError = result.error)
@@ -252,13 +259,7 @@ class ContactsViewModel @Inject constructor(
             _uiState.update { it.copy(detailBusy = true, detailError = null) }
             when (val result = contactsRepository.setAlias(contact.userId, alias)) {
                 is Result.Success -> _uiState.update { state ->
-                    state.copy(
-                        detailBusy = false,
-                        detailContact = result.value,
-                        contacts = state.contacts.map {
-                            if (it.userId == result.value.userId) result.value else it
-                        },
-                    )
+                    state.copy(detailBusy = false, detailContact = result.value)
                 }
                 is Result.Failure -> _uiState.update {
                     it.copy(detailBusy = false, detailError = result.error)
@@ -278,7 +279,6 @@ class ContactsViewModel @Inject constructor(
                         detailBusy = false,
                         detailUser = null,
                         detailContact = null,
-                        contacts = state.contacts.filterNot { it.userId == contact.userId },
                     )
                 }
                 is Result.Failure -> _uiState.update {
@@ -296,12 +296,7 @@ class ContactsViewModel @Inject constructor(
             _uiState.update { it.copy(detailBusy = true, detailError = null) }
             when (val result = contactsRepository.addContact(user.phone)) {
                 is Result.Success -> _uiState.update { state ->
-                    state.copy(
-                        detailBusy = false,
-                        detailContact = result.value,
-                        contacts = (listOf(result.value) + state.contacts)
-                            .distinctBy(Contact::userId),
-                    )
+                    state.copy(detailBusy = false, detailContact = result.value)
                 }
                 is Result.Failure -> _uiState.update {
                     it.copy(detailBusy = false, detailError = result.error)
