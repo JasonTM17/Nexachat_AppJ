@@ -17,8 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.Badge
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -39,6 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.components.EmptyState
+import com.nexachat.core.ui.components.ErrorState
+import com.nexachat.core.ui.components.LoadingState
 import com.nexachat.data.ConversationSummary
 import com.nexachat.feature.chat.chatErrorMessage
 import java.text.SimpleDateFormat
@@ -100,24 +103,15 @@ fun InboxScreen(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                state.loading && state.conversations.isEmpty() -> CircularProgressIndicator()
-                state.conversations.isEmpty() -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = stringResource(R.string.inbox_empty),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    state.error?.let { error ->
-                        Text(
-                            text = chatErrorMessage(error),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
+                state.loading && state.conversations.isEmpty() -> LoadingState()
+                state.error != null && state.conversations.isEmpty() -> ErrorState(
+                    message = chatErrorMessage(state.error!!),
+                    onRetry = viewModel::refresh,
+                )
+                state.conversations.isEmpty() -> EmptyState(
+                    message = stringResource(R.string.inbox_empty),
+                    icon = Icons.Outlined.Forum,
+                )
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(state.conversations, key = { it.id }) { conversation ->
                         ConversationRow(

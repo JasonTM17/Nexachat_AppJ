@@ -9,12 +9,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -31,6 +30,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.components.EmptyState
+import com.nexachat.core.ui.components.ErrorState
+import com.nexachat.core.ui.components.LoadingState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -106,12 +108,14 @@ fun ContactsScreen(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                state.loading && !state.contactsLoaded -> CircularProgressIndicator()
-                state.error != null && state.contacts.isEmpty() -> ErrorText(state.error!!)
-                state.contacts.isEmpty() -> Text(
-                    text = stringResource(R.string.contacts_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                state.loading && !state.contactsLoaded -> LoadingState()
+                state.error != null && state.contacts.isEmpty() -> ErrorState(
+                    message = contactErrorMessage(state.error!!),
+                    onRetry = viewModel::loadContacts,
+                )
+                state.contacts.isEmpty() -> EmptyState(
+                    message = stringResource(R.string.contacts_empty),
+                    icon = Icons.Outlined.Person,
                 )
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(state.contacts, key = { it.userId }) { contact ->

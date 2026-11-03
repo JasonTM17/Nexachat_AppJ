@@ -12,11 +12,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -33,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.components.EmptyState
+import com.nexachat.core.ui.components.ErrorState
+import com.nexachat.core.ui.components.LoadingState
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -107,12 +109,14 @@ fun UserSearchScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 when {
-                    state.loading -> CircularProgressIndicator()
-                    state.error != null -> ErrorText(state.error!!)
-                    state.searched && state.searchResults.isEmpty() -> Text(
-                        text = stringResource(R.string.search_no_results),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    state.loading -> LoadingState()
+                    state.error != null -> ErrorState(
+                        message = contactErrorMessage(state.error!!),
+                        onRetry = viewModel::search,
+                    )
+                    state.searched && state.searchResults.isEmpty() -> EmptyState(
+                        message = stringResource(R.string.search_no_results),
+                        icon = Icons.Outlined.Search,
                     )
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(state.searchResults, key = { it.id }) { user ->

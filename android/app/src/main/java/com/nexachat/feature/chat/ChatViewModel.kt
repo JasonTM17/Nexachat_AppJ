@@ -34,9 +34,9 @@ import kotlinx.coroutines.launch
  *
  * All render state derives from flows: messages come from Room+outbox via
  * [MessageRepository.messagesFlow] (restart-safe — nothing lives only in
- * memory), the draft/input and per-screen flags are MutableStateFlows merged
- * by [uiState]. A rotation is pure recomposition: the VM survives and Room
- * re-emits.
+ * memory), the draft/input ([KEY_INPUT] — SavedStateHandle, so it survives
+ * process death too) and per-screen flags are flows merged by [uiState]. A
+ * rotation is pure recomposition: the VM survives and Room re-emits.
  *
  * Typing (plan §11.3.6): outbound signals are throttled to one SEND per
  * [TYPING_SEND_INTERVAL_MS] while text is non-blank; an inbound peer signal
@@ -44,7 +44,7 @@ import kotlinx.coroutines.launch
  */
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val messageRepository: MessageRepository,
     private val conversationRepository: ConversationRepository,
     private val attachmentRepository: AttachmentRepository,
@@ -72,7 +72,11 @@ class ChatViewModel @Inject constructor(
         val pendingAttachments: List<PendingAttachment> = emptyList(),
     )
 
-    private val input = MutableStateFlow("")
+    /**
+     * Draft text — SavedStateHandle-backed so it survives process death, not
+     * just the VM-retained config change.
+     */
+    private val input = savedStateHandle.getStateFlow(KEY_INPUT, "")
     private val loading = MutableStateFlow(true)
     private val error = MutableStateFlow<ApiError?>(null)
     private val peerTyping = MutableStateFlow(false)
@@ -155,7 +159,7 @@ class ChatViewModel @Inject constructor(
     // ---- user actions ----
 
     fun onInputChange(value: String) {
-        input.value = value
+        savedStateHandle[KEY_INPUT] = value
         val now = System.currentTimeMillis()
         if (value.isNotBlank() && now - lastTypingSentMs >= TYPING_SEND_INTERVAL_MS) {
             lastTypingSentMs = now
@@ -167,7 +171,7 @@ class ChatViewModel @Inject constructor(
     fun send() {
         val text = input.value.trim()
         if (text.isEmpty()) return
-        input.value = ""
+        savedStateHandle[KEY_INPUT] = ""
         viewModelScope.launch {
             messageRepository.send(conversationId, text)
         }
@@ -285,5 +289,6 @@ class ChatViewModel @Inject constructor(
     companion object {
         const val TYPING_SEND_INTERVAL_MS = 3_000L
         const val PEER_TYPING_TTL_MS = 5_000L
+        private const val KEY_INPUT = "chat_input"
     }
 }

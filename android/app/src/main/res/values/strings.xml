@@ -48,6 +48,7 @@
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_logout">Sign out</string>
+    <string name="action_retry">Retry</string>
     <string name="cd_back">Back</string>
     <string name="cd_edit_name">Edit name</string>
 
@@ -58,6 +59,14 @@
     <!-- Profile -->
     <string name="profile_title">Profile</string>
     <string name="profile_change_password">Change password</string>
+
+    <!-- Settings -->
+    <string name="settings_language">Language</string>
+    <string name="language_system_default">System default</string>
+    <!-- Language names render in their own locale (endonyms), like the
+         platform per-app picker — never translate these two. -->
+    <string name="language_name_vietnamese" translatable="false">Tiếng Việt</string>
+    <string name="language_name_english" translatable="false">English</string>
 
     <!-- Chat placeholder -->
     <string name="chat_title">Chat</string>

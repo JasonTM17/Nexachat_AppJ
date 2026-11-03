@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.components.EmptyState
+import com.nexachat.core.ui.components.LoadingState
 import com.nexachat.feature.contacts.InitialAvatar
 import kotlinx.coroutines.flow.collectLatest
 
@@ -108,12 +111,10 @@ fun CreateGroupScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 when {
-                    state.loading && !state.contactsLoaded ->
-                        CircularProgressIndicator()
-                    state.contacts.isEmpty() -> Text(
-                        text = stringResource(R.string.contacts_empty),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    state.loading && !state.contactsLoaded -> LoadingState()
+                    state.contacts.isEmpty() -> EmptyState(
+                        message = stringResource(R.string.contacts_empty),
+                        icon = Icons.Outlined.Person,
                     )
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(state.contacts, key = { it.userId }) { contact ->

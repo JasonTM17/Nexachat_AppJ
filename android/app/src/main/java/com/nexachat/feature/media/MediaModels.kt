@@ -52,11 +52,15 @@ fun rememberAuthedImageLoader(): ImageLoader {
     }
 }
 
-/** `1.2 MB` / `640 KB` style size text for bubble rows. */
+/**
+ * `1.2 MB` / `640 KB` style size text for bubble rows. The device locale
+ * decides the decimal separator (vi_VN uses a comma); the B/KB/MB unit tokens
+ * themselves are SI-neutral.
+ */
 internal fun formatBytes(bytes: Long?): String {
     if (bytes == null || bytes < 0) return ""
     if (bytes < 1024) return "$bytes B"
     val kb = bytes / 1024.0
-    if (kb < 1024) return String.format(Locale.US, "%.1f KB", kb)
-    return String.format(Locale.US, "%.1f MB", kb / 1024.0)
+    if (kb < 1024) return String.format(Locale.getDefault(), "%.1f KB", kb)
+    return String.format(Locale.getDefault(), "%.1f MB", kb / 1024.0)
 }

@@ -264,6 +264,31 @@ class ChatViewModelTest {
         verify(exactly = 1) { session.sendTyping(CONVERSATION_ID) }
     }
 
+    /**
+     * The draft rides SavedStateHandle, so a process-death restore (a new VM
+     * built over the same handle) rehydrates it — rotation alone never needed
+     * this because the VM survives.
+     */
+    @Test
+    fun `draft input is restored from SavedStateHandle`() = runTest {
+        val restored = ChatViewModel(
+            savedStateHandle = SavedStateHandle(
+                mapOf(
+                    "conversationId" to CONVERSATION_ID,
+                    "chat_input" to "nháp tay",
+                ),
+            ),
+            messageRepository = messageRepository,
+            conversationRepository = conversationRepository,
+            attachmentRepository = attachmentRepository,
+            session = session,
+        )
+        backgroundScope.launch { restored.uiState.collect {} }
+        runCurrent()
+
+        assertEquals("nháp tay", restored.uiState.value.input)
+    }
+
     @Test
     fun `incoming message while open marks it read`() = runTest {
         runCurrent()

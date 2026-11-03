@@ -22,6 +22,7 @@ import com.nexachat.feature.group.CreateGroupScreen
 import com.nexachat.feature.group.GroupDetailScreen
 import com.nexachat.feature.inbox.InboxScreen
 import com.nexachat.feature.media.MediaViewerScreen
+import com.nexachat.feature.profile.LanguageSettingsScreen
 import com.nexachat.feature.profile.ProfileScreen
 import com.nexachat.feature.splash.SplashScreen
 import dagger.hilt.android.EntryPointAccessors
@@ -39,6 +40,7 @@ object Routes {
     const val CONTACTS = "contacts"
     const val SEARCH = "search"
     const val PROFILE = "profile"
+    const val LANGUAGE_SETTINGS = "settings/language"
     const val CHAT = "chat/{conversationId}"
     const val GROUP_CREATE = "group/create"
     const val GROUP_DETAIL = "group/{conversationId}/detail"
@@ -145,7 +147,13 @@ fun AppNavHost() {
             )
         }
         composable(Routes.PROFILE) {
-            ProfileScreen(onBack = { navController.popBackStack() })
+            ProfileScreen(
+                onBack = { navController.popBackStack() },
+                onOpenLanguage = { navController.navigate(Routes.LANGUAGE_SETTINGS) },
+            )
+        }
+        composable(Routes.LANGUAGE_SETTINGS) {
+            LanguageSettingsScreen(onBack = { navController.popBackStack() })
         }
         composable(
             route = Routes.CHAT,

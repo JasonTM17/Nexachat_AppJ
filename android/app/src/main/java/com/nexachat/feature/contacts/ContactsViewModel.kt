@@ -1,5 +1,6 @@
 package com.nexachat.feature.contacts
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nexachat.core.common.ApiError
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
  */
 @HiltViewModel
 class ContactsViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val contactsRepository: ContactsRepository,
 ) : ViewModel() {
 
@@ -61,7 +63,11 @@ class ContactsViewModel @Inject constructor(
         data class OpenConversation(val conversationId: String) : Event
     }
 
-    private val _uiState = MutableStateFlow(UiState())
+    // The search query is SavedStateHandle-backed (restored below) so a typed
+    // draft survives process death, not only rotation.
+    private val _uiState = MutableStateFlow(
+        UiState(query = savedStateHandle.get<String>(KEY_SEARCH_QUERY).orEmpty()),
+    )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private val _events = Channel<Event>(Channel.BUFFERED)
@@ -91,10 +97,12 @@ class ContactsViewModel @Inject constructor(
 
     // ---- user search ----
 
-    fun onQueryChange(value: String) =
+    fun onQueryChange(value: String) {
+        savedStateHandle[KEY_SEARCH_QUERY] = value
         _uiState.update {
             it.copy(query = value, error = null, searched = it.searched && value.isNotBlank())
         }
+    }
 
     /** True when [query] looks like a phone input (starts with '+' or a digit). */
     private fun isPhoneQuery(query: String): Boolean =
@@ -326,5 +334,9 @@ class ContactsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private companion object {
+        const val KEY_SEARCH_QUERY = "search_query"
     }
 }

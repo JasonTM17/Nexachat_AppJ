@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -19,12 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -45,6 +43,8 @@ import com.nexachat.R
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.dto.AttachmentDto
+import com.nexachat.core.ui.components.ErrorState
+import com.nexachat.core.ui.components.LoadingState
 import com.nexachat.data.AttachmentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
@@ -101,23 +101,12 @@ fun MediaViewerScreen(
                     imageLoader = imageLoader,
                     contentDescription = state.displayName,
                 )
-                state.loading -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator()
-                }
+                state.loading -> LoadingState()
                 file != null -> PlayerSurface(file = file)
-                else -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.error_network),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                else -> ErrorState(
+                    message = stringResource(R.string.error_network),
+                    onRetry = viewModel::reload,
+                )
             }
         }
     }
@@ -129,15 +118,23 @@ private fun ZoomableImage(
     imageLoader: coil.ImageLoader,
     contentDescription: String?,
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    // Zoom/pan survive rotation — a landscape re-look shouldn't reset them.
+    var scale by rememberSaveable { mutableFloatStateOf(1f) }
+    var offsetX by rememberSaveable { mutableFloatStateOf(0f) }
+    var offsetY by rememberSaveable { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     scale = (scale * zoom).coerceIn(1f, 5f)
-                    offset = if (scale > 1f) offset + pan else Offset.Zero
+                    if (scale > 1f) {
+                        offsetX += pan.x
+                        offsetY += pan.y
+                    } else {
+                        offsetX = 0f
+                        offsetY = 0f
+                    }
                 }
             },
         contentAlignment = Alignment.Center,
@@ -153,8 +150,8 @@ private fun ZoomableImage(
                 .graphicsLayer(
                     scaleX = scale,
                     scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
+                    translationX = offsetX,
+                    translationY = offsetY,
                 ),
         )
     }
@@ -213,19 +210,29 @@ class MediaViewerViewModel @Inject constructor(
         val isImage = current.mimeType
             ?.startsWith(AttachmentDto.MIME_PREFIX_IMAGE) == true
         _uiState.value = current.copy(isImage = isImage, loading = !isImage)
-        if (!isImage) {
-            viewModelScope.launch {
-                when (
-                    val result = attachmentRepository.downloadToCache(
-                        attachmentId = current.attachmentId,
-                        displayName = current.displayName,
-                    )
-                ) {
-                    is Result.Success ->
-                        _uiState.value = _uiState.value.copy(loading = false, file = result.value)
-                    is Result.Failure ->
-                        _uiState.value = _uiState.value.copy(loading = false, error = result.error)
-                }
+        if (!isImage) download()
+    }
+
+    /** Retry hook for the error state — re-runs the same authorized download. */
+    fun reload() {
+        if (_uiState.value.isImage || _uiState.value.loading) return
+        download()
+    }
+
+    private fun download() {
+        val current = _uiState.value
+        _uiState.value = current.copy(loading = true, error = null)
+        viewModelScope.launch {
+            when (
+                val result = attachmentRepository.downloadToCache(
+                    attachmentId = current.attachmentId,
+                    displayName = current.displayName,
+                )
+            ) {
+                is Result.Success ->
+                    _uiState.value = _uiState.value.copy(loading = false, file = result.value)
+                is Result.Failure ->
+                    _uiState.value = _uiState.value.copy(loading = false, error = result.error)
             }
         }
     }

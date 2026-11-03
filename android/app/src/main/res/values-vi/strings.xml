@@ -40,7 +40,7 @@
     <string name="search_no_results">Không tìm thấy người dùng</string>
     <string name="add_by_phone_title">Thêm theo SĐT</string>
     <string name="contact_added">Đã thêm vào danh bạ</string>
-    <string name="contact_alias_label">Tên gợi nhớ</string>
+    <string name="contact_alias_label">Biệt danh</string>
     <string name="action_search">Tìm kiếm</string>
     <string name="action_add_contact">Thêm liên hệ</string>
     <string name="action_remove_contact">Xóa liên hệ</string>
@@ -48,6 +48,7 @@
     <string name="action_save">Lưu</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_logout">Đăng xuất</string>
+    <string name="action_retry">Thử lại</string>
     <string name="cd_back">Quay lại</string>
     <string name="cd_edit_name">Sửa tên</string>
 
@@ -59,9 +60,15 @@
     <string name="profile_title">Hồ sơ</string>
     <string name="profile_change_password">Đổi mật khẩu</string>
 
+    <!-- Settings -->
+    <string name="settings_language">Ngôn ngữ</string>
+    <string name="language_system_default">Theo hệ thống</string>
+    <string name="language_name_vietnamese" translatable="false">Tiếng Việt</string>
+    <string name="language_name_english" translatable="false">English</string>
+
     <!-- Chat placeholder -->
     <string name="chat_title">Trò chuyện</string>
-    <string name="chat_placeholder">Trò chuyện %1$s</string>
+    <string name="chat_placeholder">Trò chuyện với %1$s</string>
 
     <!-- Chat -->
     <string name="chat_input_hint">Nhắn tin</string>
@@ -85,14 +92,14 @@
     <string name="group_create_title">Nhóm mới</string>
     <string name="group_name_label">Tên nhóm</string>
     <string name="group_detail_title">Thông tin nhóm</string>
-    <string name="group_role_admin">Quản trị</string>
+    <string name="group_role_admin">Quản trị viên</string>
     <string name="group_member_self">%1$s (bạn)</string>
-    <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm?</string>
-    <string name="group_leave_confirm">Rời nhóm này?</string>
+    <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm này?</string>
+    <string name="group_leave_confirm">Rời khỏi nhóm này?</string>
     <string name="action_create_group">Tạo nhóm</string>
     <string name="action_add_member">Thêm thành viên</string>
     <string name="action_remove_member">Xóa thành viên</string>
     <string name="action_rename_group">Đổi tên nhóm</string>
-    <string name="action_leave_group">Rời nhóm</string>
+    <string name="action_leave_group">Rời khỏi nhóm</string>
     <string name="action_remove">Xóa</string>
 </resources>

@@ -22,18 +22,13 @@ import kotlinx.coroutines.SupervisorJob
 @Retention(AnnotationRetention.BINARY)
 annotation class TokenPreferences
 
-/** DataStore file holding non-secret app prefs ([PrefsDataStore]). */
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
-annotation class AppPreferences
-
 private const val TOKEN_FILE = "nexachat_tokens"
-private const val APP_PREFS_FILE = "nexachat_prefs"
 
 /**
- * Two isolated preference files: tokens vs. everything else. `PreferenceDataStoreFactory`
- * (rather than the `preferencesDataStore` delegate) keeps the file names
- * explicit and the stores injectable for faking in tests.
+ * `PreferenceDataStoreFactory` (rather than the `preferencesDataStore`
+ * delegate) keeps the file name explicit and the store injectable for
+ * faking in tests. Locale override lives in AppLocaleManager, not here —
+ * attachBaseContext cannot suspend on a DataStore read.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -53,17 +48,6 @@ object StorageModule {
     ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
         scope = scope,
         produceFile = { context.preferencesDataStoreFile(TOKEN_FILE) },
-    )
-
-    @Provides
-    @Singleton
-    @AppPreferences
-    fun provideAppPreferencesDataStore(
-        @ApplicationContext context: Context,
-        scope: CoroutineScope,
-    ): DataStore<Preferences> = PreferenceDataStoreFactory.create(
-        scope = scope,
-        produceFile = { context.preferencesDataStoreFile(APP_PREFS_FILE) },
     )
 }
 

@@ -1,5 +1,6 @@
 package com.nexachat.feature.contacts
 
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.nexachat.MainDispatcherRule
 import com.nexachat.core.common.ApiError
@@ -47,7 +48,17 @@ class ContactsViewModelTest {
         // The VM's init block calls loadContacts() → repository.contacts()
         // immediately; it must be stubbed before construction.
         coEvery { repository.contacts() } returns Result.Success(emptyList())
-        viewModel = ContactsViewModel(repository)
+        viewModel = ContactsViewModel(SavedStateHandle(), repository)
+    }
+
+    @Test
+    fun `search query draft restores from SavedStateHandle`() = runTest {
+        val restored = ContactsViewModel(
+            SavedStateHandle(mapOf("search_query" to "+849")),
+            repository,
+        )
+
+        assertEquals("+849", restored.uiState.value.query)
     }
 
     @Test
