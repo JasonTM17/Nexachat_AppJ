@@ -1,0 +1,98 @@
+### ==========================================================================
+### NexaChat live-demo requests (REST client script)
+### Works in JetBrains HTTP Client (IDEA/WebStorm/PhpStorm) and VS Code
+### REST Client. Run top-to-bottom against a local backend:
+###   docker compose up -d && psql ... < demo/seed.sql   # provides +84900000002
+### Base URL: http://localhost:8080   |   Prefix: /api/v1   |   Auth: JWT Bearer
+### ==========================================================================
+
+### 1. Register the demo account -------------------------------------------
+### TOLERANT: a 409 PHONE_EXISTS simply means the account already exists
+### (the demo was run before) — ignore it and go straight to step 2 (login).
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "phone": "+84900000010",
+  "password": "password123",
+  "displayName": "Demo"
+}
+
+### 2. Login — captures accessToken and refreshToken as client variables ----
+### {{token}} is reused by every authenticated request below.
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "phone": "+84900000010",
+  "password": "password123"
+}
+
+> {%
+    client.global.set("token", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}
+
+### 3. List my contacts -----------------------------------------------------
+GET http://localhost:8080/api/v1/contacts
+Authorization: Bearer {{token}}
+
+### 4. Open the direct conversation with Binh (+84900000002) ----------------
+### Idempotent: 201 when created, 200 when it already existed. Either way the
+### conversation id is saved as {{conversationId}}.
+POST http://localhost:8080/api/v1/conversations/direct
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phone": "+84900000002"
+}
+
+> {%
+    client.global.set("conversationId", response.body.id);
+%}
+
+### 5. Inbox ----------------------------------------------------------------
+GET http://localhost:8080/api/v1/conversations
+Authorization: Bearer {{token}}
+
+### 6. Send a TEXT message (REST fallback for the WebSocket path) -----------
+### Fixed clientMessageId: replaying the request is idempotent (200 + same row).
+POST http://localhost:8080/api/v1/conversations/{{conversationId}}/messages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "clientMessageId": "3f2b8c1e-9a4d-4e6f-8b7c-1d2e3f4a5b6c",
+  "type": "TEXT",
+  "content": "Hello from REST"
+}
+
+### 7. Message history — newest first, page size 5 --------------------------
+GET http://localhost:8080/api/v1/conversations/{{conversationId}}/messages?limit=5
+Authorization: Bearer {{token}}
+
+### 8. Mark conversation as read up to seq 1 --------------------------------
+### Watermark is monotonic; any non-negative seq is accepted (204).
+POST http://localhost:8080/api/v1/conversations/{{conversationId}}/read
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "upToSeq": 1
+}
+
+### 9. Refresh the token pair ----------------------------------------------
+### Public endpoint (no Authorization header needed): refreshToken is
+### single-use and rotates — the new pair is stored back into the variables.
+POST http://localhost:8080/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+> {%
+    client.global.set("token", response.body.accessToken);
+    client.global.set("refreshToken", response.body.refreshToken);
+%}

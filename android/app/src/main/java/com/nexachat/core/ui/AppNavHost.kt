@@ -16,6 +16,8 @@ import com.nexachat.feature.auth.RegisterScreen
 import com.nexachat.feature.chat.ChatScreen
 import com.nexachat.feature.contacts.ContactsScreen
 import com.nexachat.feature.contacts.UserSearchScreen
+import com.nexachat.feature.group.CreateGroupScreen
+import com.nexachat.feature.group.GroupDetailScreen
 import com.nexachat.feature.inbox.InboxScreen
 import com.nexachat.feature.profile.ProfileScreen
 import com.nexachat.feature.splash.SplashScreen
@@ -35,8 +37,11 @@ object Routes {
     const val SEARCH = "search"
     const val PROFILE = "profile"
     const val CHAT = "chat/{conversationId}"
+    const val GROUP_CREATE = "group/create"
+    const val GROUP_DETAIL = "group/{conversationId}/detail"
 
     fun chat(conversationId: String): String = "chat/$conversationId"
+    fun groupDetail(conversationId: String): String = "group/$conversationId/detail"
 }
 
 @Composable
@@ -106,6 +111,7 @@ fun AppNavHost() {
             InboxScreen(
                 onNavigateToContacts = { navController.navigate(Routes.CONTACTS) },
                 onNavigateToProfile = { navController.navigate(Routes.PROFILE) },
+                onNavigateToCreateGroup = { navController.navigate(Routes.GROUP_CREATE) },
                 onOpenConversation = { conversationId ->
                     navController.navigate(Routes.chat(conversationId))
                 },
@@ -138,6 +144,34 @@ fun AppNavHost() {
             ChatScreen(
                 conversationId = entry.arguments?.getString("conversationId").orEmpty(),
                 onBack = { navController.popBackStack() },
+                onOpenDetail = { conversationId ->
+                    navController.navigate(Routes.groupDetail(conversationId))
+                },
+            )
+        }
+        composable(Routes.GROUP_CREATE) {
+            CreateGroupScreen(
+                onBack = { navController.popBackStack() },
+                onCreated = { conversationId ->
+                    navController.navigate(Routes.chat(conversationId)) {
+                        // Replace the create form — Back from the new group chat
+                        // returns to the inbox, not to a stale form.
+                        popUpTo(Routes.GROUP_CREATE) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(
+            route = Routes.GROUP_DETAIL,
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
+        ) {
+            GroupDetailScreen(
+                onBack = { navController.popBackStack() },
+                onExitToInbox = {
+                    // Leaving drops the whole chat branch — the user must not
+                    // land back on a conversation they are no longer in.
+                    navController.popBackStack(Routes.INBOX, inclusive = false)
+                },
             )
         }
     }

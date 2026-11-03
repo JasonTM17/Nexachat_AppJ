@@ -86,6 +86,19 @@ public class Conversation {
         return conversation;
     }
 
+    /**
+     * GROUP factory: no {@code directKey} — the DDL CHECK requires
+     * {@code type='GROUP' <=> direct_key IS NULL}. {@code title} arrives
+     * already validated and trimmed by the caller (service layer).
+     */
+    public static Conversation group(User createdBy, String title) {
+        Conversation conversation = new Conversation();
+        conversation.type = Type.GROUP;
+        conversation.title = title;
+        conversation.createdBy = createdBy;
+        return conversation;
+    }
+
     @PrePersist
     void onPrePersist() {
         if (createdAt == null) {
@@ -127,5 +140,15 @@ public class Conversation {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /** Admin-only rename (GROUP) — same mutator convention as {@link User#changeDisplayName}. */
+    public void changeTitle(String title) {
+        this.title = title;
+    }
+
+    /** Admin-only avatar update (GROUP); {@code null} clears the avatar. */
+    public void changeAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 }

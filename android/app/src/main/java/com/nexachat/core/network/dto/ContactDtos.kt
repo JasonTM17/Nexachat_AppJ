@@ -72,11 +72,18 @@ data class DirectConversationRequest(
     val phone: String? = null,
 )
 
+/**
+ * Member row as carried by `ConversationInboxDto.members` / `ConversationDto.members`.
+ * [role] ("ADMIN"/"MEMBER") and [avatarUrl] are nullable: earlier server builds
+ * may not send them — callers must degrade gracefully when they are absent.
+ */
 @JsonClass(generateAdapter = true)
 data class ConversationMemberDto(
     val userId: String? = null,
     val displayName: String? = null,
     val phone: String? = null,
+    val avatarUrl: String? = null,
+    val role: String? = null,
 )
 
 @JsonClass(generateAdapter = true)

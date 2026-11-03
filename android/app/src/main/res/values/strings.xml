@@ -69,4 +69,20 @@
     <string name="chat_offline">Offline</string>
     <string name="cd_send">Send</string>
     <string name="cd_retry">Retry</string>
+    <string name="cd_group_info">Group info</string>
+
+    <!-- Group -->
+    <string name="group_create_title">New group</string>
+    <string name="group_name_label">Group name</string>
+    <string name="group_detail_title">Group info</string>
+    <string name="group_role_admin">Admin</string>
+    <string name="group_member_self">%1$s (you)</string>
+    <string name="group_remove_member_confirm">Remove %1$s from this group?</string>
+    <string name="group_leave_confirm">Leave this group?</string>
+    <string name="action_create_group">Create group</string>
+    <string name="action_add_member">Add member</string>
+    <string name="action_remove_member">Remove member</string>
+    <string name="action_rename_group">Rename group</string>
+    <string name="action_leave_group">Leave group</string>
+    <string name="action_remove">Remove</string>
 </resources>

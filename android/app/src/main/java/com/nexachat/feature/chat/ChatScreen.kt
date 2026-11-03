@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ import java.util.Locale
 fun ChatScreen(
     conversationId: String,
     onBack: () -> Unit,
+    onOpenDetail: (String) -> Unit = {},
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -74,6 +76,17 @@ fun ChatScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.cd_back),
                         )
+                    }
+                },
+                actions = {
+                    // Group conversations get an entry to member management.
+                    if (state.isGroup) {
+                        IconButton(onClick = { onOpenDetail(conversationId) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Info,
+                                contentDescription = stringResource(R.string.cd_group_info),
+                            )
+                        }
                     }
                 },
             )
@@ -106,6 +119,7 @@ fun ChatScreen(
                 ) { message ->
                     MessageBubble(
                         message = message,
+                        showSender = state.isGroup && !message.mine,
                         formatTime = { timeFormat.format(Date(it)) },
                         onRetry = viewModel::retryFailed,
                     )
@@ -154,6 +168,7 @@ fun ChatScreen(
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    showSender: Boolean,
     formatTime: (Long) -> String,
     onRetry: (String) -> Unit,
 ) {
@@ -182,6 +197,14 @@ private fun MessageBubble(
                     .widthIn(max = 280.dp)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
+                // GROUP chats name the sender above incoming bubbles.
+                if (showSender && !message.senderDisplayName.isNullOrBlank()) {
+                    Text(
+                        text = message.senderDisplayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Text(
                     text = message.content ?: message.type,
                     style = MaterialTheme.typography.bodyLarge,

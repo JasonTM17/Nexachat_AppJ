@@ -3,6 +3,7 @@ package com.nexachat.conversation;
 import com.nexachat.conversation.dto.ConversationMemberView;
 import com.nexachat.conversation.dto.InboxConversationRow;
 import com.nexachat.conversation.dto.InboxMemberView;
+import com.nexachat.conversation.dto.MemberResponse;
 import com.nexachat.conversation.dto.UnreadCountRow;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -11,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ConversationMemberRepository extends JpaRepository<ConversationMember, ConversationMemberId> {
@@ -55,6 +57,33 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
+
+    /**
+     * Membership row fetch (group phase): the role-aware variant of
+     * {@link #existsByConversation_IdAndUser_Id} — member ops need the actual
+     * row to check {@code role = 'ADMIN'} and to delete on remove/leave.
+     */
+    Optional<ConversationMember> findByConversation_IdAndUser_Id(UUID conversationId, UUID userId);
+
+    /** Role histogram for the last-admin invariant (group remove/leave guard). */
+    long countByConversation_IdAndRole(UUID conversationId, ConversationMember.Role role);
+
+    /** Total headcount — distinguishes "sole admin with members" from "last member". */
+    long countByConversation_Id(UUID conversationId);
+
+    /**
+     * Role-carrying member read model for GROUP surfaces (group detail and the
+     * {@code CONVERSATION_UPDATED} payload) — same single-JOIN projection style
+     * as {@link #findMemberViews}, ordered by user id for a stable array.
+     */
+    @Query("""
+            SELECT new com.nexachat.conversation.dto.MemberResponse(
+                       u.id, u.displayName, u.phone, u.avatarUrl, m.role, m.joinedAt)
+            FROM ConversationMember m JOIN m.user u
+            WHERE m.conversation.id = :conversationId
+            ORDER BY u.id
+            """)
+    List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's conversations

@@ -176,6 +176,53 @@ public class MessageService {
     }
 
     /**
+     * Server-generated {@code SYSTEM} line for group membership events
+     * (add/remove/leave/rename — phase-08). This is the ONLY way a SYSTEM row
+     * is written; {@link #send} rejects the type so clients cannot forge one.
+     *
+     * <p>Sender choice: {@code messages.sender_id} is {@code NOT NULL} and no
+     * dedicated system account exists, so the ACTING user authors the line
+     * (the admin for add/remove/rename, the leaver for "left", the creator for
+     * "created"). Callers post BEFORE mutating that user's membership row so
+     * the member guard below always holds inside the same transaction.
+     *
+     * <p>Shares the persist-before-broadcast mechanics of {@link #send}: the
+     * server mints a fresh {@code clientMessageId} (the UNIQUE key is a NOT
+     * NULL column, not a client contract here), the same idempotent insert
+     * writes the row, {@code last_message_*} advances in-tx, and the
+     * {@link MessageCreatedEvent} fans out AFTER COMMIT as
+     * {@code MESSAGE_CREATED} with {@code type=SYSTEM}.
+     *
+     * @throws ApiException {@code NOT_MEMBER} (acting user is not a member —
+     *                      system lines are always authored by a member),
+     *                      {@code VALIDATION_FAILED} (blank content)
+     */
+    @Transactional
+    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content) {
+        if (content == null || content.isBlank()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "System message content must not be blank");
+        }
+        requireMember(conversationId, actingUserId);
+
+        UUID clientMessageId = UUID.randomUUID();
+        messageRepository.insertIgnoringDuplicateKey(
+                conversationId, actingUserId, clientMessageId, Message.Type.SYSTEM.name(), content, null);
+        MessageRow row = messageRepository
+                .findRowBySenderAndClientMessageId(actingUserId, clientMessageId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.INTERNAL_ERROR, "System message insert/read-back inconsistency"));
+
+        conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
+        memberRepository.advanceReadWatermark(conversationId, actingUserId, row.seq());
+        log.info("System message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, actingUserId);
+
+        MessageResponse response = toResponse(row);
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        return response;
+    }
+
+    /**
      * Advances the caller's read watermark to {@code upToSeq} (monotonic —
      * never regresses) and broadcasts {@code MESSAGE_READ} to the topic after
      * commit so partners render the "seen" receipt. The broadcast is emitted

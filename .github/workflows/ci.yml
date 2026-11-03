@@ -32,6 +32,12 @@ jobs:
       - name: Maven verify
         working-directory: server
         run: mvn -B verify
+        env:
+          # Integration tests (*IT, failsafe) target the postgres service on :5432;
+          # locally they default to the compose DB on :5433.
+          IT_DB_URL: jdbc:postgresql://localhost:5432/nexachat
+          IT_DB_USER: nexachat
+          IT_DB_PASSWORD: nexachat
 
   android-test:
     runs-on: ubuntu-latest

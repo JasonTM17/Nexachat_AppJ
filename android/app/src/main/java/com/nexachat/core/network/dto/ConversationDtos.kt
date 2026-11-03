@@ -26,12 +26,17 @@ data class ConversationInboxDto(
     val otherUserAvatar: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
 ) {
-    fun resolvedLastContent(): String? = lastMessage?.content ?: lastMessageContent
+    fun resolvedLastContent(): String? =
+        lastMessage?.content ?: lastMessage?.contentSnippet ?: lastMessageContent
+            ?: lastMessage?.type
 
     fun resolvedLastSender(): String? =
         lastMessage?.senderDisplayName ?: lastMessage?.senderName ?: lastMessageSenderName
 
     fun resolvedLastAt(): String? = lastMessage?.createdAt ?: lastMessageAt
+
+    /** Watermark for history paging — nested `lastMessage.seq` beats the flat field. */
+    fun resolvedLastSeq(): Long? = lastMessage?.seq ?: lastMessageSeq
 
     fun resolvedOtherName(myUserId: String?): String? =
         otherUser?.displayName ?: otherUserName
@@ -40,10 +45,20 @@ data class ConversationInboxDto(
     fun resolvedOtherAvatar(): String? = otherUser?.avatarUrl ?: otherUserAvatar
 }
 
-/** Nested `lastMessage` projection variant for [ConversationInboxDto]. */
+/**
+ * Nested `lastMessage` projection variant for [ConversationInboxDto]. The
+ * current server build sends `{seq, type, contentSnippet, senderId,
+ * createdAt}`; [content] and the sender-name spellings cover earlier and
+ * flattened variants.
+ */
 @JsonClass(generateAdapter = true)
 data class InboxLastMessageDto(
+    val seq: Long? = null,
+    val type: String? = null,
     val content: String? = null,
+    /** Current server spelling of the snippet field. */
+    val contentSnippet: String? = null,
+    val senderId: String? = null,
     val senderName: String? = null,
     val senderDisplayName: String? = null,
     val createdAt: String? = null,

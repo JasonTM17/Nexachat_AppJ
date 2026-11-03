@@ -54,6 +54,8 @@ class ChatViewModel @Inject constructor(
         val input: String = "",
         val peerTyping: Boolean = false,
         val peerName: String? = null,
+        /** GROUP conversations render sender names above incoming bubbles. */
+        val isGroup: Boolean = false,
         val connected: Boolean = true,
         val hasMore: Boolean = false,
         val error: ApiError? = null,
@@ -83,6 +85,7 @@ class ChatViewModel @Inject constructor(
             input = inputValue,
             peerTyping = typing,
             peerName = conversation?.displayName?.takeIf { it.isNotBlank() },
+            isGroup = conversation?.isGroup == true,
             error = err,
         )
     }.combine(session.isOpen) { state, open -> state.copy(connected = open) }
