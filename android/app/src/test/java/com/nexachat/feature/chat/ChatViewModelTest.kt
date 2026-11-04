@@ -485,4 +485,45 @@ class ChatViewModelTest {
 
         assertEquals(ApiError.Unknown("PIN_LIMIT"), viewModel.uiState.value.error)
     }
+
+    @Test
+    fun `canPin gates the pin affordance to group admins and direct members`() = runTest {
+        observeUi()
+        runCurrent()
+
+        fun summary(type: String, role: String?) = ConversationSummary(
+            id = CONVERSATION_ID,
+            type = type,
+            title = if (type == "GROUP") "Group" else null,
+            lastMessageContent = null,
+            lastMessageSenderName = null,
+            lastMessageAtEpochMs = null,
+            lastMessageSeq = 0L,
+            unreadCount = 0,
+            otherUserName = if (type == "GROUP") null else "Peer",
+            otherUserAvatar = null,
+            avatarUrl = null,
+            peerReadSeq = 0L,
+            myRole = role,
+        )
+
+        // A non-admin member must not be offered a doomed pin (server 403s it).
+        conversationFlow.value = summary("GROUP", "MEMBER")
+        runCurrent()
+        assertEquals(false, viewModel.uiState.value.canPin)
+
+        conversationFlow.value = summary("GROUP", "ADMIN")
+        runCurrent()
+        assertEquals(true, viewModel.uiState.value.canPin)
+
+        // Unknown role (legacy payload without members[]) stays hidden.
+        conversationFlow.value = summary("GROUP", null)
+        runCurrent()
+        assertEquals(false, viewModel.uiState.value.canPin)
+
+        // DIRECT members always pin.
+        conversationFlow.value = summary("DIRECT", null)
+        runCurrent()
+        assertEquals(true, viewModel.uiState.value.canPin)
+    }
 }

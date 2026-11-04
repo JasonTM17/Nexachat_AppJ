@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageReactionEntity::class,
         PinnedMessageEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -112,6 +112,19 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE conversations ADD COLUMN avatarUrl TEXT",
+                )
+            }
+        }
+
+        /**
+         * `myRole` on `conversations` — inbox-fed member role used for
+         * client affordance gating (GROUP pin is ADMIN-only). Nullable;
+         * the next inbox refresh fills it.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN myRole TEXT",
                 )
             }
         }

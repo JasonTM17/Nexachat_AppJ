@@ -74,6 +74,8 @@ class ChatViewModel @Inject constructor(
         val peerName: String? = null,
         /** GROUP conversations render sender names above incoming bubbles. */
         val isGroup: Boolean = false,
+        /** GROUP pin is ADMIN-only; DIRECT members may always pin (server enforces too). */
+        val canPin: Boolean = true,
         val connected: Boolean = true,
         val hasMore: Boolean = false,
         val error: ApiError? = null,
@@ -124,6 +126,8 @@ class ChatViewModel @Inject constructor(
             peerTyping = typing,
             peerName = conversation?.displayName?.takeIf { it.isNotBlank() },
             isGroup = conversation?.isGroup == true,
+            canPin = conversation?.isGroup != true ||
+                conversation.myRole == "ADMIN",
             peerReadSeq = conversation?.peerReadSeq ?: 0L,
             error = err,
         )

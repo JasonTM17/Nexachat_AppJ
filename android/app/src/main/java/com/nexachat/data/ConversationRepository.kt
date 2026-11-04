@@ -60,6 +60,8 @@ data class ConversationSummary(
     val avatarUrl: String?,
     /** Highest other-member read watermark (MESSAGE_READ) — DIRECT "seen" receipts. */
     val peerReadSeq: Long = 0,
+    /** My member role from the inbox payload — GROUP affordance gating (pin etc.). */
+    val myRole: String? = null,
 ) {
     val displayName: String get() = title ?: otherUserName ?: ""
 
@@ -339,12 +341,14 @@ class ConversationRepository @Inject constructor(
             otherUserName = resolvedOtherName(myId),
             otherUserAvatar = resolvedOtherAvatar(myId),
             avatarUrl = avatarUrl,
+            myRole = members.firstOrNull { it.userId == myId }?.role,
         )
 
     /**
      * `POST /conversations/group` 201 body → fresh Room row (no messages yet).
      * The response omits `title`, so the caller's requested value is the
-     * fallback until the first authoritative inbox refresh lands.
+     * fallback until the first authoritative inbox refresh lands. The creator
+     * is the group's first ADMIN by contract.
      */
     private fun ConversationDto.toEntity(fallbackTitle: String): ConversationEntity = ConversationEntity(
         id = id,
@@ -358,6 +362,7 @@ class ConversationRepository @Inject constructor(
         otherUserName = null,
         otherUserAvatar = null,
         avatarUrl = avatarUrl,
+        myRole = GroupMember.ROLE_ADMIN,
     )
 
     private fun ConversationMemberDto.toGroupMember(): GroupMember? =
@@ -384,6 +389,7 @@ class ConversationRepository @Inject constructor(
         otherUserAvatar = otherUserAvatar,
         avatarUrl = avatarUrl,
         peerReadSeq = peerReadSeq,
+        myRole = myRole,
     )
 
     // ---- internals ----
@@ -396,8 +402,17 @@ class ConversationRepository @Inject constructor(
     private suspend fun upsertPreservingClientColumns(rows: List<ConversationEntity>) {
         if (rows.isEmpty()) return
         val prior = conversationDao.byIds(rows.map { it.id })
-            .associate { it.id to it.peerReadSeq }
-        conversationDao.upsertAll(rows.map { it.copy(peerReadSeq = prior[it.id] ?: 0L) })
+            .associateBy { it.id }
+        conversationDao.upsertAll(
+            rows.map { row ->
+                row.copy(
+                    peerReadSeq = prior[row.id]?.peerReadSeq ?: 0L,
+                    // Payloads without members[] must not strip a known role —
+                    // a stale ADMIN is safer than hiding a real admin's pin.
+                    myRole = row.myRole ?: prior[row.id]?.myRole,
+                )
+            },
+        )
     }
 
     /**

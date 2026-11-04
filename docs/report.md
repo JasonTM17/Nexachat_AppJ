@@ -88,7 +88,7 @@ nexachat/
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
 | R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 71 keys mỗi bên (`docs/i18n-audit.md`); `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
-| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **287 tests green** (261 unit + 26 IT); Android **160 tests green**; CI gate `.github/workflows/ci.yml` |
+| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **287 tests green** (261 unit + 26 IT); Android **161 tests green**; CI gate `.github/workflows/ci.yml` |
 | R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 18 câu vấn đáp trong thiết kế, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
@@ -145,7 +145,7 @@ reaction emoji toggle (PK composite = idempotent); pin ≤3/conversation
 | NFR-3 | Security | bcrypt; JWT HS256 secret ≥256-bit từ env; mọi endpoint cần Bearer trừ whitelist; WSS ở prod | `SecurityConfig`, `JwtAuthFilter`, `application-prod.yml` fail-fast khi thiếu `JWT_SECRET` |
 | NFR-4 | Usability | Material 3; mọi màn có Loading/Empty/Error/Retry; touch target ≥48dp | `core/ui/components` shared states; đợt a11y đã sửa vi phạm 48dp thật |
 | NFR-5 | Maintainability | Package-by-feature; không trả JPA entity ra API; không business logic trong Controller/Composable | module `com.nexachat.<feature>` server; `feature/*` + `data/` + `core/` Android |
-| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 287 + 160 tests; 21 negative tests ở quality phase |
+| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 287 + 161 tests; 21 negative tests ở quality phase |
 | NFR-7 | Portability | minSdk 26, targetSdk 35; emulator + máy thật qua LAN | `build.gradle.kts`; `BuildConfig.API_BASE_URL` |
 | NFR-8 | Observability | Log không chứa password/token/file body; `/actuator/health` | log scan sạch (chỉ id/event name) |
 | NFR-9 | Constraints | 1 backend + 1 PostgreSQL; media ≤25MB; demo LAN offline | `docker-compose.yml` |
@@ -655,7 +655,7 @@ lý thuyết:
 | Server unit | JUnit5 + Mockito (`mvn test`, surefire) | **261** | ✅ green |
 | Server integration | `@SpringBootTest` + Postgres thật qua env-JDBC (failsafe, `*IT`) | **26** | ✅ green |
 | **Server tổng** | `mvn -B verify` | **287** | ✅ green |
-| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **160** | ✅ green |
+| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **161** | ✅ green |
 | **Live E2E (prod Docker)** | REST + STOMP smoke script | 12 bước | ✅ green |
 | **On-device (emulator API 35)** | adb-driven manual flow | 12 màn | ✅ green |
 
@@ -684,7 +684,7 @@ Server: `MessageServiceTest` (29 — authZ, idempotency, pagination),
 `UserServiceTest` (11), `TokenServiceTest` (10 — rotation/reuse),
 `ConversationServiceTest` (10), `ReactionServiceTest` (7)…
 
-Android (160 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
+Android (161 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
 `clientMessageId`, retry), `TokenAuthenticatorTest` (single-flight 401→refresh),
 `StompCodecTest` (frame parse/build), `TokenStoreTest`, `InboxViewModelTest`,
 `MessageRepositoryTest`, `AttachmentRepositoryTest`, `AuthViewModelTest`,
@@ -758,6 +758,7 @@ UI bug trực tiếp):
 | Group avatar (FR-D4) gãy toàn chuỗi: client không có DTO field/Room column/upload UI nào, và ngay cả khi upload được thì **`InboxEntry` bỏ sót `avatarUrl` conversation-level** — silent-degradation lần thứ 4 cùng lớp với `role`/contacts (projection `InboxConversationRow` đã SELECT nhưng service không forward vào DTO) | Server `conversations.avatar_url` + PATCH + `CONVERSATION_UPDATED` đã đủ nhưng không có endpoint upload; client `ConversationInboxDto`/`ConversationEntity`/`ConversationSummary` thiếu hẳn field | Server: `POST /conversations/{id}/avatar` multipart ADMIN-gated trong `GroupService.setGroupAvatar` — sniff `MagicBytes` + `StorageService` như user avatar, broadcast `CONVERSATION_UPDATED`; `InboxEntry` thêm `avatarUrl` forward từ `InboxConversationRow`. Client: Room v5 (`MIGRATION_4_5` + đăng ký trong `DatabaseModule`), `GroupApi.uploadAvatar`, `ConversationRepository.setGroupAvatar` (patch Room ngay cho inbox re-emit), `ConversationSummary.displayAvatar = group ?: peer`, `GroupDetailScreen` header 72dp + picker `GetContent` chỉ render khi `iAmAdmin`. Verify release APK: REST upload → `avatar_url` persist + inbox trả field → B render ảnh ở group row, group chưa style vẫn letter-fallback; GET authed 200/1903B, anon 401; +3 `GroupServiceTest` |
 | Tin push bị miss khi topic chưa watch (hoặc Room bị wipe sau logout) **không bao giờ được backfill** — inbox preview có tin mới nhưng mở chat chỉ thấy history cũ, hole tồn tại vĩnh viễn | `openConversation` chỉ `ensureConnected` + `watchConversation` + `sendRead`; `resyncForward` chỉ chạy trong `resyncOnReconnect` (sau reconnect). Socket đã sống sẵn thì không có resyncRequest nào → không ai forward-fill | `openConversation` gọi `resyncForward` trước `sendRead` (đúng thứ tự watermark đọc cả row vừa fetch). Verify release APK: device B mất seq 671-679 (push tới khi topic unwatched + wipe sau relogin) → build mới mở chat → `GET ?afterSeq` backfill đủ tới seq 679, reaction 👍 render chéo máy |
 | "Sign out all devices" (FR-A4: logout-all thu hồi refresh token) không có UI — endpoint `POST /auth/logout-all` + `AuthApi.logoutAll` tồn tại nhưng không ai gọi | Profile chỉ render một nút "Sign out" đơn phiên; cùng lớp lỗi missing-UI với change-password | `AuthRepository.logoutAll` (Bearer, revoke mọi token → clear local → `LoggedOut` global nav); VM `logoutAll()`; Profile thêm row + confirm dialog (copy "every session including this one"). Verify release APK: tap → confirm → về Login; DB `refresh_tokens.revoked_at IS NULL` count = 0; +1 VM test |
+| Member (không phải ADMIN) vẫn thấy menu "Pin" trong group — bấm vào mới bị server 403 với lỗi chung chung | Server enforce đúng (group pin = ADMIN-only) nhưng client không biết role của chính mình: `ConversationSummary` chỉ có cột Room, không ai persist `members[].role` của caller → long-press menu luôn render "Pin" | Room v6: `conversations.myRole` (`MIGRATION_5_6`) map từ `members[myId].role` trong inbox payload; upsert merge-preserve khi payload thiếu members[]; `ChatViewModel.canPin = !isGroup || myRole == "ADMIN"`; `ChatScreen` chỉ render item Pin khi `canPin`. Verify release APK 2 máy: B (Binh=MEMBER) long-press → menu chỉ còn reaction + Reply; A (An=ADMIN) → Pin vẫn hiện; +1 `ChatViewModelTest` (member ẩn, admin/direct hiện, role null → ẩn) |
 
 Regression test mới: `RealtimeSessionReArmTest` (8 case — regain re-arm
 parked loop, `ensureConnected` wake không cần network, `onAppForeground`
@@ -767,7 +768,8 @@ khi socket sống là no-op, 50 luồng `ensureConnected` đồng thời chỉ m
 connection loop` (send khi socket chết phải kick parked loop) + 4 case
 `ProfileViewModelTest` đổi mật khẩu (success đóng dialog + flag changed,
 mismatch/short/empty chặn local trước repository, lỗi server giữ dialog
-mở kèm ApiError). Review
+mở kèm ApiError) + `ChatViewModelTest` canPin gating (GROUP MEMBER/role
+null ẩn Pin; ADMIN và DIRECT hiện). Review
 pass sau fix còn phát hiện check-then-launch của `launchConnectionLoop`
 không atomic → bọc `synchronized` cho cả launch lẫn logout-cancel.
 Cùng kịch bản airplane-mode được chạy lại trên **release APK đã ký** —
@@ -829,7 +831,7 @@ docker compose up -d db          # postgres:16 @ localhost:5433
 cd server && mvn -B verify       # 287 tests
 
 # Android unit tests
-cd android && ./gradlew testDebugUnitTest   # 160 tests
+cd android && ./gradlew testDebugUnitTest   # 161 tests
 ```
 
 Manual E2E: `docs/demo-runbook.md` §5 — 10 bước demo ~8 phút (2 máy chat 1-1,
@@ -953,7 +955,7 @@ i18n Vi/En 100% parity, rotation an toàn, và creative feature Message
 Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.
 
 Chất lượng được chứng minh bằng số liệu thật: **287 test server** (261 unit +
-26 integration trên Postgres thật) và **160 test Android**, CI gate xanh trên
+26 integration trên Postgres thật) và **161 test Android**, CI gate xanh trên
 mọi PR; deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
 Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, presence
 chưa emit, edit/delete plumb sẵn chưa ship) — mỗi hạn chế kèm hướng phát triển

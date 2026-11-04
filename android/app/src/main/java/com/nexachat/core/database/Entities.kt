@@ -66,6 +66,12 @@ data class ConversationEntity(
      * "Đã xem"/"Seen" on DIRECT bubbles where `seq <= peerReadSeq` (§FR-C4).
      */
     val peerReadSeq: Long = 0,
+    /**
+     * My own member role as the inbox payload reports it ("ADMIN"/"MEMBER";
+     * null for DIRECT rows and payloads without members[]). Drives client-
+     * side affordance gating such as GROUP pin (server still enforces).
+     */
+    val myRole: String? = null,
 )
 
 /**

@@ -244,6 +244,7 @@ fun ChatScreen(
                         seen = !state.isGroup && message.mine &&
                             (message.seq ?: Long.MAX_VALUE) <= state.peerReadSeq,
                         pinned = state.isPinned(message.id),
+                        canPin = state.canPin,
                         menuOpen = menuMessageId == message.id,
                         formatTime = { timeFormat.format(Date(it)) },
                         onRetry = viewModel::retryFailed,
@@ -350,6 +351,7 @@ private fun MessageItem(
     onReaction: (String) -> Unit,
     onTogglePin: () -> Unit,
     onJumpTo: (String) -> Unit,
+    canPin: Boolean = true,
 ) {
     val mine = message.mine
     val replyable = message.status == DeliveryStatus.SENT
@@ -423,20 +425,22 @@ private fun MessageItem(
                             onClick = onReply,
                             enabled = replyable,
                         )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(
-                                        if (pinned) R.string.action_unpin else R.string.action_pin,
-                                    ),
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Filled.PushPin, contentDescription = null)
-                            },
-                            onClick = onTogglePin,
-                            enabled = replyable,
-                        )
+                        if (canPin) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (pinned) R.string.action_unpin else R.string.action_pin,
+                                        ),
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Filled.PushPin, contentDescription = null)
+                                },
+                                onClick = onTogglePin,
+                                enabled = replyable,
+                            )
+                        }
                     }
                 }
             }
