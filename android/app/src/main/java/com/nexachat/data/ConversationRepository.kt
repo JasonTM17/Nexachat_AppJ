@@ -173,7 +173,14 @@ class ConversationRepository @Inject constructor(
         val myId = currentUserId()
         return when (val result = fetchInboxItems()) {
             is Result.Success -> {
-                upsertPreservingClientColumns(result.value.mapNotNull { it.toEntity(myId) })
+                val rows = result.value.mapNotNull { it.toEntity(myId) }
+                upsertPreservingClientColumns(rows)
+                // Authoritative full set — drop rows the server no longer
+                // returns (removed membership, deleted conversation). Without
+                // this a MEMBER_REMOVED leaves a dead row in the inbox that
+                // still opens and fails only on send.
+                if (rows.isEmpty()) conversationDao.clear()
+                else conversationDao.deleteAllExcept(rows.map { it.id })
                 Result.Success(Unit)
             }
             is Result.Failure -> result

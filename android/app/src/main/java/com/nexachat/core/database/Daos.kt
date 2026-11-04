@@ -92,6 +92,16 @@ interface ConversationDao {
 
     @Query("DELETE FROM conversations")
     suspend fun clear()
+
+    /**
+     * Refresh reconcile — the inbox endpoint returns the AUTHORITATIVE full
+     * set, so rows absent from it no longer exist server-side (member
+     * removed, conversation deleted). Room must drop them or they linger
+     * forever: upserts alone never delete. Callers pass an empty list only
+     * via the `clear()` branch — `NOT IN ()` is invalid SQLite.
+     */
+    @Query("DELETE FROM conversations WHERE id NOT IN (:ids)")
+    suspend fun deleteAllExcept(ids: List<String>)
 }
 
 /**

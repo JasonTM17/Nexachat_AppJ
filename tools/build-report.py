@@ -277,7 +277,7 @@ def build():
            ["R4", "Chức năng sáng tạo", "5", "OK",
             "Message Interactions: reply/react/pin — V3__interactions.sql, ReactionController, PinController, InteractionFlowIT"],
            ["R5", "Giao diện rõ ràng + toàn bộ unit test pass", "15", "OK",
-            "Server 287 tests green (261 unit + 26 IT); Android 161 tests green; CI gate .github/workflows/ci.yml"],
+            "Server 287 tests green (261 unit + 26 IT); Android 165 tests green; CI gate .github/workflows/ci.yml"],
            ["R6", "Thuyết trình, demo, vấn đáp", "40", "OK",
             "docs/demo-runbook.md (kịch bản 8 phút + fallback), 18 câu vấn đáp, mỗi quyết định kèm \"vì sao\""]],
           widths=[1, 5.5, 1, 1, 7], font_size=8.5)
@@ -342,7 +342,7 @@ def build():
            ["NFR-5", "Maintainability", "Package-by-feature; không trả entity ra API; không logic trong Controller/Composable",
             "com.nexachat.<feature> server; feature/* + data/ + core/ Android"],
            ["NFR-6", "Testability", "Toàn bộ unit test pass ở CI; mỗi service authZ có negative test",
-            "287 + 161 tests; 21 negative tests ở quality phase"],
+            "287 + 165 tests; 21 negative tests ở quality phase"],
            ["NFR-7", "Portability", "minSdk 26, targetSdk 35; emulator + máy thật LAN",
             "build.gradle.kts; BuildConfig.API_BASE_URL"],
            ["NFR-8", "Observability", "Log không chứa password/token/file body; /actuator/health",
@@ -833,7 +833,7 @@ def build():
           [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "261", "green"],
            ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "26", "green"],
            ["Server tổng", "mvn -B verify", "287", "green"],
-           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "161", "green"]],
+           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "165", "green"]],
           widths=[3.2, 7.5, 1.8, 2.5], font_size=9)
     para(doc, "CI (.github/workflows/ci.yml): job server-test (postgres:16 "
               "service + mvn -B verify với IT_DB_* env) + android-test + "
@@ -858,11 +858,11 @@ def build():
               "ContactServiceTest (12), PhoneNormalizerTest (11 — E.164), "
               "UserServiceTest (11), TokenServiceTest (10 — rotation/reuse), "
               "ConversationServiceTest (10), ReactionServiceTest (7)…")
-    para(doc, "Android (161 test, 17 lớp): ChatViewModelTest (optimistic "
+    para(doc, "Android (165 test, 18 lớp): ChatViewModelTest (optimistic "
               "send, dedup theo clientMessageId, retry), "
               "TokenAuthenticatorTest (single-flight 401→refresh), "
               "StompCodecTest (frame parse/build), TokenStoreTest, "
-              "InboxViewModelTest, MessageRepositoryTest, "
+              "InboxViewModelTest, MessageRepositoryTest, ConversationRepositoryTest, "
               "AttachmentRepositoryTest, AuthViewModelTest, "
               "SplashViewModelTest, ContactsViewModelTest, "
               "CreateGroupViewModelTest, GroupDetailViewModelTest, "
@@ -1046,7 +1046,17 @@ def build():
             "members[]; ChatViewModel.canPin = !isGroup || role=ADMIN; "
             "ChatScreen chỉ render Pin khi canPin. Verify release APK: "
             "B (MEMBER) không thấy Pin, A (ADMIN) vẫn thấy; +1 "
-            "ChatViewModelTest"]])
+            "ChatViewModelTest"],
+        ["Member bị admin kick nhưng group vẫn nằm trong inbox của họ "
+            "mãi mãi — mở được chat cache, chỉ fail khi send",
+            "refreshInbox chỉ upsert các row server trả, không xóa row "
+            "vắng mặt trong set authoritative — MEMBER_REMOVED trigger "
+            "refresh đúng nhưng row cũ không ai delete",
+            "ConversationDao.deleteAllExcept(ids) + refreshInbox "
+            "reconcile: set trả về là authoritative full → row không có "
+            "trong set bị xóa (clear() khi list rỗng). Verify release "
+            "APK: REST remove Binh → row biến mất ngay trên inbox của B; "
+            "+4 ConversationRepositoryTest"]])
     para(doc, "(d) Offline outbox + auto-reconnect (airplane-mode E2E): bật "
               "airplane mode → gửi tin → bubble hiện SENDING ngay → tắt "
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "
@@ -1103,7 +1113,7 @@ def build():
         "cd server && mvn -B verify       # 287 tests\n"
         "\n"
         "# Android unit tests\n"
-        "cd android && ./gradlew testDebugUnitTest   # 161 tests")
+        "cd android && ./gradlew testDebugUnitTest   # 165 tests")
     para(doc, "Manual E2E: docs/demo-runbook.md §5 — 10 bước demo ~8 phút "
               "(2 máy chat 1-1, 3 máy nhóm, offline send, media, "
               "interactions, i18n+rotation, CI xanh).")
@@ -1221,7 +1231,7 @@ def build():
               "100% parity, rotation an toàn, và creative feature Message "
               "Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.")
     para(doc, "Chất lượng được chứng minh bằng số liệu thật: 287 test server "
-              "(261 unit + 26 integration trên Postgres thật) và 161 test "
+              "(261 unit + 26 integration trên Postgres thật) và 165 test "
               "Android, CI gate xanh trên mọi PR; deploy một lệnh "
               "docker compose up; demo LAN có runbook + fallback. Các hạn "
               "chế được khai báo trung thực (không E2E, SimpleBroker 1 node, "

@@ -197,6 +197,10 @@ class MessageRepositoryTest {
         override suspend fun clear() {
             rows.clear()
         }
+
+        override suspend fun deleteAllExcept(ids: List<String>) {
+            rows.keys.retainAll(ids)
+        }
     }
 
     /** Keyed by (messageId, emoji) — mirroring the real PK. */
