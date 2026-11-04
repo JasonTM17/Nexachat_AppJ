@@ -227,6 +227,7 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | `POST /conversations/{conversationId}/members` | Bearer ADMIN | `{userIds[]}` | `204` (SYSTEM `MEMBER_ADDED` message broadcast) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `USER_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
+| `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
 
 ## Attachments — `/api/v1/attachments`
 

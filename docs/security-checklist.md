@@ -33,6 +33,7 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | DELETE /api/v1/conversations/{id}/members/{userId} | Bearer | ADMIN or self; sole-admin guard (`GroupService.java:209-241`) | `GroupFlowIT`; `GroupServiceTest.removeMember_*` |
 | POST /api/v1/conversations/{id}/leave | Bearer | member; sole-admin-with-members blocked | `GroupFlowIT`; `GroupServiceTest.leave_*` |
 | PATCH /api/v1/conversations/{id} | Bearer | member check BEFORE admin check (`GroupService.java:252-254`) | `GroupFlowIT` non-member → 403 NOT_MEMBER, member → 403 NOT_ADMIN; `GroupServiceTest.updateGroup_notMember_throwsNotMember` |
+| POST /api/v1/conversations/{id}/avatar | Bearer ADMIN | member → ADMIN (`GroupService.setGroupAvatar`); `MagicBytes` sniff + `StorageService` under `avatars/` (same as user avatar) | `GroupServiceTest.setGroupAvatar_*` (member/non-member/non-admin); live: REST upload → inbox `avatarUrl`, authed GET 200, anon 401 |
 | GET /api/v1/conversations/{id}/messages | Bearer | member (`MessageService.requireMember`) | `MessageFlowIT` → 403 NOT_MEMBER; `MessageServiceTest.getHistory_notMember` |
 | POST /api/v1/conversations/{id}/messages | Bearer | member; attachment claims owner-checked | `MessageFlowIT` non-member send → 403 + 0 rows; `MessageServiceTest.send_*` |
 | POST /api/v1/conversations/{id}/read | Bearer | member | `MessageFlowIT` → 403; `MessageServiceTest.markRead_notMember` |
