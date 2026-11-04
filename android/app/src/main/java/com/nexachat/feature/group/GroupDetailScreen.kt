@@ -1,6 +1,10 @@
 package com.nexachat.feature.group
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +43,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,6 +70,13 @@ fun GroupDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val errorMessage = state.error?.let { groupErrorMessage(it) }
+
+    // Image-only system picker for the group avatar (FR-D4, ADMIN-gated).
+    val avatarPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri: android.net.Uri? ->
+        if (uri != null) viewModel.setGroupAvatar(uri)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -114,6 +127,37 @@ fun GroupDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            item(key = "group-avatar") {
+                val avatarDescription = stringResource(R.string.group_change_avatar)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 16.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    InitialAvatar(
+                        name = state.title,
+                        avatarUrl = state.groupAvatar,
+                        size = 72.dp,
+                        modifier = Modifier
+                            .then(
+                                if (state.iAmAdmin) {
+                                    Modifier
+                                        .clickable {
+                                            avatarPicker.launch(
+                                                PickVisualMediaRequest(
+                                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                                ),
+                                            )
+                                        }
+                                        .semantics { contentDescription = avatarDescription }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    )
+                }
+            }
             items(state.members, key = { it.userId }) { member ->
                 MemberRow(
                     member = member,

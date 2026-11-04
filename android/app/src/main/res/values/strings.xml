@@ -14,6 +14,7 @@
     <string name="auth_new_password_label">New password</string>
     <string name="profile_password_changed">Password changed — other devices were signed out</string>
     <string name="profile_change_avatar">Change avatar</string>
+    <string name="group_change_avatar">Change group avatar</string>
     <string name="error_current_password_required">Enter your current password</string>
     <string name="action_sign_in">Sign in</string>
     <string name="action_create_account">Create account</string>

@@ -502,6 +502,7 @@ class MessageRepositoryTest {
                 unreadCount = 0,
                 otherUserName = "Lan",
                 otherUserAvatar = null,
+                avatarUrl = null,
             ),
         )
 
@@ -532,6 +533,7 @@ class MessageRepositoryTest {
                 unreadCount = 0,
                 otherUserName = "Lan",
                 otherUserAvatar = null,
+                avatarUrl = null,
             ),
         )
 

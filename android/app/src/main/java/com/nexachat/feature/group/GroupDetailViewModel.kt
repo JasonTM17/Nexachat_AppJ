@@ -1,5 +1,6 @@
 package com.nexachat.feature.group
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,6 +63,8 @@ class GroupDetailViewModel @Inject constructor(
         val selectedAddIds: Set<String> = emptySet(),
         val busy: Boolean = false,
         val error: ApiError? = null,
+        /** Current group avatar URL (FR-D4) — null renders the letter fallback. */
+        val groupAvatar: String? = null,
     )
 
     sealed interface Event {
@@ -76,11 +79,14 @@ class GroupDetailViewModel @Inject constructor(
     val events = _events.receiveAsFlow()
 
     init {
-        // Room stream keeps the title live across renames.
+        // Room stream keeps the title and avatar live across admin edits.
         viewModelScope.launch {
             conversationRepository.conversationFlow(conversationId).collect { summary ->
-                summary?.displayName?.takeIf { it.isNotBlank() }?.let { name ->
-                    _uiState.update { it.copy(title = name) }
+                summary?.let { s ->
+                    _uiState.update { it.copy(groupAvatar = s.avatarUrl) }
+                    s.displayName.takeIf { it.isNotBlank() }?.let { name ->
+                        _uiState.update { it.copy(title = name) }
+                    }
                 }
             }
         }
@@ -220,6 +226,24 @@ class GroupDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true, showRename = false) }
             when (val result = conversationRepository.renameGroup(conversationId, title)) {
+                is Result.Success -> _uiState.update { it.copy(busy = false) }
+                is Result.Failure -> _uiState.update {
+                    it.copy(busy = false, error = result.error)
+                }
+            }
+        }
+    }
+
+    /**
+     * Group avatar pick → `POST /conversations/{id}/avatar` (ADMIN-only
+     * server-side, FR-D4). The repo patches the Room row on success so the
+     * header re-renders without waiting for CONVERSATION_UPDATED.
+     */
+    fun setGroupAvatar(uri: Uri) {
+        if (_uiState.value.busy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            when (val result = conversationRepository.setGroupAvatar(conversationId, uri)) {
                 is Result.Success -> _uiState.update { it.copy(busy = false) }
                 is Result.Failure -> _uiState.update {
                     it.copy(busy = false, error = result.error)

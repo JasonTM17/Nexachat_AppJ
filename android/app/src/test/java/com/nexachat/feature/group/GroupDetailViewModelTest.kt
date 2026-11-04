@@ -123,6 +123,7 @@ class GroupDetailViewModelTest {
             unreadCount = 0,
             otherUserName = null,
             otherUserAvatar = null,
+            avatarUrl = null,
         )
 
         assertEquals("Room title", viewModel.uiState.value.title)

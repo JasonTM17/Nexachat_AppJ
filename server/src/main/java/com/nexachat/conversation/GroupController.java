@@ -1,5 +1,6 @@
 package com.nexachat.conversation;
 
+import com.nexachat.attachment.AvatarController.AvatarResponse;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -18,8 +19,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.UUID;
 
 /**
@@ -80,6 +84,19 @@ public class GroupController {
             @PathVariable UUID conversationId) {
         groupService.leave(requireUserId(principal), conversationId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * {@code POST /{id}/avatar} — multipart image upload, ADMIN only. The
+     * stored file is served from {@code /api/v1/files/**} and the new URL is
+     * broadcast via {@code CONVERSATION_UPDATED}.
+     */
+    @PostMapping("/{conversationId}/avatar")
+    public AvatarResponse setAvatar(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID conversationId,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        return groupService.setGroupAvatar(requireUserId(principal), conversationId, file);
     }
 
     @PatchMapping("/{conversationId}")

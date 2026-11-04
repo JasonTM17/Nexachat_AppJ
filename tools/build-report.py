@@ -556,6 +556,7 @@ def build():
            ["POST /conversations/{id}/members {userIds[]}", "ADMIN", "200", "403 · 404"],
            ["DELETE /conversations/{id}/members/{userId}", "ADMIN", "204", "403"],
            ["POST /conversations/{id}/leave", "member", "204", "403"],
+           ["POST /conversations/{id}/avatar (multipart)", "ADMIN", "200 {avatarUrl} → broadcast CONVERSATION_UPDATED", "403 · 413 · 415"],
            ["GET /conversations/{id}/messages?beforeSeq=&afterSeq=&limit=", "member", "200 MessagePageResponse{items,nextBeforeSeq,hasMore}", "403 NOT_MEMBER · 404"],
            ["POST /conversations/{id}/messages", "member", "201 / 200 dedup hit — REST fallback của đường WS", "403 · 404 · 400"],
            ["POST /conversations/{id}/read {upToSeq}", "member", "204 → broadcast MESSAGE_READ", "403 · 400"]],
@@ -900,7 +901,7 @@ def build():
               "Picker (IMAGE/png byte-identical) → tạo group 3 người qua "
               "FAB (SYSTEM event render) → search SĐT + add contact → "
               "message user mới tạo direct conv.")
-    para(doc, "(c) Mười một lỗi thật chỉ phát hiện được trên device / "
+    para(doc, "(c) Mười hai lỗi thật chỉ phát hiện được trên device / "
               "trong spec-gap review (một lỗi bằng adversarial review + "
               "probe, không qua UI):")
     table(doc,
@@ -999,7 +1000,24 @@ def build():
             "avatarUrl vào ContactResponse + JPQL. Verify: pick ảnh → "
             "users.avatar_url persist → GET authed 200 đúng byte, "
             "unauthed 401 → B thấy avatar ở inbox + member row; +3 VM "
-            "tests"]])
+            "tests"],
+        ["Group avatar (FR-D4) gãy toàn chuỗi: client không có DTO "
+            "field/Room column/upload UI, và InboxEntry bỏ sót avatarUrl "
+            "conversation-level — silent-degradation lần 4 cùng lớp "
+            "role/contacts (InboxConversationRow đã SELECT nhưng service "
+            "không forward vào DTO)",
+            "Server conversations.avatar_url + PATCH + "
+            "CONVERSATION_UPDATED đã đủ nhưng không có endpoint upload; "
+            "client DTO/entity/summary thiếu hẳn field",
+            "Server: POST /conversations/{id}/avatar ADMIN-gated — sniff "
+            "MagicBytes + StorageService, broadcast CONVERSATION_UPDATED; "
+            "InboxEntry thêm avatarUrl forward từ InboxConversationRow. "
+            "Client: Room v5 MIGRATION_4_5, GroupApi.uploadAvatar, "
+            "setGroupAvatar patch Room, displayAvatar = group ?: peer, "
+            "GroupDetail header 72dp + picker gate iAmAdmin. Verify "
+            "release APK: REST upload → inbox trả field → B render ảnh ở "
+            "group row; authed GET 200/1903B, anon 401; +3 "
+            "GroupServiceTest"]])
     para(doc, "(d) Offline outbox + auto-reconnect (airplane-mode E2E): bật "
               "airplane mode → gửi tin → bubble hiện SENDING ngay → tắt "
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "

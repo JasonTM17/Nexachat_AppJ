@@ -24,6 +24,8 @@ data class ConversationInboxDto(
     val otherUser: OtherUserDto? = null,
     val otherUserName: String? = null,
     val otherUserAvatar: String? = null,
+    /** The conversation's own avatar (GROUP rows) — absent on older servers. */
+    val avatarUrl: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
 ) {
     fun resolvedLastContent(): String? =

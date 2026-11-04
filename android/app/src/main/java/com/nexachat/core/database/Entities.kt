@@ -57,6 +57,8 @@ data class ConversationEntity(
     val unreadCount: Int,
     val otherUserName: String?,
     val otherUserAvatar: String?,
+    /** GROUP avatar URL set by an admin (DIRECT rows leave it null). */
+    val avatarUrl: String?,
     /**
      * Highest OTHER member's read watermark, pushed via MESSAGE_READ events.
      * Client-only — no REST field feeds it, so refresh upserts must merge-

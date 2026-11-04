@@ -13,6 +13,7 @@ public record InboxEntry(
         UUID id,
         String type,
         String title,
+        String avatarUrl,
         List<Member> members,
         LastMessage lastMessage,
         long unreadCount,

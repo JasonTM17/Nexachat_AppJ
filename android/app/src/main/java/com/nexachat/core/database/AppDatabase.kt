@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageReactionEntity::class,
         PinnedMessageEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -100,6 +100,18 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE conversations ADD COLUMN peerReadSeq INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+        /**
+         * GROUP avatar on `conversations` — REST-fed column, so a plain
+         * nullable ALTER is safe; inbox refresh fills it.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN avatarUrl TEXT",
                 )
             }
         }

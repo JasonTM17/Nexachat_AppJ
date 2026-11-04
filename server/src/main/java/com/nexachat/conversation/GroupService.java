@@ -1,5 +1,8 @@
 package com.nexachat.conversation;
 
+import com.nexachat.attachment.AvatarController.AvatarResponse;
+import com.nexachat.attachment.StorageService;
+import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.AddMemberRequest;
@@ -17,7 +20,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -68,17 +73,20 @@ public class GroupService {
     private final UserRepository userRepository;
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final StorageService storageService;
 
     public GroupService(ConversationRepository conversationRepository,
                         ConversationMemberRepository memberRepository,
                         UserRepository userRepository,
                         MessageService messageService,
-                        ApplicationEventPublisher eventPublisher) {
+                        ApplicationEventPublisher eventPublisher,
+                        StorageService storageService) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
+        this.storageService = storageService;
     }
 
     /**
@@ -280,6 +288,34 @@ public class GroupService {
                             + conversation.getTitle() + "\"");
         }
         return publishUpdate(conversation, "UPDATED", List.of());
+    }
+
+    /**
+     * Group avatar upload (FR-D4): ADMIN only. Same sniff+store contract as
+     * {@code POST /users/me/avatar} — only image content passes, the file is
+     * kept under {@code avatars/} and served from the authed files endpoint.
+     * {@code CONVERSATION_UPDATED} carries the new {@code avatarUrl} so every
+     * member resyncs without a pull.
+     */
+    @Transactional
+    public AvatarResponse setGroupAvatar(
+            UUID callerId, UUID conversationId, MultipartFile file) throws IOException {
+        Conversation conversation = requireGroup(conversationId);
+        requireAdmin(requireMember(conversationId, callerId));
+        if (file == null || file.isEmpty()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Avatar file is required");
+        }
+        byte[] bytes = file.getBytes();
+        String sniffed = MagicBytes.sniff(bytes);
+        if (sniffed == null || !sniffed.startsWith("image/")) {
+            throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
+        }
+        StorageService.StoredFile stored = storageService.store(
+                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+        conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
+        publishUpdate(conversation, "UPDATED", List.of());
+        log.info("Group {} avatar set by {}", conversationId, callerId);
+        return new AvatarResponse(conversation.getAvatarUrl());
     }
 
     // ------------------------------------------------------------- internals

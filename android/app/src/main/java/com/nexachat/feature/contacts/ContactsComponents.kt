@@ -62,10 +62,11 @@ internal fun InitialAvatar(
     name: String,
     avatarUrl: String? = null,
     modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
 ) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
@@ -225,7 +226,7 @@ internal fun ContactDetailContent(
         modifier = modifier.padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        InitialAvatar(user.displayName, user.avatarUrl, Modifier.size(64.dp))
+        InitialAvatar(user.displayName, user.avatarUrl, size = 64.dp)
         Text(
             text = contact?.primaryLabel ?: user.displayName,
             style = MaterialTheme.typography.titleLarge,

@@ -1,5 +1,6 @@
 package com.nexachat.conversation;
 
+import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.AddMemberRequest;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
@@ -52,6 +54,8 @@ class GroupServiceTest {
     private MessageService messageService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private com.nexachat.attachment.StorageService storageService;
 
     private GroupService groupService;
 
@@ -64,7 +68,7 @@ class GroupServiceTest {
     void setUp() {
         groupService = new GroupService(
                 conversationRepository, memberRepository, userRepository,
-                messageService, eventPublisher);
+                messageService, eventPublisher, storageService);
     }
 
     // ------------------------------------------------------------- fixtures
@@ -654,5 +658,58 @@ class GroupServiceTest {
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
         verify(messageService, never()).postSystemMessage(any(), any(), anyString());
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    // ------------------------------------------------------------ avatar --
+
+    /** Minimal valid PNG: signature + IHDR skeleton — enough for MagicBytes. */
+    private static final byte[] PNG_BYTES = {
+            (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    };
+
+    private MockMultipartFile pngFile() {
+        return new MockMultipartFile("file", "a.png", "image/png", PNG_BYTES);
+    }
+
+    @Test
+    void setGroupAvatar_happyPath_storesAndBroadcasts() throws Exception {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+        when(storageService.store(eq("avatars"), any(), any(), any()))
+                .thenReturn(new StorageService.StoredFile("avatars/k.png", 16, "image/png"));
+        when(storageService.resolveUrl("avatars/k.png"))
+                .thenReturn("/api/v1/files/avatars/k.png");
+
+        var resp = groupService.setGroupAvatar(adminId, conversationId, pngFile());
+
+        assertThat(resp.avatarUrl()).isEqualTo("/api/v1/files/avatars/k.png");
+        ConversationUpdatedEvent ev = updateEvent().getValue();
+        assertThat(ev.payload().avatarUrl()).isEqualTo("/api/v1/files/avatars/k.png");
+        verify(messageService, never()).postSystemMessage(any(), any(), anyString());
+    }
+
+    @Test
+    void setGroupAvatar_memberRole_forbidden() {
+        groupExistsAndCallerIs(ConversationMember.Role.MEMBER);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.setGroupAvatar(adminId, conversationId, pngFile()));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_ADMIN);
+        verify(storageService, never()).store(any(), any(), any(), any());
+    }
+
+    @Test
+    void setGroupAvatar_nonImage_rejected() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        MockMultipartFile text = new MockMultipartFile(
+                "file", "evil.png", "image/png", "definitely not a png".getBytes());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.setGroupAvatar(adminId, conversationId, text));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        verify(storageService, never()).store(any(), any(), any(), any());
     }
 }

@@ -68,6 +68,7 @@ public class InboxService {
                         row.id(),
                         row.type().name(),
                         row.title(),
+                        row.avatarUrl(),
                         membersByConversation.getOrDefault(row.id(), List.of()),
                         toLastMessage(row.lastMessageId() == null
                                 ? null

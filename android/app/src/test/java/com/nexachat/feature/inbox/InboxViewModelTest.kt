@@ -45,6 +45,7 @@ class InboxViewModelTest {
         unreadCount = unread,
         otherUserName = name,
         otherUserAvatar = null,
+        avatarUrl = null,
     )
 
     @Before

@@ -1,5 +1,7 @@
 package com.nexachat.data
 
+import android.content.Context
+import android.net.Uri
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.database.ConversationDao
@@ -20,9 +22,12 @@ import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +35,10 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Inbox row as the feature layer sees it — [displayName] is already resolved
@@ -47,10 +56,15 @@ data class ConversationSummary(
     val unreadCount: Int,
     val otherUserName: String?,
     val otherUserAvatar: String?,
+    /** GROUP avatar set by an admin; null for DIRECT rows and unstyled groups. */
+    val avatarUrl: String?,
     /** Highest other-member read watermark (MESSAGE_READ) — DIRECT "seen" receipts. */
     val peerReadSeq: Long = 0,
 ) {
     val displayName: String get() = title ?: otherUserName ?: ""
+
+    /** Row avatar: the group image wins; DIRECT rows fall back to the peer's. */
+    val displayAvatar: String? get() = avatarUrl ?: otherUserAvatar
 
     /** GROUP rows render sender names above incoming bubbles and the detail affordance. */
     val isGroup: Boolean get() = type == TYPE_GROUP
@@ -110,6 +124,7 @@ class ConversationRepository @Inject constructor(
     private val tokenStore: TokenStore,
     private val moshi: Moshi,
     private val scope: CoroutineScope,
+    @ApplicationContext private val context: Context,
 ) {
 
     private val pageAdapter = moshi.adapter(ConversationsPageDto::class.java)
@@ -245,6 +260,39 @@ class ConversationRepository @Inject constructor(
         }
 
     /**
+     * Group avatar upload (ADMIN-only server-side, FR-D4). Same Uri→multipart
+     * contract as the user avatar; on success the local row is patched so the
+     * inbox re-emits immediately — other members get it via
+     * CONVERSATION_UPDATED → inbox refresh.
+     */
+    suspend fun setGroupAvatar(conversationId: String, uri: Uri): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            val bytes = try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    input.readBytes().takeIf { it.size <= MAX_AVATAR_BYTES }
+                }
+            } catch (e: IOException) {
+                null
+            } ?: return@withContext Result.Failure(ApiError.Network("avatar read failed"))
+            val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+                ?: "image/jpeg"
+            val part = MultipartBody.Part.createFormData(
+                "file",
+                uri.lastPathSegment ?: "group-avatar",
+                bytes.toRequestBody(mime.toMediaTypeOrNull()),
+            )
+            when (val result = call { groupApi.uploadAvatar(conversationId, part) }) {
+                is Result.Success -> {
+                    conversationDao.byId(conversationId)
+                        ?.copy(avatarUrl = result.value.avatarUrl)
+                        ?.let { conversationDao.upsert(it) }
+                    Result.Success(Unit)
+                }
+                is Result.Failure -> result
+            }
+        }
+
+    /**
      * Self-leave. The DAO has no delete-by-id, so the stale row is cleared by
      * resetting the table and re-pulling the authoritative inbox — the same
      * wipe-and-refill path logout uses, scoped to the one table we own here.
@@ -290,6 +338,7 @@ class ConversationRepository @Inject constructor(
             unreadCount = unreadCount ?: 0,
             otherUserName = resolvedOtherName(myId),
             otherUserAvatar = resolvedOtherAvatar(myId),
+            avatarUrl = avatarUrl,
         )
 
     /**
@@ -308,6 +357,7 @@ class ConversationRepository @Inject constructor(
         unreadCount = 0,
         otherUserName = null,
         otherUserAvatar = null,
+        avatarUrl = avatarUrl,
     )
 
     private fun ConversationMemberDto.toGroupMember(): GroupMember? =
@@ -332,6 +382,7 @@ class ConversationRepository @Inject constructor(
         unreadCount = unreadCount,
         otherUserName = otherUserName,
         otherUserAvatar = otherUserAvatar,
+        avatarUrl = avatarUrl,
         peerReadSeq = peerReadSeq,
     )
 
@@ -412,5 +463,8 @@ class ConversationRepository @Inject constructor(
          * be inside the first page since no single-conversation GET exists.
          */
         const val MEMBERS_PAGE_LIMIT = 100
+
+        // Server hard cap is 25 MB; a group avatar should never approach it.
+        const val MAX_AVATAR_BYTES = 25 * 1024 * 1024
     }
 }

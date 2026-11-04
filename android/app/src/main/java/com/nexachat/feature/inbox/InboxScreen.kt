@@ -137,7 +137,7 @@ private fun ConversationRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(name, conversation.otherUserAvatar)
+        InitialAvatar(name, conversation.displayAvatar)
         Column(
             modifier = Modifier
                 .weight(1f)

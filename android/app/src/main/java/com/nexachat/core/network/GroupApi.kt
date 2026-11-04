@@ -1,15 +1,19 @@
 package com.nexachat.core.network
 
 import com.nexachat.core.network.dto.AddGroupMembersRequest
+import com.nexachat.core.network.dto.AvatarResponse
 import com.nexachat.core.network.dto.ConversationDto
 import com.nexachat.core.network.dto.CreateGroupRequest
 import com.nexachat.core.network.dto.UpdateConversationRequest
+import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 
 /**
@@ -53,4 +57,16 @@ interface GroupApi {
         @Path("id") conversationId: String,
         @Body body: UpdateConversationRequest,
     ): Response<ResponseBody>
+
+    /**
+     * Group avatar upload (ADMIN-only server-side, FR-D4): image is sniffed
+     * + stored under `avatars/` and `CONVERSATION_UPDATED` carries the new
+     * `avatarUrl` to every member.
+     */
+    @Multipart
+    @POST("api/v1/conversations/{id}/avatar")
+    suspend fun uploadAvatar(
+        @Path("id") conversationId: String,
+        @Part file: MultipartBody.Part,
+    ): Response<AvatarResponse>
 }
