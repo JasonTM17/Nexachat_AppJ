@@ -54,6 +54,8 @@
     <string name="action_save">Lưu</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_logout">Đăng xuất</string>
+    <string name="action_logout_all">Đăng xuất mọi thiết bị</string>
+    <string name="profile_logout_all_confirm">Mọi phiên đăng nhập, kể cả phiên này, sẽ bị đăng xuất.</string>
     <string name="action_retry">Thử lại</string>
     <string name="cd_back">Quay lại</string>
     <string name="cd_edit_name">Sửa tên</string>

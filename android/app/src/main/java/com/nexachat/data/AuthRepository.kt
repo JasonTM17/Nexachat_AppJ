@@ -81,6 +81,17 @@ class AuthRepository @Inject constructor(
         return Result.Success(Unit)
     }
 
+    /**
+     * FR-A4 "logout-all": revokes every refresh token server-side, then the
+     * same local clear + global nav as [logout]. Bearer-auth, so no body.
+     */
+    suspend fun logoutAll(): Result<Unit> {
+        safeApiCall { authApi.logoutAll() } // ignore outcome
+        tokenStore.clear()
+        sessionEvents.emitLoggedOut()
+        return Result.Success(Unit)
+    }
+
     suspend fun changePassword(oldPassword: String, newPassword: String): Result<Unit> {
         // Passing the live refresh token keeps THIS session; the server revokes
         // every OTHER device instead of kicking the user out right after.

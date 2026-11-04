@@ -240,6 +240,10 @@ class MessageRepository @Inject constructor(
         activeConversation.value = conversationId
         session.ensureConnected()
         session.watchConversation(conversationId)
+        // Forward-fill Room before marking read: reconnect resync only runs on
+        // resyncRequests, so pushes missed while this topic was unwatched (or
+        // rows lost to a logout wipe) would otherwise stay invisible forever.
+        resyncForward(conversationId)
         sendRead(conversationId, messageDao.maxSeq(conversationId))
         flushOutbox()
         refreshPins(conversationId)

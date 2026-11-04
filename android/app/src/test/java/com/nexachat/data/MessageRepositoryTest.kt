@@ -720,6 +720,44 @@ class MessageRepositoryTest {
         coVerify { messageApi.getMessages(CONVERSATION_ID, null, 103L, any()) }
     }
 
+    @Test
+    fun `openConversation forward-fills pushes missed while the topic was unwatched`() = runTest {
+        // Room holds seq 1..3; pushes 4..5 arrived on the user queue while the
+        // socket was dead, so Room never stored them. Opening the chat must
+        // REST-fetch forward, not wait for the next reconnect.
+        (1..3).forEach { seq ->
+            messageDao.upsert(
+                MessageEntity(
+                    id = "m-$seq", conversationId = CONVERSATION_ID, seq = seq.toLong(),
+                    senderId = "u-other", senderDisplayName = null, type = "TEXT",
+                    content = "old", clientMessageId = null, replyToId = null,
+                    replyToSenderName = null, replyToSnippet = null,
+                    createdAt = seq.toLong(), attachmentsJson = null,
+                ),
+            )
+        }
+        coEvery {
+            messageApi.getMessages(CONVERSATION_ID, null, 3L, any())
+        } returns Response.success(
+            MessagePageDto(
+                items = listOf(
+                    messageDto("m-4", null, seq = 4),
+                    messageDto("m-5", null, seq = 5),
+                ),
+                hasMore = false,
+            ),
+        )
+        coEvery { messageApi.getPins(CONVERSATION_ID) } returns
+            Response.success("[]".toResponseBody())
+
+        repository.openConversation(CONVERSATION_ID)
+
+        assertEquals(5, messageDao.rows.size)
+        coVerify { messageApi.getMessages(CONVERSATION_ID, null, 3L, any()) }
+        // The read watermark covers the freshly fetched rows too.
+        coVerify { messageApi.markRead(CONVERSATION_ID, any()) }
+    }
+
     // ---- phase-10 interactions ----
 
     @Test

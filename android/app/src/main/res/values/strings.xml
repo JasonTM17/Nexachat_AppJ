@@ -54,6 +54,8 @@
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_logout">Sign out</string>
+    <string name="action_logout_all">Sign out all devices</string>
+    <string name="profile_logout_all_confirm">Every session, including this one, will be signed out.</string>
     <string name="action_retry">Retry</string>
     <string name="cd_back">Back</string>
     <string name="cd_edit_name">Edit name</string>

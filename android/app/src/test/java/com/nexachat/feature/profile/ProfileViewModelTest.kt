@@ -139,6 +139,16 @@ class ProfileViewModelTest {
         coVerify(exactly = 1) { authRepository.logout() }
     }
 
+    @Test
+    fun `logoutAll delegates to the auth repository — every session revoked`() = runTest {
+        coEvery { authRepository.logoutAll() } returns Result.Success(Unit)
+
+        val viewModel = createViewModel()
+        viewModel.logoutAll()
+
+        coVerify(exactly = 1) { authRepository.logoutAll() }
+    }
+
     private fun ProfileViewModel.openAndFillPassword(
         old: String = "oldpass123",
         new: String = "newpass456",

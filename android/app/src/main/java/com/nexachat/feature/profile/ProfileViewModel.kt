@@ -191,4 +191,9 @@ class ProfileViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch { authRepository.logout() }
     }
+
+    /** FR-A4 logout-all: revokes every refresh token, then same local clear. */
+    fun logoutAll() {
+        viewModelScope.launch { authRepository.logoutAll() }
+    }
 }
