@@ -782,6 +782,15 @@ trên chính conversation này: scroll qua toàn bộ ~680 messages tới seq 1
 **Rotation** giữ draft + conversation state qua portrait↔landscape.
 **Group admin qua UI**: remove Chi (dialog confirm) + re-add qua member
 picker; SYSTEM message "An removed Chi" render sau resync.
+**Media matrix đủ 4 loại, hai chiều trên release APK**: attach qua system
+pickers — VIDEO `video/mp4` (seq 751), FILE `text/plain` (752), AUDIO
+`audio/mpeg` (753) từ "File or audio" SAF picker, cộng IMAGE `image/png`
+(670) từ Photo Picker — cả 4 hiện trong DB server qua
+`message_attachments`. Inbox B tăng badge live trên push attachment; B
+mở group → resync render cả 3 bubble attachment; bấm "Open attachment"
+trên video → player in-app phát `1000000078.mp4` trên **máy nhận**
+(download path `GET /attachments/{id}/content` qua auth hoạt động
+end-to-end; gọi thẳng không token trả 401 đúng spec).
 
 ### 13.5. Tái hiện / Reproduce
 

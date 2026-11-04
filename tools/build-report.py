@@ -996,7 +996,12 @@ def build():
               "watermark server tiến. History paging: scroll qua ~680 "
               "messages tới seq 1 mượt. Rotation giữ draft + conversation "
               "state. Group admin qua UI: remove Chi (confirm) + re-add "
-              "qua picker; SYSTEM \"An removed Chi\" sau resync.")
+              "qua picker; SYSTEM \"An removed Chi\" sau resync. Media "
+              "matrix du 4 loai tren release APK: VIDEO video/mp4 (seq "
+              "751), FILE text/plain (752), AUDIO audio/mpeg (753), IMAGE "
+              "image/png (670) — inbox B tang badge live, B resync render "
+              "ca 3 bubble, \"Open attachment\" phat video tren may nhan "
+              "(download qua auth; khong token tra 401 dung spec).")
     h2(doc, "13.5. Tái hiện / Reproduce")
     code_box(doc,
         "# Server: Postgres that roi verify (unit + IT)\n"
