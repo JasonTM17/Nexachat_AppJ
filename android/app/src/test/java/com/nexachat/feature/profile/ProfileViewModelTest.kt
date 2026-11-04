@@ -137,4 +137,70 @@ class ProfileViewModelTest {
 
         coVerify(exactly = 1) { authRepository.logout() }
     }
+
+    private fun ProfileViewModel.openAndFillPassword(
+        old: String = "oldpass123",
+        new: String = "newpass456",
+        confirm: String = new,
+    ) {
+        openPasswordDialog()
+        onOldPasswordChange(old)
+        onNewPasswordChange(new)
+        onConfirmPasswordChange(confirm)
+    }
+
+    @Test
+    fun `password change success closes the dialog and raises passwordChanged`() = runTest {
+        coEvery { authRepository.changePassword(any(), any()) } returns Result.Success(Unit)
+
+        val viewModel = createViewModel()
+        viewModel.openAndFillPassword()
+        viewModel.submitPasswordChange()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.showPasswordDialog)
+        assertTrue(state.passwordChanged)
+        assertFalse(state.passwordSaving)
+        assertNull(state.passwordError)
+        coVerify(exactly = 1) { authRepository.changePassword("oldpass123", "newpass456") }
+    }
+
+    @Test
+    fun `mismatched confirm is blocked locally before the repository`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.openAndFillPassword(confirm = "different1")
+        viewModel.submitPasswordChange()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.confirmMismatch)
+        assertTrue(state.showPasswordDialog)
+        coVerify(exactly = 0) { authRepository.changePassword(any(), any()) }
+    }
+
+    @Test
+    fun `short new password and empty old are flagged per field`() = runTest {
+        val viewModel = createViewModel()
+        viewModel.openAndFillPassword(old = "", new = "short")
+        viewModel.submitPasswordChange()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.oldPasswordError)
+        assertTrue(state.newPasswordError)
+        coVerify(exactly = 0) { authRepository.changePassword(any(), any()) }
+    }
+
+    @Test
+    fun `server failure keeps the dialog open with the error`() = runTest {
+        coEvery { authRepository.changePassword(any(), any()) } returns
+            Result.Failure(ApiError.InvalidCredentials)
+
+        val viewModel = createViewModel()
+        viewModel.openAndFillPassword()
+        viewModel.submitPasswordChange()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.showPasswordDialog)
+        assertEquals(ApiError.InvalidCredentials, state.passwordError)
+        assertFalse(state.passwordSaving)
+    }
 }

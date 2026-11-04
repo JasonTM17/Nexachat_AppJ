@@ -10,6 +10,10 @@
     <string name="auth_password_label">Password</string>
     <string name="auth_display_name_label">Display name</string>
     <string name="auth_confirm_password_label">Confirm password</string>
+    <string name="auth_current_password_label">Current password</string>
+    <string name="auth_new_password_label">New password</string>
+    <string name="profile_password_changed">Password changed — other devices were signed out</string>
+    <string name="error_current_password_required">Enter your current password</string>
     <string name="action_sign_in">Sign in</string>
     <string name="action_create_account">Create account</string>
     <string name="action_show">Show</string>

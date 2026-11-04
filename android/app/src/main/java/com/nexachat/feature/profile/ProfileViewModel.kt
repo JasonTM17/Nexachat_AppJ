@@ -36,6 +36,17 @@ class ProfileViewModel @Inject constructor(
         val nameInput: String = "",
         val saving: Boolean = false,
         val saveError: ApiError? = null,
+        // Change-password dialog (PATCH /auth/password, FR-A6).
+        val showPasswordDialog: Boolean = false,
+        val oldPassword: String = "",
+        val newPassword: String = "",
+        val confirmPassword: String = "",
+        val oldPasswordError: Boolean = false,
+        val newPasswordError: Boolean = false,
+        val confirmMismatch: Boolean = false,
+        val passwordSaving: Boolean = false,
+        val passwordError: ApiError? = null,
+        val passwordChanged: Boolean = false,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -86,6 +97,65 @@ class ProfileViewModel @Inject constructor(
                 }
                 is Result.Failure -> _uiState.update {
                     it.copy(saving = false, saveError = result.error)
+                }
+            }
+        }
+    }
+
+    fun openPasswordDialog() =
+        _uiState.update {
+            it.copy(
+                showPasswordDialog = true,
+                oldPassword = "",
+                newPassword = "",
+                confirmPassword = "",
+                oldPasswordError = false,
+                newPasswordError = false,
+                confirmMismatch = false,
+                passwordError = null,
+                passwordChanged = false,
+            )
+        }
+
+    fun dismissPasswordDialog() =
+        _uiState.update { it.copy(showPasswordDialog = false, passwordError = null) }
+
+    fun onOldPasswordChange(value: String) =
+        _uiState.update { it.copy(oldPassword = value, oldPasswordError = false, passwordError = null) }
+
+    fun onNewPasswordChange(value: String) =
+        _uiState.update { it.copy(newPassword = value, newPasswordError = false, passwordError = null) }
+
+    fun onConfirmPasswordChange(value: String) =
+        _uiState.update { it.copy(confirmPassword = value, confirmMismatch = false, passwordError = null) }
+
+    fun consumePasswordChanged() =
+        _uiState.update { it.copy(passwordChanged = false) }
+
+    fun submitPasswordChange() {
+        val state = _uiState.value
+        if (state.passwordSaving) return
+        val oldBad = state.oldPassword.isEmpty()
+        val newBad = state.newPassword.length < 8
+        val mismatch = state.newPassword != state.confirmPassword
+        if (oldBad || newBad || mismatch) {
+            _uiState.update {
+                it.copy(
+                    oldPasswordError = oldBad,
+                    newPasswordError = newBad,
+                    confirmMismatch = mismatch,
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(passwordSaving = true, passwordError = null) }
+            when (val result = authRepository.changePassword(state.oldPassword, state.newPassword)) {
+                is Result.Success -> _uiState.update {
+                    it.copy(passwordSaving = false, showPasswordDialog = false, passwordChanged = true)
+                }
+                is Result.Failure -> _uiState.update {
+                    it.copy(passwordSaving = false, passwordError = result.error)
                 }
             }
         }

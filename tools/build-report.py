@@ -277,7 +277,7 @@ def build():
            ["R4", "Chức năng sáng tạo", "5", "OK",
             "Message Interactions: reply/react/pin — V3__interactions.sql, ReactionController, PinController, InteractionFlowIT"],
            ["R5", "Giao diện rõ ràng + toàn bộ unit test pass", "15", "OK",
-            "Server 284 tests green (258 unit + 26 IT); Android 151 tests green; CI gate .github/workflows/ci.yml"],
+            "Server 284 tests green (258 unit + 26 IT); Android 155 tests green; CI gate .github/workflows/ci.yml"],
            ["R6", "Thuyết trình, demo, vấn đáp", "40", "OK",
             "docs/demo-runbook.md (kịch bản 8 phút + fallback), 18 câu vấn đáp, mỗi quyết định kèm \"vì sao\""]],
           widths=[1, 5.5, 1, 1, 7], font_size=8.5)
@@ -342,7 +342,7 @@ def build():
            ["NFR-5", "Maintainability", "Package-by-feature; không trả entity ra API; không logic trong Controller/Composable",
             "com.nexachat.<feature> server; feature/* + data/ + core/ Android"],
            ["NFR-6", "Testability", "Toàn bộ unit test pass ở CI; mỗi service authZ có negative test",
-            "284 + 151 tests; 21 negative tests ở quality phase"],
+            "284 + 155 tests; 21 negative tests ở quality phase"],
            ["NFR-7", "Portability", "minSdk 26, targetSdk 35; emulator + máy thật LAN",
             "build.gradle.kts; BuildConfig.API_BASE_URL"],
            ["NFR-8", "Observability", "Log không chứa password/token/file body; /actuator/health",
@@ -832,7 +832,7 @@ def build():
           [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "258", "green"],
            ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "26", "green"],
            ["Server tổng", "mvn -B verify", "284", "green"],
-           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "151", "green"]],
+           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "155", "green"]],
           widths=[3.2, 7.5, 1.8, 2.5], font_size=9)
     para(doc, "CI (.github/workflows/ci.yml): job server-test (postgres:16 "
               "service + mvn -B verify với IT_DB_* env) + android-test + "
@@ -857,7 +857,7 @@ def build():
               "ContactServiceTest (12), PhoneNormalizerTest (11 — E.164), "
               "UserServiceTest (11), TokenServiceTest (10 — rotation/reuse), "
               "ConversationServiceTest (10), ReactionServiceTest (7)…")
-    para(doc, "Android (151 test, 17 lớp): ChatViewModelTest (optimistic "
+    para(doc, "Android (155 test, 17 lớp): ChatViewModelTest (optimistic "
               "send, dedup theo clientMessageId, retry), "
               "TokenAuthenticatorTest (single-flight 401→refresh), "
               "StompCodecTest (frame parse/build), TokenStoreTest, "
@@ -900,7 +900,7 @@ def build():
               "Picker (IMAGE/png byte-identical) → tạo group 3 người qua "
               "FAB (SYSTEM event render) → search SĐT + add contact → "
               "message user mới tạo direct conv.")
-    para(doc, "(c) Chín lỗi thật chỉ phát hiện được trên device / trong "
+    para(doc, "(c) Mười lỗi thật chỉ phát hiện được trên device / trong "
               "spec-gap review (một lỗi bằng adversarial review + probe, "
               "không qua UI):")
     table(doc,
@@ -969,7 +969,18 @@ def build():
             "(client không đổi — DTO đã tolerate). Verify release APK: "
             "badge \"Admin\", Remove trên từng member, Add member, "
             "Rename hiện; remove Chi qua confirm → server mất row + "
-            "SYSTEM \"An removed Chi\"; add lại qua picker"]])
+            "SYSTEM \"An removed Chi\"; add lại qua picker"],
+        ["\"Change password\" (FR-A6, P0) chỉ là text mờ không bấm "
+            "được — tính năng không tồn tại trên UI",
+            "ProfileScreen render row stub alpha(0.5f) với comment "
+            "\"no change-password screen exists yet\" dù server PATCH "
+            "/auth/password + AuthRepository.changePassword + DTO đã đủ",
+            "Profile thêm dialog 3 field (current/new/confirm — tái dùng "
+            "PasswordField + error flags chuẩn auth); VM validate từng "
+            "field, gọi repo kèm refresh token hiện tại để giữ session "
+            "thiết bị này (FR-A6). Verify release APK 2 lượt đổi thật: "
+            "password123→np456789→password123, login xác nhận cả hai "
+            "chiều; wrong-old hiện INVALID_CREDENTIALS; +4 VM tests"]])
     para(doc, "(d) Offline outbox + auto-reconnect (airplane-mode E2E): bật "
               "airplane mode → gửi tin → bubble hiện SENDING ngay → tắt "
               "airplane mode → ~15s sau WS tự reconnect và outbox tự flush, "
@@ -1001,7 +1012,15 @@ def build():
               "751), FILE text/plain (752), AUDIO audio/mpeg (753), IMAGE "
               "image/png (670) — inbox B tang badge live, B resync render "
               "ca 3 bubble, \"Open attachment\" phat video tren may nhan "
-              "(download qua auth; khong token tra 401 dung spec).")
+              "(download qua auth; khong token tra 401 dung spec). Vong "
+              "doi tai khoan lai qua UI release: doi display name \"An "
+              "Nguyen\" (hien tren inbox B); doi ten nhom \"NexaChat Group\" "
+              "(SYSTEM + title tren B doi live qua CONVERSATION_UPDATED); "
+              "register +84900000077 qua form → auto-login inbox rong → "
+              "search SDT + add contact tu account fresh; doi mat khau 2 "
+              "luot tren dialog (wrong-old → INVALID_CREDENTIALS, success "
+              "giu session nho keepToken, login xac nhan ca hai chieu; "
+              "demo state khoi phuc nguyen).")
     h2(doc, "13.5. Tái hiện / Reproduce")
     code_box(doc,
         "# Server: Postgres that roi verify (unit + IT)\n"
@@ -1009,7 +1028,7 @@ def build():
         "cd server && mvn -B verify       # 284 tests\n"
         "\n"
         "# Android unit tests\n"
-        "cd android && ./gradlew testDebugUnitTest   # 151 tests")
+        "cd android && ./gradlew testDebugUnitTest   # 155 tests")
     para(doc, "Manual E2E: docs/demo-runbook.md §5 — 10 bước demo ~8 phút "
               "(2 máy chat 1-1, 3 máy nhóm, offline send, media, "
               "interactions, i18n+rotation, CI xanh).")
@@ -1127,7 +1146,7 @@ def build():
               "100% parity, rotation an toàn, và creative feature Message "
               "Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.")
     para(doc, "Chất lượng được chứng minh bằng số liệu thật: 284 test server "
-              "(258 unit + 26 integration trên Postgres thật) và 151 test "
+              "(258 unit + 26 integration trên Postgres thật) và 155 test "
               "Android, CI gate xanh trên mọi PR; deploy một lệnh "
               "docker compose up; demo LAN có runbook + fallback. Các hạn "
               "chế được khai báo trung thực (không E2E, SimpleBroker 1 node, "

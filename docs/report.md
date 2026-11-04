@@ -88,7 +88,7 @@ nexachat/
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
 | R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 71 keys mỗi bên (`docs/i18n-audit.md`); `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
-| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **284 tests green** (258 unit + 26 IT); Android **151 tests green**; CI gate `.github/workflows/ci.yml` |
+| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **284 tests green** (258 unit + 26 IT); Android **155 tests green**; CI gate `.github/workflows/ci.yml` |
 | R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 18 câu vấn đáp trong thiết kế, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
@@ -145,7 +145,7 @@ reaction emoji toggle (PK composite = idempotent); pin ≤3/conversation
 | NFR-3 | Security | bcrypt; JWT HS256 secret ≥256-bit từ env; mọi endpoint cần Bearer trừ whitelist; WSS ở prod | `SecurityConfig`, `JwtAuthFilter`, `application-prod.yml` fail-fast khi thiếu `JWT_SECRET` |
 | NFR-4 | Usability | Material 3; mọi màn có Loading/Empty/Error/Retry; touch target ≥48dp | `core/ui/components` shared states; đợt a11y đã sửa vi phạm 48dp thật |
 | NFR-5 | Maintainability | Package-by-feature; không trả JPA entity ra API; không business logic trong Controller/Composable | module `com.nexachat.<feature>` server; `feature/*` + `data/` + `core/` Android |
-| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 284 + 151 tests; 21 negative tests ở quality phase |
+| NFR-6 | Testability | Toàn bộ unit test pass ở CI; mỗi service authZ có negative test | 284 + 155 tests; 21 negative tests ở quality phase |
 | NFR-7 | Portability | minSdk 26, targetSdk 35; emulator + máy thật qua LAN | `build.gradle.kts`; `BuildConfig.API_BASE_URL` |
 | NFR-8 | Observability | Log không chứa password/token/file body; `/actuator/health` | log scan sạch (chỉ id/event name) |
 | NFR-9 | Constraints | 1 backend + 1 PostgreSQL; media ≤25MB; demo LAN offline | `docker-compose.yml` |
@@ -654,7 +654,7 @@ lý thuyết:
 | Server unit | JUnit5 + Mockito (`mvn test`, surefire) | **258** | ✅ green |
 | Server integration | `@SpringBootTest` + Postgres thật qua env-JDBC (failsafe, `*IT`) | **26** | ✅ green |
 | **Server tổng** | `mvn -B verify` | **284** | ✅ green |
-| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **151** | ✅ green |
+| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **155** | ✅ green |
 | **Live E2E (prod Docker)** | REST + STOMP smoke script | 12 bước | ✅ green |
 | **On-device (emulator API 35)** | adb-driven manual flow | 12 màn | ✅ green |
 
@@ -683,7 +683,7 @@ Server: `MessageServiceTest` (29 — authZ, idempotency, pagination),
 `UserServiceTest` (11), `TokenServiceTest` (10 — rotation/reuse),
 `ConversationServiceTest` (10), `ReactionServiceTest` (7)…
 
-Android (151 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
+Android (155 test, 17 lớp): `ChatViewModelTest` (optimistic send, dedup theo
 `clientMessageId`, retry), `TokenAuthenticatorTest` (single-flight 401→refresh),
 `StompCodecTest` (frame parse/build), `TokenStoreTest`, `InboxViewModelTest`,
 `MessageRepositoryTest`, `AttachmentRepositoryTest`, `AuthViewModelTest`,
@@ -739,7 +739,7 @@ device" là bắt buộc trước khi tag release.
 bật airplane mode → gửi tin → bubble hiện SENDING (pending) ngay → tắt
 airplane mode → **~15s sau WS tự reconnect và outbox tự flush**, tin chuyển
 SENT đúng thứ tự seq, không nhân đôi (Room `outbox` rỗng, message có seq
-server). Bảy lỗi thật tiếp theo chỉ lộ trên device / trong spec-gap review
+server). Tám lỗi thật tiếp theo chỉ lộ trên device / trong spec-gap review
 (gồm cả hai lỗi tìm ra bằng adversarial review + probe on-device, không qua
 UI bug trực tiếp):
 
@@ -752,13 +752,17 @@ UI bug trực tiếp):
 | Loop "park" nhưng thực ra **spin** khi park trong lúc mạng vẫn tốt | `networkMonitor.regained` là **cold** callbackFlow — mỗi collector `registerNetworkCallback` riêng và Android bắn `onAvailable` NGAY cho network đã kết nối → parked-merge subscribe = nhận "regain" giả ngay → wake → fail → park → lặp vô hạn (mỗi ~25s một chu kỳ retry vô nghĩa; đã quan trắc trên device: nhiều collector hash khác nhau emit liên tiếp khi server down) | `regained` → `SharedFlow` qua `shareIn(scope, Lazily, replay=0)` — đúng 1 registration cả đời app; collector đến sau chỉ thấy regain THẬT. Verify: `docker stop` → park → `docker start` → 60s+ server healthy nhưng app vẫn Offline (không spin-reconnect) → mở chat → `ensureConnected` wake → resync → tin về đúng. Kèm `ensureConnected` trong send path (user gửi tin = tín hiệu muốn online mạnh nhất) |
 | Read receipt "Đã xem" (FR-C4, P0) đã có watermark + wire nhưng **không render** trên bubble của người gửi | `MessageRepository._readEvents` route MESSAGE_READ vào một SharedFlow **không ai collect** — UI không có consumer nào; `DeliveryStatus.SENT -> Unit` | Room v4: `conversations.peerReadSeq` (client-only, bump đơn điệu bằng MESSAGE_READ, bỏ qua echo của chính mình; refresh REST merge-preserve để không xóa) → `ChatViewModel.peerReadSeq` → bubble mình gửi hiển thị "Đã xem"/"Seen" khi `seq <= peerReadSeq`, chỉ DIRECT. Verify 2-device: A gửi → B đọc → "Seen" hiện trên A; force-stop + reopen vẫn còn; chiều ngược lại trên B cũng "Seen" |
 | Admin không thấy nút Remove/Add member/Rename trong group info — chức năng quản lý member không thể dùng từ UI | Server `InboxEntry.Member` không trả `role` (DTO "chưa cần"); client `ConversationMemberDto.role` nullable chấp nhận thiếu field → `iAmAdmin` luôn false → mọi affordance admin ẩn vĩnh viễn | Server thêm `role` vào `InboxMemberView` + `InboxEntry.Member` (client không cần đổi — DTO đã tolerate). Verify release APK: sheet hiện badge "Admin", nút Remove trên từng member, Add member, Rename — remove Chi qua dialog confirm → server mất row member + SYSTEM "An removed Chi" hiện sau resync; add lại qua picker |
+| "Change password" (FR-A6, P0) chỉ là text mờ không bấm được — tính năng không tồn tại trên UI | `ProfileScreen` render row stub `alpha(0.5f)` với comment "no change-password screen exists yet" dù server `PATCH /auth/password` + `AuthRepository.changePassword` + DTO đã đủ | Profile thêm dialog 3 field (current/new/confirm — tái dùng `PasswordField` + error flags chuẩn auth); `ProfileViewModel` validate từng field, gọi repo kèm refresh token hiện tại để giữ session thiết bị này (FR-A6: revoke các thiết bị khác). Verify release APK 2 lượt đổi thật: password123→np456789→password123, login xác nhận cả hai chiều; wrong-old hiện "Wrong phone number or password"; dialog snackbar "Password changed — other devices were signed out"; +4 VM tests |
 
 Regression test mới: `RealtimeSessionReArmTest` (8 case — regain re-arm
 parked loop, `ensureConnected` wake không cần network, `onAppForeground`
 wake khi login / no-op khi logout, regain khi logout không spin, regain
 khi socket sống là no-op, 50 luồng `ensureConnected` đồng thời chỉ mở
 đúng 1 loop, probe init) + `MessageRepositoryTest.send re-arms the
-connection loop` (send khi socket chết phải kick parked loop). Review
+connection loop` (send khi socket chết phải kick parked loop) + 4 case
+`ProfileViewModelTest` đổi mật khẩu (success đóng dialog + flag changed,
+mismatch/short/empty chặn local trước repository, lỗi server giữ dialog
+mở kèm ApiError). Review
 pass sau fix còn phát hiện check-then-launch của `launchConnectionLoop`
 không atomic → bọc `synchronized` cho cả launch lẫn logout-cancel.
 Cùng kịch bản airplane-mode được chạy lại trên **release APK đã ký** —
@@ -791,6 +795,15 @@ mở group → resync render cả 3 bubble attachment; bấm "Open attachment"
 trên video → player in-app phát `1000000078.mp4` trên **máy nhận**
 (download path `GET /attachments/{id}/content` qua auth hoạt động
 end-to-end; gọi thẳng không token trả 401 đúng spec).
+**Vòng đời tài khoản lái qua UI release**: đổi display name thành
+"An Nguyen" (nhãn cập nhật ngay trên inbox B); đổi tên nhóm thành
+"NexaChat Group" (SYSTEM "An renamed the group…" + title bar trên B đổi
+live qua `CONVERSATION_UPDATED`); register tài khoản mới `+84900000077`
+qua form → auto-login inbox rỗng → search SĐT + add contact từ tài khoản
+mới (FR-B1/B3 trên account fresh); đổi mật khẩu **2 lượt trên dialog**
+(password123→np456789→password123 — dialog 3 field, wrong-old hiện
+INVALID_CREDENTIALS, success giữ session thiết bị hiện tại nhờ keepToken,
+login xác nhận cả hai chiều; demo state khôi phục nguyên).
 
 ### 13.5. Tái hiện / Reproduce
 
@@ -800,7 +813,7 @@ docker compose up -d db          # postgres:16 @ localhost:5433
 cd server && mvn -B verify       # 284 tests
 
 # Android unit tests
-cd android && ./gradlew testDebugUnitTest   # 151 tests
+cd android && ./gradlew testDebugUnitTest   # 155 tests
 ```
 
 Manual E2E: `docs/demo-runbook.md` §5 — 10 bước demo ~8 phút (2 máy chat 1-1,
@@ -924,7 +937,7 @@ i18n Vi/En 100% parity, rotation an toàn, và creative feature Message
 Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.
 
 Chất lượng được chứng minh bằng số liệu thật: **284 test server** (258 unit +
-26 integration trên Postgres thật) và **151 test Android**, CI gate xanh trên
+26 integration trên Postgres thật) và **155 test Android**, CI gate xanh trên
 mọi PR; deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
 Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, presence
 chưa emit, edit/delete plumb sẵn chưa ship) — mỗi hạn chế kèm hướng phát triển
