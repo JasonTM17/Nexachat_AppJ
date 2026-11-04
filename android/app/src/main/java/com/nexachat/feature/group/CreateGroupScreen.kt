@@ -123,6 +123,7 @@ fun CreateGroupScreen(
                                 phone = contact.phone,
                                 selected = contact.userId in state.selectedIds,
                                 onToggle = { viewModel.toggleMember(contact.userId) },
+                                avatarUrl = contact.avatarUrl,
                             )
                         }
                     }
@@ -157,6 +158,7 @@ internal fun SelectableContactRow(
     selected: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
+    avatarUrl: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -165,7 +167,7 @@ internal fun SelectableContactRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(name)
+        InitialAvatar(name, avatarUrl)
         Column(
             modifier = Modifier
                 .weight(1f)

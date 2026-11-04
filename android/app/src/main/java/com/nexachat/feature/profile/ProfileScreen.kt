@@ -1,5 +1,9 @@
 package com.nexachat.feature.profile
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -36,14 +40,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
+import com.nexachat.core.common.absoluteMediaUrl
 import com.nexachat.core.common.AppLocaleManager
 import com.nexachat.core.ui.components.ErrorState
 import com.nexachat.core.ui.components.LoadingState
@@ -51,9 +60,11 @@ import com.nexachat.feature.auth.PasswordField
 import com.nexachat.feature.auth.apiErrorMessage
 import com.nexachat.feature.contacts.ErrorText
 import com.nexachat.feature.contacts.contactErrorMessage
+import com.nexachat.feature.media.rememberAuthedImageLoader
 
 /**
- * Own profile: avatar placeholder, editable displayName (PATCH /users/me),
+ * Own profile: avatar upload (POST /users/me/avatar via the system image
+ * picker, FR-A5), editable displayName (PATCH /users/me),
  * read-only phone, change-password dialog (PATCH /auth/password — the
  * current refresh token is passed so this device stays signed in while
  * every other session is revoked, FR-A6), a language entry into
@@ -70,11 +81,27 @@ fun ProfileScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val passwordChangedMessage = stringResource(R.string.profile_password_changed)
+    val avatarErrorMessage = state.avatarError?.let { apiErrorMessage(it) }
+    val imageLoader = rememberAuthedImageLoader()
+
+    // System photo picker — image-only, no storage permission needed.
+    val avatarPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.uploadAvatar(uri)
+    }
 
     LaunchedEffect(state.passwordChanged) {
         if (state.passwordChanged) {
             viewModel.consumePasswordChanged()
             snackbarHostState.showSnackbar(passwordChangedMessage)
+        }
+    }
+
+    LaunchedEffect(state.avatarError) {
+        if (avatarErrorMessage != null) {
+            viewModel.consumeAvatarError()
+            snackbarHostState.showSnackbar(avatarErrorMessage)
         }
     }
 
@@ -119,6 +146,12 @@ fun ProfileScreen(
                     onNewPasswordChange = viewModel::onNewPasswordChange,
                     onConfirmPasswordChange = viewModel::onConfirmPasswordChange,
                     onSubmitPassword = viewModel::submitPasswordChange,
+                    onPickAvatar = {
+                        avatarPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    imageLoader = imageLoader,
                     onLogout = viewModel::logout,
                 )
             }
@@ -140,6 +173,8 @@ private fun ProfileContent(
     onNewPasswordChange: (String) -> Unit,
     onConfirmPasswordChange: (String) -> Unit,
     onSubmitPassword: () -> Unit,
+    onPickAvatar: () -> Unit,
+    imageLoader: coil.ImageLoader,
     onLogout: () -> Unit,
 ) {
     val user = state.user ?: return
@@ -149,19 +184,36 @@ private fun ProfileContent(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Letter-circle placeholder until avatar upload lands (plan P4).
+        // FR-A5 avatar: server-persisted image via the authed loader, or an
+        // initial fallback. Tap opens the image-only system picker.
+        val avatarDescription = stringResource(R.string.profile_change_avatar)
         Box(
             modifier = Modifier
                 .size(88.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .clickable(onClick = onPickAvatar)
+                .semantics { contentDescription = avatarDescription },
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = user.displayName.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
+            if (user.avatarUrl != null) {
+                AsyncImage(
+                    model = user.avatarUrl.absoluteMediaUrl(),
+                    imageLoader = imageLoader,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = user.displayName.firstOrNull()?.uppercase() ?: "?",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            if (state.avatarUploading) {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            }
         }
 
         if (state.editingName) {

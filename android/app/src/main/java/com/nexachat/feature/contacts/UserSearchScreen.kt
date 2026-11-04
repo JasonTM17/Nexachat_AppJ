@@ -124,6 +124,7 @@ fun UserSearchScreen(
                                 title = user.displayName,
                                 subtitle = user.phone,
                                 onClick = { viewModel.openUserDetail(user) },
+                                avatarUrl = user.avatarUrl,
                             )
                         }
                     }

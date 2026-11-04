@@ -146,7 +146,7 @@ class ContactServiceTest {
 
     @Test
     void list_delegatesToProjectionQuery() {
-        ContactResponse row = new ContactResponse(UUID.randomUUID(), "+8498", "Lan", "L", null);
+        ContactResponse row = new ContactResponse(UUID.randomUUID(), "+8498", "Lan", "L", null, null);
         when(contactRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(row));
 
         assertThat(contactService.list(ownerId)).containsExactly(row);

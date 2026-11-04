@@ -49,6 +49,12 @@ data class UserDto(
     val avatarUrl: String? = null,
 )
 
+/** `POST /users/me/avatar` body — the stored file's served path. */
+@JsonClass(generateAdapter = true)
+data class AvatarResponse(
+    val avatarUrl: String,
+)
+
 @JsonClass(generateAdapter = true)
 data class AuthResponse(
     val user: UserDto,

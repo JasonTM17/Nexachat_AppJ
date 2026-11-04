@@ -311,7 +311,7 @@ private fun MemberRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(member.displayName)
+        InitialAvatar(member.displayName, member.avatarUrl)
         Column(
             modifier = Modifier
                 .weight(1f)

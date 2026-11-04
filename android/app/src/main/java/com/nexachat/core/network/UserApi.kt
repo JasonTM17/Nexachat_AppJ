@@ -1,6 +1,7 @@
 package com.nexachat.core.network
 
 import com.nexachat.core.network.dto.AddContactRequest
+import com.nexachat.core.network.dto.AvatarResponse
 import com.nexachat.core.network.dto.ContactDto
 import com.nexachat.core.network.dto.ContactEnvelopeDto
 import com.nexachat.core.network.dto.DirectConversationRequest
@@ -8,12 +9,15 @@ import com.nexachat.core.network.dto.DirectConversationResponse
 import com.nexachat.core.network.dto.UpdateContactRequest
 import com.nexachat.core.network.dto.UpdateProfileRequest
 import com.nexachat.core.network.dto.UserDto
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -41,6 +45,15 @@ interface UserApi {
 
     @PATCH("api/v1/users/me")
     suspend fun updateMe(@Body body: UpdateProfileRequest): Response<UserDto>
+
+    /**
+     * Self-service avatar upload (`POST /users/me/avatar`, multipart `file`).
+     * Server sniffs image bytes, persists `avatar_url` on the user row and
+     * returns the served path — fetch [getMe] again for the fresh record.
+     */
+    @Multipart
+    @POST("api/v1/users/me/avatar")
+    suspend fun uploadAvatar(@Part file: MultipartBody.Part): Response<AvatarResponse>
 
     @GET("api/v1/contacts")
     suspend fun getContacts(): Response<List<ContactDto>>

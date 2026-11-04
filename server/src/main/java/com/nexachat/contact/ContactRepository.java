@@ -17,7 +17,7 @@ public interface ContactRepository extends JpaRepository<Contact, ContactId> {
      */
     @Query("""
             SELECT new com.nexachat.contact.dto.ContactResponse(
-                       u.id, u.phone, u.displayName, c.aliasName, c.createdAt)
+                       u.id, u.phone, u.displayName, c.aliasName, u.avatarUrl, c.createdAt)
             FROM Contact c JOIN c.contactUser u
             WHERE c.owner.id = :ownerId
             ORDER BY u.displayName

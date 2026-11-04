@@ -70,7 +70,7 @@ public class ContactService {
         log.info("Contact added owner={} contact={}", ownerId, target.getId());
         return new ContactResponse(
                 target.getId(), target.getPhone(), target.getDisplayName(),
-                contact.getAliasName(), contact.getCreatedAt());
+                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
     }
 
     @Transactional(readOnly = true)
@@ -98,7 +98,7 @@ public class ContactService {
         User target = contact.getContactUser();
         return new ContactResponse(
                 target.getId(), target.getPhone(), target.getDisplayName(),
-                contact.getAliasName(), contact.getCreatedAt());
+                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
     }
 
     /** Idempotent by contract: deleting a non-contact is still 204. */

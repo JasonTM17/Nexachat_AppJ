@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,12 +24,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
+import com.nexachat.core.common.absoluteMediaUrl
+import com.nexachat.feature.media.rememberAuthedImageLoader
 
 /**
  * [ApiError] → user-facing strings for the contacts/search flows. Distinct
@@ -48,9 +53,16 @@ internal fun contactErrorMessage(error: ApiError): String = when (error) {
     }
 }
 
-/** Letter-circle avatar placeholder until avatar upload lands (plan P4). */
+/**
+ * Avatar: server image via the authed loader when [avatarUrl] is set,
+ * else the letter-circle fallback. Shared by contacts/group/user rows.
+ */
 @Composable
-internal fun InitialAvatar(name: String, modifier: Modifier = Modifier) {
+internal fun InitialAvatar(
+    name: String,
+    avatarUrl: String? = null,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier
             .size(44.dp)
@@ -58,11 +70,21 @@ internal fun InitialAvatar(name: String, modifier: Modifier = Modifier) {
             .background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = name.firstOrNull()?.uppercase() ?: "?",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
+        if (avatarUrl != null) {
+            AsyncImage(
+                model = avatarUrl.absoluteMediaUrl(),
+                imageLoader = rememberAuthedImageLoader(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                text = name.firstOrNull()?.uppercase() ?: "?",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
     }
 }
 
@@ -72,6 +94,7 @@ internal fun UserRow(
     subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    avatarUrl: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -80,7 +103,7 @@ internal fun UserRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(title)
+        InitialAvatar(title, avatarUrl)
         Column(modifier = Modifier.padding(start = 12.dp)) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(
@@ -140,6 +163,7 @@ internal fun AddByPhoneContent(
                 subtitle = user.phone,
                 onClick = {},
                 modifier = Modifier.padding(top = 8.dp),
+                avatarUrl = user.avatarUrl,
             )
         }
         if (state.addDone) {
@@ -201,7 +225,7 @@ internal fun ContactDetailContent(
         modifier = modifier.padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        InitialAvatar(user.displayName, Modifier.size(64.dp))
+        InitialAvatar(user.displayName, user.avatarUrl, Modifier.size(64.dp))
         Text(
             text = contact?.primaryLabel ?: user.displayName,
             style = MaterialTheme.typography.titleLarge,

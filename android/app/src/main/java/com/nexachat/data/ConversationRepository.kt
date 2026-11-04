@@ -289,7 +289,7 @@ class ConversationRepository @Inject constructor(
             lastMessageAt = resolvedLastAt()?.let { isoToEpochMs(it) },
             unreadCount = unreadCount ?: 0,
             otherUserName = resolvedOtherName(myId),
-            otherUserAvatar = resolvedOtherAvatar(),
+            otherUserAvatar = resolvedOtherAvatar(myId),
         )
 
     /**

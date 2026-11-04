@@ -123,6 +123,7 @@ fun ContactsScreen(
                             title = contact.primaryLabel,
                             subtitle = contact.phone,
                             onClick = { viewModel.openContactDetail(contact) },
+                            avatarUrl = contact.avatarUrl,
                         )
                     }
                 }

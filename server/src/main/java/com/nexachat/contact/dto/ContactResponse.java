@@ -13,6 +13,7 @@ public record ContactResponse(
         String phone,
         String displayName,
         String aliasName,
+        String avatarUrl,
         Instant createdAt
 ) {
 }

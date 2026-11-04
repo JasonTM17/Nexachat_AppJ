@@ -15,3 +15,13 @@ import com.nexachat.BuildConfig
 object AppConfig {
     const val API_BASE_URL = BuildConfig.API_BASE_URL
 }
+
+/**
+ * Server-returned media paths may be absolute (`https://…`) or root-relative
+ * (`/api/v1/files/…`); resolve either to an absolute URL for Coil/Retrofit.
+ */
+fun String.absoluteMediaUrl(): String = when {
+    startsWith("http://") || startsWith("https://") -> this
+    startsWith("/") -> AppConfig.API_BASE_URL + this
+    else -> "${AppConfig.API_BASE_URL}/$this"
+}

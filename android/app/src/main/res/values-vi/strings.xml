@@ -13,6 +13,7 @@
     <string name="auth_current_password_label">Mật khẩu hiện tại</string>
     <string name="auth_new_password_label">Mật khẩu mới</string>
     <string name="profile_password_changed">Đã đổi mật khẩu — các thiết bị khác đã bị đăng xuất</string>
+    <string name="profile_change_avatar">Đổi ảnh đại diện</string>
     <string name="error_current_password_required">Nhập mật khẩu hiện tại</string>
     <string name="action_sign_in">Đăng nhập</string>
     <string name="action_create_account">Tạo tài khoản</string>

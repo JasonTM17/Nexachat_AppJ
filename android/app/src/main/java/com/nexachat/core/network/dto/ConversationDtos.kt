@@ -42,7 +42,14 @@ data class ConversationInboxDto(
         otherUser?.displayName ?: otherUserName
             ?: members.firstOrNull { it.userId != null && it.userId != myUserId }?.displayName
 
-    fun resolvedOtherAvatar(): String? = otherUser?.avatarUrl ?: otherUserAvatar
+    /**
+     * The member-≠-self fallback is DIRECT-only — a group row must never
+     * borrow a member's photo as its own avatar.
+     */
+    fun resolvedOtherAvatar(myUserId: String?): String? =
+        otherUser?.avatarUrl ?: otherUserAvatar
+            ?: members.firstOrNull { it.userId != null && it.userId != myUserId }
+                ?.takeIf { type == null || type == "DIRECT" }?.avatarUrl
 }
 
 /**

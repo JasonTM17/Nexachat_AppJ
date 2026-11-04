@@ -1,5 +1,7 @@
 package com.nexachat.data
 
+import android.content.Context
+import android.net.Uri
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.PhoneNormalizer
 import com.nexachat.core.common.Result
@@ -12,12 +14,19 @@ import com.nexachat.core.network.dto.UpdateContactRequest
 import com.nexachat.core.network.dto.UpdateProfileRequest
 import com.nexachat.core.network.dto.UserDto
 import com.nexachat.core.network.safeApiCall
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Contact as the feature layer sees it — the wire [ContactDto] tolerates two
@@ -29,6 +38,7 @@ data class Contact(
     val phone: String,
     val displayName: String,
     val aliasName: String? = null,
+    val avatarUrl: String? = null,
     val createdAt: String? = null,
 ) {
     /** Label shown in lists: the owner-chosen alias beats the profile name. */
@@ -46,6 +56,7 @@ data class Contact(
 @Singleton
 class ContactsRepository @Inject constructor(
     private val userApi: UserApi,
+    @ApplicationContext private val context: Context,
 ) {
 
     /**
@@ -60,6 +71,41 @@ class ContactsRepository @Inject constructor(
 
     suspend fun getMe(): Result<UserDto> =
         call { userApi.getMe() }
+
+    /**
+     * Avatar upload (FR-A5): streams the picked image as multipart `file`,
+     * then re-fetches the user record so callers always see the persisted
+     * `avatarUrl` rather than trusting the upload response alone. Reads are
+     * capped — a >25 MB pick fails fast like the attachment path.
+     */
+    suspend fun uploadAvatar(uri: Uri): Result<UserDto> = withContext(Dispatchers.IO) {
+        val bytes = try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(MAX_AVATAR_BYTES + 1)
+                var read = 0
+                var total = 0
+                while (total <= MAX_AVATAR_BYTES &&
+                    input.read(buffer, total, MAX_AVATAR_BYTES + 1 - total).also { read = it } > 0
+                ) {
+                    total += read
+                }
+                if (total > MAX_AVATAR_BYTES) null else buffer.copyOf(total)
+            }
+        } catch (e: IOException) {
+            null
+        } ?: return@withContext Result.Failure(ApiError.Network("avatar read failed"))
+        val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+            ?: "image/jpeg"
+        val part = MultipartBody.Part.createFormData(
+            "file",
+            uri.lastPathSegment ?: "avatar",
+            bytes.toRequestBody(mime.toMediaTypeOrNull()),
+        )
+        when (val uploaded = call { userApi.uploadAvatar(part) }) {
+            is Result.Success -> call { userApi.getMe() }
+            is Result.Failure -> uploaded
+        }
+    }
 
     suspend fun updateDisplayName(displayName: String): Result<UserDto> =
         call { userApi.updateMe(UpdateProfileRequest(displayName = displayName.trim())) }
@@ -160,6 +206,7 @@ class ContactsRepository @Inject constructor(
             phone = phone.orEmpty(),
             displayName = displayName ?: phone.orEmpty(),
             aliasName = aliasName,
+            avatarUrl = avatarUrl,
             createdAt = createdAt,
         )
     }
@@ -199,4 +246,9 @@ class ContactsRepository @Inject constructor(
         } catch (_: ClassCastException) {
             ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
         }
+
+    private companion object {
+        // Server hard cap is 25 MB; avatars should never approach it.
+        const val MAX_AVATAR_BYTES = 25 * 1024 * 1024
+    }
 }

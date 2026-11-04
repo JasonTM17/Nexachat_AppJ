@@ -1,5 +1,6 @@
 package com.nexachat.feature.profile
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nexachat.core.common.ApiError
@@ -47,6 +48,9 @@ class ProfileViewModel @Inject constructor(
         val passwordSaving: Boolean = false,
         val passwordError: ApiError? = null,
         val passwordChanged: Boolean = false,
+        // Avatar upload row (POST /users/me/avatar, FR-A5).
+        val avatarUploading: Boolean = false,
+        val avatarError: ApiError? = null,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -160,6 +164,28 @@ class ProfileViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Avatar pick → `POST /users/me/avatar` → refreshed `user` (FR-A5).
+     * The repo returns the re-fetched record so `avatarUrl` in state is always
+     * the server-persisted value, not an optimistic guess.
+     */
+    fun uploadAvatar(uri: Uri) {
+        if (_uiState.value.avatarUploading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(avatarUploading = true, avatarError = null) }
+            when (val result = contactsRepository.uploadAvatar(uri)) {
+                is Result.Success -> _uiState.update {
+                    it.copy(avatarUploading = false, user = result.value)
+                }
+                is Result.Failure -> _uiState.update {
+                    it.copy(avatarUploading = false, avatarError = result.error)
+                }
+            }
+        }
+    }
+
+    fun consumeAvatarError() = _uiState.update { it.copy(avatarError = null) }
 
     /** Clears the session locally and broadcasts LoggedOut — nav reacts globally. */
     fun logout() {

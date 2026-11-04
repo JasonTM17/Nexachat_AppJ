@@ -40,6 +40,8 @@ data class ContactDto(
     val phone: String? = null,
     val displayName: String? = null,
     val aliasName: String? = null,
+    /** Tolerates servers that predate avatar-in-contacts (null → fallback). */
+    val avatarUrl: String? = null,
     val createdAt: String? = null,
 ) {
     /** The contact's user id regardless of which spelling the server sent. */

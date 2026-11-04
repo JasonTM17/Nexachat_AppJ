@@ -10,6 +10,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -202,5 +203,55 @@ class ProfileViewModelTest {
         assertTrue(state.showPasswordDialog)
         assertEquals(ApiError.InvalidCredentials, state.passwordError)
         assertFalse(state.passwordSaving)
+    }
+
+    @Test
+    fun `avatar upload success refreshes the user record from the repo`() = runTest {
+        val uri = mockk<android.net.Uri>()
+        val withAvatar = me.copy(avatarUrl = "/api/v1/files/avatars/me-1.png")
+        coEvery { contactsRepository.uploadAvatar(uri) } returns Result.Success(withAvatar)
+
+        val viewModel = createViewModel()
+        viewModel.uploadAvatar(uri)
+
+        val state = viewModel.uiState.value
+        assertEquals(withAvatar, state.user)
+        assertEquals("/api/v1/files/avatars/me-1.png", state.user?.avatarUrl)
+        assertFalse(state.avatarUploading)
+        assertNull(state.avatarError)
+    }
+
+    @Test
+    fun `avatar upload failure surfaces avatarError and keeps the old record`() = runTest {
+        val uri = mockk<android.net.Uri>()
+        coEvery { contactsRepository.uploadAvatar(uri) } returns
+            Result.Failure(ApiError.Network("avatar read failed"))
+
+        val viewModel = createViewModel()
+        viewModel.uploadAvatar(uri)
+
+        val state = viewModel.uiState.value
+        assertEquals(me, state.user)
+        assertEquals(ApiError.Network("avatar read failed"), state.avatarError)
+        assertFalse(state.avatarUploading)
+    }
+
+    @Test
+    fun `a second pick while uploading is ignored`() = runTest {
+        val uri = mockk<android.net.Uri>()
+        val other = mockk<android.net.Uri>()
+        val withAvatar = me.copy(avatarUrl = "/api/v1/files/avatars/me-1.png")
+        coEvery { contactsRepository.uploadAvatar(any()) } coAnswers {
+            kotlinx.coroutines.delay(50)
+            Result.Success(withAvatar)
+        }
+
+        val viewModel = createViewModel()
+        viewModel.uploadAvatar(uri)
+        viewModel.uploadAvatar(other) // must not launch a second call
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { contactsRepository.uploadAvatar(other) }
+        assertEquals(withAvatar, viewModel.uiState.value.user)
     }
 }
