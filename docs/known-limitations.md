@@ -54,11 +54,6 @@ Paths are repo-relative; `…/` abbreviates `server/src/main/java/com/nexachat/`
 
 ## 4. Honest UX limits
 
-- **Pin menu shows for non-admin group members.** `ChatViewModel.togglePin` is
-  unconditional because the chat data path exposes no role
-  (`ChatViewModel.kt:241-247`); the pin item is enabled by `replyable` only
-  (`ChatScreen.kt:407-420`). A non-admin tap gets a server 403 surfaced as a
-  snackbar — there is no client-side role check on that path.
 - **Quote/pin jump is a no-op outside the loaded window.** `jumpToMessage`
   searches only currently loaded messages and returns silently when the id is
   absent (`ChatScreen.kt:114-120`). Tapping a quote or pin banner for an older
@@ -68,8 +63,10 @@ Paths are repo-relative; `…/` abbreviates `server/src/main/java/com/nexachat/`
   otherwise (`ChatViewModel.kt:235`). Pending/outbox rows show no reaction
   affordance.
 - **Server-down-while-network-up does not auto-retry.** The re-arm triggers
-  are a validated network *transition* (`NetworkMonitor`) or a user action
-  (`ensureConnected` from `openConversation`). If the backend is unreachable
-  while the device network stays up (server restart, dead backend), the loop
-  exhausts `MAX_ATTEMPTS` and waits for the next user navigation — no
-  periodic heartbeat re-arm exists yet (`RealtimeSession.kt:196-211`).
+  are a validated network *transition* (`NetworkMonitor`), app foreground
+  (`ProcessLifecycleOwner.onStart` → `onAppForeground`), or a user action
+  (`ensureConnected` from `openConversation` and the send path). If the
+  backend is unreachable while the device network stays up (server restart,
+  dead backend), the loop exhausts `MAX_ATTEMPTS` and parks until one of
+  those triggers — no periodic heartbeat re-arm exists yet
+  (`RealtimeSession.kt:196-211`).

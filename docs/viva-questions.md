@@ -701,11 +701,12 @@ replayed frame still states the truth (`PinService.java:144-146,169-170`).
 **Model answer.** The conversation *type* drives the policy, checked against
 the member row's `role`. Pinning: in DIRECT, **any member** may pin/unpin;
 in GROUP, **ADMIN only** — `requirePinRole` throws `NOT_ADMIN` for a
-non-admin group member (`PinService.java:192-198`), and the same rule is why
-the client shows the pin menu unconditionally on the chat screen (the role
-is not on that data path — the server's 403 is the real boundary, surfaced
-as a snackbar; `ChatViewModel.kt:241-247`, documented in
-`docs/known-limitations.md` §4). Group management mirrors it: add member,
+non-admin group member (`PinService.java:192-198`). The same rule is
+surfaced client-side: `conversations.myRole` (Room v6) persists the
+caller's member row from the inbox payload, `ChatViewModel.canPin =
+!isGroup || myRole == "ADMIN"` gates the long-press Pin item, and the
+server remains the real boundary if the gate is bypassed. Group
+management mirrors it: add member,
 remove other member, rename/re-avatar = ADMIN-only (`GroupService.java` —
 `requireAdmin`, line 304-306), while *self-leave* is any member. One
 integrity rule: a group with members must keep ≥1 ADMIN, so the sole admin
@@ -760,7 +761,7 @@ placeholder from that flag. Two supporting choices: the send path requires
 the reply target to exist and live in the *same* conversation — quoting
 across conversations is rejected `VALIDATION_FAILED`
 (`MessageService.java:314-325`) — and the client denormalizes
-`replyToSenderName`/`replyToSnippet` onto its own row (Room v3,
+`replyToSenderName`/`replyToSnippet` onto its own row (Room v6 — added back at v2→v3,
 `Entities.kt:29-35`), so the quote block still renders when the original is
 outside the loaded window.
 
@@ -835,14 +836,15 @@ persists the media payload so a retry re-derives `attachmentIds`
   dispatch a no-op; the outbox delete is keyed by `clientMessageId` and only
   fires when the ack is mine.
 
-### Q5.2 — Room migrations v1→v3: những gì thay đổi, tại sao explicit Migration?
+### Q5.2 — Room migrations v1→v6: những gì thay đổi, tại sao explicit Migration?
 
-*Room migrations v1→v3 — what changed, and why explicit Migration objects?*
+*Room migrations v1→v6 — what changed, and why explicit Migration objects?*
 
-**Model answer.** `AppDatabase` is at `version = 3` with
+**Model answer.** `AppDatabase` is at `version = 6` with
 `exportSchema = false` — no exported schema JSON means `autoMigrations` are
 impossible, so every upgrade is an explicit SQL `Migration`, versioned like
-the server's Flyway files (`core/database/AppDatabase.kt:10-24`).
+the server's Flyway files (`core/database/AppDatabase.kt:33`,
+`:46-133` — all five registered in `DatabaseModule`).
 `MIGRATION_1_2` is one additive ALTER —
 `ALTER TABLE outbox ADD COLUMN attachmentsJson TEXT NOT NULL DEFAULT ''` —
 so pending attachment sends survive a restart with their id list intact
@@ -853,7 +855,13 @@ the two interaction tables — `message_reactions` (PK `(messageId, emoji)`,
 index on `conversationId`) and `pinned_messages` (PK
 `(conversationId, messageId)`) — with index names matching Room's
 `index_<table>_<columns>` convention or schema validation fails
-(line 61-92). Additive-only is deliberate: a migrated install loses nothing.
+(line 61-92). `MIGRATION_3_4` adds `conversations.peerReadSeq` — the
+client-only OTHER-member read watermark that powers the DIRECT "Seen"
+receipt (merge-preserved across refreshes since no REST field feeds it).
+`MIGRATION_4_5` adds `conversations.avatarUrl` for group avatars.
+`MIGRATION_5_6` adds `conversations.myRole` — the caller's own member role
+from the inbox payload, used to gate ADMIN-only affordances like group
+pin. Additive-only is deliberate: a migrated install loses nothing.
 
 **Follow-up traps.**
 - *"Why does the reaction PK include only (messageId, emoji)?"* — The table
@@ -862,7 +870,10 @@ index on `conversationId`) and `pinned_messages` (PK
   emoji) is the finest granularity the wire gives (`Entities.kt:92-111`).
 - *"What if a migration were missed?"* — Room throws on version mismatch;
   the honest gap is there is no `MigrationTestHelper`/androidTest suite yet
-  (`docs/known-limitations.md` §2) — say it, don't bluff.
+  (`docs/known-limitations.md` §2) — say it, don't bluff. What *did* run:
+  every E2E round installed the signed APK over the previous build, so
+  v4→v5→v6 executed on a real populated database — a missed registration
+  would have crashed launch on-device and been caught there, not by CI.
 
 ### Q5.3 — Resync và pagination khác nhau thế nào? Khi nào dùng cái nào?
 
@@ -1136,7 +1147,7 @@ constraint semantics — a green H2 suite would be green *about a different
 database*. So every `*IT` boots the real Flyway-migrated Postgres and
 exercises the actual code paths (`AuthFlowIT`, `MessageFlowIT`,
 `GroupFlowIT`, `InteractionFlowIT`, `AttachmentFlowIT`,
-`ContactConversationIT` — 26 ITs of the 284 total).
+`ContactConversationIT` — 26 ITs of the 287 total).
 
 **Follow-up traps.**
 - *"Isn't a real DB slower/flakier?"* — Yes, deliberately accepted: failsafe
@@ -1261,9 +1272,9 @@ cleartext caveat verbatim.
 
 **Model answer.** Three jobs on every PR and push to `main`/`develop`
 (`.github/workflows/ci.yml`). `server-test`: a `postgres:16` service on
-`:5432` + `mvn -B verify` — the *whole* 284 (258 unit + 26 IT) against real
+`:5432` + `mvn -B verify` — the *whole* 287 (261 unit + 26 IT) against real
 Postgres, with `IT_DB_*` pointing the ITs at the service. `android-test`:
-`./gradlew testDebugUnitTest` — the 138 JVM unit tests. `secret-scan`: a
+`./gradlew testDebugUnitTest` — the 165 JVM unit tests. `secret-scan`: a
 grep gate for `BEGIN.*PRIVATE KEY` / `api[_-]?key=<20+ chars>` patterns —
 match found = job fails. All three must be green; the branch-protection
 story in the README ("must stay green to merge") is what the workflow
