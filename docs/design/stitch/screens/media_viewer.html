@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat Media Viewer</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary-fixed-dim": "#b7c8e1",
+            "primary": "#3525cd",
+            "tertiary-fixed": "#c9e6ff",
+            "tertiary-fixed-dim": "#89ceff",
+            "on-primary-fixed-variant": "#3323cc",
+            "inverse-surface": "#2d3133",
+            "on-secondary": "#ffffff",
+            "surface-container-highest": "#e0e3e5",
+            "on-background": "#191c1e",
+            "on-primary-fixed": "#0f0069",
+            "surface": "#f7f9fb",
+            "surface-tint": "#4d44e3",
+            "background": "#f7f9fb",
+            "surface-dim": "#d8dadc",
+            "surface-container-high": "#e6e8ea",
+            "secondary": "#505f76",
+            "primary-container": "#4f46e5",
+            "secondary-container": "#d0e1fb",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "secondary-fixed": "#d3e4fe",
+            "on-surface-variant": "#464555",
+            "inverse-primary": "#c3c0ff",
+            "surface-container": "#eceef0",
+            "on-tertiary-container": "#b8e0ff",
+            "on-error-container": "#93000a",
+            "surface-container-low": "#f2f4f6",
+            "outline-variant": "#c7c4d8",
+            "on-primary-container": "#dad7ff",
+            "surface-variant": "#e0e3e5",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-container-lowest": "#ffffff",
+            "on-tertiary-fixed": "#001e2f",
+            "on-secondary-fixed": "#0b1c30",
+            "primary-fixed": "#e2dfff",
+            "on-secondary-fixed-variant": "#38485d",
+            "outline": "#777587",
+            "on-error": "#ffffff",
+            "tertiary-container": "#006693",
+            "inverse-on-surface": "#eff1f3",
+            "tertiary": "#004d70",
+            "surface-bright": "#f7f9fb",
+            "on-tertiary": "#ffffff",
+            "error-container": "#ffdad6",
+            "on-surface": "#191c1e",
+            "error": "#ba1a1a",
+            "on-secondary-container": "#54647a",
+            "on-primary": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "1rem",
+            "gutter": "1rem",
+            "margin-desktop": "2rem",
+            "space-xl": "2rem",
+            "gutter-desktop": "1.5rem",
+            "gutter-tablet": "1.25rem",
+            "space-xs": "0.25rem",
+            "margin-tablet": "1.5rem",
+            "space-md": "1rem",
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Inter"],
+            "title-md": ["Inter"],
+            "headline-lg": ["Roboto Flex"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "label-sm": ["Inter"],
+            "label-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "label-lg": ["Inter"],
+            "headline-sm": ["Roboto Flex"],
+            "body-md": ["Inter"]
+          },
+          "fontSize": {
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-inverse-on-surface flex justify-center items-center min-h-screen p-0 sm:p-4 select-none">
+<!-- Mobile Viewport Frame (390px x 844px) -->
+<div class="relative w-full max-w-[390px] h-[844px] bg-slate-950 overflow-hidden shadow-2xl sm:rounded-[40px] border border-slate-800 flex flex-col justify-between">
+<!-- Ambient Backdrop Illumination -->
+<div class="absolute -top-24 -left-24 w-80 h-80 bg-primary-container/20 rounded-full blur-3xl pointer-events-none"></div>
+<div class="absolute -bottom-24 -right-24 w-80 h-80 bg-tertiary-container/30 rounded-full blur-3xl pointer-events-none"></div>
+<!-- 1. TopAppBar Overlay (Mapped from Shared Components JSON & Custom Media Specification) -->
+<header class="fixed top-0 left-0 right-0 w-full flex justify-between items-center px-space-md py-space-sm z-50 bg-inverse-surface/85 backdrop-blur-md border-b border-outline-variant/20 shadow-sm transition-all duration-150">
+<!-- Leading Back Button & Title Stack -->
+<div class="flex items-center space-x-3 overflow-hidden">
+<button aria-label="Go back" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/10 hover:bg-surface-variant/20 active:scale-95 transition-transform text-inverse-on-surface" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="flex flex-col min-w-0">
+<span class="font-title-md text-title-md text-inverse-on-surface font-semibold truncate leading-tight">
+            IMG_2026_NexaArchitecture.png
+          </span>
+<span class="font-label-sm text-label-sm text-outline-variant flex items-center gap-1.5 pt-0.5">
+<span>Lan Anh</span>
+<span class="inline-block w-1 h-1 rounded-full bg-outline-variant"></span>
+<span>10:15</span>
+</span>
+</div>
+</div>
+<!-- Trailing Action Icons -->
+<div class="flex items-center space-x-1.5 shrink-0">
+<button aria-label="Download" class="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-surface-variant/20 active:scale-95 transition-transform text-inverse-on-surface" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="download">download</span>
+</button>
+<button aria-label="Share" class="w-9 h-9 rounded-full flex items-center justify-center bg-white/10 hover:bg-surface-variant/20 active:scale-95 transition-transform text-inverse-on-surface" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="share">share</span>
+</button>
+<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center hover:bg-surface-variant/20 active:scale-95 transition-transform text-inverse-on-surface" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</header>
+<!-- 2. Main Interactive Viewport Canvas -->
+<main class="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden px-2 pt-16 pb-36">
+<!-- Media Stage with Blueprint Image -->
+<div class="relative w-full max-h-[520px] rounded-xl overflow-hidden shadow-2xl border border-slate-800/80 bg-slate-900/60 flex items-center justify-center group cursor-grab active:cursor-grabbing">
+<!-- Blueprint Architecture Diagram Image Asset -->
+<img alt="System Architecture Roadmap Diagram" class="w-full h-full object-contain rounded-xl transition-transform duration-300 ease-out select-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGGkR91seTxYrUWxaNK-qn_tDcE_JfPaz8ssK0gVOOZXvDSeWQ6Gog8__ADNUPv5HwJF_naQs6WDxWeahUqX2g8x26Tp7kOIq8nppgpcu_G1gqCZK2MKtJ-ywB2nMWJkSz2q_zRCuJFcj2cFb9x8KLOnzWMVaDiIvGQPPKcafDZO8xsXG0O6Mk8imxH6ps6vHcvEQ-mfw0XC6qfIdIp3USZF6yWPZvj7BBCjRnG_Amu240RpknlaWHv5yNpJdvEQcA0QBr6Pslffgi"/>
+<!-- Subtle Gradient Vignette around Viewer -->
+<div class="absolute inset-0 pointer-events-none rounded-xl ring-1 ring-inset ring-white/10 shadow-inner"></div>
+<!-- Floating Zoom Level Pill & Controls (Bottom Right of Media Canvas) -->
+<div class="absolute bottom-3 right-3 flex items-center gap-1.5 bg-inverse-surface/90 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 shadow-lg">
+<button class="w-6 h-6 flex items-center justify-center text-outline-variant hover:text-white active:scale-90 transition-transform" type="button">
+<span class="material-symbols-outlined text-[16px]" data-icon="remove">remove</span>
+</button>
+<span class="font-label-sm text-label-sm text-on-primary-container font-semibold px-1">+125%</span>
+<button class="w-6 h-6 flex items-center justify-center text-outline-variant hover:text-white active:scale-90 transition-transform" type="button">
+<span class="material-symbols-outlined text-[16px]" data-icon="add">add</span>
+</button>
+</div>
+<!-- Floating Hint Indicator (Top Left of Canvas) -->
+<div class="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900/80 backdrop-blur-sm border border-white/10 text-outline-variant">
+<span class="material-symbols-outlined text-[14px]" data-icon="pinch">pinch</span>
+<span class="font-label-sm text-label-sm">Double tap to expand</span>
+</div>
+</div>
+</main>
+<!-- 3. Bottom Controls & Attachment Strip -->
+<footer class="fixed bottom-0 left-0 w-full z-50 flex flex-col bg-inverse-surface/90 backdrop-blur-lg border-t border-outline-variant/20 shadow-md">
+<!-- Utility Action Bar (Fit, Zoom, Favorite, File Details) -->
+<div class="flex items-center justify-between px-space-md py-2 border-b border-white/5">
+<div class="flex items-center space-x-1">
+<button class="p-2 rounded-lg text-outline-variant hover:text-white hover:bg-surface-variant/20 active:scale-95 transition-all flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="fit_screen">fit_screen</span>
+<span class="font-label-sm text-label-sm font-medium">Fit</span>
+</button>
+<button class="p-2 rounded-lg text-outline-variant hover:text-white hover:bg-surface-variant/20 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="favorite">favorite</span>
+</button>
+<button class="p-2 rounded-lg text-outline-variant hover:text-white hover:bg-surface-variant/20 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="crop_rotate">crop_rotate</span>
+</button>
+</div>
+<!-- File Details Pill -->
+<div class="flex items-center gap-2 bg-slate-800/80 px-2.5 py-1 rounded-full border border-white/10 text-outline-variant">
+<span class="material-symbols-outlined text-[16px] text-primary-fixed" data-icon="info">info</span>
+<span class="font-label-sm text-label-sm">2.4 MB • 1200×896</span>
+</div>
+</div>
+<!-- Attachment Thumbnails Strip Carousel -->
+<div class="px-space-md py-2.5 overflow-hidden">
+<div class="flex items-center justify-between mb-1.5">
+<span class="font-label-sm text-label-sm text-outline-variant font-medium">Attachments in conversation (5)</span>
+<span class="font-label-sm text-label-sm text-inverse-primary hover:underline cursor-pointer">View all</span>
+</div>
+<div class="flex items-center space-x-2.5 overflow-x-auto custom-scrollbar py-1">
+<!-- Item 1 (Active Selection: Architecture Diagram) -->
+<div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden ring-2 ring-primary-container ring-offset-2 ring-offset-slate-900 cursor-pointer shadow-md transform transition-all active:scale-95">
+<img alt="Active Architecture Preview Thumbnail" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGGkR91seTxYrUWxaNK-qn_tDcE_JfPaz8ssK0gVOOZXvDSeWQ6Gog8__ADNUPv5HwJF_naQs6WDxWeahUqX2g8x26Tp7kOIq8nppgpcu_G1gqCZK2MKtJ-ywB2nMWJkSz2q_zRCuJFcj2cFb9x8KLOnzWMVaDiIvGQPPKcafDZO8xsXG0O6Mk8imxH6ps6vHcvEQ-mfw0XC6qfIdIp3USZF6yWPZvj7BBCjRnG_Amu240RpknlaWHv5yNpJdvEQcA0QBr6Pslffgi"/>
+<div class="absolute inset-0 bg-primary-container/20"></div>
+<div class="absolute bottom-0.5 right-0.5 bg-primary-container text-on-primary-container rounded px-1 text-[9px] font-bold leading-none py-0.5">PNG</div>
+</div>
+<!-- Item 2: UI Dashboard Mockup Thumbnail -->
+<div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/30 opacity-75 hover:opacity-100 hover:border-outline-variant cursor-pointer transition-all active:scale-95 bg-slate-900">
+<img class="w-full h-full object-cover" data-alt="A clean modern digital user interface showing web dashboard analytics panels with sleek line graphs, metrics cards, and dark theme indigo accents against a minimal layout." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDEofAiQ1HOS1aQEnt33lp-PG2J3evtZaAtnV_qnSQsjpoVGxRusCfmWSShy3Hf1C1xpRIsDCfMc4ACKbySwPRSa5nhuoL-ttlrivjHsFBSwCTJ7Is1YkA1WOWUTNrecifGmuUYYUjmAOAer3wX-Pyl0wqH8CnhQo9fnVRnB5Vqh8ihyH046IgJWsVL3bBcjPIbsRrFvsZacnCYWBwN50aIMCD1mXv24gmiftu74dYvsrF-RfYzq9h_I2UGwZ6coiMFqv_YLzCiegBB"/>
+<div class="absolute bottom-0.5 right-0.5 bg-slate-950/80 text-outline-variant rounded px-1 text-[9px] font-medium leading-none py-0.5">09:40</div>
+</div>
+<!-- Item 3: Mobile Prototype Walkthrough (Video file) -->
+<div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/30 opacity-75 hover:opacity-100 hover:border-outline-variant cursor-pointer transition-all active:scale-95 bg-slate-900">
+<img class="w-full h-full object-cover" data-alt="A smartphone held over an architect workstation desk displaying a clean interactive mobile application design prototype with glowing indigo highlight elements." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUWt1PY8BeevH5be8HFVLdq04XkGl7BpXAspliu8C54yn0DgUBywuWXI9rAAVqkownmScG7lDAU9fcSX6sOxB4-9bGhNKA3serE57HVGEI0pHyGXPhjyMYI522DupVFXqS61fU5Yo_ho8ySOFfH_WGjyVY0Zf6TRBf-COCPPHTa7Jzc1K0c37rYcovZYSrQpOAWBofnR_X5VtEQelz69ufJnrT3PfMkmuGRghq6-MOLBIX9xVFC9Z-zQl4VAoKBt-_5jVOWQb_xv5x"/>
+<div class="absolute inset-0 flex items-center justify-center bg-black/40">
+<span class="material-symbols-outlined text-white text-[18px]" data-icon="play_circle">play_circle</span>
+</div>
+<div class="absolute bottom-0.5 right-0.5 bg-slate-950/80 text-outline-variant rounded px-1 text-[9px] font-medium leading-none py-0.5">0:45</div>
+</div>
+<!-- Item 4: Cloud Infrastructure Specs -->
+<div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/30 opacity-75 hover:opacity-100 hover:border-outline-variant cursor-pointer transition-all active:scale-95 bg-slate-900">
+<img class="w-full h-full object-cover" data-alt="Technical schematic diagram showcasing multi-cloud distributed system nodes, kubernetes clusters, and server infrastructure with subtle blueprint line work." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoZ4tUmVaeRZOtOeA_dCxfrE4z_Y_YJmXRW1EpbfUHX9-A5HkDbWCo-idYG1KoccvpErDH262HOb6O7sndbZ6ERJVClAX6X94UXBmvECEAlZF785l2UbTrxkajVdwOURBaUvLzE0C6ii0X5QfIiCri1TdwnOJGwCL_b6Gt3D3Ur2b_bIGMgwC44Yf8mx0X1Rp5xBSrM0wPhJXGuR1t4gy2Bi-KnNHlwoLPf_xRGayLYFLbWSosTi7szE25s5r5lglwZUiicfa970fK"/>
+<div class="absolute bottom-0.5 right-0.5 bg-slate-950/80 text-outline-variant rounded px-1 text-[9px] font-medium leading-none py-0.5">PDF</div>
+</div>
+<!-- Item 5: Whiteboard Discussion Photo -->
+<div class="relative shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-outline-variant/30 opacity-75 hover:opacity-100 hover:border-outline-variant cursor-pointer transition-all active:scale-95 bg-slate-900">
+<img class="w-full h-full object-cover" data-alt="Hand-drawn architectural workflow flowchart sketches and team brainstorm diagrams on a modern office glass white board with deep ambient blue lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoq53SfnLjwNXwwiumF1_xMCV6bBc0nTWgQvz9rJ1XOQz-EQ2XIKXSrpKQ7Tp4VyW6ej95esdCdgRACGau1zyhyVZZptX1AFIyxXJzoDc7MrlR9VyGtJQsxTC8BWDJhsAFIsh3JulSAyI5guS3k9QKFwO7Dyf5Lu45FYDaMEUp_65Kyezbxpik_ogatSmv17DnbhNtXDUhs0yyUv0uYxXOEktxvbt-iIi5sMAEbuETnnfMlQgqMA_67xEY5BnlCFKjGpb3iSfwy7zn"/>
+<div class="absolute bottom-0.5 right-0.5 bg-slate-950/80 text-outline-variant rounded px-1 text-[9px] font-medium leading-none py-0.5">Yesterday</div>
+</div>
+</div>
+</div>
+<!-- Mobile Device Home Bar Safe-Area Indicator -->
+<div class="w-full flex justify-center pb-2 pt-1">
+<div class="w-32 h-1 bg-white/20 rounded-full"></div>
+</div>
+</footer>
+</div>
+</body></html>

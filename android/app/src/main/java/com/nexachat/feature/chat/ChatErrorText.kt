@@ -25,6 +25,7 @@ internal fun chatErrorMessage(error: ApiError): String = when (error) {
             stringResource(R.string.error_attachment_too_large)
         // 409 on POST /pins — the conversation's pin cap (phase-10).
         ERROR_PIN_LIMIT -> stringResource(R.string.error_pin_limit)
+        ChatViewModel.ERROR_MESSAGE_GONE -> stringResource(R.string.reply_unavailable)
         else -> stringResource(R.string.error_generic)
     }
 }

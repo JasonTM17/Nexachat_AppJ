@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat - Inbox</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error-container": "#93000a",
+            "tertiary-container": "#006693",
+            "on-tertiary-container": "#b8e0ff",
+            "surface-container": "#eceef0",
+            "primary-container": "#4f46e5",
+            "on-background": "#191c1e",
+            "primary-fixed": "#e2dfff",
+            "surface-variant": "#e0e3e5",
+            "on-tertiary": "#ffffff",
+            "surface-container-low": "#f2f4f6",
+            "on-tertiary-fixed": "#001e2f",
+            "on-error": "#ffffff",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "on-secondary-fixed-variant": "#38485d",
+            "on-primary-fixed": "#0f0069",
+            "tertiary": "#004d70",
+            "surface-tint": "#4d44e3",
+            "surface": "#f7f9fb",
+            "secondary-container": "#d0e1fb",
+            "on-secondary": "#ffffff",
+            "on-secondary-container": "#54647a",
+            "inverse-on-surface": "#eff1f3",
+            "surface-container-high": "#e6e8ea",
+            "on-primary-container": "#dad7ff",
+            "outline-variant": "#c7c4d8",
+            "error-container": "#ffdad6",
+            "surface-bright": "#f7f9fb",
+            "surface-container-lowest": "#ffffff",
+            "on-surface": "#191c1e",
+            "on-surface-variant": "#464555",
+            "inverse-surface": "#2d3133",
+            "surface-container-highest": "#e0e3e5",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-dim": "#d8dadc",
+            "background": "#f7f9fb",
+            "on-secondary-fixed": "#0b1c30",
+            "secondary-fixed": "#d3e4fe",
+            "secondary-fixed-dim": "#b7c8e1",
+            "on-primary-fixed-variant": "#3323cc",
+            "tertiary-fixed": "#c9e6ff",
+            "secondary": "#505f76",
+            "tertiary-fixed-dim": "#89ceff",
+            "inverse-primary": "#c3c0ff",
+            "outline": "#777587",
+            "on-primary": "#ffffff",
+            "primary": "#3525cd",
+            "error": "#ba1a1a"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin-tablet": "1.5rem",
+            "gutter": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "margin": "1rem",
+            "gutter-tablet": "1.25rem",
+            "margin-desktop": "2rem",
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "gutter-desktop": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-lg-mobile": ["Roboto Flex"],
+            "label-md": ["Inter"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-lg": ["Roboto Flex"],
+            "headline-sm": ["Roboto Flex"],
+            "label-lg": ["Inter"],
+            "title-md": ["Inter"],
+            "label-sm": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "body-sm": ["Inter"]
+          },
+          "fontSize": {
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      font-size: 22px;
+      line-height: 1;
+      display: inline-block;
+    }
+    .material-symbols-outlined.fill-icon {
+      font-variation-settings: 'FILL' 1;
+    }
+    /* Hide scrollbar for category filter chips horizontally */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased min-h-screen flex flex-col justify-between selection:bg-primary selection:text-on-primary">
+<!-- Mobile Wrapper / Central Max Container -->
+<div class="w-full max-w-md mx-auto min-h-screen flex flex-col bg-surface shadow-2xl relative pb-24">
+<!-- Top App Bar (Shared Components Anchor Execution) -->
+<header class="sticky top-0 z-40 bg-surface-container-lowest shadow-sm flex justify-between items-center w-full px-4 h-16 transition-colors">
+<div class="flex items-center space-x-3">
+<button aria-label="Danh bạ" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
+<span class="material-symbols-outlined" data-icon="contacts">contacts</span>
+</button>
+<span class="text-headline-sm font-headline-sm font-bold text-on-surface tracking-tight">NexaChat</span>
+</div>
+<div class="flex items-center space-x-2">
+<button aria-label="Tìm kiếm nhanh" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</button>
+<div class="relative cursor-pointer hover:opacity-90 transition-opacity">
+<img class="w-9 h-9 rounded-full object-cover border-2 border-surface-container-lowest shadow-sm" data-alt="Modern close-up profile portrait of a stylish young creative professional looking directly at the camera with warm natural daylight, crisp neutral studio backdrop with light slate tones, professional high key lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEmoonETMZxHxmIfuLS3EfobeJkHpEYtvGpNzexvO6nzUpMaK7GbJjZJS9cthglXRWewApV8oh_VgJ2r4DuzxFCSu5odHOWHyuBTLXlNnq0VjB_IQ-Liwi6kHQRXIqi0Yb4f7PAr9WpQIZhIOOhiKMzLL20zii-_flx0HGdvW8EoJDsP0vcZhYDrIh63YC3XbKlacDAGwV4n_TTduaz1GyyVZddlV7Rz7FRpbcKgUD07ybpjyPiKgIvIF8rol__eo5f5PN9pg0A9JO"/>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+</div>
+</header>
+<!-- Search & Fast Filter Section -->
+<section class="px-4 pt-3 pb-2 bg-surface-container-lowest space-y-3">
+<!-- Search Input Container -->
+<div class="relative flex items-center bg-surface-container-low rounded-xl px-3 py-2 border border-surface-variant focus-within:border-primary-container focus-within:bg-surface-container-lowest transition-all">
+<span class="material-symbols-outlined text-outline mr-2" data-icon="search">search</span>
+<input class="w-full bg-transparent border-0 p-0 text-body-md font-body-md text-on-surface placeholder:text-outline focus:ring-0 focus:outline-none" placeholder="Tìm kiếm tin nhắn, liên hệ..." type="text"/>
+<button aria-label="Bộ lọc &amp; Giọng nói" class="text-outline hover:text-primary transition-colors p-1 flex items-center">
+<span class="material-symbols-outlined" data-icon="mic">mic</span>
+</button>
+</div>
+<!-- Filter Chips Row -->
+<div class="flex items-center space-x-2 overflow-x-auto no-scrollbar pb-1">
+<button class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary text-label-md font-label-md shadow-sm whitespace-nowrap active:scale-95 transition-all">
+          Tất cả
+        </button>
+<button class="px-3.5 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all flex items-center space-x-1.5">
+<span>Chưa đọc</span>
+<span class="w-4 h-4 rounded-full bg-primary-container text-on-primary text-[10px] flex items-center justify-center font-bold">4</span>
+</button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all">
+          Nhóm
+        </button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all">
+          Trực tiếp
+        </button>
+</div>
+</section>
+<!-- Main Conversation Roster List -->
+<main class="flex-1 bg-surface-container-lowest pt-1">
+<!-- Conversation 1: Nhóm Thiết Kế UI/UX -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<div class="w-12 h-12 rounded-full bg-primary-container/10 flex items-center justify-center border border-primary-container/20 text-primary-container">
+<span class="material-symbols-outlined text-[26px] fill-icon" data-icon="groups">groups</span>
+</div>
+<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2 font-semibold">Nhóm Thiết Kế UI/UX</h2>
+<span class="text-label-sm font-label-sm text-primary-container font-semibold whitespace-nowrap">14:25</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface font-medium truncate">
+            Hẹn gặp mọi người vào 15:00 nhé!
+          </p>
+</div>
+<div class="flex flex-col items-end justify-center ml-1">
+<span class="px-2 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-label-sm font-bold min-w-[20px] text-center shadow-sm">
+            3
+          </span>
+</div>
+</article>
+<!-- Conversation 2: Lan Anh -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Portrait photography of an energetic young East Asian woman with friendly smile wearing a crisp white linen collar, soft natural indoor lighting in an airy modern studio with gentle slate blue textures." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6sO8XZzCiGuA66jPNHBWSKebQoqL18Rm28YRrFyCc9BKNIYPpCRRT17IXVRyXCUUXGjSoYl8387OdcbQkXL-H8Rj8akTUvNWaLXK8hfsEFlcbpXcpy-lQ0b6N4FCL777hJRVuE2pushZLFSo_0UC85JGlqxKJbsAiMajfNMGPu48XnGv8vazkJbcLj7TQaMJALOUbyIFr35kbjtWy2uFRKom2R-LNvt6dnVY5Bhf_YesKN5RoKY1gz9U1k5PJd_cHq3CpDSxz4Uih"/>
+<span class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Lan Anh</h2>
+<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">12:10</span>
+</div>
+<div class="flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="done_all">done_all</span>
+<p class="text-body-sm font-body-sm text-secondary truncate">
+              Cậu gửi cho mình file thiết kế mới nhé!
+            </p>
+</div>
+</div>
+</article>
+<!-- Conversation 3: Alex Morgan -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Editorial portrait of a bearded European creative director with glasses smiling subtly, dressed in navy apparel against a calm clean architectural concrete wall with bright morning ambient illumination." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcsmU5N6AMitfuAgMw3Gn39LYW7ddXjrcmM8uXTXHepM7-gO-3tjUfPMtU35ABbqVRDCrLlkkEh5iUGgvqO9o3xjD_geL6rb2plmsM5Xu35wEgYjAnT3BFAngsC639bKfEtGDySH-9HAcO6HaYifT0tuA4UPP68BUYLHNVfgcsNlw7-H8_TVrZ5NlNR3_8ql1TPwMBPB5efQRMiYJAJuwtgw3cBxgjm6G2yxHDXbPamBzxLMgNFN0tDlEu7CKkujTkamHnMzu9M2Y6"/>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Alex Morgan</h2>
+<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">09:45</span>
+</div>
+<div class="flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px] text-primary-container fill-icon" data-icon="done_all">done_all</span>
+<p class="text-body-sm font-body-sm text-secondary truncate">
+              See you tomorrow!
+            </p>
+</div>
+</div>
+</article>
+<!-- Conversation 4: Minh Trí & Team Dev -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<div class="w-12 h-12 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed font-bold text-label-lg shadow-sm">
+            MT
+          </div>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Minh Trí &amp; Team Dev</h2>
+<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">Hôm qua</span>
+</div>
+<p class="text-body-sm font-body-sm text-secondary truncate">
+            Đã deploy bản cập nhật v2.4 thành công.
+          </p>
+</div>
+</article>
+<!-- Conversation 5: Sarah Jenkins -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Natural sunlight portrait of Sarah Jenkins, a professional product manager in a chic minimalist workstation with laptop blurred in background, bright warm daylight with high clarity and indigo accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0J5bhpanamTveYUw-c0z6vgS76l5iNeSBpGGemFmKc6uKYcIXNdk3YKGtvOrpi_gz1x2RHlxnV68armE9zZKC5DIld1qY4GiO_1bE4bOUBoYJUIxe2OY5gEfYFeGw3cfTJf8Q_liMwvEcol3laeGNm8sPJG5GURB2NhHhwtRk-WhjuZP9fB6NhThhKrEitXeVcphzoNOiNEDg48Q6r5656y9M9nrMT6gYR-H1I5-oJf6m3dwmT_vDU_N7yVFYRVQzXtV0xMXFG4ZP"/>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Sarah Jenkins</h2>
+<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">04/11</span>
+</div>
+<div class="flex items-center space-x-1">
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="check">check</span>
+<p class="text-body-sm font-body-sm text-secondary truncate">
+              Sounds great, looking forward to the demo.
+            </p>
+</div>
+</div>
+</article>
+<!-- Conversation 6: Gia Đình ❤️ -->
+<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
+<div class="relative mr-3.5 flex-shrink-0">
+<div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center text-error shadow-sm">
+<span class="material-symbols-outlined text-[24px] fill-icon" data-icon="family_restroom">family_restroom</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 pr-2">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="text-title-md font-title-md text-on-surface truncate pr-2 font-semibold">Gia Đình ❤️</h2>
+<span class="text-label-sm font-label-sm text-primary-container font-semibold whitespace-nowrap">02/11</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface font-medium truncate">
+            Cuối tuần này về ăn cơm nhé con!
+          </p>
+</div>
+<div class="flex flex-col items-end justify-center ml-1">
+<span class="px-2 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-label-sm font-bold min-w-[20px] text-center shadow-sm">
+            1
+          </span>
+</div>
+</article>
+</main>
+<!-- M3 Floating Action Button (FAB) -->
+<div class="fixed bottom-24 right-4 md:right-[calc(50%-13rem)] z-40">
+<button aria-label="Tạo tin nhắn mới" class="w-14 h-14 rounded-2xl bg-primary-container text-on-primary flex items-center justify-center shadow-lg hover:shadow-indigo-500/25 hover:brightness-105 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[28px]" data-icon="add">add</span>
+</button>
+</div>
+<!-- Bottom Navigation Bar (Shared Components Anchor Execution) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-surface-container-lowest shadow-sm max-w-md mx-auto right-0 transition-colors">
+<!-- Chats Destination (Active Mapping) -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-5 py-1 transition-transform active:scale-95" href="#">
+<span class="material-symbols-outlined fill-icon text-on-secondary-container" data-icon="chat">chat</span>
+<span class="text-label-md font-label-md mt-0.5">Chats</span>
+</a>
+<!-- Calls Destination (Inactive) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full px-5 py-1 transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined" data-icon="call">call</span>
+<span class="text-label-md font-label-md mt-0.5">Calls</span>
+</a>
+<!-- Contacts Destination (Inactive) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full px-5 py-1 transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="text-label-md font-label-md mt-0.5">Contacts</span>
+</a>
+</nav>
+</div>
+</body></html>

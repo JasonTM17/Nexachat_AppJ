@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,9 +30,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,10 +60,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -68,6 +75,7 @@ import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.DeliveryStatus
+import com.nexachat.feature.contacts.InitialAvatar
 import com.nexachat.feature.media.MediaPickerSheet
 import com.nexachat.feature.media.MessageAttachmentContent
 import com.nexachat.feature.media.PendingAttachmentStrip
@@ -75,6 +83,8 @@ import com.nexachat.feature.media.rememberAuthedImageLoader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -109,12 +119,29 @@ fun ChatScreen(
     var menuMessageId by remember { mutableStateOf<String?>(null) }
     /** Pin the banner currently shows — each tap cycles to the next pin. */
     var pinIndex by rememberSaveable { mutableIntStateOf(0) }
+    /** Target message ID actively being paged into view from the network; null = idle. */
+    var jumpingTargetId by remember { mutableStateOf<String?>(null) }
 
-    /** Scrolls the list to a loaded message id (reply quote / pin banner tap). */
-    fun jumpToMessage(messageId: String) {
-        val index = state.messages.asReversed().indexOfFirst { it.id == messageId }
-        if (index >= 0) {
-            scope.launch { listState.animateScrollToItem(index) }
+    LaunchedEffect(viewModel) {
+        viewModel.jumpTargets.collect { targetId ->
+            jumpingTargetId = null
+            var index = findMessageReversedIndex(state.messages, targetId)
+            if (index < 0) {
+                // If the message was paged in from the network, wait for composition to reflect it
+                snapshotFlow { state.messages }
+                    .filter { msgs -> msgs.any { it.id == targetId } }
+                    .first()
+                index = findMessageReversedIndex(state.messages, targetId)
+            }
+            if (index >= 0) {
+                listState.animateScrollToItem(index)
+            }
+        }
+    }
+
+    LaunchedEffect(state.error) {
+        if (state.error != null) {
+            jumpingTargetId = null
         }
     }
 
@@ -176,7 +203,38 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(state.peerName ?: stringResource(R.string.chat_title)) },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InitialAvatar(
+                            name = state.peerName ?: stringResource(R.string.chat_title),
+                            size = 38.dp,
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = state.peerName ?: stringResource(R.string.chat_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (state.peerTyping) {
+                                Text(
+                                    text = stringResource(R.string.chat_typing),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            } else if (!state.connected) {
+                                Text(
+                                    text = stringResource(R.string.chat_offline),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -205,13 +263,22 @@ fun ChatScreen(
                 .padding(innerPadding)
                 .imePadding(),
         ) {
+            if (jumpingTargetId != null) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             if (state.pins.isNotEmpty()) {
                 PinnedBanner(
                     pins = state.pins,
                     index = pinIndex,
                     onJump = {
                         state.pins.getOrNull(pinIndex % state.pins.size)?.let { pin ->
-                            jumpToMessage(pin.id)
+                            if (findMessageReversedIndex(state.messages, pin.id) < 0) {
+                                jumpingTargetId = pin.id
+                            }
+                            viewModel.jumpToMessage(pin.id)
                         }
                         pinIndex++
                     },
@@ -241,8 +308,12 @@ fun ChatScreen(
                         showSender = state.isGroup && !message.mine,
                         // FR-C4 — 1-1 "Đã xem" only: a group watermark can't
                         // attribute the reader, so no receipt text there.
-                        seen = !state.isGroup && message.mine &&
-                            (message.seq ?: Long.MAX_VALUE) <= state.peerReadSeq,
+                        seen = isSeenReceiptVisible(
+                            isGroup = state.isGroup,
+                            mine = message.mine,
+                            messageSeq = message.seq,
+                            peerReadSeq = state.peerReadSeq,
+                        ),
                         pinned = state.isPinned(message.id),
                         canPin = state.canPin,
                         menuOpen = menuMessageId == message.id,
@@ -269,7 +340,12 @@ fun ChatScreen(
                             viewModel.togglePin(message)
                             menuMessageId = null
                         },
-                        onJumpTo = ::jumpToMessage,
+                        onJumpTo = { targetId ->
+                            if (findMessageReversedIndex(state.messages, targetId) < 0) {
+                                jumpingTargetId = targetId
+                            }
+                            viewModel.jumpToMessage(targetId)
+                        },
                     )
                 }
                 if (state.hasMore) {
@@ -354,7 +430,7 @@ private fun MessageItem(
     canPin: Boolean = true,
 ) {
     val mine = message.mine
-    val replyable = message.status == DeliveryStatus.SENT
+    val replyable = isMessageReplyable(message.status)
     val swipeState = rememberSwipeToDismissBoxState(
         // Never actually dismiss — settle always snaps back. The swipe is a
         // pure "reply" affordance: confirm fires past the threshold only.
@@ -473,11 +549,13 @@ private fun MessageBubble(
     onJumpTo: (String) -> Unit,
 ) {
     val mine = message.mine
+    val containerRole = resolveBubbleContainerRole(message.status, mine)
+    val isRetry = isRetryAffordanceVisible(message.status)
     Surface(
-        color = if (mine) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
+        color = when (containerRole) {
+            BubbleContainerColorRole.ERROR -> MaterialTheme.colorScheme.errorContainer
+            BubbleContainerColorRole.MINE -> MaterialTheme.colorScheme.primaryContainer
+            BubbleContainerColorRole.PEER -> MaterialTheme.colorScheme.surfaceVariant
         },
         shape = RoundedCornerShape(
             topStart = 16.dp,
@@ -490,11 +568,11 @@ private fun MessageBubble(
         // the Retry action label instead of a bare "!" glyph.
         modifier = Modifier.combinedClickable(
             onClick = {
-                if (message.status == DeliveryStatus.FAILED) {
+                if (isRetry) {
                     onRetry(message.clientMessageId ?: message.id)
                 }
             },
-            onClickLabel = if (message.status == DeliveryStatus.FAILED) {
+            onClickLabel = if (isRetry) {
                 stringResource(R.string.action_retry)
             } else {
                 null
@@ -562,26 +640,44 @@ private fun MessageBubble(
         }
     }
 
-/** Send-state indicator: spinner for SENDING, "!" mark for FAILED — the
- *  bubble itself carries the retry tap action (see [MessageBubble]). */
+/** Send-state indicator: themed spinner for SENDING, warning + retry for FAILED, checkmark or "Seen" for SENT. */
 @Composable
 private fun DeliveryMark(message: ChatMessage, seen: Boolean) {
     when (message.status) {
         DeliveryStatus.SENDING -> CircularProgressIndicator(
-            modifier = Modifier.size(10.dp),
+            modifier = Modifier.size(12.dp),
             strokeWidth = 1.5.dp,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
         )
-        DeliveryStatus.FAILED -> Text(
-            text = "!",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-        )
+        DeliveryStatus.FAILED -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                text = stringResource(R.string.action_retry),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         // FR-C4 — "Đã xem"/"Seen" once the peer's watermark passes this seq.
         DeliveryStatus.SENT -> if (seen) {
             Text(
                 text = stringResource(R.string.msg_seen),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = stringResource(R.string.cd_delivered),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.size(14.dp),
             )
         }
     }
@@ -625,3 +721,56 @@ private fun MessageInputBar(
         }
     }
 }
+
+/**
+ * Visual container role for message bubble background color selection.
+ */
+internal enum class BubbleContainerColorRole {
+    ERROR,
+    MINE,
+    PEER,
+}
+
+/**
+ * Pure UI presentation rule: resolves the bubble container color role.
+ * FAILED messages always highlight as ERROR regardless of sender;
+ * otherwise outgoing (mine) messages use MINE tint and incoming use PEER tint.
+ */
+internal fun resolveBubbleContainerRole(status: DeliveryStatus, mine: Boolean): BubbleContainerColorRole = when {
+    status == DeliveryStatus.FAILED -> BubbleContainerColorRole.ERROR
+    mine -> BubbleContainerColorRole.MINE
+    else -> BubbleContainerColorRole.PEER
+}
+
+/**
+ * Pure UI presentation rule: only messages confirmed SENT by the server can be replied to or pinned.
+ * Pending (SENDING) and FAILED outbox messages lack permanent server IDs.
+ */
+internal fun isMessageReplyable(status: DeliveryStatus): Boolean = status == DeliveryStatus.SENT
+
+/**
+ * Pure UI presentation rule: retry affordance is visible and actionable only on FAILED messages.
+ */
+internal fun isRetryAffordanceVisible(status: DeliveryStatus): Boolean = status == DeliveryStatus.FAILED
+
+/**
+ * Pure UI presentation rule: Seen ("Đã xem") receipt display.
+ * Only shown for:
+ * 1) 1-1 direct chat (NOT group chat, where watermark cannot identify individual reader)
+ * 2) Current user's own sent messages (mine == true)
+ * 3) Message sequence number is <= the peer's confirmed lastReadSeq
+ */
+internal fun isSeenReceiptVisible(
+    isGroup: Boolean,
+    mine: Boolean,
+    messageSeq: Long?,
+    peerReadSeq: Long,
+): Boolean = !isGroup && mine && (messageSeq ?: Long.MAX_VALUE) <= peerReadSeq
+
+/**
+ * Pure UI presentation rule: resolves the 0-indexed position within a reverseLayout LazyColumn
+ * for [targetId]. Under reverseLayout, index 0 is the newest message (last element of [messages]).
+ * Returns -1 if [targetId] is not found in [messages].
+ */
+internal fun findMessageReversedIndex(messages: List<ChatMessage>, targetId: String): Int =
+    messages.asReversed().indexOfFirst { it.id == targetId }

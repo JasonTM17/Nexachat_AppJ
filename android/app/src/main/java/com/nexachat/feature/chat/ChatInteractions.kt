@@ -119,7 +119,11 @@ internal fun ReactionChipsRow(
                             Text(
                                 text = chip.count.toString(),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (chip.reactedByMe) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                             )
                         }
                     }
@@ -278,7 +282,7 @@ internal fun PinnedBanner(
         ) {
             Icon(
                 imageVector = Icons.Filled.PushPin,
-                contentDescription = stringResource(R.string.cd_pinned),
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp),
             )

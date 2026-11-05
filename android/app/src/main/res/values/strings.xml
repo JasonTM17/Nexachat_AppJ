@@ -3,7 +3,6 @@
     <string name="app_name">NexaChat</string>
 
     <!-- Splash -->
-    <string name="splash_tagline">Connecting…</string>
 
     <!-- Auth -->
     <string name="auth_phone_label">Phone number</string>
@@ -84,13 +83,15 @@
     <string name="chat_input_hint">Message</string>
     <string name="chat_typing">typing…</string>
     <string name="msg_seen">Seen</string>
-    <string name="chat_offline">Offline</string>
+    <string name="chat_offline">Disconnected</string>
     <string name="cd_send">Send</string>
     <string name="cd_retry">Retry</string>
     <string name="cd_group_info">Group info</string>
     <string name="cd_attach">Attach</string>
     <string name="cd_remove_attachment">Remove attachment</string>
     <string name="cd_open_attachment">Open attachment</string>
+    <string name="cd_delivered">Delivered</string>
+    <string name="action_close">Close</string>
 
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>

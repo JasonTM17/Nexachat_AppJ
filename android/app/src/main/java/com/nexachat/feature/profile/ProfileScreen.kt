@@ -193,31 +193,52 @@ private fun ProfileContent(
         // initial fallback. Tap opens the image-only system picker.
         val avatarDescription = stringResource(R.string.profile_change_avatar)
         Box(
-            modifier = Modifier
-                .size(88.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .clickable(onClick = onPickAvatar)
-                .semantics { contentDescription = avatarDescription },
+            modifier = Modifier.size(96.dp),
             contentAlignment = Alignment.Center,
         ) {
-            if (user.avatarUrl != null) {
-                AsyncImage(
-                    model = user.avatarUrl.absoluteMediaUrl(),
-                    imageLoader = imageLoader,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    text = user.displayName.firstOrNull()?.uppercase() ?: "?",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable(onClick = onPickAvatar)
+                    .semantics { contentDescription = avatarDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (user.avatarUrl != null) {
+                    AsyncImage(
+                        model = user.avatarUrl.absoluteMediaUrl(),
+                        imageLoader = imageLoader,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Text(
+                        text = user.displayName.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+                if (state.avatarUploading) {
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                }
             }
-            if (state.avatarUploading) {
-                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onPickAvatar),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
 

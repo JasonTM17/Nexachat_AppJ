@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -101,6 +103,7 @@ fun CreateGroupScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 label = { Text(stringResource(R.string.group_name_label)) },
+                shape = RoundedCornerShape(12.dp),
                 singleLine = true,
                 enabled = !state.creating,
             )
@@ -132,9 +135,11 @@ fun CreateGroupScreen(
             Button(
                 onClick = viewModel::create,
                 enabled = state.canCreate,
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .heightIn(min = 48.dp),
             ) {
                 if (state.creating) {
                     CircularProgressIndicator(
@@ -163,6 +168,7 @@ internal fun SelectableContactRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 56.dp)
             .clickable(onClick = onToggle)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

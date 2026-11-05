@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.nexachat.R
@@ -55,36 +57,41 @@ internal fun contactErrorMessage(error: ApiError): String = when (error) {
 
 /**
  * Avatar: server image via the authed loader when [avatarUrl] is set,
- * else the letter-circle fallback. Shared by contacts/group/user rows.
+ * else the letter-circle fallback.
  */
 @Composable
 internal fun InitialAvatar(
     name: String,
     avatarUrl: String? = null,
     modifier: Modifier = Modifier,
-    size: androidx.compose.ui.unit.Dp = 44.dp,
+    size: Dp = 44.dp,
 ) {
     Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
+        modifier = modifier.size(size),
         contentAlignment = Alignment.Center,
     ) {
-        if (avatarUrl != null) {
-            AsyncImage(
-                model = avatarUrl.absoluteMediaUrl(),
-                imageLoader = rememberAuthedImageLoader(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(
-                text = name.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (avatarUrl != null) {
+                AsyncImage(
+                    model = avatarUrl.absoluteMediaUrl(),
+                    imageLoader = rememberAuthedImageLoader(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = name.firstOrNull()?.uppercase() ?: "?",
+                    style = if (size > 50.dp) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
         }
     }
 }
@@ -101,10 +108,10 @@ internal fun UserRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(title, avatarUrl)
+        InitialAvatar(title, avatarUrl, size = 48.dp)
         Column(modifier = Modifier.padding(start = 12.dp)) {
             Text(text = title, style = MaterialTheme.typography.bodyLarge)
             Text(

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-surface" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat - Danh bạ &amp; Tìm kiếm</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-lowest": "#ffffff",
+            "on-tertiary-fixed": "#001e2f",
+            "on-error": "#ffffff",
+            "primary-container": "#4f46e5",
+            "surface-bright": "#f7f9fb",
+            "on-tertiary": "#ffffff",
+            "on-primary-container": "#dad7ff",
+            "tertiary-container": "#006693",
+            "on-secondary-fixed": "#0b1c30",
+            "secondary-fixed-dim": "#b7c8e1",
+            "on-tertiary-container": "#b8e0ff",
+            "tertiary": "#004d70",
+            "surface-container-high": "#e6e8ea",
+            "secondary-container": "#d0e1fb",
+            "surface-dim": "#d8dadc",
+            "primary-fixed": "#e2dfff",
+            "outline": "#777587",
+            "tertiary-fixed": "#c9e6ff",
+            "on-primary-fixed-variant": "#3323cc",
+            "surface-container": "#eceef0",
+            "on-primary-fixed": "#0f0069",
+            "error": "#ba1a1a",
+            "on-secondary": "#ffffff",
+            "surface-tint": "#4d44e3",
+            "on-error-container": "#93000a",
+            "on-secondary-container": "#54647a",
+            "secondary-fixed": "#d3e4fe",
+            "on-background": "#191c1e",
+            "on-surface": "#191c1e",
+            "surface-container-highest": "#e0e3e5",
+            "background": "#f7f9fb",
+            "tertiary-fixed-dim": "#89ceff",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "error-container": "#ffdad6",
+            "surface": "#f7f9fb",
+            "inverse-surface": "#2d3133",
+            "outline-variant": "#c7c4d8",
+            "surface-variant": "#e0e3e5",
+            "on-secondary-fixed-variant": "#38485d",
+            "inverse-on-surface": "#eff1f3",
+            "secondary": "#505f76",
+            "primary-fixed-dim": "#c3c0ff",
+            "on-primary": "#ffffff",
+            "inverse-primary": "#c3c0ff",
+            "surface-container-low": "#f2f4f6",
+            "primary": "#3525cd",
+            "on-surface-variant": "#464555"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-lg": "1.5rem",
+            "space-xl": "2rem",
+            "gutter-tablet": "1.25rem",
+            "margin": "1rem",
+            "space-sm": "0.5rem",
+            "margin-desktop": "2rem",
+            "gutter-desktop": "1.5rem",
+            "gutter": "1rem",
+            "margin-tablet": "1.5rem"
+          },
+          "fontFamily": {
+            "label-sm": ["Inter"],
+            "headline-lg": ["Roboto Flex"],
+            "label-md": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "label-lg": ["Inter"],
+            "title-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "body-sm": ["Inter"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "headline-sm": ["Roboto Flex"]
+          },
+          "fontSize": {
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased h-full flex justify-center selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Mobile Device Shell Mockup -->
+<div class="w-full max-w-md bg-surface min-h-screen relative flex flex-col shadow-2xl overflow-hidden pb-20">
+<!-- Top App Bar -->
+<header class="sticky top-0 z-30 bg-surface-container-lowest shadow-sm flex items-center justify-between px-4 h-16">
+<div class="flex items-center gap-3">
+<button aria-label="Quay lại" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface">Danh bạ</h1>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Quét mã QR" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">qr_code_scanner</span>
+</button>
+<button aria-label="Thêm nhanh" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">person_add</span>
+</button>
+</div>
+</header>
+<!-- Main Scrollable Area -->
+<main class="flex-1 overflow-y-auto custom-scrollbar px-4 pt-3 pb-24">
+<!-- Search Bar (M3 Pill Shape) -->
+<section class="mb-4">
+<div class="relative flex items-center w-full h-12 bg-surface-container-low rounded-full px-4 border border-surface-variant/40 shadow-sm focus-within:ring-2 focus-within:ring-primary focus-within:bg-surface-container-lowest transition-all">
+<span class="material-symbols-outlined text-outline text-[22px] mr-3">search</span>
+<input class="w-full bg-transparent border-none p-0 text-on-surface placeholder:text-outline font-body-md text-body-md focus:outline-none focus:ring-0" placeholder="Tìm kiếm theo tên hoặc số điện thoại..." type="text"/>
+<button aria-label="Tìm kiếm bằng giọng nói" class="text-outline hover:text-on-surface p-1 rounded-full" type="button">
+<span class="material-symbols-outlined text-[20px]">mic</span>
+</button>
+</div>
+</section>
+<!-- Quick Action Filter Chips -->
+<section class="mb-5 overflow-x-auto custom-scrollbar -mx-4 px-4 flex gap-2">
+<button class="inline-flex items-center px-4 py-1.5 rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm whitespace-nowrap active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px] mr-1.5" style="font-variation-settings: 'FILL' 1;">check</span>
+          Tất cả
+        </button>
+<button class="inline-flex items-center px-4 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container whitespace-nowrap active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px] mr-1.5">bolt</span>
+          Bạn bè trên NexaChat
+        </button>
+<button class="inline-flex items-center px-4 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container whitespace-nowrap active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px] mr-1.5">contacts</span>
+          Từ danh bạ máy
+        </button>
+<button class="inline-flex items-center px-4 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container whitespace-nowrap active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px] mr-1.5">star</span>
+          Yêu thích
+        </button>
+</section>
+<!-- Contact List Structure -->
+<div class="relative flex">
+<!-- Main Contacts Column -->
+<div class="flex-1 space-y-4 pr-3">
+<!-- Section A -->
+<div>
+<div class="font-label-lg text-label-lg text-primary font-bold px-2 py-1 bg-surface-container/50 rounded-md inline-block mb-1">A</div>
+<div class="bg-surface-container-lowest rounded-xl divide-y divide-surface-variant/30 shadow-sm border border-surface-variant/20 overflow-hidden">
+<!-- Contact: An Nhiên -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-11 h-11 rounded-full bg-secondary-container text-on-secondary-container font-title-md text-title-md flex items-center justify-center flex-shrink-0">
+                    AN
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface truncate">An Nhiên</p>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 908 123 456</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section B -->
+<div>
+<div class="font-label-lg text-label-lg text-primary font-bold px-2 py-1 bg-surface-container/50 rounded-md inline-block mb-1">B</div>
+<div class="bg-surface-container-lowest rounded-xl divide-y divide-surface-variant/30 shadow-sm border border-surface-variant/20 overflow-hidden">
+<!-- Contact: Bảo Nam -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A realistic close-up portrait of a young Vietnamese man named Bao Nam smiling in soft studio lighting with a neutral modern backdrop, wearing a casual indigo shirt, sharp focus and contemporary tech mobile app avatar style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpwyWk943u0FDy7STGg3HOfVXDlkr5ELtBpqe5AvaAqudT5bxdN2rDS_1o4_iW2HizprK2Zw0VJQUhPcRZsEISZmCgNCDfrjACXcIUfNqVGxtKqL99FpXipzao1PDN2S3l9Z60gjAeT0-ufSb77gdHRiqqRwMqGRfCZ9qGrKvT8uqlZ96XVpWEXxQbgdf6XDPU_N8fMPLvh1y7CsuINj8BWxxWflGdrV3MzS91gt4WnsDU-ogJFy5qs0g6P4ueT6OIWzJOK5OBrzG7"/>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<p class="font-title-md text-title-md text-on-surface truncate">Bảo Nam</p>
+<span class="bg-secondary-container text-on-secondary-fixed text-[10px] font-semibold px-1.5 py-0.2 rounded-full">Nexa</span>
+</div>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 901 234 567</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section H -->
+<div>
+<div class="font-label-lg text-label-lg text-primary font-bold px-2 py-1 bg-surface-container/50 rounded-md inline-block mb-1">H</div>
+<div class="bg-surface-container-lowest rounded-xl divide-y divide-surface-variant/30 shadow-sm border border-surface-variant/20 overflow-hidden">
+<!-- Contact: Hải Yến -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A portrait of a cheerful Vietnamese woman named Hai Yen with sleek dark hair and gentle natural daylight streaming in, shot against a minimalist warm white modern interior, framed neatly as a high quality profile avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXJmzG1LyUR6WBiQgEOCsBbKr4hESjzXB9znn2NII1MiOFdp_NNJAobK37s9TQFeEAMiZabV7fm-ERSlFkwI60WSM6I1u-T1sojuyEVqXGo2vgmq_magwbd3lGW7SPgsF1bDmPcs5fY-wiqFAdVs_UjtiEyLLvmYay7cjf1Qz2tj0CYRwA4Ny1D9VpmUp7BXdoylIEA3sum89SxaePKUdVo68S2-cZW2znnd2gCocGT5ec6ZkQ6qCDQL0qCoD-Gb0GOb6ZEH4CLqNk"/>
+</div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface truncate">Hải Yến</p>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 934 889 900</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section M -->
+<div>
+<div class="font-label-lg text-label-lg text-primary font-bold px-2 py-1 bg-surface-container/50 rounded-md inline-block mb-1">M</div>
+<div class="bg-surface-container-lowest rounded-xl divide-y divide-surface-variant/30 shadow-sm border border-surface-variant/20 overflow-hidden">
+<!-- Contact: Minh Châu -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-11 h-11 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-title-md text-title-md flex items-center justify-center flex-shrink-0">
+                    MC
+                  </div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface truncate">Minh Châu</p>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 987 654 321</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Section T -->
+<div>
+<div class="font-label-lg text-label-lg text-primary font-bold px-2 py-1 bg-surface-container/50 rounded-md inline-block mb-1">T</div>
+<div class="bg-surface-container-lowest rounded-xl divide-y divide-surface-variant/30 shadow-sm border border-surface-variant/20 overflow-hidden">
+<!-- Contact: Thu Hà -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-11 h-11 rounded-full bg-primary-fixed text-on-primary-fixed font-title-md text-title-md flex items-center justify-center flex-shrink-0">
+                    TH
+                    <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<p class="font-title-md text-title-md text-on-surface truncate">Thu Hà</p>
+<span class="bg-secondary-container text-on-secondary-fixed text-[10px] font-semibold px-1.5 py-0.2 rounded-full">Nexa</span>
+</div>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 912 345 678</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+<!-- Contact: Tuấn Kiệt -->
+<div class="flex items-center justify-between p-3 hover:bg-surface-bright transition-colors">
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-11 h-11 rounded-full bg-surface-container-high text-on-surface font-title-md text-title-md flex items-center justify-center flex-shrink-0">
+                    TK
+                  </div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface truncate">Tuấn Kiệt</p>
+<p class="font-body-sm text-body-sm text-outline truncate">+84 978 112 233</p>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Gọi điện" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">call</span>
+</button>
+<button aria-label="Nhắn tin" class="w-9 h-9 rounded-full flex items-center justify-center text-primary hover:bg-surface-container active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Alphabet Scrollbar Index -->
+<div class="w-5 flex flex-col items-center justify-start text-[11px] font-semibold text-outline select-none pt-2 gap-1">
+<span class="text-primary font-bold">A</span>
+<span class="text-primary font-bold">B</span>
+<span class="hover:text-primary">C</span>
+<span class="hover:text-primary">D</span>
+<span class="hover:text-primary">G</span>
+<span class="text-primary font-bold">H</span>
+<span class="hover:text-primary">K</span>
+<span class="hover:text-primary">L</span>
+<span class="text-primary font-bold">M</span>
+<span class="hover:text-primary">N</span>
+<span class="hover:text-primary">P</span>
+<span class="text-primary font-bold">Q</span>
+<span class="hover:text-primary">S</span>
+<span class="text-primary font-bold">T</span>
+<span class="hover:text-primary">V</span>
+<span class="hover:text-primary">#</span>
+</div>
+</div>
+</main>
+<!-- Floating Action Button (FAB) M3 -->
+<div class="fixed right-5 bottom-24 z-30">
+<button aria-label="Thêm liên hệ mới" class="w-14 h-14 bg-primary text-on-primary rounded-2xl flex items-center justify-center shadow-lg hover:shadow-xl active:scale-95 transition-all focus:outline-none" onclick="document.getElementById('bottom-sheet-modal').classList.remove('hidden')" type="button">
+<span class="material-symbols-outlined text-[28px]">add</span>
+</button>
+</div>
+<!-- Bottom Navigation Bar (Shared Component Anchor) -->
+<!-- Destination count: 3; Active tab: Contacts -->
+<nav class="fixed bottom-0 left-0 w-full z-20 flex justify-around items-center h-20 px-2 bg-surface-container-lowest shadow-sm border-t border-surface-variant/40">
+<!-- Tab Chats -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-container rounded-full transition-colors active:scale-95" href="#">
+<span class="material-symbols-outlined text-[24px]">chat</span>
+<span class="font-label-md text-label-md mt-1">Chats</span>
+</a>
+<!-- Tab Calls -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-5 py-1 hover:bg-surface-container rounded-full transition-colors active:scale-95" href="#">
+<span class="material-symbols-outlined text-[24px]">call</span>
+<span class="font-label-md text-label-md mt-1">Calls</span>
+</a>
+<!-- Tab Contacts (Active State) -->
+<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-5 py-1 transition-all active:scale-95" href="#">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">group</span>
+<span class="font-label-md text-label-md mt-1 font-semibold">Contacts</span>
+</a>
+</nav>
+<!-- Bottom Sheet Modal (M3 Style Simulation) -->
+<div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-[2px] transition-opacity" id="bottom-sheet-modal">
+<!-- Backdrop click to dismiss area -->
+<div class="absolute inset-0" onclick="document.getElementById('bottom-sheet-modal').classList.add('hidden')"></div>
+<!-- Bottom Sheet Surface Container -->
+<div class="relative w-full max-w-md bg-surface-container-lowest rounded-t-[28px] shadow-2xl p-6 z-10 animate-in slide-in-from-bottom duration-200">
+<!-- M3 Drag Handle -->
+<div class="w-8 h-1 bg-outline-variant rounded-full mx-auto mb-5 cursor-pointer"></div>
+<!-- Header -->
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-title-md text-title-md text-on-surface font-bold">Thêm liên hệ qua số điện thoại</h2>
+<button aria-label="Đóng" class="w-8 h-8 rounded-full flex items-center justify-center text-outline hover:bg-surface-container active:scale-90 transition-all" onclick="document.getElementById('bottom-sheet-modal').classList.add('hidden')" type="button">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+          Nhập số điện thoại để tìm kiếm tài khoản NexaChat hoặc thêm vào danh bạ đám mây.
+        </p>
+<!-- Phone Input Field with Country Code -->
+<div class="flex gap-2 mb-4">
+<!-- Country code flag badge -->
+<div class="h-12 px-3 bg-surface-container-low rounded-lg border border-outline-variant flex items-center justify-center gap-1.5 flex-shrink-0">
+<span class="text-base leading-none">🇻🇳</span>
+<span class="font-label-lg text-label-lg font-bold text-on-surface">+84</span>
+</div>
+<!-- Floated Label Styled Input Container -->
+<div class="relative flex-1">
+<input class="w-full h-12 pt-3 pb-1 px-3.5 bg-surface-container-low rounded-lg border border-primary focus:border-primary focus:ring-1 focus:ring-primary text-on-surface font-title-md text-title-md outline-none" id="phone_search_input" type="tel" value="0915 889 999"/>
+<label class="absolute top-1 left-3.5 text-[10px] font-semibold text-primary" for="phone_search_input">
+              Số điện thoại
+            </label>
+</div>
+<!-- Search Action Button -->
+<button class="h-12 px-4 bg-primary text-on-primary rounded-lg font-label-lg text-label-lg font-semibold flex items-center justify-center gap-1 hover:bg-primary/90 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px]">search</span>
+<span>Tìm</span>
+</button>
+</div>
+<!-- Found User Preview Card (M3 Elevated Component) -->
+<div class="p-3.5 bg-surface-container-low rounded-xl border border-surface-variant flex flex-col gap-3 mb-2">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-primary font-semibold tracking-wide uppercase">Người dùng NexaChat tìm thấy</span>
+<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+              Đang online
+            </span>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border border-primary-container">
+<img class="w-full h-full object-cover" data-alt="A portrait photograph of a young Vietnamese developer named Quoc Bao with stylish glasses and confident expression against a contemporary dark indigo office setting, styled perfectly as a high tech mobile app profile avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbM678koJjyq7HYySAuBQx2yO8Sz5XiRcGsXFgPnk4WuV5U5MyAnodVFu-RR15uNlkNAeUp1L8_pJRcNmNJUTFqTBQU3zS_ULbSNzf8OIFNjDl-hvLcTjlFu5_bUv4Crtig0dggDr8H2IS8_BS7wU4DndODbdPR8Nn32-l0E4R7GFYZymj_q0X-OABwn1bWv4t5s4Qyvvf9s-cT7rvzwhYOch7782OIEbC1RO6rMa0i_NwL5Yt5ZYaALAOLYm57xhNfxkiwEoSdiO_"/>
+</div>
+<div class="min-w-0 flex-1">
+<p class="font-title-md text-title-md text-on-surface font-bold truncate">Quốc Bảo</p>
+<p class="font-body-sm text-body-sm text-primary truncate">@quocbao_dev</p>
+</div>
+</div>
+<div class="flex gap-2 pt-1 border-t border-surface-variant/40">
+<button class="flex-1 h-10 bg-primary text-on-primary rounded-lg font-label-lg text-label-lg font-semibold flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary/90 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px]">person_add</span>
+<span>Thêm vào danh bạ</span>
+</button>
+<button aria-label="Gửi tin nhắn" class="h-10 px-3 bg-secondary-container text-on-secondary-container rounded-lg font-label-lg text-label-lg flex items-center justify-center hover:bg-secondary-container/80 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px]">chat</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</body></html>

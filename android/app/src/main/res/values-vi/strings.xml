@@ -3,7 +3,6 @@
     <string name="app_name">NexaChat</string>
 
     <!-- Splash -->
-    <string name="splash_tagline">Đang kết nối…</string>
 
     <!-- Auth -->
     <string name="auth_phone_label">Số điện thoại</string>
@@ -82,13 +81,15 @@
     <string name="chat_input_hint">Nhắn tin</string>
     <string name="chat_typing">đang nhập…</string>
     <string name="msg_seen">Đã xem</string>
-    <string name="chat_offline">Ngoại tuyến</string>
+    <string name="chat_offline">Mất kết nối</string>
     <string name="cd_send">Gửi</string>
     <string name="cd_retry">Thử lại</string>
     <string name="cd_group_info">Thông tin nhóm</string>
     <string name="cd_attach">Đính kèm</string>
     <string name="cd_remove_attachment">Xóa tệp đính kèm</string>
     <string name="cd_open_attachment">Mở tệp đính kèm</string>
+    <string name="cd_delivered">Đã gửi</string>
+    <string name="action_close">Đóng</string>
 
     <!-- Message interactions -->
     <string name="action_reply">Trả lời</string>

@@ -3,6 +3,7 @@ package com.nexachat.feature.group
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -135,27 +138,46 @@ fun GroupDetailScreen(
                         .padding(top = 16.dp, bottom = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    InitialAvatar(
-                        name = state.title,
-                        avatarUrl = state.groupAvatar,
-                        size = 72.dp,
-                        modifier = Modifier
-                            .then(
-                                if (state.iAmAdmin) {
-                                    Modifier
-                                        .clickable {
-                                            avatarPicker.launch(
-                                                PickVisualMediaRequest(
-                                                    ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                                ),
-                                            )
-                                        }
-                                        .semantics { contentDescription = avatarDescription }
-                                } else {
-                                    Modifier
-                                },
-                            ),
-                    )
+                    Box(modifier = Modifier.size(80.dp), contentAlignment = Alignment.Center) {
+                        InitialAvatar(
+                            name = state.title,
+                            avatarUrl = state.groupAvatar,
+                            size = 72.dp,
+                            modifier = Modifier
+                                .then(
+                                    if (state.iAmAdmin) {
+                                        Modifier
+                                            .clickable {
+                                                avatarPicker.launch(
+                                                    PickVisualMediaRequest(
+                                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                                    ),
+                                                )
+                                            }
+                                            .semantics { contentDescription = avatarDescription }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        )
+                        if (state.iAmAdmin) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             }
             items(state.members, key = { it.userId }) { member ->

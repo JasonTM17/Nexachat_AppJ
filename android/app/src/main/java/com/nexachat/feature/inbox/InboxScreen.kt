@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
@@ -18,6 +20,8 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +89,12 @@ fun InboxScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onNavigateToCreateGroup) {
+            FloatingActionButton(
+                onClick = onNavigateToCreateGroup,
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
                 Icon(
                     imageVector = Icons.Filled.Add,
                     contentDescription = stringResource(R.string.action_create_group),
@@ -110,12 +119,18 @@ fun InboxScreen(
                     icon = Icons.Outlined.Forum,
                 )
                 else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.conversations, key = { it.id }) { conversation ->
+                    itemsIndexed(state.conversations, key = { _, item -> item.id }) { index, conversation ->
                         ConversationRow(
                             conversation = conversation,
                             formatTime = { epochMs -> formatInboxTime(epochMs, timeFormat, dateFormat) },
                             onClick = { onOpenConversation(conversation.id) },
                         )
+                        if (index < state.conversations.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 72.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -134,10 +149,10 @@ private fun ConversationRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        InitialAvatar(name, conversation.displayAvatar)
+        InitialAvatar(name, conversation.displayAvatar, size = 48.dp)
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -145,13 +160,13 @@ private fun ConversationRow(
         ) {
             Text(
                 text = name,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = conversation.lastMessageContent.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -169,8 +184,15 @@ private fun ConversationRow(
                 )
             }
             if (conversation.unreadCount > 0) {
-                Badge(modifier = Modifier.padding(top = 4.dp)) {
-                    Text(conversation.unreadCount.toString())
+                Badge(
+                    modifier = Modifier.padding(top = 4.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Text(
+                        text = conversation.unreadCount.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
         }

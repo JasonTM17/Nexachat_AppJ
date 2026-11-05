@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Chi tiết nhóm &amp; Quản lý thành viên - NexaChat</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary": "#004d70",
+            "on-secondary": "#ffffff",
+            "surface-container": "#eceef0",
+            "error-container": "#ffdad6",
+            "surface-container-high": "#e6e8ea",
+            "secondary-container": "#d0e1fb",
+            "surface-bright": "#f7f9fb",
+            "on-tertiary-fixed": "#001e2f",
+            "on-secondary-fixed": "#0b1c30",
+            "surface-container-highest": "#e0e3e5",
+            "on-primary-container": "#dad7ff",
+            "surface-tint": "#4d44e3",
+            "surface-container-low": "#f2f4f6",
+            "secondary-fixed-dim": "#b7c8e1",
+            "on-error-container": "#93000a",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "outline": "#777587",
+            "inverse-surface": "#2d3133",
+            "secondary-fixed": "#d3e4fe",
+            "error": "#ba1a1a",
+            "inverse-on-surface": "#eff1f3",
+            "tertiary-fixed": "#c9e6ff",
+            "on-tertiary": "#ffffff",
+            "on-primary-fixed": "#0f0069",
+            "background": "#f7f9fb",
+            "secondary": "#505f76",
+            "primary-container": "#4f46e5",
+            "on-primary-fixed-variant": "#3323cc",
+            "on-error": "#ffffff",
+            "tertiary-container": "#006693",
+            "surface-container-lowest": "#ffffff",
+            "on-surface-variant": "#464555",
+            "on-primary": "#ffffff",
+            "surface": "#f7f9fb",
+            "on-tertiary-container": "#b8e0ff",
+            "on-background": "#191c1e",
+            "primary-fixed-dim": "#c3c0ff",
+            "on-surface": "#191c1e",
+            "inverse-primary": "#c3c0ff",
+            "on-secondary-fixed-variant": "#38485d",
+            "tertiary-fixed-dim": "#89ceff",
+            "on-secondary-container": "#54647a",
+            "surface-dim": "#d8dadc",
+            "surface-variant": "#e0e3e5",
+            "primary-fixed": "#e2dfff",
+            "outline-variant": "#c7c4d8",
+            "primary": "#3525cd"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "1rem",
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "margin-tablet": "1.5rem",
+            "gutter-tablet": "1.25rem",
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem",
+            "margin-desktop": "2rem",
+            "gutter-desktop": "1.5rem"
+          },
+          "fontFamily": {
+            "label-sm": ["Inter"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "body-sm": ["Inter"],
+            "label-md": ["Inter"],
+            "title-md": ["Inter"],
+            "headline-sm": ["Roboto Flex"],
+            "headline-md": ["Roboto Flex"],
+            "body-lg": ["Inter"],
+            "headline-lg": ["Roboto Flex"],
+            "body-md": ["Inter"],
+            "label-lg": ["Inter"]
+          },
+          "fontSize": {
+            "label-sm": ["11px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600"}],
+            "headline-lg-mobile": ["26px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+            "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+            "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+            "title-md": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+            "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+            "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600"}],
+            "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "label-lg": ["14px", {"lineHeight": "20px", "fontWeight": "500"}]
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md antialiased min-h-screen flex justify-center selection:bg-primary-fixed selection:text-on-primary-fixed">
+<div class="w-full max-w-md bg-surface flex flex-col min-h-screen relative shadow-2xl pb-12">
+<!-- 1. Top App Bar (Task Sub-page with Back Navigation) -->
+<header class="sticky top-0 z-40 bg-surface-container-lowest/95 backdrop-blur-md px-2 h-16 flex items-center justify-between shadow-sm">
+<div class="flex items-center space-x-1">
+<button aria-label="Quay lại" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-on-surface font-semibold truncate max-w-[210px]">
+          Nhóm Dự Án NexaChat
+        </h1>
+</div>
+<div class="flex items-center">
+<button aria-label="Chỉnh sửa thông tin nhóm" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">edit</span>
+</button>
+</div>
+</header>
+<main class="flex-1 px-4 py-4 space-y-5">
+<!-- 2. Group Header -->
+<section class="flex flex-col items-center text-center pt-2 pb-1">
+<div class="relative group">
+<div class="w-24 h-24 rounded-full bg-secondary-container p-1 shadow-md ring-4 ring-surface-container-lowest overflow-hidden flex items-center justify-center">
+<div class="grid grid-cols-2 gap-1 w-full h-full p-2 bg-primary/10 rounded-full">
+<span class="material-symbols-outlined text-primary text-[28px] m-auto" style="font-variation-settings: 'FILL' 1;">groups</span>
+<span class="material-symbols-outlined text-tertiary-container text-[20px] m-auto">forum</span>
+<span class="material-symbols-outlined text-secondary text-[20px] m-auto">bolt</span>
+<span class="material-symbols-outlined text-primary text-[22px] m-auto">tag</span>
+</div>
+</div>
+<!-- Edit photo action badge -->
+<button aria-label="Đổi ảnh đại diện nhóm" class="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-on-primary shadow-md flex items-center justify-center ring-2 ring-surface-container-lowest hover:bg-primary-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[18px]">photo_camera</span>
+</button>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold mt-3.5 tracking-tight">
+          Nhóm Dự Án NexaChat
+        </h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">
+          4 thành viên • Tạo bởi bạn vào 15/10/2023
+        </p>
+<!-- Quick Action Buttons -->
+<div class="grid grid-cols-3 gap-3 w-full mt-5">
+<button class="flex flex-col items-center justify-center py-2.5 px-2 rounded-xl bg-primary text-on-primary shadow-sm hover:opacity-95 active:scale-95 transition-all min-h-[48px]" type="button">
+<span class="material-symbols-outlined text-[22px] mb-1">person_add</span>
+<span class="font-label-sm text-label-sm">Thêm người</span>
+</button>
+<button class="flex flex-col items-center justify-center py-2.5 px-2 rounded-xl bg-surface-container-lowest text-on-surface hover:bg-surface-container active:scale-95 transition-all border border-outline-variant/30 min-h-[48px]" type="button">
+<span class="material-symbols-outlined text-[22px] mb-1 text-on-surface-variant">search</span>
+<span class="font-label-sm text-label-sm">Tìm kiếm</span>
+</button>
+<button class="flex flex-col items-center justify-center py-2.5 px-2 rounded-xl bg-surface-container-lowest text-on-surface hover:bg-surface-container active:scale-95 transition-all border border-outline-variant/30 min-h-[48px]" type="button">
+<span class="material-symbols-outlined text-[22px] mb-1 text-on-surface-variant">notifications_off</span>
+<span class="font-label-sm text-label-sm">Tắt thông báo</span>
+</button>
+</div>
+</section>
+<!-- 3. Section Cài đặt & Tiện ích nhóm (Bento & Cards) -->
+<section class="bg-surface-container-lowest rounded-xl p-2 shadow-sm border border-outline-variant/20 divide-y divide-outline-variant/15">
+<a class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container transition-colors min-h-[48px]" href="#media">
+<div class="flex items-center space-x-3.5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[22px]">perm_media</span>
+</div>
+<div>
+<p class="font-title-md text-title-md text-on-surface text-left">Ảnh, File &amp; Phương tiện</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-left">142 tệp tin và liên kết</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[20px]">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container transition-colors min-h-[48px]" href="#pinned">
+<div class="flex items-center space-x-3.5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[22px]">push_pin</span>
+</div>
+<div>
+<p class="font-title-md text-title-md text-on-surface text-left">Tin nhắn đã ghim</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-left">3 tin quan trọng</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[20px]">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container transition-colors min-h-[48px]" href="#link">
+<div class="flex items-center space-x-3.5">
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[22px]">link</span>
+</div>
+<div>
+<p class="font-title-md text-title-md text-on-surface text-left">Link tham gia nhóm</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant text-left">nexachat.me/g/du-an-2024</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[20px]">chevron_right</span>
+</a>
+</section>
+<!-- 4. Member Management List -->
+<section class="bg-surface-container-lowest rounded-xl p-3 shadow-sm border border-outline-variant/20">
+<div class="flex items-center justify-between mb-2 px-1">
+<div class="flex items-center space-x-2">
+<h3 class="font-title-md text-title-md text-on-surface font-semibold">
+              Thành viên
+            </h3>
+<span class="bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-full font-label-sm text-label-sm">4</span>
+</div>
+<button aria-label="Tìm kiếm thành viên" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[22px]">search</span>
+</button>
+</div>
+<ul class="divide-y divide-outline-variant/15">
+<!-- Member 1: Admin / User -->
+<li class="py-2.5 flex items-center justify-between">
+<div class="flex items-center space-x-3 min-w-0">
+<div class="relative flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover ring-1 ring-outline-variant/30" data-alt="A polished modern portrait photo of a professional Asian male UI architect wearing sleek minimalist attire in a softly lit, warm contemporary studio with mild indigo reflections." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMoZiqxERBs7QnpH1h4bIzYBNTXxRd4XUysNj0lCfWsuwqWkLJRA-AIAlLqokLYYhkrd6NBMZ0gOgH9kvwInq3UMLxtOTqnS-Z2Wg-xslFNxPRwOKynldPRPONTMu6bi6iONLchO609NW3ER8Qa9souzM7UHJi-7O7tDUmIo97pxFM266Usr4cucyev7q06iwyGufTOze5sSp04maefCXKqB-rVA5T58HiJ_oXNcna-UT4SsMLMAAd8nNrADYqhwSM22WllAzP1fjv"/>
+<span class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-surface-container-lowest" title="Trực tuyến"></span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center space-x-2">
+<p class="font-title-md text-title-md text-on-surface font-semibold truncate">Trần Minh Quân (Bạn)</p>
+</div>
+<div class="flex items-center space-x-2 mt-0.5">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm font-semibold">
+                    Trưởng nhóm
+                  </span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Trực tuyến</span>
+</div>
+</div>
+</div>
+<div class="flex-shrink-0 flex items-center text-outline">
+<span class="material-symbols-outlined text-[20px] p-2">lock</span>
+</div>
+</li>
+<!-- Member 2: Lan Anh -->
+<li class="py-2.5 flex items-center justify-between">
+<div class="flex items-center space-x-3 min-w-0">
+<div class="relative flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover ring-1 ring-outline-variant/30" data-alt="Close-up portrait of a cheerful young Vietnamese female product manager with gentle studio lighting and soft violet back illumination in an airy workspace." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLK9YS2Snd8ebsUYlMcQFD725_MrcgUz4EwJ8S6T20xPOUjeRb0y5EDjLiuultBfhZKua2nXhFCc2SXUCUtaIgfwTlLzrkmXi8wE2pTJGbthOxNyoY8jdEIQXQu_sVMUYGTDNIEQKagIVpzNVOaO4U_PVAWDtxMVbUf7mN-YPHpJiuaL7KMjIE2DsTHIYuxmkT1zv7O1882EnAAbL1RhtxSsALFE6Yne8cx9-58fqNzGkkcHGwAQq2e77-sW5w5pnChMnHZ_m_QjL0"/>
+<span class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-surface-container-lowest" title="Trực tuyến"></span>
+</div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface font-semibold truncate">Lan Anh</p>
+<div class="flex items-center space-x-2 mt-0.5">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">
+                    Phó nhóm
+                  </span>
+</div>
+</div>
+</div>
+<div class="flex-shrink-0">
+<button aria-label="Tùy chọn Lan Anh" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[22px]">more_vert</span>
+</button>
+</div>
+</li>
+<!-- Member 3: Bảo Nam -->
+<li class="py-2.5 flex items-center justify-between">
+<div class="flex items-center space-x-3 min-w-0">
+<div class="relative flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover ring-1 ring-outline-variant/30" data-alt="Vibrant artistic headshot of a creative male front-end developer wearing dark casual apparel bathed in natural ambient daylight and subtle cool shadows." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAAyamEtQSXR0X4V1SRlkoa7OOXj37l2tqxwWkHmHT5AnB6YR2z2vN1_Ur1Q5LmXqbtNMoqytUO-mQjEqmTBpQC2FOAqhlgT1j3arA28KRNLZWQixo7YxsTQrQEKnJfIjkFK8DIuVyhqgv9-nwbtr_GxsSVfxeIcpcy2-gsFu2DuEm5OglZZvEDnJicKHQ8YuPlKKBfX1SZ9J08Cn4JUj5sN-uI5BzAN57Ma8QjUnJ6k3jME1tId8I2vYoslI0qnUnMFH4zMvXv3CZH"/>
+</div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface font-semibold truncate">Bảo Nam</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Thành viên</p>
+</div>
+</div>
+<div class="flex-shrink-0 flex items-center space-x-0.5">
+<button aria-label="Loại Bảo Nam khỏi nhóm" class="w-12 h-12 flex items-center justify-center rounded-full text-error hover:bg-error-container/40 active:scale-95 transition-all" onclick="openKickModal('Bảo Nam')" title="Xóa khỏi nhóm" type="button">
+<span class="material-symbols-outlined text-[22px]">person_remove</span>
+</button>
+</div>
+</li>
+<!-- Member 4: Thu Hà -->
+<li class="py-2.5 flex items-center justify-between">
+<div class="flex items-center space-x-3 min-w-0">
+<div class="relative flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover ring-1 ring-outline-variant/30" data-alt="Professional headshot of a friendly female QA specialist smiling with soft background bokeh in a minimalist modern tech company interior." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeKo18a3g18gOE4vs8_AlFVTdi3KThZv3pVoyupGcfR0ZLSc1JrU5jblK88v6ES51X5iRPNsZEAsKY2He3oqzGRep9qbbyB1H86eba_UNpWFfcU5COCw7GZKJRXE3bwn6YBkCeMFm0Ul-ilwex-jV1ApLolLxRDMCEseCoAV8WZpi3tozpTZ6rCQc7PHGH9q_SUvrvg3pYheYosKy6gEukg1A0qdQBfeT-fM51ZAP97nQXk1XV5Bk273o2jM3cKUKunLcyGZYQkvYH"/>
+</div>
+<div class="min-w-0">
+<p class="font-title-md text-title-md text-on-surface font-semibold truncate">Thu Hà</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Thành viên</p>
+</div>
+</div>
+<div class="flex-shrink-0">
+<button aria-label="Tùy chọn Thu Hà" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[22px]">more_vert</span>
+</button>
+</div>
+</li>
+</ul>
+</section>
+<!-- 5. Danger Zone -->
+<section class="pt-2">
+<button class="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl bg-surface-container-lowest text-error border border-error-container hover:bg-error-container/20 active:scale-[0.98] transition-all min-h-[48px] shadow-sm" onclick="openLeaveDialog()" type="button">
+<span class="material-symbols-outlined text-[22px]">logout</span>
+<span class="font-title-md text-title-md font-semibold">Rời nhóm</span>
+</button>
+</section>
+</main>
+<!-- Modal Xác nhận Rời Nhóm (Material 3 Dialog) -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-inverse-surface/40 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200" id="leaveModal">
+<div class="w-full max-w-xs bg-surface-container-lowest rounded-xl p-6 shadow-2xl border border-outline-variant/30 transform scale-95 transition-transform duration-200" id="leaveModalCard">
+<div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center text-error mx-auto mb-3">
+<span class="material-symbols-outlined text-[28px]">warning</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold text-center">
+          Rời khỏi nhóm này?
+        </h3>
+<p class="font-body-md text-body-md text-on-surface-variant text-center mt-2">
+          Bạn sẽ không còn nhận được tin nhắn hoặc tương tác từ nhóm này nữa.
+        </p>
+<div class="flex items-center justify-end space-x-3 mt-6">
+<button class="min-h-[48px] px-4 py-2 rounded-lg text-primary font-label-lg text-label-lg hover:bg-surface-container active:scale-95 transition-all" onclick="closeLeaveDialog()" type="button">
+            Hủy
+          </button>
+<button class="min-h-[48px] px-4 py-2 rounded-lg bg-error text-on-error font-label-lg text-label-lg font-semibold hover:opacity-90 active:scale-95 transition-all shadow-sm" onclick="confirmLeaveGroup()" type="button">
+            Rời nhóm
+          </button>
+</div>
+</div>
+</div>
+<!-- Notification Toast Mini -->
+<div class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-inverse-surface text-inverse-on-surface px-4 py-2.5 rounded-full shadow-lg font-body-sm text-body-sm flex items-center space-x-2 pointer-events-none opacity-0 transition-opacity duration-300 z-50" id="toast">
+<span class="material-symbols-outlined text-[18px] text-primary-fixed">info</span>
+<span id="toastText">Thao tác thành công</span>
+</div>
+</div>
+<script>
+    function openLeaveDialog() {
+      const modal = document.getElementById('leaveModal');
+      const card = document.getElementById('leaveModalCard');
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        card.classList.remove('scale-95');
+        card.classList.add('scale-100');
+      }, 10);
+    }
+
+    function closeLeaveDialog() {
+      const modal = document.getElementById('leaveModal');
+      const card = document.getElementById('leaveModalCard');
+      modal.classList.add('opacity-0');
+      card.classList.remove('scale-100');
+      card.classList.add('scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 200);
+    }
+
+    function confirmLeaveGroup() {
+      closeLeaveDialog();
+      showToast('Bạn đã rời khỏi nhóm "Nhóm Dự Án NexaChat"');
+    }
+
+    function openKickModal(name) {
+      if (confirm(`Bạn có chắc muốn loại ${name} ra khỏi nhóm?`)) {
+        showToast(`Đã xóa ${name} khỏi nhóm`);
+      }
+    }
+
+    function showToast(text) {
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toastText');
+      toastText.textContent = text;
+      toast.classList.remove('opacity-0');
+      setTimeout(() => {
+        toast.classList.add('opacity-0');
+      }, 2800);
+    }
+  </script>
+</body></html>
