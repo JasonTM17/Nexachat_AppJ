@@ -44,7 +44,7 @@ public class AttachmentService {
      * too so the rejection is a clean 413 even when the multipart layer did
      * not trip first (e.g. tests, alternate storage backends).
      */
-    static final long MAX_FILE_SIZE_BYTES = 25L * 1024 * 1024;
+    static final long MAX_FILE_SIZE_BYTES = StorageService.MAX_FILE_SIZE_BYTES;
 
     /** Logical storage subdirectory for message attachments. */
     static final String STORAGE_SUBDIR = "attachments";
@@ -89,6 +89,9 @@ public class AttachmentService {
                                      Integer width, Integer height, Integer duration) {
         if (file == null || file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Attachment file is required");
+        }
+        if (file.getSize() > MAX_FILE_SIZE_BYTES) {
+            throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
         }
         validateDimension("width", width);
         validateDimension("height", height);

@@ -43,4 +43,20 @@ class RateLimitServiceTest {
         assertThat(rateLimitService.tryConsume(refreshIp1, 30, window).allowed()).isTrue();
         assertThat(rateLimitService.bucketCount()).isEqualTo(3);
     }
+
+    @Test
+    void tryConsume_evictsLeastRecentlyUsedBucketAtCapacity() {
+        RateLimitService bounded = new RateLimitService(2, Duration.ofMinutes(5));
+        Duration window = Duration.ofMinutes(5);
+
+        assertThat(bounded.tryConsume("first", 1, window).allowed()).isTrue();
+        assertThat(bounded.tryConsume("second", 1, window).allowed()).isTrue();
+        assertThat(bounded.tryConsume("first", 1, window).allowed()).isFalse();
+        assertThat(bounded.tryConsume("third", 1, window).allowed()).isTrue();
+
+        assertThat(bounded.bucketCount()).isEqualTo(2);
+        assertThat(bounded.tryConsume("first", 1, window).allowed()).isFalse();
+        assertThat(bounded.tryConsume("second", 1, window).allowed()).isTrue();
+        assertThat(bounded.bucketCount()).isEqualTo(2);
+    }
 }

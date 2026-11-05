@@ -36,6 +36,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -193,7 +197,186 @@ class MessageFlowIT {
         return null;
     }
 
+    @Test
+    void inboxPaginationUsesStableKeysetAndKeepsUnpagedResponse() throws Exception {
+        TestUser paginationOwner = registerUser("Pagination Owner");
+        UUID olderConversationId = openDirectConversation(paginationOwner, carol);
+        UUID newerConversationId = openDirectConversation(paginationOwner, bob);
+        sendRest(olderConversationId, paginationOwner, "older inbox item");
+        sendRest(newerConversationId, paginationOwner, "newer inbox item");
+
+        MvcResult pageOne = getJson("/api/v1/conversations?limit=1", paginationOwner.accessToken())
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode firstPage = objectMapper.readTree(pageOne.getResponse().getContentAsString());
+        String cursor = pageOne.getResponse().getHeader("X-Next-Cursor");
+        assertThat(firstPage).hasSize(1);
+        assertThat(firstPage.get(0).get("id").asText()).isEqualTo(newerConversationId.toString());
+        assertThat(cursor).isNotBlank();
+
+        MvcResult pageTwo = getJson("/api/v1/conversations?limit=1&cursor=" + cursor,
+                paginationOwner.accessToken()).andExpect(status().isOk()).andReturn();
+        JsonNode secondPage = objectMapper.readTree(pageTwo.getResponse().getContentAsString());
+        assertThat(secondPage).hasSize(1);
+        assertThat(secondPage.get(0).get("id").asText()).isEqualTo(olderConversationId.toString());
+        assertThat(pageTwo.getResponse().getHeader("X-Next-Cursor")).isNull();
+
+        MvcResult cursorOnly = getJson("/api/v1/conversations?cursor=" + cursor,
+                paginationOwner.accessToken()).andExpect(status().isOk()).andReturn();
+        assertThat(objectMapper.readTree(cursorOnly.getResponse().getContentAsString()))
+                .extracting(node -> node.get("id").asText())
+                .containsExactly(olderConversationId.toString());
+
+        MvcResult unpaged = getJson("/api/v1/conversations", paginationOwner.accessToken())
+                .andExpect(status().isOk()).andReturn();
+        assertThat(unpaged.getResponse().getHeader("X-Next-Cursor")).isNull();
+        assertThat(objectMapper.readTree(unpaged.getResponse().getContentAsString()))
+                .extracting(node -> node.get("id").asText())
+                .containsExactly(newerConversationId.toString(), olderConversationId.toString());
+    }
+
     // ============================================================ REST flow
+
+    @Test
+    void concurrentSendersReceiveUniqueMonotonicSequences() throws Exception {
+        UUID conversationId = openDirectConversation();
+        int sendCount = 20;
+        List<UUID> clientMessageIds = new ArrayList<>();
+        for (int i = 0; i < sendCount; i++) {
+            clientMessageIds.add(UUID.randomUUID());
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(sendCount);
+        CountDownLatch ready = new CountDownLatch(sendCount);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<MvcResult>> results = new ArrayList<>();
+        try {
+            for (int i = 0; i < sendCount; i++) {
+                final int index = i;
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Concurrent send gate timed out");
+                    }
+                    TestUser sender = index % 2 == 0 ? alice : bob;
+                    Map<String, String> payload = Map.of(
+                            "clientMessageId", clientMessageIds.get(index).toString(),
+                            "type", "TEXT",
+                            "content", "parallel-" + index);
+                    return mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/messages")
+                                    .header("Authorization", "Bearer " + sender.accessToken())
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(payload)))
+                            .andReturn();
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            for (Future<MvcResult> result : results) {
+                assertThat(result.get(30, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(201);
+            }
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        String placeholders = String.join(",", java.util.Collections.nCopies(sendCount, "?"));
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(conversationId);
+        parameters.addAll(clientMessageIds);
+        List<Long> sequences = jdbcTemplate.queryForList(
+                "SELECT seq FROM messages WHERE conversation_id = ? AND client_message_id IN ("
+                        + placeholders + ") ORDER BY seq",
+                Long.class,
+                parameters.toArray());
+        assertThat(sequences).hasSize(sendCount).doesNotHaveDuplicates();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT last_message_seq FROM conversations WHERE id = ?", Long.class, conversationId))
+                .isEqualTo(sequences.get(sequences.size() - 1));
+    }
+
+    @Test
+    void concurrentDuplicateClientMessageIdReturnsOneRowAndRebroadcastsBothCalls() throws Exception {
+        UUID conversationId = openDirectConversation();
+        UUID clientMessageId = UUID.randomUUID();
+        StompSession bobSession = connect(bob);
+        try {
+            BlockingQueue<String> topic = subscribeToQueue(
+                    bobSession, "/topic/conversations." + conversationId);
+            Thread.sleep(400);
+
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<MvcResult>> results = new ArrayList<>();
+            Set<String> messageIds = new HashSet<>();
+            Set<Long> messageSeqs = new HashSet<>();
+            try {
+                for (int i = 0; i < 2; i++) {
+                    results.add(executor.submit(() -> {
+                        ready.countDown();
+                        if (!start.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("Concurrent retry gate timed out");
+                        }
+                        return postJson("/api/v1/conversations/" + conversationId + "/messages",
+                                alice.accessToken(),
+                                Map.of("clientMessageId", clientMessageId.toString(),
+                                        "type", "TEXT", "content", "same retry"))
+                                .andReturn();
+                    }));
+                }
+                assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+                start.countDown();
+
+                Set<Integer> statuses = new HashSet<>();
+                for (Future<MvcResult> result : results) {
+                    MvcResult response = result.get(30, TimeUnit.SECONDS);
+                    statuses.add(response.getResponse().getStatus());
+                    JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+                    messageIds.add(body.get("id").asText());
+                    messageSeqs.add(body.get("seq").asLong());
+                }
+                assertThat(statuses).containsExactlyInAnyOrder(200, 201);
+                assertThat(messageIds).hasSize(1);
+                assertThat(messageSeqs).hasSize(1);
+            } finally {
+                start.countDown();
+                executor.shutdownNow();
+            }
+
+            Integer storedRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND sender_id = ? "
+                            + "AND client_message_id = ?",
+                    Integer.class, conversationId, alice.id(), clientMessageId);
+            assertThat(storedRows).isEqualTo(1);
+
+            UUID storedMessageId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM messages WHERE conversation_id = ? AND sender_id = ? "
+                            + "AND client_message_id = ?",
+                    UUID.class, conversationId, alice.id(), clientMessageId);
+            Long storedSeq = jdbcTemplate.queryForObject(
+                    "SELECT seq FROM messages WHERE conversation_id = ? AND sender_id = ? "
+                            + "AND client_message_id = ?",
+                    Long.class, conversationId, alice.id(), clientMessageId);
+            assertThat(messageIds).containsOnly(storedMessageId.toString());
+            assertThat(messageSeqs).containsOnly(storedSeq);
+
+            for (int i = 0; i < 2; i++) {
+                JsonNode broadcast = objectMapper.readTree(topic.poll(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+                assertThat(broadcast).isNotNull();
+                assertThat(broadcast.get("eventType").asText()).isEqualTo("MESSAGE_CREATED");
+                assertThat(broadcast.get("payload").get("clientMessageId").asText())
+                        .isEqualTo(clientMessageId.toString());
+                assertThat(broadcast.get("payload").get("id").asText())
+                        .isEqualTo(storedMessageId.toString());
+                assertThat(broadcast.get("payload").get("seq").asLong()).isEqualTo(storedSeq);
+            }
+            assertThat(topic.poll(NEGATIVE_POLL_MS, TimeUnit.MILLISECONDS)).isNull();
+        } finally {
+            bobSession.disconnect();
+        }
+    }
 
     @Test
     void restSendHistoryInboxAndReadWatermark() throws Exception {
@@ -203,6 +386,7 @@ class MessageFlowIT {
 
         // --- 35 messages in, page them 30+5 ---
         List<UUID> sentIds = new ArrayList<>();
+        List<Long> sentSeqs = new ArrayList<>();
         List<UUID> clientMessageIds = new ArrayList<>();
         for (int i = 1; i <= 35; i++) {
             UUID clientMessageId = UUID.randomUUID();
@@ -214,21 +398,49 @@ class MessageFlowIT {
                             "type", "TEXT", "content", "msg-" + i))
                     .andExpect(status().isCreated())
                     .andReturn();
-            sentIds.add(UUID.fromString(objectMapper
-                    .readTree(result.getResponse().getContentAsString()).get("id").asText()));
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            sentIds.add(UUID.fromString(body.get("id").asText()));
+            sentSeqs.add(body.get("seq").asLong());
         }
         assertThat(new HashSet<>(sentIds)).hasSize(35);
 
-        // --- idempotent replay: same clientMessageId → 200 + same id, still 35 rows ---
-        MvcResult replay = postJson(
-                "/api/v1/conversations/" + conversationId + "/messages",
-                alice.accessToken(),
-                Map.of("clientMessageId", clientMessageIds.get(0).toString(),
-                        "type", "TEXT", "content", "msg-1"))
-                .andExpect(status().isOk())
-                .andReturn();
-        assertThat(objectMapper.readTree(replay.getResponse().getContentAsString())
-                .get("id").asText()).isEqualTo(sentIds.get(0).toString());
+        // --- idempotent replay: same key → same id/seq, one row, retry event ---
+        StompSession retryReceiver = connect(carol);
+        try {
+            BlockingQueue<String> retryTopic = subscribeToQueue(
+                    retryReceiver, "/topic/conversations." + conversationId);
+            Thread.sleep(400);
+
+            MvcResult replay = postJson(
+                    "/api/v1/conversations/" + conversationId + "/messages",
+                    alice.accessToken(),
+                    Map.of("clientMessageId", clientMessageIds.get(0).toString(),
+                            "type", "TEXT", "content", "msg-1"))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            JsonNode replayBody = objectMapper.readTree(replay.getResponse().getContentAsString());
+            assertThat(replayBody.get("id").asText()).isEqualTo(sentIds.get(0).toString());
+            assertThat(replayBody.get("seq").asLong()).isEqualTo(sentSeqs.get(0));
+
+            Integer replayRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND sender_id = ? "
+                            + "AND client_message_id = ?",
+                    Integer.class, conversationId, alice.id(), clientMessageIds.get(0));
+            assertThat(replayRows).isEqualTo(1);
+
+            JsonNode retryBroadcast = objectMapper.readTree(
+                    retryTopic.poll(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            assertThat(retryBroadcast).isNotNull();
+            assertThat(retryBroadcast.get("eventType").asText()).isEqualTo("MESSAGE_CREATED");
+            assertThat(retryBroadcast.get("payload").get("clientMessageId").asText())
+                    .isEqualTo(clientMessageIds.get(0).toString());
+            assertThat(retryBroadcast.get("payload").get("id").asText())
+                    .isEqualTo(sentIds.get(0).toString());
+            assertThat(retryBroadcast.get("payload").get("seq").asLong()).isEqualTo(sentSeqs.get(0));
+            assertThat(retryTopic.poll(NEGATIVE_POLL_MS, TimeUnit.MILLISECONDS)).isNull();
+        } finally {
+            retryReceiver.disconnect();
+        }
         Integer stored = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM messages WHERE conversation_id = ?", Integer.class, conversationId);
         assertThat(stored).isEqualTo(35);

@@ -15,8 +15,14 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -132,6 +138,51 @@ class AuthFlowIT {
                 Integer.class, userId);
         assertThat(totalRows).isGreaterThanOrEqualTo(3);
         assertThat(liveRows).isZero();
+    }
+
+    @Test
+    void concurrentRefreshRotationAllowsOneWinnerAndRevokesTheFamily() throws Exception {
+        String phone = "+84905557788";
+        MvcResult registered = postJson("/api/v1/auth/register",
+                Map.of("phone", phone, "password", "secret123", "displayName", "Race User"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(registered.getResponse().getContentAsString());
+        String refreshToken = body.get("refreshToken").asText();
+        UUID userId = UUID.fromString(body.get("user").get("id").asText());
+        String requestBody = objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken));
+
+        CyclicBarrier startTogether = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<MvcResult> first = executor.submit(() -> {
+                startTogether.await(10, TimeUnit.SECONDS);
+                return mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody)).andReturn();
+            });
+            Future<MvcResult> second = executor.submit(() -> {
+                startTogether.await(10, TimeUnit.SECONDS);
+                return mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody)).andReturn();
+            });
+
+            MvcResult firstResult = first.get(30, TimeUnit.SECONDS);
+            MvcResult secondResult = second.get(30, TimeUnit.SECONDS);
+            assertThat(List.of(firstResult.getResponse().getStatus(), secondResult.getResponse().getStatus()))
+                    .containsExactlyInAnyOrder(200, 401);
+            MvcResult rejected = firstResult.getResponse().getStatus() == 401 ? firstResult : secondResult;
+            assertThat(objectMapper.readTree(rejected.getResponse().getContentAsString())
+                    .path("error").path("code").asText()).isEqualTo("TOKEN_REUSED");
+
+            Integer liveRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
+                    Integer.class, userId);
+            assertThat(liveRows).isZero();
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

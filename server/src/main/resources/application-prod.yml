@@ -27,8 +27,8 @@ logging:
 spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://db:5432/nexachat}
-    username: ${DATABASE_USER:nexachat}
-    password: ${DATABASE_PASSWORD:nexachat}
+    username: ${DATABASE_USER}
+    password: ${DATABASE_PASSWORD}
 
 nexachat:
   jwt:

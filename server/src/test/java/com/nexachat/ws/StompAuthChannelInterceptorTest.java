@@ -1,8 +1,11 @@
 package com.nexachat.ws;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.ws.dto.WsErrorResponse;
 import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,15 +14,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -35,20 +41,30 @@ class StompAuthChannelInterceptorTest {
     private ConversationMemberRepository memberRepository;
     @Mock
     private MessageChannel channel;
+    @Mock
+    private SimpMessagingTemplate messaging;
 
     private StompAuthChannelInterceptor interceptor;
+    private RateLimitService rateLimitService;
 
     private final UUID userId = UUID.randomUUID();
     private final UUID conversationId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        interceptor = new StompAuthChannelInterceptor(jwtService, memberRepository);
+        rateLimitService = new RateLimitService();
+        interceptor = new StompAuthChannelInterceptor(
+                jwtService, memberRepository, rateLimitService, messaging,
+                new ObjectMapper(), 2, 60, 3, 10);
     }
 
     private Message<?> message(StompHeaderAccessor accessor) {
+        return message(accessor, new byte[0]);
+    }
+
+    private Message<?> message(StompHeaderAccessor accessor, Object payload) {
         accessor.setLeaveMutable(true);
-        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+        return MessageBuilder.createMessage(payload, accessor.getMessageHeaders());
     }
 
     private Message<?> subscribeMessage(String destination, boolean authenticated) {
@@ -68,6 +84,15 @@ class StompAuthChannelInterceptorTest {
             accessor.setUser(new StompUserPrincipal(userId));
         }
         return message(accessor);
+    }
+
+    private Message<?> sendMessage(String destination, UUID authenticatedUser, UUID clientMessageId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination(destination);
+        accessor.setUser(new StompUserPrincipal(authenticatedUser));
+        byte[] payload = ("{\"clientMessageId\":\"" + clientMessageId + "\"}")
+                .getBytes(StandardCharsets.UTF_8);
+        return message(accessor, payload);
     }
 
     // --------------------------------------------------------------- CONNECT
@@ -220,6 +245,61 @@ class StompAuthChannelInterceptorTest {
         Message<?> message = sendMessage("/app/admin/shutdown", true);
 
         assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void send_messagesRateLimit_isPerUserAndReportsCorrelatedErrorWithoutDisconnecting() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        UUID rejectedId = UUID.randomUUID();
+        Message<?> first = sendMessage("/app/conversations/" + conversationId + "/messages", userId, firstId);
+        Message<?> second = sendMessage("/app/conversations/" + conversationId + "/messages", userId, secondId);
+        Message<?> rejected = sendMessage("/app/conversations/" + conversationId + "/messages", userId, rejectedId);
+
+        assertThat(interceptor.preSend(first, channel)).isSameAs(first);
+        assertThat(interceptor.preSend(second, channel)).isSameAs(second);
+        assertThat(interceptor.preSend(rejected, channel)).isNull();
+        verify(messaging).convertAndSendToUser(userId.toString(), "/queue/errors",
+                new WsErrorResponse("RATE_LIMITED", rejectedId));
+        // A reconnect and a new subscription do not reset the shared user bucket.
+        StompHeaderAccessor reconnectAccessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        reconnectAccessor.setNativeHeader("Authorization", "Bearer good-token");
+        when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        assertThat(interceptor.preSend(message(reconnectAccessor), channel)).isNotNull();
+        assertThat(interceptor.preSend(subscribeMessage("/user/queue/inbox", true), channel)).isNotNull();
+        assertThat(interceptor.preSend(sendMessage(
+                "/app/conversations/" + conversationId + "/messages", userId, UUID.randomUUID()), channel))
+                .isNull();
+
+        UUID otherUser = UUID.randomUUID();
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, otherUser))
+                .thenReturn(true);
+        Message<?> otherUsersFirst = sendMessage(
+                "/app/conversations/" + conversationId + "/messages", otherUser, UUID.randomUUID());
+        assertThat(interceptor.preSend(otherUsersFirst, channel)).isSameAs(otherUsersFirst);
+    }
+
+    @Test
+    void send_typingRateLimitIsSeparateAndCannotCreateMessageTraffic() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        for (int i = 0; i < 3; i++) {
+            Message<?> typing = sendMessage("/app/conversations/" + conversationId + "/typing", userId,
+                    UUID.randomUUID());
+            assertThat(interceptor.preSend(typing, channel)).isSameAs(typing);
+        }
+        Message<?> excessTyping = sendMessage(
+                "/app/conversations/" + conversationId + "/typing", userId, UUID.randomUUID());
+        assertThat(interceptor.preSend(excessTyping, channel)).isNull();
+        verify(messaging).convertAndSendToUser(userId.toString(), "/queue/errors",
+                new WsErrorResponse("RATE_LIMITED", null));
+
+        Message<?> chatMessage = sendMessage("/app/conversations/" + conversationId + "/messages",
+                userId, UUID.randomUUID());
+        assertThat(interceptor.preSend(chatMessage, channel)).isSameAs(chatMessage);
     }
 
     @Test

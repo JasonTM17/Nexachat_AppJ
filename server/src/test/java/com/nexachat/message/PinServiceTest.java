@@ -7,6 +7,9 @@ import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.PinRequest;
+import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.PinnedMessageView;
 import com.nexachat.user.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +21,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -119,6 +126,18 @@ class PinServiceTest {
 
     private PinRequest request() {
         return new PinRequest(messageId);
+    }
+
+    private PinnedMessage pinned(UUID id, Instant pinnedAt) {
+        PinnedMessage pin = mock(PinnedMessage.class);
+        Message message = mock(Message.class);
+        User pinnedBy = mock(User.class);
+        when(message.getId()).thenReturn(id);
+        when(pinnedBy.getId()).thenReturn(userId);
+        when(pin.getMessage()).thenReturn(message);
+        when(pin.getPinnedBy()).thenReturn(pinnedBy);
+        when(pin.getPinnedAt()).thenReturn(pinnedAt);
+        return pin;
     }
 
     // -------------------------------------------------------------------- pin
@@ -320,7 +339,47 @@ class PinServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
-        verify(pinRepository, never()).findByConversation_IdOrderByPinnedAtAsc(any());
+        verify(pinRepository, never()).findByConversation_IdOrderByPinnedAtDesc(any());
+    }
+
+    @Test
+    void listPins_newestFirstBatchHydratesMessagesOnce() {
+        Instant newerAt = Instant.parse("2026-01-02T00:00:00Z");
+        Instant olderAt = Instant.parse("2026-01-01T00:00:00Z");
+        UUID newerId = UUID.randomUUID();
+        UUID olderId = UUID.randomUUID();
+        PinnedMessage newerPin = pinned(newerId, newerAt);
+        PinnedMessage olderPin = pinned(olderId, olderAt);
+        Conversation direct = conversation(Conversation.Type.DIRECT);
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.of(member(direct, ConversationMember.Role.MEMBER)));
+        when(pinRepository.findByConversation_IdOrderByPinnedAtDesc(conversationId))
+                .thenReturn(List.of(newerPin, olderPin));
+
+        MessageRow newerRow = new MessageRow(
+                newerId, conversationId, 2L, userId, "Member", Message.Type.TEXT,
+                "newer", UUID.randomUUID(), null, newerAt, null, null);
+        MessageRow olderRow = new MessageRow(
+                olderId, conversationId, 1L, userId, "Member", Message.Type.TEXT,
+                "older", UUID.randomUUID(), null, olderAt, null, null);
+        when(messageRepository.findRowsByIdIn(List.of(newerId, olderId)))
+                .thenReturn(List.of(olderRow, newerRow));
+        MessageResponse newerResponse = new MessageResponse(
+                newerId, conversationId, 2L, userId, "Member", "TEXT", "newer",
+                null, null, null, List.of(), List.of(), newerAt, null, null);
+        MessageResponse olderResponse = new MessageResponse(
+                olderId, conversationId, 1L, userId, "Member", "TEXT", "older",
+                null, null, null, List.of(), List.of(), olderAt, null, null);
+        when(messageService.toResponses(List.of(newerRow, olderRow), userId))
+                .thenReturn(List.of(newerResponse, olderResponse));
+
+        List<PinnedMessageView> pins = pinService.listPins(userId, conversationId);
+
+        assertThat(pins).extracting(PinnedMessageView::messageId)
+                .containsExactly(newerId, olderId);
+        verify(messageService, times(1)).toResponses(List.of(newerRow, olderRow), userId);
+        verify(messageService, never()).toResponse(any(), any());
     }
 
     @Test

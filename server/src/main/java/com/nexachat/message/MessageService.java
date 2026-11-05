@@ -65,6 +65,7 @@ public class MessageService {
 
     /** Cap on {@code attachmentIds} per send (phase-09) — bounds the bind work per message. */
     static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;
+    static final int MAX_CONTENT_LENGTH = 10_000;
 
     private final MessageRepository messageRepository;
     private final MessageAttachmentRepository attachmentRepository;
@@ -98,9 +99,9 @@ public class MessageService {
      * Sends a message into {@code conversationId} on behalf of {@code senderId}.
      *
      * <p>Retry semantics: the same {@code clientMessageId} re-sent to the same
-     * conversation returns (and re-broadcasts) the already-stored row — receivers
-     * dedup by message id client-side (plan §11.3.3). Reusing the key for a
-     * DIFFERENT conversation is a client-contract violation →
+     * conversation returns (and re-broadcasts) the already-stored row; receivers
+     * deduplicate by message id client-side. Reusing the key for a DIFFERENT
+     * conversation is a client-contract violation →
      * {@code VALIDATION_FAILED}.
      *
      * @throws ApiException {@code NOT_MEMBER}, {@code VALIDATION_FAILED},
@@ -144,7 +145,7 @@ public class MessageService {
 
         MessageResponse response = toResponse(row);
         // Broadcast on dedup too: the re-sent frame is how a retrying sender
-        // gets its SENT signal; receivers dedup by message id (plan §11.3.3).
+        // gets its SENT signal; receivers deduplicate by message id.
         eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
         return new SendResult(response, created);
     }
@@ -174,28 +175,7 @@ public class MessageService {
         boolean hasMore = rows.size() > pageSize;
         List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
 
-        Map<UUID, List<AttachmentResponse>> attachmentsByMessage = page.isEmpty()
-                ? Map.of()
-                : attachmentRepository.findByMessage_IdIn(
-                                page.stream().map(MessageRow::id).toList())
-                        .stream()
-                        .collect(Collectors.groupingBy(
-                                a -> a.getMessage().getId(),
-                                Collectors.mapping(this::toAttachmentResponse, Collectors.toList())));
-
-        // Phase-10 hydration, same one-IN-query-per-facet style: reaction
-        // summaries (viewer = the reader) and reply-target previews.
-        Map<UUID, List<ReactionView>> reactionsByMessage =
-                reactionsByMessage(page.stream().map(MessageRow::id).toList(), userId);
-        Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(
-                page.stream().map(MessageRow::replyToId).filter(Objects::nonNull).toList());
-
-        List<MessageResponse> items = page.stream()
-                .map(row -> toResponse(row,
-                        attachmentsByMessage.getOrDefault(row.id(), List.of()),
-                        reactionsByMessage.getOrDefault(row.id(), List.of()),
-                        row.replyToId() == null ? null : replyRefsById.get(row.replyToId())))
-                .toList();
+        List<MessageResponse> items = hydrateResponses(page, userId);
         Long nextBeforeSeq = (afterSeq != null || items.isEmpty())
                 ? null : items.get(items.size() - 1).seq();
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
@@ -265,8 +245,14 @@ public class MessageService {
         }
         requireMember(conversationId, userId);
         long upToSeq = request.upToSeq();
+        long latestSeq = messageRepository.findMaxSeqByConversationId(conversationId);
+        if (upToSeq > latestSeq) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "upToSeq cannot exceed the latest message sequence");
+        }
         memberRepository.advanceReadWatermark(conversationId, userId, upToSeq);
-        eventPublisher.publishEvent(new MessageReadEvent(conversationId, userId, upToSeq));
+        long persistedWatermark = memberRepository.findReadWatermark(conversationId, userId);
+        eventPublisher.publishEvent(new MessageReadEvent(conversationId, userId, persistedWatermark));
     }
 
     // ------------------------------------------------------------- internals
@@ -303,6 +289,10 @@ public class MessageService {
     private static String normalizedContent(Message.Type type, String content) {
         if (type == Message.Type.TEXT && (content == null || content.isBlank())) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "TEXT messages require content");
+        }
+        if (content != null && content.length() > MAX_CONTENT_LENGTH) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Message content must be at most " + MAX_CONTENT_LENGTH + " characters");
         }
         return content;
     }
@@ -434,17 +424,36 @@ public class MessageService {
      * not the message author).
      */
     MessageResponse toResponse(MessageRow row, UUID viewerId) {
-        List<AttachmentResponse> attachments = attachmentRepository
-                .findByMessage_IdIn(List.of(row.id()))
-                .stream()
-                .map(this::toAttachmentResponse)
+        return hydrateResponses(List.of(row), viewerId).get(0);
+    }
+
+    /** Batch hydration shared by history and pinned-message read models. */
+    List<MessageResponse> toResponses(List<MessageRow> rows, UUID viewerId) {
+        return hydrateResponses(rows, viewerId);
+    }
+
+    private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> messageIds = rows.stream().map(MessageRow::id).toList();
+        Map<UUID, List<AttachmentResponse>> attachmentsByMessage =
+                attachmentRepository.findByMessage_IdIn(messageIds).stream()
+                        .collect(Collectors.groupingBy(
+                                attachment -> attachment.getMessage().getId(),
+                                Collectors.mapping(this::toAttachmentResponse, Collectors.toList())));
+        Map<UUID, List<ReactionView>> reactionsByMessage = reactionsByMessage(messageIds, viewerId);
+        Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(rows.stream()
+                .map(MessageRow::replyToId)
+                .filter(Objects::nonNull)
+                .toList());
+
+        return rows.stream()
+                .map(row -> toResponse(row,
+                        attachmentsByMessage.getOrDefault(row.id(), List.of()),
+                        reactionsByMessage.getOrDefault(row.id(), List.of()),
+                        row.replyToId() == null ? null : replyRefsById.get(row.replyToId())))
                 .toList();
-        List<ReactionView> reactions = reactionsByMessage(List.of(row.id()), viewerId)
-                .getOrDefault(row.id(), List.of());
-        ReplyRefResponse replyTo = row.replyToId() == null
-                ? null
-                : replyRefsById(List.of(row.replyToId())).get(row.replyToId());
-        return toResponse(row, attachments, reactions, replyTo);
     }
 
     private static MessageResponse toResponse(MessageRow row,

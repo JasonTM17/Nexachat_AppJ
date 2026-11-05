@@ -10,6 +10,9 @@ package com.nexachat.attachment;
  */
 public interface StorageService {
 
+    /** Maximum allowed upload size, enforced before upload bytes are buffered by service code. */
+    long MAX_FILE_SIZE_BYTES = 25L * 1024 * 1024;
+
     /**
      * Persists {@code bytes} under {@code subdir}.
      *

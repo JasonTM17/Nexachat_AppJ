@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
 import java.util.List;
@@ -102,6 +103,60 @@ class InboxServiceTest {
 
         assertThat(entry.lastMessage()).isNull();
         assertThat(entry.unreadCount()).isZero();
+    }
+
+    @Test
+    void listInbox_paginationReturnsStableCursorAndNextPage() {
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        Instant firstCreatedAt = Instant.parse("2026-01-02T03:04:05Z");
+        Instant secondCreatedAt = Instant.parse("2026-01-01T03:04:05Z");
+        InboxConversationRow firstRow = new InboxConversationRow(
+                firstId, Conversation.Type.DIRECT, null, null, null, 42L, firstCreatedAt, 0L);
+        InboxConversationRow secondRow = new InboxConversationRow(
+                secondId, Conversation.Type.DIRECT, null, null, null, 41L, secondCreatedAt, 0L);
+        when(memberRepository.findInboxConversationsPage(
+                userId, null, null, null, PageRequest.of(0, 2)))
+                .thenReturn(List.of(firstRow, secondRow));
+        when(memberRepository.findInboxMemberViews(List.of(firstId))).thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(userId, List.of(firstId))).thenReturn(List.of());
+
+        InboxService.InboxPage first = inboxService.listInbox(userId, 1, null);
+
+        assertThat(first.items()).extracting(InboxEntry::id).containsExactly(firstId);
+        assertThat(first.nextCursor()).isNotBlank();
+
+        when(memberRepository.findInboxConversationsPage(
+                userId, 42L, firstCreatedAt, firstId, PageRequest.of(0, 2)))
+                .thenReturn(List.of(secondRow));
+        when(memberRepository.findInboxMemberViews(List.of(secondId))).thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(userId, List.of(secondId))).thenReturn(List.of());
+
+        InboxService.InboxPage second = inboxService.listInbox(userId, 1, first.nextCursor());
+
+        assertThat(second.items()).extracting(InboxEntry::id).containsExactly(secondId);
+        assertThat(second.nextCursor()).isNull();
+    }
+
+    @Test
+    void listInbox_cursorWithoutLimitReturnsAllRemainingEntries() {
+        UUID nextId = UUID.randomUUID();
+        InboxConversationRow row = new InboxConversationRow(
+                nextId, Conversation.Type.DIRECT, null, null, null,
+                40L, Instant.parse("2026-01-01T00:00:00Z"), 0L);
+        when(memberRepository.findInboxConversationsAfterCursor(
+                userId, 42L, Instant.parse("2026-01-02T00:00:00Z"), conversationId))
+                .thenReturn(List.of(row));
+        when(memberRepository.findInboxMemberViews(List.of(nextId))).thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(userId, List.of(nextId))).thenReturn(List.of());
+        String cursor = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                ("v1|42|2026-01-02T00:00:00Z|" + conversationId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        InboxService.InboxPage page = inboxService.listInbox(userId, null, cursor);
+
+        assertThat(page.items()).extracting(InboxEntry::id).containsExactly(nextId);
+        assertThat(page.nextCursor()).isNull();
     }
 
     @Test

@@ -139,6 +139,7 @@ class FileControllerTest {
         verify(storageService).read("avatars/x.png");
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getHeaders().getContentType().toString()).isEqualTo("image/png");
+        assertThat(response.getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
         assertThat(response.getBody()).containsExactly(PNG_BYTES);
     }
 

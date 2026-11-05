@@ -13,6 +13,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -114,7 +115,7 @@ public class ReactionService {
         if (raw == null || raw.isBlank()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "emoji is required");
         }
-        String emoji = raw.trim();
+        String emoji = Normalizer.normalize(raw.trim(), Normalizer.Form.NFC);
         if (emoji.isEmpty() || emoji.codePointCount(0, emoji.length()) > MAX_EMOJI_LENGTH) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "emoji must be 1-" + MAX_EMOJI_LENGTH + " characters");

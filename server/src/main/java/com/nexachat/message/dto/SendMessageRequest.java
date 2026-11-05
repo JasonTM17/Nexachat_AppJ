@@ -1,6 +1,7 @@
 package com.nexachat.message.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 import java.util.UUID;
@@ -22,7 +23,7 @@ import java.util.UUID;
 public record SendMessageRequest(
         @NotNull UUID clientMessageId,
         @NotNull String type,
-        String content,
+        @Size(max = 10_000) String content,
         UUID replyToId,
         List<UUID> attachmentIds
 ) {

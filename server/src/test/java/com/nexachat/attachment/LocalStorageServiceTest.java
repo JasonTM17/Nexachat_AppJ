@@ -58,6 +58,22 @@ class LocalStorageServiceTest {
     }
 
     @Test
+    void rejectsHtmlAndSvgPayloads() {
+        byte[] html = "<html><script>alert(1)</script></html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] svg = "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        ApiException htmlEx = catchThrowableOfType(ApiException.class,
+                () -> newService().store("attachments", "page.html", "text/html", html));
+        ApiException svgEx = catchThrowableOfType(ApiException.class,
+                () -> newService().store("attachments", "image.svg", "image/svg+xml", svg));
+
+        assertThat(htmlEx.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        assertThat(svgEx.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        assertThat(tempDir).isEmptyDirectory();
+    }
+
+    @Test
     void rejectsEmptyContent() {
         ApiException ex = catchThrowableOfType(ApiException.class, () ->
                 newService().store("avatars", "empty.jpg", "image/jpeg", new byte[0]));
@@ -146,7 +162,10 @@ class LocalStorageServiceTest {
     void read_traversalKey_throwsFileNotFound() {
         // Same rejection set as store: the read side is the last line of
         // defence behind FileController's key check.
-        for (String hostile : new String[] {"..", "../escape.png", "a/../b.png", "a\\b.png", "  "}) {
+        for (String hostile : new String[] {
+                "..", "../escape.png", "a/../b.png", "a\\b.png", "  ",
+                tempDir.resolveSibling("outside.png").toAbsolutePath().toString().replace('\\', '/'),
+                "%2e%2e/escape.png", "%252e%252e/escape.png"}) {
             ApiException ex = catchThrowableOfType(ApiException.class,
                     () -> newService().read(hostile));
             assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);

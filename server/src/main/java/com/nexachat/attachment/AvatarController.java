@@ -44,6 +44,9 @@ public class AvatarController {
         if (file == null || file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Avatar file is required");
         }
+        if (file.getSize() > StorageService.MAX_FILE_SIZE_BYTES) {
+            throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
+        }
         byte[] bytes = file.getBytes();
         String sniffed = MagicBytes.sniff(bytes);
         if (sniffed == null || !sniffed.startsWith("image/")) {

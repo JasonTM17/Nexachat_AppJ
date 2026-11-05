@@ -28,5 +28,11 @@ nexachat:
     secret: ${JWT_SECRET:dev-secret-change-me-at-least-64-chars-long-0123456789}
     access-ttl-seconds: 900
     refresh-ttl-days: 14
+  rate-limit:
+    stomp:
+      messages-per-window: 30
+      window-seconds: 10
+      typing-per-window: 60
+      typing-window-seconds: 10
   storage:
     root: ${STORAGE_ROOT:./data/uploads}

@@ -5,7 +5,9 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.InboxEntry;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,8 +29,20 @@ public class ConversationInboxController {
     }
 
     @GetMapping
-    public List<InboxEntry> inbox(@AuthenticationPrincipal JwtPrincipal principal) {
-        return inboxService.listInbox(requireUserId(principal));
+    public ResponseEntity<List<InboxEntry>> inbox(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String cursor) {
+        UUID userId = requireUserId(principal);
+        if (limit == null && cursor == null) {
+            return ResponseEntity.ok(inboxService.listInbox(userId));
+        }
+        InboxService.InboxPage page = inboxService.listInbox(userId, limit, cursor);
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
+        if (page.nextCursor() != null) {
+            response.header("X-Next-Cursor", page.nextCursor());
+        }
+        return response.body(page.items());
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

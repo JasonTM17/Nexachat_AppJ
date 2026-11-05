@@ -18,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -145,19 +147,17 @@ class AttachmentServiceTest {
     }
 
     @Test
-    void upload_oversize_throwsFileTooLargeBeforeStore() {
-        byte[] tooBig = new byte[(int) AttachmentService.MAX_FILE_SIZE_BYTES + 1];
-        tooBig[0] = (byte) 0x89;
-        tooBig[1] = 0x50;
-        tooBig[2] = 0x4E;
-        tooBig[3] = 0x47;
-        MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", tooBig);
+    void upload_oversize_throwsFileTooLargeBeforeStore() throws Exception {
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(AttachmentService.MAX_FILE_SIZE_BYTES + 1);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> attachmentService.upload(ownerId, file, null, null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_TOO_LARGE);
         assertThat(ex.getHttpStatus()).isEqualTo(413);
+        verify(file, never()).getBytes();
         verify(storageService, never()).store(any(), any(), any(), any());
     }
 

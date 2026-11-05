@@ -9,8 +9,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -53,6 +55,12 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     int advanceReadWatermark(@Param("conversationId") UUID conversationId,
                              @Param("userId") UUID userId,
                              @Param("seq") long seq);
+
+    /** Read back the persisted monotonic watermark for the post-commit event. */
+    @Query("SELECT m.lastReadSeq FROM ConversationMember m "
+            + "WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
+    long findReadWatermark(@Param("conversationId") UUID conversationId,
+                           @Param("userId") UUID userId);
 
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
@@ -99,6 +107,47 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC
             """)
     List<InboxConversationRow> findInboxConversations(@Param("userId") UUID userId);
+
+    /** Keyset-paged inbox query with a unique final tie-breaker for stable cursors. */
+    @Query("""
+            SELECT new com.nexachat.conversation.dto.InboxConversationRow(
+                       c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
+                       c.lastMessageSeq, c.createdAt, m.lastReadSeq)
+            FROM ConversationMember m JOIN m.conversation c
+            WHERE m.user.id = :userId
+              AND (:cursorId IS NULL
+                   OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
+                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
+                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                       AND c.createdAt = :cursorCreatedAt AND c.id > :cursorId))
+            ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC, c.id ASC
+            """)
+    List<InboxConversationRow> findInboxConversationsPage(
+            @Param("userId") UUID userId,
+            @Param("cursorSeq") Long cursorSeq,
+            @Param("cursorCreatedAt") Instant cursorCreatedAt,
+            @Param("cursorId") UUID cursorId,
+            Pageable pageable);
+
+    /** Cursor-only form preserves the existing unlimited default when limit is omitted. */
+    @Query("""
+            SELECT new com.nexachat.conversation.dto.InboxConversationRow(
+                       c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
+                       c.lastMessageSeq, c.createdAt, m.lastReadSeq)
+            FROM ConversationMember m JOIN m.conversation c
+            WHERE m.user.id = :userId
+              AND (:cursorId IS NULL
+                   OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
+                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
+                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                       AND c.createdAt = :cursorCreatedAt AND c.id > :cursorId))
+            ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC, c.id ASC
+            """)
+    List<InboxConversationRow> findInboxConversationsAfterCursor(
+            @Param("userId") UUID userId,
+            @Param("cursorSeq") Long cursorSeq,
+            @Param("cursorCreatedAt") Instant cursorCreatedAt,
+            @Param("cursorId") UUID cursorId);
 
     /** Batch member fetch for the inbox — one IN query, no N+1. */
     @Query("""

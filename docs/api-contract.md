@@ -82,7 +82,8 @@
 - `POST /conversations/direct` is idempotent by design: `201` on first create,
   `200` with the same body afterwards.
 - `POST /conversations/{id}/messages` is idempotent per `clientMessageId`:
-  retrying the exact same body returns the stored message instead of duplicating it.
+  retrying the same key returns and re-broadcasts the stored message instead of
+  duplicating it; receivers deduplicate by message id.
 - `POST /contacts`, `PATCH /contacts/{id}`, `DELETE /contacts/{id}` and
   `POST /conversations/{id}/read` are safe to retry.
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
@@ -206,17 +207,18 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /conversations/direct` | Bearer | `{phone}` **or** `{userId}` — exactly one (XOR) | `201` created / `200` existing — same `ConversationResponse` either way (idempotent) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
-| `GET /conversations` | Bearer | — | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `UNAUTHORIZED` 401 |
+| `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100) and stable opaque `cursor?`; omit both for the full list | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — items newest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative global seq, watermark is monotonic | `204` empty (broadcasts `MESSAGE_READ`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
 `ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
 `InboxEntry` = `{id, type, title, members[], lastMessage?{seq, type, contentSnippet, senderId, createdAt}, unreadCount, lastReadSeq}`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (null fields omitted).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
-`SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns the stored row (idempotent); reusing it in a different conversation is `VALIDATION_FAILED`.
+`SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns and re-broadcasts the stored row without inserting a second message; receivers deduplicate by message id. Reusing it in a different conversation is `VALIDATION_FAILED`.
+Inbox pagination uses query parameters `limit` and `cursor`. With no parameters, the complete list and byte-compatible response body are unchanged. A `limit` page is clamped to 1–100 items; `X-Next-Cursor` contains the next opaque keyset cursor only when another page exists. A cursor without a limit returns all remaining entries.
 
 ## Groups — `/api/v1/conversations` (type `GROUP`)
 
@@ -234,7 +236,7 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /attachments` | Bearer | `multipart/form-data`, field `file` — upload-first: the attachment is bound to a message later via `SendMessageRequest.attachmentIds` | `201` `AttachmentResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
-| `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, sniffed `Content-Type` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `FILE_NOT_FOUND` 404 |
+| `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, server-sniffed `Content-Type`, inline `Content-Disposition`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `FILE_NOT_FOUND` 404 |
 
 `AttachmentResponse` = `{id, ownerId, messageId?, storageKey, originalName, mimeType, sizeBytes, width?, height?, durationMs?, createdAt}`.
 Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`).
@@ -243,8 +245,8 @@ Upload validation reads magic bytes, not the client-declared MIME; text types pa
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 chars) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 |
-| `GET /conversations/{conversationId}/pins` | Bearer member | — | `200` `PinnedMessageView[]` oldest-first | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 code points, normalized to NFC) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/pins` | Bearer member | — | `200` `PinnedMessageView[]` newest-first | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `PIN_LIMIT` 409 |
 | `DELETE /conversations/{conversationId}/pins/{messageId}` | same as POST | — | `204` (broadcasts `PIN_UPDATED {pinned:false}`; idempotent no-op) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 |
 
@@ -255,7 +257,7 @@ Pin limit serializes under a `FOR UPDATE` lock on the conversation row.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root | `200` raw bytes, sniffed `Content-Type`, `Content-Disposition: inline` | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
+| `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root | `200` raw bytes, server-sniffed `Content-Type` (octet-stream fallback), `Content-Disposition: inline`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
 
 Generic uploads go through `POST /api/v1/attachments` above (upload-first,
 bound to a message on send); this endpoint serves every stored object —
@@ -275,7 +277,9 @@ above apply unchanged:
 - Typing signal: `SEND /app/conversations/{id}/typing`
 - Read receipt: `SEND /app/conversations/{id}/read`
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
-- Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`
+- Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.
+
+Message SEND is limited to 30 per 10 seconds per authenticated user by default (`nexachat.rate-limit.stomp.messages-per-window`, `nexachat.rate-limit.stomp.window-seconds`). Typing SEND is separately limited to 60 per 10 seconds (`nexachat.rate-limit.stomp.typing-per-window`, `nexachat.rate-limit.stomp.typing-window-seconds`). Excess frames are dropped and return `RATE_LIMITED` on `/user/queue/errors` without closing the session.
 
 The full destination table, event envelope and frame contracts live in
 [`docs/websocket-protocol.md`](websocket-protocol.md) — see its §4 Destinations

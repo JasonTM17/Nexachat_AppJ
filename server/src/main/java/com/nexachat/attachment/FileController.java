@@ -55,6 +55,7 @@ public class FileController {
         byte[] bytes = storageService.read(storageKey);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(sniffedOrOctetStream(bytes)))
+                .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(bytes);
     }

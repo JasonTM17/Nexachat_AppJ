@@ -185,11 +185,14 @@ class MessageServiceTest {
 
         assertThat(result.created()).isFalse();
         assertThat(result.message().id()).isEqualTo(stored.id());
+        assertThat(result.message().seq()).isEqualTo(stored.seq());
         // No state mutation on the dedup path…
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
-        // …but the existing message is re-broadcast so the retrying sender
-        // gets its SENT signal (client dedups by message id — plan §11.3.3).
-        verify(eventPublisher).publishEvent(any(MessageCreatedEvent.class));
+        // …but the retry signal is re-broadcast so the sender can reach SENT.
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().message().id()).isEqualTo(stored.id());
+        assertThat(event.getValue().message().seq()).isEqualTo(stored.seq());
     }
 
     @Test
@@ -300,6 +303,19 @@ class MessageServiceTest {
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> messageService.send(senderId, conversationId,
                         new SendMessageRequest(clientMessageId, "FILE", null, null, ids)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void send_contentOverMaximumLength_throwsValidationBeforeInsert() {
+        memberOk();
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> messageService.send(senderId, conversationId,
+                        new SendMessageRequest(clientMessageId, "TEXT",
+                                "x".repeat(MessageService.MAX_CONTENT_LENGTH + 1), null, List.of())));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
@@ -423,6 +439,8 @@ class MessageServiceTest {
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
                 .thenReturn(true);
+        when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
+        when(memberRepository.findReadWatermark(conversationId, senderId)).thenReturn(88L);
 
         messageService.markRead(senderId, conversationId, new ReadRequest(88L));
 
@@ -431,6 +449,37 @@ class MessageServiceTest {
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().userId()).isEqualTo(senderId);
         assertThat(event.getValue().upToSeq()).isEqualTo(88L);
+    }
+
+    @Test
+    void markRead_lowerRequestBroadcastsPersistedWatermark() {
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
+                .thenReturn(true);
+        when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
+        when(memberRepository.findReadWatermark(conversationId, senderId)).thenReturn(50L);
+
+        messageService.markRead(senderId, conversationId, new ReadRequest(40L));
+
+        verify(memberRepository).advanceReadWatermark(conversationId, senderId, 40L);
+        ArgumentCaptor<MessageReadEvent> event = ArgumentCaptor.forClass(MessageReadEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().upToSeq()).isEqualTo(50L);
+    }
+
+    @Test
+    void markRead_futureSeq_throwsValidationWithoutAdvancing() {
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
+                .thenReturn(true);
+        when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> messageService.markRead(senderId, conversationId, new ReadRequest(101L)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(memberRepository, never()).advanceReadWatermark(any(), any(), anyLong());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

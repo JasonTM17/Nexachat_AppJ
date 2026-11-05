@@ -15,6 +15,10 @@ import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<Message, UUID> {
 
+    /** Latest sequence within one conversation; zero for an empty conversation. */
+    @Query("SELECT COALESCE(MAX(m.seq), 0) FROM Message m WHERE m.conversation.id = :conversationId")
+    long findMaxSeqByConversationId(@Param("conversationId") UUID conversationId);
+
     /**
      * THE send path (plan §9.3.2): a single native statement that is race-safe
      * by construction — a concurrent retry blocks on the conflicting row until

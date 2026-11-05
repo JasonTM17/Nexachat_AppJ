@@ -233,6 +233,7 @@ class AttachmentFlowIT {
                         .header("Authorization", "Bearer " + bob.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "image/png"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(header().string("Content-Disposition",
                         org.hamcrest.Matchers.startsWith("inline")))
                 .andReturn();

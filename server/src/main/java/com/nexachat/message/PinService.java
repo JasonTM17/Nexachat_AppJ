@@ -7,6 +7,7 @@ import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.PinRequest;
 import com.nexachat.message.dto.PinUpdatedPayload;
 import com.nexachat.message.dto.PinnedMessageView;
@@ -75,11 +76,9 @@ public class PinService {
     }
 
     /**
-     * The conversation's pinned list, oldest pin first (PinnedBanner order).
-     * Each entry carries the full {@code MessageResponse} — assembly reuses
-     * {@link MessageService#toResponse(MessageRow, UUID)} so the pinned
-     * message renders exactly like a feed row (viewer-relative
-     * {@code byMe} included).
+     * The conversation's pinned list, newest pin first (PinnedBanner order).
+     * Each entry carries the full {@code MessageResponse}; attachments,
+     * reactions and reply previews are batch-hydrated for the bounded list.
      *
      * @throws ApiException {@code CONVERSATION_NOT_FOUND}, {@code NOT_MEMBER}
      */
@@ -91,7 +90,7 @@ public class PinService {
         requireMember(conversationId, userId);
 
         List<PinnedMessage> pins =
-                pinRepository.findByConversation_IdOrderByPinnedAtAsc(conversationId);
+                pinRepository.findByConversation_IdOrderByPinnedAtDesc(conversationId);
         if (pins.isEmpty()) {
             return List.of();
         }
@@ -100,12 +99,19 @@ public class PinService {
                 .stream()
                 .collect(Collectors.toMap(MessageRow::id, Function.identity()));
 
+        List<MessageRow> rows = pins.stream()
+                .map(pin -> rowsById.get(pin.getMessage().getId()))
+                .filter(Objects::nonNull)
+                .toList();
+        Map<UUID, MessageResponse> responsesById = messageService.toResponses(rows, userId).stream()
+                .collect(Collectors.toMap(MessageResponse::id, Function.identity()));
+
         return pins.stream()
                 .map(pin -> {
-                    MessageRow row = rowsById.get(pin.getMessage().getId());
-                    return row == null ? null : new PinnedMessageView(
-                            pin.getMessage().getId(), pin.getPinnedBy().getId(),
-                            pin.getPinnedAt(), messageService.toResponse(row, userId));
+                    UUID messageId = pin.getMessage().getId();
+                    MessageResponse response = responsesById.get(messageId);
+                    return response == null ? null : new PinnedMessageView(
+                            messageId, pin.getPinnedBy().getId(), pin.getPinnedAt(), response);
                 })
                 .filter(Objects::nonNull)
                 .toList();

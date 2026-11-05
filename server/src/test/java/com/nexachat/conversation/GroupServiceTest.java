@@ -23,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.List;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -710,6 +712,21 @@ class GroupServiceTest {
                 () -> groupService.setGroupAvatar(adminId, conversationId, text));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        verify(storageService, never()).store(any(), any(), any(), any());
+    }
+
+    @Test
+    void setGroupAvatar_oversize_rejectedBeforeBuffering() throws Exception {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        MultipartFile oversized = mock(MultipartFile.class);
+        when(oversized.isEmpty()).thenReturn(false);
+        when(oversized.getSize()).thenReturn(StorageService.MAX_FILE_SIZE_BYTES + 1);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.setGroupAvatar(adminId, conversationId, oversized));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_TOO_LARGE);
+        verify(oversized, never()).getBytes();
         verify(storageService, never()).store(any(), any(), any(), any());
     }
 }

@@ -1,21 +1,30 @@
 package com.nexachat.ws;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.ws.dto.WsErrorResponse;
 import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -68,11 +77,37 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     private final JwtService jwtService;
     private final ConversationMemberRepository memberRepository;
+    private final RateLimitService rateLimitService;
+    private final SimpMessagingTemplate messaging;
+    private final ObjectMapper objectMapper;
+    private final long messagesPerWindow;
+    private final long messageWindowSeconds;
+    private final long typingPerWindow;
+    private final long typingWindowSeconds;
 
     public StompAuthChannelInterceptor(JwtService jwtService,
-                                       ConversationMemberRepository memberRepository) {
+                                       ConversationMemberRepository memberRepository,
+                                       RateLimitService rateLimitService,
+                                       @Lazy
+                                       SimpMessagingTemplate messaging,
+                                       ObjectMapper objectMapper,
+                                       @Value("${nexachat.rate-limit.stomp.messages-per-window:30}")
+                                       long messagesPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.window-seconds:10}")
+                                       long messageWindowSeconds,
+                                       @Value("${nexachat.rate-limit.stomp.typing-per-window:60}")
+                                       long typingPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.typing-window-seconds:10}")
+                                       long typingWindowSeconds) {
         this.jwtService = jwtService;
         this.memberRepository = memberRepository;
+        this.rateLimitService = rateLimitService;
+        this.messaging = messaging;
+        this.objectMapper = objectMapper;
+        this.messagesPerWindow = messagesPerWindow;
+        this.messageWindowSeconds = messageWindowSeconds;
+        this.typingPerWindow = typingPerWindow;
+        this.typingWindowSeconds = typingWindowSeconds;
     }
 
     @Override
@@ -84,7 +119,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         return switch (accessor.getCommand()) {
             case CONNECT -> onConnect(accessor) ? message : null;
             case SUBSCRIBE -> onSubscribe(accessor) ? message : null;
-            case SEND -> onSend(accessor) ? message : null;
+            case SEND -> onSend(accessor, message) ? message : null;
             default -> message;
         };
     }
@@ -138,7 +173,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     // --------------------------------------------------------------- SEND authZ
 
-    private boolean onSend(StompHeaderAccessor accessor) {
+    private boolean onSend(StompHeaderAccessor accessor, Message<?> message) {
         UUID userId = sessionUser(accessor);
         if (userId == null) {
             return false;
@@ -153,11 +188,35 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             boolean member = memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
             if (!member) {
                 log.warn("STOMP SEND denied: {} is not a member of {}", userId, conversationId);
+                return false;
             }
-            return member;
+            if ("messages".equals(app.group(2))) {
+                return consumeSendAllowance(userId, "messages", messagesPerWindow,
+                        messageWindowSeconds, clientMessageId(message.getPayload()));
+            }
+            if ("typing".equals(app.group(2))) {
+                return consumeSendAllowance(userId, "typing", typingPerWindow,
+                        typingWindowSeconds, null);
+            }
+            return true;
         }
         // Deny-by-default: only the frozen conversation actions are routable.
         log.warn("STOMP SEND denied: unknown application destination {}", destination);
+        return false;
+    }
+
+    private boolean consumeSendAllowance(UUID userId, String action, long capacity,
+                                         long windowSeconds, @Nullable UUID clientMessageId) {
+        RateLimitService.Consumption consumption = rateLimitService.tryConsume(
+                "stomp:" + action + ":" + userId,
+                capacity,
+                Duration.ofSeconds(windowSeconds));
+        if (consumption.allowed()) {
+            return true;
+        }
+        messaging.convertAndSendToUser(userId.toString(), "/queue/errors",
+                new WsErrorResponse(ApiErrorCode.RATE_LIMITED.getCode(), clientMessageId));
+        log.warn("STOMP {} SEND rate-limited for user {}", action, userId);
         return false;
     }
 
@@ -167,5 +226,23 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return principal.userId();
         }
         return null;
+    }
+
+    @Nullable
+    private UUID clientMessageId(Object payload) {
+        try {
+            JsonNode body;
+            if (payload instanceof byte[] bytes) {
+                body = objectMapper.readTree(bytes);
+            } else if (payload instanceof String text) {
+                body = objectMapper.readTree(text);
+            } else {
+                return null;
+            }
+            String id = body.path("clientMessageId").asText(null);
+            return id == null ? null : UUID.fromString(id);
+        } catch (java.io.IOException | IllegalArgumentException ex) {
+            return null;
+        }
     }
 }

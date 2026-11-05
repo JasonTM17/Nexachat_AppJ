@@ -35,7 +35,7 @@ import java.util.UUID;
 public class LocalStorageService implements StorageService {
 
     /** Hard ceiling for a single upload; also enforced by the multipart config. */
-    static final long MAX_FILE_SIZE_BYTES = 25L * 1024 * 1024;
+    static final long MAX_FILE_SIZE_BYTES = StorageService.MAX_FILE_SIZE_BYTES;
 
     private static final Map<String, String> MIME_TO_EXTENSION = Map.ofEntries(
             Map.entry("image/jpeg", ".jpg"),

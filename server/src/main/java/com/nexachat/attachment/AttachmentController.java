@@ -71,6 +71,7 @@ public class AttachmentController {
         // the header even though upload already cleaned it once.
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(content.attachment().getMimeType()))
+                .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(AttachmentService.sanitizeOriginalName(
                                 content.attachment().getOriginalName()), StandardCharsets.UTF_8)

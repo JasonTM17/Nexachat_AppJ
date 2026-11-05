@@ -46,6 +46,6 @@ public interface PinnedMessageRepository extends JpaRepository<PinnedMessage, Pi
     /** Pin count for the ≤ 3 ceiling — read under the conversation row lock. */
     long countByConversation_Id(UUID conversationId);
 
-    /** Pinned-list read for {@code GET /conversations/{id}/pins}, oldest pin first. */
-    List<PinnedMessage> findByConversation_IdOrderByPinnedAtAsc(UUID conversationId);
+    /** Pinned-list read for {@code GET /conversations/{id}/pins}, newest pin first. */
+    List<PinnedMessage> findByConversation_IdOrderByPinnedAtDesc(UUID conversationId);
 }

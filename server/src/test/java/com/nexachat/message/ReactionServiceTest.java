@@ -191,4 +191,23 @@ class ReactionServiceTest {
 
         verify(reactionRepository).insertIgnoringConflict(messageId, userId, maxEmoji);
     }
+
+    @Test
+    void toggle_equivalentUnicodeFormsCollapseToSameReaction() {
+        memberMessage();
+        String composed = "\u00e9";
+        String decomposed = "e\u0301";
+        when(reactionRepository.deleteOne(messageId, userId, composed))
+                .thenReturn(0)
+                .thenReturn(1);
+        when(reactionRepository.insertIgnoringConflict(messageId, userId, composed)).thenReturn(1);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.toggle(userId, messageId, new ReactRequest(decomposed));
+        reactionService.toggle(userId, messageId, new ReactRequest(composed));
+
+        verify(reactionRepository, org.mockito.Mockito.times(2))
+                .deleteOne(messageId, userId, composed);
+        verify(reactionRepository).insertIgnoringConflict(messageId, userId, composed);
+    }
 }
