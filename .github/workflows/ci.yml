@@ -54,6 +54,10 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew testDebugUnitTest --stacktrace
+      - name: Android lint
+        run: |
+          cd android
+          ./gradlew lintDebug --stacktrace
 
   secret-scan:
     runs-on: ubuntu-latest

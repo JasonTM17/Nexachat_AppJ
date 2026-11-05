@@ -109,8 +109,8 @@ zero forbidden entries (`build/`, `*.jks`, `keystore.properties`,
 - [ ] `git tag -a v1.0.0 -m "NexaChat submission"` — required by checklist C1.
 - [ ] Rename the zip to `GroupXX_MSSV1_MSSV2_….zip` (course convention).
 - [ ] `docs/report.docx` must exist (checklist C1) — the packager warns if absent.
-- [ ] `versionName` in `android/app/build.gradle.kts` is currently `0.1.0`
-      while artifacts are named `v1.0.0` — bump it before the final build.
+- [x] `versionName` in `android/app/build.gradle.kts` is `1.0.0`, matching the
+      `v1.0.0` artifact tag.
 - [ ] Fresh-grader check on a clean machine/VM: unzip → `git status` clean →
       `git log` shows history → `docker compose up -d db` → `mvn -B verify` →
       `demo/seed.sql` → install `apk/nexachat-v1.0.0.apk` on 2 devices →

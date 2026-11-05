@@ -273,11 +273,11 @@ def build():
            ["R2", "Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản", "20", "OK",
             "Module auth/user/contact/conversation/message; IT: AuthFlowIT, ContactConversationIT, GroupFlowIT, MessageFlowIT"],
            ["R3", "Đa ngôn ngữ, multimedia/file, xoay màn hình", "15", "OK",
-            "values/ + values-vi/ 71 keys mỗi bên (i18n-audit.md); attachment + magic-byte sniff; rotation-audit.md"],
+            "values/ + values-vi/ 96 keys mỗi bên (i18n-audit.md); attachment + magic-byte sniff; rotation-audit.md"],
            ["R4", "Chức năng sáng tạo", "5", "OK",
             "Message Interactions: reply/react/pin — V3__interactions.sql, ReactionController, PinController, InteractionFlowIT"],
            ["R5", "Giao diện rõ ràng + toàn bộ unit test pass", "15", "OK",
-            "Server 287 tests green (261 unit + 26 IT); Android 165 tests green; CI gate .github/workflows/ci.yml"],
+            "Server 310 tests green (280 unit + 30 IT); Android 202 tests green (20 classes) + RoomMigrationTest 3/3 on API 35; CI workflow .github/workflows/ci.yml configured"],
            ["R6", "Thuyết trình, demo, vấn đáp", "40", "OK",
             "docs/demo-runbook.md (kịch bản 8 phút + fallback), 18 câu vấn đáp, mỗi quyết định kèm \"vì sao\""]],
           widths=[1, 5.5, 1, 1, 7], font_size=8.5)
@@ -342,7 +342,7 @@ def build():
            ["NFR-5", "Maintainability", "Package-by-feature; không trả entity ra API; không logic trong Controller/Composable",
             "com.nexachat.<feature> server; feature/* + data/ + core/ Android"],
            ["NFR-6", "Testability", "Toàn bộ unit test pass ở CI; mỗi service authZ có negative test",
-            "287 + 165 tests; 21 negative tests ở quality phase"],
+            "310 + 202 tests; 21 negative tests ở quality phase"],
            ["NFR-7", "Portability", "minSdk 26, targetSdk 35; emulator + máy thật LAN",
             "build.gradle.kts; BuildConfig.API_BASE_URL"],
            ["NFR-8", "Observability", "Log không chứa password/token/file body; /actuator/health",
@@ -550,7 +550,7 @@ def build():
     table(doc,
           ["Method & path", "Auth", "Success", "Errors chính"],
           [["POST /conversations/direct {phone} hoặc {userId}", "Bearer", "201 created / 200 existing (idempotent qua direct_key)", "400 · 404"],
-           ["GET /conversations", "Bearer", "200 InboxEntry[] sort lastMessageSeq DESC", "401"],
+           ["GET /conversations", "Bearer", "200 InboxEntry[] sort lastMessageSeq DESC; optional limit (1-100) + cursor (X-Next-Cursor)", "401"],
            ["POST /conversations/group {title, memberIds[]}", "Bearer", "201", "400"],
            ["PATCH /conversations/{id}", "ADMIN", "200 → broadcast CONVERSATION_UPDATED", "403 NOT_ADMIN"],
            ["POST /conversations/{id}/members {userIds[]}", "ADMIN", "200", "403 · 404"],
@@ -566,7 +566,7 @@ def build():
     table(doc,
           ["Method & path", "Auth", "Success", "Errors chính"],
           [["POST /messages/{id}/reactions {emoji}", "member", "204 (toggle: thêm/xóa)", "403 · 404"],
-           ["GET /conversations/{id}/pins", "member", "200 PinnedMessageView[]", "403"],
+           ["GET /conversations/{id}/pins", "member", "200 PinnedMessageView[] newest-first, batch-hydrated", "403"],
            ["POST /conversations/{id}/pins {messageId}", "DIRECT: member; GROUP: ADMIN", "204", "403 · 409 PIN_LIMIT (>3)"],
            ["DELETE /conversations/{id}/pins/{messageId}", "như trên", "204", "403"]],
           widths=[6, 3.4, 2.6, 3.6], font_size=8.5)
@@ -578,7 +578,7 @@ def build():
            ["GET /attachments/{id}/content", "member của conv chứa file", "200 bytes", "403 · 404"],
            ["GET /files/** (storage_key path)", "Bearer", "200 bytes + sniffed Content-Type", "404 FILE_NOT_FOUND"]],
           widths=[5.4, 3.4, 4.4, 3], font_size=8.5)
-    para(doc, "Tổng: 31 REST endpoint + /actuator/health. Gửi tin có hai "
+    para(doc, "Tổng: 30 REST endpoint + /actuator/health. Gửi tin có hai "
               "đường — WS (chính) và REST POST (fallback) — cùng đi qua "
               "MessageService.send() → một nơi enforce authZ + idempotency.",
          bold=True)
@@ -590,7 +590,7 @@ def build():
               "1.2, không SockJS (client native, không cần browser fallback). "
               "JWT nằm trong Authorization header của frame CONNECT — không "
               "query param (token trong URL lọt vào access log). "
-              "heart-beat:10000,10000 → phát hiện kết nối chết ~20s.")
+              "heart-beat:10000,10000 → phát hiện kết nối chết ~30s.")
     h2(doc, "7.1. Destinations")
     table(doc,
           ["Hướng", "Destination", "Body", "Ghi chú"],
@@ -625,7 +625,7 @@ def build():
         ("Dedup — ", "sender match clientMessageId → SENT; receiver insert theo message id (OnConflictStrategy.IGNORE trong Room)."),
         ("Ordering theo seq — ", "tin đến lệch chèn đúng vị trí, không append."),
         ("Reconnect — ", "backoff 1·2·4·8·16s + jitter, tối đa 5 lần; sau reconnect resync REST (GET …/messages?afterSeq=lastSeen) → \"WS là push, REST là source of truth\"."),
-        ("Giới hạn thành thật — ", "SimpleBroker in-process không fan-out xuyên node; STOMP SEND chưa có rate limit (§15)."),
+        ("Giới hạn thành thật — ", "SimpleBroker in-process không fan-out xuyên node; STOMP SEND giới hạn 30/10 s (messages) và 60/10 s (typing) per user, bucket in-memory LRU 10.000 key / 15 phút idle."),
     ]:
         p = doc.add_paragraph(style="List Number")
         run = p.add_run(prefix)
@@ -672,13 +672,16 @@ def build():
           [["POST /auth/login, /register", "10 req / 5 phút"],
            ["POST /auth/refresh", "30 req / 5 phút"],
            ["GET /users/search", "30 req / phút / user"],
-           ["POST /contacts", "30 adds / phút / user"]],
+           ["POST /contacts", "30 adds / phút / user"],
+           ["STOMP SEND messages", "30 / 10 s / user"],
+           ["STOMP SEND typing", "60 / 10 s / user"]],
           widths=[6, 8], font_size=9)
     para(doc, "Login sai trả INVALID_CREDENTIALS thống nhất (không lộ user "
               "tồn tại). Search chỉ trả public profile tối thiểu. Thừa nhận: "
               "contact-add theo SĐT cố hữu 200/404 — giảm rủi ro bằng rate "
               "limit, không giấu được hoàn toàn (§15). Bucket là per-node "
-              "(in-memory) — ghi thành thật, không claim distributed.")
+              "(in-memory LRU 10.000 key / 15 phút idle) — ghi thành thật, "
+              "không claim distributed.")
     h2(doc, "8.5. Không claim")
     para(doc, "Báo cáo không tuyên bố E2E encryption: mã hóa đường truyền "
               "TLS/WSS ở prod, server thấy plaintext — E2E là hướng phát "
@@ -715,7 +718,7 @@ def build():
     # ------------------------------------------------------------ sec 10 --
     h1(doc, "10. Đa ngôn ngữ & Xoay màn hình — i18n & Rotation")
     h2(doc, "10.1. i18n")
-    bullet(doc, "values/strings.xml (EN mặc định) + values-vi/strings.xml: 71 "
+    bullet(doc, "values/strings.xml (EN mặc định) + values-vi/strings.xml: 96 "
                 "keys mỗi bên, parity 100% — kiểm chứng docs/i18n-audit.md "
                 "(0 missing, 0 leak).")
     bullet(doc, "Đổi ngôn ngữ trong Settings, persist: không có "
@@ -755,10 +758,10 @@ def build():
     bullet(doc, "POST /api/v1/messages/{id}/reactions {emoji} → 204 toggle. "
                 "PK composite (message_id, user_id, emoji) là idempotency: "
                 "react lại = DELETE, insert trùng = ON CONFLICT DO NOTHING "
-                "(ReactionService, 7 unit test).")
+                "(ReactionService, 8 unit test; emoji normalize NFC).")
     bullet(doc, "GET|POST|DELETE /api/v1/conversations/{id}/pins → DIRECT: "
                 "member nào cũng pin; GROUP: chỉ ADMIN; trần ≤3/conv enforce "
-                "ở PinService dưới row-lock conversation (15 unit test). Vi "
+                "ở PinService dưới row-lock conversation (16 unit test). Vi "
                 "phạm → 409 PIN_LIMIT.")
     bullet(doc, "Reply: SendMessageRequest.replyToId validate cùng "
                 "conversation; MessageResponse.replyTo = embedded preview "
@@ -769,8 +772,8 @@ def build():
     h2(doc, "11.2. Android")
     bullet(doc, "feature/interactions/: ReplyPreview (swipe/long-press → "
                 "quote strip), ReactionBar (emoji chips count/byMe), "
-                "PinnedBanner (≤3 pin, tap → jumpToMessage trong loaded "
-                "window).")
+                "PinnedBanner (≤3 pin, tap → jumpToMessage có phân trang ngược "
+                "giới hạn ~20 trang ≈ 600 tin).")
     bullet(doc, "Data: DTO + Retrofit + Room (MessageReactionEntity, "
                 "PinnedMessageEntity) + typed WS events; optimistic với "
                 "revert-on-failure (compare-and-restore snapshot — sửa từ "
@@ -819,6 +822,20 @@ def build():
         ("Pin ≤3 không cần counter column — ",
          "serialize trên row-lock của conversation; race pin/unpin giải "
          "quyết bằng khoá, không bằng check-count."),
+        ("Upload MIME precedence — ",
+         "AttachmentRepository.resolveMime ưu tiên MIME thật của resolver/parser "
+         "hơn hint chung (application/octet-stream), nên picker không còn làm mất "
+         "ảnh thành FILE."),
+        ("Picker grant + truncated download — ",
+         "SecurityException khi grant đã thu hồi được bắt thành "
+         "ATTACHMENT_UNREADABLE (không crash scope); file tải dở do mất mạng bị "
+         "xóa thay vì giữ lại thành file hỏng."),
+        ("Group-update debounce — ",
+         "CONVERSATION_UPDATED burst (đổi tên + add/remove member) chỉ gọi "
+         "refreshMembers() một lần sau 200 ms."),
+        ("Minimal UI copy — ",
+         "splash_tagline (Connecting…) bị bỏ khỏi cả EN/VI (96/96 keys); splash "
+         "chỉ giữ logo, tên app và progress indicator."),
     ]:
         p = doc.add_paragraph(style="List Number")
         run = p.add_run(prefix)
@@ -830,35 +847,39 @@ def build():
     h2(doc, "13.1. Kết quả thật (đếm từ source + CI)")
     table(doc,
           ["Tầng", "Công cụ", "Số test", "Trạng thái"],
-          [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "261", "green"],
-           ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "26", "green"],
-           ["Server tổng", "mvn -B verify", "287", "green"],
-           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "165", "green"]],
+          [["Server unit", "JUnit5 + Mockito (mvn test, surefire)", "280", "green"],
+           ["Server integration", "@SpringBootTest + Postgres thật qua env-JDBC (failsafe, *IT)", "30", "green"],
+           ["Server tổng", "mvn -B verify", "310", "green"],
+           ["Android unit", "JUnit + MockK + coroutines-test + Turbine (testDebugUnitTest)", "202 (20 classes)", "green"],
+            ["Android instrumented", "MigrationTestHelper (connectedDebugAndroidTest, API 35)", "3 (RoomMigrationTest)", "green"]],
           widths=[3.2, 7.5, 1.8, 2.5], font_size=9)
     para(doc, "CI (.github/workflows/ci.yml): job server-test (postgres:16 "
               "service + mvn -B verify với IT_DB_* env) + android-test + "
-              "secret-scan — chạy trên mọi PR và push main/develop; đỏ là "
-              "không merge (\"suite luôn xanh\").")
-    h2(doc, "13.2. Integration test classes (26 test, Postgres thật)")
+              "secret-scan; workflow được cấu hình cho PR và push main/develop. "
+              "Các thay đổi working tree chưa commit trong phiên này chưa chạy CI.")
+    h2(doc, "13.2. Integration test classes (30 test, Postgres thật)")
     table(doc,
           ["IT class", "Tests", "Cover"],
-          [["auth/AuthFlowIT", "5", "register→login→refresh rotation→reuse→logout flow"],
+          [["auth/AuthFlowIT", "6", "register→login→refresh rotation→reuse→logout flow"],
            ["attachment/AttachmentFlowIT", "5", "upload→bind→download authZ, mime/size reject"],
            ["contact/ContactConversationIT", "4", "add contact → open direct, direct_key dedup"],
            ["conversation/GroupFlowIT", "3", "tạo nhóm → member mgmt → non-member bị chặn"],
-           ["message/MessageFlowIT", "5", "send WS/REST, idempotency, history cursor, read"],
+           ["message/MessageFlowIT", "8", "send WS/REST, idempotency + re-broadcast, history cursor, inbox paging, read watermark"],
            ["message/InteractionFlowIT", "4", "react toggle, pin limit/policy, reply (TC-INT-01..04)"]],
           widths=[6, 1.5, 8], font_size=9)
     h2(doc, "13.3. Unit test highlight")
-    para(doc, "Server: MessageServiceTest (29 — authZ, idempotency, "
-              "pagination), GroupServiceTest (33), MagicBytesTest (18 — mime "
-              "sniff), StompAuthChannelInterceptorTest (18 — WS authN/Z), "
-              "AuthServiceTest (17), AttachmentServiceTest (16), "
-              "PinServiceTest (15), LocalStorageServiceTest (14), "
-              "ContactServiceTest (12), PhoneNormalizerTest (11 — E.164), "
-              "UserServiceTest (11), TokenServiceTest (10 — rotation/reuse), "
-              "ConversationServiceTest (10), ReactionServiceTest (7)…")
-    para(doc, "Android (165 test, 18 lớp): ChatViewModelTest (optimistic "
+    para(doc, "Server: MessageServiceTest (32 — authZ, idempotency + "
+              "re-broadcast, content cap, watermark), GroupServiceTest (37), "
+              "MagicBytesTest (18 — mime sniff), StompAuthChannelInterceptorTest "
+              "(20 — WS authN/Z + message/typing rate limit), AuthServiceTest "
+              "(17), AttachmentServiceTest (16), PinServiceTest (16), "
+              "LocalStorageServiceTest (15), ContactServiceTest (12), "
+              "PhoneNormalizerTest (11 — E.164), UserServiceTest (11), "
+              "TokenServiceTest (10 — rotation/reuse), ConversationServiceTest "
+              "(10), ReactionServiceTest (8 — NFC normalize), "
+              "ProductionConfigurationTest (3), ConversationInboxControllerTest "
+              "(2), AvatarControllerTest (1)…")
+    para(doc, "Android (202 test, 20 lớp): ChatViewModelTest (optimistic "
               "send, dedup theo clientMessageId, retry), "
               "TokenAuthenticatorTest (single-flight 401→refresh), "
               "StompCodecTest (frame parse/build), TokenStoreTest, "
@@ -869,7 +890,7 @@ def build():
               "MediaViewerViewModelTest, ProfileViewModelTest, "
               "AppLocaleManagerTest, WsEndpointUrlTest (wsUrl derivation + "
               "StompClient constructor crash guard), "
-              "RealtimeSessionReArmTest (parked-loop re-arm: network-regain, "
+              "RealtimeSessionReArmTest (14 cases: expired-access refresh before CONNECT; parked-loop re-arm: network-regain, "
               "ensureConnected + foreground wake, logged-out no-ops, "
               "concurrent single-loop).")
     h2(doc, "13.4. Live E2E & on-device verification")
@@ -901,7 +922,7 @@ def build():
               "Picker (IMAGE/png byte-identical) → tạo group 3 người qua "
               "FAB (SYSTEM event render) → search SĐT + add contact → "
               "message user mới tạo direct conv.")
-    para(doc, "(c) Mười bốn lỗi thật chỉ phát hiện được trên device / "
+    para(doc, "(c) Các lỗi thật chỉ phát hiện được trên device / "
               "trong spec-gap review (một lỗi bằng adversarial review + "
               "probe, không qua UI):")
     table(doc,
@@ -1106,14 +1127,32 @@ def build():
               "tren B); group avatar pick qua UI (picker → endpoint → "
               "render); logout-all → Login + 0 refresh token song "
               "trong DB.")
+    para(doc, "(f) Realtime reconnect after access-token expiry (two API 35 "
+              "emulators, debug and signed release APKs): access JWT TTL is 900 seconds. Wi-Fi and "
+              "mobile data were disabled past that TTL, then restored on both "
+              "devices. The existing An/Binh sessions stayed logged in; Binh sent "
+              "JWT_AFTER_EXPIRY_20261104, which appeared in An’s open chat through "
+              "STOMP, and Binh received Seen. /actuator/health stayed UP, and server "
+              "logs after network restoration showed no new expired-JWT CONNECT "
+              "rejection. Before each STOMP attempt, RealtimeSession checks local "
+              "token expiry and refreshes through the shared TokenRefresher. The signed "
+              "release APK was also rebuilt from this source with tools/sign-release.sh; "
+              "apksigner verify passed, adb install -r succeeded on both API 35 "
+              "emulators, both processes were running, and neither logcat had FATAL "
+              "EXCEPTION. The 900-second expiry test was then repeated with the current signed release "
+              "on both emulators: An (5556) stayed offline more than 15 minutes after "
+              "fresh login while Binh (5554) stayed online; after network restoration, "
+              "Binh sent ok, An received it over STOMP, and Binh saw Đã xem. Backend "
+              "stayed UP, and the post-restore server log sample contained no "
+              "expired-JWT CONNECT rejection.")
     h2(doc, "13.5. Tái hiện / Reproduce")
     code_box(doc,
         "# Server: Postgres that roi verify (unit + IT)\n"
         "docker compose up -d db          # postgres:16 @ localhost:5433\n"
-        "cd server && mvn -B verify       # 287 tests\n"
+        "cd server && mvn -B verify       # 310 tests (280 unit + 30 IT)\n"
         "\n"
         "# Android unit tests\n"
-        "cd android && ./gradlew testDebugUnitTest   # 165 tests")
+        "cd android && ./gradlew testDebugUnitTest   # 202 tests (20 classes)")
     para(doc, "Manual E2E: docs/demo-runbook.md §5 — 10 bước demo ~8 phút "
               "(2 máy chat 1-1, 3 máy nhóm, offline send, media, "
               "interactions, i18n+rotation, CI xanh).")
@@ -1142,7 +1181,8 @@ def build():
                 "bằng psql.")
     bullet(doc, "demo/seed.sql: 4 tài khoản demo — +84900000001 An, "
                 "+84900000002 Binh, +84900000003 Chi, +84900000004 Dung; "
-                "password password123 (bcrypt cost 10). Chỉ dùng cho demo.")
+                "password password123 (seed hash bcrypt cost 10; the app encodes "
+                "new passwords at cost 12 — Spring verifies either). Chỉ dùng cho demo.")
     bullet(doc, "App trỏ backend qua BuildConfig.API_BASE_URL — đặt "
                 "API_BASE_URL=http://<LAN-IP>:8080 trong "
                 "android/local.properties rồi rebuild, không sửa source. "
@@ -1169,21 +1209,21 @@ def build():
            ["SimpleBroker 1 instance", "Đúng cho demo/deploy 1 node", "Broker relay RabbitMQ + rate-limit bucket ra Redis/JDBC"]],
           widths=[3.6, 6.4, 5.5], font_size=8.5)
     h2(doc, "15.2. Deferred findings (ghi thành thật)")
-    bullet(doc, "STOMP SEND chưa rate-limit (REST có); inbox "
-                "GET /conversations chưa phân trang; client chưa "
-                "proactive-refresh token trước WS reconnect (chờ 401/403); "
-                "presence USER_ONLINE/OFFLINE chưa emit; listPins N+1 nhỏ "
-                "(bounded ≤3); reactions/pins chưa vào offline outbox "
-                "(optimistic + revert); pin order REST-vs-WS lệch cosmetic; "
-                "emoji chưa NFC-normalize; message edit/delete đã plumb "
-                "editedAt/deletedAt nhưng endpoint chưa ship; chưa có "
-                "androidTest/instrumented suite.")
+    bullet(doc, "Inbox GET /conversations hỗ trợ limit/cursor tuỳ chọn nhưng "
+                "client Android vẫn gọi full list (limit=null) và prune chỉ khi "
+                "payload là tập đầy đủ; presence USER_ONLINE/OFFLINE chưa emit "
+                "(online dot đã bỏ); reactions/pins chưa vào offline outbox "
+                "(optimistic + revert); message edit/delete đã plumb "
+                "editedAt/deletedAt nhưng endpoint chưa ship; đã có androidTest "
+                "migration test (3/3 trên API 35) nhưng chưa có UI "
+                "instrumentation; lint 0 error / 73 warning.")
     bullet(doc, "Env: Testcontainers không chạy được trên Docker Desktop 29 → "
                 "IT qua env-JDBC; LAN demo cleartext (dev-only, prod "
-                "WSS/TLS); dev JWT secret là placeholder (prod fail-fast).")
-    bullet(doc, "UX: pin menu hiện cho non-admin (server 403 vẫn chặn + "
-                "snackbar); jump-to-quote/pin chỉ trong loaded window; "
-                "reaction bar ẩn trên tin pending.")
+                "WSS/TLS); dev JWT secret là placeholder (prod fail-fast khi "
+                "thiếu JWT_SECRET và credentials datasource).")
+    bullet(doc, "UX: jump-to-quote/pin giới hạn ~20 trang ≈ 600 tin; reaction "
+                "bar ẩn trên tin pending; access JWT sống 15 phút sau "
+                "logout-all/đổi mật khẩu (chỉ thu hồi refresh token).")
 
     # ------------------------------------------------------------ sec 16 --
     page_break(doc)
@@ -1230,9 +1270,11 @@ def build():
               "media/file upload-first với magic-byte hardening, i18n Vi/En "
               "100% parity, rotation an toàn, và creative feature Message "
               "Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.")
-    para(doc, "Chất lượng được chứng minh bằng số liệu thật: 287 test server "
-              "(261 unit + 26 integration trên Postgres thật) và 165 test "
-              "Android, CI gate xanh trên mọi PR; deploy một lệnh "
+    para(doc, "Chất lượng được chứng minh bằng số liệu thật: 310 test server "
+              "(280 unit + 30 integration trên Postgres thật) và 202 test "
+              "Android (20 lớp) đã pass local, cộng RoomMigrationTest 3/3 trên "
+              "emulator API 35; CI workflow được cấu hình làm gate cho "
+              "PR/push nhưng chưa chạy lại trên working tree chưa commit này; deploy một lệnh "
               "docker compose up; demo LAN có runbook + fallback. Các hạn "
               "chế được khai báo trung thực (không E2E, SimpleBroker 1 node, "
               "presence chưa emit, edit/delete plumb sẵn chưa ship) — mỗi "
