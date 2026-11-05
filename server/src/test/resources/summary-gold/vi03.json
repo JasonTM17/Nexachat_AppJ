@@ -1,0 +1,14 @@
+{
+  "id": "vi03",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "vi03-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Phần hướng dẫn sẽ có bốn bước cài đặt."},
+    {"id": "vi03-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Quyết định dùng ảnh minh họa cho từng bước."},
+    {"id": "vi03-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Người A, vui lòng cập nhật phần cài đặt trước ngày 12."},
+    {"id": "vi03-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Ảnh minh họa sẽ được lưu trong thư mục hướng dẫn."},
+    {"id": "vi03-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Bước cuối yêu cầu mở lại ứng dụng."},
+    {"id": "vi03-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Bước cuối đã rõ chưa?"}
+  ],
+  "expected": {"decisions": ["vi03-m2"], "actions": ["vi03-m3"], "questions": ["vi03-m6"], "keyPoints": ["vi03-m1", "vi03-m4", "vi03-m5"]}
+}

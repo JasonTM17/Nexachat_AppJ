@@ -212,5 +212,8 @@ public class PinService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "messageId belongs to a different conversation");
         }
+        if (message.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
+        }
     }
 }

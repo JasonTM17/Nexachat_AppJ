@@ -19,11 +19,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * AFTER_COMMIT fan-out: topic broadcast plus per-member inbox push, in the
- * frozen envelope (plan §11.2).
+ * AFTER_COMMIT fan-out: one topic broadcast plus per-member inbox push, in the
+ * frozen envelope (plan §11.2). The topic frame is sent exactly once — the
+ * broker fans it out to every current subscriber, so per-session sends would
+ * deliver duplicates to each client.
  */
 @ExtendWith(MockitoExtension.class)
 class MessageBroadcastListenerTest {
@@ -80,5 +83,37 @@ class MessageBroadcastListenerTest {
                 eq("/topic/conversations." + conversationId), event.capture());
         assertThat(event.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_READ);
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
+    }
+
+    @Test
+    void messageUpdatedIsBroadcastOnceWithTheFullResponse() {
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 8L, memberA, "A", "TEXT",
+                "edited", UUID.randomUUID(), null, null, List.of(), List.of(),
+                Instant.now(), Instant.now(), null);
+
+        listener.onMessageUpdated(new MessageUpdatedEvent(conversationId, message));
+
+        ArgumentCaptor<EventEnvelope> event = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSend(
+                eq("/topic/conversations." + conversationId), event.capture());
+        assertThat(event.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_UPDATED);
+        assertThat(event.getValue().payload()).isSameAs(message);
+        verifyNoMoreInteractions(messaging);
+    }
+
+    @Test
+    void messageDeletedIsBroadcastOnceWithOnlyIdAndTimestamp() {
+        var payload = new com.nexachat.message.dto.MessageDeletedPayload(
+                UUID.randomUUID(), Instant.parse("2026-11-05T12:00:00Z"));
+
+        listener.onMessageDeleted(new MessageDeletedEvent(conversationId, payload));
+
+        ArgumentCaptor<EventEnvelope> event = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSend(
+                eq("/topic/conversations." + conversationId), event.capture());
+        assertThat(event.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_DELETED);
+        assertThat(event.getValue().payload()).isSameAs(payload);
+        verifyNoMoreInteractions(messaging);
     }
 }

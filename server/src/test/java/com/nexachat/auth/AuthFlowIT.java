@@ -2,10 +2,13 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,7 +49,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * envelope.
  */
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("it")
 class AuthFlowIT {
 
@@ -69,6 +72,10 @@ class AuthFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private JwtService jwtService;
+    @Autowired
+    private UserRepository userRepository;
 
     /**
      * The IT runs against a SHARED dev database (docker-compose :5433), so
@@ -230,6 +237,20 @@ class AuthFlowIT {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"))
                 .andExpect(jsonPath("$.error.message").isString());
+    }
+
+    @Test
+    void accessTokenForDeletedUserIsRejected() throws Exception {
+        User user = userRepository.saveAndFlush(
+                User.create("+84905558881", "x".repeat(60), "Deleted User"));
+        String accessToken = jwtService.generateAccessToken(user);
+        userRepository.deleteById(user.getId());
+        userRepository.flush();
+
+        mockMvc.perform(get("/api/v1/users/me/settings")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
 
     @Test

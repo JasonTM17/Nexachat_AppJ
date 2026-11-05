@@ -2,6 +2,7 @@ package com.nexachat.message;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -13,10 +14,12 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -29,6 +32,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -41,12 +45,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,6 +91,7 @@ class MessageFlowIT {
                 () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"));
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
     }
 
     private static String env(String name, String fallback) {
@@ -98,6 +107,10 @@ class MessageFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private HikariDataSource dataSource;
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -107,6 +120,7 @@ class MessageFlowIT {
     private TestUser carol; // never joins the conversation — the non-member probe
 
     private final List<WebSocketStompClient> stompClients = new ArrayList<>();
+    private final ScheduledExecutorService stompTaskScheduler = Executors.newSingleThreadScheduledExecutor();
 
     @BeforeAll
     void registerUsers() throws Exception {
@@ -125,6 +139,7 @@ class MessageFlowIT {
     @AfterAll
     void closeStompClients() {
         stompClients.forEach(WebSocketStompClient::stop);
+        stompTaskScheduler.shutdownNow();
     }
 
     private static String randomPhone() {
@@ -297,15 +312,142 @@ class MessageFlowIT {
     }
 
     @Test
+    void fiftyThreadEditDeleteSendStormHasUniqueSequencesAndOneDeleteEvent() throws Exception {
+        UUID conversationId = openDirectConversation();
+        Integer messagesBeforeStorm = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM messages WHERE conversation_id = ?", Integer.class, conversationId);
+        String stormRunId = UUID.randomUUID().toString();
+        UUID targetMessageId = sendRest(conversationId, alice, "storm target");
+        StompSession bobSession = connect(bob);
+        try {
+            BlockingQueue<String> topic = subscribeToQueue(
+                    bobSession, bob, "/topic/conversations." + conversationId);
+            int threadCount = 50;
+            int sendCount = 20;
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            CountDownLatch ready = new CountDownLatch(threadCount);
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<MvcResult>> results = new ArrayList<>();
+            try {
+                for (int i = 0; i < threadCount; i++) {
+                    final int index = i;
+                    results.add(executor.submit(() -> {
+                        ready.countDown();
+                        if (!start.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("50-thread message storm gate timed out");
+                        }
+                        if (index < sendCount) {
+                            return postJson("/api/v1/conversations/" + conversationId + "/messages",
+                                    alice.accessToken(),
+                                    Map.of("clientMessageId", UUID.randomUUID().toString(),
+                                            "type", "TEXT",
+                                            "content", "storm-send-" + stormRunId + "-" + index))
+                                    .andReturn();
+                        }
+                        if (index < 40) {
+                            return mockMvc.perform(patch("/api/v1/conversations/{c}/messages/{m}",
+                                            conversationId, targetMessageId)
+                                    .header("Authorization", "Bearer " + alice.accessToken())
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(
+                                            Map.of("content", "storm-edit-" + index))))
+                                    .andReturn();
+                        }
+                        return mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}",
+                                        conversationId, targetMessageId)
+                                .header("Authorization", "Bearer " + alice.accessToken()))
+                                .andReturn();
+                    }));
+                }
+                assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+                start.countDown();
+
+                List<Long> sentSequences = new ArrayList<>();
+                for (int i = 0; i < results.size(); i++) {
+                    MvcResult result = results.get(i).get(45, TimeUnit.SECONDS);
+                    int responseStatus = result.getResponse().getStatus();
+                    if (i < sendCount) {
+                        assertThat(responseStatus).isEqualTo(201);
+                        sentSequences.add(objectMapper.readTree(result.getResponse().getContentAsString())
+                                .get("seq").asLong());
+                    } else if (i < 40) {
+                        assertThat(responseStatus).isIn(200, 409);
+                    } else {
+                        assertThat(responseStatus).isEqualTo(204);
+                    }
+                }
+                executor.shutdown();
+                assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+
+                List<JsonNode> events = new ArrayList<>();
+                long eventDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                boolean quietAfterExpectedEvents = false;
+                while (System.nanoTime() < eventDeadline) {
+                    String frame = topic.poll(250, TimeUnit.MILLISECONDS);
+                    if (frame == null) {
+                        long created = events.stream()
+                                .filter(event -> "MESSAGE_CREATED".equals(event.path("eventType").asText()))
+                                .count();
+                        long deleted = events.stream()
+                                .filter(event -> "MESSAGE_DELETED".equals(event.path("eventType").asText())
+                                        && targetMessageId.toString().equals(
+                                                event.path("payload").path("messageId").asText()))
+                                .count();
+                        if (created == sendCount && deleted >= 1) {
+                            quietAfterExpectedEvents = true;
+                            break;
+                        }
+                        continue;
+                    }
+                    events.add(objectMapper.readTree(frame));
+                }
+                assertThat(quietAfterExpectedEvents).isTrue();
+                long deletedEvents = events.stream()
+                        .filter(event -> "MESSAGE_DELETED".equals(event.path("eventType").asText())
+                                && targetMessageId.toString().equals(
+                                        event.path("payload").path("messageId").asText()))
+                        .count();
+                assertThat(deletedEvents).isEqualTo(1);
+                assertThat(sentSequences).hasSize(sendCount).doesNotHaveDuplicates();
+
+                Integer messageCount = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM messages WHERE conversation_id = ?",
+                        Integer.class, conversationId);
+                Integer distinctSequences = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(DISTINCT seq) FROM messages WHERE conversation_id = ?",
+                        Integer.class, conversationId);
+                Integer persistedSends = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND content LIKE ?",
+                        Integer.class, conversationId, "storm-send-" + stormRunId + "-%");
+                assertThat(messageCount).isEqualTo(messagesBeforeStorm + sendCount + 1);
+                assertThat(distinctSequences).isEqualTo(messageCount);
+                assertThat(persistedSends).isEqualTo(sendCount);
+                assertThat(jdbcTemplate.queryForObject(
+                        "SELECT deleted_at IS NOT NULL AND content IS NULL FROM messages WHERE id = ?",
+                        Boolean.class, targetMessageId)).isTrue();
+                assertThat(jdbcTemplate.queryForObject(
+                        "SELECT last_message_seq FROM conversations WHERE id = ?", Long.class, conversationId))
+                        .isEqualTo(sentSequences.stream().mapToLong(Long::longValue).max().orElseThrow());
+                assertThat(dataSource.getHikariPoolMXBean().getActiveConnections()).isZero();
+                assertThat(dataSource.getHikariPoolMXBean().getTotalConnections())
+                        .isLessThanOrEqualTo(dataSource.getMaximumPoolSize());
+            } finally {
+                start.countDown();
+                executor.shutdownNow();
+            }
+        } finally {
+            bobSession.disconnect();
+        }
+    }
+
+    @Test
     void concurrentDuplicateClientMessageIdReturnsOneRowAndRebroadcastsBothCalls() throws Exception {
         UUID conversationId = openDirectConversation();
         UUID clientMessageId = UUID.randomUUID();
         StompSession bobSession = connect(bob);
         try {
             BlockingQueue<String> topic = subscribeToQueue(
-                    bobSession, "/topic/conversations." + conversationId);
-            Thread.sleep(400);
-
+                    bobSession, bob, "/topic/conversations." + conversationId);
             ExecutorService executor = Executors.newFixedThreadPool(2);
             CountDownLatch ready = new CountDownLatch(2);
             CountDownLatch start = new CountDownLatch(1);
@@ -408,8 +550,7 @@ class MessageFlowIT {
         StompSession retryReceiver = connect(carol);
         try {
             BlockingQueue<String> retryTopic = subscribeToQueue(
-                    retryReceiver, "/topic/conversations." + conversationId);
-            Thread.sleep(400);
+                    retryReceiver, carol, "/topic/conversations." + conversationId);
 
             MvcResult replay = postJson(
                     "/api/v1/conversations/" + conversationId + "/messages",
@@ -545,6 +686,7 @@ class MessageFlowIT {
     private WebSocketStompClient newStompClient() {
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         client.setMessageConverter(new MappingJackson2MessageConverter());
+        client.setTaskScheduler(new ConcurrentTaskScheduler(stompTaskScheduler));
         client.setDefaultHeartbeat(new long[]{0, 0});
         stompClients.add(client);
         return client;
@@ -561,9 +703,25 @@ class MessageFlowIT {
                 .get(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
-    private BlockingQueue<String> subscribeToQueue(StompSession session, String destination) {
+    private BlockingQueue<String> subscribeToQueue(
+            StompSession session, TestUser user, String destination) throws Exception {
+        String subscriptionId = "subscribe-" + UUID.randomUUID();
+        BlockingQueue<String> frames = subscribe(session, destination, subscriptionId);
+        await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() ->
+                assertThat(isSubscribed(user.id(), subscriptionId, destination)).isTrue());
+        return frames;
+    }
+
+    private BlockingQueue<String> subscribeWithoutAwait(StompSession session, String destination) {
+        return subscribe(session, destination, "unauthorized-" + UUID.randomUUID());
+    }
+
+    private BlockingQueue<String> subscribe(StompSession session, String destination, String subscriptionId) {
         BlockingQueue<String> frames = new LinkedBlockingQueue<>();
-        session.subscribe(destination, new StompFrameHandler() {
+        StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
+        headers.setDestination(destination);
+        session.subscribe(headers, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return byte[].class;
@@ -577,18 +735,31 @@ class MessageFlowIT {
         return frames;
     }
 
+    private boolean isSubscribed(UUID userId, String subscriptionId, String destination) {
+        String brokerDestination = destination.startsWith("/user/")
+                ? destination.substring("/user".length())
+                : destination;
+        var registeredUser = simpUserRegistry.getUser(userId.toString());
+        return registeredUser != null && registeredUser.getSessions().stream()
+                .flatMap(session -> session.getSubscriptions().stream())
+                .filter(subscription -> subscriptionId.equals(subscription.getId()))
+                .map(subscription -> subscription.getDestination())
+                .anyMatch(actual -> actual != null
+                        && (actual.equals(destination) || actual.equals(brokerDestination)
+                        || actual.startsWith(brokerDestination + "-user")));
+    }
+
     @Test
     void wsConnectSubscribeSendBroadcastTypingAndRead() throws Exception {
         UUID conversationId = openDirectConversation();
 
         StompSession aliceSession = connect(alice);
         StompSession bobSession = connect(bob);
-        BlockingQueue<String> aliceTopic = subscribeToQueue(aliceSession, "/topic/conversations." + conversationId);
-        BlockingQueue<String> bobTopic = subscribeToQueue(bobSession, "/topic/conversations." + conversationId);
-        BlockingQueue<String> bobInbox = subscribeToQueue(bobSession, "/user/queue/inbox");
-        // SUBSCRIBE frames are fire-and-forget — let them register before sends.
-        Thread.sleep(400);
-
+        BlockingQueue<String> aliceTopic = subscribeToQueue(
+                aliceSession, alice, "/topic/conversations." + conversationId);
+        BlockingQueue<String> bobTopic = subscribeToQueue(
+                bobSession, bob, "/topic/conversations." + conversationId);
+        BlockingQueue<String> bobInbox = subscribeToQueue(bobSession, bob, "/user/queue/inbox");
         // --- SEND via STOMP → both subscribers + sender get MESSAGE_CREATED ---
         UUID clientMessageId = UUID.randomUUID();
         aliceSession.send("/app/conversations/" + conversationId + "/messages",
@@ -652,9 +823,8 @@ class MessageFlowIT {
     void wsRestSendAlsoBroadcastsToTopic() throws Exception {
         UUID conversationId = openDirectConversation();
         StompSession bobSession = connect(bob);
-        BlockingQueue<String> bobTopic = subscribeToQueue(bobSession, "/topic/conversations." + conversationId);
-        Thread.sleep(400); // let the SUBSCRIBE register before the send
-
+        BlockingQueue<String> bobTopic = subscribeToQueue(
+                bobSession, bob, "/topic/conversations." + conversationId);
         // REST send (the fallback path) hits the same service → same broadcast.
         sendRest(conversationId, alice, "rest via ws fan-out");
 
@@ -664,6 +834,45 @@ class MessageFlowIT {
         assertThat(frame.get("eventType").asText()).isEqualTo("MESSAGE_CREATED");
         assertThat(frame.get("payload").get("content").asText()).isEqualTo("rest via ws fan-out");
         bobSession.disconnect();
+    }
+
+    @Test
+    void wsRestEditBroadcastsCommittedPayloadAndNoOpDoesNotBroadcast() throws Exception {
+        UUID conversationId = openDirectConversation();
+        UUID messageId = sendRest(conversationId, bob, "before edit");
+        sendRest(conversationId, alice, "newer message");
+
+        StompSession aliceSession = connect(alice);
+        try {
+            BlockingQueue<String> aliceTopic = subscribeToQueue(
+                    aliceSession, alice, "/topic/conversations." + conversationId);
+            JsonNode edited = objectMapper.readTree(mockMvc.perform(patch(
+                                    "/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                            .header("Authorization", "Bearer " + bob.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("content", "after edit"))))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+            JsonNode update = objectMapper.readTree(aliceTopic.poll(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            assertThat(update).isNotNull();
+            assertThat(update.get("eventType").asText()).isEqualTo("MESSAGE_UPDATED");
+            assertThat(update.get("conversationId").asText()).isEqualTo(conversationId.toString());
+            assertThat(update.get("payload")).isEqualTo(edited);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT content FROM messages WHERE id = ?", String.class, messageId))
+                    .isEqualTo("after edit");
+
+            JsonNode unchanged = objectMapper.readTree(mockMvc.perform(patch(
+                                    "/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                            .header("Authorization", "Bearer " + bob.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("content", "after edit"))))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            assertThat(unchanged.get("editedAt")).isEqualTo(edited.get("editedAt"));
+            assertThat(aliceTopic.poll(1, TimeUnit.SECONDS)).isNull();
+        } finally {
+            aliceSession.disconnect();
+        }
     }
 
     @Test
@@ -684,13 +893,11 @@ class MessageFlowIT {
 
         // --- valid CONNECT but non-member: SUBSCRIBE + SEND silently dropped ---
         StompSession carolSession = connect(carol);
-        BlockingQueue<String> carolTopic = subscribeToQueue(
+        BlockingQueue<String> carolTopic = subscribeWithoutAwait(
                 carolSession, "/topic/conversations." + conversationId);
         StompSession aliceSession = connect(alice);
         BlockingQueue<String> aliceTopic = subscribeToQueue(
-                aliceSession, "/topic/conversations." + conversationId);
-        Thread.sleep(400); // let the SUBSCRIBE register before the sends
-
+                aliceSession, alice, "/topic/conversations." + conversationId);
         carolSession.send("/app/conversations/" + conversationId + "/messages",
                 Map.of("clientMessageId", UUID.randomUUID().toString(),
                         "type", "TEXT", "content", "spy"));

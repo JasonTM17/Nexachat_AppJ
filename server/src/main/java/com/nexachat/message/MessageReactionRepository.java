@@ -45,6 +45,10 @@ public interface MessageReactionRepository extends JpaRepository<MessageReaction
                   @Param("userId") UUID userId,
                   @Param("emoji") String emoji);
 
+    @Modifying
+    @Query("DELETE FROM MessageReaction r WHERE r.message.id = :messageId")
+    int deleteByMessageId(@Param("messageId") UUID messageId);
+
     /**
      * Batch read for aggregation — one IN query feeds both the message-page
      * {@code reactions[]} summaries (grouped per message) and the

@@ -7,16 +7,18 @@ import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.ws.dto.TypingSignal;
 import com.nexachat.ws.dto.WsErrorResponse;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.Message;
+import org.springframework.core.convert.ConversionException;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
@@ -108,13 +110,28 @@ public class WsMessageController {
      */
     @MessageExceptionHandler(Exception.class)
     @SendToUser(value = "/queue/errors", broadcast = false)
-    public WsErrorResponse onUnexpected(Exception ex, Message<?> message) {
-        if (log.isWarnEnabled()) {
-            StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
-            log.warn("Unhandled exception on STOMP {} {}: {}",
-                    accessor.getCommand(), accessor.getDestination(), ex.toString());
+    public WsErrorResponse onUnexpected(Exception ex) {
+        ApiErrorCode code = isPayloadValidationFailure(ex)
+                ? ApiErrorCode.VALIDATION_FAILED
+                : ApiErrorCode.INTERNAL_ERROR;
+        if (code == ApiErrorCode.VALIDATION_FAILED) {
+            log.warn("Rejected invalid STOMP payload");
+        } else if (log.isErrorEnabled()) {
+            log.error("Unhandled STOMP handler exception ({})", ex.getClass().getSimpleName());
         }
-        return new WsErrorResponse(ApiErrorCode.INTERNAL_ERROR.getCode(), null);
+        return new WsErrorResponse(code.getCode(), null);
+    }
+
+    private static boolean isPayloadValidationFailure(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof MessageConversionException
+                    || cause instanceof MethodArgumentNotValidException
+                    || cause instanceof ConstraintViolationException
+                    || cause instanceof ConversionException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static UUID requireUserId(Principal principal) {

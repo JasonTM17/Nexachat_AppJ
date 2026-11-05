@@ -14,21 +14,46 @@
 # Secrets
 # -------
 # JWT_SECRET has no default here: startup fails fast when it is unset.
-# datasource and storage come from the environment (compose injects
-# SPRING_DATASOURCE_*; the DATABASE_* names below match .env.example).
+# Database coordinates and storage also have no production defaults. Compose
+# supplies them from the ignored .env file; standalone deployments must inject
+# the same variables through their runtime secret/configuration provider.
 
 server:
   forward-headers-strategy: framework
+  shutdown: graceful
+  error:
+    include-exception: false
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
 
 logging:
   level:
     root: INFO
+    com.nexachat: INFO
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://db:5432/nexachat}
+    url: ${DATABASE_URL}
     username: ${DATABASE_USER}
     password: ${DATABASE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
 
 nexachat:
   jwt:
@@ -36,4 +61,4 @@ nexachat:
     access-ttl-seconds: 900
     refresh-ttl-days: 14
   storage:
-    root: ${STORAGE_ROOT:./data/uploads}
+    root: ${STORAGE_ROOT}

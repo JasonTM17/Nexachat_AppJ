@@ -3,6 +3,7 @@ package com.nexachat.config;
 import com.nexachat.auth.RateLimitInterceptor;
 import com.nexachat.contact.ContactAddRateLimitInterceptor;
 import com.nexachat.user.UserSearchRateLimitInterceptor;
+import com.nexachat.message.MessageRateLimitInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -20,13 +21,16 @@ public class WebConfig implements WebMvcConfigurer {
     private final RateLimitInterceptor rateLimitInterceptor;
     private final UserSearchRateLimitInterceptor userSearchRateLimitInterceptor;
     private final ContactAddRateLimitInterceptor contactAddRateLimitInterceptor;
+    private final MessageRateLimitInterceptor messageRateLimitInterceptor;
 
     public WebConfig(RateLimitInterceptor rateLimitInterceptor,
                      UserSearchRateLimitInterceptor userSearchRateLimitInterceptor,
-                     ContactAddRateLimitInterceptor contactAddRateLimitInterceptor) {
+                     ContactAddRateLimitInterceptor contactAddRateLimitInterceptor,
+                     MessageRateLimitInterceptor messageRateLimitInterceptor) {
         this.rateLimitInterceptor = rateLimitInterceptor;
         this.userSearchRateLimitInterceptor = userSearchRateLimitInterceptor;
         this.contactAddRateLimitInterceptor = contactAddRateLimitInterceptor;
+        this.messageRateLimitInterceptor = messageRateLimitInterceptor;
     }
 
     @Override
@@ -37,5 +41,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/v1/users/search");
         registry.addInterceptor(contactAddRateLimitInterceptor)
                 .addPathPatterns("/api/v1/contacts");
+        registry.addInterceptor(messageRateLimitInterceptor)
+                .addPathPatterns("/api/v1/conversations/**");
     }
 }

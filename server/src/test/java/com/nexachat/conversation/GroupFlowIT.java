@@ -7,16 +7,29 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
+import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.ExecutorSubscribableChannel;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -29,15 +42,20 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -77,6 +95,7 @@ class GroupFlowIT {
                 () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"));
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
     }
 
     private static String env(String name, String fallback) {
@@ -92,6 +111,14 @@ class GroupFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
+
+    @Autowired
+    private SimpleBrokerMessageHandler simpleBrokerMessageHandler;
+    @Autowired
+    @Qualifier("clientInboundChannel")
+    private ExecutorSubscribableChannel clientInboundChannel;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -101,6 +128,7 @@ class GroupFlowIT {
     private TestUser carol;
 
     private final List<WebSocketStompClient> stompClients = new ArrayList<>();
+    private final ScheduledExecutorService stompTaskScheduler = Executors.newSingleThreadScheduledExecutor();
 
     @BeforeAll
     void registerUsers() throws Exception {
@@ -119,6 +147,7 @@ class GroupFlowIT {
     @AfterAll
     void closeStompClients() {
         stompClients.forEach(WebSocketStompClient::stop);
+        stompTaskScheduler.shutdownNow();
     }
 
     private static String randomPhone() {
@@ -379,6 +408,7 @@ class GroupFlowIT {
     private WebSocketStompClient newStompClient() {
         WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
         client.setMessageConverter(new MappingJackson2MessageConverter());
+        client.setTaskScheduler(new ConcurrentTaskScheduler(stompTaskScheduler));
         client.setDefaultHeartbeat(new long[]{0, 0});
         stompClients.add(client);
         return client;
@@ -395,9 +425,18 @@ class GroupFlowIT {
                 .get(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
-    private BlockingQueue<String> subscribeToQueue(StompSession session, String destination) {
+    private BlockingQueue<String> subscribeToQueue(
+            StompSession session, TestUser user, String destination) throws Exception {
+        return subscribeToQueue(session, user, destination, "subscribe-" + UUID.randomUUID());
+    }
+
+    private BlockingQueue<String> subscribeToQueue(
+            StompSession session, TestUser user, String destination, String subscriptionId) throws Exception {
         BlockingQueue<String> frames = new LinkedBlockingQueue<>();
-        session.subscribe(destination, new StompFrameHandler() {
+        StompHeaders headers = new StompHeaders();
+        headers.setDestination(destination);
+        headers.setId(subscriptionId);
+        var subscription = session.subscribe(headers, new StompFrameHandler() {
             @Override
             public Type getPayloadType(StompHeaders headers) {
                 return byte[].class;
@@ -408,7 +447,99 @@ class GroupFlowIT {
                 frames.add(new String((byte[]) payload, StandardCharsets.UTF_8));
             }
         });
+        await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() ->
+                assertThat(isSubscribed(user.id(), subscriptionId, destination)).isTrue());
         return frames;
+    }
+
+    private boolean isSubscribed(UUID userId, String subscriptionId, String destination) {
+        String brokerDestination = destination.startsWith("/user/")
+                ? destination.substring("/user".length())
+                : destination;
+        var registeredUser = simpUserRegistry.getUser(userId.toString());
+        return registeredUser != null && registeredUser.getSessions().stream()
+                .flatMap(userSession -> userSession.getSubscriptions().stream())
+                .filter(subscription -> subscriptionId.equals(subscription.getId()))
+                .map(subscription -> subscription.getDestination())
+                .anyMatch(actual -> actual != null
+                        && (actual.equals(destination) || actual.equals(brokerDestination)
+                        || actual.startsWith(brokerDestination + "-user")));
+    }
+
+    private boolean isBrokerSubscribed(String sessionId, String subscriptionId, String destination) {
+        SimpMessageHeaderAccessor accessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        accessor.setDestination(destination);
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+        return simpleBrokerMessageHandler.getSubscriptionRegistry().findSubscriptions(message)
+                .getOrDefault(sessionId, List.of())
+                .contains(subscriptionId);
+    }
+
+    private static final class SubscriptionDispatchGate implements ChannelInterceptor {
+        private final String destination;
+        private final CountDownLatch authorized = new CountDownLatch(1);
+        private final CountDownLatch released = new CountDownLatch(1);
+        private volatile String sessionId;
+
+        private SubscriptionDispatchGate(String destination) {
+            this.destination = destination;
+        }
+
+        @Override
+        public Message<?> preSend(Message<?> message, MessageChannel channel) {
+            StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+            if (accessor.getCommand() == StompCommand.SUBSCRIBE
+                    && destination.equals(accessor.getDestination())) {
+                sessionId = accessor.getSessionId();
+                authorized.countDown();
+                try {
+                    if (!released.await(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to release the subscription test gate");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+            return message;
+        }
+
+        private boolean awaitAuthorization() throws InterruptedException {
+            return authorized.await(WS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+
+        private String sessionId() {
+            return sessionId;
+        }
+
+        private void release() {
+            released.countDown();
+        }
+    }
+
+    private void sendTextMessage(UUID conversationId, TestUser sender, String content) throws Exception {
+        postJson("/api/v1/conversations/" + conversationId + "/messages", sender.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "TEXT", "content", content))
+                .andExpect(status().isCreated());
+    }
+
+    private boolean receivesFrameContaining(
+            BlockingQueue<String> frames, String value, long timeoutSeconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (true) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return false;
+            }
+            String frame = frames.poll(remaining, TimeUnit.NANOSECONDS);
+            if (frame == null) {
+                return false;
+            }
+            if (frame.contains(value)) {
+                return true;
+            }
+        }
     }
 
     @Test
@@ -418,8 +549,7 @@ class GroupFlowIT {
         // carol is NOT a member yet — her user queue subscription is still
         // allowed (it is her own queue) so the push lands when she is added.
         StompSession carolSession = connect(carol);
-        BlockingQueue<String> carolInbox = subscribeToQueue(carolSession, "/user/queue/inbox");
-        Thread.sleep(400); // let the SUBSCRIBE register before the mutation
+        BlockingQueue<String> carolInbox = subscribeToQueue(carolSession, carol, "/user/queue/inbox");
 
         postJson("/api/v1/conversations/" + groupId + "/members", alice.accessToken(),
                 Map.of("userIds", List.of(carol.id().toString())))
@@ -444,5 +574,102 @@ class GroupFlowIT {
         assertThat(frame.get("payload").get("members").findValuesAsText("userId"))
                 .contains(carol.id().toString());
         carolSession.disconnect();
+    }
+
+    @Test
+    void adminRemovalStopsLaterMessagesOnExistingConversationSubscription() throws Exception {
+        UUID groupId = createGroup(alice, "Removal subscription", List.of(bob.id(), carol.id()));
+        StompSession carolSession = connect(carol);
+        try {
+            BlockingQueue<String> topic = subscribeToQueue(
+                    carolSession, carol, "/topic/conversations." + groupId);
+            sendTextMessage(groupId, alice, "before admin removal marker");
+            assertThat(receivesFrameContaining(topic, "before admin removal marker", WS_TIMEOUT_SECONDS))
+                    .isTrue();
+
+            mockMvc.perform(delete("/api/v1/conversations/{conversationId}/members/{userId}",
+                            groupId, carol.id())
+                            .header("Authorization", "Bearer " + alice.accessToken()))
+                    .andExpect(status().isNoContent());
+            sendTextMessage(groupId, alice, "after admin removal marker");
+
+            assertThat(receivesFrameContaining(topic, "after admin removal marker", 2)).isFalse();
+        } finally {
+            carolSession.disconnect();
+        }
+    }
+
+    @Test
+    void leavingMemberStopsLaterMessagesOnExistingConversationSubscription() throws Exception {
+        UUID groupId = createGroup(alice, "Leave subscription", List.of(bob.id(), carol.id()));
+        StompSession carolSession = connect(carol);
+        try {
+            BlockingQueue<String> topic = subscribeToQueue(
+                    carolSession, carol, "/topic/conversations." + groupId);
+            sendTextMessage(groupId, alice, "before member leave marker");
+            assertThat(receivesFrameContaining(topic, "before member leave marker", WS_TIMEOUT_SECONDS))
+                    .isTrue();
+
+            postJson("/api/v1/conversations/" + groupId + "/leave", carol.accessToken(), Map.of())
+                    .andExpect(status().isNoContent());
+            sendTextMessage(groupId, alice, "after member leave marker");
+
+            assertThat(receivesFrameContaining(topic, "after member leave marker", 2)).isFalse();
+        } finally {
+            carolSession.disconnect();
+        }
+    }
+
+    @Test
+    void queuedSubscriptionAfterRemovalCannotReceiveLaterMessages() throws Exception {
+        UUID groupId = createGroup(alice, "Queued subscription", List.of(bob.id(), carol.id()));
+        String destination = "/topic/conversations." + groupId;
+        StompSession bobSession = connect(bob);
+        StompSession carolSession = connect(carol);
+        String bobSubscriptionId = "current-member-" + UUID.randomUUID();
+        String carolSubscriptionId = "queued-subscribe-" + UUID.randomUUID();
+        BlockingQueue<String> bobTopic = subscribeToQueue(bobSession, bob, destination, bobSubscriptionId);
+        BlockingQueue<String> carolTopic = new LinkedBlockingQueue<>();
+        SubscriptionDispatchGate gate = new SubscriptionDispatchGate(destination);
+        clientInboundChannel.addInterceptor(gate);
+        try {
+            StompHeaders headers = new StompHeaders();
+            headers.setDestination(destination);
+            headers.setId(carolSubscriptionId);
+            carolSession.subscribe(headers, new StompFrameHandler() {
+                @Override
+                public Type getPayloadType(StompHeaders headers) {
+                    return byte[].class;
+                }
+
+                @Override
+                public void handleFrame(StompHeaders headers, Object payload) {
+                    carolTopic.add(new String((byte[]) payload, StandardCharsets.UTF_8));
+                }
+            });
+            assertThat(gate.awaitAuthorization()).isTrue();
+
+            mockMvc.perform(delete("/api/v1/conversations/{conversationId}/members/{userId}",
+                            groupId, carol.id())
+                            .header("Authorization", "Bearer " + alice.accessToken()))
+                    .andExpect(status().isNoContent());
+
+            gate.release();
+            await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() ->
+                    assertThat(isBrokerSubscribed(
+                            gate.sessionId(), carolSubscriptionId, destination))
+                            .as("broker registry contains queued subscription")
+                            .isTrue());
+
+            String marker = "queued subscribe after removal marker";
+            sendTextMessage(groupId, alice, marker);
+            assertThat(receivesFrameContaining(bobTopic, marker, WS_TIMEOUT_SECONDS)).isTrue();
+            assertThat(receivesFrameContaining(carolTopic, marker, 2)).isFalse();
+        } finally {
+            gate.release();
+            clientInboundChannel.removeInterceptor(gate);
+            carolSession.disconnect();
+            bobSession.disconnect();
+        }
     }
 }

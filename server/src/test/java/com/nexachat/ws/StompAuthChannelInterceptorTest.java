@@ -5,6 +5,7 @@ import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.user.UserRepository;
 import com.nexachat.ws.dto.WsErrorResponse;
 import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,8 @@ class StompAuthChannelInterceptorTest {
     @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
+    private UserRepository userRepository;
+    @Mock
     private MessageChannel channel;
     @Mock
     private SimpMessagingTemplate messaging;
@@ -54,7 +57,7 @@ class StompAuthChannelInterceptorTest {
     void setUp() {
         rateLimitService = new RateLimitService();
         interceptor = new StompAuthChannelInterceptor(
-                jwtService, memberRepository, rateLimitService, messaging,
+                jwtService, userRepository, memberRepository, rateLimitService, messaging,
                 new ObjectMapper(), 2, 60, 3, 10);
     }
 
@@ -103,6 +106,7 @@ class StompAuthChannelInterceptorTest {
         accessor.setNativeHeader("Authorization", "Bearer good-token");
         Message<?> message = message(accessor);
         when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        when(userRepository.existsById(userId)).thenReturn(true);
 
         Message<?> result = interceptor.preSend(message, channel);
 
@@ -135,6 +139,15 @@ class StompAuthChannelInterceptorTest {
         accessor.setNativeHeader("Authorization", "Bearer bad-token");
         when(jwtService.parseAccessToken("bad-token"))
                 .thenThrow(new JwtException("signature invalid"));
+
+        assertThat(interceptor.preSend(message(accessor), channel)).isNull();
+    }
+
+    @Test
+    void connect_nonexistentUser_rejected() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer good-token");
+        when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
 
         assertThat(interceptor.preSend(message(accessor), channel)).isNull();
     }
@@ -178,6 +191,35 @@ class StompAuthChannelInterceptorTest {
         Message<?> message = subscribeMessage("/user/queue/errors", true);
 
         assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void subscribe_userPresence_authenticated_allowed() {
+        Message<?> message = subscribeMessage("/user/queue/presence", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void subscribe_userCallQueue_authenticated_allowed() {
+        Message<?> message = subscribeMessage("/user/queue/calls", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void subscribe_anotherUsersPresenceQueue_rejected() {
+        Message<?> message = subscribeMessage(
+                "/user/" + UUID.randomUUID() + "/queue/presence", true);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void subscribe_unknownUserQueue_rejected() {
+        Message<?> message = subscribeMessage("/user/queue/admin", true);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
     }
 
     @Test
@@ -234,6 +276,26 @@ class StompAuthChannelInterceptorTest {
     }
 
     @Test
+    void send_callSignal_member_allowed() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+        Message<?> message = sendMessage("/app/calls/" + conversationId + "/signal", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void send_callSignal_nonMember_rejected() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(false);
+        Message<?> message = sendMessage("/app/calls/" + conversationId + "/signal", true);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+        verify(messaging).convertAndSendToUser(userId.toString(), "/queue/errors",
+                new WsErrorResponse("NOT_MEMBER", null));
+    }
+
+    @Test
     void send_unauthenticated_rejected() {
         Message<?> message = sendMessage("/app/conversations/" + conversationId + "/messages", false);
 
@@ -267,6 +329,7 @@ class StompAuthChannelInterceptorTest {
         StompHeaderAccessor reconnectAccessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         reconnectAccessor.setNativeHeader("Authorization", "Bearer good-token");
         when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        when(userRepository.existsById(userId)).thenReturn(true);
         assertThat(interceptor.preSend(message(reconnectAccessor), channel)).isNotNull();
         assertThat(interceptor.preSend(subscribeMessage("/user/queue/inbox", true), channel)).isNotNull();
         assertThat(interceptor.preSend(sendMessage(

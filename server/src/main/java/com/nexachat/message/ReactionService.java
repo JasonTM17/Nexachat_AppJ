@@ -72,12 +72,15 @@ public class ReactionService {
     @Transactional
     public void toggle(UUID userId, UUID messageId, ReactRequest request) {
         String emoji = normalizeEmoji(request == null ? null : request.emoji());
-        Message message = messageRepository.findById(messageId)
+        Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         UUID conversationId = message.getConversation().getId();
         if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
+        }
+        if (message.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
         }
 
         int removed = reactionRepository.deleteOne(messageId, userId, emoji);

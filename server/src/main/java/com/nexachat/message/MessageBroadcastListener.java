@@ -2,6 +2,7 @@ package com.nexachat.message;
 
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.dto.ReadReceiptPayload;
+import com.nexachat.message.dto.MessageDeletedPayload;
 import com.nexachat.ws.EventEnvelope;
 import com.nexachat.ws.WsEventType;
 import org.slf4j.Logger;
@@ -55,6 +56,20 @@ public class MessageBroadcastListener {
         EventEnvelope envelope = EventEnvelope.of(
                 WsEventType.MESSAGE_READ, event.conversationId(),
                 new ReadReceiptPayload(event.userId(), event.upToSeq()));
+        messaging.convertAndSend(topicDestination(event.conversationId()), envelope);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMessageUpdated(MessageUpdatedEvent event) {
+        EventEnvelope envelope = EventEnvelope.of(
+                WsEventType.MESSAGE_UPDATED, event.conversationId(), event.message());
+        messaging.convertAndSend(topicDestination(event.conversationId()), envelope);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMessageDeleted(MessageDeletedEvent event) {
+        EventEnvelope envelope = EventEnvelope.of(
+                WsEventType.MESSAGE_DELETED, event.conversationId(), event.payload());
         messaging.convertAndSend(topicDestination(event.conversationId()), envelope);
     }
 

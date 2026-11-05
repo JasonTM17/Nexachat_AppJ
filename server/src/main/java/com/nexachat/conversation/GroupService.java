@@ -18,9 +18,22 @@ import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.broker.AbstractBrokerMessageHandler;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.simp.user.SimpSession;
+import org.springframework.messaging.simp.user.SimpSubscription;
+import org.springframework.messaging.simp.user.SimpUser;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -74,19 +87,25 @@ public class GroupService {
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
+    private final SimpUserRegistry simpUserRegistry;
+    private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
 
     public GroupService(ConversationRepository conversationRepository,
                         ConversationMemberRepository memberRepository,
                         UserRepository userRepository,
                         MessageService messageService,
                         ApplicationEventPublisher eventPublisher,
-                        StorageService storageService) {
+                        StorageService storageService,
+                        SimpUserRegistry simpUserRegistry,
+                        AbstractBrokerMessageHandler simpleBrokerMessageHandler) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
+        this.simpUserRegistry = simpUserRegistry;
+        this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
     }
 
     /**
@@ -242,10 +261,51 @@ public class GroupService {
                 ? actorName + " left the group"
                 : actorName + " removed " + target.getUser().getDisplayName());
         memberRepository.delete(target);
+        revokeTopicSubscriptionsAfterCommit(targetUserId, conversationId);
         publishUpdate(conversation,
                 selfRemoval ? "MEMBER_LEFT" : "MEMBER_REMOVED", List.of(targetUserId));
         log.info("{} {} {} in group {}",
                 callerId, selfRemoval ? "left" : "removed", targetUserId, conversationId);
+    }
+
+    private void revokeTopicSubscriptionsAfterCommit(UUID userId, UUID conversationId) {
+        Runnable revoke = () -> revokeTopicSubscriptions(userId, conversationId);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            revoke.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                revoke.run();
+            }
+        });
+    }
+
+    private void revokeTopicSubscriptions(UUID userId, UUID conversationId) {
+        SimpUser user = simpUserRegistry.getUser(userId.toString());
+        if (user == null) {
+            return;
+        }
+        String destination = "/topic/conversations." + conversationId;
+        for (SimpSession session : List.copyOf(user.getSessions())) {
+            List<SimpSubscription> subscriptions = session.getSubscriptions().stream()
+                    .filter(subscription -> destination.equals(subscription.getDestination()))
+                    .toList();
+            for (SimpSubscription subscription : subscriptions) {
+                StompHeaderAccessor headers = StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE);
+                headers.setSessionId(session.getId());
+                headers.setSubscriptionId(subscription.getId());
+                headers.setUser(user.getPrincipal());
+                Message<byte[]> unsubscribe = MessageBuilder.createMessage(
+                        new byte[0], headers.getMessageHeaders());
+                if (simpleBrokerMessageHandler instanceof SimpleBrokerMessageHandler broker) {
+                    broker.getSubscriptionRegistry().unregisterSubscription(unsubscribe);
+                }
+                eventPublisher.publishEvent(new SessionUnsubscribeEvent(
+                        this, unsubscribe, user.getPrincipal()));
+            }
+        }
     }
 
     /**

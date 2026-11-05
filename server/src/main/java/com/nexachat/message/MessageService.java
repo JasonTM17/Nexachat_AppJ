@@ -5,10 +5,15 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.conversation.ConversationUpdatedEvent;
+import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.message.dto.MessageDeletedPayload;
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.MessageSearchProjection;
+import com.nexachat.message.dto.PinUpdatedPayload;
 import com.nexachat.message.dto.ReactionRow;
 import com.nexachat.message.dto.ReactionView;
 import com.nexachat.message.dto.ReadRequest;
@@ -31,6 +36,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.temporal.ChronoUnit;
 
 /**
  * Message use cases — the single enforcement point for send authZ,
@@ -72,6 +78,7 @@ public class MessageService {
     private final MessageReactionRepository reactionRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
+    private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -80,6 +87,7 @@ public class MessageService {
                           MessageReactionRepository reactionRepository,
                           ConversationRepository conversationRepository,
                           ConversationMemberRepository memberRepository,
+                          PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
@@ -87,6 +95,7 @@ public class MessageService {
         this.reactionRepository = reactionRepository;
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
+        this.pinnedMessageRepository = pinnedMessageRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
     }
@@ -181,6 +190,109 @@ public class MessageService {
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
     }
 
+    @Transactional
+    public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId, String content) {
+        requireMember(conversationId, userId);
+        Message message = messageRepository.findByIdForUpdate(messageId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
+        requireMessageConversation(message, conversationId);
+        requireMessageAuthor(message, userId);
+        if (message.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
+        }
+        if (message.getType() != Message.Type.TEXT) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Only TEXT messages can be edited");
+        }
+        if (content == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "content is required");
+        }
+        String normalized = content.strip();
+        if (normalized.isEmpty() || normalized.length() > MAX_CONTENT_LENGTH
+                || normalized.indexOf('\0') >= 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "content must contain 1 to " + MAX_CONTENT_LENGTH + " characters");
+        }
+
+        MessageRow row;
+        if (normalized.equals(message.getContent())) {
+            row = messageRepository.findRowById(messageId)
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
+            return toResponse(row, userId);
+        }
+
+        java.time.Instant editedAt = java.time.Instant.now().truncatedTo(ChronoUnit.MICROS);
+        if (message.getEditedAt() != null && !editedAt.isAfter(message.getEditedAt())) {
+            editedAt = message.getEditedAt().plus(1, ChronoUnit.MICROS);
+        }
+        message.editContent(normalized, editedAt);
+        row = messageRepository.findRowById(messageId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
+        MessageResponse response = toResponse(row, userId);
+        eventPublisher.publishEvent(new MessageUpdatedEvent(conversationId, response));
+        if (isLastMessage(conversationId, messageId)) {
+            publishLastMessageChanged(conversationId, "MESSAGE_EDITED");
+        }
+        return response;
+    }
+
+    @Transactional
+    public void delete(UUID userId, UUID conversationId, UUID messageId) {
+        requireMember(conversationId, userId);
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        Message message = messageRepository.findByIdForUpdate(messageId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
+        requireMessageConversation(message, conversationId);
+        requireMessageAuthor(message, userId);
+        if (message.getDeletedAt() != null) {
+            return;
+        }
+
+        boolean wasLastMessage = isLastMessage(conversationId, messageId);
+        java.time.Instant deletedAt = java.time.Instant.now();
+        message.softDelete(deletedAt);
+        reactionRepository.deleteByMessageId(messageId);
+        if (pinnedMessageRepository.deleteOne(conversationId, messageId) > 0) {
+            eventPublisher.publishEvent(new PinUpdatedEvent(
+                    conversationId, new PinUpdatedPayload(messageId, false)));
+        }
+        MessageRow row = messageRepository.findRowById(messageId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
+        eventPublisher.publishEvent(new MessageDeletedEvent(conversationId,
+                new MessageDeletedPayload(messageId, row.deletedAt())));
+        if (wasLastMessage) {
+            publishLastMessageChanged(conversationId, "MESSAGE_DELETED");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public MessagePageResponse search(UUID userId, UUID conversationId, String query,
+                                      Integer limit, Long beforeSeq) {
+        if (!conversationRepository.existsById(conversationId)) {
+            throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
+        }
+        requireMember(conversationId, userId);
+        if (query == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "q is required");
+        }
+        String normalized = query.strip();
+        if (normalized.length() < 2 || normalized.length() > 100) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "q must contain 2 to 100 characters");
+        }
+        int pageSize = normalizeSearchLimit(limit);
+        String pattern = "%" + escapeLike(normalized) + "%";
+        List<MessageRow> rows = messageRepository.searchTextRows(
+                        conversationId, pattern, beforeSeq, PageRequest.of(0, pageSize + 1)).stream()
+                .map(MessageService::toMessageRow)
+                .toList();
+        boolean hasMore = rows.size() > pageSize;
+        List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
+        List<MessageResponse> items = hydrateResponses(page, userId);
+        Long nextBeforeSeq = items.isEmpty() ? null : items.get(items.size() - 1).seq();
+        return new MessagePageResponse(items, nextBeforeSeq, hasMore);
+    }
+
     /**
      * Server-generated {@code SYSTEM} line for group membership events
      * (add/remove/leave/rename — phase-08). This is the ONLY way a SYSTEM row
@@ -263,6 +375,55 @@ public class MessageService {
         }
     }
 
+    private static void requireMessageConversation(Message message, UUID conversationId) {
+        if (!conversationId.equals(message.getConversation().getId())) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found");
+        }
+    }
+
+    private static void requireMessageAuthor(Message message, UUID userId) {
+        if (!userId.equals(message.getSender().getId())) {
+            throw ApiException.of(ApiErrorCode.NOT_MESSAGE_AUTHOR, "Only the message author can change it");
+        }
+    }
+
+    private boolean isLastMessage(UUID conversationId, UUID messageId) {
+        return conversationRepository.findById(conversationId)
+                .map(conversation -> messageId.equals(conversation.getLastMessageId()))
+                .orElse(false);
+    }
+
+    private void publishLastMessageChanged(UUID conversationId, String change) {
+        var conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        eventPublisher.publishEvent(new ConversationUpdatedEvent(conversationId,
+                new ConversationUpdatePayload(conversationId, conversation.getTitle(),
+                        conversation.getAvatarUrl(), change, memberRepository.findMembers(conversationId)),
+                List.of()));
+    }
+
+    private static int normalizeSearchLimit(Integer limit) {
+        if (limit == null) {
+            return 20;
+        }
+        if (limit < 1 || limit > 50) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "limit must be between 1 and 50");
+        }
+        return limit;
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private static MessageRow toMessageRow(MessageSearchProjection row) {
+        return new MessageRow(row.getId(), row.getConversationId(), row.getSeq(), row.getSenderId(),
+                row.getSenderDisplayName(), Message.Type.valueOf(row.getType()), row.getContent(),
+                row.getClientMessageId(), row.getReplyToId(), row.getCreatedAt(),
+                row.getEditedAt(), row.getDeletedAt());
+    }
+
     private static void validatePayload(SendMessageRequest request) {
         if (request == null || request.clientMessageId() == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "clientMessageId is required");
@@ -290,7 +451,7 @@ public class MessageService {
         if (type == Message.Type.TEXT && (content == null || content.isBlank())) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "TEXT messages require content");
         }
-        if (content != null && content.length() > MAX_CONTENT_LENGTH) {
+        if (content != null && (content.length() > MAX_CONTENT_LENGTH || content.indexOf('\0') >= 0)) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "Message content must be at most " + MAX_CONTENT_LENGTH + " characters");
         }
@@ -460,10 +621,12 @@ public class MessageService {
                                               List<AttachmentResponse> attachments,
                                               List<ReactionView> reactions,
                                               ReplyRefResponse replyTo) {
+        boolean deleted = row.deletedAt() != null;
         return new MessageResponse(
                 row.id(), row.conversationId(), row.seq(), row.senderId(), row.senderDisplayName(),
-                row.type().name(), row.content(), row.clientMessageId(), row.replyToId(),
-                replyTo, attachments, reactions, row.createdAt(), row.editedAt(), row.deletedAt());
+                row.type().name(), deleted ? null : row.content(), row.clientMessageId(), row.replyToId(),
+                replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
+                row.createdAt(), row.editedAt(), row.deletedAt());
     }
 
     /**

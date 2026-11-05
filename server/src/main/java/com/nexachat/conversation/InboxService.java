@@ -8,6 +8,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.presence.PresenceService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,11 +43,14 @@ public class InboxService {
 
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
+    private final PresenceService presenceService;
 
     public InboxService(ConversationMemberRepository memberRepository,
-                        MessageRepository messageRepository) {
+                        MessageRepository messageRepository,
+                        PresenceService presenceService) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
+        this.presenceService = presenceService;
     }
 
     @Transactional(readOnly = true)
@@ -113,6 +117,8 @@ public class InboxService {
                 memberRepository.countUnreadByConversation(userId, conversationIds).stream()
                         .collect(Collectors.toMap(
                                 UnreadCountRow::conversationId, UnreadCountRow::unreadCount));
+        Map<UUID, InboxEntry.PeerPresence> peerPresenceByConversation =
+                presenceService.peerPresence(userId, conversationIds);
 
         return rows.stream()
                 .map(row -> new InboxEntry(
@@ -125,7 +131,9 @@ public class InboxService {
                                 ? null
                                 : lastMessageById.get(row.lastMessageId())),
                         unreadByConversation.getOrDefault(row.id(), 0L),
-                        row.lastReadSeq()))
+                        row.lastReadSeq(),
+                        row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
+                                ? peerPresenceByConversation.get(row.id()) : null))
                 .toList();
     }
 
@@ -170,7 +178,7 @@ public class InboxService {
             return null;
         }
         return new InboxEntry.LastMessage(
-                row.seq(), row.type().name(), snippet(row.content()), row.senderId(), row.createdAt());
+                row.seq(), row.type().name(), snippet(row.content()), row.senderId(), row.createdAt(), row.deletedAt());
     }
 
     private static String snippet(String content) {

@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -70,6 +71,7 @@ class AttachmentFlowIT {
                 () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"));
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
         // Real filesystem storage, sandboxed to a per-run temp dir.
         registry.add("nexachat.storage.root", STORAGE_ROOT::toString);
     }
@@ -258,6 +260,71 @@ class AttachmentFlowIT {
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void deletingMediaMessageKeepsAttachmentOutOfTombstoneHistory() throws Exception {
+        UUID conversationId = openDirectConversation();
+        JsonNode uploaded = upload(alice, "deleted.png", "image/png", PNG_BYTES);
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        String filesUrl = uploaded.get("url").asText();
+        MvcResult sent = postJson("/api/v1/conversations/" + conversationId + "/messages",
+                alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId.toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode message = objectMapper.readTree(sent.getResponse().getContentAsString());
+        UUID messageId = UUID.fromString(message.get("id").asText());
+        long sequence = message.get("seq").asLong();
+        assertThat(message.get("attachments")).hasSize(1);
+
+        mockMvc.perform(delete("/api/v1/conversations/{conversationId}/messages/{messageId}",
+                        conversationId, messageId)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+
+        List<MvcResult> deletedAttachmentDownloads = List.of(
+                mockMvc.perform(get("/api/v1/attachments/{id}/content", attachmentId)
+                                .header("Authorization", "Bearer " + alice.accessToken()))
+                        .andReturn(),
+                mockMvc.perform(get("/api/v1/attachments/{id}/content", attachmentId)
+                                .header("Authorization", "Bearer " + bob.accessToken()))
+                        .andReturn(),
+                mockMvc.perform(get(filesUrl)
+                                .header("Authorization", "Bearer " + alice.accessToken()))
+                        .andReturn(),
+                mockMvc.perform(get(filesUrl)
+                                .header("Authorization", "Bearer " + bob.accessToken()))
+                        .andReturn());
+        assertThat(deletedAttachmentDownloads)
+                .extracting(result -> result.getResponse().getStatus())
+                .containsOnly(404);
+        for (MvcResult download : deletedAttachmentDownloads) {
+            assertThat(objectMapper.readTree(download.getResponse().getContentAsString())
+                    .path("error").path("code").asText())
+                    .isEqualTo("ATTACHMENT_NOT_FOUND");
+        }
+
+        MvcResult history = mockMvc.perform(get(
+                        "/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode tombstone = null;
+        for (JsonNode item : objectMapper.readTree(history.getResponse().getContentAsString()).get("items")) {
+            if (messageId.toString().equals(item.get("id").asText())) {
+                tombstone = item;
+                break;
+            }
+        }
+        assertThat(tombstone).isNotNull();
+        assertThat(tombstone.get("seq").asLong()).isEqualTo(sequence);
+        assertThat(tombstone.has("content")).isTrue();
+        assertThat(tombstone.get("content").isNull()).isTrue();
+        assertThat(tombstone.get("deletedAt").isTextual()).isTrue();
+        assertThat(tombstone.get("attachments")).isEmpty();
     }
 
     @Test

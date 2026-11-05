@@ -83,7 +83,7 @@ class ReactionServiceTest {
     }
 
     private void memberMessage() {
-        when(messageRepository.findById(messageId))
+        when(messageRepository.findByIdForUpdate(messageId))
                 .thenReturn(Optional.of(messageInConversation()));
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(true);
@@ -130,7 +130,7 @@ class ReactionServiceTest {
 
     @Test
     void toggle_messageMissing_throwsMessageNotFound() {
-        when(messageRepository.findById(messageId)).thenReturn(Optional.empty());
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> reactionService.toggle(userId, messageId, new ReactRequest("👍")));
@@ -142,7 +142,7 @@ class ReactionServiceTest {
 
     @Test
     void toggle_notMember_throwsNotMember() {
-        when(messageRepository.findById(messageId))
+        when(messageRepository.findByIdForUpdate(messageId))
                 .thenReturn(Optional.of(messageInConversation()));
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(false);
@@ -166,7 +166,7 @@ class ReactionServiceTest {
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> reactionService.toggle(userId, messageId, null));
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).findById(any());
+        verify(messageRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
@@ -176,7 +176,7 @@ class ReactionServiceTest {
                         new ReactRequest("👍".repeat(17))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).findById(any());
+        verify(messageRepository, never()).findByIdForUpdate(any());
     }
 
     @Test

@@ -26,9 +26,9 @@ import java.util.UUID;
  * <p>Anti-enumeration guarantees (§13): login returns the SAME
  * {@code INVALID_CREDENTIALS} whether the phone is unknown or the password is
  * wrong — an unparseable phone at login also maps to {@code INVALID_CREDENTIALS}
- * (unlike register, where bad input honestly returns {@code VALIDATION_FAILED}),
- * and an unknown account still pays one bcrypt compare against a dummy hash so
- * response timing does not reveal account existence.
+ * (unlike register, where bad input honestly returns {@code VALIDATION_FAILED}).
+ * Unknown accounts and unparseable phones both pay one bcrypt compare against a
+ * dummy hash to reduce timing-based account-enumeration signals.
  *
  * <p>Transaction note: {@link #refresh} is deliberately NOT {@code @Transactional}
  * at this level — when {@link TokenService#rotate} reports reuse/expiry, the
@@ -47,7 +47,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final TokenService tokenService;
 
-    /** Well-formed bcrypt used to equalize login timing for unknown accounts. */
+    /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
 
     public AuthService(UserRepository userRepository,
@@ -82,7 +82,7 @@ public class AuthService {
             // constraint is the final arbiter, mapped back to the same contract.
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
-        log.info("Registered new user id={}", user.getId());
+        log.info("Registered new account");
         return issueSession(user, deviceLabel);
     }
 
@@ -92,6 +92,7 @@ public class AuthService {
         try {
             phone = phoneService.toE164(request.phone());
         } catch (IllegalArgumentException e) {
+            passwordEncoder.matches(request.password(), dummyHash);
             throw invalidCredentials();
         }
 
@@ -120,8 +121,8 @@ public class AuthService {
             if (e.userId() != null) {
                 // Separate transaction → the revocation COMMITS although we then throw.
                 tokenService.revokeAllForUser(e.userId());
-                log.warn("Refresh-token {} detected; revoked all sessions of user {}",
-                        e.errorCode() == ApiErrorCode.TOKEN_REUSED ? "reuse" : "expiry", e.userId());
+                log.warn("Refresh-token {} detected; revoked all sessions",
+                        e.errorCode() == ApiErrorCode.TOKEN_REUSED ? "reuse" : "expiry");
             }
             throw ApiException.of(e.errorCode(), e.getMessage());
         }
@@ -157,7 +158,7 @@ public class AuthService {
         } else {
             tokenService.revokeAllForUser(userId);
         }
-        log.info("Password changed for user id={}", userId);
+        log.info("Password changed");
     }
 
     private AuthResponse issueSession(User user, String deviceLabel) {

@@ -1,0 +1,14 @@
+{
+  "id": "vi06",
+  "language": "VI",
+  "split": "HOLDOUT",
+  "messages": [
+    {"id": "vi06-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Nhóm thống nhất lịch demo vào thứ 6."},
+    {"id": "vi06-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Người B sẽ gửi checklist trước 4 giờ chiều mai."},
+    {"id": "vi06-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Mai nhóm mình bắt đầu lúc mấy giờ?"},
+    {"id": "vi06-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Tài liệu hiện có ba phần: giới thiệu, luồng chat và kiểm thử."},
+    {"id": "vi06-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Cần mở sẵn màn hình đăng nhập trước khi demo."},
+    {"id": "vi06-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Cảm ơn nhé."}
+  ],
+  "expected": {"decisions": ["vi06-m1"], "actions": ["vi06-m2"], "questions": ["vi06-m3"], "keyPoints": ["vi06-m4", "vi06-m5"]}
+}

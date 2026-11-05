@@ -21,6 +21,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -57,6 +59,10 @@ class GroupServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
+    private SimpUserRegistry simpUserRegistry;
+    @Mock
+    private SimpleBrokerMessageHandler simpleBrokerMessageHandler;
+    @Mock
     private com.nexachat.attachment.StorageService storageService;
 
     private GroupService groupService;
@@ -70,7 +76,8 @@ class GroupServiceTest {
     void setUp() {
         groupService = new GroupService(
                 conversationRepository, memberRepository, userRepository,
-                messageService, eventPublisher, storageService);
+                messageService, eventPublisher, storageService,
+                simpUserRegistry, simpleBrokerMessageHandler);
     }
 
     // ------------------------------------------------------------- fixtures

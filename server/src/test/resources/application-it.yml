@@ -14,6 +14,9 @@ spring:
     locations: classpath:db/migration
 
 nexachat:
+  presence:
+    # PresenceFlowIT verifies the real STOMP lifecycle without waiting five seconds.
+    disconnect-coalesce-ms: 0
   jwt:
     # Fixed HS256 secret (>= 32 bytes) — ITs must not depend on env vars.
     secret: "it-only-secret-0123456789abcdef-not-for-prod"

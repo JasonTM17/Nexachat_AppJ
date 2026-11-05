@@ -112,8 +112,8 @@ public class GlobalExceptionHandler {
      * Safety net for argument-level validation raised from services (e.g. phone
      * normalization). Expected-domain IllegalArgumentExceptions should normally be
      * translated to {@link ApiException} at the call site; this keeps the contract
-     * if one slips through. The exception message is logged, never echoed —
-     * it may contain user input (e.g. a rejected phone string).
+     * if one slips through. Only the exception class is logged; its message may
+     * contain user input (e.g. a rejected phone string).
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
@@ -124,8 +124,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
-        // Full stack trace stays in the server log; the client only sees the code.
-        log.error("Unhandled exception", ex);
+        // Avoid exception messages and stack traces that may contain request data or SQL.
+        log.error("Unhandled request exception ({})", ex.getClass().getSimpleName());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse.of(
                 ApiErrorCode.INTERNAL_ERROR, "Internal server error"));
     }

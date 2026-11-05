@@ -143,4 +143,14 @@ public class Message {
     public Instant getDeletedAt() {
         return deletedAt;
     }
+
+    public void editContent(String content, Instant editedAt) {
+        this.content = content;
+        this.editedAt = editedAt;
+    }
+
+    public void softDelete(Instant deletedAt) {
+        this.content = null;
+        this.deletedAt = deletedAt;
+    }
 }

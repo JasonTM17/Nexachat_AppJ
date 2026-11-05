@@ -7,6 +7,7 @@ import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.user.UserRepository;
 import com.nexachat.ws.dto.WsErrorResponse;
 import io.jsonwebtoken.JwtException;
 import org.slf4j.Logger;
@@ -43,9 +44,9 @@ import java.util.regex.Pattern;
  *       query param (§11.1: query params leak into access logs).</li>
  *   <li><b>SUBSCRIBE (authZ)</b>: {@code /topic/conversations.{uuid}} is
  *       allowed only for conversation members;
- *       {@code /user/queue/...} is allowed for any authenticated session (the
- *       user-destination resolver maps it to THIS session's queue — it cannot
- *       name another user's). Every other destination is denied by default.</li>
+ *       {@code /user/queue/{inbox,errors,presence,calls}} is allowed for an
+ *       authenticated session and resolves to that principal's own queue.
+ *       Every other destination is denied by default.</li>
  *   <li><b>SEND (authZ)</b>: {@code /app/conversations/{uuid}/...} re-checks
  *       membership before the frame can reach a {@code @MessageMapping} —
  *       belt-and-braces under the service-level check, and it stops
@@ -72,10 +73,15 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final Pattern APP_CONVERSATION =
             Pattern.compile("^/app/conversations/(" + UUID_PATTERN + ")/(messages|typing|read)$");
 
-    /** Any authenticated session may subscribe to its own user queue. */
-    private static final Pattern USER_QUEUE = Pattern.compile("^/user/queue/.+$");
+    /** Call signaling is conversation-scoped and remains member-checked here. */
+    private static final Pattern APP_CALL =
+            Pattern.compile("^/app/calls/(" + UUID_PATTERN + ")/signal$");
+
+    /** Authenticated sessions may subscribe only to the supported own queues. */
+    private static final Pattern USER_QUEUE = Pattern.compile("^/user/queue/(inbox|errors|presence|calls)$");
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
     private final ConversationMemberRepository memberRepository;
     private final RateLimitService rateLimitService;
     private final SimpMessagingTemplate messaging;
@@ -86,6 +92,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private final long typingWindowSeconds;
 
     public StompAuthChannelInterceptor(JwtService jwtService,
+                                       UserRepository userRepository,
                                        ConversationMemberRepository memberRepository,
                                        RateLimitService rateLimitService,
                                        @Lazy
@@ -100,6 +107,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                                        @Value("${nexachat.rate-limit.stomp.typing-window-seconds:10}")
                                        long typingWindowSeconds) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
         this.memberRepository = memberRepository;
         this.rateLimitService = rateLimitService;
         this.messaging = messaging;
@@ -136,7 +144,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         try {
             principal = jwtService.parseAccessToken(header.substring(BEARER_PREFIX.length()));
         } catch (JwtException | IllegalArgumentException e) {
-            log.warn("STOMP CONNECT rejected: {}", e.getMessage());
+            log.warn("STOMP CONNECT rejected: invalid access token");
+            return false;
+        }
+        if (!userRepository.existsById(principal.userId())) {
+            log.warn("STOMP CONNECT rejected: authenticated account no longer exists");
             return false;
         }
         accessor.setUser(new StompUserPrincipal(principal.userId()));
@@ -159,15 +171,15 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             UUID conversationId = UUID.fromString(topic.group(1));
             boolean member = memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
             if (!member) {
-                log.warn("STOMP SUBSCRIBE denied: {} is not a member of {}", userId, conversationId);
+                log.warn("STOMP SUBSCRIBE denied: caller is not a conversation member");
             }
             return member;
         }
         if (USER_QUEUE.matcher(destination).matches()) {
-            // /user/queue/* resolves to THIS session's queue only — safe to allow.
+            // The allowlist exposes only the authenticated user's supported queues.
             return true;
         }
-        log.warn("STOMP SUBSCRIBE denied: unauthorized destination {}", destination);
+        log.warn("STOMP SUBSCRIBE denied: unsupported destination");
         return false;
     }
 
@@ -187,7 +199,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             UUID conversationId = UUID.fromString(app.group(1));
             boolean member = memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
             if (!member) {
-                log.warn("STOMP SEND denied: {} is not a member of {}", userId, conversationId);
+                log.warn("STOMP SEND denied: caller is not a conversation member");
                 return false;
             }
             if ("messages".equals(app.group(2))) {
@@ -200,8 +212,19 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             }
             return true;
         }
+        Matcher call = APP_CALL.matcher(destination);
+        if (call.matches()) {
+            UUID conversationId = UUID.fromString(call.group(1));
+            boolean member = memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
+            if (!member) {
+                messaging.convertAndSendToUser(userId.toString(), "/queue/errors",
+                        new WsErrorResponse(ApiErrorCode.NOT_MEMBER.getCode(), null));
+                log.warn("STOMP call SEND denied: caller is not a conversation member");
+            }
+            return member;
+        }
         // Deny-by-default: only the frozen conversation actions are routable.
-        log.warn("STOMP SEND denied: unknown application destination {}", destination);
+        log.warn("STOMP SEND denied: unsupported application destination");
         return false;
     }
 
@@ -216,7 +239,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         }
         messaging.convertAndSendToUser(userId.toString(), "/queue/errors",
                 new WsErrorResponse(ApiErrorCode.RATE_LIMITED.getCode(), clientMessageId));
-        log.warn("STOMP {} SEND rate-limited for user {}", action, userId);
+        log.warn("STOMP {} SEND rate-limited", action);
         return false;
     }
 

@@ -7,6 +7,7 @@ import com.nexachat.conversation.dto.UnreadCountRow;
 import com.nexachat.message.Message;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.presence.PresenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,6 +31,8 @@ class InboxServiceTest {
     private ConversationMemberRepository memberRepository;
     @Mock
     private MessageRepository messageRepository;
+    @Mock
+    private PresenceService presenceService;
 
     private InboxService inboxService;
 
@@ -38,7 +42,9 @@ class InboxServiceTest {
 
     @BeforeEach
     void setUp() {
-        inboxService = new InboxService(memberRepository, messageRepository);
+        inboxService = new InboxService(memberRepository, messageRepository, presenceService);
+        org.mockito.Mockito.lenient().when(presenceService.peerPresence(any(UUID.class), anyCollection()))
+                .thenReturn(java.util.Map.of());
     }
 
     @Test
@@ -179,6 +185,28 @@ class InboxServiceTest {
         assertThat(entry.lastMessage().contentSnippet())
                 .hasSize(InboxService.SNIPPET_LENGTH + 1)
                 .endsWith("…");
+    }
+
+    @Test
+    void deletedLastMessageKeepsNeutralTombstonePreview() {
+        UUID lastMessageId = UUID.randomUUID();
+        Instant deletedAt = Instant.parse("2026-11-05T12:00:00Z");
+        InboxConversationRow row = new InboxConversationRow(
+                conversationId, Conversation.Type.DIRECT, null, null,
+                lastMessageId, 5L, Instant.now(), 0L);
+        when(memberRepository.findInboxConversations(userId)).thenReturn(List.of(row));
+        when(memberRepository.findInboxMemberViews(any())).thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(any(), any())).thenReturn(List.of());
+        when(messageRepository.findRowsByIdIn(List.of(lastMessageId))).thenReturn(List.of(
+                new MessageRow(lastMessageId, conversationId, 5L, partnerId, "P",
+                        Message.Type.TEXT, null, UUID.randomUUID(), null,
+                        Instant.now(), null, deletedAt)));
+
+        InboxEntry entry = inboxService.listInbox(userId).get(0);
+
+        assertThat(entry.lastMessage().seq()).isEqualTo(5L);
+        assertThat(entry.lastMessage().contentSnippet()).isNull();
+        assertThat(entry.lastMessage().deletedAt()).isEqualTo(deletedAt);
     }
 
     // --------------------------------------------------------------- authZ

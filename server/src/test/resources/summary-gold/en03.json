@@ -1,0 +1,14 @@
+{
+  "id": "en03",
+  "language": "EN",
+  "split": "DEV",
+  "messages": [
+    {"id": "en03-m1", "seq": 1, "senderId": "u1", "senderName": "Taylor", "text": "Search results show a snippet around each match."},
+    {"id": "en03-m2", "seq": 2, "senderId": "u2", "senderName": "Morgan", "text": "Let's go with name search for the first release."},
+    {"id": "en03-m3", "seq": 3, "senderId": "u1", "senderName": "Taylor", "text": "Morgan, please add a Vietnamese keyword test by Thursday."},
+    {"id": "en03-m4", "seq": 4, "senderId": "u2", "senderName": "Morgan", "text": "A result can open the matching conversation."},
+    {"id": "en03-m5", "seq": 5, "senderId": "u1", "senderName": "Taylor", "text": "Which words should be highlighted?"},
+    {"id": "en03-m6", "seq": 6, "senderId": "u2", "senderName": "Morgan", "text": "Search also supports message content."}
+  ],
+  "expected": {"decisions": ["en03-m2"], "actions": ["en03-m3"], "questions": ["en03-m5"], "keyPoints": ["en03-m1", "en03-m4", "en03-m6"]}
+}

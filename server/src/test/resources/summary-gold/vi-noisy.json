@@ -1,0 +1,17 @@
+{
+  "id": "vi-noisy",
+  "language": "VI",
+  "split": "HOLDOUT",
+  "messages": [
+    {"id": "vi-noisy-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "ok"},
+    {"id": "vi-noisy-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "haha"},
+    {"id": "vi-noisy-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "😂"},
+    {"id": "vi-noisy-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "https://example.invalid/path?ref=chat"},
+    {"id": "vi-noisy-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "sticker"},
+    {"id": "vi-noisy-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Thống nhất chọn phương án B."},
+    {"id": "vi-noisy-m7", "seq": 7, "senderId": "u1", "senderName": "Người A", "text": "Nhớ gửi bản tổng hợp trước thứ 6."},
+    {"id": "vi-noisy-m8", "seq": 8, "senderId": "u2", "senderName": "Người B", "text": "Ai sẽ kiểm tra nội dung?"},
+    {"id": "vi-noisy-m9", "seq": 9, "senderId": "u1", "senderName": "Người A", "text": "Bản tổng hợp gồm ba mục và một phụ lục."}
+  ],
+  "expected": {"decisions": ["vi-noisy-m6"], "actions": ["vi-noisy-m7"], "questions": ["vi-noisy-m8"], "keyPoints": ["vi-noisy-m6", "vi-noisy-m9"]}
+}

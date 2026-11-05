@@ -1,0 +1,14 @@
+{
+  "id": "vi02",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "vi02-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Lịch kiểm thử hiện có ba lượt: đăng nhập, gửi tin và kết nối lại."},
+    {"id": "vi02-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Mình đồng ý giữ ba lượt kiểm thử này."},
+    {"id": "vi02-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Nhớ chạy thử luồng kết nối lại vào ngày mai."},
+    {"id": "vi02-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Luồng kết nối lại sẽ giữ bản nháp khi mất mạng."},
+    {"id": "vi02-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Mốc kiểm thử đầu tiên là thứ 4."},
+    {"id": "vi02-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Ai có thể kiểm tra trên mạng yếu?"}
+  ],
+  "expected": {"decisions": ["vi02-m2"], "actions": ["vi02-m3"], "questions": ["vi02-m6"], "keyPoints": ["vi02-m1", "vi02-m4", "vi02-m5"]}
+}

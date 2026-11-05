@@ -29,6 +29,9 @@ nexachat:
     access-ttl-seconds: 900
     refresh-ttl-days: 14
   rate-limit:
+    messages:
+      edit-delete-per-minute: 30
+      search-per-minute: 60
     stomp:
       messages-per-window: 30
       window-seconds: 10
@@ -36,3 +39,15 @@ nexachat:
       typing-window-seconds: 10
   storage:
     root: ${STORAGE_ROOT:./data/uploads}
+  presence:
+    disconnect-coalesce-ms: 5000
+  summary:
+    provider: ${NEXACHAT_SUMMARY_PROVIDER:auto}
+    llm:
+      enabled: ${NEXACHAT_SUMMARY_LLM_ENABLED:false}
+      base-url: ${NEXACHAT_SUMMARY_LLM_BASE_URL:https://api.deepseek.com}
+      model: ${NEXACHAT_SUMMARY_LLM_MODEL:deepseek-flash}
+      api-key: ${NEXACHAT_SUMMARY_LLM_API_KEY:}
+      timeout-ms: ${NEXACHAT_SUMMARY_LLM_TIMEOUT_MS:30000}
+      max-input-chars: ${NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS:24000}
+      max-output-tokens: ${NEXACHAT_SUMMARY_LLM_MAX_OUTPUT_TOKENS:4000}

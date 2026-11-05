@@ -1,5 +1,7 @@
 package com.nexachat.config;
 
+import com.nexachat.auth.JwtProperties;
+import com.nexachat.auth.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -7,6 +9,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.env.PropertySource;
@@ -20,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ProductionConfigurationTest {
 
+    private static final String TEST_JWT_SECRET = "test-only-jwt-secret-with-at-least-32-bytes";
+
     @Test
     void productionDatasourceCredentialsRequireEnvironmentValues() throws IOException {
         PropertySource<?> production = new YamlPropertySourceLoader()
@@ -30,14 +35,19 @@ class ProductionConfigurationTest {
                 .isEqualTo("${DATABASE_USER}");
         assertThat(production.getProperty("spring.datasource.password"))
                 .isEqualTo("${DATABASE_PASSWORD}");
+        assertThat(production.getProperty("spring.datasource.url")).isEqualTo("${DATABASE_URL}");
+        assertThat(production.getProperty("nexachat.jwt.secret")).isEqualTo("${JWT_SECRET}");
+        assertThat(production.getProperty("nexachat.storage.root")).isEqualTo("${STORAGE_ROOT}");
     }
 
     @Test
-    void productionDatasourceBindsComposeSpringDatasourceEnvironment() throws IOException {
+    void productionDatasourceBindsComposeDatabaseEnvironment() throws IOException {
         productionContext(Map.of(
-                "SPRING_DATASOURCE_URL", "jdbc:postgresql://db:5432/nexachat",
-                "SPRING_DATASOURCE_USERNAME", "compose-user",
-                "SPRING_DATASOURCE_PASSWORD", "compose-password")).run(context -> {
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "compose-user",
+                "DATABASE_PASSWORD", "compose-password",
+                "JWT_SECRET", TEST_JWT_SECRET,
+                "STORAGE_ROOT", "/tmp/nexachat-test-uploads")).run(context -> {
             assertThat(context).hasNotFailed();
             DataSourceProperties dataSource = context.getBean(DataSourceProperties.class);
             assertThat(context.getEnvironment().getActiveProfiles()).contains("prod");
@@ -50,10 +60,53 @@ class ProductionConfigurationTest {
     }
 
     @Test
-    void productionDatasourceFailsWhenComposeCredentialsAreMissing() throws IOException {
-        productionContext(Map.of()).run(context -> {
+    void productionConfigurationUsesGracefulShutdownBoundedPoolAndUploadLimits() throws IOException {
+        PropertySource<?> production = productionProperties();
+
+        assertThat(production.getProperty("server.shutdown")).isEqualTo("graceful");
+        assertThat(production.getProperty("spring.lifecycle.timeout-per-shutdown-phase")).isEqualTo("20s");
+        assertThat(production.getProperty("spring.datasource.hikari.maximum-pool-size")).isEqualTo(10);
+        assertThat(production.getProperty("spring.datasource.hikari.minimum-idle")).isEqualTo(2);
+        assertThat(production.getProperty("spring.datasource.hikari.connection-timeout")).isEqualTo(30000);
+        assertThat(production.getProperty("spring.datasource.hikari.validation-timeout")).isEqualTo(5000);
+        assertThat(production.getProperty("spring.servlet.multipart.max-file-size")).isEqualTo("25MB");
+        assertThat(production.getProperty("spring.servlet.multipart.max-request-size")).isEqualTo("25MB");
+    }
+
+    @Test
+    void productionConfigurationKeepsErrorsRedactedAndLoggingAtInfo() throws IOException {
+        PropertySource<?> production = productionProperties();
+
+        assertThat(production.getProperty("management.endpoints.web.exposure.include")).isEqualTo("health");
+        assertThat(production.getProperty("server.error.include-exception")).isEqualTo(false);
+        assertThat(production.getProperty("server.error.include-message")).isEqualTo("never");
+        assertThat(production.getProperty("server.error.include-binding-errors")).isEqualTo("never");
+        assertThat(production.getProperty("server.error.include-stacktrace")).isEqualTo("never");
+        assertThat(production.getProperty("logging.level.root")).isEqualTo("INFO");
+        assertThat(production.getProperty("logging.level.com.nexachat")).isEqualTo("INFO");
+    }
+
+    @Test
+    void productionDatasourceFailsWhenRequiredCredentialsAreMissing() throws IOException {
+        productionContext(Map.of(
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "test-user",
+                "JWT_SECRET", TEST_JWT_SECRET,
+                "STORAGE_ROOT", "/tmp/nexachat-test-uploads")).run(context -> {
             assertThat(context).hasFailed();
-            assertThat(context.getStartupFailure()).hasStackTraceContaining("DATABASE_USER");
+            assertThat(context.getStartupFailure()).hasStackTraceContaining("DATABASE_PASSWORD");
+        });
+    }
+
+    @Test
+    void productionJwtSecretFailsFastWhenEnvironmentValueIsMissing() {
+        productionContext(Map.of(
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "test-user",
+                "DATABASE_PASSWORD", "test-password")).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure())
+                    .hasStackTraceContaining("must be at least 32 bytes (256-bit) for HS256");
         });
     }
 
@@ -70,11 +123,28 @@ class ProductionConfigurationTest {
                 })
                 .withPropertyValues("spring.profiles.active=prod")
                 .withUserConfiguration(DataSourceBindingConfiguration.class,
-                        ProductionDataSourceConfiguration.class);
+                        ProductionDataSourceConfiguration.class,
+                        ProductionJwtConfiguration.class);
+    }
+
+    private static PropertySource<?> productionProperties() throws IOException {
+        return new YamlPropertySourceLoader()
+                .load("production", new ClassPathResource("application-prod.yml"))
+                .get(0);
     }
 
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(DataSourceProperties.class)
     static class DataSourceBindingConfiguration {
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(JwtProperties.class)
+    static class ProductionJwtConfiguration {
+
+        @Bean
+        JwtService jwtService(JwtProperties properties) {
+            return new JwtService(properties);
+        }
     }
 }

@@ -1,0 +1,14 @@
+{
+  "id": "vi04",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "vi04-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Bản ghi chú có hai mục chính là quyền riêng tư và lưu trữ."},
+    {"id": "vi04-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Thống nhất không ghi nội dung tin nhắn vào log."},
+    {"id": "vi04-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Cần bổ sung ví dụ về thời gian lưu bộ nhớ đệm."},
+    {"id": "vi04-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Bộ nhớ đệm của bản tóm tắt hết hạn sau 24 giờ."},
+    {"id": "vi04-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Ai sẽ rà lại mô tả quyền riêng tư?"},
+    {"id": "vi04-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Nhóm giữ bản ghi chú trong tài liệu vận hành."}
+  ],
+  "expected": {"decisions": ["vi04-m2"], "actions": ["vi04-m3"], "questions": ["vi04-m5"], "keyPoints": ["vi04-m1", "vi04-m4", "vi04-m6"]}
+}

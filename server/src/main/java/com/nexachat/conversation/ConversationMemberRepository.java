@@ -5,6 +5,7 @@ import com.nexachat.conversation.dto.InboxConversationRow;
 import com.nexachat.conversation.dto.InboxMemberView;
 import com.nexachat.conversation.dto.MemberResponse;
 import com.nexachat.conversation.dto.UnreadCountRow;
+import com.nexachat.presence.DirectPeerPresenceRow;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -65,6 +66,29 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
+
+    @Query("""
+            SELECT DISTINCT peer.user.id
+            FROM ConversationMember own, ConversationMember peer
+            WHERE own.conversation.id = peer.conversation.id
+              AND own.user.id = :userId
+              AND own.conversation.type = com.nexachat.conversation.Conversation.Type.DIRECT
+              AND peer.user.id <> :userId
+            """)
+    List<UUID> findDirectPeerUserIds(@Param("userId") UUID userId);
+
+    @Query("""
+            SELECT new com.nexachat.presence.DirectPeerPresenceRow(
+                       own.conversation.id, peer.user.id, peer.user.showPresence, peer.user.lastSeenAt)
+            FROM ConversationMember own, ConversationMember peer
+            WHERE own.conversation.id = peer.conversation.id
+              AND own.user.id = :userId
+              AND own.conversation.type = com.nexachat.conversation.Conversation.Type.DIRECT
+              AND own.conversation.id IN :conversationIds
+              AND peer.user.id <> :userId
+            """)
+    List<DirectPeerPresenceRow> findDirectPeerPresence(
+            @Param("userId") UUID userId, @Param("conversationIds") Collection<UUID> conversationIds);
 
     /**
      * Membership row fetch (group phase): the role-aware variant of

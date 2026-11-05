@@ -35,7 +35,7 @@ class ConversationInboxControllerTest {
     @Test
     void noPaginationParamsKeepExistingListBodyAndNoCursorHeader() {
         List<InboxEntry> entries = List.of(new InboxEntry(
-                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L));
+                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L, null));
         when(inboxService.listInbox(userId)).thenReturn(entries);
 
         ResponseEntity<List<InboxEntry>> response = controller.inbox(
@@ -50,7 +50,7 @@ class ConversationInboxControllerTest {
     @Test
     void paginationReturnsSameListShapeAndCursorHeader() {
         List<InboxEntry> entries = List.of(new InboxEntry(
-                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L));
+                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L, null));
         when(inboxService.listInbox(userId, 20, "cursor-in"))
                 .thenReturn(new InboxService.InboxPage(entries, "cursor-out"));
 

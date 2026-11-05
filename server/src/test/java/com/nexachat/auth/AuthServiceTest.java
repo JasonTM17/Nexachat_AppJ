@@ -185,6 +185,7 @@ class AuthServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
         verify(userRepository, never()).findByPhone(anyString());
+        verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
     }
 
     // -------------------------------------------------------------- refresh

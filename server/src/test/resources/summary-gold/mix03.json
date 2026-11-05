@@ -1,0 +1,14 @@
+{
+  "id": "mix03",
+  "language": "VI",
+  "split": "HOLDOUT",
+  "messages": [
+    {"id": "mix03-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Chốt nhé, let's go with the simpler flow."},
+    {"id": "mix03-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Please update phần offline before Friday."},
+    {"id": "mix03-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Ai sẽ kiểm tra reconnect flow?"},
+    {"id": "mix03-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "The reconnect test passed on both devices."},
+    {"id": "mix03-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "The report has one section for offline behavior."},
+    {"id": "mix03-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "haha"}
+  ],
+  "expected": {"decisions": ["mix03-m1"], "actions": ["mix03-m2"], "questions": ["mix03-m3"], "keyPoints": ["mix03-m4", "mix03-m5"]}
+}

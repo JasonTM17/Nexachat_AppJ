@@ -1,0 +1,14 @@
+{
+  "id": "mix01",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "mix01-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "The draft includes the inbox and chat screen."},
+    {"id": "mix01-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Mình thống nhất giữ layout hiện tại."},
+    {"id": "mix01-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Người B, please add the offline hint before Friday."},
+    {"id": "mix01-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "The banner appears when the network is unavailable."},
+    {"id": "mix01-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Ai sẽ test lại reconnect flow?"},
+    {"id": "mix01-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Reconnect flow keeps the draft."}
+  ],
+  "expected": {"decisions": ["mix01-m2"], "actions": ["mix01-m3"], "questions": ["mix01-m5"], "keyPoints": ["mix01-m1", "mix01-m4", "mix01-m6"]}
+}

@@ -44,6 +44,15 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    @Column(name = "last_seen_at")
+    private Instant lastSeenAt;
+
+    @Column(name = "show_presence", nullable = false)
+    private boolean showPresence = true;
+
+    @Column(name = "ai_summary_consent", nullable = false)
+    private boolean aiSummaryConsent;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -90,6 +99,18 @@ public class User {
         return createdAt;
     }
 
+    public Instant getLastSeenAt() {
+        return lastSeenAt;
+    }
+
+    public boolean isShowPresence() {
+        return showPresence;
+    }
+
+    public boolean isAiSummaryConsent() {
+        return aiSummaryConsent;
+    }
+
     public void changeDisplayName(String displayName) {
         this.displayName = displayName;
     }
@@ -100,5 +121,17 @@ public class User {
 
     public void changePasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public void changeShowPresence(boolean showPresence) {
+        this.showPresence = showPresence;
+    }
+
+    public void changeAiSummaryConsent(boolean aiSummaryConsent) {
+        this.aiSummaryConsent = aiSummaryConsent;
+    }
+
+    public void recordLastSeen(Instant lastSeenAt) {
+        this.lastSeenAt = lastSeenAt;
     }
 }

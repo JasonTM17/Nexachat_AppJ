@@ -159,10 +159,13 @@ public class AttachmentService {
      * uploads are owner-only.
      */
     private void assertReadable(MessageAttachment attachment, UUID requesterId) {
+        Message bound = attachment.getMessage();
+        if (bound != null && bound.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+        }
         if (attachment.getOwner().getId().equals(requesterId)) {
             return;
         }
-        Message bound = attachment.getMessage();
         if (bound != null
                 && memberRepository.existsByConversation_IdAndUser_Id(
                         bound.getConversation().getId(), requesterId)) {

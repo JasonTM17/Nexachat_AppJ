@@ -16,6 +16,7 @@ public record ReplyRefResponse(UUID id,
                                UUID senderId,
                                String senderDisplayName,
                                String type,
+                               @JsonInclude(JsonInclude.Include.ALWAYS)
                                String content,
                                boolean deleted) {
 }

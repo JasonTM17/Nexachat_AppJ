@@ -1,0 +1,14 @@
+{
+  "id": "vi01",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "vi01-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Mọi người đã xem bản nháp giao diện chưa?"},
+    {"id": "vi01-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Bản nháp có hai màn: danh sách nhóm và cửa sổ chat."},
+    {"id": "vi01-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Nhóm thống nhất dùng bảng màu xanh cho bản giao diện."},
+    {"id": "vi01-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Người B, nhớ gửi ảnh chụp màn hình trước thứ 6."},
+    {"id": "vi01-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Nút gửi cần cao ít nhất 48dp."},
+    {"id": "vi01-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Ai sẽ rà lại phần tương phản?"}
+  ],
+  "expected": {"decisions": ["vi01-m3"], "actions": ["vi01-m4"], "questions": ["vi01-m6"], "keyPoints": ["vi01-m2", "vi01-m3", "vi01-m5"]}
+}

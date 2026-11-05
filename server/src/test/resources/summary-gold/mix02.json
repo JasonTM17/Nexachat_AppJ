@@ -1,0 +1,14 @@
+{
+  "id": "mix02",
+  "language": "EN",
+  "split": "DEV",
+  "messages": [
+    {"id": "mix02-m1", "seq": 1, "senderId": "u1", "senderName": "Taylor", "text": "Bản tóm tắt hiện có overview và key points."},
+    {"id": "mix02-m2", "seq": 2, "senderId": "u2", "senderName": "Morgan", "text": "We decided to keep the local engine as the default."},
+    {"id": "mix02-m3", "seq": 3, "senderId": "u1", "senderName": "Taylor", "text": "Morgan, nhớ review the summary output by Thursday."},
+    {"id": "mix02-m4", "seq": 4, "senderId": "u2", "senderName": "Morgan", "text": "Citations link each item back to a message."},
+    {"id": "mix02-m5", "seq": 5, "senderId": "u1", "senderName": "Taylor", "text": "Ai sẽ kiểm tra language detection?"},
+    {"id": "mix02-m6", "seq": 6, "senderId": "u2", "senderName": "Morgan", "text": "The output follows the requested language."}
+  ],
+  "expected": {"decisions": ["mix02-m2"], "actions": ["mix02-m3"], "questions": ["mix02-m5"], "keyPoints": ["mix02-m1", "mix02-m4", "mix02-m6"]}
+}

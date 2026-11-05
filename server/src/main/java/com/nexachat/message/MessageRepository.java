@@ -1,12 +1,15 @@
 package com.nexachat.message;
 
 import com.nexachat.message.dto.MessageRow;
+import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.ReplyRefRow;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.Collection;
 import java.util.List;
@@ -14,6 +17,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<Message, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT m FROM Message m WHERE m.id = :messageId")
+    Optional<Message> findByIdForUpdate(@Param("messageId") UUID messageId);
 
     /** Latest sequence within one conversation; zero for an empty conversation. */
     @Query("SELECT COALESCE(MAX(m.seq), 0) FROM Message m WHERE m.conversation.id = :conversationId")
@@ -58,6 +65,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     Optional<MessageRow> findRowBySenderAndClientMessageId(@Param("senderId") UUID senderId,
                                                            @Param("clientMessageId") UUID clientMessageId);
 
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.id = :messageId
+            """)
+    Optional<MessageRow> findRowById(@Param("messageId") UUID messageId);
+
     /**
      * Cursor page (plan §10.3): newest-first via the
      * {@code idx_msg_conv_seq (conversation_id, seq DESC)} index;
@@ -94,6 +110,29 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<MessageRow> findRowsAfter(@Param("conversationId") UUID conversationId,
                                    @Param("afterSeq") long afterSeq,
                                    Pageable pageable);
+
+    /** Conversation-scoped literal substring search, ordered through idx_msg_conv_seq. */
+    @Query(value = """
+            SELECT m.id AS id, m.conversation_id AS "conversationId", m.seq AS seq,
+                   m.sender_id AS "senderId", u.display_name AS "senderDisplayName",
+                   m.type AS type, m.content AS content,
+                   m.client_message_id AS "clientMessageId", reply.id AS "replyToId",
+                   m.created_at AS "createdAt", m.edited_at AS "editedAt",
+                   m.deleted_at AS "deletedAt"
+            FROM messages m
+            JOIN users u ON u.id = m.sender_id
+            LEFT JOIN messages reply ON reply.id = m.reply_to_id
+            WHERE m.conversation_id = :conversationId
+              AND m.type = 'TEXT'
+              AND m.deleted_at IS NULL
+              AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
+              AND public.unaccent(m.content) ILIKE public.unaccent(:pattern) ESCAPE chr(92)
+            ORDER BY m.seq DESC
+            """, nativeQuery = true)
+    List<MessageSearchProjection> searchTextRows(@Param("conversationId") UUID conversationId,
+                                                 @Param("pattern") String pattern,
+                                                 @Param("beforeSeq") Long beforeSeq,
+                                                 Pageable pageable);
 
     /** Batch projection fetch for inbox {@code lastMessage} hydration — one IN query. */
     @Query("""

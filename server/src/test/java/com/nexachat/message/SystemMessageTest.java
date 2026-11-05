@@ -48,6 +48,8 @@ class SystemMessageTest {
     @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
+    private PinnedMessageRepository pinnedMessageRepository;
+    @Mock
     private StorageService storageService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -61,7 +63,8 @@ class SystemMessageTest {
     void setUp() {
         messageService = new MessageService(
                 messageRepository, attachmentRepository, reactionRepository,
-                conversationRepository, memberRepository, storageService, eventPublisher);
+                conversationRepository, memberRepository, pinnedMessageRepository,
+                storageService, eventPublisher);
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
         lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());

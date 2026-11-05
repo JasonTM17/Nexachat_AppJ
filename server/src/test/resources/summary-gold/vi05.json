@@ -1,0 +1,14 @@
+{
+  "id": "vi05",
+  "language": "VI",
+  "split": "DEV",
+  "messages": [
+    {"id": "vi05-m1", "seq": 1, "senderId": "u1", "senderName": "Người A", "text": "Tìm kiếm có thể lọc theo tên và theo nội dung tin nhắn."},
+    {"id": "vi05-m2", "seq": 2, "senderId": "u2", "senderName": "Người B", "text": "Chốt ưu tiên lọc theo tên trong bản đầu."},
+    {"id": "vi05-m3", "seq": 3, "senderId": "u1", "senderName": "Người A", "text": "Người B, giúp thêm kiểm thử cho từ khóa tiếng Việt trước thứ 5."},
+    {"id": "vi05-m4", "seq": 4, "senderId": "u2", "senderName": "Người B", "text": "Kết quả tìm kiếm vẫn hiển thị đoạn trích quanh từ khóa."},
+    {"id": "vi05-m5", "seq": 5, "senderId": "u1", "senderName": "Người A", "text": "Màn kết quả có thể mở đúng cuộc trò chuyện."},
+    {"id": "vi05-m6", "seq": 6, "senderId": "u2", "senderName": "Người B", "text": "Từ khóa nào nên được đánh dấu?"}
+  ],
+  "expected": {"decisions": ["vi05-m2"], "actions": ["vi05-m3"], "questions": ["vi05-m6"], "keyPoints": ["vi05-m1", "vi05-m4", "vi05-m5"]}
+}

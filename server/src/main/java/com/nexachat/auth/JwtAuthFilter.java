@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.user.UserRepository;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -39,9 +40,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(JwtService jwtService, UserRepository userRepository) {
         this.jwtService = jwtService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -52,9 +55,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith(BEARER_PREFIX)) {
             try {
                 JwtPrincipal principal = jwtService.parseAccessToken(header.substring(BEARER_PREFIX.length()));
-                var authentication = new UsernamePasswordAuthenticationToken(principal, null, List.of());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (userRepository.existsById(principal.userId())) {
+                    var authentication = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
+                }
             } catch (ExpiredJwtException e) {
                 request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_EXPIRED);
             } catch (JwtException | IllegalArgumentException e) {

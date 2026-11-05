@@ -1,0 +1,28 @@
+{
+  "id": "en-long",
+  "language": "EN",
+  "split": "DEV",
+  "messages": [
+    {"id": "en-long-m1", "seq": 1, "senderId": "u1", "senderName": "Taylor", "text": "The team listed the chat screens for the review."},
+    {"id": "en-long-m2", "seq": 2, "senderId": "u2", "senderName": "Morgan", "text": "The inbox shows unread counts beside each conversation."},
+    {"id": "en-long-m3", "seq": 3, "senderId": "u1", "senderName": "Taylor", "text": "The chat view keeps the draft after rotation."},
+    {"id": "en-long-m4", "seq": 4, "senderId": "u2", "senderName": "Morgan", "text": "Search opens the conversation at the matching message."},
+    {"id": "en-long-m5", "seq": 5, "senderId": "u1", "senderName": "Taylor", "text": "The profile page stores the selected language."},
+    {"id": "en-long-m6", "seq": 6, "senderId": "u2", "senderName": "Morgan", "text": "The group screen lists each member and role."},
+    {"id": "en-long-m7", "seq": 7, "senderId": "u1", "senderName": "Taylor", "text": "The offline queue retries when the connection returns."},
+    {"id": "en-long-m8", "seq": 8, "senderId": "u2", "senderName": "Morgan", "text": "The message composer supports reply and attachment actions."},
+    {"id": "en-long-m9", "seq": 9, "senderId": "u1", "senderName": "Taylor", "text": "The current plan covers login and registration."},
+    {"id": "en-long-m10", "seq": 10, "senderId": "u2", "senderName": "Morgan", "text": "The demo uses synthetic conversation content."},
+    {"id": "en-long-m11", "seq": 11, "senderId": "u1", "senderName": "Taylor", "text": "The test checklist includes reconnect and message delivery."},
+    {"id": "en-long-m12", "seq": 12, "senderId": "u2", "senderName": "Morgan", "text": "The settings page has a privacy section."},
+    {"id": "en-long-m13", "seq": 13, "senderId": "u1", "senderName": "Taylor", "text": "The cache entry expires after one day."},
+    {"id": "en-long-m14", "seq": 14, "senderId": "u2", "senderName": "Morgan", "text": "The UI labels local summaries separately from AI summaries."},
+    {"id": "en-long-m15", "seq": 15, "senderId": "u1", "senderName": "Taylor", "text": "We agreed to keep the current screen order for the demo."},
+    {"id": "en-long-m16", "seq": 16, "senderId": "u2", "senderName": "Morgan", "text": "Morgan, please verify the offline banner before Friday."},
+    {"id": "en-long-m17", "seq": 17, "senderId": "u1", "senderName": "Taylor", "text": "Which screen should we show first?"},
+    {"id": "en-long-m18", "seq": 18, "senderId": "u2", "senderName": "Morgan", "text": "The inbox gives a clear starting point."},
+    {"id": "en-long-m19", "seq": 19, "senderId": "u1", "senderName": "Taylor", "text": "The review can focus on the message journey."},
+    {"id": "en-long-m20", "seq": 20, "senderId": "u2", "senderName": "Morgan", "text": "The journey ends with a read receipt."}
+  ],
+  "expected": {"decisions": ["en-long-m15"], "actions": ["en-long-m16"], "questions": ["en-long-m17"], "keyPoints": ["en-long-m7", "en-long-m14", "en-long-m20"]}
+}

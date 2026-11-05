@@ -5,6 +5,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.message.dto.EditMessageRequest;
 import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.SendMessageRequest;
 import jakarta.validation.Valid;
@@ -12,8 +13,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -67,6 +70,31 @@ public class MessageController {
         return ResponseEntity
                 .status(result.created() ? HttpStatus.CREATED : HttpStatus.OK)
                 .body(result.message());
+    }
+
+    @PatchMapping("/messages/{messageId}")
+    public MessageResponse edit(@AuthenticationPrincipal JwtPrincipal principal,
+                                @PathVariable UUID conversationId,
+                                @PathVariable UUID messageId,
+                                @Valid @RequestBody EditMessageRequest request) {
+        return messageService.edit(requireUserId(principal), conversationId, messageId, request.content());
+    }
+
+    @DeleteMapping("/messages/{messageId}")
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal JwtPrincipal principal,
+                                       @PathVariable UUID conversationId,
+                                       @PathVariable UUID messageId) {
+        messageService.delete(requireUserId(principal), conversationId, messageId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/messages/search")
+    public MessagePageResponse search(@AuthenticationPrincipal JwtPrincipal principal,
+                                      @PathVariable UUID conversationId,
+                                      @RequestParam String q,
+                                      @RequestParam(required = false) Integer limit,
+                                      @RequestParam(required = false) Long beforeSeq) {
+        return messageService.search(requireUserId(principal), conversationId, q, limit, beforeSeq);
     }
 
     @PostMapping("/read")

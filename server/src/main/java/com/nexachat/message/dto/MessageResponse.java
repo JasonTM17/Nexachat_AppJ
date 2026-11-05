@@ -23,6 +23,7 @@ public record MessageResponse(
         UUID senderId,
         String senderDisplayName,
         String type,
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         String content,
         UUID clientMessageId,
         UUID replyToId,
