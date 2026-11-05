@@ -170,6 +170,26 @@ Screenshots captured on `emulator-5558` validating the live backend summary inte
 | `s5-21-sheet-ready-light-en.png` | Summary bottom sheet in English: "Conversation summary", "AI" badge, "Last 50", "Overview", "Key points" | light / en |
 | `s5-22-presence-ticker-1min-dark-vi.png` | Direct chat top bar with offline peer showing relative presence subtitle advanced to "Hoạt động 1 phút trước" via UI clock ticker | dark / vi |
 
+## 2.6. Stage 6 — 1-to-1 Voice Call verification (`s6-*`)
+
+| File | Screen | Theme / locale |
+|---|---|---|
+| `s6-01-outgoing-calling-dark-vi.png` | Outgoing calling screen ("Đang gọi…", avatar initials "MK", "Minh Khoa", "HỦY CUỘC GỌI") in dark theme | dark / vi |
+| `s6-02-outgoing-calling-light-vi.png` | Outgoing calling screen in light theme | light / vi |
+| `s6-03-outgoing-calling-dark-en.png` | Outgoing calling screen in English ("Calling…", "CANCEL CALL") | dark / en |
+| `s6-04-outgoing-calling-landscape-vi.png` | Outgoing calling screen in landscape orientation (2400×1080) with centered controls | dark / vi |
+| `s6-05-outgoing-calling-fontscale15-vi.png` | Outgoing calling screen at 1.5× font scale with no label clipping | dark / vi |
+| `s6-06-connected-call-dark-vi.png` | Connected call screen with mute, speaker, and "KẾT THÚC" controls active | dark / vi |
+| `s6-07-connected-call-muted-dark-vi.png` | Connected call screen with microphone muted (button toggle state showing "BẬT MIC") | dark / vi |
+| `s6-08-connected-call-speaker-dark-vi.png` | Connected call screen with speakerphone enabled (button toggle state showing "LOA TRONG") | dark / vi |
+| `s6-09-connected-call-landscape-vi.png` | Connected call screen surviving device rotation to landscape (2400×1080) | dark / vi |
+| `s6-10-incoming-call-activity-dark-vi.png` | Incoming call full-screen activity over lock screen with "TỪ CHỐI" and "TRẢ LỜI" action buttons | dark / vi |
+| `s6-11-incoming-call-notification-vi.png` | Incoming call heads-up notification in notification shade with "Trả lời" and "Từ chối" quick actions | dark / vi |
+| `s6-12-chat-history-call-log-vi.png` | Direct chat conversation rendering localized outgoing call duration bubble ("Cuộc gọi thoại đi · 0:18") | dark / vi |
+| `s6-13-chat-missed-call-line-vi.png` | Direct chat conversation rendering localized cancelled call bubble ("Cuộc gọi thoại đã hủy") | dark / vi |
+| `s6-14-permission-dialog-mic-vi.png` | System `RECORD_AUDIO` permission request dialog triggered on call initiation | dark / vi |
+| `s6-15-permission-denied-fallback-dialog-vi.png` | Informational dialog on microphone permission denial explaining mic requirement for calling | dark / vi |
+
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 
 - No probe/e2e/test strings: the demo data was re-seeded and the two
