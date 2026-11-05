@@ -182,6 +182,34 @@ falls back to the REST POST with the *same* `SendMessageRequest` — identical
   same transaction, same broadcast. Any divergence would be a bug in one
   adapter, not in the model.
 
+### Q1.7 — Tại sao codebase vừa Kotlin vừa Java?
+
+*Why is the Android codebase split between Kotlin and Java?*
+
+**Model answer.** The split follows the project's language rule, not a
+technical limitation. Jetpack Compose is a Kotlin-only UI toolkit, so every
+`@Composable` screen and preview stays Kotlin — that is framework necessity.
+All **new** non-Compose Android code is written in Java: pure-logic helpers
+(`PresenceFormatter`, `SearchHighlightHelper`, `ThemeMapper`, `ForwardFilter`,
+`MessageUiRules`, `MessageResolver`, `SearchUiRules`, `ChatUiRules`), the call
+core/media/service/UI layer, the summary data layer, the Hilt modules (`di/`),
+and their unit tests. Existing Kotlin files (ViewModels, repositories, screens)
+are not converted; edits to them stay Kotlin. The server is Java throughout.
+The rule keeps the UI idiomatic while making the business and domain logic
+uniformly Java for the course's Java-focused review
+(`android/app/src/main/java/com/nexachat/core/ui/*.java`,
+`android/app/src/main/java/com/nexachat/call/**`,
+`android/app/src/main/java/com/nexachat/summary/**`).
+
+**Follow-up traps.**
+- *"Is Compose really unavailable in Java?"* — Yes. Compose is built on Kotlin
+  coroutines, inline functions and compiler plugins; there is no Java API.
+- *"So a Java helper cannot be a Composable?"* — Correct. A Composable that
+  needs the logic calls the Java helper; the helper never imports Compose.
+- *"Does the mixed language break Hilt or tests?"* — No; both languages compile
+  to the same JVM bytecode and Hilt's generated code is language-agnostic. The
+  Java helpers have plain JUnit tests (`core/ui/*Test.java`).
+
 ---
 
 ## 2. Xác thực & bảo mật — Auth & security
@@ -350,7 +378,7 @@ type (`MessageService.java:371-396`).
 
 **Follow-up traps.**
 - *"Why not trust Content-Type?"* — It is client-supplied. The magic-byte
-  check is the only ground truth; `MagicBytesTest` (18 tests) includes the
+  check is the only ground truth; `MagicBytesTest` includes the
   disguised-executable cases.
 - *"A member could fetch an attachment by guessing the id?"* — UUIDs are not
   the boundary; membership is. Guessing an id of a conversation you are not
@@ -388,12 +416,13 @@ enumerates valid accounts.
 
 **Model answer.** Bucket4j token-buckets via `RateLimitService`
 (`auth/RateLimitService.java`) — greedy refill so the budget trickles back
-continuously rather than refilling as a lump at the window boundary. Three
+continuously rather than refilling as a lump at the window boundary. Four MVC
 interceptors, wired in `config/WebConfig.java:32-40`: per-IP buckets on the
 credential endpoints — login 10/5min, register 10/5min, refresh 30/5min
 (`RateLimitInterceptor.java:37-40`); per-user buckets on
-`GET /users/search` (30/min) and `POST /contacts` (30/min). Interceptors
-rather than servlet filters so rejections flow through
+`GET /users/search` (30/min), `POST /contacts` (30/min), and conversation
+message edit/delete (30/min shared) and message search (60/min). They run as
+MVC interceptors rather than servlet filters, so rejections flow through
 `GlobalExceptionHandler` as the standard
 `429 {"error":{"code":"RATE_LIMITED","retryAfterSeconds"}}` envelope.
 Client IP is `getRemoteAddr()` — `X-Forwarded-For` is deliberately *not*
@@ -638,6 +667,12 @@ dropped every error frame. The fix: match on the **`subscription` header**
 `ChatEvent.SendRejected`, which flips the outbox row `SENDING → FAILED`
 (`MessageRepository.kt:465-467`).
 
+Malformed STOMP body conversion or bean-validation failures use the generic
+messaging exception handler and return `VALIDATION_FAILED` without
+`clientMessageId`; unexpected handler exceptions return `INTERNAL_ERROR`, also
+without the id, because the body may not have parsed
+(`ws/WsMessageController.java`).
+
 **Follow-up traps.**
 - *"Why does Spring rewrite the destination at all?"* — `/user/queue/errors`
   is a logical name; the broker must resolve it to *this* session's queue so
@@ -656,8 +691,10 @@ dropped every error frame. The fix: match on the **`subscription` header**
 
 **Model answer.** Two surfaces with different jobs (`docs/websocket-protocol.md` §4).
 `/topic/conversations.{id}` is the room channel — members *watching* the
-conversation get `MESSAGE_CREATED`, `MESSAGE_READ`, `USER_TYPING`,
-`REACTION_UPDATED`, `PIN_UPDATED`, `CONVERSATION_UPDATED`.
+conversation get `MESSAGE_CREATED`, `MESSAGE_UPDATED`, `MESSAGE_DELETED`,
+`MESSAGE_READ`, `USER_TYPING`, `REACTION_UPDATED`, `PIN_UPDATED`, and
+`CONVERSATION_UPDATED`. Presence events go to `/user/queue/presence`, not the
+conversation topic.
 `/user/queue/inbox` is the per-session badge channel — `MESSAGE_CREATED` is
 additionally pushed to *every member's* inbox queue so their unread count
 updates even when nobody is subscribed to the topic
@@ -706,28 +743,141 @@ conversation is `VALIDATION_FAILED`, not a silent cross-room dedup
   and `MessageFlowIT.concurrentDuplicateClientMessageIdReturnsOneRowAndRebroadcastsBothCalls`
   (real Postgres, concurrent senders).
 
-### Q3.9 — Tại sao không có presence / online dot?
+### Q3.9 — Presence được giới hạn và ẩn theo cài đặt thế nào?
 
-*Why is there no presence / online indicator?*
+*How is presence scoped and controlled by the privacy setting?*
 
-**Model answer.** Presence is genuinely not implemented, and the UI was cleaned
-rather than faked. `WsEventType` carries the `USER_ONLINE`/`USER_OFFLINE`
-vocabulary (`ws/WsEventType.java:8-9`), but nothing emits those values: the
-server has no broker session connect/disconnect listeners, so it cannot know
-who is online. The Android UI therefore had its online dot removed instead of
-showing a permanently-offline lie. Presence needs (a) STOMP session
-connect/disconnect listeners on the broker, (b) a contract surface for
-`USER_ONLINE`/`USER_OFFLINE`, and (c) a client presence store — a non-trivial
-feature, listed as deferred in `docs/known-limitations.md` §2.
+**Model answer.** `GET/PATCH /api/v1/users/me/settings` stores the user's
+`showPresence` preference. The server tracks authenticated STOMP sessions in
+the in-memory `PresenceSessionRegistry`; only DIRECT peers receive online and
+last-seen updates, and group conversations receive none. Turning presence off
+suppresses that user's state from peer inboxes and events. It is one-way: the
+user can still see peers who have enabled presence. The last session disconnect
+records `last_seen_at`; an offline event is delayed up to five seconds to avoid
+a short reconnect flicker (`presence/PresenceSessionRegistry.java`,
+`PresenceService.java`, `UserSettingsService.java`). This state is per server
+process, so it does not scale across backend nodes (`docs/known-limitations.md`).
 
 **Follow-up traps.**
-- *"Couldn't you infer presence from the heartbeat?"* — A dead-heartbeat
-  detection (~30 s) only tells you a *socket* died, not that the user left;
-  mapping that to per-user presence would be a guess. Honest absence beats a
-  wrong green dot.
-- *"Is the vocabulary a broken promise?"* — No: it is documented contract
-  vocabulary for a later phase, exactly as `MESSAGE_UPDATED`/`MESSAGE_DELETED`
-  exist before their endpoints ship.
+- *"Can a user see presence from group members?"* — No; presence fan-out and
+  inbox status are restricted to DIRECT peers.
+- *"Does hiding my status hide the other person's status from me?"* — No, the
+  preference controls only the subject's own presence.
+
+### Q3.10 — Edit/delete tin nhắn hoạt động và đồng bộ thế nào?
+
+*How do message edits and deletions work and stay synchronized?*
+
+**Model answer.** The REST routes are
+`PATCH` and `DELETE /api/v1/conversations/{id}/messages/{messageId}`. Only a
+conversation member who authored the message may mutate it. Edit accepts live
+`TEXT` messages, trims and validates the content, and sets `editedAt`. An unchanged normalized value is a successful
+no-op. Delete is a soft delete: it retains the row and `seq`, sets `deletedAt`,
+clears content, and removes reactions and pins. After commit, the server sends
+`MESSAGE_UPDATED` or `MESSAGE_DELETED`; clients update Room, which remains the
+render source. Deleted messages remain tombstones in history, while their
+attachment metadata and stored bytes are retained but cannot be read through
+that deleted message (`MessageService.java`, `MessageBroadcastListener.java`,
+`MessageMutationServiceTest`).
+
+**Follow-up traps.**
+- *"Can I edit a photo or delete another user's message?"* — No; only the
+  author can mutate, and only `TEXT` messages can be edited.
+- *"Can a deleted message still be reacted to or pinned?"* — No; both services
+  reject it with `MESSAGE_DELETED`.
+
+### Q3.11 — Tìm kiếm tin nhắn dùng thuật toán và giới hạn nào?
+
+*What search method and limits apply to conversation messages?*
+
+**Model answer.** `GET /api/v1/conversations/{id}/messages/search` searches
+non-deleted `TEXT` rows in one conversation. `q` is trimmed and must contain
+2–100 characters; the page defaults to 20 and is capped at 50, with optional
+`beforeSeq` pagination. The query uses escaped `unaccent` + `ILIKE`, so the
+match is case- and accent-insensitive and `%`, `_`, and `\` are treated
+literally. It is limited to 60 requests per user per minute. There is no
+trigram index yet, so larger conversations may require scanning many rows
+(`MessageService.java`, `MessageRepository.java`,
+`MessageRateLimitInterceptor.java`, `docs/known-limitations.md`).
+
+**Follow-up traps.**
+- *"Does it search attachments or deleted messages?"* — No; only live text
+  content is matched.
+- *"Why escape `%` and `_`?"* — They have wildcard meaning in `LIKE`; escaping
+  them preserves literal substring search.
+
+### Q3.12 — Edit/delete gửi hai lần thì sao? Soft delete vs hard delete?
+
+*What happens when the same edit or delete is sent twice — and why soft delete?*
+
+**Model answer.** Both mutations are idempotent at the service level. A repeated
+`PATCH` with the same normalized content is a successful no-op and emits no
+`MESSAGE_UPDATED`; a repeated `DELETE` finds `deletedAt` already set and returns
+the same `204` without clearing anything twice. Delete is a **soft delete**: the
+row and its global `seq` are retained, `deletedAt` is set, `content` is cleared,
+and reaction rows plus any pin are removed. The client renders a tombstone
+("Tin nhắn đã bị xoá") at the original position instead of dropping the bubble,
+so history stays coherent and reply quotes keep their target. A hard delete would
+break `reply_to_id` and pin/reaction FK integrity and would leave gaps in the
+sequence that other clients may already have rendered
+(`MessageService.java`, `MessageMutationServiceTest`, `MessageDeletedEvent.java`).
+Attachment metadata and stored bytes are retained but are no longer readable
+through the deleted message.
+
+**Follow-up traps.**
+- *"Does a tombstone keep its reactions?"* — No; reactions are removed on
+  delete, and reacting to a deleted message returns `MESSAGE_DELETED`.
+- *"Can I restore a deleted message?"* — Not through the API; the content is
+  cleared. Restoration would need a backup/undo feature.
+- *"Why keep the row at all?"* — Reply quotes, pin history, and sequence
+  ordering all reference the message id; soft delete preserves referential
+  integrity.
+
+### Q3.13 — Presence: tại sao trễ 5 giây và sao chỉ DIRECT peer?
+
+*Why is the offline event delayed five seconds, and why do only direct peers see presence?*
+
+**Model answer.** Presence is scoped to DIRECT peers because that is the only
+place the UI shows it (chat header + inbox dot); groups receive no presence, and
+the `show_presence` setting is one-way — hiding your own state does not hide
+others' state from you. The five-second delay is a **coalescing window**: when a
+session disconnects, the server waits up to 5 s before emitting `USER_OFFLINE`,
+so a quick reconnect (network blip, activity switch, heartbeat timeout) cancels
+the transient offline event instead of flickering the peer's UI. The delay is
+bounded and server-side (`PresenceSessionRegistry`), and the last disconnect
+still persists `users.last_seen_at`. The registry is in-memory and single-node,
+so it does not span backend instances.
+
+**Follow-up traps.**
+- *"What if the user stays offline longer than 5 s?"* — The offline event is
+  emitted after the window and peers flip to "Hoạt động X phút trước".
+- *"Is the 5 s delay client or server?"* — Server. The client applies
+  `USER_ONLINE` immediately and only learns about offline through the event.
+- *"Can I hide from one person only?"* — No; it is an account-level one-way
+  switch, not per-contact.
+
+### Q3.14 — Search: unaccent + ILIKE và escape `%`/`_` — tại sao không dùng trigram?
+
+*How does message search fold diacritics, why are `%` and `_` literal, and why is there no trigram index?*
+
+**Model answer.** The query runs as escaped `unaccent` + `ILIKE` against
+non-deleted `TEXT` rows in one conversation (`MessageRepository`). `unaccent`
+strips diacritics so `khoa` matches `Khoa`/`KHOA`, and `ILIKE` folds case. `%`,
+`_`, and `\` are escaped first so they are treated as literal characters, not
+`LIKE` wildcards — a user searching `100%` should find the literal text, not
+everything starting with `100`. There is currently **no trigram index** on the
+substring predicate; at demo scale the planner scans the conversation's rows
+using the existing `(conversation_id, seq)` index, and the page is bounded
+(default 20, max 50). This is recorded honestly as a scale limitation rather
+than claimed as a fast substring search.
+
+**Follow-up traps.**
+- *"Why not `pg_trgm`?"* — `pg_trgm` is installed (V1) and used for the
+  displayName search index; the message substring predicate does not have a
+  trigram index yet, so large conversations may scan many rows.
+- *"Does search see attachments or deleted messages?"* — No; only live text.
+- *"Is the limit 2–100 characters?"* — Yes; shorter or longer `q` is
+  `VALIDATION_FAILED`.
 
 ---
 
@@ -802,7 +952,7 @@ the bounded ≤3 list costs a constant number of queries.
 the member row's `role`. Pinning: in DIRECT, **any member** may pin/unpin;
 in GROUP, **ADMIN only** — `requirePinRole` throws `NOT_ADMIN` for a
 non-admin group member (`PinService.java:192-198`). The same rule is
-surfaced client-side: `conversations.myRole` (Room v6) persists the
+  surfaced client-side: `conversations.myRole` (Room v7) persists the
 caller's member row from the inbox payload, `ChatViewModel.canPin =
 !isGroup || myRole == "ADMIN"` gates the long-press Pin item, and the
 server remains the real boundary if the gate is bypassed. Group
@@ -861,7 +1011,7 @@ placeholder from that flag. Two supporting choices: the send path requires
 the reply target to exist and live in the *same* conversation — quoting
 across conversations is rejected `VALIDATION_FAILED`
 (`MessageService.java:304-325`) — and the client denormalizes
-`replyToSenderName`/`replyToSnippet` onto its own row (Room v6 — added back at v2→v3,
+`replyToSenderName`/`replyToSnippet` onto its own row (added in Room migration v2→v3,
 `Entities.kt:29-35`), so the quote block still renders when the original is
 outside the loaded window.
 
@@ -870,10 +1020,9 @@ outside the loaded window.
   deleting it would destroy the replier's content over someone else's
   deletion. The FK is intentionally *not* `ON DELETE CASCADE` (soft-delete
   model — `deleted_at` keeps the row anyway).
-- *"Is edit/delete shipped?"* — `edited_at`/`deleted_at` are plumbed through
-  DTOs and the reply preview, but no edit/delete endpoint ships — an honest
-  deferred item (`docs/known-limitations.md` §2); the reply-degraded path is
-  the proof the schema anticipates it.
+- *"What happens to a reply when its target is deleted?"* — The reply remains;
+  its preview keeps identity but has `content: null` and `deleted: true`. The
+  target itself remains a tombstone in history.
 
 ### Q4.6 — Tại sao broadcast ngay cả no-op? "Replayed frame is truthful" nghĩa là gì?
 
@@ -927,6 +1076,23 @@ explicit "unreachable" is honest.
 - *"Proof?"* — `MessageRepositoryTest` covers `loadUntilLoaded`; the
   reverse-index mapping is unit-tested by `ChatUiLogicTest`.
 
+### Q4.8 — Chuyển tiếp tin nhắn hỗ trợ loại nội dung nào?
+
+*Which message types can the user forward?*
+
+**Model answer.** Forwarding is a client action for live `TEXT` messages only.
+The user picks a target conversation, and the app sends the same text as a new
+message there; the forwarded row gets a new message identity and normal send
+semantics. Deleted messages and every attachment/media type are excluded by
+`ForwardFilter.canForward` (`android/app/src/main/java/com/nexachat/core/ui/ForwardFilter.java`)
+and `ChatViewModel.forwardMessage`. This is not a server-side forward record
+or a copy of the original message metadata.
+
+**Follow-up traps.**
+- *"Are attachments forwarded too?"* — No; forwarding is text-only.
+- *"Does the recipient see the original sender or source conversation?"* —
+  No; the app creates a new text message authored by the forwarding user.
+
 ---
 
 ## 5. Offline & persistence
@@ -962,17 +1128,17 @@ persists the media payload so a retry re-derives `attachmentIds`
   dispatch a no-op; the outbox delete is keyed by `clientMessageId` and only
   fires when the ack is mine.
 
-### Q5.2 — Room migrations v1→v6: những gì thay đổi, tại sao explicit Migration?
+### Q5.2 — Room migrations v1→v7: những gì thay đổi, tại sao explicit Migration?
 
-*Room migrations v1→v6 — what changed, and why explicit Migration objects?*
+*Room migrations v1→v7 — what changed, and why explicit Migration objects?*
 
-**Model answer.** `AppDatabase` is at `version = 6` with
-`exportSchema = true` — Room writes `schemas/…/6.json` at build time, which is
+**Model answer.** `AppDatabase` is at `version = 7` with
+`exportSchema = true` — Room writes `schemas/…/7.json` at build time, which is
 what makes the migration chain instrumented-testable; `autoMigrations` are
 still avoided because the exported history only helps if the SQL is explicit
 and reviewed. Every upgrade is an explicit SQL `Migration`, versioned like
-the server's Flyway files (`core/database/AppDatabase.kt:34-35,48-130` — all
-five registered in `DatabaseModule`).
+the server's Flyway files (`core/database/AppDatabase.kt` — six explicit
+migrations registered in `DatabaseModule`).
 `MIGRATION_1_2` is one additive ALTER —
 `ALTER TABLE outbox ADD COLUMN attachmentsJson TEXT NOT NULL DEFAULT ''` —
 so pending attachment sends survive a restart with their id list intact
@@ -989,19 +1155,21 @@ receipt (merge-preserved across refreshes since no REST field feeds it).
 `MIGRATION_4_5` adds `conversations.avatarUrl` for group avatars.
 `MIGRATION_5_6` adds `conversations.myRole` — the caller's own member role
 from the inbox payload, used to gate ADMIN-only affordances like group
-pin. Additive-only is deliberate: a migrated install loses nothing.
+pin. `MIGRATION_6_7` adds message `editedAtEpochMs` and `deletedAtEpochMs`,
+plus conversation `otherUserId` and `lastMessageDeleted` for presence and
+tombstone inbox rendering. Additive-only is deliberate: a migrated install
+keeps its existing rows.
 
 **Follow-up traps.**
 - *"Why does the reaction PK include only (messageId, emoji)?"* — The table
   stores *pre-aggregated* summaries `{count, reactedByMe}` — the REST/WS
   shape cannot be decomposed into per-user rows, so one row per (message,
   emoji) is the finest granularity the wire gives (`Entities.kt:115-126`).
-- *"What if a migration were missed?"* — Room throws on version mismatch, and
-  the chain is now instrumented-tested: `RoomMigrationTest` opens a hand-written
-  v1 and v5 database through the production migrations and asserts the v6 shape
-  plus preserved rows (`android/app/src/androidTest/.../RoomMigrationTest.kt`).
-  What is still missing is an instrumented **UI** regression suite — rotation
-  and i18n evidence remains unit-level (`docs/known-limitations.md` §2).
+- *"What if a migration were missed?"* — Room throws on version mismatch.
+  `RoomMigrationTest` source covers upgrades from v1 and v6 and asserts the v7
+  shape plus preserved rows (`android/app/src/androidTest/.../RoomMigrationTest.kt`).
+  Check current CI for execution status; there is no instrumented **UI**
+  regression suite (`docs/known-limitations.md`).
 
 ### Q5.3 — Resync và pagination khác nhau thế nào? Khi nào dùng cái nào?
 
@@ -1124,7 +1292,7 @@ SENT, outbox empty, no duplicates (report §13.4(d)).
   classes.
 - *"Server down but WiFi up?"* — Covered while the app is foregrounded: the
   parked loop re-arms on its own bounded timer
-  (`docs/known-limitations.md` §4). Backgrounded, the timer stops (battery)
+  (`docs/known-limitations.md` §2). Backgrounded, the timer stops (battery)
   and the next foreground/network transition/user action re-arms.
 - *"What if the user sends while the loop is dead?"* — `dispatchOutbox`
   falls back to REST `POST /messages` when `!isOpen` — the outbox is a
@@ -1235,23 +1403,25 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
   accessibility minimum touch target (`48 x 48dp`); interactive elements
   below it are an a11y defect, not a style choice — the audit treats it as
   the floor.
-- *"Where does i18n fit M3?"* — Strings are fully externalized: 96 keys
-  in `values/strings.xml` matched 1:1 by `values-vi/strings.xml` — the audit
-  (`docs/i18n-audit.md`) verifies parity and hunts hardcoded literals across
-  all 82 Kotlin files.
+- *"Where does i18n fit M3?"* — User-facing strings are externalized in
+  paired English and Vietnamese resource files. The base `strings.xml` has
+  140 entries per locale (138 translatable); `strings_call.xml` adds 43
+  translatable entries per locale. Each file pair has matching resource
+  names. The linked i18n audit contains the fuller review.
 
 ### Q6.5 — Bilingual song ngữ implement ở tầng nào? Có missing key không?
 
 *Where is bilingual support implemented — are there missing keys?*
 
-**Model answer.** Pure Android resource resolution: one `strings.xml` per
-locale — `values/` (English default) and `values-vi/` — with *exactly* 96
-`<string>` entries each (verified parity), referenced via `stringResource()`
-in composables; switching is the `AppLocaleManager` path of Q6.1 — the
-framework picks `values-vi` once the configuration locale is `vi`. The
-audit doc `docs/i18n-audit.md` does two jobs: the key-by-key parity check
-(no missing/extra keys on either side) and a hardcoded-literal sweep over
-all 82 Kotlin files under `android/app/src/main/java`. Server-side content
+**Model answer.** Pure Android resource resolution: paired resource files
+under `values/` (English default) and `values-vi/`. The base `strings.xml`
+contains 142 entries per locale (140 marked translatable), and
+`strings_call.xml` adds 44 translatable entries, for 186 entries total
+(184 translatable) per locale. Each English/Vietnamese file pair has matching names.
+Strings are referenced via `stringResource()` in composables; switching is
+the `AppLocaleManager` path of Q6.1 — the framework picks `values-vi` once the
+configuration locale is `vi`. The current counts and the exact counting command
+are recorded in `docs/i18n-audit.md`. Server-side content
 is language-agnostic: error payloads carry machine `code`s
 (`ErrorResponse`, `ApiErrorCode`), so clients map codes → localized strings
 (`feature/auth/ApiErrorText.kt`, `feature/chat/ChatErrorText.kt`) instead of
@@ -1266,6 +1436,23 @@ displaying English server text.
   layouts mirror automatically; the demo languages are LTR but the flag is
   the honest declaration.
 
+### Q6.6 — Theme mode ở đâu và lưu thế nào?
+
+*Where is theme mode selected and stored?*
+
+**Model answer.** The app supports `SYSTEM`, `LIGHT`, and `DARK` theme modes.
+`SettingsRepository` persists the choice locally in `SharedPreferences`, and
+the root UI resolves the mode against the platform's system-dark setting via
+the Java `ThemeMapper` (`android/app/src/main/java/com/nexachat/data/SettingsRepository.kt`,
+`android/app/src/main/java/com/nexachat/core/ui/ThemeMapper.java`). Theme mode
+is device-local and is not sent to the server; the server-backed account
+setting in the same settings screen is `showPresence`.
+
+**Follow-up traps.**
+- *"What does SYSTEM mean?"* — Follow Android's current system theme.
+- *"Does changing the theme update other devices?"* — No, each device stores
+  its own theme preference.
+
 ---
 
 ## 7. Testing & deployment
@@ -1279,14 +1466,15 @@ behavior, and H2 cannot fake it. The load-bearing mechanisms are
 dialect-specific: `INSERT … ON CONFLICT … DO NOTHING` (message idempotency
 and reaction/pin upserts), `SELECT … FOR UPDATE` (rotation serialization,
 pin ceiling), the `BIGSERIAL` seq semantics, the `WHERE lastReadSeq < :seq`
-monotonic update, `pg_trgm`/`pgcrypto` extensions and the `CHECK`
+monotonic update, PostgreSQL extensions (`pgcrypto`, `pg_trgm`, `unaccent`)
+and the `CHECK`
 constraints in `V1__init.sql` (e.g. `(type='DIRECT') = (direct_key IS NOT NULL)`).
 H2's compatibility mode emulates some syntax but not the concurrency or
 constraint semantics — a green H2 suite would be green *about a different
 database*. So every `*IT` boots the real Flyway-migrated Postgres and
 exercises the actual code paths (`AuthFlowIT`, `MessageFlowIT`,
 `GroupFlowIT`, `InteractionFlowIT`, `AttachmentFlowIT`,
-`ContactConversationIT` — 30 ITs of the 310 total).
+`ContactConversationIT`).
 
 **Follow-up traps.**
 - *"Isn't a real DB slower/flakier?"* — Yes, deliberately accepted: failsafe
@@ -1308,13 +1496,9 @@ the cleaner isolation story. What shipped instead is **env-JDBC against the
 compose Postgres**: `application-it.yml` + `AuthFlowIT.java:53-59` read
 `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD`, defaulting to
 `jdbc:postgresql://localhost:5433/nexachat` (the compose port mapping —
-`docker-compose.yml:11`). The reason is documented honestly in
-`docs/known-limitations.md` §3: docker-java 1.20.4 cannot negotiate the
-Docker Desktop 29 named pipe, so container lifecycle could not be exercised
-locally; coverage is preserved because the ITs still run *real* Postgres —
-just a managed-by-compose instance rather than a managed-by-test one. CI
-keeps the same gate by pointing `IT_DB_URL` at the workflow's postgres
-service on `:5432` (`ci.yml:32-40`).
+`docker-compose.yml:11`). The suite therefore uses a compose-managed real
+Postgres locally rather than creating a fresh test container. CI points
+`IT_DB_URL` at the workflow's PostgreSQL service on `:5432` (`ci.yml`).
 
 **Follow-up traps.**
 - *"What do you lose vs Testcontainers?"* — Per-run isolation and
@@ -1329,19 +1513,16 @@ service on `:5432` (`ci.yml:32-40`).
 
 *What does the negative authorization test matrix look like?*
 
-**Model answer.** Two layers, both tested. **Frame layer** —
-`StompAuthChannelInterceptorTest` (20 tests): CONNECT with
+**Model answer.** Two layers. **Frame layer** —
+`StompAuthChannelInterceptorTest` covers CONNECT with
 missing/garbage/expired token; SUBSCRIBE to a conversation topic as a
 non-member; SUBSCRIBE to a foreign-shaped destination (deny-by-default);
 SEND to a non-member conversation; `/user/queue/*` allowed (session-bound);
-denial = `null` return. **Service layer** — the `NOT_MEMBER` path is
-asserted per use case: `MessageServiceTest` (32 — send/history/read
-rejection), `ReactionServiceTest`, `PinServiceTest` (16 — `NOT_ADMIN` on
-group pin by member, `PIN_LIMIT`, cross-conversation message id),
-`GroupServiceTest` (37 — non-admin add/remove/rename, sole-admin leave
-guard), `AttachmentServiceTest` (16 — owner-vs-member read rule,
-`assertStorageKeyReadable`). The ITs then prove the rule end-to-end on real
-rows. The security table mapping every endpoint to its rule is
+denied frames are dropped by the interceptor. **Service layer** tests the
+`NOT_MEMBER` path per use case: `MessageServiceTest`, `ReactionServiceTest`,
+`PinServiceTest`, `GroupServiceTest`, and `AttachmentServiceTest`. The ITs
+prove authorization rules end-to-end against real rows. The security table
+mapping every endpoint to its rule is
 `docs/security-checklist.md` §1.
 
 **Follow-up traps.**
@@ -1393,7 +1574,7 @@ physical phone demos over LAN `http://<laptop-ip>:8080` while the shipped
 posture stays TLS-only. Server-side, `application-prod.yml` documents TLS
 termination at the reverse proxy (`forward-headers-strategy=framework` so
 redirects/URLs render as https/wss) — the app itself speaks plain HTTP *inside*
-the trusted network, and `docs/known-limitations.md` §3 states the LAN
+the trusted network, and `docs/known-limitations.md` §2 states the LAN
 cleartext caveat verbatim.
 
 **Follow-up traps.**
@@ -1409,19 +1590,14 @@ cleartext caveat verbatim.
 
 *What does CI enforce — can it actually block a bad merge?*
 
-**Model answer.** Three jobs on every PR and push to `main`/`develop`
-(`.github/workflows/ci.yml`). `server-test`: a `postgres:16` service on
-`:5432` + `mvn -B verify` — the *whole* suite (final XML run: 310 tests =
-280 unit + 30 IT, 0 failures) against real Postgres, with `IT_DB_*` pointing
-the ITs at the service. `android-test`: `./gradlew testDebugUnitTest` — the JVM
-unit tests (final XML run: 202 tests across 20 classes, 0 failures).
-`secret-scan`: a
-grep gate for `BEGIN.*PRIVATE KEY` / `api[_-]?key=<20+ chars>` patterns —
-match found = job fails. All three must be green; the README's CI note points
-at this workflow, and the workflow is the gate that enforces it. The failsafe binding is the point worth
-defending: `*IT` runs at `verify`, so CI enforces the integration suite —
-the ledger records that an earlier revision ran ITs only via targeted
-`-Dtest` runs (a gate hole now closed).
+**Model answer.** The CI workflow runs on PRs and pushes to `main`/`develop`
+(`.github/workflows/ci.yml`). Its jobs run `mvn -B verify` against a
+PostgreSQL 16 service, Android unit tests plus lint and debug assembly, a
+Markdown-link and shell-syntax check, and a committed-secret scan. The workflow
+definition describes gates; only a completed run for the reviewed revision
+proves their result. Maven Failsafe binds `*IT` to `verify`, so the server job
+includes the database integration tests. The exact current pass/fail status
+belongs to the matching CI run, not a fixed count in this Q&A.
 
 **Follow-up traps.**
 - *"Why a grep secret-scan instead of a real scanner?"* — Scoped to the
@@ -1491,17 +1667,100 @@ Compose supplies `SPRING_DATASOURCE_*` so a fresh clone still boots
 
 ---
 
+## 8. Call signaling & AI summary (in progress)
+
+### Q8.1 — Call signaling: state machine RINGING→ACTIVE→ENDED và vì sao server-authoritative?
+
+*How does call signaling work, and why does the server own the state?*
+
+**Model answer.** Calls ride the authenticated STOMP connection. The caller
+sends `INVITE` with a client-generated `callId`; the server reserves both users,
+persists a `RINGING` `call_records` row, and pushes `CALL_INVITE` to the callee's
+`/user/queue/calls`. From there the transitions are fixed: callee `ACCEPT` →
+`ACTIVE`; callee `REJECT` or caller `CANCEL` → `ENDED`; a 45 s ring timeout →
+`ENDED(MISSED)`; either participant's `END` in `ACTIVE` → `ENDED(COMPLETED)`;
+the last STOMP session of a participant closing → `ENDED(FAILED)`. SDP and ICE
+are relayed verbatim only after acceptance. The server is authoritative because
+it alone owns the registry, the per-user busy reservation, and the transition
+guard: a second invite to a busy callee creates a terminal `BUSY` record without
+notifying the callee, and concurrent terminal frames cannot write a second
+`SYSTEM` call line — the winning transition owns the history/message write. The
+client never declares a state; it sends an intent and renders the event
+(`docs/calls.md`, `CallService`, `CallRegistry`, `CallStateMachineTest`).
+
+**Follow-up traps.**
+- *"Why not peer-to-peer signaling?"* — The server must authorize both
+  participants and arbitrate races (busy, double-accept, timeout); a P2P
+  negotiation would need the same rules duplicated on each client.
+- *"What ends the call if a client dies?"* — The last STOMP session closing
+  transitions the participant's call to `ENDED(FAILED)`.
+- *"Is media encrypted?"* — Signaling is TLS/WSS in production; the audio path
+  depends on WebRTC's own DTLS-SRTP. No TURN is configured (STUN only).
+
+### Q8.2 — Summary: tại sao extractive-first và citation chống hallucination?
+
+*Why is the local summary engine extractive, and how do citations prevent hallucination?*
+
+**Model answer.** The local engine is deterministic and **extractive**: it
+selects existing messages and labels them (decision, action item, question,
+topic), rather than generating new prose. Every emitted item carries
+`messageIds` that point back to the source messages in the requested window; the
+client can jump to them. Because the text is copied from real rows, the summary
+cannot invent facts — there is no generative step to hallucinate. A
+`CitationGuard` filters any candidate whose cited ids are missing or outside the
+window, and the evaluation suite asserts citation validity. The LLM engine is
+optional (operator key + user consent) and still returns the same cited
+structure; any failure falls back to the local engine with a `fallbackReason`
+(`docs/ai-summary.md`, `LocalExtractiveSummaryProvider`, `CitationGuardTest`).
+
+**Follow-up traps.**
+- *"So the local summary is just a filter?"* — It is a heuristic selector and
+  labeler (cue detection, topic extraction, MMR diversification), not a
+  rewriter; quality is measured on the gold set.
+- *"Could the LLM hallucinate?"* — The response schema requires `messageIds` for
+  every item, so an uncited or out-of-window claim is rejected; provider
+  failures degrade to local instead of inventing content.
+- *"Why extractive first?"* — It works offline, is deterministic, costs nothing,
+  and is always available; the LLM is an enhancement, not a dependency.
+
+### Q8.3 — Consent model: `aiSummaryConsent` và LLM opt-in hoạt động thế nào?
+
+*How does the summary consent model work?*
+
+**Model answer.** The `users.ai_summary_consent` column (Flyway V6) defaults to
+`false`. The settings API exposes it as `aiSummaryConsent` alongside
+`showPresence` (`GET/PATCH /api/v1/users/me/settings`). Provider selection reads
+the persisted value: with consent off, or with no operator key, the service
+selects the local engine and **no message text leaves the server**. With both,
+the server sends only redacted usable text of the window to the configured
+OpenAI-compatible endpoint; sender names become stable labels (`U1`, `U2`), and
+message ids never leave the server. Disabling consent therefore both selects
+local and prevents the external call (`SummaryProviderSelector`,
+`SummaryConsentRepository`, `docs/ai-summary.md`).
+
+**Follow-up traps.**
+- *"Is consent per conversation?"* — No. It is an account-level opt-in; there is
+  no per-conversation veto yet (see `docs/known-limitations.md`).
+- *"What if the LLM fails?"* — The service falls back to local with a
+  `fallbackReason` (`NO_CONSENT`, `LLM_DISABLED`, `LLM_TIMEOUT`,
+  `LLM_BAD_OUTPUT`, `LLM_HTTP_ERROR`); the endpoint never returns `503`.
+- *"Can consent be changed at runtime?"* — Yes, through the settings endpoint;
+  the next summary request uses the new value.
+
+---
+
 ## Quick index — mục lục nhanh
 
 | # | Section | Q&A |
 |---|---|---|
-| 1 | Kiến trúc & patterns | Q1.1 – Q1.6 |
+| 1 | Kiến trúc & patterns | Q1.1 – Q1.7 |
 | 2 | Auth & security | Q2.1 – Q2.10 |
-| 3 | Realtime & messaging | Q3.1 – Q3.9 |
-| 4 | Creative (reply/reaction/pin) | Q4.1 – Q4.7 |
+| 3 | Realtime & messaging | Q3.1 – Q3.14 |
+| 4 | Creative (reply/reaction/pin/forward) | Q4.1 – Q4.8 |
 | 5 | Offline & persistence | Q5.1 – Q5.6 |
-| 6 | i18n / state / UX | Q6.1 – Q6.5 |
+| 6 | i18n / state / UX | Q6.1 – Q6.6 |
 | 7 | Testing & deployment | Q7.1 – Q7.8 |
+| 8 | Call signaling & AI summary (in progress) | Q8.1 – Q8.3 |
 
-**51 Q&A total.** Every claim cites shipped code; where the honest answer is
+**62 Q&A total.** Claims cite current source where practical; where the honest answer is
 "we deferred it", the answer says so and points at `docs/known-limitations.md`.

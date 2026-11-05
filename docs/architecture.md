@@ -1,8 +1,10 @@
 # NexaChat Architecture
 
-> Diagrams verbatim from the master design (§7). Summary: Android client
-> (Compose + MVVM/UDF, offline-first Room) → REST `/api/v1` + STOMP over
-> WebSocket → Spring Boot modular monolith → PostgreSQL 16 + file volume.
+> Current implementation view: Android app (Compose + MVVM/UDF, offline-first
+> Room) → REST `/api/v1` + STOMP over WebSocket → Spring Boot modular monolith
+> → PostgreSQL 16 + file volume. Call signaling shares STOMP; the Java Android
+> call core defines a media boundary, while this document does not claim a
+> shipped call screen or concrete media engine.
 
 ## 1. Container diagram (§7.1 — sơ đồ tổng)
 
@@ -10,7 +12,7 @@ Overall system containers and their connections:
 
 ```mermaid
 flowchart LR
-    subgraph Device["Android (Kotlin + Compose)"]
+    subgraph Device["Android (Kotlin + Java core, Compose)"]
         UI["Compose Screens<br/>(Material 3)"]
         VM["ViewModel + StateFlow<br/>(UDF)"]
         REPO["Repositories<br/>(offline-first)"]
@@ -19,9 +21,11 @@ flowchart LR
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
             ROOM[("Room DB<br/>cache + outbox")]
             STORE["DataStore + TokenStore<br/>(Android Keystore AES)"]
+            SETTINGS["Local theme + locale settings"]
         end
         UI --> VM --> REPO
         REPO --> REST & STOMP & ROOM & STORE
+        UI --> SETTINGS
     end
 
     subgraph Server["Backend — Modular Monolith (Java + Spring Boot)"]
@@ -33,14 +37,18 @@ flowchart LR
             CONV["conversation"]
             MSG["message"]
             ATT["attachment"]
+            PRES["presence"]
+            CALL["call signaling"]
+            SUM["summary (in progress)"]
             COMMON["common: errors, logging,<br/>config, E.164 util"]
         end
         WS["WebSocket/STOMP layer<br/>@MessageMapping +<br/>ChannelInterceptor authZ"]
         BROKER["SimpleBroker<br/>(in-process)"]
+    PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
     PG[("PostgreSQL 16<br/>Flyway migrations")]
-    VOL[("Volume: /data/uploads<br/>(StorageService interface<br/>→ S3 swappable)")]
+    VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (optional, chưa bật)"]]
 
     REST -- "HTTPS REST /api/v1" --> SEC
@@ -48,16 +56,21 @@ flowchart LR
     SEC --> Mod
     WS --> SEC
     WS --> MSG
+    WS --> CALL
+    WS --> PRESENCE
+    PRES --> PRESENCE --> BROKER
     MSG --> BROKER --> STOMP
     Mod --> PG
     ATT --> VOL
     MSG -. "khi WS offline (optional)" .-> FCM
 ```
 
-## 2. Module diagram (backend modules — extracted verbatim from §7.1)
+## 2. Backend module diagram
 
-The monolith is split into feature modules, each with its own
-Controller/Service/Repository — one deployable unit:
+The monolith separates feature code by package and deploys as one backend
+unit. Individual modules use the controller/service/repository layers they
+need; the diagram is a package overview, not a claim that every package has
+all three layers.
 
 ```mermaid
 flowchart TB
@@ -67,11 +80,14 @@ flowchart TB
         CONV["conversation"]
         MSG["message"]
         ATT["attachment"]
+        PRES["presence"]
+        CALL["call signaling"]
+        SUM["summary (in progress)"]
         COMMON["common: errors, logging,<br/>config, E.164 util"]
     end
 ```
 
-## 3. Send-message sequence (§7.2 — luồng gửi tin)
+## 3. Send-message sequence
 
 Persist-before-broadcast with `clientMessageId` idempotency and watermark read
 receipts:
@@ -93,6 +109,26 @@ sequenceDiagram
     B->>B: render + unread++ (watermark chưa đọc)
     Note over B: khi mở chat → POST /conversations/42/read {upToSeq}<br/>→ A nhận MESSAGE_READ cập nhật "Đã xem"
 ```
+
+## 4. Edit, delete and search
+
+- **Edit:** an authenticated conversation member may edit their own `TEXT`
+  message. The server trims and validates content, updates `editedAt`, commits,
+  then broadcasts `MESSAGE_UPDATED`. Repeating the same normalized content is
+  a no-op. The REST search endpoint searches live `TEXT` rows in one
+  conversation using escaped, accent-insensitive `unaccent` + `ILIKE` matching.
+- **Delete:** the author soft-deletes their message. The row and sequence stay
+  in history as a tombstone (`content: null`); reactions and pins are removed.
+  Attachment metadata and stored bytes are retained, but the deleted message's
+  attachments cannot be downloaded through the message binding.
+- **Presence:** each authenticated STOMP session contributes to an
+  in-memory per-user count. After commit, presence goes only to DIRECT peers
+  when the subject allows presence. Hiding one's presence is one-way; it does
+  not hide the peers from that user. Last-disconnect offline notification is
+  coalesced for five seconds.
+
+Theme mode (`SYSTEM`, `LIGHT`, `DARK`) and locale are local Android settings;
+they are applied by the app and are not persisted as server account settings.
 
 *Why monolith, not microservices:* modules are separated by package with clear
 boundaries, deployed as one unit — clean enough to discuss architecture,

@@ -1,10 +1,9 @@
 # NexaChat REST API Contract
 
-> Complete endpoint catalog for the project report / viva. Every route below is
-> derived from the shipped controllers under
-> `server/src/main/java/com/nexachat/` — nothing is invented. The WebSocket /
-> STOMP contract is documented separately in
-> [`docs/websocket-protocol.md`](websocket-protocol.md); this file only links it.
+> Endpoint catalog for the current REST contract. Routes below are derived from
+> controllers under `server/src/main/java/com/nexachat/`. The in-progress summary
+> route is called out separately and is not release-verified. The WebSocket /
+> STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
 
 ## Conventions
 
@@ -13,10 +12,11 @@
   header. Public (no token): `POST /auth/register`, `POST /auth/login`,
   `POST /auth/refresh`, `/actuator/health`, and the `/ws` handshake (the JWT
   travels in the STOMP CONNECT frame there instead).
-- **Tokens:** access TTL 900 s (`accessTokenExpiresIn`); refresh tokens rotate
-  on use; `PATCH /auth/password` revokes other sessions by design.
-- **Content type:** `application/json` unless noted (avatar upload is
-  `multipart/form-data`). Timestamps are ISO-8601 UTC (`Instant`).
+- **Tokens:** access TTL 900 s (`accessTokenExpiresIn`); refresh TTL 14 days;
+  refresh tokens rotate on use; `PATCH /auth/password` revokes other sessions
+  by design.
+- **Content type:** `application/json` unless noted (user/group avatars and
+  attachments use `multipart/form-data`). Timestamps are ISO-8601 UTC (`Instant`).
 - **Error envelope** (all non-2xx responses):
 
   ```json
@@ -50,8 +50,11 @@
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
 | `NOT_MEMBER` | 403 | Caller is not a member of the conversation |
 | `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin) |
-| `MESSAGE_NOT_FOUND` | 404 | Reply target message missing |
+| `NOT_MESSAGE_AUTHOR` | 403 | Caller is not the message author |
+| `MESSAGE_NOT_FOUND` | 404 | Message missing or belongs to another conversation |
+| `MESSAGE_DELETED` | 409 | Deleted message cannot be edited, reacted to, or pinned |
 | `FILE_NOT_FOUND` | 404 | Stored file / attachment key missing |
+| `ATTACHMENT_NOT_FOUND` | 404 | Attachment record does not exist |
 | `PIN_LIMIT` | 409 | Conversation already has the maximum 3 pinned messages |
 | `MIME_NOT_ALLOWED` | 415 | Uploaded bytes failed the magic-byte sniff |
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
@@ -92,8 +95,9 @@
 
 ## Response wire formats
 
-JSON examples of the shapes referenced in the tables. Null/absent fields are
-omitted where noted (`@JsonInclude(NON_NULL)` applies to messages).
+JSON examples of the shapes referenced in the tables. Optional null fields are
+omitted where noted; tombstone message content and preview content are explicit
+JSON `null` values.
 
 ```json
 {
@@ -111,7 +115,7 @@ omitted where noted (`@JsonInclude(NON_NULL)` applies to messages).
 
 `AuthResponse` is `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`; `ContactResponse` adds
-`contactUserId`, `aliasName` and `createdAt`.
+`contactUserId`, `aliasName`, `avatarUrl` and `createdAt`.
 
 ```json
 {
@@ -132,9 +136,11 @@ omitted where noted (`@JsonInclude(NON_NULL)` applies to messages).
   "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "type": "DIRECT",
   "title": "Binh",
+  "avatarUrl": null,
   "members": [
     { "userId": "22222222-2222-4222-8222-222222222222",
-      "displayName": "Binh", "phone": "+84900000002", "avatarUrl": null }
+      "displayName": "Binh", "phone": "+84900000002", "avatarUrl": null,
+      "role": "MEMBER" }
   ],
   "lastMessage": {
     "seq": 6, "type": "TEXT", "contentSnippet": "Được, bao mình.",
@@ -146,7 +152,8 @@ omitted where noted (`@JsonInclude(NON_NULL)` applies to messages).
 }
 ```
 
-`MessageResponse` as returned by send and history (null fields omitted):
+`MessageResponse` as returned by send and history (optional null fields omitted;
+`content` is explicit `null` on a deleted-message tombstone):
 
 ```json
 {
@@ -199,7 +206,7 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | `PATCH /contacts/{userId}` | Bearer | `{aliasName?}` — JSON `null` clears the alias | `200` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
 | `DELETE /contacts/{userId}` | Bearer | — | `204` empty (idempotent: deleting a non-contact is still 204) | `UNAUTHORIZED` 401 |
 
-`ContactResponse` = `{contactUserId, phone, displayName, aliasName, createdAt}`;
+`ContactResponse` = `{contactUserId, phone, displayName, aliasName, avatarUrl, createdAt}`;
 `aliasName` is the owner's override, `null` means render `displayName`.
 
 ## Conversations — `/api/v1/conversations`
@@ -208,14 +215,46 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 |---|---|---|---|---|
 | `POST /conversations/direct` | Bearer | `{phone}` **or** `{userId}` — exactly one (XOR) | `201` created / `200` existing — same `ConversationResponse` either way (idempotent) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
 | `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100) and stable opaque `cursor?`; omit both for the full list | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
-| `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — items newest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — `beforeSeq` newest-first; `afterSeq` oldest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters; at most 10 attachment IDs | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
+| `PATCH /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | `{content}` — trimmed, non-blank, ≤10,000 chars; TEXT only | `200` current `MessageResponse`; identical content is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `RATE_LIMITED` 429 (30/min per user, shared with delete) |
+| `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
+| `GET /conversations/{conversationId}/messages/search` | Bearer member | `q` (trimmed, 2–100 chars), optional `limit` (1–50, default 20), `beforeSeq?` | `200` `MessagePageResponse`, newest-first; literal, case- and accent-insensitive TEXT substring match | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `RATE_LIMITED` 429 (60/min per user) |
 | `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
+`PATCH` broadcasts `MESSAGE_UPDATED` after commit only when content changes.
+Identical normalized content is a successful no-op and produces no update event.
+If the changed message is the conversation's last message, the existing
+`CONVERSATION_UPDATED` inbox push also asks clients to refresh the snippet.
+`DELETE` retains the row and sequence,
+sets `deletedAt`, clears content, and removes reaction rows and any pin. It does
+not purge attachment metadata or stored file bytes; deleted-message attachment
+URLs are no longer readable. History returns a tombstone with `content: null`,
+`attachments: []`, and `reactions: []`. A deleted last message remains the
+inbox `lastMessage`, with `deletedAt` and `contentSnippet: null`; clients render
+their localized deleted-message label. Reply previews keep their id/sender,
+with `content: null` and `deleted: true`.
+
+Search uses PostgreSQL `unaccent` + `ILIKE` with escaped `%`, `_`, and `\` so
+those characters are literal. Flyway V4 installs `unaccent`; filtering and
+newest-first pagination are scoped and ordered for the existing
+`idx_msg_conv_seq` index; PostgreSQL's cost planner may prefer a table scan on
+small datasets.
+
+`GET /users/me/settings` returns `{showPresence: boolean, aiSummaryConsent: boolean}`;
+`aiSummaryConsent` defaults to `false`. `PATCH /users/me/settings` accepts either
+field independently; an omitted field remains unchanged, and an empty object is
+rejected. Provider selection uses persisted `users.ai_summary_consent`, and the LLM
+adapter rechecks consent immediately before an outbound request, so revoking
+consent after selection prevents that request. Inbox entries for DIRECT conversations may include
+`peerPresence: {online, lastSeenAt}`; group and hidden-peer values are omitted.
+Presence changes are described in the WebSocket section and are in-memory on a
+single backend node.
+
 `ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
-`InboxEntry` = `{id, type, title, members[], lastMessage?{seq, type, contentSnippet, senderId, createdAt}, unreadCount, lastReadSeq}`.
-`MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page.
-`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (null fields omitted).
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. Null optional values may be omitted.
+`MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
+`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
 `SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns and re-broadcasts the stored row without inserting a second message; receivers deduplicate by message id. Reusing it in a different conversation is `VALIDATION_FAILED`.
 Inbox pagination uses query parameters `limit` and `cursor`. With no parameters, the complete list and byte-compatible response body are unchanged. A `limit` page is clamped to 1–100 items; `X-Next-Cursor` contains the next opaque keyset cursor only when another page exists. A cursor without a limit returns all remaining entries.
@@ -224,8 +263,8 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /conversations/group` | Bearer | `{name, memberIds[]?}` | `201` `ConversationResponse` (creator = ADMIN) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
-| `PATCH /conversations/{conversationId}` | Bearer ADMIN | `{name?}` | `200` `ConversationUpdatePayload` (broadcasts `CONVERSATION_UPDATED` + SYSTEM message) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/group` | Bearer | `{title, memberIds[]}` — non-blank title ≤80 chars; at least one other member after deduplication | `201` `ConversationResponse` (creator = ADMIN) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
+| `PATCH /conversations/{conversationId}` | Bearer ADMIN | `{title?, avatarUrl?}` — at least one field; empty `avatarUrl` clears it | `200` `ConversationUpdatePayload` (broadcasts `CONVERSATION_UPDATED`; title changes also post a SYSTEM message) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/members` | Bearer ADMIN | `{userIds[]}` | `204` (SYSTEM `MEMBER_ADDED` message broadcast) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `USER_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
@@ -236,18 +275,18 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /attachments` | Bearer | `multipart/form-data`, field `file` — upload-first: the attachment is bound to a message later via `SendMessageRequest.attachmentIds` | `201` `AttachmentResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
-| `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, server-sniffed `Content-Type`, inline `Content-Disposition`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `FILE_NOT_FOUND` 404 |
+| `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, server-sniffed `Content-Type`, inline `Content-Disposition`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `ATTACHMENT_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 
-`AttachmentResponse` = `{id, ownerId, messageId?, storageKey, originalName, mimeType, sizeBytes, width?, height?, durationMs?, createdAt}`.
+`AttachmentResponse` = `{id, url, originalName, mimeType, sizeBytes, width?, height?, durationMs?}`. Internal owner/message/storage fields and creation time are not exposed in this DTO.
 Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`).
 
 ## Interactions — reactions `/api/v1/messages`, pins `/api/v1/conversations/{id}/pins`
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 code points, normalized to NFC) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 |
+| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 code points, normalized to NFC) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 |
 | `GET /conversations/{conversationId}/pins` | Bearer member | — | `200` `PinnedMessageView[]` newest-first | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `PIN_LIMIT` 409 |
+| `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation, not deleted | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `PIN_LIMIT` 409 |
 | `DELETE /conversations/{conversationId}/pins/{messageId}` | same as POST | — | `204` (broadcasts `PIN_UPDATED {pinned:false}`; idempotent no-op) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 |
 
 `PinnedMessageView` = `{messageId, pinnedBy, pinnedAt, message: MessageResponse}`.
@@ -263,11 +302,33 @@ Generic uploads go through `POST /api/v1/attachments` above (upload-first,
 bound to a message on send); this endpoint serves every stored object —
 attachment keys are checked against the caller's conversation membership.
 
+## Calls — `/api/v1/calls` and `/api/v1/conversations`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /calls/ice-config` | Bearer | — | `200` `{iceServers:[{urls:string[]}], ttlSeconds}` | `UNAUTHORIZED` 401 |
+| `GET /conversations/{id}/calls` | Bearer member of a DIRECT conversation | `limit?` (default 20, range 1–100), optional opaque `cursor?` | `200` `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
+
+Call signaling uses STOMP `SEND /app/calls/{conversationId}/signal` and events
+on `/user/queue/calls`; see [`docs/calls.md`](calls.md) for its frame and
+state-machine contract.
+
+## In-progress summary API
+
+The current worktree also contains `POST /api/v1/conversations/{conversationId}/summary`.
+The route is implemented in `SummaryController`, but the separate summary document
+still labels the feature in progress. It is not part of the release-verified contract.
+The draft request/response shape and proposed provider behavior are in
+[`docs/ai-summary.md`](ai-summary.md). Current source requires conversation membership
+and at least five usable messages; see the source and the feature owner report for
+current behavior before treating the draft as a shipped API.
+
 ## WebSocket / STOMP
 
 Realtime transport is STOMP 1.2 over `ws://localhost:8080/ws` (WSS in
 production). Authentication uses the **CONNECT frame header**
-`authorization: Bearer <accessToken>` — never a query-string token.
+`Authorization:Bearer <accessToken>` — no space after the colon because the
+server does not trim native STOMP header values; never put the token in the URL.
 
 Application destinations mirror the REST surface and share the same service
 layer (`MessageService.send` / `markRead`), so validation and authorization rules
@@ -276,6 +337,7 @@ above apply unchanged:
 - Send message: `SEND /app/conversations/{id}/messages`
 - Typing signal: `SEND /app/conversations/{id}/typing`
 - Read receipt: `SEND /app/conversations/{id}/read`
+- Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/calls.md`](calls.md))
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.
 

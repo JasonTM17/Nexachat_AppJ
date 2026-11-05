@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Giao diện &amp; Quyền riêng tư - NexaChat</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Roboto Flex & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with custom configuration -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "error-container": "#ffdad6",
+            "surface-container-lowest": "#ffffff",
+            "primary-fixed": "#e2dfff",
+            "on-secondary": "#ffffff",
+            "surface-container-low": "#f2f4f6",
+            "on-secondary-container": "#54647a",
+            "error": "#ba1a1a",
+            "on-primary": "#ffffff",
+            "secondary-fixed": "#d3e4fe",
+            "on-primary-container": "#dad7ff",
+            "secondary-fixed-dim": "#b7c8e1",
+            "inverse-primary": "#c3c0ff",
+            "background": "#f7f9fb",
+            "tertiary-container": "#006693",
+            "surface-variant": "#e0e3e5",
+            "surface-tint": "#4d44e3",
+            "tertiary-fixed": "#c9e6ff",
+            "on-primary-fixed": "#0f0069",
+            "inverse-on-surface": "#eff1f3",
+            "on-tertiary-fixed": "#001e2f",
+            "primary-container": "#4f46e5",
+            "on-background": "#191c1e",
+            "on-error": "#ffffff",
+            "tertiary-fixed-dim": "#89ceff",
+            "surface-container": "#eceef0",
+            "on-secondary-fixed": "#0b1c30",
+            "surface-container-high": "#e6e8ea",
+            "surface-container-highest": "#e0e3e5",
+            "on-primary-fixed-variant": "#3323cc",
+            "on-surface-variant": "#464555",
+            "on-secondary-fixed-variant": "#38485d",
+            "on-tertiary-container": "#b8e0ff",
+            "secondary-container": "#d0e1fb",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "on-surface": "#191c1e",
+            "surface-dim": "#d8dadc",
+            "surface-bright": "#f7f9fb",
+            "outline-variant": "#c7c4d8",
+            "inverse-surface": "#2d3133",
+            "tertiary": "#004d70",
+            "outline": "#777587",
+            "on-error-container": "#93000a",
+            "surface": "#f7f9fb",
+            "primary": "#3525cd",
+            "on-tertiary": "#ffffff",
+            "primary-fixed-dim": "#c3c0ff",
+            "secondary": "#505f76"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "gutter-tablet": "1.25rem",
+            "gutter-desktop": "1.5rem",
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "margin": "1rem",
+            "gutter": "1rem",
+            "space-lg": "1.5rem",
+            "margin-desktop": "2rem",
+            "space-sm": "0.5rem",
+            "margin-tablet": "1.5rem"
+          },
+          "fontFamily": {
+            "title-md": ["Inter"],
+            "label-lg": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "headline-lg": ["Roboto Flex"],
+            "body-sm": ["Inter"],
+            "label-sm": ["Inter"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-sm": ["Roboto Flex"]
+          },
+          "fontSize": {
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .material-symbols-outlined.fill {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased flex justify-center min-h-screen selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- Mobile Viewport Shell (Max width ~ 430px) -->
+<main class="w-full max-w-md bg-background min-h-screen flex flex-col relative pb-10 shadow-sm border-x border-surface-variant">
+<!-- Top App Bar (Task-focused sub-page with Back Navigation) -->
+<header class="sticky top-0 z-50 flex items-center justify-between px-margin w-full h-14 bg-surface-container-lowest shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+<div class="flex items-center gap-2">
+<button aria-label="Quay lại" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface hover:bg-surface-container active:scale-95 transition-transform duration-100" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-sm text-headline-sm text-on-surface tracking-tight truncate max-w-[240px]">
+          Giao diện &amp; Quyền riêng tư
+        </h1>
+</div>
+<button aria-label="Thông tin bổ sung" class="w-12 h-12 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container active:scale-95 transition-transform duration-100" type="button">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+</header>
+<!-- Scrollable Settings Content -->
+<div class="flex-1 px-margin pt-space-md space-y-space-lg">
+<!-- SECTION 1: Giao diện (Appearance) -->
+<section aria-labelledby="section-appearance">
+<div class="flex items-center justify-between px-1 mb-space-sm">
+<h2 class="font-label-md text-label-md text-primary font-bold uppercase tracking-wider" id="section-appearance">
+            Giao diện
+          </h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Hệ thống</span>
+</div>
+<!-- M3 Container Card -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_1px_3px_rgba(15,23,42,0.06)] border border-surface-variant overflow-hidden">
+<!-- Radio Options Group -->
+<div aria-label="Chế độ hiển thị" class="divide-y divide-surface-container" role="radiogroup">
+<!-- Option 1: Theo hệ thống -->
+<label class="flex items-center justify-between p-space-md min-h-[56px] cursor-pointer hover:bg-surface-container-low transition-colors active:bg-surface-container">
+<div class="flex items-start gap-space-md pr-2">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0 mt-0.5">
+<span class="material-symbols-outlined" data-icon="settings_brightness">settings_brightness</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block">Theo hệ thống</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Tự động điều chỉnh theo cài đặt thiết bị</p>
+</div>
+</div>
+<div class="relative flex items-center justify-center w-6 h-6 shrink-0">
+<input class="sr-only peer" name="theme_mode" type="radio" value="system"/>
+<div class="w-5 h-5 rounded-full border-2 border-outline peer-checked:border-primary peer-checked:border-[6px] transition-all duration-150"></div>
+</div>
+</label>
+<!-- Option 2: Sáng (Selected by default) -->
+<label class="flex items-center justify-between p-space-md min-h-[56px] cursor-pointer bg-primary-fixed/20 hover:bg-primary-fixed/30 transition-colors active:bg-primary-fixed/40">
+<div class="flex items-start gap-space-md pr-2">
+<div class="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+<span class="material-symbols-outlined fill" data-icon="light_mode">light_mode</span>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-title-md text-title-md text-on-surface block">Sáng</span>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-sm text-label-sm">Đang bật</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Nền trắng tinh gọn, độ tương phản rõ</p>
+</div>
+</div>
+<div class="relative flex items-center justify-center w-6 h-6 shrink-0">
+<input checked="" class="sr-only peer" name="theme_mode" type="radio" value="light"/>
+<div class="w-5 h-5 rounded-full border-[6px] border-primary-container bg-surface-container-lowest transition-all duration-150 ring-2 ring-primary/20"></div>
+</div>
+</label>
+<!-- Option 3: Tối -->
+<label class="flex items-center justify-between p-space-md min-h-[56px] cursor-pointer hover:bg-surface-container-low transition-colors active:bg-surface-container">
+<div class="flex items-start gap-space-md pr-2">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0 mt-0.5">
+<span class="material-symbols-outlined" data-icon="dark_mode">dark_mode</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block">Tối</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">Giảm mỏi mắt trong môi trường thiếu sáng</p>
+</div>
+</div>
+<div class="relative flex items-center justify-center w-6 h-6 shrink-0">
+<input class="sr-only peer" name="theme_mode" type="radio" value="dark"/>
+<div class="w-5 h-5 rounded-full border-2 border-outline peer-checked:border-primary peer-checked:border-[6px] transition-all duration-150"></div>
+</div>
+</label>
+</div>
+<!-- Color Accent Palette Section (M3 Dynamic Color) -->
+<div class="p-space-md bg-surface-container-low/60 border-t border-surface-container">
+<label class="font-label-md text-label-md text-on-surface block mb-2 font-semibold">
+              Tông màu chủ đạo
+            </label>
+<div class="flex items-center gap-space-sm">
+<!-- Indigo (Selected) -->
+<button aria-pressed="true" class="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-surface-container-lowest border-2 border-primary-container shadow-sm active:scale-95 transition-transform" type="button">
+<span class="w-4 h-4 rounded-full bg-primary-container inline-block shadow-inner ring-2 ring-primary-container/20"></span>
+<span class="font-label-md text-label-md text-primary font-bold">Indigo</span>
+</button>
+<!-- Emerald -->
+<button aria-pressed="false" class="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-surface-container-lowest border border-surface-variant text-on-surface-variant active:scale-95 transition-transform" type="button">
+<span class="w-4 h-4 rounded-full bg-tertiary inline-block"></span>
+<span class="font-label-md text-label-md font-medium">Emerald</span>
+</button>
+<!-- Violet -->
+<button aria-pressed="false" class="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-surface-container-lowest border border-surface-variant text-on-surface-variant active:scale-95 transition-transform" type="button">
+<span class="w-4 h-4 rounded-full bg-tertiary-container inline-block"></span>
+<span class="font-label-md text-label-md font-medium">Violet</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 2: Quyền riêng tư (Privacy) -->
+<section aria-labelledby="section-privacy">
+<div class="flex items-center justify-between px-1 mb-space-sm">
+<h2 class="font-label-md text-label-md text-primary font-bold uppercase tracking-wider" id="section-privacy">
+            Quyền riêng tư
+          </h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Bảo vệ cá nhân</span>
+</div>
+<!-- M3 Container Card -->
+<div class="bg-surface-container-lowest rounded-xl shadow-[0_1px_3px_rgba(15,23,42,0.06)] border border-surface-variant divide-y divide-surface-container overflow-hidden">
+<!-- Switch Item 1: Trạng thái hoạt động -->
+<div class="flex items-center justify-between p-space-md min-h-[64px]">
+<div class="flex items-start gap-space-md pr-space-md">
+<div class="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined" data-icon="sensors">sensors</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block leading-tight">Trạng thái hoạt động</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1 leading-snug">
+                  Cho phép người khác thấy khi bạn đang trực tuyến hoặc hoạt động gần đây.
+                </p>
+</div>
+</div>
+<!-- Material 3 Switch Toggle (ON state) -->
+<button aria-checked="true" class="w-14 h-8 bg-primary-container rounded-full p-1 relative flex items-center shrink-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-container/30 active:scale-95" role="switch" type="button">
+<div class="w-6 h-6 bg-surface-container-lowest rounded-full shadow-md transform translate-x-6 transition-transform duration-200 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="check">check</span>
+</div>
+</button>
+</div>
+<!-- Switch Item 2: Thông báo đã xem -->
+<div class="flex items-center justify-between p-space-md min-h-[64px]">
+<div class="flex items-start gap-space-md pr-space-md">
+<div class="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined" data-icon="mark_chat_read">mark_chat_read</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block leading-tight">Thông báo đã xem</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1 leading-snug">
+                  Hiển thị dấu tích xanh khi bạn đã đọc tin nhắn của người khác và ngược lại.
+                </p>
+</div>
+</div>
+<!-- Material 3 Switch Toggle (ON state) -->
+<button aria-checked="true" class="w-14 h-8 bg-primary-container rounded-full p-1 relative flex items-center shrink-0 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-container/30 active:scale-95" role="switch" type="button">
+<div class="w-6 h-6 bg-surface-container-lowest rounded-full shadow-md transform translate-x-6 transition-transform duration-200 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[16px]" data-icon="check">check</span>
+</div>
+</button>
+</div>
+<!-- Navigation Item 1: Ai có thể liên hệ với bạn -->
+<a class="flex items-center justify-between p-space-md min-h-[56px] hover:bg-surface-container-low active:bg-surface-container transition-colors group" href="#">
+<div class="flex items-center gap-space-md pr-2">
+<div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block group-hover:text-primary transition-colors">Ai có thể liên hệ với bạn</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block mt-0.5">Mọi người có số điện thoại</span>
+</div>
+</div>
+<div class="w-8 h-8 flex items-center justify-center text-on-surface-variant shrink-0">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</div>
+</a>
+<!-- Navigation Item 2: Danh sách chặn -->
+<a class="flex items-center justify-between p-space-md min-h-[56px] hover:bg-surface-container-low active:bg-surface-container transition-colors group" href="#">
+<div class="flex items-center gap-space-md pr-2">
+<div class="w-9 h-9 rounded-full bg-surface-container text-on-surface-variant flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined" data-icon="block">block</span>
+</div>
+<div>
+<span class="font-title-md text-title-md text-on-surface block group-hover:text-primary transition-colors">Danh sách chặn</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block mt-0.5">Tài khoản bị hạn chế nhắn tin và gọi</span>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0">
+<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm font-semibold">0 người</span>
+<div class="w-6 h-6 flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+</a>
+</div>
+</section>
+<!-- Security / End-to-End Encryption Note -->
+<footer class="pt-2 px-2 flex items-center justify-center gap-2 text-center">
+<span class="material-symbols-outlined text-outline text-[18px]" data-icon="lock">lock</span>
+<p class="font-body-sm text-body-sm text-outline">
+          Mọi tin nhắn cá nhân đều được bảo vệ bằng mã hóa đầu cuối.
+        </p>
+</footer>
+</div>
+</main>
+<!-- Interactive State Script -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Toggle switches micro-interaction
+      const switches = document.querySelectorAll('button[role="switch"]');
+      switches.forEach(toggle => {
+        toggle.addEventListener('click', () => {
+          const isChecked = toggle.getAttribute('aria-checked') === 'true';
+          const newState = !isChecked;
+          toggle.setAttribute('aria-checked', newState);
+
+          const thumb = toggle.querySelector('div');
+          const icon = toggle.querySelector('span');
+
+          if (newState) {
+            toggle.classList.remove('bg-surface-variant');
+            toggle.classList.add('bg-primary-container');
+            thumb.classList.remove('translate-x-0');
+            thumb.classList.add('translate-x-6');
+            if (icon) {
+              icon.textContent = 'check';
+              icon.classList.remove('opacity-0');
+            }
+          } else {
+            toggle.classList.remove('bg-primary-container');
+            toggle.classList.add('bg-surface-variant');
+            thumb.classList.remove('translate-x-6');
+            thumb.classList.add('translate-x-0');
+            if (icon) {
+              icon.textContent = 'close';
+              icon.classList.remove('text-primary');
+              icon.classList.add('text-outline');
+            }
+          }
+        });
+      });
+
+      // Radio cards micro-interaction
+      const radioLabels = document.querySelectorAll('div[role="radiogroup"] label');
+      radioLabels.forEach(label => {
+        label.addEventListener('click', () => {
+          radioLabels.forEach(l => {
+            l.classList.remove('bg-primary-fixed/20', 'hover:bg-primary-fixed/30');
+            const iconDiv = l.querySelector('.w-9');
+            if (iconDiv) {
+              iconDiv.classList.remove('bg-primary-container', 'text-on-primary', 'shadow-sm');
+              iconDiv.classList.add('bg-surface-container', 'text-on-surface-variant');
+            }
+            const radioCircle = l.querySelector('.rounded-full.border-2, .rounded-full.border-\\[6px\\]');
+            if (radioCircle) {
+              radioCircle.className = 'w-5 h-5 rounded-full border-2 border-outline transition-all duration-150';
+            }
+            const badge = l.querySelector('.bg-secondary-container');
+            if (badge) badge.remove();
+          });
+
+          label.classList.add('bg-primary-fixed/20', 'hover:bg-primary-fixed/30');
+          const activeIcon = label.querySelector('.w-9');
+          if (activeIcon) {
+            activeIcon.classList.remove('bg-surface-container', 'text-on-surface-variant');
+            activeIcon.classList.add('bg-primary-container', 'text-on-primary', 'shadow-sm');
+          }
+          const activeCircle = label.querySelector('.rounded-full.border-2, .rounded-full.border-\\[6px\\]');
+          if (activeCircle) {
+            activeCircle.className = 'w-5 h-5 rounded-full border-[6px] border-primary-container bg-surface-container-lowest ring-2 ring-primary/20 transition-all duration-150';
+          }
+        });
+      });
+    });
+  </script>
+</body></html>

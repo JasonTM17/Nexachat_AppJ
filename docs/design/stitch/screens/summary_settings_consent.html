@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-surface-bright" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat - Quyền riêng tư</title>
+<!-- Google Fonts: Roboto Flex & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-bright": "#f7f9fb",
+            "secondary-container": "#d0e1fb",
+            "secondary-fixed": "#d3e4fe",
+            "surface-container-lowest": "#ffffff",
+            "background": "#f7f9fb",
+            "on-primary-container": "#dad7ff",
+            "on-secondary-container": "#54647a",
+            "tertiary-fixed": "#c9e6ff",
+            "on-primary": "#ffffff",
+            "on-primary-fixed": "#0f0069",
+            "surface-tint": "#4d44e3",
+            "outline": "#777587",
+            "on-secondary": "#ffffff",
+            "surface": "#f7f9fb",
+            "secondary-fixed-dim": "#b7c8e1",
+            "inverse-surface": "#2d3133",
+            "surface-variant": "#e0e3e5",
+            "primary": "#3525cd",
+            "surface-container-highest": "#e0e3e5",
+            "on-tertiary-fixed": "#001e2f",
+            "on-surface-variant": "#464555",
+            "surface-container-low": "#f2f4f6",
+            "tertiary-container": "#006693",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#191c1e",
+            "inverse-primary": "#c3c0ff",
+            "surface-container-high": "#e6e8ea",
+            "outline-variant": "#c7c4d8",
+            "on-error": "#ffffff",
+            "surface-container": "#eceef0",
+            "error": "#ba1a1a",
+            "primary-fixed-dim": "#c3c0ff",
+            "on-error-container": "#93000a",
+            "primary-container": "#4f46e5",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "error-container": "#ffdad6",
+            "tertiary-fixed-dim": "#89ceff",
+            "inverse-on-surface": "#eff1f3",
+            "secondary": "#505f76",
+            "on-primary-fixed-variant": "#3323cc",
+            "primary-fixed": "#e2dfff",
+            "on-background": "#191c1e",
+            "tertiary": "#004d70",
+            "on-secondary-fixed-variant": "#38485d",
+            "on-secondary-fixed": "#0b1c30",
+            "surface-dim": "#d8dadc",
+            "on-tertiary-container": "#b8e0ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "1rem",
+            "margin": "1rem",
+            "gutter-tablet": "1.25rem",
+            "margin-tablet": "1.5rem",
+            "space-md": "1rem",
+            "space-lg": "1.5rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin-desktop": "2rem",
+            "gutter-desktop": "1.5rem",
+            "space-xs": "0.25rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "title-md": ["Inter"],
+            "label-sm": ["Inter"],
+            "headline-sm": ["Roboto Flex"],
+            "body-md": ["Inter"],
+            "label-md": ["Inter"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "label-lg": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "headline-lg": ["Roboto Flex"],
+            "body-sm": ["Inter"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      line-height: 1;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .material-symbols-outlined.fill-icon {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen bg-surface font-body-md text-on-surface antialiased flex justify-center selection:bg-primary selection:text-on-primary">
+<!-- Mobile Screen Container -->
+<div class="relative w-full max-w-md min-h-screen bg-surface flex flex-col shadow-2xl overflow-hidden pb-12">
+<!-- TopAppBar (from Shared Components JSON Blueprint) -->
+<header class="sticky top-0 z-40 flex items-center justify-between w-full h-16 px-4 bg-surface-container-lowest dark:bg-inverse-surface border-b border-surface-variant dark:border-outline-variant shadow-sm">
+<div class="flex items-center gap-3">
+<button aria-label="Quay lại" class="p-2 -ml-2 rounded-full text-primary dark:text-primary-fixed hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors active:scale-95 transition-transform duration-150 flex items-center justify-center" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="text-headline-sm font-headline-sm font-semibold text-on-surface dark:text-inverse-on-surface tracking-tight">Quyền riêng tư</h1>
+</div>
+<button aria-label="Trợ giúp" class="p-2 -mr-2 rounded-full text-on-surface-variant dark:text-outline-variant hover:bg-surface-container dark:hover:bg-surface-container-highest transition-colors active:scale-95 transition-transform duration-150 flex items-center justify-center" type="button">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+</header>
+<!-- Scrollable Content Canvas -->
+<main class="flex-1 px-4 py-5 space-y-6 overflow-y-auto">
+<!-- Section 1: TÍNH NĂNG THÔNG MINH & AI -->
+<section class="space-y-3">
+<div class="flex items-center gap-1.5 px-1">
+<span class="material-symbols-outlined text-primary text-[18px] fill-icon" data-icon="auto_awesome" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+<h2 class="text-label-md font-label-md uppercase tracking-wider text-primary">TÍNH NĂNG THÔNG MINH &amp; AI</h2>
+</div>
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-sm border border-surface-variant/70 space-y-4">
+<!-- Main AI Summary Toggle -->
+<div class="flex items-start justify-between gap-4">
+<div class="space-y-1.5 flex-1">
+<label class="text-title-md font-title-md text-on-surface block cursor-pointer" for="ai-toggle">Dùng AI ngoài để tóm tắt</label>
+<p class="text-body-sm font-body-sm text-on-surface-variant leading-relaxed">
+                Tin nhắn được ẩn thông tin nhạy cảm rồi gửi tới dịch vụ AI
+              </p>
+</div>
+<!-- M3 Active Switch Toggle -->
+<div class="relative inline-flex items-center cursor-pointer pt-1">
+<input checked="" class="sr-only peer" id="ai-toggle" type="checkbox"/>
+<div class="w-13 h-7 w-[52px] h-[32px] bg-primary rounded-full transition-colors peer-checked:bg-primary-container relative">
+<div class="absolute right-[4px] top-[4px] bg-on-primary w-6 h-6 rounded-full transition-transform flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-primary text-[16px] font-bold" data-icon="check">check</span>
+</div>
+</div>
+</div>
+</div>
+<div class="h-px bg-surface-variant/60 -mx-4"></div>
+<!-- Secondary AI Privacy Option -->
+<div class="flex items-center justify-between gap-4">
+<div class="space-y-0.5 flex-1">
+<span class="text-body-lg font-body-lg text-on-surface">Lưu lịch sử tóm tắt (30 ngày)</span>
+<p class="text-body-sm font-body-sm text-secondary">Tự động xóa nội dung đã xử lý sau 30 ngày</p>
+</div>
+<!-- M3 Switch (Inactive) -->
+<div class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" id="history-toggle" type="checkbox"/>
+<div class="w-[52px] h-[32px] bg-surface-variant rounded-full transition-colors relative border-2 border-outline/30">
+<div class="absolute left-[4px] top-[4px] bg-outline w-5 h-5 rounded-full transition-transform"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 2: QUYỀN RIÊNG TƯ & TIN NHẮN -->
+<section class="space-y-3">
+<h2 class="text-label-md font-label-md uppercase tracking-wider text-secondary px-1">QUYỀN RIÊNG TƯ &amp; TIN NHẮN</h2>
+<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-surface-variant/70 divide-y divide-surface-variant/60 overflow-hidden">
+<!-- Trạng thái hoạt động Row -->
+<div class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-[20px]" data-icon="fiber_manual_record">fiber_manual_record</span>
+</div>
+<div>
+<p class="text-body-lg font-body-lg text-on-surface">Trạng thái hoạt động</p>
+<p class="text-body-sm font-body-sm text-secondary">Đang bật</p>
+</div>
+</div>
+<!-- M3 Switch (Active) -->
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-[52px] h-[32px] bg-primary rounded-full relative">
+<div class="absolute right-[4px] top-[4px] bg-on-primary w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-primary text-[16px] font-bold" data-icon="check">check</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Thông báo đã xem Row -->
+<div class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-[20px]" data-icon="done_all">done_all</span>
+</div>
+<div>
+<p class="text-body-lg font-body-lg text-on-surface">Thông báo đã xem</p>
+<p class="text-body-sm font-body-sm text-secondary">Người khác có thể thấy khi bạn đọc tin</p>
+</div>
+</div>
+<!-- M3 Switch (Active) -->
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-[52px] h-[32px] bg-primary rounded-full relative">
+<div class="absolute right-[4px] top-[4px] bg-on-primary w-6 h-6 rounded-full flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-primary text-[16px] font-bold" data-icon="check">check</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Ai có thể liên hệ Row -->
+<button class="w-full flex items-center justify-between p-4 text-left hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]" data-icon="person_search">person_search</span>
+</div>
+<p class="text-body-lg font-body-lg text-on-surface">Ai có thể liên hệ với bạn</p>
+</div>
+<div class="flex items-center gap-1 text-secondary">
+<span class="text-body-md font-body-md">Mọi người</span>
+<span class="material-symbols-outlined text-[20px]" data-icon="chevron_right">chevron_right</span>
+</div>
+</button>
+<!-- Danh sách chặn Row -->
+<button class="w-full flex items-center justify-between p-4 text-left hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]" data-icon="block">block</span>
+</div>
+<p class="text-body-lg font-body-lg text-on-surface">Danh sách chặn</p>
+</div>
+<div class="flex items-center gap-1 text-secondary">
+<span class="text-body-md font-body-md">0 người</span>
+<span class="material-symbols-outlined text-[20px]" data-icon="chevron_right">chevron_right</span>
+</div>
+</button>
+</div>
+</section>
+<!-- Security Trust Callout / Info Footer Banner -->
+<div class="p-4 rounded-xl bg-surface-container-low border border-surface-variant flex items-center gap-3">
+<span class="material-symbols-outlined text-primary shrink-0" data-icon="lock">lock</span>
+<p class="text-body-sm font-body-sm text-secondary">
+          Mọi tin nhắn cá nhân đều được bảo vệ bằng mã hóa đầu cuối.
+        </p>
+</div>
+</main>
+<!-- Scrim Modal Backdrop (rgba(0, 0, 0, 0.48)) -->
+<div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4 transition-opacity">
+<!-- Material 3 AlertDialog Surface -->
+<div class="w-full max-w-[340px] bg-surface-container-lowest rounded-[28px] p-6 shadow-2xl border border-surface-variant/40 flex flex-col space-y-4 animate-in fade-in zoom-in-95 duration-200">
+<!-- Dialog Header with Icon Container -->
+<div class="flex flex-col items-center text-center space-y-3 pt-1">
+<div class="w-12 h-12 rounded-2xl bg-secondary-container text-primary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[28px] fill-icon" data-icon="auto_awesome" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+<h3 class="text-headline-sm font-headline-sm font-semibold text-on-surface tracking-tight">
+            Bật tóm tắt bằng AI?
+          </h3>
+</div>
+<!-- Dialog Body Content -->
+<div class="space-y-4 text-center">
+<p class="text-body-sm font-body-sm text-on-surface-variant leading-relaxed text-left">
+            Khi bật tính năng này, nội dung tin nhắn sẽ được ẩn danh hóa và lọc bỏ thông tin nhạy cảm (số điện thoại, mật khẩu, CCCD) trước khi gửi tới nhà cung cấp mô hình trí tuệ nhân tạo bên thứ ba để xử lý tóm tắt. Dữ liệu không được dùng để huấn luyện mô hình.
+          </p>
+<!-- Security Badges / Micro-checks -->
+<div class="bg-surface-container-low rounded-xl p-3 space-y-2 text-left border border-surface-variant/50">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] fill-icon" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-label-md font-label-md text-on-surface">Mã hóa trong khi truyền tải</span>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px] fill-icon" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="text-label-md font-label-md text-on-surface">Không lưu dữ liệu vĩnh viễn</span>
+</div>
+</div>
+</div>
+<!-- Dialog Action Buttons (Docked Bottom) -->
+<div class="flex items-center justify-end gap-2 pt-2">
+<button class="px-4 py-2.5 rounded-full text-label-lg font-label-lg text-secondary hover:bg-surface-container active:scale-95 transition-all" type="button">
+            Hủy
+          </button>
+<button class="px-5 py-2.5 rounded-full text-label-lg font-label-lg bg-primary-container text-on-primary hover:bg-primary active:scale-95 transition-all shadow-sm flex items-center gap-1.5" type="button">
+<span>Đồng ý</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</body></html>

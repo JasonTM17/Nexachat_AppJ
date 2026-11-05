@@ -62,9 +62,11 @@ Discovery & Phone Search · Private Chat · Group Chat · Multimedia & File ·
 Multi-language · Rotation — cộng Creative Feature **Message Interactions**
 (Reply/Quote + Emoji Reaction + Pin).
 
-**Out-of-scope** (nói rõ để tránh overclaim): voice/video call (WebRTC),
-end-to-end encryption, đồng bộ danh bạ máy, microservices/Kubernetes, admin
-dashboard, FCM push notification. Mỗi mục loại đều có lý do và hướng phát
+**Out-of-scope** (nói rõ để tránh overclaim): end-to-end encryption, đồng bộ
+danh bạ máy, microservices/Kubernetes, admin dashboard, FCM push notification.
+Voice/video call (WebRTC) đang **in progress**: server đã có signaling, ICE
+config và direct-call history; Android đã có call core/media/UI trong repo
+nhưng chưa verify đầy đủ — chưa dùng trong demo. Mỗi mục loại đều có lý do và hướng phát
 triển được ghi ở §15.
 
 **Cấu trúc repo** (monorepo, một `.git` duy nhất):
@@ -86,10 +88,10 @@ nexachat/
 |---|---|---:|---|---|
 | R1 | Bài nộp đầy đủ, đúng cấu trúc | 5 | ✅ | `docs/packaging-checklist.md` (C1–C12), `.git` full history, `docs/report.docx`, APK release |
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
-| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 96 keys mỗi bên (`docs/i18n-audit.md`); `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
+| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 186 string entries mỗi bên (184 translatable, gồm `strings_call.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
-| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Server **310 tests green** (280 unit + 30 IT); Android **202 tests green** (20 classes) + `RoomMigrationTest` 3/3 on API 35; CI workflow `.github/workflows/ci.yml` configured |
-| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 18 câu vấn đáp trong thiết kế, mỗi quyết định kèm "vì sao" |
+| R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Test status do CI run hiện tại báo (`.github/workflows/ci.yml`); `RoomMigrationTest` cover migration chain Room v1→v7 (xem §13.1) |
+| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 62 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
 cụ thể — không ghi "end-to-end encryption", không ghi "scalable triệu user".
@@ -145,7 +147,7 @@ reaction emoji toggle (PK composite = idempotent); pin ≤3/conversation
 | NFR-3 | Security | bcrypt; JWT HS256 secret ≥256-bit từ env; mọi endpoint cần Bearer trừ whitelist; WSS ở prod | `SecurityConfig`, `JwtAuthFilter`, `application-prod.yml` fail-fast khi thiếu `JWT_SECRET` |
 | NFR-4 | Usability | Material 3; mọi màn có Loading/Empty/Error/Retry; touch target ≥48dp | `core/ui/components` shared states; đợt a11y đã sửa vi phạm 48dp thật |
 | NFR-5 | Maintainability | Package-by-feature; không trả JPA entity ra API; không business logic trong Controller/Composable | module `com.nexachat.<feature>` server; `feature/*` + `data/` + `core/` Android |
-| NFR-6 | Testability | Unit tests pass locally; CI enforces the suites after push; mỗi service authZ có negative test | 310 + 202 tests; 21 negative tests ở quality phase |
+| NFR-6 | Testability | Unit tests pass locally; CI enforces the suites after push; mỗi service authZ có negative test | Test status xem CI run hiện tại; mỗi service authZ có negative test |
 | NFR-7 | Portability | minSdk 26, targetSdk 35; emulator + máy thật qua LAN | `build.gradle.kts`; `BuildConfig.API_BASE_URL` |
 | NFR-8 | Observability | Log không chứa password/token/file body; `/actuator/health` | log scan sạch (chỉ id/event name) |
 | NFR-9 | Constraints | 1 backend + 1 PostgreSQL; media ≤25MB; demo LAN offline | `docker-compose.yml` |
@@ -250,7 +252,7 @@ bền vững; reconnect chỉ cần `GET messages?afterSeq=` để resync.
 | T6 | Token | TokenStore tự viết: AES/GCM key trong Android Keystore + DataStore | ~100 dòng, không phụ thuộc lib deprecating |
 | T8 | Picker | Photo Picker + SAF | Không cần runtime permission |
 | T9 | Backend | Spring Boot 3.4.1 MVC, Java 17 | Blocking model đơn giản, khớp JPA |
-| T10 | DB access | Spring Data JPA + Flyway | Migration versioned V1→V3 |
+| T10 | DB access | Spring Data JPA + Flyway | Migration versioned V1–V6 (V4 presence, V5 calls, V6 summaries — summary in progress) |
 | T11 | DB | PostgreSQL 16 | JSONB/constraint mạnh; BIGSERIAL ordering |
 | T12 | Realtime | **STOMP over WebSocket + SimpleBroker**, không SockJS | Frame semantics + authZ theo destination có sẵn; client native không cần browser fallback |
 | T13 | Auth | **SĐT + password + JWT access/refresh rotation** | OTP cần SMS gateway trả phí, khó test LAN; rubric không đòi verify ownership |
@@ -277,7 +279,7 @@ conversations ──1:N── pinned_messages qua message (V3, ≤3/conv enforce
 messages ──1:N── messages             (reply_to_id — self FK, V1)
 ```
 
-### 5.2. Bảng thực tế (theo migration V1/V2/V3 — `server/src/main/resources/db/migration/`)
+### 5.2. Bảng thực tế (theo migration V1–V6 — `server/src/main/resources/db/migration/`)
 
 **V1__init.sql** — 7 bảng lõi + extensions `pgcrypto`, `pg_trgm`:
 
@@ -305,6 +307,26 @@ cùng transaction.
 | `message_reactions` | `message_id`+`user_id`+`emoji` **composite PK**, `created_at` | PK composite chính là toggle-idempotency: react lại = DELETE row, insert trùng = `ON CONFLICT DO NOTHING`; CASCADE theo message & user |
 | `pinned_messages` | `conversation_id`+`message_id` **composite PK**, `pinned_by` FK, `pinned_at` | "Pin 2 lần" là no-op by construction; trần ≤3/conv enforce ở `PinService` dưới row-lock của conversation; index `idx_pins_message` |
 
+**V4__presence.sql** — privacy-aware presence + literal search:
+
+| Bảng/Thay đổi | Cột | Thiết kế |
+|---|---|---|
+| `users` (alter) | `last_seen_at TIMESTAMPTZ`, `show_presence BOOLEAN NOT NULL DEFAULT TRUE` | Presence mặc định bật; `unaccent` extension cho search không dấu |
+
+**V5__calls.sql** — call history:
+
+| Bảng | Cột chính | Ràng buộc & index |
+|---|---|---|
+| `call_records` | `call_id` UUID PK, `conversation_id` FK CASCADE, `caller_id`/`callee_id` FK CASCADE, `state` CHECK(RINGING/ACTIVE/ENDED), `end_reason` CHECK(COMPLETED/REJECTED/CANCELLED/MISSED/BUSY/FAILED), `started_at`, `answered_at`, `ended_at`, `duration_seconds` | `ck_call_participants_distinct`, `ck_call_terminal_fields`, `ck_call_answered_state`, `ck_call_duration_nonnegative`; 3 index theo conversation/caller/callee + `started_at` |
+
+**V6__conversation_summaries.sql** — summary (in progress):
+
+| Bảng/Thay đổi | Cột | Thiết kế |
+|---|---|---|
+| `users` (alter) | `ai_summary_consent BOOLEAN NOT NULL DEFAULT FALSE` | Opt-in mặc định tắt |
+| `message_summaries` | `id` UUID PK, `conversation_id` FK, `from_seq`/`to_seq`, `content_hash` CHAR(64), `provider` CHECK(LOCAL/LLM), `language`, `payload_json` JSONB, `expires_at` | Unique `(conversation_id, from_seq, to_seq, content_hash, provider, language)`; index `expires_at` |
+| `summary_request_limits` | `user_id` FK, `window_type` CHECK(MINUTE/DAY), `window_start`, `request_count` | PK `(user_id, window_type, window_start)` — rate limit 10/phút, 60/ngày |
+
 ### 5.3. Các quyết định schema phải giải thích được
 
 1. **`seq BIGSERIAL` thay timestamp ordering**: tăng đơn điệu toàn cục, độc lập
@@ -321,7 +343,7 @@ cùng transaction.
 5. **Denormalized `last_message_*`**: inbox không cần `MAX(seq)` per
    conversation; cập nhật trong cùng transaction insert message.
 6. **Soft delete `deleted_at`**: tin xóa vẫn giữ FK integrity (reply_to,
-   reactions); `edited_at` đã plumb sẵn (endpoint chưa ship — §15).
+   reactions); endpoint edit/delete đã ship (F1/F2 — §6.3, §7.2).
 7. **JPA**: mọi `@ManyToOne` LAZY (bẫy N+1 kinh điển); transaction boundary ở
    Service `@Transactional`; `ddl-auto=validate` — schema chỉ đổi qua Flyway.
 
@@ -351,7 +373,7 @@ dưới liệt kê đúng các controller trong `server/src/main/java/com/nexach
 Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 `RateLimitInterceptor`).
 
-### 6.2. Users & Contacts — `UserController`, `AvatarController`, `ContactController`
+### 6.2. Users & Contacts — `UserController`, `AvatarController`, `ContactController`, `UserSettingsController`
 
 | Method & path | Auth | Success | Errors chính |
 |---|---|---|---|
@@ -363,6 +385,8 @@ Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 | `POST /contacts {phone}` | Bearer | 201 | 404 USER_NOT_FOUND · 409 ALREADY_CONTACT · 429 (30/min) |
 | `PATCH /contacts/{userId} {aliasName?}` | Bearer | 200 | 400 · 404 |
 | `DELETE /contacts/{userId}` | Bearer | 204 (idempotent) | 401 |
+| `GET /users/me/settings` | Bearer | 200 `{showPresence, aiSummaryConsent}` | 401 |
+| `PATCH /users/me/settings` | Bearer | 200 `{showPresence, aiSummaryConsent}` | 400 · 401 |
 
 ### 6.3. Conversations & Messages — `ConversationController`, `ConversationInboxController`, `GroupController`, `MessageController`
 
@@ -378,6 +402,9 @@ Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 | `POST /conversations/{id}/avatar` (multipart) | ADMIN | 200 `{avatarUrl}` → broadcast CONVERSATION_UPDATED | 403 · 413 · 415 MIME_NOT_ALLOWED |
 | `GET /conversations/{id}/messages?beforeSeq=&afterSeq=&limit=` | member | 200 `MessagePageResponse{items,nextBeforeSeq,hasMore}` | 403 NOT_MEMBER · 404 |
 | `POST /conversations/{id}/messages` | member | 201 / 200 dedup hit — REST fallback của đường WS | 403 · 404 · 400 |
+| `PATCH /conversations/{id}/messages/{messageId}` | message author | 200 `MessageResponse`; identical content = no-op | 403 NOT_MESSAGE_AUTHOR · 404 · 409 MESSAGE_DELETED · 429 |
+| `DELETE /conversations/{id}/messages/{messageId}` | message author | 204 (idempotent soft delete) | 403 NOT_MESSAGE_AUTHOR · 404 · 429 |
+| `GET /conversations/{id}/messages/search?q=` | member | 200 `MessagePageResponse` (literal, case/accent-insensitive) | 403 · 404 · 429 |
 | `POST /conversations/{id}/read {upToSeq}` | member | 204 → broadcast MESSAGE_READ | 403 · 400 |
 
 ### 6.4. Interactions — `ReactionController`, `PinController`
@@ -397,7 +424,27 @@ Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 | `GET /attachments/{id}/content` | member của conv chứa file | 200 bytes | 403 · 404 |
 | `GET /files/**` (storage_key path) | Bearer | 200 bytes + sniffed Content-Type | 404 FILE_NOT_FOUND |
 
-**Tổng: 30 REST endpoint + `/actuator/health`.** Gửi tin có hai đường — WS
+### 6.6. Calls — `CallRestController`
+
+| Method & path | Auth | Success | Errors chính |
+|---|---|---|---|
+| `GET /calls/ice-config` | Bearer | 200 `{iceServers, ttlSeconds}` | 401 |
+| `GET /conversations/{id}/calls?limit=&cursor=` | member của DIRECT conv | 200 `{items: CallHistoryItem[], nextCursor?}` | 403 NOT_MEMBER · 404 |
+
+Call signaling rides STOMP (`SEND /app/calls/{id}/signal`, events on
+`/user/queue/calls`); full frame/state-machine contract in `docs/calls.md`.
+Android media/UI đang **in progress** — chưa verify đa thiết bị.
+
+### 6.7. Summary — `SummaryController` (in progress)
+
+| Method & path | Auth | Success | Errors chính |
+|---|---|---|---|
+| `POST /conversations/{id}/summary` | member | 200 summary payload (local extractive hoặc LLM nếu consent + operator key) | 400 · 403 NOT_MEMBER · 404 · 429 |
+
+Route tồn tại trong worktree nhưng `docs/ai-summary.md` đánh dấu **in progress**;
+chưa thuộc release-verified contract.
+
+**Tổng: 40 REST endpoint + `/actuator/health`.** Gửi tin có hai đường — WS
 (chính) và REST POST (fallback) — cùng đi qua `MessageService.send()` → một nơi
 enforce authZ + idempotency.
 
@@ -432,14 +479,14 @@ Mọi event cùng format — client parse một lần:
 | eventType | Payload | Phát khi |
 |---|---|---|
 | `MESSAGE_CREATED` | MessageResponse (seq, sender, content, attachments, replyTo, reactions) | tin mới persist xong |
-| `MESSAGE_UPDATED` | message id + content/editedAt | (contract sẵn; endpoint edit chưa ship) |
-| `MESSAGE_DELETED` | message id + deletedAt | (contract sẵn; endpoint delete chưa ship) |
+| `MESSAGE_UPDATED` | message id + content/editedAt | tin edit persist xong (F1) |
+| `MESSAGE_DELETED` | message id + deletedAt | tin soft-delete persist xong (F2) |
 | `MESSAGE_READ` | conversationId, readerId, upToSeq | member cập nhật watermark |
 | `REACTION_UPDATED` | `{messageId, reactions:[{emoji,count,userIds[]}]}` | toggle reaction |
 | `PIN_UPDATED` | `{conversationId, messageId, pinned}` | pin/unpin |
 | `USER_TYPING` | conversationId, senderId | typing frame |
 | `CONVERSATION_UPDATED` | title/avatar/members thay đổi | tạo nhóm, đổi nhóm, member add/remove |
-| `USER_ONLINE` / `USER_OFFLINE` | (vocabulary tồn tại trong `WsEventType`, chưa emit — §15) | presence — future |
+| `USER_ONLINE` / `USER_OFFLINE` | `{userId, online, lastSeenAt}` | presence thay đổi (F3) |
 
 ### 7.3. Điểm thiết kế then chốt
 
@@ -548,8 +595,10 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
 
 ### 10.1. i18n
 
-- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **96 keys mỗi
-  bên, parity 100%** — kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
+- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **186 string
+  entries mỗi bên (184 translatable), parity 100%** — gồm cả
+  `values/strings_call.xml` + `values-vi/strings_call.xml` (44 entries mỗi bên);
+  kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
 - Đổi ngôn ngữ trong Settings, persist: không có `androidx.appcompat` trong
   dependency graph → dùng **framework `android.app.LocaleManager` (API 33+,
   system-persisted)** và `SharedPreferences` + `wrapContext` cho API <33 —
@@ -655,53 +704,61 @@ lý thuyết:
     member) chỉ gọi `refreshMembers()` một lần sau 200 ms
     (`GroupDetailViewModel.PUSH_REFRESH_DEBOUNCE_MS`).
 12. **Minimal UI copy** — `splash_tagline` ("Connecting…") bị bỏ khỏi cả EN/VI
-    (96/96 keys); splash chỉ giữ logo, tên app và progress indicator.
+    (186/186 entries); splash chỉ giữ logo, tên app và progress indicator.
 
 ---
 
 ## 13. Kiểm thử — Testing
 
-### 13.1. Kết quả kiểm thử local (đếm từ XML report và Maven output)
+### 13.1. Kết quả kiểm thử (test status xem CI run hiện tại)
 
-| Tầng | Công cụ | Số test | Trạng thái |
-|---|---|---|---:|---|
-| Server unit | JUnit5 + Mockito (`mvn test`, surefire) | **280** | ✅ green |
-| Server integration | `@SpringBootTest` + Postgres thật qua env-JDBC (failsafe, `*IT`) | **30** | ✅ green |
-| **Server tổng** | `mvn -B verify` | **310** | ✅ green |
-| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | **202** (20 classes) | ✅ green |
-| Android instrumented | `MigrationTestHelper` (`connectedDebugAndroidTest`, API 35) | **3** (`RoomMigrationTest`) | ✅ green |
-| **Live E2E (prod Docker)** | REST + STOMP smoke script | 12 bước | ✅ green |
-| **On-device (emulator API 35)** | adb-driven manual flow + screenshot set | 22 screenshots (Vi/En) + 21 design screens | ✅ captured |
+Số test và trạng thái pass/fail là revision-specific; báo cáo này **không** ghi
+số cố định. Dùng CI run hiện tại (`.github/workflows/ci.yml`) cho kết quả chạy
+thật của đúng revision.
+
+| Tầng | Công cụ | Trạng thái |
+|---|---|---|
+| Server unit + integration | JUnit5 + Mockito (`mvn test`) + `@SpringBootTest` với Postgres thật qua env-JDBC (failsafe, `*IT`) | xem CI run hiện tại |
+| Android unit | JUnit + MockK + coroutines-test + Turbine (`testDebugUnitTest`) | xem CI run hiện tại |
+| Android instrumented | `MigrationTestHelper` (`connectedDebugAndroidTest`, API 35) — `RoomMigrationTest` | covers Room v1→v7 (4 tests: schema export, v1→v7 data preservation, v5→v6 role, v6→v7 edit/delete + inbox columns); chạy trên emulator |
+| Live E2E (prod Docker) | REST + STOMP smoke script | xem `docs/operations.md` + báo cáo device |
+| On-device (emulator API 35) | adb-driven manual flow + screenshot set | `docs/screenshots-manifest.md` |
 
 CI (`.github/workflows/ci.yml`) defines job `server-test` (postgres:16 service +
 `mvn -B verify` với `IT_DB_*` env) + `android-test` + secret-scan — chạy trên
 mọi PR và push `main`/`develop`; đỏ là không merge ("suite luôn xanh"). CI
 chưa được chạy lại cho các thay đổi working tree chưa commit trong phiên này.
 
-### 13.2. Integration test classes (26 test, Postgres thật)
+### 13.2. Integration test classes (Postgres thật)
 
-| IT class | Tests | Cover |
-|---|---:|---|
-| `auth/AuthFlowIT` | 6 | register→login→refresh rotation→reuse→logout flow |
-| `attachment/AttachmentFlowIT` | 5 | upload→bind→download authZ, mime/size reject |
-| `contact/ContactConversationIT` | 4 | add contact → open direct, `direct_key` dedup |
-| `conversation/GroupFlowIT` | 3 | tạo nhóm → member mgmt → non-member bị chặn |
-| `message/MessageFlowIT` | 8 | send WS/REST, idempotency + re-broadcast, history cursor, inbox paging, read watermark |
-| `message/InteractionFlowIT` | 4 | react toggle, pin limit/policy, reply (TC-INT-01..04) |
+| IT class | Cover |
+|---|---|
+| `auth/AuthFlowIT` | register→login→refresh rotation→reuse→logout flow |
+| `attachment/AttachmentFlowIT` | upload→bind→download authZ, mime/size reject |
+| `call/CallFlowIT` | invite/accept/media relay/end/history, busy/reject, timeout, disconnect, non-member/group denial |
+| `contact/ContactConversationIT` | add contact → open direct, `direct_key` dedup |
+| `conversation/GroupFlowIT` | tạo nhóm → member mgmt → non-member bị chặn |
+| `message/InteractionFlowIT` | react toggle, pin limit/policy, reply |
+| `message/MessageFeatureFlowIT` | edit/delete/search mutation flow, tombstone history, rate limits |
+| `message/MessageFlowIT` | send WS/REST, idempotency + re-broadcast, history cursor, inbox paging, read watermark |
+| `presence/PresenceFlowIT` | presence fan-out to DIRECT peers + privacy, reconnect coalescing |
+| `summary/SummaryApiIT` | summary request, consent, window, cache, rate limit |
+| `user/UserSettingsFlowIT` | settings get/patch (showPresence, aiSummaryConsent) |
+| `ws/WsPayloadSecurityIT` | malformed/oversized STOMP payload handling |
 
 ### 13.3. Unit test highlight
 
-Server: `MessageServiceTest` (32 — authZ, idempotency + re-broadcast, content
-cap, watermark), `GroupServiceTest` (37), `MagicBytesTest` (18 — mime sniff),
-`StompAuthChannelInterceptorTest` (20 — WS authN/Z + message/typing rate
-limit), `AuthServiceTest` (17), `AttachmentServiceTest` (16),
-`PinServiceTest` (16), `LocalStorageServiceTest` (15), `ContactServiceTest`
-(12), `PhoneNormalizerTest` (11 — E.164), `UserServiceTest` (11),
-`TokenServiceTest` (10 — rotation/reuse), `ConversationServiceTest` (10),
-`ReactionServiceTest` (8 — NFC normalize), `ProductionConfigurationTest` (3),
-`ConversationInboxControllerTest` (2), `AvatarControllerTest` (1)…
+Server: `MessageServiceTest` (authZ, idempotency + re-broadcast, content cap,
+watermark), `GroupServiceTest`, `MagicBytesTest` (mime sniff),
+`StompAuthChannelInterceptorTest` (WS authN/Z + message/typing rate limit),
+`AuthServiceTest`, `AttachmentServiceTest`, `PinServiceTest`,
+`LocalStorageServiceTest`, `ContactServiceTest`, `PhoneNormalizerTest` (E.164),
+`UserServiceTest`, `TokenServiceTest` (rotation/reuse), `ConversationServiceTest`,
+`ReactionServiceTest` (NFC normalize), `ProductionConfigurationTest`,
+`ConversationInboxControllerTest`, `AvatarControllerTest`, plus the message
+mutation/search/rate-limit, presence, settings, call, and summary suites.
 
-Android (202 test, 20 lớp): `ChatViewModelTest` (optimistic send, dedup theo
+Android (các lớp unit test): `ChatViewModelTest` (optimistic send, dedup theo
 `clientMessageId`, retry), `ChatUiLogicTest` (jump index mapping),
 `StringParityTest` (EN/VI key parity), `TokenAuthenticatorTest` (single-flight
 401→refresh), `StompCodecTest` (frame parse/build), `TokenStoreTest`,
@@ -712,7 +769,14 @@ Android (202 test, 20 lớp): `ChatViewModelTest` (optimistic send, dedup theo
 `WsEndpointUrlTest` (wsUrl derivation + constructor crash guard),
 `RealtimeSessionReArmTest` (expired-access refresh before CONNECT, parked-loop
 re-arm: network-regain, `ensureConnected` + foreground wake, logged-out
-no-ops, concurrent single-loop).
+no-ops, concurrent single-loop), `RealtimeSessionEventDecodeTest`,
+`DesignSystemUiRulesTest`, `PresenceFormatterTest`, `SearchHighlightHelperTest`,
+`ThemeMapperTest`, `ForwardFilterTest`, `MessageUiRulesTest`, `SearchUiRulesTest`,
+`MessageResolverTest`, `PresenceRepositoryTest`, `SettingsRepositoryTest`,
+`MessageRepositoryOfflineTest`, `ContactDtosTest`, `ConversationDtosTest`,
+call core/media/ui tests (`CallManagerTest`, `CallFrameCodecTest`,
+`CallUiModelMapperTest`, …), and summary tests (`SummaryViewModelTest`,
+`SummaryRepositoryTest`, `AiConsentRepositoryTest` — in progress).
 
 ### 13.4. Live E2E & on-device verification
 
@@ -729,14 +793,23 @@ WebSocket: `CONNECT` + Bearer → `CONNECTED` → REST gửi tin → nhận broa
 `MESSAGE_CREATED` → stranger `CONNECTED` nhưng `SUBSCRIBE` bị drop
 (authZ deny-by-default, đúng contract §7.3).
 
-**(b) On-device (emulator Android 15 / API 35, signed debug + release APK; 22
-feature screenshots + 21 design-system screens in `docs/design/screens/`):**
+**(b) On-device (emulator Android 15 / API 35, signed debug + release APK;
+screenshot inventory in `docs/screenshots-manifest.md`):**
 cài đặt → launch → login tài khoản seed `+84900000001` → inbox render từ
 Room → mở direct chat (history đầy đủ) → gửi tin (REST → persist → bubble
 hiện) → **nhận tin realtime qua WS push** (không cần refresh) → Contacts →
 Profile → đổi ngôn ngữ EN→VI **ngay lập tức** (framework `LocaleManager`
 API 33+, không restart) → group chat với sender labels → **xoay ngang màn
 hình state giữ nguyên** → logout → session restore sau reinstall.
+
+Đợt verify Stage-2 trên emulator (`deepseek-device.md` mục a–i) đã lái thêm:
+edit (`MessageController` PATCH + `MESSAGE_UPDATED` realtime), delete (dialog +
+tombstone + `MESSAGE_DELETED`), in-chat search (`MessageRepository` — highlight
++ jump), forward picker (`ForwardFilter`), presence header + inbox dot
+(`PresenceService`/`PresenceSessionRegistry`), theme SYSTEM/LIGHT/DARK
+(`ThemeMapper`/`SettingsRepository`) áp dụng tức thì. Caveat còn lại: D1 crash
+khi xoay trong edit (open), D2 presence offline lag ~1–2 phút, D3 "Xem" không
+điều hướng, D4 status-bar dark-on-dark.
 
 Các luồng tương tác cũng được lái qua **chính UI của release APK** (không
 chỉ REST): long-press bubble → sheet 6 emoji + Reply + Pin → react 👍
@@ -853,10 +926,10 @@ trong DB.
 ```bash
 # Server: Postgres thật rồi verify (unit + IT)
 docker compose up -d db          # postgres:16 @ localhost:5433
-cd server && mvn -B verify       # 310 tests (280 unit + 30 IT)
+cd server && mvn -B verify       # kết quả xem CI run hiện tại
 
 # Android unit tests
-cd android && ./gradlew testDebugUnitTest   # 202 tests (20 classes)
+cd android && ./gradlew testDebugUnitTest   # kết quả xem CI run hiện tại
 ```
 
 Manual E2E: `docs/demo-runbook.md` §5 — 10 bước demo ~8 phút (2 máy chat 1-1,
@@ -909,12 +982,13 @@ màn giữ draft (45s) → test suites xanh (60s) → kiến trúc + ERD + log (
 
 Đầy đủ ở `docs/known-limitations.md`; tóm tắt trung thực:
 
-### 15.1. Ngoài phạm vi theo thiết kế
+### 15.1. Ngoài phạm vi & đang làm — Out of scope & in progress
 
 | Hạn chế | Vì sao | Hướng phát triển |
 |---|---|---|
 | Không E2E encryption | Threat model chọn = JWT + TLS; E2EE không nằm trong MVP | Key exchange per-conversation + client crypto |
-| Không WebRTC voice/video | Rủi ro ổn định cao nhất; đề tự khuyên loại nếu ảnh hưởng cốt lõi | Signaling + STUN/TURN đã thiết kế sẵn |
+| Voice/video call (WebRTC) — in progress | Server signaling + ICE config + direct-call history đã ship; Android call core/media/UI đã có trong repo nhưng chưa verify đa thiết bị | Hoàn thiện + verify media path trên nhiều thiết bị |
+| AI summary — in progress | Server route + consent + Flyway V6 + Android data layer đã có; chưa có UI và chưa verify đầy đủ | Hoàn thiện UI + verify provider/consent flow |
 | Không FCM push | Optional tier; demo foreground đủ | Integration point đã vẽ sẵn |
 | SimpleBroker 1 instance | Đúng cho demo/deploy 1 node | Broker relay RabbitMQ + rate-limit bucket ra Redis/JDBC |
 
@@ -922,10 +996,8 @@ màn giữ draft (45s) → test suites xanh (60s) → kiến trúc + ERD + log (
 
 - Inbox `GET /conversations` hỗ trợ `limit`/`cursor` tuỳ chọn nhưng client
   Android vẫn gọi full list (`limit=null`) và prune chỉ khi payload là tập
-  đầy đủ; presence `USER_ONLINE/OFFLINE` chưa emit (online dot đã bỏ);
-  reactions/pins chưa vào offline outbox (optimistic + revert); **message
-  edit/delete** đã plumb `editedAt`/`deletedAt` nhưng endpoint chưa ship; đã
-  có `androidTest` migration test (3/3 trên API 35) nhưng chưa có UI
+  đầy đủ; reactions/pins chưa vào offline outbox (optimistic + revert); đã
+  có `RoomMigrationTest` cover Room v1→v7 (4 tests) nhưng chưa có UI
   instrumentation; lint 0 error / 73 warning.
 - Env: Testcontainers không chạy được trên Docker Desktop 29 → IT qua
   env-JDBC; LAN demo cleartext (dev-only, prod WSS/TLS); dev JWT secret là
@@ -979,13 +1051,12 @@ NexaChat ship đầy đủ phạm vi rubric: chat 1-1/nhóm realtime qua STOMP-o
 WebSocket, tìm & thêm bằng SĐT E.164, quản lý tài khoản với JWT refresh
 rotation + reuse detection, media/file upload-first với magic-byte hardening,
 i18n Vi/En 100% parity, rotation an toàn, và creative feature Message
-Interactions trên nền schema V1→V3 có kiểm soát bằng Flyway.
+Interactions trên nền schema V1–V6 có kiểm soát bằng Flyway (V4 presence,
+V5 calls, V6 summaries — summary in progress).
 
-Chất lượng được chứng minh bằng số liệu thật: **310 test server** (280 unit +
-30 integration trên Postgres thật) và **202 test Android** (20 lớp) đã pass
-local, cộng `RoomMigrationTest` 3/3 trên emulator API 35; CI workflow được
-cấu hình làm gate cho PR/push nhưng chưa chạy lại trên working tree chưa commit
-này; deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
-Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, presence
-chưa emit, edit/delete plumb sẵn chưa ship) — mỗi hạn chế kèm hướng phát triển
-rõ ràng, đúng nguyên tắc "không overclaim" của đồ án.
+Chất lượng được chứng minh bằng CI run hiện tại (`.github/workflows/ci.yml`);
+`RoomMigrationTest` cover migration chain Room v1→v7 trên emulator API 35;
+deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
+Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, voice
+call và AI summary còn in progress) — mỗi hạn chế kèm hướng phát triển rõ
+ràng, đúng nguyên tắc "không overclaim" của đồ án.

@@ -1,13 +1,14 @@
 # NexaChat WebSocket / STOMP Protocol
 
 > Realtime contract between the Android client and the Spring Boot backend;
-> REST covers auth, search, attachments and resync. Version 1.0 — 2026-11-04.
+> REST covers auth, search, attachments and resync. Version 1.0 — 2026-11-05.
 
 ## 1. Endpoint and transport
 
 - Endpoint: `ws://host/ws` (WSS in production, `wss://host/ws`), standard
   HTTP upgrade; no session cookie and no query-string token.
 - Transport: raw WebSocket speaking STOMP 1.2 frames.
+- Frame size: incoming raw WebSocket text messages are effectively limited to 16,640 bytes by Spring WebSocket 6.2.1 over Tomcat 10.1.34 (Tomcat's own default is 8,192 bytes). The assembled STOMP decoder limit is 65,536 bytes, but the lower transport limit may close an oversized raw frame before STOMP can return an ERROR frame.
 - **No SockJS.** The only client is the native Android app (OkHttp
   WebSocket + STOMP frames). SockJS exists to give browsers a fallback when
   WebSocket is blocked; with no browser client there is no fallback to
@@ -21,7 +22,7 @@ frame:
 ```text
 CONNECT
 accept-version:1.2
-authorization:Bearer <access-token>
+Authorization:Bearer <access-token>
 heart-beat:10000,10000
 
 ^@
@@ -42,6 +43,13 @@ stored access-token expiry and calls the shared, mutex-protected
 `TokenRefresher.refreshIfNeeded()` when it has expired. The authenticated user
 is bound to the session so `/user/**` destinations resolve.
 
+**Header whitespace quirk:** the interceptor reads the native
+`Authorization` value without trimming it, then requires the value to start
+with `Bearer `. Send the STOMP header as `Authorization:Bearer <access-token>`
+with no space after the colon. A header serialized as
+`Authorization: Bearer <access-token>` is rejected because that leading value
+space remains. A rejected CONNECT has no guaranteed `ERROR` frame.
+
 ## 3. Heartbeat
 
 `heart-beat:10000,10000` means the client sends a STOMP heartbeat every 10 s
@@ -60,9 +68,12 @@ and expects one from the server every 10 s.
 | C→S | `/app/conversations/{id}/messages` | SEND | `{clientMessageId,type,content,replyToId?,attachmentIds[]}` |
 | C→S | `/app/conversations/{id}/typing` | SEND | `{}` |
 | C→S | `/app/conversations/{id}/read` | SEND | `{upToSeq}` |
+| C→S | `/app/calls/{conversationId}/signal` | SEND | call signal JSON; see [`docs/calls.md`](calls.md) |
 | S→C | `/topic/conversations.{id}` | SUBSCRIBE | event envelope (§5); authorized by membership |
 | S→C | `/user/queue/inbox` | SUBSCRIBE | event envelope |
 | S→C | `/user/queue/errors` | SUBSCRIBE | `{code,clientMessageId?}` |
+| S→C | `/user/queue/presence` | SUBSCRIBE | `USER_ONLINE` / `USER_OFFLINE` envelope |
+| S→C | `/user/queue/calls` | SUBSCRIBE | `CallEvent` JSON; see [`docs/calls.md`](calls.md) |
 
 Notes:
 
@@ -72,6 +83,9 @@ Notes:
   referenced by `attachmentIds`; nothing binary goes over STOMP.
 - `/user/queue/*` is a per-connection user queue from the CONNECT principal;
   it is not shared between devices.
+- Supported user-queue subscriptions are exactly `/user/queue/inbox`,
+  `/user/queue/errors`, `/user/queue/presence`, and `/user/queue/calls`; each
+  resolves only to the authenticated user's own sessions.
 - SEND is rate-limited per user: 30 `messages` / 10 s and 60 `typing` / 10 s,
   configured by `nexachat.rate-limit.stomp.*`. An over-budget frame is dropped
   and reported on `/user/queue/errors` as
@@ -83,7 +97,9 @@ Notes:
 
 ## 5. Event envelope
 
-Every server event uses the same envelope:
+Conversation and presence events use the following envelope (call signaling
+uses a separate `CallEvent` payload on `/user/queue/calls`; see
+[`docs/calls.md`](calls.md)):
 
 ```json
 {"eventType": "MESSAGE_CREATED", "conversationId": "42…", "serverTs": "2026-11-04T10:31:05.123Z", "payload": {}}
@@ -91,14 +107,34 @@ Every server event uses the same envelope:
 
 | eventType | payload summary |
 |---|---|
-| `MESSAGE_CREATED` | message: `seq`, `clientMessageId`, `senderId`, `type`, `content`, `replyToId?`, `createdAt` |
-| `MESSAGE_UPDATED` | message id + edited `content`/`editedAt` |
-| `MESSAGE_DELETED` | message id + `deletedAt` |
-| `MESSAGE_READ` | conversation id, reader id, `upToSeq` |
-| `REACTION_UPDATED` | message id, emoji, actor, added/removed |
-| `PIN_UPDATED` | conversation id, pinned message id or null |
-| `USER_TYPING` | conversation id, sender id, `typing` boolean |
-| `CONVERSATION_UPDATED` | changed fields (title, avatar, members) |
+| `MESSAGE_CREATED` | Full `MessageResponse` payload (including `id`, `conversationId`, `seq`, `senderId`, `type`, content/tombstone fields, and timestamps) |
+| `MESSAGE_UPDATED` | full `MessageResponse` with edited `content`/`editedAt` |
+| `MESSAGE_DELETED` | `{messageId, deletedAt}`; deleted content is never rebroadcast |
+| `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope |
+| `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
+| `PIN_UPDATED` | `{messageId, pinned}`; conversation id is in the envelope |
+| `USER_TYPING` | `{userId}`; conversation id is in the envelope and the Android client expires the indicator after a local 5 s TTL |
+| `CONVERSATION_UPDATED` | `{conversationId, title, avatarUrl, change, members[]}` state snapshot; also refreshes inbox snippets when the last message is edited or deleted |
+| `USER_ONLINE` | `{userId, online:true, lastSeenAt:null}`; `conversationId` is null |
+| `USER_OFFLINE` | `{userId, online:false, lastSeenAt}`; `conversationId` is null |
+
+Presence is counted per authenticated STOMP session in memory. Only a user's
+DIRECT-conversation peers receive that user's state, and only while the subject
+has `show_presence=true`; group members do not receive presence. If a user
+hides their own presence, their state is omitted from peer inboxes and no
+presence events are sent to those peers. This setting is one-way: it does not
+hide peers' presence from that user. The last disconnect persists
+`users.last_seen_at`; offline delivery is delayed up to five seconds, so a
+reconnect in that window cancels the transient offline event. This registry
+and Spring `SimpleBroker` are single-node only; multiple backend instances
+would need shared presence state and a broker relay.
+
+Malformed STOMP payload conversion or bean-validation failures are sent to
+`/user/queue/errors` as `{"code":"VALIDATION_FAILED"}`. Unexpected handler
+exceptions use `{"code":"INTERNAL_ERROR"}`. These error responses omit
+`clientMessageId`, because an invalid body may not have been parsed far enough
+to read it. This behavior is implemented by `WsMessageController`'s generic
+messaging exception handler.
 
 `serverTs` is server time; clients use it for display and, with
 `payload.seq`, as the resync watermark.
@@ -147,10 +183,11 @@ CONNECT resets the counter.
    token means no session and no `CONNECTED` acknowledgement. Clients should
    refresh from the stored refresh token after local access-token expiry.
 2. **SUBSCRIBE / SEND = authorization.** Every subscription to
-   `/topic/conversations.{id}` and every SEND to `/app/conversations/{id}/…`
-   is checked against `conversation_members` for the authenticated user. A
-   non-member gets an `ERROR` frame (`code=FORBIDDEN`) and the subscription is
-   rejected. The check runs in a channel interceptor, not only in the UI.
+   `/topic/conversations.{id}`, SENDs to `/app/conversations/{id}/…`, and
+   call signaling for a conversation are checked against its members. The
+   interceptor drops denied frames; clients must not rely on receiving an
+   `ERROR` frame for a non-member denial. The check runs in a channel
+   interceptor, not only in the UI.
 
 `typing` and `read` frames are membership-checked too.
 
@@ -169,7 +206,7 @@ When multi-instance is needed, replace it with a broker relay
 ```text
 CONNECT
 accept-version:1.2
-authorization:Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTEx...
+Authorization:Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTEx...
 heart-beat:10000,10000
 
 ^@

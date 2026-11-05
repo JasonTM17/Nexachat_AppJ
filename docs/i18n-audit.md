@@ -1,35 +1,56 @@
 # i18n Audit — NexaChat Android
 
 Read-only audit. Sources: `android/app/src/main/res/values/strings.xml`,
-`android/app/src/main/res/values-vi/strings.xml`, and all 82 Kotlin files under
-`android/app/src/main/java`. No source or resource file was modified.
-Counts re-verified against the final frozen tree (2026-11-05).
+`android/app/src/main/res/values-vi/strings.xml`,
+`android/app/src/main/res/values/strings_call.xml`,
+`android/app/src/main/res/values-vi/strings_call.xml`, and the Kotlin/Java
+sources under `android/app/src/main/java/com/nexachat` (`feature/**`, `call/**`,
+`core/ui/**`). No source or resource file was modified.
+Counts re-verified against the tree on 2026-11-05.
+
+## Counting command
+
+Run from the repository root:
+
+```bash
+python - <<'PY'
+import re, pathlib
+files = [
+    "android/app/src/main/res/values/strings.xml",
+    "android/app/src/main/res/values-vi/strings.xml",
+    "android/app/src/main/res/values/strings_call.xml",
+    "android/app/src/main/res/values-vi/strings_call.xml",
+]
+sets = {}
+for f in files:
+    body = re.search(r"<resources[^>]*>([\s\S]*?)</resources>",
+                     pathlib.Path(f).read_text(encoding="utf-8")).group(1)
+    pairs = re.findall(r'<string\s+name="([^"]+)"([^>]*)>', body)
+    names = [n for n, _ in pairs]
+    translatable = [n for n, a in pairs if 'translatable="false"' not in a]
+    sets[f] = names
+    print(f"{f}: {len(names)} entries, {len(translatable)} translatable")
+print("base parity:", sets[files[0]] == sets[files[1]])
+print("call parity:", sets[files[2]] == sets[files[3]])
+PY
+```
 
 ## 1. Parity check (EN vs VI)
 
-| Section | EN keys | VI keys | Status |
-| --- | ---: | ---: | --- |
-| App name | 1 | 1 | identical by design |
-| Splash | 0 | 0 | section removed with `splash_tagline` |
-| Auth | 14 | 14 | ok |
-| Auth field validation | 4 | 4 | ok |
-| ApiError → user-facing messages | 5 | 5 | ok |
-| Inbox | 2 | 2 | ok |
-| Contacts & user search | 20 | 20 | ok |
-| Contacts errors | 2 | 2 | ok |
-| Profile | 2 | 2 | ok |
-| Settings | 4 | 4 | 2 endonyms are `translatable="false"` |
-| Chat placeholder | 2 | 2 | ok |
-| Chat | 12 | 12 | ok |
-| Message interactions | 10 | 10 | ok |
-| Media / attachments | 5 | 5 | ok |
-| Group | 13 | 13 | ok |
-| **Total** | **96** | **96** | **100 %** |
+| Resource pair | EN entries | VI entries | Translatable EN/VI | Name sets |
+| --- | ---: | ---: | ---: | --- |
+| `values/strings.xml` ↔ `values-vi/strings.xml` | 142 | 142 | 140 / 140 | identical |
+| `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 44 | 44 | 44 / 44 | identical |
+| **Total per locale** | **186** | **186** | **184 / 184** | **identical** |
 
 - Missing from VI: **none**.
 - Missing from EN: **none**.
-- Translatable keys: **94** (the 2 `language_name_*` endonyms are
+- Translatable keys: **184** of 186 (the 2 `language_name_*` endonyms are
   `translatable="false"` by design).
+- `strings_call.xml` carries the call-specific labels (state names, permission
+  rationales, call controls, settings section titles). It was added after the
+  original 96-key audit and is now inside the audit scope; both locales carry the
+  same 44 names.
 - Present but identical in VI: `app_name` and `pinned_count` (`%1$d/%2$d`,
   numeric format) — both intentional.
 - Untranslated English leaking through resources: **none**.
@@ -60,39 +81,39 @@ Consistency notes (not errors):
 - No machine-translation artifacts with leftover English words were found;
   the issues above are grammar/word-choice, not garbled output.
 
-## 3. Hardcoded user-visible strings in Kotlin
+## 3. Hardcoded user-visible strings in Kotlin/Java
 
-Scan covered `Text("…")`, `placeholder=`, `label=`, `contentDescription=`,
-`setContentDescription`, dialogs, and snackbars/toasts across all 82 files.
+Scan covered `feature/**`, `call/**`, `core/ui/**` for `Text("…")`,
+`text = "…"`, `placeholder = "…"`, `label = "…"`, `contentDescription = "…"`,
+`setContentDescription(…)`, `Toast.makeText(…)`, dialogs, and snackbars.
 Imports, URLs, route names, tags, keys, SQL, and logging were excluded.
 
 | Screen / area | Location | Literal | Classification |
 | --- | --- | --- | --- |
-| Chat | `feature/chat/ChatScreen.kt:575` | `"!"` | Delivery-failed mark; symbol, not localizable prose |
-| Attachments | `feature/media/AttachmentViews.kt:247` | `"!"` | Failed-upload placeholder; symbol |
+| Attachments | `feature/media/AttachmentViews.kt:247` | `"!"` | Failed-upload placeholder; symbol, not localizable prose |
 | Attachments | `feature/media/AttachmentViews.kt:239` | `"${(item.progress * 100).toInt()}%"` | Dynamic progress; numeric only |
-| Media | `feature/media/MediaModels.kt:62` | `"$bytes B"` | Size template hardcoded in code |
-| Media | `feature/media/MediaModels.kt:64` | `"%.1f KB"` | Size template hardcoded in code |
-| Media | `feature/media/MediaModels.kt:65` | `"%.1f MB"` | Size template hardcoded in code |
+| Media | `feature/media/MediaModels.kt:62` | `"$bytes B"` | Size template; unit only |
+| Media | `feature/media/MediaModels.kt:64` | `"%.1f KB"` | Size template; `String.format(Locale.getDefault(), …)` |
+| Media | `feature/media/MediaModels.kt:65` | `"%.1f MB"` | Size template; `String.format(Locale.getDefault(), …)` |
 
-The previous `formatBytes()` locale defect is **fixed**: it now calls
+The `formatBytes()` locale behavior is correct: KB/MB use
 `String.format(Locale.getDefault(), …)` (`MediaModels.kt:60-65`), so `vi_VN`
 renders a comma decimal separator. Unit tokens (B/KB/MB) are SI-neutral.
 
-Every other user-visible value resolves through
-`stringResource(R.string.*)` (154 call sites across 22 files), including all
-top bars, labels, placeholders, content descriptions, dialogs, and
-error/snackbar text.
+The call UI (`call/ui/*.java`) resolves every user-visible string through
+`R.string.call_*`; no hardcoded prose was found there. Every other user-visible
+value in the scanned packages resolves through `stringResource(R.string.*)` or
+`getString(R.string.*)`.
 
 ## 4. Verdict
 
-- Resource key coverage: **96/96 = 100 %** (0 missing either direction).
-- Translatable strings localized: **94/94 = 100 %** (2 endonyms are
+- Resource key coverage: **186/186 = 100 %** (0 missing either direction).
+- Translatable strings localized: **184/184 = 100 %** (2 endonyms are
   `translatable="false"` by design).
-- Hardcoded prose in Compose UI: **0 hits**; only 2 symbols, 1 dynamic numeric,
-  and 3 hardcoded size-format templates were found.
-- Translation quality: **94/94 clean = 100 %** — the six previously flagged VI
-  entries are all fixed, and the `formatBytes()` locale defect is fixed.
+- Hardcoded prose in UI: **0 hits**; only 2 symbols and 3 numeric/size-format
+  templates were found.
+- Translation quality: **184/184 clean = 100 %** — the six previously flagged VI
+  entries are all fixed, and the `formatBytes()` locale behavior is correct.
 
 Overall: clean i18n pass. The remaining `SĐT` vs "số điện thoại" register split
 is a consistency nit, not a correctness defect.

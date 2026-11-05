@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Chuyển tiếp tin nhắn - NexaChat</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "primary-container": "#4f46e5",
+            "primary-fixed": "#e2dfff",
+            "on-tertiary-fixed": "#001e2f",
+            "tertiary": "#004d70",
+            "surface-container": "#eceef0",
+            "outline-variant": "#c7c4d8",
+            "inverse-surface": "#2d3133",
+            "error": "#ba1a1a",
+            "on-secondary-container": "#54647a",
+            "background": "#f7f9fb",
+            "surface-bright": "#f7f9fb",
+            "surface-container-lowest": "#ffffff",
+            "tertiary-fixed-dim": "#89ceff",
+            "on-secondary-fixed": "#0b1c30",
+            "on-secondary-fixed-variant": "#38485d",
+            "on-primary": "#ffffff",
+            "inverse-on-surface": "#eff1f3",
+            "on-primary-container": "#dad7ff",
+            "secondary-container": "#d0e1fb",
+            "primary": "#3525cd",
+            "surface": "#f7f9fb",
+            "on-tertiary-container": "#b8e0ff",
+            "tertiary-container": "#006693",
+            "outline": "#777587",
+            "on-background": "#191c1e",
+            "secondary-fixed-dim": "#b7c8e1",
+            "on-primary-fixed": "#0f0069",
+            "surface-container-high": "#e6e8ea",
+            "inverse-primary": "#c3c0ff",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "surface-variant": "#e0e3e5",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-tint": "#4d44e3",
+            "on-tertiary": "#ffffff",
+            "on-surface-variant": "#464555",
+            "tertiary-fixed": "#c9e6ff",
+            "surface-container-highest": "#e0e3e5",
+            "on-error": "#ffffff",
+            "error-container": "#ffdad6",
+            "on-surface": "#191c1e",
+            "on-primary-fixed-variant": "#3323cc",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "surface-dim": "#d8dadc",
+            "secondary-fixed": "#d3e4fe",
+            "surface-container-low": "#f2f4f6",
+            "secondary": "#505f76"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "3xl": "1.5rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "gutter-tablet": "1.25rem",
+            "gutter-desktop": "1.5rem",
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "gutter": "1rem",
+            "space-sm": "0.5rem",
+            "space-lg": "1.5rem",
+            "margin-tablet": "1.5rem",
+            "margin-desktop": "2rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Inter", "sans-serif"],
+            "headline-lg": ["Roboto Flex", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "headline-md": ["Roboto Flex", "sans-serif"],
+            "label-lg": ["Inter", "sans-serif"],
+            "headline-sm": ["Roboto Flex", "sans-serif"],
+            "headline-lg-mobile": ["Roboto Flex", "sans-serif"],
+            "title-md": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"]
+          },
+          "fontSize": {
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .material-symbols-outlined.fill {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased select-none overflow-hidden h-screen w-screen flex justify-center items-end sm:items-center">
+<!-- Background App View (Contextual Chat Stream Behind Dimmed Overlay) -->
+<div class="fixed inset-0 flex flex-col justify-between filter blur-sm pointer-events-none opacity-40 bg-surface">
+<!-- Mocked Background Top Navigation -->
+<header class="bg-surface-container-lowest px-4 py-3 shadow-sm flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<span class="material-symbols-outlined text-on-surface">arrow_back</span>
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center font-title-md text-title-md text-on-secondary-container">LA</div>
+<div>
+<h2 class="font-title-md text-title-md text-on-surface">Lan Anh</h2>
+<p class="font-label-sm text-label-sm text-secondary">Đang hoạt động</p>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-on-surface-variant">call</span>
+<span class="material-symbols-outlined text-on-surface-variant">videocam</span>
+</div>
+</header>
+<!-- Mocked Background Chat Bubbles -->
+<div class="p-4 space-y-4 max-w-md mx-auto w-full">
+<div class="flex justify-start">
+<div class="bg-surface-container-high rounded-2xl rounded-bl-sm p-3.5 max-w-[80%]">
+<p class="font-body-md text-body-md text-on-surface">Chào cả nhà, tài liệu phân tích hệ thống vừa cập nhật xong.</p>
+<span class="font-label-sm text-label-sm text-on-surface-variant block text-right mt-1">14:24</span>
+</div>
+</div>
+<div class="flex justify-end">
+<div class="bg-primary-container text-on-primary rounded-2xl rounded-br-sm p-3.5 max-w-[80%] shadow-sm">
+<p class="font-body-md text-body-md text-on-primary">Tuyệt vời, mình sẽ tổng hợp với nhóm UI.</p>
+<span class="font-label-sm text-label-sm text-on-primary-container block text-right mt-1">14:28</span>
+</div>
+</div>
+<div class="flex justify-start">
+<div class="bg-surface-container-high rounded-2xl rounded-bl-sm p-3.5 max-w-[80%] border-2 border-primary-container">
+<p class="font-body-md text-body-md text-on-surface font-semibold">Hẹn gặp mọi người lúc 15:00 nhé!</p>
+<span class="font-label-sm text-label-sm text-on-surface-variant block text-right mt-1">14:30</span>
+</div>
+</div>
+</div>
+<!-- Mocked Background Composer -->
+<div class="p-3 bg-surface-container-lowest border-t border-outline-variant flex items-center gap-2">
+<div class="h-10 flex-1 bg-surface-container rounded-lg"></div>
+<div class="w-10 h-10 rounded-full bg-primary-container"></div>
+</div>
+</div>
+<!-- Modal Backdrop / Scrim -->
+<div class="fixed inset-0 bg-inverse-surface/40 backdrop-blur-md transition-opacity duration-200 z-40"></div>
+<!-- Modal Bottom Sheet Container -->
+<div class="relative z-50 w-full max-w-lg bg-surface-container-lowest rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[813px] sm:max-h-[777px] border border-outline-variant/30 overflow-hidden transition-all duration-300">
+<!-- Drag Handle Indicator -->
+<div class="w-full pt-3 pb-1 flex justify-center items-center cursor-grab active:cursor-grabbing">
+<div class="w-10 h-1.5 bg-outline-variant rounded-full"></div>
+</div>
+<!-- Top App Bar / Sheet Header (Shared Component Mapping) -->
+<div class="flex items-center justify-between px-4 py-2 w-full border-b border-outline-variant/40 bg-surface-container-lowest">
+<!-- Close Action Leading Button -->
+<button aria-label="Đóng" class="p-2 -ml-1 rounded-full text-on-surface-variant hover:bg-surface-container active:scale-95 transition-transform duration-150 flex items-center justify-center" type="button">
+<span class="material-symbols-outlined text-[24px]">close</span>
+</button>
+<!-- Center Title Anchor & Sub-counter -->
+<div class="flex flex-col items-center justify-center text-center">
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface leading-snug">Chuyển tiếp tin nhắn</h1>
+<span class="font-label-md text-label-md text-primary font-semibold flex items-center gap-1">
+          Đã chọn 2 người nhận
+        </span>
+</div>
+<!-- Trailing Action -->
+<button aria-label="Tìm kiếm nhanh" class="p-2 -mr-1 rounded-full text-primary hover:bg-surface-container active:scale-95 transition-transform duration-150 flex items-center justify-center" type="button">
+<span class="material-symbols-outlined text-[24px]">search</span>
+</button>
+</div>
+<!-- Scrollable Content Canvas -->
+<div class="flex-1 overflow-y-auto px-4 py-3 space-y-3.5 scrollbar-thin">
+<!-- Message Preview Snippet Card -->
+<div class="bg-surface-container-low rounded-xl p-3 border border-outline-variant/40 relative shadow-sm">
+<div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-outline-variant/30">
+<div class="flex items-center space-x-1.5 text-primary">
+<span class="material-symbols-outlined text-[18px]">forward</span>
+<span class="font-label-md text-label-md font-semibold">Tin nhắn đính kèm</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">14:30</span>
+</div>
+<div class="flex items-start gap-2.5">
+<div class="w-1 bg-primary-container rounded-full self-stretch my-0.5"></div>
+<div class="flex-1 min-w-0">
+<p class="font-label-md text-label-md font-semibold text-on-surface truncate">Lan Anh</p>
+<p class="font-body-md text-body-md text-on-surface-variant italic truncate mt-0.5">
+              "Hẹn gặp mọi người lúc 15:00 nhé!"
+            </p>
+</div>
+</div>
+</div>
+<!-- Material 3 Rounded Pill Search Bar -->
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3.5 text-on-surface-variant text-[20px]">search</span>
+<input class="w-full pl-10 pr-9 py-2.5 bg-surface-container-low border border-outline-variant/50 rounded-full font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary-container focus:border-transparent transition-all" placeholder="Tìm cuộc trò chuyện..." type="text" value=""/>
+<button aria-label="Xóa nội dung tìm kiếm" class="absolute right-3 text-on-surface-variant hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[18px]">cancel</span>
+</button>
+</div>
+<!-- Quick Filter Tabs / Chips -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+<!-- Chip 1: Active 'Gần đây' -->
+<button class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-primary-container text-on-primary font-label-md text-label-md shadow-sm active:scale-95 transition-transform duration-150" type="button">
+<span class="material-symbols-outlined text-[16px]">check</span>
+<span>Gần đây</span>
+</button>
+<!-- Chip 2: 'Nhóm' -->
+<button class="inline-flex items-center px-3.5 py-1.5 rounded-full bg-surface-container-lowest border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container active:scale-95 transition-transform duration-150" type="button">
+<span>Nhóm</span>
+</button>
+<!-- Chip 3: 'Danh bạ' -->
+<button class="inline-flex items-center px-3.5 py-1.5 rounded-full bg-surface-container-lowest border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container active:scale-95 transition-transform duration-150" type="button">
+<span>Danh bạ</span>
+</button>
+<!-- Chip 4: 'Kênh thông báo' -->
+<button class="inline-flex items-center px-3.5 py-1.5 rounded-full bg-surface-container-lowest border border-outline-variant text-on-surface-variant font-label-md text-label-md hover:bg-surface-container active:scale-95 transition-transform duration-150" type="button">
+<span>Tin đã ghim</span>
+</button>
+</div>
+<!-- Conversation List (M3 List Items with Multi-Select) -->
+<div class="space-y-1 pt-1">
+<!-- Item 1: Nhóm Thiết Kế UI/UX (Checked) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl bg-surface-container-low hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<!-- Group Avatar with decorative badge -->
+<div class="relative w-12 h-12 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center flex-shrink-0 shadow-xs">
+<span class="material-symbols-outlined text-[22px]">group</span>
+</div>
+<div class="min-w-0">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Nhóm Thiết Kế UI/UX</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">4 thành viên</p>
+</div>
+</div>
+<!-- Custom Checked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full bg-primary-container text-on-primary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+</div>
+</label>
+<!-- Item 2: Nguyễn Văn An (Checked + Online status) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl bg-surface-container-low hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<!-- User Avatar with Online Dot -->
+<div class="relative w-12 h-12 flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover border border-outline-variant/30" data-alt="A clean, professional portrait photograph of a young Vietnamese product designer with glasses and warm smile in a modern bright creative studio under high-key natural illumination. The image features smooth studio depth of field with indigo and crisp white ambient color accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5dYuhKrH-vqkEbAQBltqtfHjDjzCEe85KzLU6idrkngfZrGyv8lywYW5mmx5AVHYT1dn66U7f12DeqaumwD63mIJFU3fc_1b0XlmDhLKY5WlZeiQwQhnAwXMER7NdIOnQpGWZes-jdTvd2qX1Y0dLItwfPmP3BMgscSMp3-6ekCS1wiG1hdEd1zIkMvAd7iiG9HL9wgsJZG5MTJKPpQlpmYusa41rSE709ryAbiuidnQEJV0q8nC71ycv4YT5DBeiU5mC23XkOBp4"/>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-surface-container-lowest"></span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Nguyễn Văn An</h2>
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Hôm nay 14:30</p>
+</div>
+</div>
+<!-- Custom Checked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full bg-primary-container text-on-primary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+</div>
+</label>
+<!-- Item 3: Đồ án Tốt nghiệp 2026 (Unchecked) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-12 h-12 rounded-full bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[22px]">school</span>
+</div>
+<div class="min-w-0">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Đồ án Tốt nghiệp 2026</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Trần Bình: Đã đẩy code...</p>
+</div>
+</div>
+<!-- Custom Unchecked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant group-hover:border-primary transition-colors"></div>
+</div>
+</label>
+<!-- Item 4: Lan Anh (Unchecked + Online Active) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-12 h-12 flex-shrink-0">
+<img class="w-12 h-12 rounded-full object-cover border border-outline-variant/30" data-alt="A portrait shot of a young Vietnamese female team manager looking confident with a friendly expression in a sunlit modern glass architectural office. The image has a clean aesthetic with bright soft white lighting and balanced deep indigo contrast accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbaEL2XfuAR3LNjQniiCesYOni8QeG24dzx7KbzAaQFH8RzsMWBaMn9TFzVii7tTZJ5u_r8kk0NWmBGexVj2yTFByD2B36Kex62mjVymcYmJDKVfLhiKJZ3FXYW3o9gqfQup_dzpKRRqNao51fYn4Ty38dN5IYPFk1flhiu2qhAdqv0DGXrFMnlk-SIRzFCnQdHPRUdo52nG-ESEFbdU3avIiTNByjezYPJ1Z3jfqpJ7Xgpvg22wGQ7Mk1FRFMhwgy9MQQ1NXu6Xg4"/>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-surface-container-lowest"></span>
+</div>
+<div class="min-w-0">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Lan Anh</h2>
+<p class="font-body-sm text-body-sm text-emerald-600 font-medium truncate">Đang hoạt động</p>
+</div>
+</div>
+<!-- Custom Unchecked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant group-hover:border-primary transition-colors"></div>
+</div>
+</label>
+<!-- Item 5: Alex Morgan (Unchecked) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-12 h-12 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center font-title-md text-title-md flex-shrink-0">
+              AM
+            </div>
+<div class="min-w-0">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Alex Morgan</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Hoạt động 1 giờ trước</p>
+</div>
+</div>
+<!-- Custom Unchecked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant group-hover:border-primary transition-colors"></div>
+</div>
+</label>
+<!-- Item 6: Bảo Nam (Unchecked) -->
+<label class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-surface-container cursor-pointer transition-colors group">
+<div class="flex items-center gap-3 min-w-0">
+<div class="relative w-12 h-12 rounded-full bg-surface-container-high text-on-surface flex items-center justify-center font-title-md text-title-md flex-shrink-0">
+              BN
+            </div>
+<div class="min-w-0">
+<h2 class="font-title-md text-title-md text-on-surface truncate group-hover:text-primary transition-colors">Bảo Nam</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Hôm qua</p>
+</div>
+</div>
+<!-- Custom Unchecked Checkbox -->
+<div class="flex-shrink-0 ml-3">
+<div class="w-6 h-6 rounded-full border-2 border-outline-variant group-hover:border-primary transition-colors"></div>
+</div>
+</label>
+</div>
+</div>
+<!-- Bottom Fixed Action Dock -->
+<div class="p-4 bg-surface-container-lowest border-t border-outline-variant/30 space-y-3">
+<!-- Optional 'Thêm lời nhắn...' Input Box -->
+<div class="relative flex items-center">
+<input class="w-full pl-3.5 pr-10 py-2.5 bg-surface-container-low border border-outline-variant/40 rounded-xl font-body-md text-body-md text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary-container focus:bg-surface-container-lowest transition-all" placeholder="Thêm lời nhắn..." type="text"/>
+<button aria-label="Thêm biểu cảm cảm xúc" class="absolute right-3 text-on-surface-variant hover:text-primary transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px]">sentiment_satisfied</span>
+</button>
+</div>
+<!-- Prominent Pill Button 'Gửi (2)' -->
+<button class="w-full h-13 py-3.5 px-6 bg-primary-container hover:bg-primary text-on-primary rounded-full flex items-center justify-center gap-2 font-headline-sm text-headline-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-150" type="button">
+<span>Gửi (2)</span>
+<span class="material-symbols-outlined text-[22px]">send</span>
+</button>
+<!-- Bottom Safe Area Spacer -->
+<div class="h-1 sm:h-0"></div>
+</div>
+</div>
+</body></html>

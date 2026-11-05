@@ -1,79 +1,53 @@
-# NexaChat Known Limitations & Deferred Work
+# Known Limitations
 
-Current-state inventory for the final-project report ("hạn chế"). Snapshot basis:
-final frozen tree on `main` based on `64d47c0` (2026-11-05), including the
-uncommitted stability fixes. Sources: the execution ledger
-(`plans/261103-2322-nexachat-master-design/reports/execution-ledger.md`),
-`docs/security.md`, `docs/interactions-demo.md`, `docs/i18n-audit.md`,
-`docs/rotation-audit.md`, and the cited source files.
-Paths are repo-relative; `…/` abbreviates `server/src/main/java/com/nexachat/` and
-`android/app/src/main/java/com/nexachat/`.
+This page describes constraints visible in the current source. It is not a
+deployment certification; use the current CI and release evidence for build,
+test, and runtime status.
 
-## 1. Explicitly out of scope by design
+## 1. Backend scope and scaling
 
-| Limitation | Why deferred | User-facing impact | Future work |
-| --- | --- | --- | --- |
-| No end-to-end encryption | JWT auth + TLS transport is the chosen threat model; E2EE was never in MVP scope (`docs/security.md:147-148`). | Message and file content is plaintext at rest; a database/backup leak exposes content. | Per-conversation key exchange + client crypto; server-side key management. |
-| No WebRTC voice/video calling | Plan ranks it the highest stability risk and excludes it from mandatory scope (`plan.md:83,100,369`); Message Interactions was chosen as the creative feature instead (`plan.md:100`). | No in-app call button; the demo covers chat, media and interactions only. | Signaling + STUN/TURN design is pre-drawn (`plan.md:83`); add as a later phase. |
-| No push notifications (FCM) | Optional tier; a foreground demo is sufficient (`plan.md:88,98`). | No notification while backgrounded; unread badges update on next launch/refresh. | FCM integration point is pre-drawn (`plan.md:275-286`). |
-| Single-instance broker | `SimpleBroker` is in-process fan-out, correct for one instance (`WebSocketConfig.java:58`). | Works for the one-backend demo; cannot fan out across multiple server nodes. | Broker relay (RabbitMQ/STOMP) + move `RateLimitService` buckets to Redis/JDBC (`docs/security.md`; `docs/websocket-protocol.md` §8; `plan.md:919`). |
-| In-memory rate limiter | Buckets live in a bounded LRU map (10,000 keys, 15 min idle TTL) in one JVM (`RateLimitService.java:24-27`). | Correct for one instance; two nodes get two independent budgets, and a restart clears the budgets. | Bucket4j Redis/JDBC backend. |
-| Message `seq` is a global PostgreSQL sequence | `BIGSERIAL UNIQUE` (`V1__init.sql:90`) gives a unique, monotonic per-conversation order, but seq values are shared across conversations, so gaps are possible (a rolled-back insert or another conversation's message consumes a value). | Cursor pagination (`afterSeq`/`beforeSeq`) is unaffected — it is exclusive `>` / `<`; only "seq == row count" assumptions break. | Per-conversation counters would need locking or a max+1 race; global seq is the simpler correct choice. |
+| Limitation | Current behavior | Impact / next step |
+|---|---|---|
+| Single-node realtime broker | Spring `SimpleBroker` and `PresenceSessionRegistry` are process-local (`server/src/main/java/com/nexachat/config/WebSocketConfig.java`, `server/src/main/java/com/nexachat/presence/PresenceSessionRegistry.java`). | Events and online-session counts do not span backend instances. A multi-node deployment needs shared presence state and a broker relay. |
+| Live subscription after member removal | Membership is checked at SUBSCRIBE, but removing a member does not revoke an already-open broker subscription; a still-connected removed member may receive later topic frames until it disconnects (`GroupService.java:217`, `StompAuthChannelInterceptor.java:160`, `MessageBroadcastListener.java:48-73`). | Reported as a deferred High finding in `reports/codex-sec.md`; no round-2 report exists in this audit round, so the status is **open**. Revoke subscriptions on removal or filter frames by current membership, then test with an open removed-member socket. |
+| In-memory rate limits | `RateLimitService` keeps bounded token buckets in the server process. | Budgets reset on restart and are independent across nodes; use a shared store before scaling out. |
+| Presence privacy and scope | Presence is sent only to DIRECT peers while the subject's `show_presence` setting is on; groups receive no presence. Hiding one's own state does not hide peers' state from that user. | This is a coarse account-level, one-way control, not per-contact visibility. |
+| Presence state | Presence is tracked in the in-memory `PresenceSessionRegistry` and is single-node. | Online state does not span backend instances; a multi-node deployment needs shared presence state. |
+| Message search index | Message search uses escaped `unaccent` + `ILIKE` substring matching scoped to a conversation; there is no trigram index for the substring predicate (`server/src/main/java/com/nexachat/message/MessageRepository.java`). | Larger conversations may require scanning many rows. Measure realistic data before selecting a trigram or full-text index. |
+| Soft-deleted attachment retention | Deleting a message removes reaction rows and any pin and makes its attachment inaccessible through the deleted message, but keeps attachment metadata and stored bytes. | Storage is not reclaimed automatically. A retention/purge policy and a safe background cleanup are future work. |
+| Global message sequence | PostgreSQL `BIGSERIAL` values are unique and monotonic globally, not contiguous per conversation (`server/src/main/resources/db/migration/V1__init.sql`). | Sequence gaps are normal; consumers must use ordered cursors, not infer row counts from sequence differences. |
+| Access-token revocation | Logout-all and password change revoke refresh-token families; already issued access JWTs remain valid until their short expiry. | A revoked session may keep API access for the remainder of the access-token TTL. An access-token denylist would change this behavior. |
+| Phone ownership | Registration uses phone number plus password and does not verify phone ownership with OTP. | The service cannot prove that a registrant controls the number. Adding verification requires an external messaging provider. |
+| Phone enumeration | Registration reports `PHONE_EXISTS`; login uses a uniform invalid-credentials response. | An unauthenticated caller can learn whether a phone is registered. Rate limiting reduces, but does not remove, that disclosure. |
+| CORS defaults | Server API and STOMP origin patterns are permissive in the current configuration (`server/src/main/java/com/nexachat/config/SecurityConfig.java`, `WebSocketConfig.java`). | Restrict allowed origins by environment before public deployment. |
+| Call feature | Call signaling, ICE configuration, server call history, and an Android call-core/media/UI path exist (`server/call`, `android/.../call`), but the Android voice-call flow is still in progress and is not yet a verified demo feature. | Complete device verification of the media path before presenting calls as shipped. |
+| Call infrastructure | Call state and STOMP delivery use the single-node in-memory registry and `SimpleBroker` (`docs/calls.md`). | Multiple server instances need shared call coordination and a broker relay. |
+| Call NAT traversal | The default ICE configuration has public STUN only and no TURN. | Strict NAT or mobile networks may not establish media; a shared LAN/Wi-Fi path is the expected demo environment. |
+| Call scope | Only DIRECT conversations with exactly two members can call; calls are audio-only. | Group calls are out of scope. |
+| Call delivery while offline | An offline callee receives no push notification; the ring expires as a missed call and leaves a history row plus a localized chat line. | No FCM integration exists (see Android limitations). |
+| Call audio path | Audio media is negotiated by the Android client and depends on WebRTC availability on the device. | A missing or failed WebRTC stack degrades the call; signaling itself does not carry audio bytes. |
+| Conversation summary | A server summary route, services, Flyway V6 tables, and an Android summary data layer exist, but `docs/ai-summary.md` marks the feature in progress and no summary screen is wired into the app yet. The local engine is extractive: it selects and labels existing messages and does not generate new prose. The LLM engine is optional and requires both an operator key and the user's `aiSummaryConsent`; without either, no text leaves the server. | Treat the summary route and provider path as in progress until the UI and feature acceptance are complete. |
+| Summary privacy | With consent and an operator key, the server sends only redacted usable message text of other members on the requester's behalf; there is no per-conversation veto. | A member cannot block their messages from being summarized in a conversation they belong to. Add a per-conversation opt-out if required. |
+| Browser client | The supported realtime client is the native Android app using raw WebSocket + STOMP; no browser UI or SockJS fallback is provided. | There is no desktop/web messaging client. |
 
-## 2. Deferred review findings (ledger LATER)
+## 2. Android and offline behavior
 
-| Finding | What / why deferred | User-facing impact | Future work |
-| --- | --- | --- | --- |
-| Inbox pagination is server-optional, client-unbounded | `GET /conversations` accepts optional `limit`/`cursor` (`ConversationInboxController.java:29-33`; `docs/api-contract.md:210,221`), but the Android client always requests the full list (`ConversationRepository.refreshInbox` passes `limit=null`), and the reconcile prune runs only when the payload is provably complete (an envelope with `hasMore`/`nextBeforeSeq` is treated as partial). | Users with many conversations still load them all at once; no incremental inbox paging on the device. | Page from the client and keep the partial-payload prune guard honest. |
-| Presence `USER_ONLINE`/`USER_OFFLINE` | Vocabulary exists (`WsEventType.java:8-9`) but only the subset emitted this phase is produced; needs connect/disconnect listeners. Deferred (`ledger:121,130`). The online dot was removed from the UI rather than faked. | No online dot / last-seen; users cannot tell who is online. | Broker connect/disconnect listeners + contract surface. |
-| Offline queue for reactions/pins | Outbox covers message sends only (`MessageRepository.kt:354-376`); reactions/pins are optimistic with revert-on-failure (`MessageRepository.kt:560-685`). Deferred (`ledger:129`). | React/pin tapped while offline reverts; no retry queue. | Extend the outbox to interaction actions. |
-| Message edit/delete | `deletedAt`/`editedAt` are plumbed through responses and reply previews (`MessageService.java:450-458,489-501`; `MessageResponse.java:33-34`), but no edit/delete endpoint ships. Deferred (`ledger:129`). | Users cannot edit or remove a sent message; deleted messages are unreachable. | Ship edit/delete endpoints + client actions; gate react/pin on `deletedAt`. |
-| Access JWT survives logout-all / password change | Logout-all and password change revoke **refresh** tokens only (`AuthService.java:138-159`); there is no access-token denylist, so an already-issued access JWT stays valid until its 15-minute expiry. | A stolen access token remains usable for ≤15 min after "sign out all devices". | Access-token denylist (jti + short TTL) or a shorter access TTL. |
-| Registration reveals `PHONE_EXISTS` | Registration must tell the caller the phone is taken (`AuthService.register` → 409); login is the surface protected by uniform `INVALID_CREDENTIALS` + dummy bcrypt. | An unauthenticated caller can test whether a phone number is registered. | Rate-limited registration probing is the realistic mitigation; hiding existence would break the UX. |
-| Dev-grade permissive CORS | `allowedOriginPatterns("*")` and STOMP `setAllowedOriginPatterns("*")` (`SecurityConfig.java:87`; `WebSocketConfig.java`). | Any origin may call the API; acceptable only for the local demo. | Narrow per environment before any public deployment. |
-| Instrumented test coverage | The `androidTest` source set, `room-testing` dependency and `MigrationTestHelper` migration test exist and pass 3/3 on an API-35 emulator (`android/app/build.gradle.kts`; `android/app/src/androidTest/.../RoomMigrationTest.kt`), but there is no instrumented **UI** regression suite; rotation/i18n evidence is still unit-level (`docs/rotation-audit.md:1-8`). | Migration chain is verified on-device; UI state survival is not. | Add instrumented UI/rotation tests. |
-| Lint warnings | `./gradlew lintDebug` reports **0 errors, 73 warnings** (`android/app/build/reports/lint-results-debug.txt`) — mostly `GradleDependency`/`AndroidGradlePluginVersion` and a few `UnusedResources`. | No functional impact; the warnings are advisory. | Upgrade dependencies / prune unused resources when the next version lands. |
+| Limitation | Current behavior | Impact / next step |
+|---|---|---|
+| Interaction actions while offline | The durable outbox covers message sends. Reactions and pins use optimistic updates with failure rollback rather than a durable action queue (`android/app/src/main/java/com/nexachat/data/MessageRepository.kt`). | Offline reactions and pins are not retried automatically. |
+| Attachment forwarding | Message forwarding supports live `TEXT` content only (`android/app/src/main/java/com/nexachat/core/ui/ForwardFilter.java`). | Images, audio, video, files, and deleted messages cannot be forwarded through this action. |
+| Client inbox paging | The server accepts optional `limit`/`cursor` paging, but the Android client currently requests the complete inbox (`android/app/src/main/java/com/nexachat/data/ConversationRepository.kt`). | Very large inboxes are loaded in one request; client keyset paging remains future work. |
+| Deep history jump | Quote/pin jumps page at most 20 history pages (`MessageRepository.MAX_JUMP_PAGES`). | A target beyond the bound may not be reached by the jump flow. |
+| Reconnect while backgrounded | A parked connection loop re-arms from a timer while foregrounded; while backgrounded it waits for a network, foreground, or user-action trigger (`RealtimeSession.kt`). | A recovered server may not be reached until the app returns to the foreground or another trigger occurs. |
+| Instrumented UI coverage | The repository has a Room migration instrumentation test, but no instrumented UI/rotation regression suite. | JVM tests do not prove device lifecycle behavior; add UI instrumentation if lifecycle coverage is required. Check the current CI run for migration execution status. |
+| Debug LAN transport | The Android debug source set permits cleartext HTTP/WS for LAN demos (`android/app/src/debug/res/xml/network_security_config.xml`). | Credentials and traffic can be observed on an untrusted network. Use only a trusted demo LAN; production requires HTTPS/WSS. |
+| Push notifications | Firebase Cloud Messaging is not integrated. | No notification is delivered while the app is backgrounded or stopped. |
+| End-to-end encryption | Transport security is TLS-dependent; message and file content is not end-to-end encrypted. | Server/database or backup access can expose stored content. |
 
-## 3. Environment limits hit during build
+## 3. Verification boundary
 
-- **Testcontainers unusable on Docker Desktop 29.** docker-java 1.20.4 cannot
-  negotiate the named pipe, so ITs were rewired to env-JDBC against the compose
-  Postgres (`ledger:33-35,50-53`; `server/pom.xml:25`;
-  `server/src/test/resources/application-it.yml:6`). ITs still run real Postgres —
-  e.g. `AuthFlowIT.java:56` defaults to
-  `jdbc:postgresql://localhost:5433/nexachat` — so coverage is preserved, but
-  container lifecycle is not exercised locally.
-- **Debug LAN demo uses cleartext `http://` / `ws://`.** The debug source-set
-  override permits cleartext for the configured LAN server
-  (`android/app/src/debug/res/xml/network_security_config.xml`); use a trusted
-  network because traffic is visible to other network peers. The main/release
-  config remains restrictive except for emulator host `10.0.2.2`
-  (`android/app/src/main/res/xml/network_security_config.xml`). Production needs
-  TLS termination + WSS (`docs/security.md:140-143`).
-- **Local environment drift.** Port 5432 is occupied, so compose maps `5433:5432`
-  (`ledger:51`); the dev JWT secret is a visible placeholder
-  (`application.yml:28`), while prod fails fast on unset `JWT_SECRET`
-  (`application-prod.yml`) and on missing/unresolved datasource credentials
-  (`ProductionDataSourceConfiguration.java:21-38`). Compose supplies
-  `SPRING_DATASOURCE_*` so a fresh clone still boots.
-
-## 4. Honest UX limits
-
-- **Quote/pin jump is bounded to ~20 pages of history.** Tapping a quote or pin
-  banner pages backwards through history (`MAX_JUMP_PAGES = 20` ≈ 600 messages,
-  `MessageRepository.kt:916-917,292-317`) before scrolling to the target
-  (`ChatScreen.kt:125-137`). A message older than that budget reports
-  `reply_unavailable` ("Message unavailable") instead of jumping.
-- **Reaction bar is hidden on own pending messages.** `replyable = status == SENT`
-  gates the bar (`ChatScreen.kt:357,416`) and `toggleReaction` returns early
-  otherwise (`ChatViewModel.kt:274`). Pending/outbox rows show no reaction
-  affordance.
-- **Server-down-while-network-up recovers only while foregrounded.** The
-  re-arm triggers are a validated network *transition* (`NetworkMonitor`),
-  app foreground (`ProcessLifecycleOwner.onStart` → `onAppForeground`), a
-  user action (`ensureConnected` from `openConversation` and the send path),
-  and — while the app is foregrounded with a valid session — a bounded
-  backoff timer (5 s doubling to 60 s max) that re-arms a parked loop
-  (`RealtimeSession.kt:320-358`). Backgrounded, the timer stops, so a
-  backend that recovers while the app is behind another one waits for the
-  next foreground/network transition/user action.
+Test totals and pass/fail status are intentionally not fixed in this document.
+The checkout may contain partial local reports while a build is running or
+after a failed run. Use the current CI result and the release audit report for
+the exact revision under review. Unit tests do not prove a hosted deployment,
+multi-node broker behavior, or a real call-media journey.

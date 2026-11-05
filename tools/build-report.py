@@ -14,6 +14,7 @@ Output: docs/report.docx
 Requires: python-docx >= 1.1
 """
 from pathlib import Path
+import argparse
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -1286,7 +1287,9 @@ def build():
     return OUT
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Generate the NexaChat final report DOCX.")
+    parser.parse_args(argv)
     out = build()
     size = out.stat().st_size
     print(f"wrote {out} ({size:,} bytes)")

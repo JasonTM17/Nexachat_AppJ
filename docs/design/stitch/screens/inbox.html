@@ -3,12 +3,15 @@
 <html class="light" lang="vi"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>NexaChat - Inbox</title>
+<title>NexaChat - Tin nhắn</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Fonts: Roboto Flex & Inter -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@600;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script id="tailwind-config">
     tailwind.config = {
@@ -16,53 +19,53 @@
       theme: {
         extend: {
           "colors": {
-            "on-error-container": "#93000a",
-            "tertiary-container": "#006693",
             "on-tertiary-container": "#b8e0ff",
-            "surface-container": "#eceef0",
-            "primary-container": "#4f46e5",
-            "on-background": "#191c1e",
-            "primary-fixed": "#e2dfff",
-            "surface-variant": "#e0e3e5",
-            "on-tertiary": "#ffffff",
-            "surface-container-low": "#f2f4f6",
-            "on-tertiary-fixed": "#001e2f",
-            "on-error": "#ffffff",
-            "on-tertiary-fixed-variant": "#004c6e",
-            "on-secondary-fixed-variant": "#38485d",
-            "on-primary-fixed": "#0f0069",
-            "tertiary": "#004d70",
-            "surface-tint": "#4d44e3",
-            "surface": "#f7f9fb",
-            "secondary-container": "#d0e1fb",
-            "on-secondary": "#ffffff",
-            "on-secondary-container": "#54647a",
-            "inverse-on-surface": "#eff1f3",
-            "surface-container-high": "#e6e8ea",
-            "on-primary-container": "#dad7ff",
-            "outline-variant": "#c7c4d8",
-            "error-container": "#ffdad6",
-            "surface-bright": "#f7f9fb",
-            "surface-container-lowest": "#ffffff",
-            "on-surface": "#191c1e",
-            "on-surface-variant": "#464555",
-            "inverse-surface": "#2d3133",
-            "surface-container-highest": "#e0e3e5",
-            "primary-fixed-dim": "#c3c0ff",
-            "surface-dim": "#d8dadc",
-            "background": "#f7f9fb",
-            "on-secondary-fixed": "#0b1c30",
+            "on-error-container": "#93000a",
             "secondary-fixed": "#d3e4fe",
+            "primary-fixed": "#e2dfff",
+            "on-primary-container": "#dad7ff",
+            "tertiary-fixed-dim": "#89ceff",
             "secondary-fixed-dim": "#b7c8e1",
             "on-primary-fixed-variant": "#3323cc",
-            "tertiary-fixed": "#c9e6ff",
+            "inverse-surface": "#2d3133",
+            "on-surface-variant": "#464555",
+            "surface-container-highest": "#e0e3e5",
+            "on-error": "#ffffff",
+            "on-secondary-container": "#54647a",
+            "on-background": "#191c1e",
+            "on-tertiary-fixed": "#001e2f",
+            "outline-variant": "#c7c4d8",
+            "primary-fixed-dim": "#c3c0ff",
+            "tertiary": "#004d70",
+            "surface-container": "#eceef0",
+            "surface-tint": "#4d44e3",
+            "surface-container-lowest": "#ffffff",
             "secondary": "#505f76",
-            "tertiary-fixed-dim": "#89ceff",
-            "inverse-primary": "#c3c0ff",
+            "on-surface": "#191c1e",
+            "tertiary-fixed": "#c9e6ff",
+            "surface-variant": "#e0e3e5",
+            "surface-dim": "#d8dadc",
             "outline": "#777587",
-            "on-primary": "#ffffff",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "on-secondary": "#ffffff",
+            "inverse-on-surface": "#eff1f3",
+            "background": "#f7f9fb",
+            "tertiary-container": "#006693",
+            "surface-bright": "#f7f9fb",
+            "on-primary-fixed": "#0f0069",
+            "inverse-primary": "#c3c0ff",
+            "surface-container-high": "#e6e8ea",
+            "on-tertiary": "#ffffff",
             "primary": "#3525cd",
-            "error": "#ba1a1a"
+            "error-container": "#ffdad6",
+            "error": "#ba1a1a",
+            "on-secondary-fixed": "#0b1c30",
+            "surface-container-low": "#f2f4f6",
+            "secondary-container": "#d0e1fb",
+            "on-secondary-fixed-variant": "#38485d",
+            "surface": "#f7f9fb",
+            "primary-container": "#4f46e5",
+            "on-primary": "#ffffff"
           },
           "borderRadius": {
             "DEFAULT": "0.25rem",
@@ -71,63 +74,59 @@
             "full": "9999px"
           },
           "spacing": {
-            "margin-tablet": "1.5rem",
-            "gutter": "1rem",
-            "space-xs": "0.25rem",
-            "space-lg": "1.5rem",
-            "margin": "1rem",
-            "gutter-tablet": "1.25rem",
-            "margin-desktop": "2rem",
             "space-xl": "2rem",
+            "gutter": "1rem",
+            "margin": "1rem",
+            "gutter-desktop": "1.5rem",
             "space-md": "1rem",
             "space-sm": "0.5rem",
-            "gutter-desktop": "1.5rem"
+            "gutter-tablet": "1.25rem",
+            "margin-tablet": "1.5rem",
+            "space-xs": "0.25rem",
+            "margin-desktop": "2rem",
+            "space-lg": "1.5rem"
           },
           "fontFamily": {
-            "headline-lg-mobile": ["Roboto Flex"],
             "label-md": ["Inter"],
-            "body-md": ["Inter"],
-            "body-lg": ["Inter"],
-            "headline-lg": ["Roboto Flex"],
-            "headline-sm": ["Roboto Flex"],
+            "label-sm": ["Inter"],
             "label-lg": ["Inter"],
             "title-md": ["Inter"],
-            "label-sm": ["Inter"],
+            "headline-lg": ["Roboto Flex"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "body-sm": ["Inter"],
             "headline-md": ["Roboto Flex"],
-            "body-sm": ["Inter"]
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-sm": ["Roboto Flex"]
           },
           "fontSize": {
-            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
             "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
-            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
-            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
-            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
-            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
             "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
             "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
-            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
             "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
-            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }]
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
           }
-        }
-      }
+        },
+      },
     }
   </script>
 <style>
     .material-symbols-outlined {
       font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-      font-size: 22px;
-      line-height: 1;
       display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
     }
-    .material-symbols-outlined.fill-icon {
-      font-variation-settings: 'FILL' 1;
-    }
-    /* Hide scrollbar for category filter chips horizontally */
-    .no-scrollbar::-webkit-scrollbar {
+    .custom-scroll::-webkit-scrollbar {
       display: none;
     }
-    .no-scrollbar {
+    .custom-scroll {
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
@@ -137,196 +136,264 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-  </head>
-<body class="bg-surface text-on-surface antialiased min-h-screen flex flex-col justify-between selection:bg-primary selection:text-on-primary">
-<!-- Mobile Wrapper / Central Max Container -->
-<div class="w-full max-w-md mx-auto min-h-screen flex flex-col bg-surface shadow-2xl relative pb-24">
-<!-- Top App Bar (Shared Components Anchor Execution) -->
-<header class="sticky top-0 z-40 bg-surface-container-lowest shadow-sm flex justify-between items-center w-full px-4 h-16 transition-colors">
-<div class="flex items-center space-x-3">
-<button aria-label="Danh bạ" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
-<span class="material-symbols-outlined" data-icon="contacts">contacts</span>
+</head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex justify-center selection:bg-primary-container selection:text-on-primary">
+<!-- Mobile Viewport Container (~390px shell) -->
+<div class="w-full max-w-[420px] min-h-screen bg-surface flex flex-col relative pb-24 shadow-2xl">
+<!-- Top App Bar Component -->
+<header class="bg-surface-container-lowest dark:bg-inverse-surface border-b border-surface-variant dark:border-outline-variant shadow-sm dark:shadow-none flex justify-between items-center w-full px-4 h-16 sticky top-0 z-40 transition-colors"><!-- Leading Icon: Contacts / Danh bạ -->
+<div class="flex items-center space-x-1">
+<button aria-label="Danh bạ" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150 active:scale-95" type="button">
+<span class="material-symbols-outlined text-[24px] text-primary">contacts</span>
 </button>
-<span class="text-headline-sm font-headline-sm font-bold text-on-surface tracking-tight">NexaChat</span>
 </div>
+<!-- Center Brand Title with Brand Icon -->
 <div class="flex items-center space-x-2">
-<button aria-label="Tìm kiếm nhanh" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
-<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="material-symbols-outlined text-primary text-[26px]" style="font-variation-settings: 'FILL' 1;">forum</span>
+<h1 class="text-headline-sm font-headline-sm font-bold text-on-surface tracking-tight">
+    NexaChat
+  </h1>
+</div>
+<!-- Trailing Action: Quick Search & Profile Avatar -->
+<div class="flex items-center space-x-1.5">
+<button aria-label="Tìm kiếm nhanh" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors duration-150 active:scale-95" type="button">
+<span class="material-symbols-outlined text-[22px]">search</span>
 </button>
-<div class="relative cursor-pointer hover:opacity-90 transition-opacity">
-<img class="w-9 h-9 rounded-full object-cover border-2 border-surface-container-lowest shadow-sm" data-alt="Modern close-up profile portrait of a stylish young creative professional looking directly at the camera with warm natural daylight, crisp neutral studio backdrop with light slate tones, professional high key lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEmoonETMZxHxmIfuLS3EfobeJkHpEYtvGpNzexvO6nzUpMaK7GbJjZJS9cthglXRWewApV8oh_VgJ2r4DuzxFCSu5odHOWHyuBTLXlNnq0VjB_IQ-Liwi6kHQRXIqi0Yb4f7PAr9WpQIZhIOOhiKMzLL20zii-_flx0HGdvW8EoJDsP0vcZhYDrIh63YC3XbKlacDAGwV4n_TTduaz1GyyVZddlV7Rz7FRpbcKgUD07ybpjyPiKgIvIF8rol__eo5f5PN9pg0A9JO"/>
-<span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+<!-- User Profile Avatar with Online Status Dot -->
+<div aria-label="User profile avatar" class="relative cursor-pointer group active:scale-95 transition-transform duration-150 ml-1">
+<div class="w-10 h-10 rounded-full bg-secondary-container text-on-secondary-container font-title-md flex items-center justify-center font-bold ring-2 ring-surface-container-lowest shadow-sm">
+      TM
+    </div>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-[#10b981] border-2 border-surface-container-lowest rounded-full ring-1 ring-surface-container-low" title="Trực tuyến"></span>
 </div>
-</div>
-</header>
-<!-- Search & Fast Filter Section -->
-<section class="px-4 pt-3 pb-2 bg-surface-container-lowest space-y-3">
-<!-- Search Input Container -->
-<div class="relative flex items-center bg-surface-container-low rounded-xl px-3 py-2 border border-surface-variant focus-within:border-primary-container focus-within:bg-surface-container-lowest transition-all">
-<span class="material-symbols-outlined text-outline mr-2" data-icon="search">search</span>
-<input class="w-full bg-transparent border-0 p-0 text-body-md font-body-md text-on-surface placeholder:text-outline focus:ring-0 focus:outline-none" placeholder="Tìm kiếm tin nhắn, liên hệ..." type="text"/>
-<button aria-label="Bộ lọc &amp; Giọng nói" class="text-outline hover:text-primary transition-colors p-1 flex items-center">
-<span class="material-symbols-outlined" data-icon="mic">mic</span>
+</div></header>
+<!-- Sub-header & Search / Filter Controls -->
+<section class="px-4 pt-3 pb-2 bg-surface-container-lowest border-b border-surface-variant">
+<!-- Search Input Bar -->
+<div class="relative w-full mb-3">
+<span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-outline text-[20px] pointer-events-none">
+          search
+        </span>
+<input class="w-full h-11 pl-11 pr-10 bg-surface-container-low border-0 focus:ring-2 focus:ring-primary rounded-xl font-body-md text-body-md text-on-surface placeholder:text-outline outline-none transition-all" placeholder="Tìm kiếm tin nhắn, liên hệ..." type="text"/>
+<button aria-label="Lọc tìm kiếm" class="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-primary transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">tune</span>
 </button>
 </div>
-<!-- Filter Chips Row -->
-<div class="flex items-center space-x-2 overflow-x-auto no-scrollbar pb-1">
-<button class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary text-label-md font-label-md shadow-sm whitespace-nowrap active:scale-95 transition-all">
+<!-- Horizontal Filter Chips Carousel -->
+<div class="flex items-center space-x-2 overflow-x-auto custom-scroll pb-1">
+<!-- Active Filter: Tất cả -->
+<button class="shrink-0 h-8 px-3.5 rounded-full bg-primary-container text-on-primary font-label-md text-label-md flex items-center justify-center shadow-sm active:scale-95 transition-transform" type="button">
           Tất cả
         </button>
-<button class="px-3.5 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all flex items-center space-x-1.5">
+<!-- Filter: Chưa đọc (with count) -->
+<button class="shrink-0 h-8 px-3 rounded-full bg-surface-container-low border border-outline-variant text-on-surface-variant font-label-md text-label-md flex items-center space-x-1.5 hover:bg-surface-container transition-colors active:scale-95" type="button">
 <span>Chưa đọc</span>
-<span class="w-4 h-4 rounded-full bg-primary-container text-on-primary text-[10px] flex items-center justify-center font-bold">4</span>
+<span class="w-4 h-4 bg-primary text-on-primary text-[10px] font-bold rounded-full flex items-center justify-center">
+            3
+          </span>
 </button>
-<button class="px-4 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all">
+<!-- Filter: Nhóm -->
+<button class="shrink-0 h-8 px-3.5 rounded-full bg-surface-container-low border border-outline-variant text-on-surface-variant font-label-md text-label-md flex items-center justify-center hover:bg-surface-container transition-colors active:scale-95" type="button">
           Nhóm
         </button>
-<button class="px-4 py-1.5 rounded-full bg-surface-container-low text-on-surface-variant hover:bg-surface-container text-label-md font-label-md border border-surface-variant whitespace-nowrap active:scale-95 transition-all">
-          Trực tiếp
+<!-- Filter: Cá nhân -->
+<button class="shrink-0 h-8 px-3.5 rounded-full bg-surface-container-low border border-outline-variant text-on-surface-variant font-label-md text-label-md flex items-center justify-center hover:bg-surface-container transition-colors active:scale-95" type="button">
+          Cá nhân
         </button>
 </div>
 </section>
-<!-- Main Conversation Roster List -->
-<main class="flex-1 bg-surface-container-lowest pt-1">
-<!-- Conversation 1: Nhóm Thiết Kế UI/UX -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<div class="w-12 h-12 rounded-full bg-primary-container/10 flex items-center justify-center border border-primary-container/20 text-primary-container">
-<span class="material-symbols-outlined text-[26px] fill-icon" data-icon="groups">groups</span>
+<!-- Pinned Category Section Header -->
+<div class="px-4 pt-3 pb-1 flex items-center space-x-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary" style="font-variation-settings: 'FILL' 1;">push_pin</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline font-semibold">Đã ghim</span>
 </div>
-<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
+<!-- Active Chat Feed List -->
+<main class="flex-1 divide-y divide-surface-container"><!-- 1. Pinned conversation item: Nhóm Thiết Kế UI/UX -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container relative">
+<!-- Avatar Stack/Container with pin badge -->
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-bold overflow-hidden shadow-sm">
+<span class="material-symbols-outlined text-[26px]">palette</span>
 </div>
-<div class="flex-1 min-w-0 pr-2">
+<span class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-sm ring-1 ring-surface-variant">
+<span class="material-symbols-outlined text-primary text-[11px]" style="font-variation-settings: 'FILL' 1;">push_pin</span>
+</span>
+</div>
+<!-- Chat Details Middle Column -->
+<div class="flex-1 min-w-0 flex flex-col justify-center">
 <div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2 font-semibold">Nhóm Thiết Kế UI/UX</h2>
-<span class="text-label-sm font-label-sm text-primary-container font-semibold whitespace-nowrap">14:25</span>
+<h2 class="font-title-md text-title-md text-on-surface truncate pr-2">
+        Nhóm Thiết Kế UI/UX
+      </h2>
+<time class="font-label-sm text-label-sm text-primary font-bold shrink-0" datetime="now">
+        Vừa xong
+      </time>
 </div>
-<p class="text-body-sm font-body-sm text-on-surface font-medium truncate">
-            Hẹn gặp mọi người vào 15:00 nhé!
-          </p>
-</div>
-<div class="flex flex-col items-end justify-center ml-1">
-<span class="px-2 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-label-sm font-bold min-w-[20px] text-center shadow-sm">
-            3
-          </span>
-</div>
-</article>
-<!-- Conversation 2: Lan Anh -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Portrait photography of an energetic young East Asian woman with friendly smile wearing a crisp white linen collar, soft natural indoor lighting in an airy modern studio with gentle slate blue textures." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6sO8XZzCiGuA66jPNHBWSKebQoqL18Rm28YRrFyCc9BKNIYPpCRRT17IXVRyXCUUXGjSoYl8387OdcbQkXL-H8Rj8akTUvNWaLXK8hfsEFlcbpXcpy-lQ0b6N4FCL777hJRVuE2pushZLFSo_0UC85JGlqxKJbsAiMajfNMGPu48XnGv8vazkJbcLj7TQaMJALOUbyIFr35kbjtWy2uFRKom2R-LNvt6dnVY5Bhf_YesKN5RoKY1gz9U1k5PJd_cHq3CpDSxz4Uih"/>
-<span class="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"></span>
-</div>
-<div class="flex-1 min-w-0 pr-2">
-<div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Lan Anh</h2>
-<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">12:10</span>
-</div>
-<div class="flex items-center space-x-1">
-<span class="material-symbols-outlined text-[16px] text-outline" data-icon="done_all">done_all</span>
-<p class="text-body-sm font-body-sm text-secondary truncate">
-              Cậu gửi cho mình file thiết kế mới nhé!
-            </p>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md text-on-surface truncate pr-2">
+<span class="font-semibold text-primary">Lan Anh: </span>Hẹn gặp mọi người lúc 15:00 nhé!
+      </p>
+<!-- Unread indicator dot -->
+<span class="w-2.5 h-2.5 bg-primary rounded-full shrink-0"></span>
 </div>
 </div>
 </article>
-<!-- Conversation 3: Alex Morgan -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Editorial portrait of a bearded European creative director with glasses smiling subtly, dressed in navy apparel against a calm clean architectural concrete wall with bright morning ambient illumination." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcsmU5N6AMitfuAgMw3Gn39LYW7ddXjrcmM8uXTXHepM7-gO-3tjUfPMtU35ABbqVRDCrLlkkEh5iUGgvqO9o3xjD_geL6rb2plmsM5Xu35wEgYjAnT3BFAngsC639bKfEtGDySH-9HAcO6HaYifT0tuA4UPP68BUYLHNVfgcsNlw7-H8_TVrZ5NlNR3_8ql1TPwMBPB5efQRMiYJAJuwtgw3cBxgjm6G2yxHDXbPamBzxLMgNFN0tDlEu7CKkujTkamHnMzu9M2Y6"/>
+<!-- All Messages Section Header -->
+<div class="px-4 py-2 bg-surface-container-low flex items-center justify-between text-outline border-y border-surface-variant">
+<span class="font-label-sm text-label-sm uppercase tracking-wider font-semibold text-on-surface-variant">Tất cả hội thoại</span>
+<span class="font-label-sm text-label-sm text-outline">Sắp xếp theo thời gian</span>
 </div>
-<div class="flex-1 min-w-0 pr-2">
+<!-- 2. Direct chat row: Nguyễn Văn An (Unread with badge) -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container">
+<!-- Peer avatar with emerald green online indicator dot -->
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-secondary-fixed text-on-secondary-fixed font-title-md text-title-md font-bold flex items-center justify-center ring-1 ring-surface-variant overflow-hidden shadow-sm">
+      NA
+    </div>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-[#10b981] border-2 border-surface-container-lowest rounded-full" title="Đang hoạt động"></span>
+</div>
+<!-- Content Stack -->
+<div class="flex-1 min-w-0 flex flex-col justify-center">
 <div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Alex Morgan</h2>
-<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">09:45</span>
+<h2 class="font-title-md text-title-md font-bold text-on-surface truncate pr-2">
+        Nguyễn Văn An
+      </h2>
+<time class="font-label-sm text-label-sm text-primary font-bold shrink-0" datetime="14:30">
+        14:30
+      </time>
 </div>
-<div class="flex items-center space-x-1">
-<span class="material-symbols-outlined text-[16px] text-primary-container fill-icon" data-icon="done_all">done_all</span>
-<p class="text-body-sm font-body-sm text-secondary truncate">
-              See you tomorrow!
-            </p>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md font-bold text-on-surface truncate pr-2">
+        Hôm nay họp nhóm lúc mấy giờ?
+      </p>
+<!-- Indigo unread count pill badge -->
+<span class="shrink-0 h-5 min-w-[20px] px-2 bg-primary-container text-on-primary font-label-sm text-[11px] font-bold rounded-full flex items-center justify-center shadow-sm">
+        3
+      </span>
 </div>
 </div>
 </article>
-<!-- Conversation 4: Minh Trí & Team Dev -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<div class="w-12 h-12 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed font-bold text-label-lg shadow-sm">
-            MT
-          </div>
+<!-- 3. Group chat row: Đồ án Tốt nghiệp 2026 -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container">
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-tertiary-fixed text-tertiary font-bold flex items-center justify-center ring-1 ring-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[24px]">group_work</span>
 </div>
-<div class="flex-1 min-w-0 pr-2">
+</div>
+<div class="flex-1 min-w-0 flex flex-col justify-center">
 <div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Minh Trí &amp; Team Dev</h2>
-<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">Hôm qua</span>
+<h2 class="font-title-md text-title-md text-on-surface truncate pr-2">
+        Đồ án Tốt nghiệp 2026
+      </h2>
+<time class="font-label-sm text-label-sm text-outline shrink-0" datetime="yesterday">
+        Hôm qua
+      </time>
 </div>
-<p class="text-body-sm font-body-sm text-secondary truncate">
-            Đã deploy bản cập nhật v2.4 thành công.
-          </p>
-</div>
-</article>
-<!-- Conversation 5: Sarah Jenkins -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<img class="w-12 h-12 rounded-full object-cover shadow-sm" data-alt="Natural sunlight portrait of Sarah Jenkins, a professional product manager in a chic minimalist workstation with laptop blurred in background, bright warm daylight with high clarity and indigo accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0J5bhpanamTveYUw-c0z6vgS76l5iNeSBpGGemFmKc6uKYcIXNdk3YKGtvOrpi_gz1x2RHlxnV68armE9zZKC5DIld1qY4GiO_1bE4bOUBoYJUIxe2OY5gEfYFeGw3cfTJf8Q_liMwvEcol3laeGNm8sPJG5GURB2NhHhwtRk-WhjuZP9fB6NhThhKrEitXeVcphzoNOiNEDg48Q6r5656y9M9nrMT6gYR-H1I5-oJf6m3dwmT_vDU_N7yVFYRVQzXtV0xMXFG4ZP"/>
-</div>
-<div class="flex-1 min-w-0 pr-2">
-<div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2">Sarah Jenkins</h2>
-<span class="text-label-sm font-label-sm text-outline whitespace-nowrap">04/11</span>
-</div>
-<div class="flex items-center space-x-1">
-<span class="material-symbols-outlined text-[16px] text-outline" data-icon="check">check</span>
-<p class="text-body-sm font-body-sm text-secondary truncate">
-              Sounds great, looking forward to the demo.
-            </p>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md text-on-surface-variant truncate pr-2">
+<span class="text-on-surface font-medium">Trần Bình:</span> Đã đẩy code lên git
+      </p>
+<span class="material-symbols-outlined text-outline text-[18px] shrink-0" title="Đã gửi">
+        done_all
+      </span>
 </div>
 </div>
 </article>
-<!-- Conversation 6: Gia Đình ❤️ -->
-<article class="flex items-center px-4 py-3 min-h-[72px] hover:bg-surface-container-low transition-colors cursor-pointer active:scale-[0.99] border-b border-surface-variant">
-<div class="relative mr-3.5 flex-shrink-0">
-<div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center text-error shadow-sm">
-<span class="material-symbols-outlined text-[24px] fill-icon" data-icon="family_restroom">family_restroom</span>
+<!-- 4. Direct chat row: Alex Morgan -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container">
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-secondary-fixed text-on-secondary-fixed font-title-md text-title-md font-bold flex items-center justify-center ring-1 ring-surface-variant shadow-sm">
+      AM
+    </div>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-[#10b981] border-2 border-surface-container-lowest rounded-full"></span>
 </div>
-</div>
-<div class="flex-1 min-w-0 pr-2">
+<div class="flex-1 min-w-0 flex flex-col justify-center">
 <div class="flex justify-between items-baseline mb-0.5">
-<h2 class="text-title-md font-title-md text-on-surface truncate pr-2 font-semibold">Gia Đình ❤️</h2>
-<span class="text-label-sm font-label-sm text-primary-container font-semibold whitespace-nowrap">02/11</span>
+<h2 class="font-title-md text-title-md text-on-surface truncate pr-2">
+        Alex Morgan
+      </h2>
+<time class="font-label-sm text-label-sm text-outline shrink-0" datetime="yesterday">
+        Hôm qua
+      </time>
 </div>
-<p class="text-body-sm font-body-sm text-on-surface font-medium truncate">
-            Cuối tuần này về ăn cơm nhé con!
-          </p>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md text-on-surface-variant truncate pr-2">
+        File Figma prototype đã xong nhé, kiểm tra giúp mình!
+      </p>
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0" title="Đã đọc">
+        done_all
+      </span>
 </div>
-<div class="flex flex-col items-end justify-center ml-1">
-<span class="px-2 py-0.5 rounded-full bg-primary-container text-on-primary text-label-sm font-label-sm font-bold min-w-[20px] text-center shadow-sm">
-            1
-          </span>
 </div>
 </article>
-</main>
-<!-- M3 Floating Action Button (FAB) -->
-<div class="fixed bottom-24 right-4 md:right-[calc(50%-13rem)] z-40">
-<button aria-label="Tạo tin nhắn mới" class="w-14 h-14 rounded-2xl bg-primary-container text-on-primary flex items-center justify-center shadow-lg hover:shadow-indigo-500/25 hover:brightness-105 active:scale-95 transition-all">
-<span class="material-symbols-outlined text-[28px]" data-icon="add">add</span>
+<!-- 5. Direct chat row: Bảo Nam -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container">
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-surface-container-high text-on-surface-variant font-title-md text-title-md font-bold flex items-center justify-center ring-1 ring-surface-variant shadow-sm">
+      BN
+    </div>
+</div>
+<div class="flex-1 min-w-0 flex flex-col justify-center">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="font-title-md text-title-md text-on-surface truncate pr-2">
+        Bảo Nam
+      </h2>
+<time class="font-label-sm text-label-sm text-outline shrink-0" datetime="2026-03-28">
+        28 Th03
+      </time>
+</div>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md text-on-surface-variant truncate pr-2">
+        Ok, cảm ơn bạn nhiều nhé!
+      </p>
+</div>
+</div>
+</article>
+<!-- 6. Cloud storage chat row: Cloud Của Tôi -->
+<article class="h-[74px] px-4 flex items-center space-x-3.5 bg-surface-container-lowest hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:bg-surface-container">
+<div class="relative shrink-0 w-12 h-12">
+<div class="w-12 h-12 rounded-full bg-surface-container text-primary font-bold flex items-center justify-center ring-1 ring-surface-variant shadow-sm">
+<span class="material-symbols-outlined text-[24px]">cloud_queue</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 flex flex-col justify-center">
+<div class="flex justify-between items-baseline mb-0.5">
+<h2 class="font-title-md text-title-md text-on-surface truncate pr-2">
+        Cloud Của Tôi
+      </h2>
+<time class="font-label-sm text-label-sm text-outline shrink-0" datetime="2026-03-25">
+        25 Th03
+      </time>
+</div>
+<div class="flex justify-between items-center">
+<p class="font-body-md text-body-md text-on-surface-variant truncate pr-2">
+<span class="material-symbols-outlined text-[14px] align-middle mr-0.5 text-outline">description</span>Tai_lieu_nghien_cuu_v2.pdf
+      </p>
+</div>
+</div>
+</article></main>
+<!-- Floating Action Button (FAB): Bottom-Right squircle 56x56dp -->
+<div class="fixed bottom-24 right-5 z-40 max-w-[420px]">
+<button aria-label="Tạo cuộc trò chuyện mới" class="w-14 h-14 rounded-2xl bg-primary-container text-on-primary flex items-center justify-center shadow-lg hover:shadow-indigo-300 active:scale-95 transition-all duration-150 focus:outline-none" style="box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.25), 0 2px 4px -2px rgba(15, 23, 42, 0.1);" type="button">
+<span class="material-symbols-outlined text-[28px]">edit</span>
 </button>
 </div>
-<!-- Bottom Navigation Bar (Shared Components Anchor Execution) -->
-<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-surface-container-lowest shadow-sm max-w-md mx-auto right-0 transition-colors">
-<!-- Chats Destination (Active Mapping) -->
-<a class="flex flex-col items-center justify-center bg-secondary-container text-on-secondary-container rounded-full px-5 py-1 transition-transform active:scale-95" href="#">
-<span class="material-symbols-outlined fill-icon text-on-secondary-container" data-icon="chat">chat</span>
+<!-- BottomNavBar Component (Destination Shell) -->
+<!-- Matches JSON structure and styles: Chats (active), Calls, Contacts -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-surface-container-lowest dark:bg-inverse-surface border-t border-surface-variant dark:border-outline-variant shadow-sm dark:shadow-none max-w-[420px] left-1/2 -translate-x-1/2">
+<!-- Destination 1: Chats (ACTIVE) -->
+<a aria-current="page" class="flex flex-col items-center justify-center bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary rounded-full px-5 py-1 active:scale-95 transition-transform duration-150" href="#chats">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">chat</span>
 <span class="text-label-md font-label-md mt-0.5">Chats</span>
 </a>
-<!-- Calls Destination (Inactive) -->
-<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full px-5 py-1 transition-all active:scale-95" href="#">
-<span class="material-symbols-outlined" data-icon="call">call</span>
+<!-- Destination 2: Calls (INACTIVE) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-5 py-1 hover:bg-surface-container dark:hover:bg-surface-container-high rounded-full transition-colors duration-150 active:scale-95" href="#calls">
+<span class="material-symbols-outlined text-[22px]">call</span>
 <span class="text-label-md font-label-md mt-0.5">Calls</span>
 </a>
-<!-- Contacts Destination (Inactive) -->
-<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-surface-container rounded-full px-5 py-1 transition-all active:scale-95" href="#">
-<span class="material-symbols-outlined" data-icon="group">group</span>
+<!-- Destination 3: Contacts (INACTIVE) -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant px-5 py-1 hover:bg-surface-container dark:hover:bg-surface-container-high rounded-full transition-colors duration-150 active:scale-95" href="#contacts">
+<span class="material-symbols-outlined text-[22px]">group</span>
 <span class="text-label-md font-label-md mt-0.5">Contacts</span>
 </a>
 </nav>

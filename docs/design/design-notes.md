@@ -1,131 +1,158 @@
 # NexaChat Android Design System Notes
 
-This document describes the design language, token definitions, component states, and Jetpack Compose mapping for NexaChat on Android, synthesized from the Stitch design system **Modern Material Messenger** (`projects/15384195107762462338`).
+This document describes the design language, token definitions, component states, and Jetpack Compose mapping for NexaChat on Android, synthesized from the Stitch design system **Modern Material Messenger** (`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`).
 
 ---
 
-## 1. Design Tokens
+## 1. Design Decisions & Review Justifications
 
-### 1.1 Color Palettes
+### 1.1 Inbox Top Bar Icons (Contacts vs Profile)
+- **Problem**: The top bar previously featured two near-identical person icons (one standard person icon and one inside a grey disc), causing visual ambiguity and confusion about their destinations.
+- **Decision**: Replaced the contacts icon with `Icons.Filled.People` (representing the contacts directory / address book) and the profile icon with `Icons.Filled.AccountCircle` (representing user account/settings). Both icons use uniform 24dp sizing, standard top-bar tonal tinting, touch target padding >= 48dp, and explicit localized accessibility content descriptions (`R.string.contacts_title` and `R.string.profile_title`).
 
-#### Primary & Accent Brand Tokens
-- **Primary Brand Indigo**: `#4F46E5` (Active actions, FAB background, outgoing bubble fill, unread badge, active tabs)
-- **Primary Variant / Dark Indigo**: `#3525CD`
-- **Primary Fixed Dim / Soft Lilac**: `#C3C0FF` / `#DAD7FF`
-- **Secondary Slate**: `#505F76` (Default secondary text, inactive icons, system headers)
-- **Secondary Variant / Light Slate**: `#64748B` / `#94A3B8`
-- **Tertiary Cyan/Sky**: `#0EA5E9` (Link preview accents, read receipts)
-- **Error Red**: `#BA1A1A` / `#DC2626`
-- **Error Container**: `#FFDAD6`
-- **Success Emerald**: `#10B981`
+### 1.2 Group Detail Calm Role Chip & Destructive Actions
+- **Problem**: An alarming red "Admin" pill and a red trash can icon appeared on every group member row, causing false danger affordances.
+- **Decision**:
+  - The "Admin" / "Quản trị viên" role badge was migrated to a calm Material 3 `Surface` chip using `MaterialTheme.colorScheme.secondaryContainer` background and `MaterialTheme.colorScheme.onSecondaryContainer` text, shaped with `RoundedCornerShape(6.dp)` and 2dp vertical padding.
+  - Member deletion trash icons are tinted neutrally with `MaterialTheme.colorScheme.onSurfaceVariant`, reserving destructive red exclusively for "Leave group" / "Rời khỏi nhóm" and confirmation alert dialogs.
 
-#### Light Theme M3 Surface & Background Hierarchy
-- `background`: `#F8FAFC` (Canvas tone)
-- `surface`: `#F8FAFC`
-- `surfaceVariant`: `#E0E3E5`
-- `surfaceContainerLowest`: `#FFFFFF` (Elevated cards, modal sheets, sticky composer docks)
-- `surfaceContainerLow`: `#F2F4F6`
-- `surfaceContainer`: `#ECEEF0`
-- `surfaceContainerHigh`: `#E6E8EA`
-- `onSurface`: `#0F172A` (WCAG AAA primary text)
-- `onSurfaceVariant`: `#64748B` (Secondary text / timestamps)
-- `outline`: `#CBD5E1` (Hairline borders & input borders)
-- `outlineVariant`: `#E2E8F0` (List dividers, composer separators)
-
-#### Dark Theme M3 Hierarchy
-- `background`: `#0F172A` (Deep Slate Canvas)
-- `surface`: `#0F172A`
-- `surfaceContainerLowest`: `#0B1120`
-- `surfaceContainerLow`: `#1E293B`
-- `surfaceContainer`: `#1E293B` (Cards & dialogs)
-- `surfaceContainerHigh`: `#334155` (Incoming message bubble in dark mode)
-- `surfaceContainerHighest`: `#475569`
-- `onSurface`: `#F8FAFC` (High-contrast text)
-- `onSurfaceVariant`: `#94A3B8` (Muted timestamps, captions)
-- `primary`: `#818CF8` (Lighter indigo for dark mode contrast)
-- `onPrimary`: `#0F172A`
-- `outline`: `#334155`
-- `outlineVariant`: `#1E293B`
-
-#### Chat Message Bubble Tokens
-- **Outgoing (Mine)**:
-  - Fill: Primary `#4F46E5` (Light) / `#6366F1` (Dark)
-  - Text: High contrast `#FFFFFF`
-  - Timestamp / Receipt: `#E0E7FF` / `rgba(255, 255, 255, 0.75)`
-  - Outbox status icon (Clock for sending, Single/Double check for sent/delivered, Exclamation for failed)
-- **Incoming (Peer)**:
-  - Fill: `#F1F5F9` (Light) / `#1E293B` (Dark)
-  - Stroke: 1px `#E2E8F0` (Light) / 1px `#334155` (Dark)
-  - Text: `#0F172A` (Light) / `#F8FAFC` (Dark)
-  - Sender name: `#4F46E5` (Group chat color accent)
-  - Timestamp: `#64748B` (Light) / `#94A3B8` (Dark)
+### 1.3 Deterministic Avatar Palette & Initials Fallback
+- **Problem**: Image loading failures or missing profile pictures previously defaulted to blank solid blobs without initials, leading to unidentifiable contacts.
+- **Decision**:
+  - Authoritative `Avatar` component (`com.nexachat.core.ui.components.Avatar.kt`) implements deterministic 8-hue tonal palettes calculated via `name.hashCode().absoluteValue % 8`.
+  - Hues are curated to guarantee contrast ratio >= 4.5:1 against initials text in both light and dark themes (unit tested in `DesignSystemUiRulesTest`).
+  - Initials extraction (`extractInitials`) handles multi-word names (taking first letters of the first and last word, uppercase), single-word names, and defaults to "?" for blank strings.
+  - Powered by Coil's `SubcomposeAsyncImage` with graceful fallback to deterministic initials on loading, error, or null URLs.
 
 ---
 
-### 1.2 Typography Scale
+## 2. Design Tokens
 
-| Token | Family | Weight | Size | Line Height | Letter Spacing | Compose Equivalent |
-|---|---|---|---|---|---|---|
-| `headline-lg` | Roboto Flex | Bold (700) | 32sp | 40sp | -0.02em | `Typography.headlineLarge` |
-| `headline-md` | Roboto Flex | SemiBold (600) | 24sp | 32sp | -0.015em | `Typography.headlineMedium` |
-| `headline-sm` | Roboto Flex | SemiBold (600) | 20sp | 28sp | 0 | `Typography.headlineSmall` |
-| `title-lg` | Inter | SemiBold (600) | 18sp | 24sp | 0 | `Typography.titleLarge` |
-| `title-md` | Inter | SemiBold (600) | 16sp | 24sp | 0.01em | `Typography.titleMedium` |
-| `title-sm` | Inter | Medium (500) | 14sp | 20sp | 0.01em | `Typography.titleSmall` |
-| `body-lg` | Inter | Regular (400) | 16sp | 24sp | 0.02em | `Typography.bodyLarge` |
-| `body-md` | Inter | Regular (400) | 14sp | 20sp | 0.02em | `Typography.bodyMedium` |
-| `body-sm` | Inter | Regular (400) | 12sp | 16sp | 0.02em | `Typography.bodySmall` |
-| `label-lg` | Inter | Medium (500) | 14sp | 20sp | 0.01em | `Typography.labelLarge` |
-| `label-md` | Inter | SemiBold (600) | 12sp | 16sp | 0.02em | `Typography.labelMedium` |
-| `label-sm` | Inter | SemiBold (600) | 11sp | 14sp | 0.02em | `Typography.labelSmall` |
+### 2.1 Spacing (`NexaSpacing`)
+Defined in `com.nexachat.core.ui.theme.Spacing.kt` based on a strict 8pt grid baseline:
+- `xxs`: `2.dp` (hairline spacing, badge offsets)
+- `xs`: `4.dp` (consecutive message bubble vertical spacing)
+- `sm`: `8.dp` (icon paddings, standard list item vertical separation)
+- `md`: `16.dp` (screen horizontal margins, standard content padding)
+- `lg`: `24.dp` (section spacing, dialog padding)
+- `xl`: `32.dp` (hero element offsets, empty state illustrations)
+- `xxl`: `48.dp` (minimum touch target boundary)
 
----
+### 2.2 Elevation (`NexaElevation`)
+Defined in `com.nexachat.core.ui.theme.Elevation.kt`:
+- `level0`: `0.dp` (flat surface canvas)
+- `level1`: `1.dp` (cards, top bars, docked input containers)
+- `level2`: `3.dp` (menus, dropdowns)
+- `level3`: `6.dp` (floating action buttons, modal bottom sheets)
+- `level4`: `8.dp` (dialogs)
+- `level5`: `12.dp` (prominent overlays)
 
-### 1.3 Shapes, Elevation, & Spacing
-
-#### Corner Radii
-- **Standard Controls / Inputs / Cards**: `8.dp` (`RoundedCornerShape(8.dp)`)
-- **Action Buttons / Floating Action Button**: `16.dp` (`RoundedCornerShape(16.dp)`)
-- **Pill Badges & Filter Chips**: `9999.dp` (`CircleShape`)
-- **Avatars**: `9999.dp` (`CircleShape`)
-- **Outgoing Message Bubble**: Asymmetric `RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)`
-- **Incoming Message Bubble**: Asymmetric `RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)`
-
-#### Spacing Baseline (8pt Grid)
-- `space-xs`: `4.dp` (grouped messages from same sender, tight padding)
-- `space-sm`: `8.dp` (badge padding, icon margins, list item vertical gaps)
-- `space-md`: `16.dp` (screen margin, conversation sender separation, input horizontal padding)
-- `space-lg`: `24.dp` (section spacing, dialog insets)
-- `space-xl`: `32.dp` (hero margins, empty state graphic spacing)
-
-#### Touch Targets
-- Strictly enforce minimum **48dp** interactive touch hitbox across all buttons, icon buttons, list items, and tabs (`Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)` or `IconButton` default 48dp box).
+### 2.3 Shapes (`NexaShapes`)
+Defined in `com.nexachat.core.ui.theme.Shape.kt`:
+- `fabShape`: `RoundedCornerShape(16.dp)` (modern squircle for FABs)
+- `composerPill`: `RoundedCornerShape(24.dp)` (pill text field container for chat composer)
+- `searchBarPill`: `RoundedCornerShape(28.dp)` (search bar container)
+- `avatar`: `CircleShape`
+- `bubbleSingle`: `RoundedCornerShape(16.dp)`
+- `bubbleFirstSent`: `RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp)`
+- `bubbleMiddleSent`: `RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 4.dp)`
+- `bubbleLastSent`: `RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)`
+- `bubbleFirstReceived`: `RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)`
+- `bubbleMiddleReceived`: `RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)`
+- `bubbleLastReceived`: `RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)`
 
 ---
 
-## 2. Component List & States
+## 3. Shared Presentation Components
 
-| Component | Default | Pressed / Active | Focused | Disabled | Error |
-|---|---|---|---|---|---|
-| **Filled Button** | Bg `#4F46E5`, Text `#FFFFFF` | Bg `#3525CD`, scale down 98% | Outline 2dp `#C3C0FF` | Bg `#E2E8F0`, Text `#94A3B8` | - |
-| **Outlined Button** | Border 1.5dp `#4F46E5`, Text `#4F46E5` | Bg `#EEF2FF` | Border 2dp `#3525CD` | Border 1dp `#E2E8F0`, Text `#CBD5E1` | - |
-| **Danger Button** | Bg `#BA1A1A`, Text `#FFFFFF` | Bg `#991B1B` | Outline 2dp `#FFDAD6` | Bg `#E2E8F0`, Text `#94A3B8` | - |
-| **Outbox Message** | Solid Indigo, tick mark | Indigo | - | - | Red container `#FFDAD6`, tap to retry |
-| **Text Input** | Bg `#F1F5F9`, border none | - | Bg `#FFFFFF`, border 1.5dp `#4F46E5` | Bg `#E2E8F0`, Text `#94A3B8` | Border 1.5dp `#BA1A1A`, error text `#BA1A1A` |
-| **Search Bar** | Bg `#F1F5F9`, search icon | - | Border 1.5dp `#4F46E5`, clear icon | - | - |
-| **Avatar** | Initials on `#EEF2FF` or Coil Image | Ripple effect | - | - | Fallback letter |
-| **Filter Chip** | Bg `#FFFFFF`, border 1dp `#CBD5E1` | Bg `#4F46E5`, Text `#FFFFFF` | - | Bg `#F1F5F9` | - |
-
----
-
-## 3. Stitch Screen to Jetpack Compose Mapping
-
-| Stitch Screen & File | Composable Path | Key UI Elements |
+| Component | File Path | Purpose & Key Features |
 |---|---|---|
-| **Inbox** (`inbox.html`, `inbox.png`) | `feature/inbox/InboxScreen.kt` | Material 3 Channel row (72dp height), unread pill badge, TopAppBar with search & profile action, FAB (16dp rounded squircle). |
-| **Active Chat** (`active_chat.html`, `active_chat.png`) | `feature/chat/ChatScreen.kt`, `ChatInteractions.kt` | TopBar with peer avatar + connection status subtitle, Asymmetric message bubbles, pending clock icon, failed badge with retry affordance, reply quote preview block, reaction chips, pinned message banner, sticky bottom composer with IME padding. |
-| **Contacts & Search** (`contacts_search.html`, `contacts_search.png`) | `feature/contacts/ContactsScreen.kt`, `feature/contacts/UserSearchScreen.kt` | Search bar with instant clear, tab bar (Contacts / Discover), contact item with start-chat action, Add by phone bottom sheet dialog, empty search state. |
-| **Profile & Password** (`profile_password.html`, `profile_password.png`) | `feature/profile/ProfileScreen.kt`, `feature/settings/LanguageSettingsScreen.kt` | Circular avatar with camera edit badge, user metadata card, Change Password bottom sheet / dialog with validations, language selector radio items, logout button. |
-| **Group Detail & Roles** (`group_detail.html`, `group_detail.png`) | `feature/group/GroupDetailScreen.kt`, `feature/group/CreateGroupScreen.kt` | Group hero avatar with edit camera button, group member roster with Owner/Admin/Member role badges, member remove action, danger zone leave group button. |
-| **Login & Register** (`login_register.html`, `login_register.png`) | `feature/auth/LoginScreen.kt`, `feature/auth/RegisterScreen.kt` | Centered app hero icon & title, segmented tab or link to toggle Login/Register, styled text fields with icons, password toggle, soft error container banner. |
-| **Media Viewer** (`media_viewer.html`, `media_viewer.png`) | `feature/chat/MediaViewerScreen.kt` | Dark surface (`#000000` / `#0F172A`), top transparent back action, zoomable media image, download/share action, caption bar. |
+| `Avatar` | `com/nexachat/core/ui/components/Avatar.kt` | Deterministic 8-hue avatar with initials fallback, Coil async loading, online badge support, accessibility semantics. |
+| `ChatBubble` | `com/nexachat/core/ui/components/ChatBubble.kt` | Asymmetric corner shapes per group position, embedded reply quotes, clickable links (`ACTION_VIEW`, strictly http/https), inline timestamp & receipt status. |
+| `SectionHeader` | `com/nexachat/core/ui/components/SectionHeader.kt` | All-caps bold sub-headers for grouped lists (Profile, Settings, Members). |
+| `SettingsRow` | `com/nexachat/core/ui/components/SettingsRow.kt` | Interactive preference row with leading icon, chevron/value trailing affordance, destructive styling mode, >= 48dp touch target. |
+| `EmptyState` | `com/nexachat/core/ui/components/EmptyState.kt` | Calm centered empty state supporting vector illustrations (`ic_empty_chat.xml`), single concise helper line. |
+| `NexaMotion` | `com/nexachat/core/ui/components/Motion.kt` | Restrained animation specs (150ms fade/slide), respecting `LocalReduceMotion` and system animator duration scale. |
+| `LinkUtils` | `com/nexachat/core/ui/components/LinkUtils.kt` | Safe URI parsing using `java.net.URI`, strictly allowing `http`/`https` protocols while rejecting `file`, `javascript`, and `intent`. |
+
+---
+
+## 4. Screen-to-File Implementation Map
+
+| Screen | Composable & Implementation | Key Changes in Feature 1 |
+|---|---|---|
+| **Inbox** | `feature/inbox/InboxScreen.kt` | Distinct People vs Account icons, relative times (`resolveRelativeTimeLabel`), unread pill badge, vector empty state illustration `ic_empty_chat`, 640dp tablet centering. |
+| **Chat** | `feature/chat/ChatScreen.kt`, `ChatInteractions.kt` | Consecutive message grouping, asymmetric bubble shapes (`resolveBubbleShape`), localized date separators ("Hôm nay", "Hôm qua", "dd/MM"), pill composer, animated send button, scroll-to-bottom FAB with arrow icon. |
+| **Contacts** | `feature/contacts/ContactsScreen.kt`, `ContactsComponents.kt` | Distinct deterministic avatars, clean user rows, add-by-phone sheet, contact details sheet with alias editing. |
+| **Group Detail** | `feature/group/GroupDetailScreen.kt` | Calm tonal Admin role chip (`secondaryContainer`), neutral member remove icon, red destructive leave action, 640dp centered width. |
+| **Profile** | `feature/profile/ProfileScreen.kt` | Grouped settings sections ("Account", "Session"), 80dp avatar with edit badge, `SettingsRow` with leading icons and chevrons, destructive sign-out rows. |
+| **Login & Register** | `feature/auth/LoginScreen.kt`, `RegisterScreen.kt`, `AuthFields.kt` | Brand vertical gradient background, password visibility eye toggle icon (`Icons.Filled.Visibility` / `VisibilityOff`), `imePadding()`, centered 440dp width. |
+| **Search** | `feature/contacts/UserSearchScreen.kt` | Search bar with pill shape (`NexaShapes.searchBarPill`), instant debounce search results with deterministic avatars. |
+| **Language Settings** | `feature/profile/LanguageSettingsScreen.kt` | Radio selection for System Default, Tiếng Việt, and English, instant locale updating. |
+
+---
+
+## 5. Before vs. After Screen Comparison
+
+| Screen | Before Polish | After Polish |
+|---|---|---|
+| **Inbox** | Two identical person icons on top bar; raw timestamp format; unstyled list rows; missing empty illustration. | Distinct Contacts (`Icons.Filled.People`) vs Profile (`Icons.Filled.AccountCircle`) icons; relative timestamps ("Vừa xong", "18:51", "Hôm qua"); bold unread preview with pill badge; custom vector `ic_empty_chat`. |
+| **Chat** | Monolithic identical rectangles for all bubbles; missing date headers; time overlapping bubble edge; square composer. | Grouped bubbles with position-dependent asymmetric corners (single/first/middle/last); localized date separators; inline receipts; pill composer (`composerPill`) with animated send button. |
+| **Group Detail** | Alarming red "Admin" pill and red trash can icons on every row reading as constant danger. | Calm tonal `secondaryContainer` chip for Admin; subtle `onSurfaceVariant` trash icon; destructive red reserved for "Leave Group" and confirmation dialogs. |
+| **Profile** | Unstyled flat card list; plain avatar; basic unaligned action buttons. | Grouped card sections ("Account", "Session") with `SectionHeader`; 80dp avatar with edit badge; unified `SettingsRow` items with icons and chevrons. |
+| **Auth** | Flat white screen; text button labeled "Show" for password; keyboard occluding submit buttons. | Subtle vertical brand gradient; standard eye toggle icon with `Icons.Filled.Visibility` / `VisibilityOff`; `imePadding()` and IME actions Next/Done. |
+| **Avatars** | Solid color circle with no initials on error/placeholder. | Deterministic 8-hue palette (WCAG contrast >= 4.5:1) with extracted 1-2 letter initials fallback on null/loading/error. |
+
+---
+
+## 6. Stage 2 feature decisions (F1–F6)
+
+| Feature | Decision | Why |
+|---|---|---|
+| F1 Action sheet | Material 3 `ModalBottomSheet` on long-press; 6 quick reactions plus Reply / Copy / Forward / Pin / Edit / Delete; touch targets ≥ 48dp | Every interaction is one gesture away; Edit/Delete are gated by `MessageUiRules.canEdit/canDelete` |
+| F2 Edit | Composer switches to edit mode with a banner showing the original snippet; checkmark submits; `editedAt` renders the "Đã chỉnh sửa" micro-label | Reuses the existing composer; the label is honest about mutation |
+| F3 Delete | Confirmation dialog → soft delete → italic tombstone "Tin nhắn đã bị xoá"; all interactions suppressed | Soft delete preserves FK/reply integrity; the tombstone stays truthful in history |
+| F4 In-chat search | Top bar morphs into an autofocus field; `SearchHighlightHelper` folds case and diacritics; tapping a result jumps with a 1.2 s pulse | Search is scoped to the open conversation; a jump needs a visible target |
+| F5 Forward | Bottom-sheet conversation picker; `ForwardFilter` restricts the action to live `TEXT`; success snackbar "Đã chuyển tiếp" | Text-only keeps the action honest — attachments are not copied |
+| F6 Presence & settings | Direct-chat header + inbox online dot; `PresenceFormatter`; Profile Appearance (SYSTEM/LIGHT/DARK) and Privacy (`showPresence`) switch | Presence is one-way and DIRECT-only; theme is local, presence is server-backed |
+
+## 7. Stitch attribution (honest)
+
+The Stitch design system **Modern Material Messenger**
+(`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`)
+supplied layout references and the Material 3 token direction. Stitch-generated
+layouts were **converted by hand** to Jetpack Compose; nothing is an automatic
+code export. Stitch screens referenced under `docs/design/stitch/screens/`:
+
+| Stitch screen | Converted to | Notes |
+|---|---|---|
+| `active_chat` | `feature/chat/ChatScreen.kt` | Compose `ChatBubble` + asymmetric grouping |
+| `message_action_sheet` | `feature/chat/ChatScreen.kt` | M3 `ModalBottomSheet` |
+| `edit_message_mode` | `feature/chat/ChatScreen.kt` | Composer banner + checkmark submit |
+| `in_chat_search` | `feature/chat/ChatScreen.kt` | Morphing top bar + `SearchHighlightHelper` |
+| `forward_message_sheet` | `feature/chat/ChatScreen.kt` | `ForwardConversationSheet` + `ForwardFilter` |
+| `theme_privacy_settings` | `feature/profile/ProfileScreen.kt` | Appearance + Privacy sections |
+| `contacts_search` | `feature/contacts/UserSearchScreen.kt` | Debounced results |
+| `group_detail` | `feature/group/GroupDetailScreen.kt` | Calm tonal role chip |
+| `inbox` | `feature/inbox/InboxScreen.kt` | Distinct top-bar icons |
+| `login_register` | `feature/auth/LoginScreen.kt`, `RegisterScreen.kt` | Brand gradient, eye toggle |
+| `media_viewer` | `feature/media/MediaViewerScreen.kt` | Zoom/pan |
+| `profile_settings` | `feature/profile/ProfileScreen.kt` | Grouped sections |
+
+Pure-logic helpers added for these features are Java (project language rule):
+`PresenceFormatter`, `SearchHighlightHelper`, `ThemeMapper`, `ForwardFilter`,
+and `MessageUiRules`; the Composables that call them stay Kotlin.
+
+---
+
+## 8. Conversation Catch-up AI Summary (Phase 6)
+
+Stitch project: `projects/15384195107762462338` (Modern Material Messenger)
+Design system asset: `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`
+
+| Screen ID | Stitch Artifact | Hand-Coded Composable / Java Helper | Notes & Deliberate Deviations |
+|---|---|---|---|
+| `279a9f06271348349e14721dd8d021d1` | `summary_ready.{html,png}` | `feature/summary/SummaryBottomSheet.kt`, `UnreadBanner.kt`, `ScopeLabel.java`, `SummaryTextFormatter.java` | Unread banner with dismissal memory; M3 `ModalBottomSheet` with scope chips, overview, key points, decisions, action items, questions, and topics. Citation chips close sheet and jump to message with pulse highlight. Stitch mock used inline tags; Compose implementation uses accessible interactive chips with >=48dp touch targets and disabled state when `CitationResolver` returns unavailable. |
+| `dd3d9a9a537f4870a8550866e9a06ebc` | `summary_loading_skeleton.{html,png}` | `feature/summary/SummarySkeleton.kt` | Animated shimmer skeleton placeholders for overview, list items, and action chips; reduced-motion safe via `NexaMotion` / `LocalReduceMotion`. |
+| `86bfe206298d4deea5065280af5831c6` | `summary_error_states.{html,png}` | `feature/summary/SummaryErrorViews.kt`, `SummaryErrorMapper.java` | Typed error rendering: `TOO_FEW` ("Chưa đủ tin nhắn · Cần tối thiểu 5 tin nhắn để tạo tóm tắt"), `RATE_LIMITED` with countdown hint, `NETWORK` ("Không thể kết nối máy chủ" + "Thử lại" action), `NOT_MEMBER`, and `UNKNOWN`. |
+| `f9918e0ec2a44d45b0a57d5a782d67f1` | `summary_settings_consent.{html,png}` | `feature/profile/ProfileScreen.kt`, `AiConsentRepository.java` | Settings Privacy row with switch bound to `AiConsentRepository` (optimistic update + rollback on error), required disclosure ("Tin nhắn được ẩn thông tin nhạy cảm rồi gửi tới dịch vụ AI"), and first-use confirmation dialog. |

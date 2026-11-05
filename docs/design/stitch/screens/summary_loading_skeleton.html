@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat - Tóm tắt hội thoại AI</title>
+<!-- Material Symbols & Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Flex:wght@500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto+Flex:wght@100..900&display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary-container": "#d0e1fb",
+            "on-primary-fixed": "#0f0069",
+            "surface-bright": "#f7f9fb",
+            "on-error": "#ffffff",
+            "background": "#f7f9fb",
+            "surface-container-high": "#e6e8ea",
+            "inverse-surface": "#2d3133",
+            "on-surface-variant": "#464555",
+            "on-tertiary-container": "#b8e0ff",
+            "secondary-fixed-dim": "#b7c8e1",
+            "outline-variant": "#c7c4d8",
+            "tertiary-container": "#006693",
+            "on-tertiary-fixed": "#001e2f",
+            "on-secondary-container": "#54647a",
+            "tertiary-fixed": "#c9e6ff",
+            "on-secondary-fixed-variant": "#38485d",
+            "error": "#ba1a1a",
+            "primary": "#3525cd",
+            "surface-container": "#eceef0",
+            "primary-fixed": "#e2dfff",
+            "secondary-fixed": "#d3e4fe",
+            "inverse-on-surface": "#eff1f3",
+            "on-secondary-fixed": "#0b1c30",
+            "on-primary-fixed-variant": "#3323cc",
+            "on-surface": "#191c1e",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "surface-tint": "#4d44e3",
+            "on-tertiary": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "surface": "#f7f9fb",
+            "primary-container": "#4f46e5",
+            "secondary": "#505f76",
+            "on-secondary": "#ffffff",
+            "on-primary": "#ffffff",
+            "tertiary": "#004d70",
+            "inverse-primary": "#c3c0ff",
+            "on-error-container": "#93000a",
+            "surface-dim": "#d8dadc",
+            "surface-variant": "#e0e3e5",
+            "primary-fixed-dim": "#c3c0ff",
+            "surface-container-low": "#f2f4f6",
+            "on-primary-container": "#dad7ff",
+            "outline": "#777587",
+            "on-background": "#191c1e",
+            "error-container": "#ffdad6",
+            "tertiary-fixed-dim": "#89ceff",
+            "surface-container-highest": "#e0e3e5"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "3xl": "1.5rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "1rem",
+            "margin-desktop": "2rem",
+            "space-sm": "0.5rem",
+            "margin-tablet": "1.5rem",
+            "space-xs": "0.25rem",
+            "gutter": "1rem",
+            "space-xl": "2rem",
+            "space-lg": "1.5rem",
+            "gutter-tablet": "1.25rem",
+            "space-md": "1rem",
+            "gutter-desktop": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-lg": ["Roboto Flex"],
+            "body-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "label-sm": ["Inter"],
+            "label-lg": ["Inter"],
+            "title-md": ["Inter"],
+            "headline-sm": ["Roboto Flex"],
+            "headline-md": ["Roboto Flex"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+
+    @keyframes shimmerWave {
+      0% {
+        background-position: -200% 0;
+      }
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    .shimmer-animated {
+      background: linear-gradient(
+        90deg,
+        #e2e8f0 0%,
+        #f8fafc 45%,
+        #e2e8f0 90%
+      );
+      background-size: 250% 100%;
+      animation: shimmerWave 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes pulseSoft {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 0.6;
+        transform: scale(0.97);
+      }
+    }
+
+    .pulsing-badge {
+      animation: pulseSoft 2s ease-in-out infinite;
+    }
+
+    /* Custom thin scrollbar for bottom sheet content */
+    .sheet-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .sheet-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .sheet-scroll::-webkit-scrollbar-thumb {
+      background: #c7c4d8;
+      border-radius: 9999px;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased font-body-md select-none overflow-hidden h-screen w-screen flex justify-center items-center">
+<!-- Mobile Device Shell Simulation -->
+<main class="relative w-full max-w-md h-full max-h-[920px] bg-surface flex flex-col shadow-2xl overflow-hidden md:rounded-3xl border border-outline-variant">
+<!-- ============================================== -->
+<!-- LAYER 0: BACKDROP CHAT SCREEN (FOCUSED & DIMMED) -->
+<!-- ============================================== -->
+<div class="absolute inset-0 flex flex-col bg-surface z-0 pointer-events-none filter blur-[1px] brightness-[0.88] select-none">
+<!-- Android System Status Bar -->
+<div class="h-8 px-6 pt-1 flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span class="font-semibold tracking-tight">9:41</span>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">signal_cellular_4_bar</span>
+<span class="material-symbols-outlined text-[16px]">wifi</span>
+<span class="material-symbols-outlined text-[16px]">battery_full</span>
+</div>
+</div>
+<!-- App Header / Toolbar (Shared TopAppBar format dimmed) -->
+<header class="h-16 px-4 flex items-center justify-between border-b border-outline-variant bg-surface">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">arrow_back</span>
+</div>
+<div class="relative w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-headline-sm text-headline-sm font-semibold">
+<span>UX</span>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-surface"></span>
+</div>
+<div>
+<h1 class="font-headline-sm text-headline-sm text-on-surface font-semibold leading-tight">Nhóm Thiết Kế UI/UX</h1>
+<p class="font-label-sm text-label-sm text-on-surface-variant">8 thành viên • 3 trực tuyến</p>
+</div>
+</div>
+<div class="flex items-center gap-1 text-on-surface-variant">
+<div class="w-10 h-10 flex items-center justify-center">
+<span class="material-symbols-outlined">videocam</span>
+</div>
+<div class="w-10 h-10 flex items-center justify-center">
+<span class="material-symbols-outlined">more_vert</span>
+</div>
+</div>
+</header>
+<!-- Chat Feed Content -->
+<div class="flex-1 p-4 space-y-4 overflow-hidden">
+<!-- Date pill -->
+<div class="flex justify-center">
+<span class="px-3 py-1 bg-surface-container-high rounded-full font-label-sm text-label-sm text-on-surface-variant">
+            Hôm nay, 24 Tháng 10
+          </span>
+</div>
+<!-- Incoming Message Group 1 -->
+<div class="flex items-start gap-2.5 max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-secondary-container text-on-secondary-container text-xs flex items-center justify-center font-bold">
+            HA
+          </div>
+<div class="space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant ml-1">Hoàng Anh</span>
+<div class="p-3 bg-surface-container rounded-2xl rounded-tl-sm text-on-surface shadow-sm">
+<p class="font-body-md text-body-md">Mọi người ơi, đã thống nhất màu chủ đạo cho đợt cập nhật Design System quý này chưa?</p>
+<span class="block text-right font-label-sm text-label-sm text-on-surface-variant mt-1">09:15</span>
+</div>
+</div>
+</div>
+<!-- Incoming Message Group 2 -->
+<div class="flex items-start gap-2.5 max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-xs flex items-center justify-center font-bold">
+            MN
+          </div>
+<div class="space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant ml-1">Minh Nhật</span>
+<div class="p-3 bg-surface-container rounded-2xl rounded-tl-sm text-on-surface shadow-sm">
+<p class="font-body-md text-body-md">Team đã chốt bảng màu Indigo #4F46E5 làm Primary và bổ sung đầy đủ token surface M3 rồi nhé. Mình đang làm file Figma.</p>
+<span class="block text-right font-label-sm text-label-sm text-on-surface-variant mt-1">09:22</span>
+</div>
+</div>
+</div>
+<!-- Outgoing Message Group -->
+<div class="flex flex-col items-end max-w-[85%] ml-auto space-y-1">
+<div class="p-3 bg-primary-container text-on-primary rounded-2xl rounded-tr-sm shadow-sm">
+<p class="font-body-md text-body-md">Tuyệt vời! Còn các component ModalBottomSheet và Skeleton loading thì sao @MinhNhật?</p>
+<div class="flex items-center justify-end gap-1 font-label-sm text-label-sm text-on-primary-container mt-1">
+<span>09:28</span>
+<span class="material-symbols-outlined text-[14px]">done_all</span>
+</div>
+</div>
+</div>
+<!-- Incoming Message Group 3 -->
+<div class="flex items-start gap-2.5 max-w-[85%]">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed text-xs flex items-center justify-center font-bold">
+            TL
+          </div>
+<div class="space-y-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant ml-1">Thùy Linh</span>
+<div class="p-3 bg-surface-container rounded-2xl rounded-tl-sm text-on-surface shadow-sm">
+<p class="font-body-md text-body-md">Mình đang test AI summary cho luồng tin nhắn nhóm này luôn. Để chạy thử tóm tắt xem kết quả thế nào!</p>
+<span class="block text-right font-label-sm text-label-sm text-on-surface-variant mt-1">09:35</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Dummy Bottom Chat Input Composer -->
+<div class="p-3 bg-surface border-t border-outline-variant flex items-center gap-2">
+<div class="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">add_circle</span>
+</div>
+<div class="flex-1 h-10 bg-surface-container rounded-full px-4 flex items-center text-on-surface-variant font-body-md text-body-md">
+          Nhập tin nhắn...
+        </div>
+<div class="w-10 h-10 rounded-full bg-primary-container text-on-primary flex items-center justify-center">
+<span class="material-symbols-outlined">mic</span>
+</div>
+</div>
+</div>
+<!-- Scrim / Dimmed Backdrop Overlay -->
+<div class="absolute inset-0 bg-on-surface/50 backdrop-blur-[2px] z-10 transition-opacity duration-300"></div>
+<!-- ============================================== -->
+<!-- LAYER 1: MATERIAL 3 MODAL BOTTOM SHEET (ACTIVE) -->
+<!-- ============================================== -->
+<section class="absolute bottom-0 inset-x-0 z-20 max-h-[88%] flex flex-col bg-surface-container-lowest rounded-t-3xl shadow-[0_-8px_30px_rgba(0,0,0,0.18)] border-t border-outline-variant/30">
+<!-- M3 Standard Centered Drag Handle -->
+<div class="w-full flex items-center justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing">
+<div class="w-10 h-1 rounded-full bg-outline-variant/80"></div>
+</div>
+<!-- Sheet Header -->
+<header class="px-5 pt-1 pb-3 flex items-start justify-between border-b border-outline-variant/40">
+<div class="flex items-start gap-3">
+<!-- Sparkle AI Icon with tonal container -->
+<div class="w-10 h-10 rounded-xl bg-primary-fixed flex items-center justify-center text-primary shadow-xs">
+<span class="material-symbols-outlined text-2xl font-bold" data-weight="fill" style="font-variation-settings: 'FILL' 1;">
+              auto_awesome
+            </span>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-2 flex-wrap">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-bold tracking-tight">
+                Tóm tắt cuộc trò chuyện
+              </h2>
+</div>
+<!-- Live Pulsating Status Badge -->
+<div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-secondary-container/70 text-primary font-label-sm text-label-sm border border-primary/20 pulsing-badge">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+<span class="font-semibold text-primary">Đang xử lý nội dung với Nexa AI...</span>
+</div>
+</div>
+</div>
+<!-- Close Button -->
+<button aria-label="Đóng" class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95" type="button">
+<span class="material-symbols-outlined text-xl">close</span>
+</button>
+</header>
+<!-- Scope Chips (Horizontal Scroll Filter Chips) -->
+<nav aria-label="Phạm vi tóm tắt" class="px-5 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar border-b border-outline-variant/30 bg-surface/50">
+<!-- Selected Pill Chip: 'Chưa đọc' -->
+<button class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-primary-container text-on-primary font-label-md text-label-md shadow-sm whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">mark_chat_unread</span>
+<span>Chưa đọc</span>
+</button>
+<!-- Filter Chip 2: '50 tin gần nhất' -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container-low transition-colors whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">history</span>
+<span>50 tin gần nhất</span>
+</button>
+<!-- Filter Chip 3: 'Hôm nay' -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container-low transition-colors whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">calendar_today</span>
+<span>Hôm nay</span>
+</button>
+<!-- Filter Chip 4: 'Theo người gửi' -->
+<button class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container-low transition-colors whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">group</span>
+<span>Theo người gửi</span>
+</button>
+</nav>
+<!-- Skeleton Loading Scrollable Area -->
+<div class="flex-1 overflow-y-auto px-5 py-4 space-y-6 sheet-scroll">
+<!-- SECTION 1: TỔNG QUAN (OVERVIEW) -->
+<section class="space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-md shimmer-animated"></span>
+<div class="w-32 h-4 rounded shimmer-animated"></div>
+</div>
+<div class="w-16 h-3 rounded shimmer-animated"></div>
+</div>
+<!-- Overview Card Skeleton mimicking AI paragraph -->
+<div class="p-4 rounded-2xl bg-surface-container-low border border-outline-variant/40 space-y-2.5">
+<div class="w-full h-3.5 rounded shimmer-animated"></div>
+<div class="w-[94%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[82%] h-3.5 rounded shimmer-animated"></div>
+<div class="pt-1 flex items-center gap-2">
+<div class="w-20 h-4 rounded-full shimmer-animated"></div>
+<div class="w-24 h-4 rounded-full shimmer-animated"></div>
+</div>
+</div>
+</section>
+<!-- SECTION 2: Ý CHÍNH (KEY POINTS) -->
+<section class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-base">format_list_bulleted</span>
+<span class="font-label-md text-label-md text-on-surface font-bold tracking-wider">Ý CHÍNH ĐÃ TRAO ĐỔI</span>
+</div>
+<div class="space-y-2.5 pl-1">
+<!-- Bullet Item 1 -->
+<div class="flex items-start gap-3">
+<span class="w-2 h-2 rounded-full mt-2 bg-primary/40 flex-shrink-0 animate-pulse"></span>
+<div class="flex-1 space-y-1.5">
+<div class="w-[90%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[65%] h-3 rounded shimmer-animated"></div>
+</div>
+<div class="w-12 h-4 rounded-md shimmer-animated"></div>
+</div>
+<!-- Bullet Item 2 -->
+<div class="flex items-start gap-3">
+<span class="w-2 h-2 rounded-full mt-2 bg-primary/40 flex-shrink-0 animate-pulse"></span>
+<div class="flex-1 space-y-1.5">
+<div class="w-[78%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[50%] h-3 rounded shimmer-animated"></div>
+</div>
+<div class="w-14 h-4 rounded-md shimmer-animated"></div>
+</div>
+<!-- Bullet Item 3 -->
+<div class="flex items-start gap-3">
+<span class="w-2 h-2 rounded-full mt-2 bg-primary/40 flex-shrink-0 animate-pulse"></span>
+<div class="flex-1 space-y-1.5">
+<div class="w-[86%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[70%] h-3 rounded shimmer-animated"></div>
+</div>
+<div class="w-10 h-4 rounded-md shimmer-animated"></div>
+</div>
+</div>
+</section>
+<!-- SECTION 3: QUYẾT ĐỊNH (KEY DECISIONS) -->
+<section class="space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-base">verified</span>
+<span class="font-label-md text-label-md text-on-surface font-bold tracking-wider">QUYẾT ĐỊNH THỐNG NHẤT</span>
+</div>
+<div class="space-y-2.5">
+<!-- Decision Item 1 -->
+<div class="p-3 rounded-xl bg-surface-container-low/70 border border-outline-variant/30 flex items-center gap-3">
+<div class="w-6 h-6 rounded-full shimmer-animated flex-shrink-0"></div>
+<div class="flex-1 space-y-1">
+<div class="w-[88%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[45%] h-3 rounded shimmer-animated"></div>
+</div>
+</div>
+<!-- Decision Item 2 -->
+<div class="p-3 rounded-xl bg-surface-container-low/70 border border-outline-variant/30 flex items-center gap-3">
+<div class="w-6 h-6 rounded-full shimmer-animated flex-shrink-0"></div>
+<div class="flex-1 space-y-1">
+<div class="w-[76%] h-3.5 rounded shimmer-animated"></div>
+<div class="w-[55%] h-3 rounded shimmer-animated"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 4: VIỆC CẦN LÀM (ACTION ITEMS) -->
+<section class="space-y-3 pb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-base">checklist</span>
+<span class="font-label-md text-label-md text-on-surface font-bold tracking-wider">VIỆC CẦN LÀM (ACTION ITEMS)</span>
+</div>
+<div class="space-y-2">
+<!-- Action Item 1 -->
+<div class="flex items-center gap-3 p-2.5 rounded-lg bg-surface border border-outline-variant/20">
+<div class="w-5 h-5 rounded-md shimmer-animated flex-shrink-0"></div>
+<div class="flex-1 space-y-1">
+<div class="w-[82%] h-3.5 rounded shimmer-animated"></div>
+</div>
+<div class="w-16 h-4 rounded-full shimmer-animated"></div>
+</div>
+<!-- Action Item 2 -->
+<div class="flex items-center gap-3 p-2.5 rounded-lg bg-surface border border-outline-variant/20">
+<div class="w-5 h-5 rounded-md shimmer-animated flex-shrink-0"></div>
+<div class="flex-1 space-y-1">
+<div class="w-[70%] h-3.5 rounded shimmer-animated"></div>
+</div>
+<div class="w-16 h-4 rounded-full shimmer-animated"></div>
+</div>
+</div>
+</section>
+</div>
+<!-- ============================================== -->
+<!-- BOTTOM STICKY ACTION BAR (M3 DISABLED DOCK)   -->
+<!-- ============================================== -->
+<footer class="p-4 bg-surface-container-lowest border-t border-outline-variant/40 flex items-center gap-3">
+<!-- Disabled 'Tạo lại' Icon Button -->
+<button class="w-11 h-11 rounded-xl bg-surface-container text-outline opacity-60 cursor-not-allowed flex items-center justify-center transition-all" disabled="" title="Tạo lại bản tóm tắt" type="button">
+<span class="material-symbols-outlined text-xl">refresh</span>
+</button>
+<!-- Disabled 'Sao chép' Button -->
+<button class="px-3.5 h-11 rounded-xl bg-surface-container text-outline opacity-60 cursor-not-allowed flex items-center gap-1.5 font-label-lg text-label-lg transition-all" disabled="" type="button">
+<span class="material-symbols-outlined text-lg">content_copy</span>
+<span>Sao chép</span>
+</button>
+<!-- Primary Disabled CTA with Loading Spinner -->
+<button class="flex-1 h-11 rounded-xl bg-primary/70 text-on-primary cursor-wait flex items-center justify-center gap-2 font-label-lg text-label-lg shadow-sm" disabled="" type="button">
+<!-- Animated Spinner -->
+<svg class="animate-spin h-4 w-4 text-on-primary" fill="none" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+<path class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" fill="currentColor"></path>
+</svg>
+<span class="tracking-wide">Đang tạo bản tóm tắt...</span>
+</button>
+</footer>
+<!-- Android Home Navigation Indicator Bar -->
+<div class="w-full flex justify-center pb-2 pt-1 bg-surface-container-lowest">
+<div class="w-32 h-1 bg-on-surface/20 rounded-full"></div>
+</div>
+</section>
+</main>
+<script>
+    // Lightweight micro-interaction for chip filtering demonstration
+    document.querySelectorAll('nav[aria-label="Phạm vi tóm tắt"] button').forEach((btn) => {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('nav[aria-label="Phạm vi tóm tắt"] button').forEach(b => {
+          b.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest text-on-surface-variant border border-outline-variant font-label-md text-label-md hover:bg-surface-container-low transition-colors whitespace-nowrap';
+        });
+        this.className = 'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-primary-container text-on-primary font-label-md text-label-md shadow-sm whitespace-nowrap';
+      });
+    });
+  </script>
+</body></html>

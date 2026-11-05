@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+
+<html class="light" lang="vi"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexaChat - Message Edit Mode</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Roboto Flex & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-fixed": "#c9e6ff",
+            "secondary": "#505f76",
+            "on-surface": "#191c1e",
+            "surface-container": "#eceef0",
+            "on-surface-variant": "#464555",
+            "error-container": "#ffdad6",
+            "background": "#f7f9fb",
+            "surface": "#f7f9fb",
+            "on-tertiary": "#ffffff",
+            "on-error-container": "#93000a",
+            "surface-dim": "#d8dadc",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f2f4f6",
+            "outline": "#777587",
+            "on-secondary-fixed": "#0b1c30",
+            "inverse-primary": "#c3c0ff",
+            "on-secondary-fixed-variant": "#38485d",
+            "surface-container-highest": "#e0e3e5",
+            "on-tertiary-fixed-variant": "#004c6e",
+            "primary": "#3525cd",
+            "surface-container-high": "#e6e8ea",
+            "on-error": "#ffffff",
+            "inverse-surface": "#2d3133",
+            "tertiary-fixed-dim": "#89ceff",
+            "secondary-fixed": "#d3e4fe",
+            "outline-variant": "#c7c4d8",
+            "on-background": "#191c1e",
+            "surface-container-lowest": "#ffffff",
+            "on-tertiary-fixed": "#001e2f",
+            "tertiary-container": "#006693",
+            "secondary-fixed-dim": "#b7c8e1",
+            "on-secondary": "#ffffff",
+            "surface-variant": "#e0e3e5",
+            "surface-tint": "#4d44e3",
+            "primary-fixed": "#e2dfff",
+            "error": "#ba1a1a",
+            "primary-container": "#4f46e5",
+            "primary-fixed-dim": "#c3c0ff",
+            "tertiary": "#004d70",
+            "surface-bright": "#f7f9fb",
+            "on-primary-container": "#dad7ff",
+            "secondary-container": "#d0e1fb",
+            "on-primary-fixed-variant": "#3323cc",
+            "on-secondary-container": "#54647a",
+            "inverse-on-surface": "#eff1f3",
+            "on-tertiary-container": "#b8e0ff",
+            "on-primary-fixed": "#0f0069"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "1rem",
+            "gutter-desktop": "1.5rem",
+            "margin-desktop": "2rem",
+            "gutter-tablet": "1.25rem",
+            "margin-tablet": "1.5rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "gutter": "1rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "headline-lg": ["Roboto Flex"],
+            "label-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "title-md": ["Inter"],
+            "headline-md": ["Roboto Flex"],
+            "headline-lg-mobile": ["Roboto Flex"],
+            "label-md": ["Inter"],
+            "label-sm": ["Inter"],
+            "body-sm": ["Inter"],
+            "headline-sm": ["Roboto Flex"]
+          },
+          "fontSize": {
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      line-height: 1;
+      display: inline-block;
+    }
+    @keyframes cursor-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .blinking-cursor {
+      animation: cursor-blink 1s ease-in-out infinite;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex justify-center items-center p-0 md:p-6 select-none">
+<!-- Mobile Frame Screen Container -->
+<div class="w-full max-w-md h-screen md:h-[844px] md:max-h-[813px] bg-surface flex flex-col relative overflow-hidden md:rounded-3xl md:shadow-2xl border-0 md:border border-outline-variant">
+<!-- TopAppBar Component (from Shared Components JSON specs) -->
+<header class="bg-surface-container-lowest dark:bg-inverse-surface border-b border-outline-variant dark:border-outline shadow-sm dark:shadow-none fixed top-0 left-0 w-full z-50 flex items-center justify-between px-3 h-16 max-w-full">
+<div class="flex items-center space-x-2">
+<!-- Leading Icon Button -->
+<button aria-label="Quay lại" class="w-10 h-10 flex items-center justify-center text-primary dark:text-inverse-primary hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors duration-150 rounded-full active:scale-95 transition-transform duration-100">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<!-- User Profile Avatar + Online status badge -->
+<div class="relative flex-shrink-0 cursor-pointer">
+<img class="w-10 h-10 rounded-full object-cover ring-2 ring-surface-container-lowest shadow-sm" data-alt="Close up modern business portrait of a friendly young Vietnamese male tech professional named Nguyen Van An with smart glasses in a softly lit high-tech design office. The atmosphere is vibrant with gentle indigo and ambient cool slate lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBEtOHzBMh6z4PTTENbTjrxNsjhIW6MKDYFaASLWZfkYiIHqqXjtgqSTjD6b1RVWWASwd7LZGKYr5b4xuwbGSn8748L3HfJyEnv4JZCMKxXLqkLi2NS9RUlRETOvDkrn4YPr1vvrP6IULQJXAtqkditMmX98TY9_8pknWnkUNUv6MOIzPNL781LN1qzrBeKOHgZ_w44hO2pgT-YwASjb7A46IZDN3kV5uO99-KI0tJf8RowpnLgUI5ppi2sECC9gJ3eGgaGvYitphR"/>
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-surface-container-lowest"></span>
+</div>
+<!-- Headline & Status info -->
+<div class="flex flex-col ml-1 leading-tight">
+<div class="flex items-center space-x-1">
+<span class="text-title-md font-title-md text-on-surface dark:text-inverse-on-surface font-semibold truncate max-w-[130px]">Nguyễn Văn An</span>
+<span class="material-symbols-outlined text-primary text-[17px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<span class="text-label-sm font-label-sm text-emerald-600 flex items-center gap-1 font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            Đang hoạt động
+          </span>
+</div>
+</div>
+<!-- Action Icons: Audio call, Video call, More menu -->
+<div class="flex items-center space-x-0.5">
+<button aria-label="Gọi thoại" class="w-9 h-9 flex items-center justify-center text-secondary hover:bg-surface-container-high transition-colors duration-150 rounded-full active:scale-95">
+<span class="material-symbols-outlined text-[22px]">call</span>
+</button>
+<button aria-label="Gọi video" class="w-9 h-9 flex items-center justify-center text-primary dark:text-inverse-primary hover:bg-surface-container-high dark:hover:bg-surface-container-highest transition-colors duration-150 rounded-full active:scale-95 transition-transform duration-100">
+<span class="material-symbols-outlined text-[22px]">videocam</span>
+</button>
+<button aria-label="Thao tác khác" class="w-9 h-9 flex items-center justify-center text-secondary hover:bg-surface-container-high transition-colors duration-150 rounded-full active:scale-95">
+<span class="material-symbols-outlined text-[22px]">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Chat Conversation Body Scroll Area -->
+<main class="flex-1 overflow-y-auto px-4 pt-20 pb-56 space-y-4 bg-background">
+<!-- Date Separator Badge -->
+<div class="flex items-center justify-center my-2">
+<div class="px-3 py-1 bg-surface-container-high rounded-full shadow-sm flex items-center gap-1.5 border border-outline-variant/40">
+<span class="material-symbols-outlined text-secondary text-[14px]">calendar_today</span>
+<span class="text-label-sm font-label-sm text-secondary tracking-wide">Hôm nay, 14:30</span>
+</div>
+</div>
+<!-- Incoming Message 1 -->
+<div class="flex items-end gap-2 max-w-[85%] group">
+<img class="w-7 h-7 rounded-full object-cover flex-shrink-0 ring-1 ring-outline-variant mb-1" data-alt="Portrait avatar of Nguyen Van An in soft casual office lighting smiling subtly against a slate neutral background with deep indigo accents." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFl8OmWXIPVygSWM8UAMxP4xfCJIRTokMlvkg8S3SJiXjna5kwuk1ywOTqiBytHzjB4lL4U8YWjKaMgkhvitxCqBt4Fl5CK5OaHUXl9DXhM5dU7wCeOgNK2Vlssr_sLceYFkzIa2tq3bTIYpb-riD62-u7VU1jO8ArLDeIF4bpjY4LB-4Pmzz7cSnkNQA-Ume7X6u3Keb661B0uYrWsj6qm31zb82Gyo7dl0sq2YTmOXyebHMrIIdsYYTzVUoqspZymCKZPC8uVJe-"/>
+<div class="flex flex-col items-start">
+<div class="bg-surface-container-lowest text-on-surface border border-outline-variant/70 rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm">
+<p class="text-body-md font-body-md text-on-surface leading-relaxed">Chào bạn, dự án NexaChat tiến độ thế nào rồi?</p>
+</div>
+<span class="text-label-sm font-label-sm text-secondary mt-1 ml-1">14:31</span>
+</div>
+</div>
+<!-- Outgoing Message 1 (Already Edited) -->
+<div class="flex flex-col items-end self-end ml-auto max-w-[85%]">
+<div class="bg-primary-container text-on-primary rounded-2xl rounded-br-sm px-4 py-2.5 shadow-md">
+<p class="text-body-md font-body-md text-white leading-relaxed">Đã hoàn thiện các tính năng cốt lõi rồi anh nhé!</p>
+</div>
+<div class="flex items-center gap-1.5 mt-1 mr-1 text-secondary">
+<span class="material-symbols-outlined text-[13px] text-secondary">edit</span>
+<span class="text-label-sm font-label-sm text-secondary">Đã chỉnh sửa • 14:32</span>
+<span class="material-symbols-outlined text-[15px] text-primary" style="font-variation-settings: 'FILL' 1;">done_all</span>
+</div>
+</div>
+<!-- ACTIVE MESSAGE CURRENTLY BEING EDITED (Highlighted Outgoing Message) -->
+<div class="flex flex-col items-end self-end ml-auto max-w-[88%] relative">
+<!-- Floating Active Editing Tag Indicator -->
+<div class="flex items-center gap-1 px-2.5 py-0.5 mb-1 rounded-full bg-secondary-container text-on-secondary-container border border-primary/20 shadow-sm animate-pulse">
+<span class="material-symbols-outlined text-[13px] text-primary">edit_note</span>
+<span class="text-label-sm font-label-sm font-medium text-primary">Đang chỉnh sửa...</span>
+</div>
+<!-- Bubble with active focus ring and subtle tint highlight -->
+<div class="relative bg-primary-container text-on-primary rounded-2xl rounded-br-sm px-4 py-3 shadow-lg ring-2 ring-offset-2 ring-primary">
+<!-- Subtle Glow Overlay -->
+<div class="absolute -inset-0.5 bg-primary/20 rounded-2xl blur-sm -z-10"></div>
+<p class="text-body-md font-body-md text-white font-medium leading-relaxed">
+            Hôm nay mấy giờ nhóm mình họp báo cáo vậy?
+          </p>
+</div>
+<div class="flex items-center gap-1.5 mt-1 mr-1">
+<span class="text-label-sm font-label-sm text-secondary">14:33</span>
+<span class="material-symbols-outlined text-[15px] text-secondary">done</span>
+</div>
+</div>
+<!-- Incoming Message 2 (Context Reply) -->
+<div class="flex items-end gap-2 max-w-[85%] group">
+<img class="w-7 h-7 rounded-full object-cover flex-shrink-0 ring-1 ring-outline-variant mb-1" data-alt="Small round avatar of Nguyen Van An in soft lighting against light neutral background with professional composure." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCn8ULfiSdUC36FajPoyrsjuVrfqW2Vw6vDIxA1494WURYZ2m1ovH6NVWejsgT2tM8UOPQ6z2ubESGwq51_en2UbUteIp9zBAYZo4YrRI_7kl_ke2DFuQscwa44WZIu0Mk2t24jONHjjTiDrejkWvb4KuOYYExFUBmhJQxPJeFvPjmXY650ApIInArDsDDWPBnacae0kPaSP727Tlk7IYHM8Bljxdk7L4To1vquOXLBlYGIzlq7LGjNcR3Y5dusL0RcXJQ_WcN-O8cZ"/>
+<div class="flex flex-col items-start">
+<div class="bg-surface-container-lowest text-on-surface border border-outline-variant/70 rounded-2xl rounded-bl-sm px-4 py-2.5 shadow-sm">
+<p class="text-body-md font-body-md text-on-surface leading-relaxed">Dự kiến 15:30 chiều nay nhé, em chuẩn bị slide nha!</p>
+</div>
+<span class="text-label-sm font-label-sm text-secondary mt-1 ml-1">14:34</span>
+</div>
+</div>
+</main>
+<!-- Bottom Message Composer Area (Active Edit Mode State) -->
+<div class="fixed md:absolute bottom-0 left-0 w-full z-40 bg-surface-container-lowest shadow-[0_-4px_20px_rgba(15,23,42,0.08)] border-t border-outline-variant/50">
+<!-- Top Edit Banner (M3 Light Indigo/Primary Container) -->
+<div class="bg-secondary-container/60 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between backdrop-blur-sm transition-all duration-200">
+<div class="flex items-center gap-2.5 overflow-hidden flex-1 mr-2">
+<!-- Active Edit Icon with Container Accent -->
+<div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary">
+<span class="material-symbols-outlined text-[17px]">edit</span>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-1.5">
+<span class="text-label-md font-label-md text-primary font-bold">Chỉnh sửa tin nhắn</span>
+<span class="text-label-sm font-label-sm text-secondary">• 14:33</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-secondary-container truncate italic opacity-85">
+              "Hôm nay mấy giờ nhóm mình họp báo cáo vậy?"
+            </p>
+</div>
+</div>
+<!-- Cancel / Dismiss Edit Mode Button -->
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container-high hover:text-on-surface active:scale-90 transition-all flex-shrink-0" title="Hủy chỉnh sửa">
+<span class="material-symbols-outlined text-[19px]">close</span>
+</button>
+</div>
+<!-- Input Field Action Bar -->
+<div class="p-3 bg-surface-container-lowest flex items-center gap-2">
+<!-- Add Media / Attach Action -->
+<button class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container-high transition-colors active:scale-95 flex-shrink-0" title="Thêm đính kèm">
+<span class="material-symbols-outlined text-[24px]">add_circle</span>
+</button>
+<!-- Main Editable Input Container -->
+<div class="flex-1 bg-surface-container-low border-2 border-primary rounded-2xl px-3.5 py-2 flex items-center gap-2 transition-all shadow-inner">
+<div class="flex-1 flex items-center overflow-x-auto whitespace-nowrap scrollbar-none py-0.5">
+<span class="text-body-md font-body-md text-on-surface select-text outline-none font-normal">Hôm nay mấy giờ nhóm mình họp báo cáo vậy?</span>
+<!-- Blinking cursor simulation in edit mode -->
+<span class="inline-block w-[2px] h-5 bg-primary ml-0.5 blinking-cursor"></span>
+</div>
+<!-- Emoji Picker Trigger inside Input -->
+<button class="text-secondary hover:text-primary transition-colors flex-shrink-0" title="Chọn biểu tượng cảm xúc">
+<span class="material-symbols-outlined text-[20px]">sentiment_satisfied</span>
+</button>
+</div>
+<!-- Primary Confirm Save Edit Action Button (Checkmark replacing Send arrow) -->
+<button class="w-11 h-11 rounded-full bg-primary-container hover:bg-primary text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform flex-shrink-0 relative group" title="Lưu thay đổi">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">check</span>
+<span class="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full ring-2 ring-surface-container-lowest"></span>
+</button>
+</div>
+<!-- Micro Helper / Shortcut Hint Strip -->
+<div class="px-4 pb-2 pt-0 flex items-center justify-between text-secondary">
+<p class="text-label-sm font-label-sm text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">info</span>
+          Nhấn <span class="font-bold text-primary">✓</span> để lưu thay đổi hoặc <span class="font-bold text-on-surface">✕</span> để hủy
+        </p>
+<span class="text-label-sm font-label-sm text-outline">43/500</span>
+</div>
+</div>
+</div>
+</body></html>

@@ -1,4 +1,4 @@
-# Rotation Audit — NexaChat Android (phase-10 P8)
+# Rotation Audit — NexaChat Android
 
 Walks every destination for state loss on rotation (config change) and
 process death. Facts: every screen renders a Hilt ViewModel, so anything in a
@@ -41,6 +41,26 @@ verified, no hoisting gaps.
   restored); the rate-limited endpoint would burn a call to do better.
 - Scroll position after process death restores first-item index/offset — the
   pixel-perfect offset inside a tall bubble is not kept (Compose limitation).
+
+## Device rotation matrix (2026-11-05, emulator Android 15 / API 35)
+
+Evidence: device verification report `deepseek-device.md` (final audit round),
+item h. Reproduce: open a chat, then rotate during each state.
+
+| State rotated | Result | Status |
+| --- | --- | --- |
+| In-chat search (query + results) | Query and results survive rotation | ✅ pass |
+| Message action sheet | Sheet is dismissed on rotation (its state was not saveable) | ⚠️ D5 (Medium) — client defect, no data loss |
+| Edit mode | **App crash**: `IllegalStateException: MutableState(value=ChatMessage(…)) cannot be saved using the current SaveableStateRegistry` | ❌ D1 (Critical) — **open** |
+
+D1 status: no `reports/agy-feat3.md` exists in this audit round, so per the audit
+rule the defect is recorded as **open**. The current source already stores only
+the message id (`editingMessageId`) and re-resolves the message through
+`MessageResolver.resolveForEdit` (`feature/chat/ChatScreen.kt:193-195`), which is
+the recommended fix pattern, but a device re-check is required before the row can
+be closed. The action-sheet state is likewise id-based and saveable
+(`actionSheetMessageId`, `ChatScreen.kt:188`), so D5 needs the same device
+re-check.
 
 ## Typing indicator (verified, no changes)
 

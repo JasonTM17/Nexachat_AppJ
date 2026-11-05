@@ -61,8 +61,10 @@ rate limiting, error handling. Claims cite source files for viva defence.
   (StompAuthChannelInterceptor.onConnect, SecurityConfig.java).
 - SUBSCRIBE authZ: `/topic/conversations.{uuid}` is allowed only when
   `conversation_members` contains `(conversationId, userId)`;
-  `/user/queue/*` is allowed because it resolves to the caller's own session
-  queue; every other destination is denied by default
+  only `/user/queue/inbox`, `/user/queue/errors`, `/user/queue/presence`, and
+  `/user/queue/calls` are allowed for the authenticated user's own destination;
+  direct `/user/{id}/queue/*`, unknown queues, and every other destination are denied
+  by default
   (StompAuthChannelInterceptor.onSubscribe).
 - SEND authZ: `/app/conversations/{uuid}/{messages|typing|read}` re-checks
   membership before any `@MessageMapping` runs — belt-and-braces under
@@ -141,9 +143,11 @@ rate limiting, error handling. Claims cite source files for viva defence.
   stable public contract: e.g. `INVALID_CREDENTIALS` 401, `NOT_MEMBER` 403,
   `PHONE_EXISTS` 409, `ATTACHMENT_NOT_FOUND` 404, `MIME_NOT_ALLOWED` 415,
   `FILE_TOO_LARGE` 413, `RATE_LIMITED` 429.
-- Stack traces are logged server-side and never serialized; even
-  IllegalArgumentException messages — which may contain attacker input such as a
-  rejected phone string — are logged, not echoed (GlobalExceptionHandler.java).
+- REST exception logs contain the exception class only; `GlobalExceptionHandler`
+  does not log exception messages or stack traces, and its response contains a
+  sanitized error envelope. `WsMessageController` maps payload conversion or
+  validation failures to `VALIDATION_FAILED`, unexpected handler failures to
+  `INTERNAL_ERROR`, and logs no exception message, stack trace, or payload.
 - Validation errors are structured and stable: field violations become an
   insertion-ordered `details` map (GlobalExceptionHandler.handleValidation).
 
@@ -164,12 +168,11 @@ rate limiting, error handling. Claims cite source files for viva defence.
 - The prod profile fails fast when datasource credentials are missing or
   unresolved (`ProductionDataSourceConfiguration.java:21-38`); compose supplies
   `SPRING_DATASOURCE_*` so a fresh clone still boots.
-- Kicked/removed members: membership is checked at CONNECT/SUBSCRIBE/SEND only
-  (StompAuthChannelInterceptor). After GroupService.removeMemberInternal deletes
-  the row, an existing SUBSCRIBE on `/topic/conversations.{uuid}` is not
-  proactively unsubscribed, so a still-connected client may keep receiving topic
-  frames until reconnect; inbox pushes stop because MessageBroadcastListener
-  derives recipients from current members.
+- Kicked/removed members: after a member removal or self-leave commits,
+  `GroupService` revokes existing `/topic/conversations.{uuid}` subscriptions.
+  Every outbound conversation-topic frame also rechecks the recipient's current
+  membership, closing the queued-SUBSCRIBE race. `GroupFlowIT` covers admin
+  removal, self-leave, and an authorized SUBSCRIBE held until after removal.
 - Dev-grade permissive origins — CORS `*` and STOMP
   `setAllowedOriginPatterns("*")` (SecurityConfig.java, WebSocketConfig.java) —
   must be narrowed per environment before any public deployment.
