@@ -21,10 +21,10 @@ Rubric coverage — the full mapping with test evidence is in
 | R2 — direct chat | 1-1 messaging, optimistic send + outbox retry, read receipts, typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat` |
 | R2 — group chat | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
-| R3 — i18n | Full Vi/En parity (86/86 strings), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
-| R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, zero state loss on rotation/process death | `core/database`, `feature/*/ViewModel` |
+| R3 — i18n | Full Vi/En parity (96/96 string keys, 94 translatable), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
+| R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
 | R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin) | `server/message` (V3), `app/feature/chat/ChatInteractions` |
-| R5 — UI + tests | Material 3, ≥48dp touch targets, shared state components; 287 server + 165 Android tests | `core/ui`, `server/src/test`, `app/src/test` |
+| R5 — UI + tests | Material 3, ≥48dp touch targets, shared state components; 310 server + 202 Android tests green | `core/ui`, `server/src/test`, `app/src/test` |
 | R6 — presentation | This README, `docs/`, viva question bank | `docs/viva-questions.md` |
 | R1 — submission | Monorepo + packaging checklist | `docs/packaging-checklist.md` |
 
@@ -83,6 +83,10 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 DI, Retrofit 2.11 + Moshi, coroutines 1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle + version catalog, JUnit4/MockK/Turbine |
 | Deploy | Multi-stage `server/Dockerfile`, `docker-compose.yml` | `API_BASE_URL` via `local.properties`/`-PapiBaseUrl` |
+
+Design system: tokens, component states and the Stitch→Compose mapping are in
+[docs/design/design-notes.md](docs/design/design-notes.md); live emulator
+screenshots are in [docs/design/screens/](docs/design/screens/).
 
 ## Prerequisites
 
@@ -162,21 +166,23 @@ build alone permits LAN cleartext — the release config blocks it
 ## Running tests
 
 ```bash
-# Server — full gate: 258 unit tests + 26 integration tests (real Postgres)
+# Server — full gate: 280 unit tests + 30 integration tests (real Postgres)
 cd server && mvn verify
 #   unit loop only (faster, skips *IT):
 cd server && mvn test
 
-# Android — 165 JVM unit tests
+# Android — 202 JVM unit tests
 cd android && ./gradlew testDebugUnitTest
 ```
 
 Integration tests (`*IT`, failsafe) run against real PostgreSQL — locally the
 compose DB on `:5433` via `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD` env vars, in CI
 the workflow's postgres service on `:5432` (`.github/workflows/ci.yml`).
-Current counts: **287 server tests + 165 Android tests, all green.** CI runs
-both suites plus a committed-secret scan on every PR and push to
-`main`/`develop` — the suite must stay green to merge.
+Latest final-tree results (surefire/failsafe + Gradle XML): **310 server tests
+(280 unit + 30 IT, 0 failures) + 202 Android tests (20 classes, 0 failures).**
+Server counts exclude one stale `MessageFlowIT` surefire XML from an earlier
+run; the class's current results are in failsafe. CI is configured to run both
+suites plus a committed-secret scan on every PR and push to `main`/`develop`.
 
 ## Repo layout
 
@@ -211,14 +217,16 @@ nexachat/
 | [docs/rtm.md](docs/rtm.md) | Requirement → module → test → demo traceability |
 | [docs/demo-runbook.md](docs/demo-runbook.md) | LAN demo preflight + ~8-minute script |
 | [docs/interactions-demo.md](docs/interactions-demo.md) | Reply/reaction/pin demo & viva playbook |
-| [docs/viva-questions.md](docs/viva-questions.md) | 45-question defense bank with code citations |
+| [docs/viva-questions.md](docs/viva-questions.md) | 51-question defense bank with code citations |
 | [docs/known-limitations.md](docs/known-limitations.md) | Honest deferred work — read before the viva |
 | [docs/i18n-audit.md](docs/i18n-audit.md) | EN/VI parity + hardcoded-literal sweep |
 | [docs/rotation-audit.md](docs/rotation-audit.md) | Per-screen state-survival audit |
 | [docs/packaging-checklist.md](docs/packaging-checklist.md) | R1 submission checklist |
 | [docs/report.md](docs/report.md) + [docs/report.docx](docs/report.docx) | Full course report (18 sections; regenerate via `tools/build-report.py`) |
 | [docs/screenshots-manifest.md](docs/screenshots-manifest.md) | Screenshot capture plan — 22 shots, routes + preconditions |
-| `docs/screenshots/` | UI evidence |
+| [docs/design/design-notes.md](docs/design/design-notes.md) | Design tokens, component states, Stitch→Compose mapping |
+| `docs/screenshots/` | UI evidence (22 shots) |
+| `docs/design/screens/` | Live emulator screenshots (21 shots, EN/VI + dark) |
 
 ## Team & AI declaration / Tuyên bố sử dụng AI
 

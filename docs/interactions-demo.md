@@ -4,17 +4,17 @@
 > **Plan:** `plans/261103-2322-nexachat-master-design/phase-11-creative.md` (file is
 > named `phase-11-creative.md`; its title says "Phase 10" and the roadmap calls it
 > **P9** — the naming is inconsistent in the plan set).
-> **Repo snapshot:** `nexachat` @ `1c133b6` (branch `main`), with P9 implementation
-> in progress in the working tree. **The repo is being modified concurrently**;
-> this document reflects the state at the time of writing (2026-11-04).
+> **Repo snapshot:** final frozen tree on `main` (2026-11-05). The feature is
+> fully shipped: server, Android data layer, Compose UI, and tests.
 
 ## 0. Read this first — evidence status
 
-At the snapshot the feature is **partially implemented**: the server side is
-complete (migration, entities, repositories, services, controllers, WS
-broadcast), and the Android data layer is complete (DTOs, Retrofit API, Room,
-repository, typed WS events, ViewModel state). The **Compose UI is not yet
-wired** and the **TC-INT tests are not yet written**.
+The feature is **fully implemented**: the server side is complete (migration,
+entities, repositories, services, controllers, WS broadcast), the Android data
+layer is complete (DTOs, Retrofit API, Room, repository, typed WS events,
+ViewModel state), the **Compose UI is wired** (`ChatInteractions.kt` +
+`ChatScreen.kt`), and the **TC-INT tests are written and green**
+(`InteractionFlowIT`, `ReactionServiceTest`, `PinServiceTest`).
 
 | P9 piece | Status | Evidence |
 |---|---|---|
@@ -37,8 +37,8 @@ wired** and the **TC-INT tests are not yet written**.
 | Android typed WS events | **SHIPPED** | `core/network/stomp/RealtimeSession.kt:63-79,322-339` |
 | Android repository: toggle/pin/unpin/optimistic reconcile | **SHIPPED** | `data/MessageRepository.kt:446-579` |
 | Android ViewModel state + actions | **SHIPPED** | `feature/chat/ChatViewModel.kt:57-89,133-136,200-255` |
-| Android Compose UI (ReactionBar / ReplyPreview / PinnedBanner) | **PLANNED (stub only)** | `feature/interactions/README.md:3-7`; `ChatScreen.kt` renders none of them yet |
-| Tests TC-INT-01..04 | **PLANNED** | `phase-11-creative.md:24`; no `ReactionServiceTest` / `PinServiceTest` / `InteractionFlowIT` in `server/src/test` |
+| Android Compose UI (ReactionBar / ReplyPreview / PinnedBanner) | **SHIPPED** | `feature/chat/ChatInteractions.kt`; wired in `ChatScreen.kt` (reaction bar + reply + pin gated by `replyable` / `canPin`) |
+| Tests TC-INT-01..04 | **SHIPPED** | `InteractionFlowIT.java:176-380`; `ReactionServiceTest`; `PinServiceTest` in `server/src/test` |
 
 **Migration number:** `phase-11-creative.md:13` says `V2__interactions.sql`, but
 `V2` was already `V2__attachments.sql`; the implementation correctly landed as
@@ -61,8 +61,8 @@ Three interactions, all riding the existing message pipeline:
    user per emoji (`V3__interactions.sql:15-24`). Toggle = `DELETE` then, if
    nothing was removed, `INSERT … ON CONFLICT DO NOTHING`
    (`ReactionService.java:82-86`; `MessageReactionRepository.java:23-46`).
-3. **Pin** — up to **3** pins per conversation (`PinService.java:54,136-139`);
-   DIRECT = any member, GROUP = ADMIN only (`PinService.java:187-193`).
+3. **Pin** — up to **3** pins per conversation (`PinService.java:55,143-145`);
+   DIRECT = any member, GROUP = ADMIN only (`PinService.java:199-203`).
 
 Realtime surface: `REACTION_UPDATED` and `PIN_UPDATED` are broadcast on
 `/topic/conversations.{id}` (`InteractionBroadcastListener.java:35-47`;
@@ -83,13 +83,15 @@ new STOMP SEND destination is required** — the interceptor regex only routes
 | B | `+84900000002` **Binh** | `MEMBER` (`seed.sql:76`) |
 
 Direct chat An↔Binh: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` (`seed.sql:58-61`).
-Seed password is `password123` (`seed.sql:9-12`); note `docs/demo-runbook.md:11`
-still says `demo@1234` — **doc drift**, use `demo/seed.sql`.
+Seed password is `password123` (`seed.sql:9-12`); `README.md` and
+`docs/demo-runbook.md` agree. Rows from an older draft seed (`demo@1234`)
+verify as `password123` only after a reset — `DELETE FROM users WHERE phone
+LIKE '+8490000%';` then re-apply `demo/seed.sql`.
 
 **Status key for steps:** **[S]** = shipped behaviour (verified in repo), **[C]** =
-contract/implementation behaviour, **[P]** = planned UI gesture (no composable
-in repo yet). Because the server endpoints are live, every step can also be
-driven with `curl` if the Compose UI is not wired in time.
+contract/implementation behaviour. The Compose UI is wired, so every UI step
+below is driven by the real app; the server endpoints can also be exercised
+with `curl` if needed.
 
 ### 2.0 Preflight (30 min before)
 
@@ -101,21 +103,21 @@ driven with `curl` if the Compose UI is not wired in time.
 
 ### 2.1 Reply-to-message (DIRECT) — ~30s
 
-1. **[P]** Phone B opens the direct chat with An.
-2. **[P]** Swipe right on An's message **"Bình ơi, họp lúc 3 giờ chiều đúng
+1. **[S]** Phone B opens the direct chat with An.
+2. **[S]** Swipe right on An's message **"Bình ơi, họp lúc 3 giờ chiều đúng
    không?"** (`seq=1`, id `00000000-0000-4000-8000-000000000001`, `seed.sql:87-89`).
-3. **[P]** A `ReplyPreview` appears above the composer showing the quoted
+3. **[S]** A `ReplyPreview` appears above the composer showing the quoted
    snippet (planned UI: `feature/interactions/README.md:5`).
-4. **[P]** Type `Oke, 3 giờ phòng 2A nhé.` and tap **Send**.
+4. **[S]** Type `Oke, 3 giờ phòng 2A nhé.` and tap **Send**.
 5. **[S]** The client sends STOMP `SEND /app/conversations/aaaaaaaa-…/messages`
    with body
    `{"clientMessageId":"…","type":"TEXT","content":"Oke, 3 giờ phòng 2A nhé.","replyToId":"00000000-0000-4000-8000-000000000001","attachmentIds":[]}`
    (`docs/websocket-protocol.md:55`; `SendMessageRequest.java:26`;
-   `ChatViewModel.kt:200-204`).
+   `ChatViewModel.kt:221-226`).
 6. **[S]** Both phones receive `MESSAGE_CREATED` on
    `/topic/conversations.aaaaaaaa-…` with `payload.replyToId` and the embedded
    `payload.replyTo` preview (`MessageResponse.java:19-35`).
-7. **[P]** Phone A renders the reply bubble with the quote above it.
+7. **[S]** Phone A renders the reply bubble with the quote above it.
 
 > **Narrate:** "A reply is just a message with a validated foreign key. The
 > server rejects a `replyToId` that does not exist or belongs to another
@@ -124,9 +126,9 @@ driven with `curl` if the Compose UI is not wired in time.
 
 ### 2.2 Emoji reaction toggle on the partner's message — ~30s
 
-1. **[P]** Phone A long-presses Binh's message **"Được, bao mình."** (`seq=6`,
+1. **[S]** Phone A long-presses Binh's message **"Được, bao mình."** (`seq=6`,
    id `00000000-0000-4000-8000-000000000006`, `seed.sql:102-104`).
-2. **[P]** The `ReactionBar` appears (`feature/interactions/README.md:4`);
+2. **[S]** The `ReactionBar` appears (`feature/interactions/README.md:4`);
    tap **👍**.
 3. **[S]** `POST /api/v1/messages/00000000-0000-4000-8000-000000000006/reactions`
    with `{"emoji":"👍"}` → **204** (`ReactionController.java:38-45`).
@@ -136,7 +138,7 @@ driven with `curl` if the Compose UI is not wired in time.
    (`ReactionUpdatedPayload.java:12`; `ReactionSlice.java:13`;
    `InteractionBroadcastListener.java:35-40`). Phone B shows the 👍 chip with
    count **1**.
-5. **[P]** Tap **👍** again on Phone A.
+5. **[S]** Tap **👍** again on Phone A.
 6. **[S]** Same `POST` toggles the row off → **204**; `REACTION_UPDATED` with
    `reactions:[]` (the full post-toggle aggregate, replace-not-merge); the chip
    disappears on both phones (`ReactionService.java:82-89`).
@@ -148,10 +150,10 @@ driven with `curl` if the Compose UI is not wired in time.
 
 ### 2.3 Pin a message in the group as ADMIN — ~30s
 
-1. **[P]** Phone A opens the group **Nhom Do An**.
-2. **[P]** Long-press Chi's message **"Em làm xong phần API rồi, đang viết
+1. **[S]** Phone A opens the group **Nhom Do An**.
+2. **[S]** Long-press Chi's message **"Em làm xong phần API rồi, đang viết
    slide."** (`seq=8`, id `00000000-0000-4000-8000-000000000008`, `seed.sql:109-111`).
-3. **[P]** Tap **Ghim** (Pin).
+3. **[S]** Tap **Ghim** (Pin).
 4. **[S]** `POST /api/v1/conversations/bbbbbbbb-…/pins` with
    `{"messageId":"00000000-0000-4000-8000-000000000008"}` → **204**
    (`PinController.java:52-59`).
@@ -159,24 +161,26 @@ driven with `curl` if the Compose UI is not wired in time.
    with payload `{"messageId":"…","pinned":true}` (`PinUpdatedPayload.java:10`;
    `InteractionBroadcastListener.java:42-47`). A `PinnedBanner` appears at the
    top of the chat on **both** phones.
-6. **[P]** Tap the `PinnedBanner` → the list jumps to the pinned message
-   (`feature/interactions/README.md:6`).
+6. **[S]** Tap the `PinnedBanner` → the list pages backwards (bounded, ~20
+   pages ≈ 600 messages) and jumps to the pinned message
+   (`MessageRepository.loadUntilLoaded`, `MAX_JUMP_PAGES = 20`;
+   `ChatScreen.kt:125-137`).
 7. **[S]** *(Optional, proves the cap)* Pin two more messages → 3 pins OK; a
-   4th `POST /pins` → **409 `PIN_LIMIT`** (`PinService.java:136-139`;
+   4th `POST /pins` → **409 `PIN_LIMIT`** (`PinService.java:143-145`;
    `ApiErrorCode.java:30`). Show the error toast.
 
 ### 2.4 Non-admin denied — ~20s
 
-1. **[P]** Phone B (Binh, `MEMBER`) long-presses a group message → taps **Ghim**.
+1. **[S]** Phone B (Binh, `MEMBER`) long-presses a group message → taps **Ghim**.
 2. **[S]** `POST /api/v1/conversations/bbbbbbbb-…/pins` → **403 `NOT_ADMIN`**
-   (`PinService.java:187-193`; `ApiErrorCode.java:26`).
+   (`PinService.java:199-203`; `ApiErrorCode.java:26`).
 3. **[S]** **No `PIN_UPDATED` is broadcast** — Phone A sees nothing change.
-4. **[P]** Phone B shows the error state (toast: *"Chỉ quản trị viên mới được
+4. **[S]** Phone B shows the error state (toast: *"Chỉ quản trị viên mới được
    ghim"*).
 
 > **Narrate:** "Membership is checked first (a non-member gets `NOT_MEMBER`
 > 403), then the group role (a member who is not an admin gets `NOT_ADMIN`
-> 403) — `PinService.requirePinRole` (`PinService.java:187-193`). The UI hides
+> 403) — `PinService.requirePinRole` (`PinService.java:199-203`). The UI hides
 > the action, but the server is the authority."
 
 ### 2.5 Timing & fallbacks
@@ -186,10 +190,10 @@ driven with `curl` if the Compose UI is not wired in time.
   demo).
 - If the WS socket is down: the REST send path still works
   (`docs/api-contract.md:211`), and reactions/pins are REST anyway. On reconnect
-  the client resyncs via REST (`MessageRepository.kt:348-356`).
-- If the Compose UI is not ready: drive the same endpoints with `curl` against
-  the LAN IP and show the `REACTION_UPDATED` / `PIN_UPDATED` frames in the
-  server log — the contract is the proof.
+  the client resyncs via REST (`MessageRepository.kt:692-707`).
+- If the UI is unavailable on the day: drive the same endpoints with `curl`
+  against the LAN IP and show the `REACTION_UPDATED` / `PIN_UPDATED` frames in
+  the server log — the contract is the proof.
 
 ---
 
@@ -201,7 +205,7 @@ driven with `curl` if the Compose UI is not wired in time.
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/conversations/{conversationId}/messages` | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` | `201` created / `200` dedup — `MessageResponse` | `400 VALIDATION_FAILED` · `401 UNAUTHORIZED` · `403 NOT_MEMBER` · `404 CONVERSATION_NOT_FOUND` · `404 MESSAGE_NOT_FOUND` (reply target) · `404 FILE_NOT_FOUND` | **SHIPPED** (`MessageController.java:60-70`) |
 | `POST` | `/api/v1/messages/{messageId}/reactions` | `{emoji}` (non-blank, ≤16 code points) | `204` empty | `400 VALIDATION_FAILED` (blank/too long) · `401` · `403 NOT_MEMBER` · `404 MESSAGE_NOT_FOUND` | **SHIPPED** (`ReactionController.java:38-45`; `ReactionService.java:67-80,113-122`) |
-| `GET` | `/api/v1/conversations/{conversationId}/pins` | — | `200` `PinnedMessageView[]` (oldest pin first) | `401` · `403 NOT_MEMBER` · `404 CONVERSATION_NOT_FOUND` | **SHIPPED** (`PinController.java:45-50`; `PinService.java:86-112`) |
+| `GET` | `/api/v1/conversations/{conversationId}/pins` | — | `200` `PinnedMessageView[]` (newest pin first, batch-hydrated) | `401` · `403 NOT_MEMBER` · `404 CONVERSATION_NOT_FOUND` | **SHIPPED** (`PinController.java:45-50`; `PinService.java:86-112`) |
 | `POST` | `/api/v1/conversations/{conversationId}/pins` | `{messageId}` | `204` | `400 VALIDATION_FAILED` (missing id / cross-conversation) · `401` · `403 NOT_MEMBER` · `403 NOT_ADMIN` (GROUP non-admin) · `404 CONVERSATION_NOT_FOUND` · `404 MESSAGE_NOT_FOUND` · `409 PIN_LIMIT` | **SHIPPED** (`PinController.java:52-59`; `PinService.java:119-145,187-204`) |
 | `DELETE` | `/api/v1/conversations/{conversationId}/pins/{messageId}` | — | `204` | same as `POST /pins` | **SHIPPED** (`PinController.java:61-68`; `PinService.java:152-166`) |
 
@@ -212,7 +216,7 @@ Notes:
   (`ReactionService.java:82-86`). The 204 deliberately has no body; the
   post-toggle state arrives via `REACTION_UPDATED`.
 - Pin authorization is **conversation-type dependent**: DIRECT = any member,
-  GROUP = ADMIN only (`PinService.java:187-193`).
+  GROUP = ADMIN only (`PinService.java:199-203`).
 - Pins are **idempotent**: re-pinning an already-pinned message is a no-op, not
   a `PIN_LIMIT` hit — the ceiling only guards *new* pins
   (`PinService.java:135-142`).
@@ -227,7 +231,7 @@ Notes:
 
 Both use the frozen envelope `{eventType, conversationId, serverTs, payload}`
 (`EventEnvelope.java:16-23`; `docs/websocket-protocol.md:73-77`). Only members
-can subscribe to the topic (`StompAuthChannelInterceptor.java:113-137`), so
+can subscribe to the topic (`StompAuthChannelInterceptor.java:148-162`), so
 interaction events are only delivered to conversation members. The listener is
 **topic-only** — no `/user/queue/inbox` push — because a reaction or pin changes
 no unread badge (`InteractionBroadcastListener.java:20-22`).
@@ -242,13 +246,13 @@ no unread badge (`InteractionBroadcastListener.java:20-22`).
 
 | Code | HTTP | Where |
 |---|---|---|
-| `VALIDATION_FAILED` | 400 | blank/oversized emoji (`ReactionService.java:113-122`); missing/cross-conversation `messageId` (`PinService.java:127-129,196-204`) |
+| `VALIDATION_FAILED` | 400 | blank/oversized emoji (`ReactionService.java:114-122`); missing/cross-conversation `messageId` (`PinService.java:133-135,207-213`) |
 | `UNAUTHORIZED` | 401 | missing/invalid Bearer token (security layer) |
-| `NOT_MEMBER` | 403 | caller not in the conversation (`ReactionService.java:78-80`; `PinService.java:181-185`) |
-| `NOT_ADMIN` | 403 | GROUP pin by a non-admin (`PinService.java:187-193`) |
-| `MESSAGE_NOT_FOUND` | 404 | reaction target or pin target missing (`ReactionService.java:74-76`; `PinService.java:196-204`) |
-| `CONVERSATION_NOT_FOUND` | 404 | pin list/pin on a missing conversation (`PinService.java:88-90,175-179`) |
-| `PIN_LIMIT` | 409 | 4th distinct pin (`PinService.java:136-139`) |
+| `NOT_MEMBER` | 403 | caller not in the conversation (`ReactionService.java:78-80`; `PinService.java:192-196`) |
+| `NOT_ADMIN` | 403 | GROUP pin by a non-admin (`PinService.java:199-203`) |
+| `MESSAGE_NOT_FOUND` | 404 | reaction target or pin target missing (`ReactionService.java:74-76`; `PinService.java:207-213`) |
+| `CONVERSATION_NOT_FOUND` | 404 | pin list/pin on a missing conversation (`PinService.java:87-88,186-187`) |
+| `PIN_LIMIT` | 409 | 4th distinct pin (`PinService.java:143-145`) |
 
 ---
 
@@ -283,12 +287,12 @@ check-then-insert race with a single atomic statement, the same pattern as
 **Answer.** A pin is a *highlight*, not storage. Past ~3 items the banner stops
 being scannable and becomes a second chat list; the cap keeps the feature
 legible and the demo deterministic. The limit is enforced **server-side**
-(`409 PIN_LIMIT`, `ApiErrorCode.java:30`; `PinService.java:54,136-139`) because
+(`409 PIN_LIMIT`, `ApiErrorCode.java:30`; `PinService.java:55,143-145`) because
 a client-side cap is not authorization.
 
 The race-safety detail is the interesting part: `pin()` and `unpin()` both take
 `SELECT … FOR UPDATE` on the **conversation row**
-(`ConversationRepository.java:24-26`; `PinService.java:175-179`), so the
+(`ConversationRepository.java:24-26`; `PinService.java:186-187`), so the
 exists/count/insert sequence is serialized per conversation. Two racing pins
 cannot both pass a "count < 3" check. The composite PK
 `(conversation_id, message_id)` additionally makes a repeat pin a no-op at the
@@ -303,7 +307,7 @@ discipline as `direct_key` for DIRECT creation."
 
 **Answer.** The reaction/pin paths publish a Spring event inside the transaction
 and fan out `AFTER_COMMIT` (`ReactionService.java:33-35,88-89`;
-`PinService.java:42-46,143-144`; `InteractionBroadcastListener.java:35-47`) —
+`PinService.java:150-151,175-176`; `InteractionBroadcastListener.java:35-47`) —
 the same pattern as `MessageService`/`MessageBroadcastListener`
 (`MessageService.java:45-47`; `MessageBroadcastListener.java:16-23,43-51`).
 
@@ -316,7 +320,7 @@ the same pattern as `MessageService`/`MessageBroadcastListener`
 - The payload is a **full-state replace**, not a delta, so out-of-order or
   replayed frames are idempotent: `ReactionUpdatedPayload` carries the whole
   `reactions[]` set and clients replace their cache
-  (`ReactionUpdatedPayload.java:7-12`; `MessageRepository.kt:446-454`).
+  (`ReactionUpdatedPayload.java:7-12`; `MessageRepository.kt:525-531`).
 - Like `markRead`, the pin event is published even on a no-op — a replayed frame
   states the truth and receivers converge (`PinService.java:42-46,164-165`).
 
@@ -333,14 +337,14 @@ satisfy the check. GROUP conversations have a real `ADMIN`
 (`ConversationMember.java:39-43`), and pins are admin-only so there is one
 authoritative curator and no "pin war" between members. This mirrors the
 existing group mutation rules: add/remove/rename are all ADMIN-only
-(`GroupService.java:148-151,250-254,304-308`).
+(`GroupService.java:156-159,262,343-345`).
 
 The rule is enforced in the **service**, not only the UI: membership first
 (`403 NOT_MEMBER`), then role for GROUP (`403 NOT_ADMIN`) —
-`PinService.requirePinRole` (`PinService.java:187-193`). The UI hides the
+`PinService.requirePinRole` (`PinService.java:199-203`). The UI hides the
 action for non-admins, but the server remains the authority — the same
 belt-and-braces principle as the STOMP interceptor
-(`StompAuthChannelInterceptor.java:113-162`) under the service-level checks.
+(`StompAuthChannelInterceptor.java:148-162`) under the service-level checks.
 
 **Viva line:** "Authorization follows the conversation's role model: DIRECT is
 peer-to-peer (no admin exists), GROUP has an admin by design — so the pin rule
@@ -355,7 +359,7 @@ is 'member in DIRECT, admin in GROUP', and it is checked server-side."
   (`ReactionView.java:5-8`).
 - The emoji is bounded to 16 **code points**, not Java `char`s, so multi-code-unit
   emoji (flags, ZWJ sequences) are measured the way PostgreSQL measures
-  `VARCHAR(16)` (`ReactionService.java:108-122`;
+  `VARCHAR(16)` (`ReactionService.java:114-122`;
   `V3__interactions.sql:18`).
 
 ---
@@ -393,7 +397,7 @@ exist. The full-set payload also makes replay idempotent.
 get?**
 A. Three keeps the pin banner scannable (a highlight, not storage). The limit
 is enforced server-side in `PinService.pin()` inside the insert transaction,
-and the client gets `409 PIN_LIMIT` (`PinService.java:54,136-139`;
+and the client gets `409 PIN_LIMIT` (`PinService.java:55,143-145`;
 `ApiErrorCode.java:30`). A client-side cap would not be authorization. The
 `SELECT … FOR UPDATE` on the conversation row
 (`ConversationRepository.java:24-26`) serializes racing pins so the check is
@@ -404,17 +408,17 @@ A. DIRECT has no ADMIN — both members are `MEMBER`
 (`ConversationMember.java:26-28`), so an ADMIN check would make pinning
 impossible. GROUP has an ADMIN role, and pins are admin-only to keep one
 authoritative curator, mirroring add/remove/rename
-(`GroupService.java:304-308`; `PinService.java:187-193`).
+(`GroupService.java:343-345`; `PinService.java:199-203`).
 
 **Q6. A group member who is not an admin taps Pin — what happens, and which
 layer returns the error?**
 A. The UI hides the action, but if the request is sent, `PinService.pin()` locks
 the conversation, checks membership (`403 NOT_MEMBER` for non-members), then
 `requirePinRole` (`403 NOT_ADMIN` for members who are not admins)
-(`PinService.java:126-133,181-193`). No `PIN_UPDATED` is broadcast. For REST the
+(`PinService.java:132-152,192-203`). No `PIN_UPDATED` is broadcast. For REST the
 service-level check is the enforcement point; for WS the SUBSCRIBE interceptor
 additionally ensures only members receive the topic events
-(`StompAuthChannelInterceptor.java:113-137`).
+(`StompAuthChannelInterceptor.java:148-162`).
 
 **Q7. Why must `replyToId` point to a message in the same conversation?**
 A. `MessageService.resolveReplyTo` loads the target and verifies the
@@ -424,16 +428,16 @@ broken quote preview — and the foreign key alone (`V1__init.sql:96`) only
 guarantees existence, not context. A missing target returns
 `MESSAGE_NOT_FOUND` (404); a cross-conversation target returns
 `VALIDATION_FAILED` (400). The same rule is applied to pin targets
-(`PinService.java:196-204`).
+(`PinService.java:207-213`).
 
 **Q8. A client was offline while someone reacted or pinned. How does it catch
 up — WS or REST?**
 A. REST is the source of truth; WS is push only. On reconnect the client fires
 a resync request (`RealtimeSession.kt:127-131,180`) and pages history with
-`afterSeq` (`MessageRepository.kt:348-356,363`); pins are refreshed with
-`GET /pins` (`MessageRepository.kt:541-550`) and reactions are re-read with the
+`afterSeq` (`MessageRepository.kt:692-707`); pins are refreshed with
+`GET /pins` (`MessageRepository.kt:630`) and reactions are re-read with the
 message payload (`MessageService.reactionsByMessage`,
-`MessageService.java:465-483`). Missed `REACTION_UPDATED` / `PIN_UPDATED`
+`MessageService.java:473-483`). Missed `REACTION_UPDATED` / `PIN_UPDATED`
 frames are not replayed — the REST resync closes the gap
 (`docs/websocket-protocol.md:100-102`). This is the same guarantee that makes
 persist-before-broadcast sufficient.
@@ -456,28 +460,27 @@ persist-before-broadcast sufficient.
 - [x] `ReactionUpdatedEvent` / `PinUpdatedEvent` + `InteractionBroadcastListener`
       (`InteractionBroadcastListener.java`).
 - [x] `MessageResponse.replyTo` + `reactions[]`; `MessageService` viewer-relative
-      assembly (`MessageResponse.java`; `MessageService.java:437-502`).
+      assembly (`MessageResponse.java`; `MessageService.java:436-501`).
 
 **Done (Android data layer):**
 - [x] `InteractionDtos.kt` + `MessageApi` methods (`MessageApi.kt:64-98`).
 - [x] Room `MessageReactionEntity` / `PinnedMessageEntity` + DAOs + DB migration
-      (`Entities.kt:100-126`; `Daos.kt:115-195`; `AppDatabase.kt:30-31,63-64`).
-- [x] Typed `ChatEvent.ReactionUpdated` / `PinUpdated` (`RealtimeSession.kt:63-79,322-339`).
-- [x] Repository optimistic toggle/pin/unpin + reconcile (`MessageRepository.kt:446-579`).
-- [x] `ChatViewModel` reply/pin state + actions (`ChatViewModel.kt:57-89,200-255`).
+      (`Entities.kt:120-141`; `Daos.kt:160-188`; `AppDatabase.kt:31-32,62-92`).
+- [x] Typed `ChatEvent.ReactionUpdated` / `PinUpdated` (`RealtimeSession.kt:70-86`).
+- [x] Repository optimistic toggle/pin/unpin + reconcile (`MessageRepository.kt:560-685`).
+- [x] `ChatViewModel` reply/pin state + actions (`ChatViewModel.kt:72-99,259-296`).
 
-**Remaining:**
-- [ ] **Compose UI** — `ReactionBar`, `ReplyPreview`, `PinnedBanner`
-      (`feature/interactions/README.md:3-7`); wire them into `ChatScreen.kt`
-      (currently renders none of them).
-- [ ] **Tests TC-INT-01..04** — react twice → remove; non-admin group pin → 403;
-      4th pin → 409; reply DTO (`phase-11-creative.md:24`; `docs/rtm.md:17`;
-      `docs/packaging-checklist.md:20`).
-- [ ] **Update `docs/websocket-protocol.md:85-86`** to the concrete DTO payload
-      shapes (currently the looser summary).
-- [ ] **No new STOMP SEND destination needed** — reactions/pins are
+**Done (Compose UI + tests):**
+- [x] **Compose UI** — `ReactionBarRow` / `ReactionChipsRow` / `ReplyQuoteBlock` /
+      `ReplyPreviewBar` / `PinnedBanner` (`feature/chat/ChatInteractions.kt`),
+      wired into `ChatScreen.kt` (reaction bar + reply + pin gated by
+      `replyable` / `canPin`).
+- [x] **Tests TC-INT-01..04** — `InteractionFlowIT`: react twice → remove;
+      non-admin group pin → 403; 4th pin → 409; reply DTO end-to-end
+      (`InteractionFlowIT.java:176-380`).
+- [x] **No new STOMP SEND destination needed** — reactions/pins are
       REST-triggered; the interceptor regex `messages|typing|read`
-      (`StompAuthChannelInterceptor.java:62-64`) stays unchanged. The two WS
+      (`StompAuthChannelInterceptor.java:71-72`) stays unchanged. The two WS
       events are server→client only.
 
 ---

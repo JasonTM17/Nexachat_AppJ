@@ -34,9 +34,13 @@ Why a header and not `?token=` on the URL:
 - The header stays inside the CONNECT frame, so reconnects never reuse a
   logged URL.
 
-The server validates the JWT before sending CONNECTED; an invalid token gets
-an `ERROR` frame and the socket closes. The authenticated user is bound to the
-session so `/user/**` destinations resolve.
+The server validates the JWT in the inbound channel interceptor before it
+processes CONNECT. A rejected CONNECT is dropped and the server does not
+guarantee an `ERROR` frame; the client may see the CONNECT acknowledgement
+timeout instead. Before every socket attempt, `RealtimeSession` checks the
+stored access-token expiry and calls the shared, mutex-protected
+`TokenRefresher.refreshIfNeeded()` when it has expired. The authenticated user
+is bound to the session so `/user/**` destinations resolve.
 
 ## 3. Heartbeat
 
@@ -44,8 +48,9 @@ session so `/user/**` destinations resolve.
 and expects one from the server every 10 s.
 
 - Either side closes the socket when heartbeats stop; a dead connection
-  (device asleep, NAT timeout, silent loss) is detected in ~20 s (two missed
-  10 s intervals) — fast enough for the demo and unread cleanup.
+  (device asleep, NAT timeout, silent loss) is detected in ~30 s (three missed
+  10 s intervals — `StompClient.DEAD_AFTER_MS = 30_000`) — fast enough for the
+  demo and unread cleanup.
 - Heartbeats are transport liveness only; they carry no app data.
 
 ## 4. Destinations
@@ -67,6 +72,14 @@ Notes:
   referenced by `attachmentIds`; nothing binary goes over STOMP.
 - `/user/queue/*` is a per-connection user queue from the CONNECT principal;
   it is not shared between devices.
+- SEND is rate-limited per user: 30 `messages` / 10 s and 60 `typing` / 10 s,
+  configured by `nexachat.rate-limit.stomp.*`. An over-budget frame is dropped
+  and reported on `/user/queue/errors` as
+  `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}` (typing omits the id);
+  the session is not closed.
+- `content` is capped at 10,000 characters (`SendMessageRequest` `@Size` +
+  `MessageService.MAX_CONTENT_LENGTH`); a longer body is `VALIDATION_FAILED`
+  before any insert.
 
 ## 5. Event envelope
 
@@ -103,21 +116,36 @@ the live stream, closing the gap for events missed while offline.
 
 **Idempotency.** `clientMessageId` is a sender-generated UUID, unique per
 `(sender_id, client_message_id)`. A retried SEND hits `ON CONFLICT DO NOTHING`
-and returns the existing row, so no duplicate is created. The sender flips its
-optimistic Room row from `SENDING` to `SENT` by matching `clientMessageId`.
+and returns the existing row, so no duplicate is created — and the server
+**re-broadcasts** `MESSAGE_CREATED` for the deduplicated row, because that
+frame is the retrying sender's SENT acknowledgment. Receivers deduplicate by
+message id, so the re-broadcast is harmless (`MessageService.java:121-149`).
+The sender flips its optimistic Room row from `SENDING` to `SENT` by matching
+`clientMessageId`. Reusing the key in a *different* conversation is
+`VALIDATION_FAILED`, not a silent cross-room dedup.
 
 **Ordering.** Render and diff by monotonic `seq` (BIGSERIAL), never by arrival
 time or `serverTs`; a delayed lower-`seq` event still inserts in position.
 
+**Read watermark.** `upToSeq` must be non-negative and cannot exceed the
+conversation's latest `seq`; the persisted watermark is monotonic (never moves
+backwards) and `MESSAGE_READ` broadcasts the *persisted* value, so a replayed
+frame is truthful.
+
 **Reconnect backoff.** On socket loss the client retries with delays
-`1s, 2s, 4s, 8s, 16s` plus jitter, maximum 5 attempts. After the 5th failure
-it stops auto-reconnect and falls back to REST until a foreground/refresh
-re-authenticates; a successful CONNECT resets the counter.
+`1s, 2s, 4s, 8s, 16s` plus ±20% jitter, at most 5 attempts
+(`ReconnectPolicy.MAX_ATTEMPTS`). After the budget is spent the loop parks and
+REST remains the send path; it is re-armed by a validated network regain, app
+foreground, a user action (`ensureConnected`), and — while the app is
+foregrounded with a valid session — a bounded backoff timer (5 s doubling to
+60 s max). Backgrounded, only the explicit triggers apply. A successful
+CONNECT resets the counter.
 
 ## 7. Authorization (two layers)
 
-1. **CONNECT = authentication.** The JWT proves who the user is; no valid
-   token means no session (`ERROR` frame).
+1. **CONNECT = authentication.** The JWT proves who the user is; a rejected
+   token means no session and no `CONNECTED` acknowledgement. Clients should
+   refresh from the stored refresh token after local access-token expiry.
 2. **SUBSCRIBE / SEND = authorization.** Every subscription to
    `/topic/conversations.{id}` and every SEND to `/app/conversations/{id}/…`
    is checked against `conversation_members` for the authenticated user. A

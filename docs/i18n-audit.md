@@ -1,43 +1,52 @@
 # i18n Audit — NexaChat Android
 
 Read-only audit. Sources: `android/app/src/main/res/values/strings.xml`,
-`android/app/src/main/res/values-vi/strings.xml`, and all 74 Kotlin files under
+`android/app/src/main/res/values-vi/strings.xml`, and all 82 Kotlin files under
 `android/app/src/main/java`. No source or resource file was modified.
+Counts re-verified against the final frozen tree (2026-11-05).
 
 ## 1. Parity check (EN vs VI)
 
 | Section | EN keys | VI keys | Status |
 | --- | ---: | ---: | --- |
 | App name | 1 | 1 | identical by design |
-| Splash | 1 | 1 | ok |
-| Auth labels & actions | 8 | 8 | ok |
+| Splash | 0 | 0 | section removed with `splash_tagline` |
+| Auth | 14 | 14 | ok |
 | Auth field validation | 4 | 4 | ok |
-| API/user-facing errors | 5 | 5 | ok |
+| ApiError → user-facing messages | 5 | 5 | ok |
 | Inbox | 2 | 2 | ok |
-| Contacts & user search | 17 | 17 | ok |
+| Contacts & user search | 20 | 20 | ok |
 | Contacts errors | 2 | 2 | ok |
 | Profile | 2 | 2 | ok |
+| Settings | 4 | 4 | 2 endonyms are `translatable="false"` |
 | Chat placeholder | 2 | 2 | ok |
-| Chat | 9 | 9 | ok |
+| Chat | 12 | 12 | ok |
+| Message interactions | 10 | 10 | ok |
 | Media / attachments | 5 | 5 | ok |
 | Group | 13 | 13 | ok |
-| **Total** | **71** | **71** | **100 %** |
+| **Total** | **96** | **96** | **100 %** |
 
 - Missing from VI: **none**.
 - Missing from EN: **none**.
-- Present but identical in VI: **none** (only `app_name`, which is intentional).
+- Translatable keys: **94** (the 2 `language_name_*` endonyms are
+  `translatable="false"` by design).
+- Present but identical in VI: `app_name` and `pinned_count` (`%1$d/%2$d`,
+  numeric format) — both intentional.
 - Untranslated English leaking through resources: **none**.
 
 ## 2. Suspicious VI strings (quality, not parity)
 
-| Key | EN | Current VI | Issue | Suggested VI |
-| --- | --- | --- | --- | --- |
-| `contact_alias_label` | Alias | Tên gợi nhớ | Wrong semantics; "Tên gợi nhớ" is not the word for an alias/nickname. | Biệt danh |
-| `group_role_admin` | Admin | Quản trị | "Quản trị" means administration, not the role. | Quản trị viên |
-| `chat_placeholder` | Chat %1$s | Trò chuyện %1$s | Missing preposition; reads as a fragment. | Trò chuyện với %1$s |
-| `action_leave_group` | Leave group | Rời nhóm | Missing "khỏi"; ungrammatical. | Rời khỏi nhóm |
-| `group_leave_confirm` | Leave this group? | Rời nhóm này? | Missing "khỏi". | Rời khỏi nhóm này? |
-| `group_remove_member_confirm` | Remove %1$s from this group? | Xóa %1$s khỏi nhóm? | Understandable but drops "this". | Xóa %1$s khỏi nhóm này? |
+All six entries flagged in the previous audit pass have been fixed in
+`values-vi/strings.xml`; the current values are the suggested ones:
+
+| Key | EN | Current VI | Status |
+| --- | --- | --- | --- |
+| `contact_alias_label` | Alias | Biệt danh | ✅ fixed |
+| `group_role_admin` | Admin | Quản trị viên | ✅ fixed |
+| `chat_placeholder` | Chat %1$s | Trò chuyện với %1$s | ✅ fixed |
+| `action_leave_group` | Leave group | Rời khỏi nhóm | ✅ fixed |
+| `group_leave_confirm` | Leave this group? | Rời khỏi nhóm này? | ✅ fixed |
+| `group_remove_member_confirm` | Remove %1$s from this group? | Xóa %1$s khỏi nhóm này? | ✅ fixed |
 
 Consistency notes (not errors):
 
@@ -54,37 +63,36 @@ Consistency notes (not errors):
 ## 3. Hardcoded user-visible strings in Kotlin
 
 Scan covered `Text("…")`, `placeholder=`, `label=`, `contentDescription=`,
-`setContentDescription`, dialogs, and snackbars/toasts across all 74 files.
+`setContentDescription`, dialogs, and snackbars/toasts across all 82 files.
 Imports, URLs, route names, tags, keys, SQL, and logging were excluded.
 
 | Screen / area | Location | Literal | Classification |
 | --- | --- | --- | --- |
-| Chat | `feature/chat/ChatScreen.kt:339` | `"!"` | Delivery-failed mark; symbol, not localizable prose |
-| Attachments | `feature/media/AttachmentViews.kt:245` | `"!"` | Failed-upload placeholder; symbol |
-| Attachments | `feature/media/AttachmentViews.kt:237` | `"${(item.progress * 100).toInt()}%"` | Dynamic progress; numeric only |
-| Media | `feature/media/MediaModels.kt:58` | `"$bytes B"` | Size template hardcoded in code |
-| Media | `feature/media/MediaModels.kt:60` | `"%.1f KB"` | Size template hardcoded in code |
-| Media | `feature/media/MediaModels.kt:61` | `"%.1f MB"` | Size template hardcoded in code |
+| Chat | `feature/chat/ChatScreen.kt:575` | `"!"` | Delivery-failed mark; symbol, not localizable prose |
+| Attachments | `feature/media/AttachmentViews.kt:247` | `"!"` | Failed-upload placeholder; symbol |
+| Attachments | `feature/media/AttachmentViews.kt:239` | `"${(item.progress * 100).toInt()}%"` | Dynamic progress; numeric only |
+| Media | `feature/media/MediaModels.kt:62` | `"$bytes B"` | Size template hardcoded in code |
+| Media | `feature/media/MediaModels.kt:64` | `"%.1f KB"` | Size template hardcoded in code |
+| Media | `feature/media/MediaModels.kt:65` | `"%.1f MB"` | Size template hardcoded in code |
 
-Adjacent finding: `formatBytes()` at `MediaModels.kt:56-61` forces
-`String.format(Locale.US, …)`, so Vietnamese users see a dot decimal separator
-("640.0 KB") where `vi_VN` convention is a comma. Unit tokens (B/KB/MB) are
-SI-neutral, so this is a formatting defect rather than missing copy.
+The previous `formatBytes()` locale defect is **fixed**: it now calls
+`String.format(Locale.getDefault(), …)` (`MediaModels.kt:60-65`), so `vi_VN`
+renders a comma decimal separator. Unit tokens (B/KB/MB) are SI-neutral.
 
 Every other user-visible value resolves through
-`stringResource(R.string.*)` (153 references), including all top bars, labels,
-placeholders, content descriptions, dialogs, and error/snackbar text.
+`stringResource(R.string.*)` (154 call sites across 22 files), including all
+top bars, labels, placeholders, content descriptions, dialogs, and
+error/snackbar text.
 
 ## 4. Verdict
 
-- Resource key coverage: **71/71 = 100 %** (0 missing either direction).
-- Translatable strings localized: **70/70 = 100 %**.
+- Resource key coverage: **96/96 = 100 %** (0 missing either direction).
+- Translatable strings localized: **94/94 = 100 %** (2 endonyms are
+  `translatable="false"` by design).
 - Hardcoded prose in Compose UI: **0 hits**; only 2 symbols, 1 dynamic numeric,
   and 3 hardcoded size-format templates were found.
-- Translation quality: **65/70 clean ≈ 93 %**; 5 keys need retranslation and
-  1 minor wording tweak.
-- Effective localized coverage: **~93 %** after quality adjustment; the single
-  functional locale bug is the forced `Locale.US` in `formatBytes()`.
+- Translation quality: **94/94 clean = 100 %** — the six previously flagged VI
+  entries are all fixed, and the `formatBytes()` locale defect is fixed.
 
-Overall: strong i18n hygiene. Fix the five flagged VI entries and the
-`Locale.US` size formatting to reach a clean pass.
+Overall: clean i18n pass. The remaining `SĐT` vs "số điện thoại" register split
+is a consistency nit, not a correctness defect.

@@ -35,8 +35,9 @@ Run on a **clean machine** (fresh clone from the zip) before archiving:
       `node_modules/`, `.gradle/`, `*.keystore`, `*.jks`,
       `keystore.properties`, `.env*`, `local.properties`,
       `google-services.json`, `server/uploads/`, `data/`, `*.log`.
-      Verify: `git ls-files | grep -Ei 'keystore|\.env|local\.properties'`
-      returns nothing.
+      Verify: `git ls-files | grep -Ei 'keystore|\.env|local\.properties'
+      | grep -vE '\.example$'` returns nothing (the two tracked `*.example`
+      templates are expected).
 - [ ] APK `release` is signed with the LOCAL keystore (keystore itself is
       never committed/submitted); tag `v1.0.0` exists.
 - [ ] Fresh-clone verification: `docker compose up -d db` → `mvn -B verify`
@@ -60,8 +61,8 @@ curl http://localhost:8080/actuator/health   # {"status":"UP"}
 docker exec -i $(docker compose ps -q db) psql -U nexachat -d nexachat < demo/seed.sql
 
 # 4. Full test gates
-cd server && mvn -B verify                          # 284 tests (258 unit + 26 IT)
-cd ../android && ./gradlew testDebugUnitTest        # 143 tests
+cd server && mvn -B verify                          # final XML run: 310 tests (280 unit + 30 IT)
+cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (20 classes)
 ```
 
 ## APK install & demo accounts
@@ -74,8 +75,9 @@ cd ../android && ./gradlew testDebugUnitTest        # 143 tests
       must show no `FATAL EXCEPTION`. Unit/IT tests cannot see DI-init or
       theme-window defects — this gate exists because one launch crash
       (`unexpected scheme: ws`) shipped past 418 green tests.
-- [ ] Install on 2+ devices: `adb -s <device> install app-release.apk`
-      (or Gradle `installDebug` for the debug variant).
+- [ ] Install on 2+ devices: `adb -s <device> install
+      app/build/outputs/apk/debug/app-debug.apk` (debug variant — required for
+      LAN cleartext; the signed release APK is `release/nexachat-v1.0.0.apk`).
 - [ ] Point the app at the backend **without source edits**: add
       `API_BASE_URL=http://<LAN-IP>:8080` to `android/local.properties` and
       rebuild (`./gradlew -PapiBaseUrl=http://<LAN-IP>:8080 assembleDebug`
@@ -103,10 +105,11 @@ cd ../android && ./gradlew testDebugUnitTest        # 143 tests
 - [ ] `docs/rtm.md` — requirement traceability matrix.
 - [ ] `docs/demo-runbook.md` — preflight + 8-minute script + fallbacks.
 - [ ] `docs/known-limitations.md` — honest limitations.
-- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (71/71
+- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (96/96
       keys) and per-screen rotation evidence.
 - [ ] `docs/interactions-demo.md` — creative feature playbook.
-- [ ] `docs/screenshots/` — see user-side TODO below.
+- [ ] `docs/screenshots/` (22 feature shots) + `docs/design/screens/`
+      (21 design-system shots) + `docs/design/design-notes.md`.
 - [ ] `demo/` — `seed.sql`, `lan-up.sh`, `lan-up.ps1`, `backup.sh`.
 - [ ] `.github/workflows/ci.yml` + `.github/pull_request_template.md`.
 - [ ] `tools/build-report.py` — report generator.
@@ -115,16 +118,17 @@ cd ../android && ./gradlew testDebugUnitTest        # 143 tests
 
 | Suite | Command | Expected |
 |---|---|---|
-| Server unit + integration | `docker compose up -d db` then `cd server && mvn -B verify` | 284 tests green (258 unit + 26 IT on real Postgres via env-JDBC; local default `localhost:5433`) |
-| Android unit | `cd android && ./gradlew testDebugUnitTest` | 143 tests green |
+| Server unit + integration | `docker compose up -d db` then `cd server && mvn -B verify` | final XML run: 310 tests green (280 unit + 30 IT on real Postgres via env-JDBC; local default `localhost:5433`) |
+| Android unit | `cd android && ./gradlew testDebugUnitTest` | final XML run: 202 green (20 classes) |
 | CI equivalent | `.github/workflows/ci.yml` | server-test (postgres svc `:5432` + `IT_DB_*` env), android-test, secret-scan |
 
-## User-side TODO (cannot be produced from the repo — do before zipping)
+## Remaining submission TODO (team inputs and final packaging)
 
-- [ ] **Screenshots** — capture every feature in **both** languages into
-      `docs/screenshots/` (login/register, inbox, chat 1-1, group,
-      contacts/search, media viewer, upload progress, reply/reaction/pin,
-      settings/language, profile): ~15–20 shots minimum.
+- [x] **Screenshots** — 22 feature PNGs captured across Vietnamese and English,
+      including login/register, inbox, direct/group chat, contacts/search,
+      media, interactions, profile, and language settings. Inventory:
+      `docs/screenshots-manifest.md`. Plus 21 live design-system screenshots
+      (EN/VI + dark) in `docs/design/screens/`.
 - [ ] **Member names / MSSV** — replace `{{MEMBER_*}}`, `{{MSSV_*}}`,
       `{{GROUP_NAME}}`, `{{COURSE_NAME}}`, `{{INSTRUCTOR}}`, `{{SEMESTER}}`,
       `{{DATE}}`, `{{PCT_*}}`, `{{AI_AREA_*}}` placeholders in
@@ -134,7 +138,10 @@ cd ../android && ./gradlew testDebugUnitTest        # 143 tests
       end-to-end; keep on the demo laptop.
 - [ ] **Rehearsal log** — run the demo script ≥3 times (C11); note pass/fail
       per step.
-- [ ] **Release APK** — build + sign with the LOCAL keystore; verify with
-      `apksigner verify app-release.apk`; keep keystore OUT of the zip.
+- [x] **Release APK** — rebuilt from the current working-tree source with
+      `tools/sign-release.sh`; `apksigner verify` passed, install and launch
+      succeeded on both API 35 emulators, and the >900-second expiry/reconnect
+      flow delivered a live chat message and Seen receipt on the signed release.
+      Keep the local keystore OUT of the zip.
 - [ ] **Zip** — name `GroupXX_MSSV1_MSSV2_….zip`; re-check the "does not
       contain" list above on the final artifact.

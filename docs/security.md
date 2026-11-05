@@ -74,8 +74,9 @@ rate limiting, error handling. Claims cite source files for viva defence.
 - Endpoint and size: `POST /api/v1/attachments` needs a Bearer token and a
   `multipart/form-data` part `file` (optional `width`/`height`/`duration`); 201
   returns `{id, url, originalName, mimeType, sizeBytes, …}`. The 25 MB ceiling
-  is enforced three times — multipart config (application.yml),
-  AttachmentService, LocalStorageService — and maps to 413 `FILE_TOO_LARGE`
+  is enforced at every layer — multipart config (application.yml),
+  `AttachmentService` (declared size and actual byte length), `LocalStorageService`
+  before any write, and `AvatarController` — and maps to 413 `FILE_TOO_LARGE`
   (AttachmentController.java, GlobalExceptionHandler.java).
 - Type: declared `Content-Type` and client filename are never trusted. Storage
   re-sniffs the leading bytes against fixed signatures and an allow-list
@@ -103,7 +104,9 @@ rate limiting, error handling. Claims cite source files for viva defence.
   the same rule for keys mapped to attachment rows, so neither door bypasses
   the other (FileController.serve → AttachmentService.assertStorageKeyReadable);
   avatar keys stay public to any authenticated user. Content-Type is the
-  upload-time sniff; the inline filename is re-sanitized.
+  upload-time sniff; the inline filename is re-sanitized, and both serve paths
+  send `X-Content-Type-Options: nosniff` (AttachmentController.java:74,
+  FileController.java:58) so a browser cannot re-interpret a uploaded payload.
 
 ## 5. Rate limits
 
@@ -114,9 +117,18 @@ rate limiting, error handling. Claims cite source files for viva defence.
   contact-add 30/min, bucket key `user:<id>` (UserSearchRateLimitInterceptor
   .java, ContactAddRateLimitInterceptor.java). The IP fallback exists only for a
   stray unauthenticated call that the security layer rejects anyway.
-- Buckets are Bucket4j greedy-refill token buckets in an in-memory
-  ConcurrentHashMap (RateLimitService.java): the budget trickles back
-  continuously instead of bursting at a window boundary. Denials return 429
+- STOMP SEND is per-user as well, with two independent buckets: 30 messages /
+  10 s (`stomp:messages:<userId>`) and 60 typing frames / 10 s
+  (`stomp:typing:<userId>`), configured by `nexachat.rate-limit.stomp.*`
+  (application.yml). A denial drops the frame and reports `RATE_LIMITED` to
+  the originating session as a `/user/queue/errors` frame carrying the
+  correlated `clientMessageId` (typing carries none)
+  (StompAuthChannelInterceptor.java:166-224).
+- Buckets are Bucket4j greedy-refill token buckets in a bounded in-memory LRU
+  map (RateLimitService.java): the budget trickles back continuously instead of
+  bursting at a window boundary; at most 10,000 keys are retained and an idle
+  key is evicted after 15 minutes (swept every 64 operations), so a burst of
+  unique identities cannot grow the map without bound. Denials return 429
   `RATE_LIMITED` with `retryAfterSeconds` through the standard envelope.
 
 ## 6. Error hygiene
@@ -146,6 +158,12 @@ rate limiting, error handling. Claims cite source files for viva defence.
   broker relay, and RateLimitService's in-memory buckets need Redis/JDBC.
 - No end-to-end encryption: message and file content is plaintext at rest and
   protected only in transit (TLS in production).
+- Logout-all / password change revoke refresh tokens only; there is no
+  access-token denylist, so an already-issued access JWT stays valid until its
+  15-minute expiry (`AuthService.java:138-159`).
+- The prod profile fails fast when datasource credentials are missing or
+  unresolved (`ProductionDataSourceConfiguration.java:21-38`); compose supplies
+  `SPRING_DATASOURCE_*` so a fresh clone still boots.
 - Kicked/removed members: membership is checked at CONNECT/SUBSCRIBE/SEND only
   (StompAuthChannelInterceptor). After GroupService.removeMemberInternal deletes
   the row, an existing SUBSCRIBE on `/topic/conversations.{uuid}` is not

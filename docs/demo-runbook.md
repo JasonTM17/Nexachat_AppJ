@@ -26,7 +26,7 @@ via passthrough — see `docker-compose.yml`).
 | 1 | Start DB + backend | `docker compose up -d db app` (first run builds the image, ~3–5 min: `docker compose build app`) | `docker compose ps` → `db` healthy, `app` healthy |
 | 2 | Health check | `curl http://localhost:8080/actuator/health` | `{"status":"UP"}` — this endpoint is `permitAll` |
 | 3 | Seed demo data | `docker exec -i $(docker compose ps -q db) psql -U nexachat -d nexachat < demo/seed.sql` | completes silently (re-runnable) |
-| 4 | Install APK on 2 devices | `adb -s <device> install app-release.apk` or Gradle install | app icon on both |
+| 4 | Install APK on 2 devices | `adb -s <device> install app/build/outputs/apk/debug/app-debug.apk` or Gradle `installDebug` | app icon on both |
 | 5 | Point app at backend | see §2 "Pointing the app at the backend" | login screen loads |
 | 6 | Log in | Phone A: `+84900000001` / `password123`; Phone B: `+84900000002` / `password123` | inbox shows seeded chats |
 | 7 | Send a message A → B | type + send | B receives in realtime (WS); reply, reaction, pin work |
@@ -124,7 +124,7 @@ must be WSS/HTTPS anyway. So the LAN demo needs **only** the
 | `docker compose up -d db` fails: port already in use | Local Postgres or old container holds 5433 | Edit compose `db.ports` host side, e.g. `"15433:5432"` (app is unaffected — it reaches `db:5432` internally); update `DATABASE_URL`/IT envs accordingly |
 | `app` container unhealthy | DB not healthy yet, or bad `JWT_SECRET` env | `docker compose logs app`; Flyway runs on boot — first start takes ~30–60 s |
 | Phone browser can't open `…:8080/actuator/health` | Firewall or different subnet | Windows firewall rule (§3.3); confirm same Wi-Fi; try hotspot fallback |
-| WS won't connect (REST works) | Wrong IP in `API_BASE_URL`, stale token, or proxy stripping `Upgrade` | Re-check `AppConfig.kt`; re-login to refresh JWT; `docker compose logs app` shows STOMP handshake |
+| WS won't connect (REST works) | Wrong IP in `API_BASE_URL`, refresh session expired/revoked, or proxy stripping `Upgrade` | Confirm backend health and `AppConfig.kt`; the app refreshes access JWT before STOMP CONNECT while its refresh session is valid; log in again only if that session expired/revoked; inspect `docker compose logs app` for the STOMP handshake |
 | Cleartext HTTP blocked on physical phone | A release (non-debug) build — release keeps the restrictive `10.0.2.2`-only config | Rebuild `assembleDebug` — debug builds permit cleartext to any host (§2) |
 | Emulator can't reach backend | — | Default `10.0.2.2` already maps to host `localhost`; verify `docker compose ps` and host `curl localhost:8080/actuator/health` |
 | Seeded users "wrong password" | Rows from a pre-`password123` seed still present (an old draft used `demo@1234`) | `DELETE FROM users WHERE phone LIKE '+8490000%';` then re-apply `demo/seed.sql` |

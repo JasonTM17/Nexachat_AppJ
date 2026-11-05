@@ -26,7 +26,7 @@ which already speaks WebSocket natively via OkHttp and ships its own STOMP
 codec (`core/network/stomp/StompClient.kt`, `StompFrame.kt`, proven by
 `StompCodecTest`). A fallback transport would be dead code on this client set,
 so the server registers a plain endpoint — `registry.addEndpoint("/ws")` with
-no `.withSockJS()` call (`config/WebSocketConfig.java:47-53`) — and both sides
+no `.withSockJS()` call (`config/WebSocketConfig.java:47-54`) — and both sides
 stay simpler: no SockJS session protocol, no `/ws/websocket` URL variants, no
 XHR fallback surface to secure. STOMP itself still pays for itself: frames
 carry `destination`, typed commands and subscription ids, so authZ can hook
@@ -81,15 +81,15 @@ read can ever return.
 collects `MessageRepository.messagesFlow`, which `combine`s three DAO streams
 — `messageDao.messagesForConversation` (SENT rows), `outboxDao.pendingOrdered`
 (SENDING/FAILED rows) and `reactionDao.reactionsForConversation` — into the
-`List<ChatMessage>` the UI sees (`data/MessageRepository.kt:186-198`). A WS
+`List<ChatMessage>` the UI sees (`data/MessageRepository.kt:198-210`). A WS
 `MESSAGE_CREATED` never touches the UI; it is *written through* to Room
-(`onMessageCreated` → `messageDao.upsert`, line ~413-426) and the flow
+(`onMessageCreated` → `messageDao.upsert`, line ~475-488) and the flow
 re-emits. The payoff is four-fold: (1) **process-death safe** — reopen the
 app, history is instant, nothing lived only in memory; (2) **one merge point**
 — optimistic outbox rows and server rows unify in a single sorted list; (3)
 **one dedup rule** — `INSERT … ON CONFLICT IGNORE` by message id means a
 redelivered frame or an overlapping history page can never double-render
-(`core/database/Daos.kt:10-26`); (4) **testable** — the repository is JVM-unit
+(`core/database/Daos.kt:18-22`); (4) **testable** — the repository is JVM-unit
 tested (`MessageRepositoryTest`) without a composable in sight.
 
 **Follow-up traps.**
@@ -118,7 +118,7 @@ the *boundary discipline*: the codebase is partitioned by feature package —
 services owning use cases. The documented cost is the single-node ceiling:
 the `SimpleBroker` is in-process fan-out (`WebSocketConfig.java:58`, declared
 in `docs/known-limitations.md` §1), and `RateLimitService` buckets are
-in-memory (`RateLimitService.java:17-19`); both are explicit, honest
+in-memory (`RateLimitService.java:24-27`); both are explicit, honest
 trade-offs rather than hidden ones.
 
 **Follow-up traps.**
@@ -170,7 +170,7 @@ catches `ApiException` and rethrows `SendRejectedException` carrying the
 error envelope. On the client this is what makes the offline fallback
 seamless: `MessageRepository.dispatchOutbox` tries the STOMP SEND first and
 falls back to the REST POST with the *same* `SendMessageRequest` — identical
-`clientMessageId`, identical server behavior (`data/MessageRepository.kt:342-367`).
+`clientMessageId`, identical server behavior (`data/MessageRepository.kt:391-419`).
 
 **Follow-up traps.**
 - *"So membership is checked twice on the WS path?"* — Yes, deliberately:
@@ -291,7 +291,7 @@ backup-exfiltration path entirely (`AndroidManifest.xml:10,18-19`).
   survive process death (a logged-out-per-kill app is unusable). DataStore is
   the container, Keystore-AES is the protection — the two are orthogonal.
 - *"What if the keystore entry is wiped?"* — `decryptString` wraps `runCatching`;
-  undecryptable is treated as logged-out (`TokenStore.kt:61,87-89`) — fail
+  undecryptable is treated as logged-out (`TokenStore.kt:85-94`) — fail
   closed, never crash.
 
 ### Q2.5 — STOMP SUBSCRIBE/SEND kiểm tra quyền ở đâu?
@@ -302,7 +302,7 @@ backup-exfiltration path entirely (`AndroidManifest.xml:10,18-19`).
 channel — the JWT is *not* trusted at the HTTP upgrade layer (the handshake
 is `permitAll` in `SecurityConfig` because the token travels in the STOMP
 `Authorization` header, never a URL query param that would leak into access
-logs). Three gates (`ws/StompAuthChannelInterceptor.java:78-162`): CONNECT
+logs). Three gates (`ws/StompAuthChannelInterceptor.java:103-224`): CONNECT
 parses the Bearer token into a `StompUserPrincipal` (fail → frame dropped, no
 CONNECTED reply); SUBSCRIBE allows `/topic/conversations.{uuid}` only when
 `conversation_members` contains the session user — `existsByConversation_IdAndUser_Id`
@@ -311,7 +311,8 @@ CONNECTED reply); SUBSCRIBE allows `/topic/conversations.{uuid}` only when
 membership check on `/app/conversations/{uuid}/(messages|typing|read)` before
 the frame can reach a `@MessageMapping`. Everything else is deny-by-default,
 and denial is silent — return `null`, the frame is dropped, the sender
-observes a subscription that never delivers. 18 unit tests cover the matrix
+observes a subscription that never delivers. 20 unit tests cover the matrix,
+including the per-user message/typing rate-limit buckets
 (`StompAuthChannelInterceptorTest`).
 
 **Follow-up traps.**
@@ -338,11 +339,11 @@ signatures (JPEG/PNG/WebP/GIF/MP4/MP3-MP4-OGG audio/PDF/office/ZIP/…) — so a
 (`attachment/AttachmentService.java:87-119`, `common/MagicBytes.java`).
 `storage_key` is server-minted `<subdir>/<uuid>.<sniffed-ext>`; the client
 filename is sanitized to display metadata only (`sanitizeOriginalName`,
-line 196-219). **Download authZ** (`assertReadable`, line 158-169): the
+line 199-222). **Download authZ** (`assertReadable`, line 161-172): the
 requester must be the owner *or* a member of the conversation the file is
 bound to; unbound uploads are owner-only. The same rule guards both
 `GET /attachments/{id}/content` and the raw `/files/**` serving path
-(`assertStorageKeyReadable`, line 147-151) — neither door bypasses the
+(`assertStorageKeyReadable`, line 150-154) — neither door bypasses the
 other. Bonus: at send time, `bindAttachments` requires each id exist, be
 owned by the sender, still be unbound, and sniff-match the declared message
 type (`MessageService.java:371-396`).
@@ -361,12 +362,12 @@ type (`MessageService.java:371-396`).
 
 **Model answer.** Login returns the *same* `INVALID_CREDENTIALS` whether the
 phone is unknown or the password is wrong — and the equalization is
-deliberate, not accidental (`AuthService.java:26-31,89-108`). An unparseable
+deliberate, not accidental (`AuthService.java:90-105,183`). An unparseable
 phone at login also maps to `INVALID_CREDENTIALS` (unlike register, where
 bad input honestly returns `VALIDATION_FAILED`). The non-obvious part: an
 unknown account *still pays one bcrypt compare* — `passwordEncoder.matches`
 against `dummyHash`, a well-formed bcrypt hash computed once at startup
-(`AuthService.java:50-65`). Without it, "user doesn't exist" returns in
+(`AuthService.java:64,101`). Without it, "user doesn't exist" returns in
 microseconds while "wrong password" takes ~250ms of bcrypt — timing alone
 enumerates valid accounts.
 
@@ -379,7 +380,7 @@ enumerates valid accounts.
 - *"Why compute dummyHash at startup, not a constant?"* — A literal string
   risks not being a valid bcrypt hash (format checks would short-circuit
   `matches` and break timing parity); encoding once at boot guarantees the
-  compare does full work (`AuthService.java:63-64`).
+  compare does full work (`AuthService.java:64`).
 
 ### Q2.8 — Rate limiting được áp dụng thế nào?
 
@@ -397,15 +398,22 @@ rather than servlet filters so rejections flow through
 `429 {"error":{"code":"RATE_LIMITED","retryAfterSeconds"}}` envelope.
 Client IP is `getRemoteAddr()` — `X-Forwarded-For` is deliberately *not*
 trusted because it is client-supplied and spoofable without a trusted proxy
-(`RateLimitInterceptor.java:27-29`).
+(`RateLimitInterceptor.java:27-29`). STOMP SEND is bucket-limited too, with
+two separate per-user budgets: messages 30 / 10 s (`stomp:messages:<userId>`)
+and typing 60 / 10 s (`stomp:typing:<userId>`)
+(`StompAuthChannelInterceptor.java:205-213`), with the denial reported to the
+originating session as a `/user/queue/errors` `RATE_LIMITED` frame. Buckets
+are a bounded in-memory LRU (10,000 keys, 15 min idle) — single-node scope.
 
 **Follow-up traps.**
 - *"In-memory buckets — what breaks at scale?"* — Two instances get two
   independent budgets. Declared limitation (`docs/known-limitations.md` §1);
   the fix is a Bucket4j Redis/JDBC backend, no API change.
-- *"Why isn't STOMP SEND rate-limited?"* — Honest deferred item
-  (`docs/known-limitations.md` §2): only REST paths are bucket-limited today.
-  Say it plainly — a grader respects a named gap over a bluff.
+- *"Why is the STOMP bucket separate from the REST ones?"* — Different
+  transport, different rejection path: REST throws `ApiException` into the
+  standard 429 envelope, while a STOMP SEND has no HTTP response — the frame
+  is dropped and the correlated `clientMessageId` is reported on the error
+  queue so the client can flip its outbox row to `FAILED`.
 
 ### Q2.9 — Tại sao đăng ký không dùng OTP?
 
@@ -432,6 +440,37 @@ pretended away.
   OTP-as-login moves the secret to the phone network (SIM-swap risk) instead
   of removing it.
 
+### Q2.10 — STOMP limiter hoạt động thế nào? Giới hạn thành thật là gì?
+
+*How does the STOMP limiter work, and what are its honest limits?*
+
+**Model answer.** Two independent per-user token buckets live in
+`StompAuthChannelInterceptor` (`ws/StompAuthChannelInterceptor.java:166-224`):
+`messages` at 30 / 10 s and `typing` at 60 / 10 s, configured by
+`nexachat.rate-limit.stomp.*` (application.yml). `consumeSendAllowance` calls
+`RateLimitService.tryConsume("stomp:<action>:<userId>", capacity, window)`;
+an over-budget frame is **dropped**, not queued, and the denial is reported to
+the originating session on `/user/queue/errors` as
+`{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}` (typing carries no id).
+The session is not closed — the limit is a flood guard, not a ban. The buckets
+are Bucket4j greedy-refill token buckets in a bounded in-memory LRU: at most
+10,000 keys, idle keys evicted after 15 min (`RateLimitService.java:24-27`).
+Honest limits: single-node only (two instances get two independent budgets),
+a restart clears the budgets, and the LRU bound means a burst of 10,001
+distinct identities evicts the oldest — acceptable for a chat where identities
+are logged-in users, not arbitrary IPs.
+
+**Follow-up traps.**
+- *"Why drop the frame instead of buffering it?"* — A chat message is only
+  useful now; a queued burst would arrive stale and out of order. The sender's
+  outbox stays `SENDING` and the user can retry explicitly.
+- *"Why is typing bucketed separately?"* — Typing is high-frequency and
+  ephemeral; a shared 30/10 s bucket would let a typist starve real messages.
+  Separate 60/10 s keeps typing responsive without touching message capacity.
+- *"What proves it?"* — `StompAuthChannelInterceptorTest`
+  (`send_messagesRateLimit_isPerUserAndReportsCorrelatedErrorWithoutDisconnecting`,
+  `send_typingRateLimitIsSeparateAndCannotCreateMessageTraffic`).
+
 ---
 
 ## 3. Realtime & messaging
@@ -450,7 +489,7 @@ be "spent" by another conversation or a rolled-back insert). The contract
 `serverTs` is display-only. Client clocks are never trusted — Room orders
 `ORDER BY seq ASC` (`Daos.kt:25`) and the inbox's `updateLastMessage` guards
 with `seq > lastMessageSeq` so a delayed lower-seq event cannot rewind the
-projection (`Daos.kt:63-67`).
+projection (`Daos.kt:90-96`).
 
 **Follow-up traps.**
 - *"Why not per-conversation seq — wouldn't global gaps confuse the resync?"* —
@@ -479,7 +518,7 @@ receivers dedup by message id so the re-broadcast is harmless
 for a *different* conversation gets `VALIDATION_FAILED`, not silent
 corruption (line 130-135). Client side: the outbox row is keyed by
 `clientMessageId` and deleted when the matching broadcast lands — but only
-when the sender is actually me (`MessageRepository.kt:419-424`), so a
+when the sender is actually me (`MessageRepository.kt:482-484`), so a
 foreign sender's key can never clear my pending row.
 
 **Follow-up traps.**
@@ -504,11 +543,15 @@ that scales with group size × traffic; the watermark stores O(1) state per
 member and one `UPDATE` marks an arbitrary batch read at once. The advance
 is monotonic *in SQL*: `SET lastReadSeq = :seq WHERE … AND lastReadSeq < :seq`
 (`ConversationMemberRepository.advanceReadWatermark`) — an out-of-order or
-replayed `upToSeq` can never *un-read* messages. `markRead` broadcasts
-`MESSAGE_READ` even when the watermark did not move — a replayed frame is
-truthful and idempotent (`MessageService.java:251-270`). Client side,
+replayed `upToSeq` can never *un-read* messages. The server also rejects an
+`upToSeq` greater than the conversation's latest `seq`
+(`MessageService.java:248-252`), and the broadcast carries the *persisted*
+watermark, not the requested one (`MessageService.java:254-255`), so a
+replayed frame states the same truth. `markRead` broadcasts `MESSAGE_READ`
+even when the watermark did not move (`MessageService.java:239-256`). Client
+side,
 `sendRead` dedups against `lastMarkedRead` before hitting the network
-(`MessageRepository.kt:380-389`).
+(`MessageRepository.kt:432-441`).
 
 **Follow-up traps.**
 - *"What does per-message buy that you lose?"* — Per-message receipts (who
@@ -526,7 +569,7 @@ truthful and idempotent (`MessageService.java:251-270`). Client side,
 **Model answer.** Two directions, one index. `beforeSeq` pages *backwards*
 into history (infinite scroll up — exclusive cursor, newest-first,
 `idx_msg_conv_seq (conversation_id, seq DESC)`; `MessageService.getHistory`,
-line 156-202). `afterSeq` pages *forwards* — the reconnect path. On every WS
+line 158-202). `afterSeq` pages *forwards* — the reconnect path. On every WS
 `Open`, `RealtimeSession` emits `resyncRequests`; `MessageRepository.resyncForward`
 takes `messageDao.maxSeq(conversationId)` and loops
 `GET …/messages?afterSeq=<max>` until `hasMore` is false or the page stops
@@ -542,31 +585,32 @@ complete recovery channel — no special catch-up protocol needed.
   *from where the client actually is* — the local `MAX(seq)` is the cursor.
 - *"Infinite loop guard?"* — The loop exits when `!hasMore` or
   `lastSeq <= afterSeq` — a page that does not advance the cursor terminates
-  rather than spinning (`MessageRepository.kt:641-643`).
+  rather than spinning (`MessageRepository.kt:704`).
 
 ### Q3.5 — Typing indicator: throttle/TTL làm ở đâu?
 
 *Typing indicator — where is it throttled, and how does it expire?*
 
 **Model answer.** Two numbers in `ChatViewModel`
-(`feature/chat/ChatViewModel.kt:42-44,363-367`): outbound,
+(`feature/chat/ChatViewModel.kt:406-407`): outbound,
 `TYPING_SEND_INTERVAL_MS = 3_000` — `onInputChange` emits at most one
-`sendTyping` per 3 s while the draft is non-blank (line 187-194), so a fast
+`sendTyping` per 3 s while the draft is non-blank (line 211-218), so a fast
 typist cannot flood the topic; inbound, `PEER_TYPING_TTL_MS = 5_000` — each
 `USER_TYPING` event sets `peerTyping` and a coroutine TTL turns it off 5 s
-later unless refreshed (line 171-183). Server side the typing SEND is a
+later unless refreshed (line 196-207). Server side the typing SEND is a
 `{}` body to `/app/conversations/{id}/typing`; `WsMessageController.typing`
 fans it straight onto the topic with no persistence (typing is ephemeral —
 never a row). The simple broker has no per-subscriber filter, so the sender
 is *not* excluded server-side; the payload carries `userId` and each client
-drops its own signal (`WsMessageController.java:32-36`,
-`MessageRepository.kt:397-399` + `isMine` check in the ViewModel).
+drops its own signal (`WsMessageController.java:74-80`,
+`MessageRepository.kt:449-451` + `isMine` check in the ViewModel).
 
 **Follow-up traps.**
-- *"Why client-side throttle, not server-side?"* — The server treats typing
-  as best-effort; throttling at the source is cheaper than enforcing a
-  per-user bucket on the broker path (and there is deliberately no SEND
-  rate-limit yet — `docs/known-limitations.md` §2).
+- *"Why client-side throttle as well as a server bucket?"* — Client throttle
+  keeps the common case quiet; the server still enforces a separate typing
+  bucket (60 / 10 s) so a malicious or buggy client cannot flood the topic
+  (`StompAuthChannelInterceptor.java:211-213`). The message bucket (30/10 s)
+  is untouched by typing.
 - *"Why a TTL instead of a 'stopped typing' event?"* — Cheaper and
   crash-safe: a client that dies mid-typing can never leave a stuck
   indicator — the TTL expires on its own.
@@ -590,9 +634,9 @@ dropped every error frame. The fix: match on the **`subscription` header**
 `StompClient.subscribe`, `StompClient.kt:242-243`) — so `dispatch` compares
 `frame.headers["subscription"]` against
 `subscriptionIdFor(USER_ERRORS_DESTINATION)`
-(`RealtimeSession.kt:271-282`). On a match the body decodes to
+(`RealtimeSession.kt:412-418`). On a match the body decodes to
 `ChatEvent.SendRejected`, which flips the outbox row `SENDING → FAILED`
-(`MessageRepository.kt:403-405`).
+(`MessageRepository.kt:465-467`).
 
 **Follow-up traps.**
 - *"Why does Spring rewrite the destination at all?"* — `/user/queue/errors`
@@ -633,7 +677,57 @@ no longer in `conversation_members`, so the event carries
 - *"Security on the inbox queue?"* — The user-destination resolver binds
   `/user/**` to the CONNECT principal's session — a client can subscribe but
   the broker only ever delivers *its own* queue (`StompAuthChannelInterceptor`
-  javadoc, line 37-39).
+  javadoc, line 43-47).
+
+### Q3.8 — Tại sao duplicate send vẫn re-broadcast? Không phải thừa sao?
+
+*Why does a duplicate send still re-broadcast — isn't that redundant?*
+
+**Model answer.** It is deliberate and frozen after review. `MessageService.send`
+inserts with `ON CONFLICT (sender_id, client_message_id) DO NOTHING`; when the
+insert affects 0 rows it re-reads the winning row and **publishes
+`MESSAGE_CREATED` for it anyway** (`MessageService.java:121-149`). That frame
+is the retrying sender's SENT acknowledgment: without it, a sender that
+retried after losing the first broadcast (reconnect, timeout, REST fallback)
+would stay `SENDING` forever. Receivers deduplicate by message id — Room
+`INSERT IGNORE` on the message PK (`Daos.kt:18-22`) — so the extra frame is
+harmless to everyone else. A `clientMessageId` reused in a *different*
+conversation is `VALIDATION_FAILED`, not a silent cross-room dedup
+(`MessageService.java:130-135`).
+
+**Follow-up traps.**
+- *"Why not suppress the event on a dedup hit?"* — That was tried and reverted:
+  it traded a harmless extra frame for a stuck outbox row. The dedup is
+  DB-level; the broadcast is the recovery signal.
+- *"Two identical frames arrive — does the recipient double-render?"* — No:
+  the message id is the primary key, so the second insert is ignored and the
+  flow re-emits the same row.
+- *"Proof?"* — `MessageServiceTest.send_duplicateInSameConversation_returnsExistingAndRebroadcasts`
+  and `MessageFlowIT.concurrentDuplicateClientMessageIdReturnsOneRowAndRebroadcastsBothCalls`
+  (real Postgres, concurrent senders).
+
+### Q3.9 — Tại sao không có presence / online dot?
+
+*Why is there no presence / online indicator?*
+
+**Model answer.** Presence is genuinely not implemented, and the UI was cleaned
+rather than faked. `WsEventType` carries the `USER_ONLINE`/`USER_OFFLINE`
+vocabulary (`ws/WsEventType.java:8-9`), but nothing emits those values: the
+server has no broker session connect/disconnect listeners, so it cannot know
+who is online. The Android UI therefore had its online dot removed instead of
+showing a permanently-offline lie. Presence needs (a) STOMP session
+connect/disconnect listeners on the broker, (b) a contract surface for
+`USER_ONLINE`/`USER_OFFLINE`, and (c) a client presence store — a non-trivial
+feature, listed as deferred in `docs/known-limitations.md` §2.
+
+**Follow-up traps.**
+- *"Couldn't you infer presence from the heartbeat?"* — A dead-heartbeat
+  detection (~30 s) only tells you a *socket* died, not that the user left;
+  mapping that to per-user presence would be a guess. Honest absence beats a
+  wrong green dot.
+- *"Is the vocabulary a broken promise?"* — No: it is documented contract
+  vocabulary for a later phase, exactly as `MESSAGE_UPDATED`/`MESSAGE_DELETED`
+  exist before their endpoints ship.
 
 ---
 
@@ -651,7 +745,9 @@ row; if nothing was deleted, `INSERT … ON CONFLICT DO NOTHING`
 (`ReactionService.java:82-86`). Two concurrent toggles of the same emoji can
 never duplicate or corrupt — the PK arbitrates every interleaving. Emoji is
 `VARCHAR(16)`, validated in code points so ZWJ sequences and flags are
-measured the way PostgreSQL counts them (`ReactionService.java:108-122`).
+measured the way PostgreSQL counts them; the emoji is also normalized to NFC
+  before the PK lookup (`ReactionService.java:114-122`), so visually identical
+  forms in different Unicode compositions share one chip.
 After the toggle the *whole aggregate* is computed in-transaction and
 broadcast `REACTION_UPDATED {messageId, reactions:[{emoji,count,userIds}]}`
 AFTER COMMIT — receivers replace their summary wholesale; the payload
@@ -671,18 +767,22 @@ replaces, never merges, client state (`ReactionService.java:88-106`,
 *The ≤3-pin ceiling — how is it race-safe? Why SELECT FOR UPDATE?*
 
 **Model answer.** `PinService.MAX_PINS_PER_CONVERSATION = 3`
-(`message/PinService.java:53-54`). The check is `exists → count < 3 →
+(`message/PinService.java:55`). The check is `exists → count < 3 →
 insert` — classic check-then-act, so *both* pin and unpin first take
 `SELECT … FOR UPDATE` on the parent conversation row
-(`findByIdForUpdate` via `lockConversation`, `PinService.java:180-184`). The
+(`findByIdForUpdate` via `lockConversation`, `PinService.java:186-187`). The
 conversation row becomes a per-room mutex: every pin/unpin in that room
 serializes, so two racing pins cannot both pass the count check — the second
 blocks, then sees count=3 and fails `PIN_LIMIT` (409). The composite PK
 `(conversation_id, message_id)` (`V3__interactions.sql:26-32`) makes a repeat
 pin a no-op by construction (`insertIgnoringConflict`); `pin`/`unpin` are
 idempotent — re-pinning an already-pinned message is not a `PIN_LIMIT` hit
-(`PinService.java:125-146`), and even no-ops broadcast `PIN_UPDATED` so a
-replayed frame still states the truth (`PinService.java:144-146,169-170`).
+(`PinService.java:132-152`), and even no-ops broadcast `PIN_UPDATED` so a
+replayed frame still states the truth (`PinService.java:150-151,175-176`).
+`listPins` returns the pins **newest-first** (`OrderByPinnedAtDesc`) and
+batch-hydrates each entry's attachments/reactions/reply preview in one pass
+(`PinService.java:92-118`), so the banner order and the REST order agree and
+the bounded ≤3 list costs a constant number of queries.
 
 **Follow-up traps.**
 - *"Why not a DB constraint or trigger for the ceiling?"* — A
@@ -708,9 +808,9 @@ caller's member row from the inbox payload, `ChatViewModel.canPin =
 server remains the real boundary if the gate is bypassed. Group
 management mirrors it: add member,
 remove other member, rename/re-avatar = ADMIN-only (`GroupService.java` —
-`requireAdmin`, line 304-306), while *self-leave* is any member. One
+`requireAdmin`, line 343-347), while *self-leave* is any member. One
 integrity rule: a group with members must keep ≥1 ADMIN, so the sole admin
-cannot leave (`GroupService.java:38-40,222-224`).
+cannot leave (`GroupService.java:45-49,230-236`).
 
 **Follow-up traps.**
 - *"Where does the role live?"* — `conversation_members.role` (`ADMIN`/
@@ -730,7 +830,7 @@ the caller. `POST /messages/{id}/reactions` deliberately returns `204`
 (`ReactionController.java:38-39`); the durable state fans out as
 `REACTION_UPDATED` on the topic AFTER COMMIT. The caller's optimistic Room
 write covers the instant-feedback window (`MessageRepository.toggleReaction`,
-line 498-530); the broadcast is what *reconciles* it — the payload replaces
+line 560-592); the broadcast is what *reconciles* it — the payload replaces
 the stored summary wholesale (`reactionDao.replaceForMessage`), and the
 client's own toggle arrives back over the same channel as other members'
 toggles, so all clients converge on one wire shape. A REST-body response
@@ -745,7 +845,7 @@ else's broadcast — with slightly different semantics to reconcile.
 - *"Caller offline — no optimistic reconcile?"* — The `REACTION_UPDATED` is
   still durable state on the server; a later history fetch re-embeds
   `reactions` on the message rows and `storeHistoryItems` replaces the set
-  for messages that carried the field (`MessageRepository.kt:276-292`).
+  for messages that carried the field (`MessageRepository.kt:325-341`).
 
 ### Q4.5 — Reply đến tin đã xóa thì sao?
 
@@ -755,12 +855,12 @@ else's broadcast — with slightly different semantics to reconcile.
 reply rows keep pointing at the target id — and the *preview* degrades
 gracefully. `replyRefsById` builds `ReplyRefResponse` per target: when
 `deleted_at` is set it emits `deleted=true` and **content=null** — the id
-and sender survive, the body does not (`MessageService.java:484-501`, plan
+and sender survive, the body does not (`MessageService.java:498-509`, plan
 §9.3.6 soft-delete model). The UI renders the "Tin nhắn đã bị xóa"
 placeholder from that flag. Two supporting choices: the send path requires
 the reply target to exist and live in the *same* conversation — quoting
 across conversations is rejected `VALIDATION_FAILED`
-(`MessageService.java:314-325`) — and the client denormalizes
+(`MessageService.java:304-325`) — and the client denormalizes
 `replyToSenderName`/`replyToSnippet` onto its own row (Room v6 — added back at v2→v3,
 `Entities.kt:29-35`), so the quote block still renders when the original is
 outside the loaded window.
@@ -783,7 +883,7 @@ outside the loaded window.
 `PinService.pin` publishes `PIN_UPDATED {messageId, pinned:true}` even when
 the message was already pinned (`PinService.java:136-146`); `markRead`
 publishes `MESSAGE_READ` even when the watermark did not move
-(`MessageService.java:251-270`); `toggle` always emits the post-toggle
+(`MessageService.java:239-256`); `toggle` always emits the post-toggle
 aggregate (`ReactionService.java:88-89`). The payload always states *current
 durable truth*, never a delta — so a redelivered, replayed or out-of-order
 frame cannot corrupt a receiver: applying it twice yields the same state.
@@ -801,6 +901,32 @@ monotonic or set-semantics).
   a second client of the same user that missed the first frame converges on
   the replay.
 
+### Q4.7 — Jump-to-quote/pin phân trang giới hạn thế nào?
+
+*How is quote/pin jump paging bounded?*
+
+**Model answer.** `ChatViewModel.jumpToMessage` calls
+`MessageRepository.loadUntilLoaded(conversationId, messageId)`, which pages
+**backwards** through history with `refreshHistory(beforeSeq = oldestLoaded)`
+until the target exists or the budget is spent
+(`MessageRepository.kt:292-317`). The budget is `MAX_JUMP_PAGES = 20`
+(`MessageRepository.kt:916-917`) — at the 30-per-page history size that is
+about 600 messages. If the target is found, `jumpTargets` emits and
+`ChatScreen` scrolls to it (`ChatScreen.kt:125-137`); if the budget runs out,
+the UI shows `reply_unavailable` ("Message unavailable") rather than silently
+doing nothing. The bound exists because a unbounded backward walk on a
+10,000-message conversation would hammer the server and the UI; a bounded,
+explicit "unreachable" is honest.
+
+**Follow-up traps.**
+- *"Why 20 pages?"* — It covers the realistic demo/QA window (~600 messages)
+  while bounding worst-case requests. A user can still reach older messages by
+  scrolling normally; jump is a convenience, not the only path.
+- *"What if the target is in a gap / deleted?"* — Deleted messages keep their
+  row, so the jump still lands; the bubble renders the deleted placeholder.
+- *"Proof?"* — `MessageRepositoryTest` covers `loadUntilLoaded`; the
+  reverse-index mapping is unit-tested by `ChatUiLogicTest`.
+
 ---
 
 ## 5. Offline & persistence
@@ -811,18 +937,18 @@ monotonic or set-semantics).
 
 **Model answer.** `send()` first writes an `OutboxEntity(clientMessageId =
 randomUUID, state = SENDING)` — the bubble appears instantly, offline or not
-(`MessageRepository.kt:305-327`). `dispatchOutbox` then tries the STOMP SEND;
+(`MessageRepository.kt:354-376`). `dispatchOutbox` then tries the STOMP SEND;
 if the socket is down it falls back to the REST POST *with the same
-request* (line 342-367). The ack is the `MESSAGE_CREATED` echo carrying the
+request* (line 391-419). The ack is the `MESSAGE_CREATED` echo carrying the
 same `clientMessageId` — `onMessageCreated`/`acknowledge` deletes the outbox
-row and upserts the real message (line 369-375, 413-426). Failures are
+row and upserts the real message (line 421-427, 475-488). Failures are
 classified, not guessed: a *server rejection* (`/user/queue/errors` or an
 HTTP error like `NOT_MEMBER`) is a real answer → `FAILED`, tap-to-retry via
 `retry()`; a *transport failure* is not an answer → stays `SENDING` and the
 next flush picks it up. `flushOutbox` dispatches every `SENDING` row in
-`createdAt` order on connect/resync (`pendingList`, `Daos.kt:100-102`). The
+`createdAt` order on connect/resync (`pendingList`, `Daos.kt:133-134`). The
 row is *deleted on success, never flipped to SENT* — so `{SENDING, FAILED}`
-is exhaustive and there is no ambiguous third state (`Entities.kt:62-90`).
+is exhaustive and there is no ambiguous third state (`Entities.kt:84-105`).
 Crucially, a `FAILED` row is not dropped on app restart — `attachmentsJson`
 persists the media payload so a retry re-derives `attachmentIds`
 (Entities + MIGRATION_1_2).
@@ -841,10 +967,12 @@ persists the media payload so a retry re-derives `attachmentIds`
 *Room migrations v1→v6 — what changed, and why explicit Migration objects?*
 
 **Model answer.** `AppDatabase` is at `version = 6` with
-`exportSchema = false` — no exported schema JSON means `autoMigrations` are
-impossible, so every upgrade is an explicit SQL `Migration`, versioned like
-the server's Flyway files (`core/database/AppDatabase.kt:33`,
-`:46-133` — all five registered in `DatabaseModule`).
+`exportSchema = true` — Room writes `schemas/…/6.json` at build time, which is
+what makes the migration chain instrumented-testable; `autoMigrations` are
+still avoided because the exported history only helps if the SQL is explicit
+and reviewed. Every upgrade is an explicit SQL `Migration`, versioned like
+the server's Flyway files (`core/database/AppDatabase.kt:34-35,48-130` — all
+five registered in `DatabaseModule`).
 `MIGRATION_1_2` is one additive ALTER —
 `ALTER TABLE outbox ADD COLUMN attachmentsJson TEXT NOT NULL DEFAULT ''` —
 so pending attachment sends survive a restart with their id list intact
@@ -867,13 +995,13 @@ pin. Additive-only is deliberate: a migrated install loses nothing.
 - *"Why does the reaction PK include only (messageId, emoji)?"* — The table
   stores *pre-aggregated* summaries `{count, reactedByMe}` — the REST/WS
   shape cannot be decomposed into per-user rows, so one row per (message,
-  emoji) is the finest granularity the wire gives (`Entities.kt:92-111`).
-- *"What if a migration were missed?"* — Room throws on version mismatch;
-  the honest gap is there is no `MigrationTestHelper`/androidTest suite yet
-  (`docs/known-limitations.md` §2) — say it, don't bluff. What *did* run:
-  every E2E round installed the signed APK over the previous build, so
-  v4→v5→v6 executed on a real populated database — a missed registration
-  would have crashed launch on-device and been caught there, not by CI.
+  emoji) is the finest granularity the wire gives (`Entities.kt:115-126`).
+- *"What if a migration were missed?"* — Room throws on version mismatch, and
+  the chain is now instrumented-tested: `RoomMigrationTest` opens a hand-written
+  v1 and v5 database through the production migrations and asserts the v6 shape
+  plus preserved rows (`android/app/src/androidTest/.../RoomMigrationTest.kt`).
+  What is still missing is an instrumented **UI** regression suite — rotation
+  and i18n evidence remains unit-level (`docs/known-limitations.md` §2).
 
 ### Q5.3 — Resync và pagination khác nhau thế nào? Khi nào dùng cái nào?
 
@@ -881,17 +1009,17 @@ pin. Additive-only is deliberate: a migrated install loses nothing.
 
 **Model answer.** Same endpoint, opposite directions and different cursors.
 *Pagination* = `beforeSeq` — the user scrolls up, `loadOlder` passes the
-oldest loaded `seq` (`ChatViewModel.kt:347-359`), and the server returns the
+oldest loaded `seq` (`ChatViewModel.kt:390-401`), and the server returns the
 newest-first page strictly older than it (exclusive cursor, no overlap,
 `MessageService.getHistory`). *Resync* = `afterSeq` — reconnect recovery,
 `resyncForward` walks forward from the local `MAX(seq)` until contiguous
-(`MessageRepository.kt:626-645`). The distinction that matters:
+(`MessageRepository.kt:692-707`). The distinction that matters:
 `beforeSeq` is *user-driven, best-effort, single-page at a time*;
 `afterSeq` is *system-driven, must be gap-free*, so it loops until the
 cursor stops advancing or `hasMore` is false. Both write through the same
 `storeHistoryItems` path — messages upsert by id and reaction summaries
 replace wholesale *only* for messages that carried the field (an absent
-`reactions` field must not wipe local state, line 282-291).
+`reactions` field must not wipe local state, line 330-340).
 
 **Follow-up traps.**
 - *"Why not just use the inbox's last_message_seq as the resync cursor?"* —
@@ -901,7 +1029,13 @@ replace wholesale *only* for messages that carried the field (an absent
 - *"Unread badge during resync?"* — `unreadCount` is recomputed from the
   server inbox row on refresh and adjusted locally by `incrementUnread` for
   incoming events — resync only writes history, it does not fake reads
-  (`ConversationDao.incrementUnread`, `Daos.kt:76-77`).
+  (`ConversationDao.incrementUnread`, `Daos.kt:98-99`).
+- *"Does the inbox page too?"* — The server supports optional `limit`/`cursor`
+  keyset paging on `GET /conversations` (`ConversationInboxController.java:29-33`,
+  `InboxService.java:73-101`), but the Android client always requests the full
+  list (`limit=null`); the reconcile prune runs only when the payload is
+  provably complete. That is a documented, honest limitation
+  (`docs/known-limitations.md` §2).
 
 ### Q5.4 — Optimistic update thất bại: "compare-and-restore" race là gì?
 
@@ -914,11 +1048,11 @@ restore overwrites that fresher state with a stale one. The fix is compare
 before restoring (`MessageRepository.kt`): on failure, `toggleReaction`
 restores the pre-call snapshot *only if* the current stored set still equals
 the optimistic write — `if (reactionDao.forMessage(messageId) == optimistic)`
-(line 520-528); if anything fresher arrived, the server truth wins and we
+(line 586-588); if anything fresher arrived, the server truth wins and we
 keep it. Same pattern for pins — `pinMessage` deletes its optimistic row
 only if the stored row is still *ours* (`pinDao.find(…) == entry`,
-line 596-604); `unpinMessage` restores only while the row is still absent
-(line 608-623). Failures surface on `interactionEvents` as a snackbar rather
+line 662-664); `unpinMessage` restores only while the row is still absent
+(line 679-681). Failures surface on `interactionEvents` as a snackbar rather
 than a silent revert.
 
 **Follow-up traps.**
@@ -940,10 +1074,10 @@ than a silent revert.
 `MessageRepository.wipeOnLogout` subscribes that event and clears *every*
 Room table — messages, conversations, outbox, reactions, pins — plus the
 in-memory `lastMarkedRead` and `activeConversation`
-(`data/MessageRepository.kt:647-661`). `RealtimeSession.observeTokens`
+(`data/MessageRepository.kt:710-723`). `RealtimeSession.observeTokens`
 watches `hasValidRefresh`: a disappearing token cancels the connection loop
 and closes the socket so nothing lingers
-(`core/network/stomp/RealtimeSession.kt:171-183`). The principle: a dead
+(`core/network/stomp/RealtimeSession.kt:197-213`). The principle: a dead
 session's local copies of server data go with it — the next login is a cold
 sync, not a merge with a stranger's cache.
 
@@ -960,36 +1094,41 @@ sync, not a merge with a stranger's cache.
 *A message queued offline stays pending — who wakes the socket when the
 network returns?*
 
-**Model answer.** Three actors, one ownership line. `runConnectionLoop` in
+**Model answer.** One ownership line: `runConnectionLoop` in
 `RealtimeSession` retries `ReconnectPolicy.MAX_ATTEMPTS` (5) with
-exponential backoff (1s→16s, ±20% jitter) then exits — an unbounded loop
-would burn battery on a dead network. Two re-arm triggers then exist:
+exponential backoff (1s→16s, ±20% jitter), then **parks** instead of exiting —
+an unbounded loop would burn battery on a dead network. Four re-arm triggers:
 **(a) user action** — `openConversation` calls `ensureConnected()`
-(`data/MessageRepository.kt:241`); **(b) network regain** —
+(`data/MessageRepository.kt:253`); **(b) network regain** —
 `NetworkMonitor` registers a `ConnectivityManager` callback on
 `NET_CAPABILITY_INTERNET + VALIDATED` — *validated* matters: a captive
 portal that "connects" without internet must not wake the loop
-(`core/network/NetworkMonitor.kt:29-42`). `observeNetworkRegain` gates the
+(`core/network/NetworkMonitor.kt:47-60`); **(c) app foreground** —
+`onAppForeground` re-arms a parked loop when the user returns;
+**(d) a bounded backoff timer** while foregrounded (5 s doubling to 60 s max)
+so a backend that recovers with no connectivity transition is still picked up
+(`RealtimeSession.kt:320-358`). `observeNetworkRegain` gates the
 re-arm on `!isOpen` and a live refresh token, so a logged-out app never
 spins a loop and a wifi↔cell handover with a healthy socket is a no-op
-(`RealtimeSession.kt:205-211`). On `Open`, `resyncRequests` fires →
+(`RealtimeSession.kt:249-255`). On `Open`, `resyncRequests` fires →
 `MessageRepository.flushOutbox()` replays SENDING rows in `createdAt`
 order; the server dedups by `clientMessageId`, so a retried send can never
-double-post (`data/MessageRepository.kt:335-340,447-456`). Proven
+double-post (`data/MessageRepository.kt:385-389,509-518`). Proven
 on-device: airplane on → send → pending bubble → airplane off → ~15s →
 SENT, outbox empty, no duplicates (report §13.4(d)).
 
 **Follow-up traps.**
 - *"Why not retry forever instead of re-arm?"* — Infinite retry on a dead
   network is wasted work; the retry *budget* is for transient blips, the
-  regain signal is for real recovery — two different failure classes.
-- *"Server down but WiFi up?"* — Honest gap: no periodic heartbeat re-arm
-  yet; the next user action re-arms
-  (`docs/known-limitations.md` §4). Network transitions and server health
-  are intentionally separate signals.
+  regain/foreground/timer signals are for real recovery — different failure
+  classes.
+- *"Server down but WiFi up?"* — Covered while the app is foregrounded: the
+  parked loop re-arms on its own bounded timer
+  (`docs/known-limitations.md` §4). Backgrounded, the timer stops (battery)
+  and the next foreground/network transition/user action re-arms.
 - *"What if the user sends while the loop is dead?"* — `dispatchOutbox`
   falls back to REST `POST /messages` when `!isOpen` — the outbox is a
-  queue, not a WS-only path (`MessageRepository.kt:354-364`).
+  queue, not a WS-only path (`MessageRepository.kt:406-416`).
 
 ---
 
@@ -1009,7 +1148,7 @@ across cold starts; no app-side storage (`LocaleManager.kt:48-58,67-70`).
 **API <33**: the BCP-47 tag is stored in the `nexachat_locale`
 SharedPreferences file and merged into each activity's configuration by
 `wrapContext`, called from `MainActivity.attachBaseContext`
-(`MainActivity.kt:25-27`, `LocaleManager.kt:91-99`) —
+(`MainActivity.kt:29-30`, `LocaleManager.kt:91-99`) —
 `createConfigurationContext` with `config.setLocales`; `Locale.setDefault`
 is also aligned so `java.util` formatters follow, and `recreate()` rebuilds
 the running activity in the new locale. An empty tag = "follow system",
@@ -1060,8 +1199,8 @@ saved-state bundle — survives process death *and* stays owned by the VM,
 testable without Compose. NexaChat's rule of thumb (see
 `docs/rotation-audit.md`): **anything worth surviving process death lives in
 the ViewModel or Room** — the chat draft is `savedStateHandle.getStateFlow(KEY_INPUT)`
-(`ChatViewModel.kt:91-95`), the `conversationId` arrives via `SavedStateHandle`
-nav args (line 54-55); rememberSaveable is reserved for pure-UI trivia
+(`ChatViewModel.kt:105`), the `conversationId` arrives via `SavedStateHandle`
+nav args (line 60-61); rememberSaveable is reserved for pure-UI trivia
 (expanded menus etc.) where loss is invisible. The deeper truth: *render*
 state survives in Room — after a process death the messages are still there
 because Room is the SSOT; VM/handle state is only for ephemeral
@@ -1080,14 +1219,14 @@ user-in-progress input.
 
 **Model answer.** Two layers. **M3 componentry**: the app is Material 3
 end-to-end (`androidx.compose.material3`, BOM-managed —
-`build.gradle.kts:77`, `libs.versions.toml`), with shared state components —
+`libs.versions.toml:10,40`), with shared state components —
 `core/ui/components/LoadingState.kt`, `EmptyState.kt`, `ErrorState.kt` — so
 every screen renders loading/empty/error through one vocabulary instead of
 per-screen improvisations. **Touch targets**: the interaction UI keeps the
 Android ≥48dp minimum explicitly — emoji glyphs sit in `size(48.dp)`
 hit areas, the ~30dp reaction chip gets a 48dp transparent hit box, the
 quote/reply bar and pin banner enforce `height(48.dp)`/`heightIn(min=48.dp)`
-(`feature/chat/ChatInteractions.kt:43-95,161-166,271-275`, `EmptyState.kt:41`).
+(`feature/chat/ChatInteractions.kt:63,95,170,216,279`, `EmptyState.kt:61`).
 Interactive affordances are gated by data, not vibes: reaction bar and
 reply/pin only on `SENT` messages (`replyable = status == SENT`).
 
@@ -1096,23 +1235,23 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
   accessibility minimum touch target (`48 x 48dp`); interactive elements
   below it are an a11y defect, not a style choice — the audit treats it as
   the floor.
-- *"Where does i18n fit M3?"* — Strings are fully externalized: 86 entries
+- *"Where does i18n fit M3?"* — Strings are fully externalized: 96 keys
   in `values/strings.xml` matched 1:1 by `values-vi/strings.xml` — the audit
   (`docs/i18n-audit.md`) verifies parity and hunts hardcoded literals across
-  all 74 Kotlin files.
+  all 82 Kotlin files.
 
 ### Q6.5 — Bilingual song ngữ implement ở tầng nào? Có missing key không?
 
 *Where is bilingual support implemented — are there missing keys?*
 
 **Model answer.** Pure Android resource resolution: one `strings.xml` per
-locale — `values/` (English default) and `values-vi/` — with *exactly* 86
+locale — `values/` (English default) and `values-vi/` — with *exactly* 96
 `<string>` entries each (verified parity), referenced via `stringResource()`
 in composables; switching is the `AppLocaleManager` path of Q6.1 — the
 framework picks `values-vi` once the configuration locale is `vi`. The
 audit doc `docs/i18n-audit.md` does two jobs: the key-by-key parity check
 (no missing/extra keys on either side) and a hardcoded-literal sweep over
-all 74 Kotlin files under `android/app/src/main/java`. Server-side content
+all 82 Kotlin files under `android/app/src/main/java`. Server-side content
 is language-agnostic: error payloads carry machine `code`s
 (`ErrorResponse`, `ApiErrorCode`), so clients map codes → localized strings
 (`feature/auth/ApiErrorText.kt`, `feature/chat/ChatErrorText.kt`) instead of
@@ -1147,7 +1286,7 @@ constraint semantics — a green H2 suite would be green *about a different
 database*. So every `*IT` boots the real Flyway-migrated Postgres and
 exercises the actual code paths (`AuthFlowIT`, `MessageFlowIT`,
 `GroupFlowIT`, `InteractionFlowIT`, `AttachmentFlowIT`,
-`ContactConversationIT` — 26 ITs of the 287 total).
+`ContactConversationIT` — 30 ITs of the 310 total).
 
 **Follow-up traps.**
 - *"Isn't a real DB slower/flakier?"* — Yes, deliberately accepted: failsafe
@@ -1166,7 +1305,7 @@ exercises the actual code paths (`AuthFlowIT`, `MessageFlowIT`,
 **Model answer.** The dependency is declared (`pom.xml:119-129`,
 testcontainers 1.20.4) and was the original design — container-per-suite is
 the cleaner isolation story. What shipped instead is **env-JDBC against the
-compose Postgres**: `application-it.yml` + `AuthFlowIT.java:50-52` read
+compose Postgres**: `application-it.yml` + `AuthFlowIT.java:53-59` read
 `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD`, defaulting to
 `jdbc:postgresql://localhost:5433/nexachat` (the compose port mapping —
 `docker-compose.yml:11`). The reason is documented honestly in
@@ -1191,15 +1330,15 @@ service on `:5432` (`ci.yml:32-40`).
 *What does the negative authorization test matrix look like?*
 
 **Model answer.** Two layers, both tested. **Frame layer** —
-`StompAuthChannelInterceptorTest` (18 tests): CONNECT with
+`StompAuthChannelInterceptorTest` (20 tests): CONNECT with
 missing/garbage/expired token; SUBSCRIBE to a conversation topic as a
 non-member; SUBSCRIBE to a foreign-shaped destination (deny-by-default);
 SEND to a non-member conversation; `/user/queue/*` allowed (session-bound);
 denial = `null` return. **Service layer** — the `NOT_MEMBER` path is
-asserted per use case: `MessageServiceTest` (29 — send/history/read
-rejection), `ReactionServiceTest`, `PinServiceTest` (15 — `NOT_ADMIN` on
+asserted per use case: `MessageServiceTest` (32 — send/history/read
+rejection), `ReactionServiceTest`, `PinServiceTest` (16 — `NOT_ADMIN` on
 group pin by member, `PIN_LIMIT`, cross-conversation message id),
-`GroupServiceTest` (33 — non-admin add/remove/rename, sole-admin leave
+`GroupServiceTest` (37 — non-admin add/remove/rename, sole-admin leave
 guard), `AttachmentServiceTest` (16 — owner-vs-member read rule,
 `assertStorageKeyReadable`). The ITs then prove the rule end-to-end on real
 rows. The security table mapping every endpoint to its rule is
@@ -1272,13 +1411,14 @@ cleartext caveat verbatim.
 
 **Model answer.** Three jobs on every PR and push to `main`/`develop`
 (`.github/workflows/ci.yml`). `server-test`: a `postgres:16` service on
-`:5432` + `mvn -B verify` — the *whole* 287 (261 unit + 26 IT) against real
-Postgres, with `IT_DB_*` pointing the ITs at the service. `android-test`:
-`./gradlew testDebugUnitTest` — the 165 JVM unit tests. `secret-scan`: a
+`:5432` + `mvn -B verify` — the *whole* suite (final XML run: 310 tests =
+280 unit + 30 IT, 0 failures) against real Postgres, with `IT_DB_*` pointing
+the ITs at the service. `android-test`: `./gradlew testDebugUnitTest` — the JVM
+unit tests (final XML run: 202 tests across 20 classes, 0 failures).
+`secret-scan`: a
 grep gate for `BEGIN.*PRIVATE KEY` / `api[_-]?key=<20+ chars>` patterns —
-match found = job fails. All three must be green; the branch-protection
-story in the README ("must stay green to merge") is what the workflow
-files actually implement. The failsafe binding is the point worth
+match found = job fails. All three must be green; the README's CI note points
+at this workflow, and the workflow is the gate that enforces it. The failsafe binding is the point worth
 defending: `*IT` runs at `verify`, so CI enforces the integration suite —
 the ledger records that an earlier revision ran ITs only via targeted
 `-Dtest` runs (a gate hole now closed).
@@ -1304,9 +1444,12 @@ setup (`application.yml:6-8,28`); the dev secret is a *visible placeholder*,
 not a hidden real one. **Prod** (`application-prod.yml`, activated by
 `SPRING_PROFILES_ACTIVE=prod` in compose): `JWT_SECRET` has **no default**
 — `JwtService` fails fast at boot on a missing/short secret (≥32 bytes),
-so prod cannot silently boot on the dev key (`application-prod.yml:33-39`,
-`JwtService.java:42-46`); datasource/storage come from the environment.
-Compose passes `JWT_SECRET` through with the dev fallback so the container
+so prod cannot silently boot on the dev key (`application-prod.yml:35`,
+`JwtService.java:42-46`); datasource credentials come from the environment and
+`ProductionDataSourceConfiguration` fails boot when they are missing or
+unresolved (`application-prod.yml:29-31`,
+`ProductionDataSourceConfiguration.java:21-38`).
+Compose passes `JWT_SECRET`/`SPRING_DATASOURCE_*` through so the container
 still boots for a fresh clone (`docker-compose.yml:33`). Client side, the
 only "secret" is the TLS-less dev config (Q7.5) and the Keystore-protected
 token store — no API keys are baked into the APK.
@@ -1320,6 +1463,32 @@ token store — no API keys are baked into the APK.
   outstanding access tokens fail signature check (15-min TTL bounds the
   window); refresh tokens are DB rows, unaffected.
 
+### Q7.8 — Tại sao prod fail fast khi thiếu DB credentials?
+
+*Why does the prod profile fail fast when datasource credentials are missing?*
+
+**Model answer.** Because a late, confusing failure is worse than an early,
+named one. `ProductionDataSourceConfiguration` is a `@Profile("prod")`
+`BeanFactoryPostProcessor` that requires `spring.datasource.username` and
+`spring.datasource.password` to be present **and** resolvable before any bean
+is created (`config/ProductionDataSourceConfiguration.java:21-38`);
+`application-prod.yml` declares them without defaults
+(`${DATABASE_USER}` / `${DATABASE_PASSWORD}`). Without this guard the context
+would boot, and the first query would fail with a generic datasource error —
+or worse, a default credential might silently connect to the wrong database.
+Compose supplies `SPRING_DATASOURCE_*` so a fresh clone still boots
+(`docker-compose.yml`).
+
+**Follow-up traps.**
+- *"Why not just let Spring validate at first use?"* — By then the app has
+  bound ports, run Flyway, and possibly served health checks; a config error
+  should stop startup, not surface as a runtime 500.
+- *"Does this cover JWT_SECRET too?"* — Yes, separately: `application-prod.yml`
+  gives `JWT_SECRET` no default and `JwtService` fails fast on a missing/short
+  secret (Q7.7).
+- *"Proof?"* — `ProductionConfigurationTest` asserts the prod profile rejects
+  missing/unresolved datasource properties.
+
 ---
 
 ## Quick index — mục lục nhanh
@@ -1327,12 +1496,12 @@ token store — no API keys are baked into the APK.
 | # | Section | Q&A |
 |---|---|---|
 | 1 | Kiến trúc & patterns | Q1.1 – Q1.6 |
-| 2 | Auth & security | Q2.1 – Q2.9 |
-| 3 | Realtime & messaging | Q3.1 – Q3.7 |
-| 4 | Creative (reply/reaction/pin) | Q4.1 – Q4.6 |
+| 2 | Auth & security | Q2.1 – Q2.10 |
+| 3 | Realtime & messaging | Q3.1 – Q3.9 |
+| 4 | Creative (reply/reaction/pin) | Q4.1 – Q4.7 |
 | 5 | Offline & persistence | Q5.1 – Q5.6 |
 | 6 | i18n / state / UX | Q6.1 – Q6.5 |
-| 7 | Testing & deployment | Q7.1 – Q7.7 |
+| 7 | Testing & deployment | Q7.1 – Q7.8 |
 
-**46 Q&A total.** Every claim cites shipped code; where the honest answer is
+**51 Q&A total.** Every claim cites shipped code; where the honest answer is
 "we deferred it", the answer says so and points at `docs/known-limitations.md`.

@@ -27,12 +27,12 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | PATCH /api/v1/contacts/{userId} | Bearer | composite ContactId(owner,callee) — cannot name another owner | `ContactServiceTest.updateAlias_*` |
 | DELETE /api/v1/contacts/{userId} | Bearer | owner-scoped; idempotent 204 | `ContactServiceTest.delete_*` |
 | POST /api/v1/conversations/direct | Bearer | target must exist; self 400; direct_key dedup | `ConversationServiceTest.openDirect_*`; `ContactConversationIT.directConversation*` |
-| GET /api/v1/conversations (inbox) | Bearer | member-scoped query — no way to name another user (`InboxService.java:40, 62`) | `MessageFlowIT.nonMemberCannotReadWriteOrWatermark` (invisible in non-member inbox); `GroupFlowIT` kicked-user inbox drop; `InboxServiceTest.listInbox_scopesEveryQueryToCallerUserId` |
+| GET /api/v1/conversations (inbox) | Bearer | member-scoped query — no way to name another user; optional `limit`/`cursor` keyset paging (`InboxService.java:40,62,73-101`) | `MessageFlowIT.nonMemberCannotReadWriteOrWatermark` (invisible in non-member inbox); `GroupFlowIT` kicked-user inbox drop; `InboxServiceTest.listInbox_scopesEveryQueryToCallerUserId` |
 | POST /api/v1/conversations/group | Bearer | creator → ADMIN, rest → MEMBER | `GroupFlowIT.groupCreateAndMemberValidation` |
 | POST /api/v1/conversations/{id}/members | Bearer | member → ADMIN (`GroupService.addMembers`) | `GroupFlowIT` MEMBER → 403 NOT_ADMIN; `GroupServiceTest.addMembers_*` |
-| DELETE /api/v1/conversations/{id}/members/{userId} | Bearer | ADMIN or self; sole-admin guard (`GroupService.java:209-241`) | `GroupFlowIT`; `GroupServiceTest.removeMember_*` |
+| DELETE /api/v1/conversations/{id}/members/{userId} | Bearer | ADMIN or self; sole-admin guard (`GroupService.java:217-249`) | `GroupFlowIT`; `GroupServiceTest.removeMember_*` |
 | POST /api/v1/conversations/{id}/leave | Bearer | member; sole-admin-with-members blocked | `GroupFlowIT`; `GroupServiceTest.leave_*` |
-| PATCH /api/v1/conversations/{id} | Bearer | member check BEFORE admin check (`GroupService.java:252-254`) | `GroupFlowIT` non-member → 403 NOT_MEMBER, member → 403 NOT_ADMIN; `GroupServiceTest.updateGroup_notMember_throwsNotMember` |
+| PATCH /api/v1/conversations/{id} | Bearer | member check BEFORE admin check (`GroupService.java:260-262`) | `GroupFlowIT` non-member → 403 NOT_MEMBER, member → 403 NOT_ADMIN; `GroupServiceTest.updateGroup_notMember_throwsNotMember` |
 | POST /api/v1/conversations/{id}/avatar | Bearer ADMIN | member → ADMIN (`GroupService.setGroupAvatar`); `MagicBytes` sniff + `StorageService` under `avatars/` (same as user avatar) | `GroupServiceTest.setGroupAvatar_*` (member/non-member/non-admin); live: REST upload → inbox `avatarUrl`, authed GET 200, anon 401 |
 | GET /api/v1/conversations/{id}/messages | Bearer | member (`MessageService.requireMember`) | `MessageFlowIT` → 403 NOT_MEMBER; `MessageServiceTest.getHistory_notMember` |
 | POST /api/v1/conversations/{id}/messages | Bearer | member; attachment claims owner-checked | `MessageFlowIT` non-member send → 403 + 0 rows; `MessageServiceTest.send_*` |
@@ -42,13 +42,13 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | DELETE /api/v1/conversations/{id}/pins/{mid} | Bearer | member; GROUP → ADMIN; foreign message → 400 | `PinServiceTest.unpin_*` |
 | POST /api/v1/messages/{id}/reactions | Bearer | member of the message's conversation (`ReactionService`) | `InteractionFlowIT` non-member → 403; `ReactionServiceTest.toggle_*` |
 | POST /api/v1/attachments | Bearer | owner-owned row; ≤25MB; magic-byte allow-list | `AttachmentFlowIT` exe→415, >25MB→413, no-auth→401; `AttachmentServiceTest.upload_*`; `LocalStorageServiceTest` |
-| GET /api/v1/attachments/{id}/content | Bearer | owner, or member of bound conversation; unbound → owner-only (`AttachmentService.java:158-169`) | `AttachmentFlowIT` member 200 / non-member 403 / unknown 404; `AttachmentServiceTest.loadContent_*` |
-| GET /api/v1/files/** | Bearer | key rejects `..`/`\`/blank (`FileController.java:62-83`); attachment keys → same owner/member rule (`AttachmentService.java:148-151`); avatar keys auth-only | `AttachmentFlowIT` files-path non-member 403; `FileControllerTest` (traversal/backslash/prefix/unauth); `LocalStorageServiceTest.read_*` |
+| GET /api/v1/attachments/{id}/content | Bearer | owner, or member of bound conversation; unbound → owner-only (`AttachmentService.java:161-172`) | `AttachmentFlowIT` member 200 / non-member 403 / unknown 404; `AttachmentServiceTest.loadContent_*` |
+| GET /api/v1/files/** | Bearer | key rejects `..`/`\`/blank (`FileController.java:62-83`); attachment keys → same owner/member rule (`AttachmentService.java:150-154`); avatar keys auth-only | `AttachmentFlowIT` files-path non-member 403; `FileControllerTest` (traversal/backslash/prefix/unauth); `LocalStorageServiceTest.read_*` |
 | POST /api/v1/users/me/avatar | Bearer | self; fixed `avatars` subdir (`AvatarController.java:37-56`) | covered by storage-layer tests |
-| STOMP CONNECT /ws | token in STOMP header (never URL) | `JwtService.parseAccessToken` → `StompUserPrincipal` (`StompAuthChannelInterceptor.java:94-109`) | `StompAuthChannelInterceptorTest.connect_*`; `MessageFlowIT` bad CONNECT dropped |
-| STOMP SUBSCRIBE /topic/conversations.{uuid} | session principal | member check (`StompAuthChannelInterceptor.java:122-130`) | `StompAuthChannelInterceptorTest.subscribe_*` |
+| STOMP CONNECT /ws | token in STOMP header (never URL) | `JwtService.parseAccessToken` → `StompUserPrincipal` (`StompAuthChannelInterceptor.java:119-134`) | `StompAuthChannelInterceptorTest.connect_*`; `MessageFlowIT` bad CONNECT dropped |
+| STOMP SUBSCRIBE /topic/conversations.{uuid} | session principal | member check (`StompAuthChannelInterceptor.java:138-162`) | `StompAuthChannelInterceptorTest.subscribe_*` |
 | STOMP SUBSCRIBE /user/queue/* | session principal | own-queue only by resolver | `StompAuthChannelInterceptorTest.subscribe_userQueue_*` |
-| STOMP SEND /app/conversations/{id}/{messages\|typing\|read} | session principal | member check, deny-by-default (`StompAuthChannelInterceptor.java:141-161`) | `StompAuthChannelInterceptorTest.send_*`; `MessageFlowIT` non-member SEND → 0 rows |
+| STOMP SEND /app/conversations/{id}/{messages\|typing\|read} | session principal | member check + per-user buckets (messages 30/10 s, typing 60/10 s), deny-by-default (`StompAuthChannelInterceptor.java:166-224`) | `StompAuthChannelInterceptorTest.send_*`; `MessageFlowIT` non-member SEND → 0 rows |
 
 ## 2. Password & token handling facts
 
@@ -69,7 +69,9 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 - **Secrets in config:** dev defaults exist only for the local profile —
   `application.yml:28` (JWT dev secret), `application.yml:8` (DB password
   `nexachat`, matching docker-compose). Prod profile requires env
-  `JWT_SECRET` with no fallback (`application-prod.yml:35`).
+  `JWT_SECRET` with no fallback, and `ProductionDataSourceConfiguration`
+  fails boot when `spring.datasource.username`/`password` are missing or
+  unresolved (`application-prod.yml`, `ProductionDataSourceConfiguration.java:21-38`).
 
 ## 3. Secret scan — PASS
 
@@ -103,12 +105,14 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | POST /api/v1/auth/refresh | per-IP | 30 / 5 min | `RateLimitInterceptor.java:40` |
 | GET /api/v1/users/search | per-user | 30 / 1 min | `UserSearchRateLimitInterceptor.java:45-47` |
 | POST /api/v1/contacts | per-user | 30 / 1 min | `ContactAddRateLimitInterceptor.java:29-31` |
+| STOMP SEND /app/conversations/{id}/messages | per-user | 30 / 10 s | `StompAuthChannelInterceptor.java:205-210` |
+| STOMP SEND /app/conversations/{id}/typing | per-user | 60 / 10 s | `StompAuthChannelInterceptor.java:211-213` |
 
-Registration wiring: `WebConfig.java:33-39`. `X-Forwarded-For` deliberately
+Registration wiring: `WebConfig.java:33-40`. `X-Forwarded-For` deliberately
 untrusted (`RateLimitInterceptor.java:27-29`); post-auth buckets key on the
-JWT subject. Buckets are in-memory Bucket4j — single-node scope
-(`RateLimitService`); horizontal scale needs Redis/JDBC (known limit,
-`docs/security.md`).
+JWT subject. Buckets are in-memory Bucket4j in a bounded LRU (10,000 keys,
+15 min idle TTL) — single-node scope (`RateLimitService.java:24-27`); horizontal
+scale needs Redis/JDBC (known limit, `docs/security.md`).
 
 ## 6. Log scan — no secrets logged — PASS
 
@@ -144,7 +148,7 @@ logged — user/conversation/message ids, event names, and exception *types*:
 | ReactionService | ✓ message-missing/not-member/blank/long emoji |
 | PinService | ✓ pin non-admin/not-member/limit/foreign/missing/idempotent; unpin non-admin · + unpin not-member/foreign-message, listPins not-member/missing-conv |
 | FileController | + NEW FileControllerTest: `..`/backslash/wrong-prefix keys rejected before storage; null principal → 401; member-check before read |
-| StompAuthChannelInterceptor | ✓ CONNECT missing/malformed/bad-token; SUBSCRIBE non-member/unauth/foreign/malformed; SEND non-member/unauth/unknown |
+| StompAuthChannelInterceptor | ✓ CONNECT missing/malformed/bad-token; SUBSCRIBE non-member/unauth/foreign/malformed; SEND non-member/unauth/unknown · + message/typing rate-limit and correlated `RATE_LIMITED` error frame |
 
 ## Known limits (carried from docs/security.md)
 
