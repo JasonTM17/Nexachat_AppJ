@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class CallTimeoutScheduler {
 
+    private static final long RETRY_DELAY_MILLIS = 25L;
+
     private final CallService callService;
     private final CallRegistry registry;
     private final long ringTimeoutMillis;
@@ -45,19 +47,30 @@ public class CallTimeoutScheduler {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCallRinging(CallRingingEvent event) {
-        registry.find(event.callId()).ifPresent(session -> {
+        scheduleTimeout(event.callId(), 1L);
+    }
+
+    private void scheduleTimeout(UUID callId, long minimumDelayMillis) {
+        registry.find(callId).ifPresent(session -> {
             long elapsed = Math.max(0L, Duration.between(session.startedAt(), registry.now()).toMillis());
-            long delay = Math.max(0L, ringTimeoutMillis - elapsed);
-            ScheduledFuture<?> next = scheduler.schedule(
-                    () -> {
-                        scheduledCalls.remove(event.callId());
-                        callService.timeout(event.callId());
-                    }, Math.max(1L, delay), TimeUnit.MILLISECONDS);
-            ScheduledFuture<?> previous = scheduledCalls.put(event.callId(), next);
+            long delay = Math.max(minimumDelayMillis, ringTimeoutMillis - elapsed);
+            ScheduledFuture<?> next = scheduler.schedule(() -> fire(callId), delay, TimeUnit.MILLISECONDS);
+            ScheduledFuture<?> previous = scheduledCalls.put(callId, next);
             if (previous != null) {
                 previous.cancel(false);
             }
         });
+    }
+
+    private void fire(UUID callId) {
+        scheduledCalls.remove(callId);
+        callService.timeout(callId);
+        // The timer and the registry clock are independent: a timer that fires a
+        // moment before the ring deadline leaves the call ringing, so it is
+        // re-armed instead of being left to ring forever.
+        registry.find(callId)
+                .filter(session -> session.state() == CallState.RINGING)
+                .ifPresent(session -> scheduleTimeout(callId, RETRY_DELAY_MILLIS));
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
