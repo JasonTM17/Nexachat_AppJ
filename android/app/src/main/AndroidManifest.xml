@@ -4,6 +4,14 @@
     <!-- Chat needs network; ACCESS_NETWORK_STATE lets the UI react to connectivity loss -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".NexaChatApp"
@@ -27,6 +35,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".call.ui.CallActivity"
+            android:exported="false"
+            android:theme="@style/Theme.NexaChat.Call" />
+        <activity
+            android:name=".call.ui.IncomingCallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.NexaChat.Call" />
+        <service
+            android:name=".call.service.CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- FILE bubbles hand cached downloads to ACTION_VIEW (phase-09). -->
         <provider

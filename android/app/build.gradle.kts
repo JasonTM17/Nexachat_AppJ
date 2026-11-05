@@ -14,6 +14,29 @@ val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }
         ?.inputStream()?.use { load(it) }
 }
+val releaseSigningPropertiesFile = rootProject.file("../release/keystore/signing.properties")
+val releaseSigningProperties = Properties().apply {
+    releaseSigningPropertiesFile.takeIf { it.isFile }
+        ?.inputStream()?.use { load(it) }
+}
+val releaseSigningKeys = listOf(
+    "storeFile",
+    "keyAlias",
+    "keystore.storePassword",
+    "keyPassword"
+)
+if (releaseSigningPropertiesFile.isFile) {
+    val missingSigningKeys = releaseSigningKeys.filter {
+        releaseSigningProperties.getProperty(it).isNullOrBlank()
+    }
+    require(missingSigningKeys.isEmpty()) {
+        "release/keystore/signing.properties is missing required entries: ${missingSigningKeys.joinToString()}"
+    }
+    require(rootProject.file("../${releaseSigningProperties.getProperty("storeFile")}").isFile) {
+        "The keystore configured in release/keystore/signing.properties does not exist"
+    }
+}
+
 val apiBaseUrl = providers.gradleProperty("apiBaseUrl")
     .orElse(localProps.getProperty("API_BASE_URL") ?: "http://10.0.2.2:8080")
 
@@ -30,15 +53,35 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+
         // Backend base URL — override in local.properties (LAN demo) or via
         // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
         buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrl.get()}\"")
     }
 
+    signingConfigs {
+        if (releaseSigningPropertiesFile.isFile) {
+            create("release") {
+                storeFile = rootProject.file("../${releaseSigningProperties.getProperty("storeFile")}")
+                storePassword = releaseSigningProperties.getProperty("keystore.storePassword")
+                keyAlias = releaseSigningProperties.getProperty("keyAlias")
+                keyPassword = releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = if (releaseSigningPropertiesFile.isFile) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -69,6 +112,20 @@ android {
         // Room's exported schema JSON doubles as an androidTest asset directory
         // so MigrationTestHelper can open a database at an older version.
         getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val releasePackagingRequested = allTasks.any {
+        it.path == ":app:assembleRelease" ||
+            it.path == ":app:packageRelease" ||
+            it.path == ":app:bundleRelease"
+    }
+    if (releasePackagingRequested && !releaseSigningPropertiesFile.isFile) {
+        logger.warn(
+            "WARNING: release/keystore/signing.properties is missing; this release artifact is " +
+                "signed with the debug key and is for local verification only."
+        )
     }
 }
 
@@ -119,6 +176,9 @@ dependencies {
 
     // Media playback — voice/video messages
     implementation(libs.bundles.media3)
+
+    // In-app audio calls
+    implementation(libs.stream.webrtc)
 
     // E.164 phone normalization
     implementation(libs.libphonenumber)

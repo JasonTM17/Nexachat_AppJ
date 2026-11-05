@@ -126,4 +126,69 @@
     <string name="action_rename_group">Rename group</string>
     <string name="action_leave_group">Leave group</string>
     <string name="action_remove">Remove</string>
+
+    <!-- Additional UI Polish Strings -->
+    <string name="time_today">Today</string>
+    <string name="time_yesterday">Yesterday</string>
+    <string name="time_just_now">Just now</string>
+    <string name="cd_scroll_to_bottom">Scroll to bottom</string>
+    <string name="cd_password_visibility">Toggle password visibility</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_account">Account</string>
+    <string name="settings_section_session">Session</string>
+
+    <!-- Stage 2 Feature Strings -->
+    <!-- Message Actions & Clipboard -->
+    <string name="action_copy">Copy</string>
+    <string name="copied_to_clipboard">Copied</string>
+    <string name="action_forward">Forward</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_delete">Delete</string>
+    <string name="forwarded_snackbar">Forwarded</string>
+    <string name="action_view">View</string>
+
+    <!-- Message Edit -->
+    <string name="edit_message_title">Edit message</string>
+    <string name="cd_cancel_edit">Cancel edit</string>
+    <string name="message_edited">Edited</string>
+
+    <!-- Message Delete -->
+    <string name="dialog_delete_message_title">Delete message?</string>
+    <string name="dialog_delete_message_body">Delete this message for everyone?</string>
+    <string name="message_deleted">This message was deleted</string>
+
+    <!-- In-Chat Search -->
+    <string name="search_in_chat_placeholder">Search in conversation...</string>
+    <string name="search_in_chat_no_results">No messages found</string>
+    <string name="search_in_chat_error">Could not search messages</string>
+    <string name="cd_search_in_chat">Search in chat</string>
+    <string name="cd_clear_search">Clear search</string>
+    <string name="cd_call">Call</string>
+
+    <!-- Forward Picker -->
+    <string name="forward_title">Forward message</string>
+    <string name="forward_search_placeholder">Search conversations...</string>
+    <string name="forward_send">Send</string>
+
+    <!-- Presence -->
+    <string name="presence_active_now">Active now</string>
+    <string name="presence_minutes_ago">Active %1$d min ago</string>
+    <string name="presence_hours_ago">Active %1$d hr ago</string>
+    <string name="presence_yesterday">Active yesterday</string>
+    <string name="cd_online_status">Online</string>
+
+    <!-- Settings: Appearance & Privacy -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_privacy">Privacy</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="theme_system">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="privacy_show_presence">Show activity status</string>
+
+    <!-- Error Mapping for Edit/Delete -->
+    <string name="error_not_message_author">You can only edit or delete your own messages</string>
+    <string name="error_message_deleted">This message was deleted</string>
+    <string name="error_message_not_found">Message not found</string>
+    <string name="error_validation_failed">Invalid message content</string>
 </resources>

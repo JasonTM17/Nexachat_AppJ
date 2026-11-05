@@ -23,7 +23,9 @@ import com.nexachat.core.storage.TokenStore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,6 +35,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -64,6 +67,12 @@ data class ConversationSummary(
     val peerReadSeq: Long = 0,
     /** My member role from the inbox payload — GROUP affordance gating (pin etc.). */
     val myRole: String? = null,
+    /** Peer user id for DIRECT rows — presence lookup key. */
+    val otherUserId: String? = null,
+    /** Last message is soft-deleted — the inbox renders a neutral snippet. */
+    val lastMessageDeleted: Boolean = false,
+    /** Live/seed presence of the DIRECT peer; null for groups or hidden peers. */
+    val peerPresence: PeerPresence? = null,
 ) {
     val displayName: String get() = title ?: otherUserName ?: ""
 
@@ -124,6 +133,7 @@ class ConversationRepository @Inject constructor(
     private val messageApi: MessageApi,
     private val groupApi: GroupApi,
     private val conversationDao: ConversationDao,
+    private val presenceRepository: PresenceRepository,
     private val session: RealtimeSession,
     private val tokenStore: TokenStore,
     private val moshi: Moshi,
@@ -171,11 +181,15 @@ class ConversationRepository @Inject constructor(
     // ---- read model ----
 
     fun inboxFlow(): Flow<List<ConversationSummary>> =
-        conversationDao.inboxFlow().map { rows -> rows.map { it.toSummary() } }
+        combine(conversationDao.inboxFlow(), presenceRepository.presences) { rows, presence ->
+            rows.map { it.toSummary(presence) }
+        }
 
     /** Single conversation for the chat title bar. */
     fun conversationFlow(conversationId: String): Flow<ConversationSummary?> =
-        conversationDao.observeById(conversationId).map { it?.toSummary() }
+        combine(conversationDao.observeById(conversationId), presenceRepository.presences) { row, presence ->
+            row?.toSummary(presence)
+        }
 
     /** Signals server updates for a group whose detail screen is currently open. */
     fun groupUpdates(conversationId: String): Flow<Unit> =
@@ -185,14 +199,14 @@ class ConversationRepository @Inject constructor(
 
     /**
      * Pulls the inbox and writes rows through. Tolerant of the two plausible
-     * response shapes — `{items,nextBeforeSeq,hasMore}` envelope or a bare
+     * response shapes — `{items,nextCursor,hasMore}` envelope or a bare
      * array (see MessageApi.getConversations).
      *
      * Invariant: the prune below assumes the payload is the caller's COMPLETE
      * inbox. `GET /conversations` returns exactly that when it carries no
      * `limit`/`cursor` (contract: optional keyset paging, default = full list),
      * and this is the only caller without a limit. If paging is ever adopted
-     * here, this function must stop pruning from a page — page 2+ rows would
+     * here, this function must stop pruning from a page — later rows would
      * be deleted — and rely on [InboxFetch.complete] alone to decide.
      */
     suspend fun refreshInbox(): Result<Unit> {
@@ -201,6 +215,23 @@ class ConversationRepository @Inject constructor(
             is Result.Success -> {
                 val rows = result.value.items.mapNotNull { it.toEntity(myId) }
                 upsertPreservingClientColumns(rows)
+                val presenceSeeds = result.value.items.mapNotNull { dto ->
+                    val presence = dto.peerPresence ?: return@mapNotNull null
+                    val peerId = dto.resolvedOtherId(myId) ?: return@mapNotNull null
+                    peerId to PeerPresence(
+                        online = presence.online == true,
+                        lastSeenAtEpochMs = isoToEpochMsOrNull(presence.lastSeenAt),
+                    )
+                }.toMap()
+                presenceRepository.seed(presenceSeeds)
+                // A DIRECT row without a seed means the peer hides presence
+                // (or is gone). Drop any stale dot so "hidden = invisible"
+                // holds everywhere, not just for events.
+                result.value.items
+                    .filter { (it.type ?: TYPE_DIRECT) == TYPE_DIRECT }
+                    .mapNotNull { it.resolvedOtherId(myId) }
+                    .filterNot(presenceSeeds::containsKey)
+                    .forEach(presenceRepository::clear)
                 // Authoritative full set — drop rows the server no longer
                 // returns (removed membership, deleted conversation). Without
                 // this a MEMBER_REMOVED leaves a dead row in the inbox that
@@ -251,27 +282,37 @@ class ConversationRepository @Inject constructor(
 
     /**
      * Member list + title for the group detail screen. There is no assumed
-     * `GET /conversations/{id}` on the parallel server build, so this derives
-     * the projection from the inbox payload (`ConversationInboxDto.members`)
-     * — the same call [refreshInbox] makes — and write-throughs what it finds
-     * so Room stays warm. `limit` widens the window for busy inboxes.
+     * `GET /conversations/{id}`, so this walks the inbox's opaque cursor pages
+     * until it finds the row and writes it through to Room.
      */
-    suspend fun groupDetail(conversationId: String): Result<GroupDetail> =
-        when (val result = fetchInboxItems(limit = MEMBERS_PAGE_LIMIT)) {
-            is Result.Success -> {
-                val myId = currentUserId()
-                val inbox = result.value.items.firstOrNull { it.id == conversationId }
-                    ?: return Result.Failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
-                upsertPreservingClientColumns(listOf(inbox.toEntity(myId)))
-                Result.Success(
-                    GroupDetail(
-                        title = inbox.title,
-                        members = inbox.members.mapNotNull { it.toGroupMember() },
-                    ),
-                )
+    suspend fun groupDetail(conversationId: String): Result<GroupDetail> {
+        val myId = currentUserId()
+        var cursor: String? = null
+        val seenCursors = HashSet<String>()
+        while (true) {
+            when (val result = fetchInboxItems(limit = MEMBERS_PAGE_LIMIT, cursor = cursor)) {
+                is Result.Success -> {
+                    val inbox = result.value.items.firstOrNull { it.id == conversationId }
+                    if (inbox != null) {
+                        upsertPreservingClientColumns(listOf(inbox.toEntity(myId)))
+                        return Result.Success(
+                            GroupDetail(
+                                title = inbox.title,
+                                members = inbox.members.mapNotNull { it.toGroupMember() },
+                            ),
+                        )
+                    }
+                    val nextCursor = result.value.nextCursor
+                        ?: return Result.Failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
+                    if (!seenCursors.add(nextCursor)) {
+                        return Result.Failure(ApiError.Unknown("INVALID_INBOX_CURSOR"))
+                    }
+                    cursor = nextCursor
+                }
+                is Result.Failure -> return Result.Failure(result.error)
             }
-            is Result.Failure -> result
         }
+    }
 
     suspend fun addGroupMembers(conversationId: String, userIds: List<String>): Result<Unit> =
         call { groupApi.addMembers(conversationId, AddGroupMembersRequest(userIds)) }
@@ -313,7 +354,7 @@ class ConversationRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             val bytes = try {
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    input.readBytes().takeIf { it.size <= MAX_AVATAR_BYTES }
+                    readBoundedAvatar(input)
                 }
             } catch (e: IOException) {
                 null
@@ -335,6 +376,27 @@ class ConversationRepository @Inject constructor(
                 is Result.Failure -> result
             }
         }
+
+    private fun readBoundedAvatar(input: InputStream): ByteArray? {
+        val buffer = ByteArray(AVATAR_READ_BUFFER_BYTES)
+        val output = ByteArrayOutputStream()
+        var total = 0
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) return output.toByteArray()
+            if (read == 0) {
+                val single = input.read()
+                if (single < 0) return output.toByteArray()
+                if (total == MAX_AVATAR_BYTES) return null
+                output.write(single)
+                total++
+                continue
+            }
+            if (total + read > MAX_AVATAR_BYTES) return null
+            output.write(buffer, 0, read)
+            total += read
+        }
+    }
 
     /**
      * Self-leave. The DAO has no delete-by-id, so the stale row is cleared by
@@ -386,6 +448,8 @@ class ConversationRepository @Inject constructor(
             otherUserAvatar = resolvedOtherAvatar(myId),
             avatarUrl = avatarUrl,
             myRole = members.firstOrNull { it.userId == myId }?.role,
+            otherUserId = resolvedOtherId(myId),
+            lastMessageDeleted = lastMessage?.deletedAt != null,
         )
 
     /**
@@ -420,7 +484,9 @@ class ConversationRepository @Inject constructor(
             )
         }
 
-    private fun ConversationEntity.toSummary(): ConversationSummary = ConversationSummary(
+    private fun ConversationEntity.toSummary(
+        presence: Map<String, PeerPresence>,
+    ): ConversationSummary = ConversationSummary(
         id = id,
         type = type,
         title = title,
@@ -434,6 +500,9 @@ class ConversationRepository @Inject constructor(
         avatarUrl = avatarUrl,
         peerReadSeq = peerReadSeq,
         myRole = myRole,
+        otherUserId = otherUserId,
+        lastMessageDeleted = lastMessageDeleted,
+        peerPresence = if (type == TYPE_DIRECT) otherUserId?.let(presence::get) else null,
     )
 
     // ---- internals ----
@@ -454,6 +523,8 @@ class ConversationRepository @Inject constructor(
                     // Payloads without members[] must not strip a known role —
                     // a stale ADMIN is safer than hiding a real admin's pin.
                     myRole = row.myRole ?: prior[row.id]?.myRole,
+                    // Same for the peer id: losing it would blind presence.
+                    otherUserId = row.otherUserId ?: prior[row.id]?.otherUserId,
                 )
             },
         )
@@ -465,32 +536,47 @@ class ConversationRepository @Inject constructor(
      * [InboxFetch.complete] is false when the envelope admits another page —
      * the caller must not treat that payload as the full set.
      */
-    private suspend fun fetchInboxItems(limit: Int? = null): Result<InboxFetch> =
-        when (val result = call { messageApi.getConversations(limit = limit) }) {
-            is Result.Success -> {
-                val body = runCatching { result.value.string().trim() }.getOrNull()
-                    ?: return Result.Failure(ApiError.Network("body read failed"))
-                val page = parseInboxBody(body)
-                if (page == null) {
-                    Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
-                } else {
-                    Result.Success(page)
-                }
+    private suspend fun fetchInboxItems(
+        limit: Int? = null,
+        cursor: String? = null,
+    ): Result<InboxFetch> {
+        return try {
+            val response = messageApi.getConversations(limit = limit, cursor = cursor)
+            if (!response.isSuccessful) {
+                return Result.Failure(
+                    ApiError.from(
+                        response.code(),
+                        com.nexachat.core.network.dto.errorCodeOf(response.errorBody()?.string()),
+                    ),
+                )
             }
-            is Result.Failure -> result
+            val responseBody = response.body()
+                ?: return Result.Failure(ApiError.Unknown("UNEXPECTED_EMPTY_BODY"))
+            val page = parseInboxBody(
+                body = responseBody.string().trim(),
+                headerCursor = response.headers()[NEXT_CURSOR_HEADER],
+            ) ?: return Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
+            Result.Success(page)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: IOException) {
+            Result.Failure(ApiError.Network(error.message))
         }
+    }
 
-    private fun parseInboxBody(body: String): InboxFetch? = when {
-        body.isEmpty() -> InboxFetch(emptyList(), complete = true)
+    private fun parseInboxBody(body: String, headerCursor: String? = null): InboxFetch? = when {
+        body.isEmpty() -> InboxFetch(emptyList(), nextCursor = headerCursor, complete = headerCursor == null)
         body.startsWith("[") ->
             runCatching { listAdapter.fromJson(body) }.getOrNull()
-                ?.let { InboxFetch(it, complete = true) }
+                ?.let { InboxFetch(it, nextCursor = headerCursor, complete = headerCursor == null) }
         else ->
             runCatching { pageAdapter.fromJson(body) }.getOrNull()
                 ?.let {
+                    val nextCursor = headerCursor ?: it.nextCursor
                     InboxFetch(
                         items = it.items,
-                        complete = !it.hasMore && it.nextBeforeSeq == null,
+                        nextCursor = nextCursor,
+                        complete = !it.hasMore && nextCursor == null,
                     )
                 }
     }
@@ -498,6 +584,7 @@ class ConversationRepository @Inject constructor(
     /** Inbox items plus whether the payload was the authoritative full set. */
     private data class InboxFetch(
         val items: List<ConversationInboxDto>,
+        val nextCursor: String?,
         val complete: Boolean,
     )
 
@@ -531,14 +618,13 @@ class ConversationRepository @Inject constructor(
     private companion object {
         const val TYPE_DIRECT = "DIRECT"
         const val PUSH_REFRESH_DEBOUNCE_MS = 400L
+        const val NEXT_CURSOR_HEADER = "X-Next-Cursor"
 
-        /**
-         * Inbox page size for the member-list fetch — the conversation must
-         * be inside the first page since no single-conversation GET exists.
-         */
+        /** Inbox page size for the cursor walk used by the group detail fetch. */
         const val MEMBERS_PAGE_LIMIT = 100
 
         // Server hard cap is 25 MB; a group avatar should never approach it.
         const val MAX_AVATAR_BYTES = 25 * 1024 * 1024
+        const val AVATAR_READ_BUFFER_BYTES = 64 * 1024
     }
 }

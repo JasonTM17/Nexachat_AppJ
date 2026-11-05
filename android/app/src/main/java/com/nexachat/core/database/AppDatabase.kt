@@ -22,6 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * v3: phase-10 message interactions — `message_reactions` (aggregated
  * per-emoji summaries), `pinned_messages` (conversation pins), and the
  * denormalized `replyTo` preview columns on `messages`.
+ *
+ * v7: message edit/delete — `messages.editedAtEpochMs`/`deletedAtEpochMs`,
+ * plus the DIRECT peer id and deleted-last-message flag on `conversations`.
  */
 @Database(
     entities = [
@@ -31,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageReactionEntity::class,
         PinnedMessageEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -126,6 +129,25 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE conversations ADD COLUMN myRole TEXT",
+                )
+            }
+        }
+
+        /**
+         * Message edit/delete (F1/F2). Both message columns are nullable —
+         * rows predating v7 read back as "never edited / live". The inbox
+         * additions are server-fed: `otherUserId` keys peer presence and
+         * `lastMessageDeleted` renders the deleted-last-message neutral
+         * snippet, so existing rows default to 0/absent until the next
+         * authoritative refresh.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN editedAtEpochMs INTEGER")
+                db.execSQL("ALTER TABLE messages ADD COLUMN deletedAtEpochMs INTEGER")
+                db.execSQL("ALTER TABLE conversations ADD COLUMN otherUserId TEXT")
+                db.execSQL(
+                    "ALTER TABLE conversations ADD COLUMN lastMessageDeleted INTEGER NOT NULL DEFAULT 0",
                 )
             }
         }

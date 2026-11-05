@@ -18,6 +18,8 @@ import com.nexachat.data.DeliveryStatus
 import com.nexachat.data.LocalAttachment
 import com.nexachat.data.MessageJump
 import com.nexachat.data.MessageRepository
+import com.nexachat.data.MessageSearchResult
+import com.nexachat.data.PeerPresence
 import com.nexachat.data.TypingEvent
 import com.nexachat.feature.media.PendingAttachment
 import io.mockk.coEvery
@@ -63,6 +65,7 @@ class ChatViewModelTest {
 
     private companion object {
         const val CONVERSATION_ID = "c-1"
+        const val TARGET_CONVERSATION_ID = "c-target"
         val ATTACHMENT = AttachmentDto(
             id = "att-1",
             originalName = "pic.png",
@@ -563,6 +566,294 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(ApiError.Network("down"), viewModel.uiState.value.error)
+    }
+
+    // ---- edit / delete / forward / search ----
+
+    @Test
+    fun `canEdit allows only my live delivered TEXT messages`() = runTest {
+        assertTrue(viewModel.canEdit(message(id = "m-1", seq = 1, mine = true)))
+        assertFalse(viewModel.canEdit(message(id = "m-2", seq = 2, mine = false)))
+        assertFalse(
+            viewModel.canEdit(
+                message(id = "m-3", seq = 3, mine = true, status = DeliveryStatus.SENDING),
+            ),
+        )
+        assertFalse(
+            viewModel.canEdit(
+                message(id = "m-4", seq = 4, mine = true).copy(deletedAtEpochMs = 1L),
+            ),
+        )
+        assertFalse(
+            viewModel.canEdit(
+                message(id = "m-5", seq = 5, mine = true).copy(type = "IMAGE"),
+            ),
+        )
+    }
+
+    @Test
+    fun `canDelete allows my live messages of any type`() = runTest {
+        assertTrue(viewModel.canDelete(message(id = "m-1", seq = 1, mine = true)))
+        assertTrue(
+            viewModel.canDelete(
+                message(id = "m-2", seq = 2, mine = true).copy(type = "IMAGE"),
+            ),
+        )
+        assertFalse(viewModel.canDelete(message(id = "m-3", seq = 3, mine = false)))
+        assertFalse(
+            viewModel.canDelete(
+                message(id = "m-4", seq = 4, mine = true)
+                    .copy(deletedAtEpochMs = 1L),
+            ),
+        )
+    }
+
+    @Test
+    fun `editMessage trims and delegates`() = runTest {
+        coEvery { messageRepository.editMessage(any(), any(), any()) } returns Result.Success(Unit)
+
+        viewModel.editMessage("m-1", "  new text  ")
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            messageRepository.editMessage(CONVERSATION_ID, "m-1", "new text")
+        }
+    }
+
+    @Test
+    fun `editMessage with blank input never calls the repository`() = runTest {
+        viewModel.editMessage("m-1", "   ")
+        runCurrent()
+
+        coVerify(exactly = 0) { messageRepository.editMessage(any(), any(), any()) }
+    }
+
+    @Test
+    fun `edit failure surfaces in the ui error state`() = runTest {
+        observeUi()
+        runCurrent()
+        coEvery { messageRepository.editMessage(any(), any(), any()) } returns
+            Result.Failure(ApiError.Unknown("MESSAGE_DELETED"))
+
+        viewModel.editMessage("m-1", "new")
+        runCurrent()
+
+        assertEquals(ApiError.Unknown("MESSAGE_DELETED"), viewModel.uiState.value.error)
+    }
+
+    @Test
+    fun `deleteMessage delegates and surfaces failures`() = runTest {
+        observeUi()
+        runCurrent()
+        coEvery { messageRepository.deleteMessage(any(), any()) } returns Result.Success(Unit)
+
+        viewModel.deleteMessage("m-1")
+        runCurrent()
+        coVerify(exactly = 1) { messageRepository.deleteMessage(CONVERSATION_ID, "m-1") }
+
+        coEvery { messageRepository.deleteMessage(any(), any()) } returns
+            Result.Failure(ApiError.Unknown("NOT_MESSAGE_AUTHOR"))
+        viewModel.deleteMessage("m-2")
+        runCurrent()
+        assertEquals(
+            ApiError.Unknown("NOT_MESSAGE_AUTHOR"),
+            viewModel.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `forward re-sends the content as a new TEXT message and emits an event`() = runTest {
+        observeUi()
+        runCurrent()
+        messagesFlow.value = listOf(message(id = "m-1", seq = 1, mine = true))
+
+        viewModel.actionEvents.test {
+            viewModel.forwardMessage("m-1", TARGET_CONVERSATION_ID)
+            runCurrent()
+
+            assertEquals(
+                ChatActionEvent.MessageForwarded(TARGET_CONVERSATION_ID),
+                awaitItem(),
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+        coVerify(exactly = 1) {
+            messageRepository.send(TARGET_CONVERSATION_ID, "hello m-1", null)
+        }
+    }
+
+    @Test
+    fun `forward skips deleted and pending messages`() = runTest {
+        observeUi()
+        runCurrent()
+        messagesFlow.value = listOf(
+            message(id = "m-del", seq = 1, mine = true).copy(deletedAtEpochMs = 1L),
+            message(
+                id = "cm-1",
+                seq = null,
+                mine = true,
+                status = DeliveryStatus.SENDING,
+                clientMessageId = "cm-1",
+            ),
+        )
+
+        viewModel.forwardMessage("m-del", TARGET_CONVERSATION_ID)
+        viewModel.forwardMessage("cm-1", TARGET_CONVERSATION_ID)
+        runCurrent()
+
+        coVerify(exactly = 0) { messageRepository.send(any(), any(), any()) }
+    }
+
+    @Test
+    fun `search debounces keystrokes and queries the final term after 300 ms`() = runTest {
+        coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
+            Result.Success(MessageSearchResult(emptyList(), hasMore = false, nextBeforeSeq = null))
+
+        viewModel.search("h")
+        runCurrent()
+        viewModel.search("hi")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS - 1)
+        runCurrent()
+
+        coVerify(exactly = 0) { messageRepository.searchMessages(any(), any(), any(), any()) }
+
+        advanceTimeBy(1)
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            messageRepository.searchMessages(CONVERSATION_ID, "hi", null)
+        }
+    }
+
+    @Test
+    fun `search below two characters clears results without a call`() = runTest {
+        coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
+            Result.Success(MessageSearchResult(emptyList(), hasMore = false, nextBeforeSeq = null))
+        viewModel.search("hello")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
+        runCurrent()
+
+        viewModel.search("h")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertEquals("h", viewModel.searchState.value.query)
+        assertTrue(viewModel.searchState.value.results.isEmpty())
+        assertFalse(viewModel.searchState.value.loading)
+        coVerify(exactly = 1) { messageRepository.searchMessages(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `search exposes results and pages with the server cursor`() = runTest {
+        val first = listOf(
+            message(id = "m-9", seq = 9, mine = true),
+            message(id = "m-8", seq = 8, mine = false),
+        )
+        val second = listOf(message(id = "m-7", seq = 7, mine = true))
+        coEvery {
+            messageRepository.searchMessages(CONVERSATION_ID, "hi", null)
+        } returns Result.Success(MessageSearchResult(first, hasMore = true, nextBeforeSeq = 8))
+        coEvery {
+            messageRepository.searchMessages(CONVERSATION_ID, "hi", 8L)
+        } returns Result.Success(MessageSearchResult(second, hasMore = false, nextBeforeSeq = null))
+
+        viewModel.search("hi")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertEquals(listOf("m-9", "m-8"), viewModel.searchState.value.results.map { it.id })
+        assertTrue(viewModel.searchState.value.hasMore)
+
+        viewModel.loadMoreSearch()
+        runCurrent()
+
+        assertEquals(
+            listOf("m-9", "m-8", "m-7"),
+            viewModel.searchState.value.results.map { it.id },
+        )
+        assertFalse(viewModel.searchState.value.hasMore)
+    }
+
+    @Test
+    fun `clearSearch drops the query and results`() = runTest {
+        coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
+            Result.Success(
+                MessageSearchResult(
+                    listOf(message(id = "m-1", seq = 1, mine = true)),
+                    hasMore = false,
+                    nextBeforeSeq = null,
+                ),
+            )
+        viewModel.search("hi")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
+        runCurrent()
+        assertTrue(viewModel.searchState.value.results.isNotEmpty())
+
+        viewModel.clearSearch()
+
+        assertEquals(ChatSearchState(), viewModel.searchState.value)
+    }
+
+    @Test
+    fun `search failure surfaces on the search state only`() = runTest {
+        coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
+            Result.Failure(ApiError.Network("down"))
+
+        viewModel.search("hi")
+        advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
+        runCurrent()
+
+        assertEquals(ApiError.Network("down"), viewModel.searchState.value.error)
+        assertFalse(viewModel.searchState.value.loading)
+    }
+
+    @Test
+    fun `peer presence comes from the DIRECT conversation summary`() = runTest {
+        observeUi()
+        runCurrent()
+
+        conversationFlow.value = ConversationSummary(
+            id = CONVERSATION_ID,
+            type = "DIRECT",
+            title = null,
+            lastMessageContent = null,
+            lastMessageSenderName = null,
+            lastMessageAtEpochMs = null,
+            lastMessageSeq = 0L,
+            unreadCount = 0,
+            otherUserName = "Peer",
+            otherUserAvatar = null,
+            avatarUrl = null,
+            peerPresence = PeerPresence(online = true, lastSeenAtEpochMs = 1_700_000_000_000L),
+        )
+        runCurrent()
+
+        assertEquals(true, viewModel.uiState.value.peerPresence?.online)
+    }
+
+    @Test
+    fun `direct peer id is exposed before the first message`() = runTest {
+        observeUi()
+        runCurrent()
+
+        conversationFlow.value = ConversationSummary(
+            id = CONVERSATION_ID,
+            type = "DIRECT",
+            title = null,
+            lastMessageContent = null,
+            lastMessageSenderName = null,
+            lastMessageAtEpochMs = null,
+            lastMessageSeq = 0L,
+            unreadCount = 0,
+            otherUserName = "Peer",
+            otherUserAvatar = null,
+            avatarUrl = null,
+            otherUserId = "u-peer",
+        )
+        runCurrent()
+
+        assertTrue(messagesFlow.value.isEmpty())
+        assertEquals("u-peer", viewModel.uiState.value.otherUserId)
     }
 
     @Test

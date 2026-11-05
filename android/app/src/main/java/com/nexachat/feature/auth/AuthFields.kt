@@ -2,17 +2,21 @@ package com.nexachat.feature.auth
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,9 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.nexachat.R
 
 /**
- * Shared building blocks for Login/Register. Password visibility uses a text
- * toggle (Show/Hide) rather than an eye icon — `material-icons-extended` is not
- * on the classpath and gradle files are out of scope for this slice.
+ * Shared building blocks for Login/Register.
  */
 
 @Composable
@@ -86,11 +88,11 @@ internal fun PasswordField(
         visualTransformation =
             if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         trailingIcon = {
-            TextButton(onClick = { visible = !visible }) {
-                Text(
-                    stringResource(
-                        if (visible) R.string.action_hide else R.string.action_show,
-                    ),
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = stringResource(R.string.cd_password_visibility),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },

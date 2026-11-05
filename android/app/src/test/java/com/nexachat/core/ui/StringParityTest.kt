@@ -41,6 +41,50 @@ class StringParityTest {
         assertEquals("String count should match exactly", enKeys.size, viKeys.size)
     }
 
+    @Test
+    fun verifyCallStringsHaveExactParity() {
+        val rootDir = File(".").absoluteFile
+        val resDir = listOf(
+            File("src/main/res"),
+            File("app/src/main/res"),
+            File("android/app/src/main/res"),
+        ).firstOrNull { it.isDirectory }
+            ?: throw IllegalStateException("Cannot find res directory from ${rootDir.path}")
+
+        val enFile = File(resDir, "values/strings_call.xml")
+        val viFile = File(resDir, "values-vi/strings_call.xml")
+        assertTrue("English call strings should exist", enFile.exists())
+        assertTrue("Vietnamese call strings should exist", viFile.exists())
+
+        val enKeys = extractStringKeys(enFile)
+        val viKeys = extractStringKeys(viFile)
+        assertTrue("Call keys present in EN but missing in VI: ${enKeys - viKeys}", enKeys == viKeys)
+    }
+
+    @Test
+    fun verifySummaryStringsHaveExactParity() {
+        val rootDir = File(".").absoluteFile
+        val resDir = listOf(
+            File("src/main/res"),
+            File("app/src/main/res"),
+            File("android/app/src/main/res"),
+        ).firstOrNull { it.isDirectory }
+            ?: throw IllegalStateException("Cannot find res directory from ${rootDir.path}")
+
+        val enFile = File(resDir, "values/strings_summary.xml")
+        val viFile = File(resDir, "values-vi/strings_summary.xml")
+        assertTrue("English summary strings should exist", enFile.exists())
+        assertTrue("Vietnamese summary strings should exist", viFile.exists())
+
+        val enKeys = extractStringKeys(enFile)
+        val viKeys = extractStringKeys(viFile)
+        val missingInVi = enKeys - viKeys
+        val extraInVi = viKeys - enKeys
+        assertTrue("Summary keys present in EN but missing in VI: $missingInVi", missingInVi.isEmpty())
+        assertTrue("Summary keys present in VI but missing in EN: $extraInVi", extraInVi.isEmpty())
+        assertEquals("Summary string count should match exactly", enKeys.size, viKeys.size)
+    }
+
     private fun extractStringKeys(file: File): Set<String> {
         val factory = DocumentBuilderFactory.newInstance()
         val builder = factory.newDocumentBuilder()

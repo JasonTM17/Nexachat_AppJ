@@ -37,6 +37,13 @@ data class MessageEntity(
     val createdAt: Long,
     /** Re-encoded `attachments` array JSON; null when empty. */
     val attachmentsJson: String?,
+    /** `editedAt` ingest; null while the content is original. */
+    val editedAtEpochMs: Long? = null,
+    /**
+     * Soft-delete marker. A deleted row keeps its `seq` (history continuity);
+     * `content` is blanked and attachments detached at ingest.
+     */
+    val deletedAtEpochMs: Long? = null,
 )
 
 /**
@@ -72,6 +79,16 @@ data class ConversationEntity(
      * side affordance gating such as GROUP pin (server still enforces).
      */
     val myRole: String? = null,
+    /**
+     * Peer user id for DIRECT rows — keys the presence map
+     * (`PresenceRepository`), so the chat header can resolve peer state.
+     */
+    val otherUserId: String? = null,
+    /**
+     * True when the conversation's last message is soft-deleted; the inbox
+     * renders a neutral "message deleted" snippet instead of stale content.
+     */
+    val lastMessageDeleted: Boolean = false,
 )
 
 /**

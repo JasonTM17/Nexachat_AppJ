@@ -159,14 +159,20 @@ fun AppNavHost() {
             route = Routes.CHAT,
             arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
         ) { entry ->
+            val currentConversationId = entry.arguments?.getString("conversationId").orEmpty()
             ChatScreen(
-                conversationId = entry.arguments?.getString("conversationId").orEmpty(),
+                conversationId = currentConversationId,
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { conversationId ->
                     navController.navigate(Routes.groupDetail(conversationId))
                 },
                 onOpenMedia = { attachment ->
                     navController.navigate(Routes.mediaViewer(attachment))
+                },
+                onOpenConversation = { targetId ->
+                    if (targetId.isNotBlank() && targetId != currentConversationId) {
+                        navController.navigate(Routes.chat(targetId))
+                    }
                 },
             )
         }

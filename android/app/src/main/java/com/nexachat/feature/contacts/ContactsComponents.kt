@@ -31,7 +31,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import com.nexachat.core.ui.components.Avatar
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.absoluteMediaUrl
@@ -66,34 +66,12 @@ internal fun InitialAvatar(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
 ) {
-    Box(
-        modifier = modifier.size(size),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (avatarUrl != null) {
-                AsyncImage(
-                    model = avatarUrl.absoluteMediaUrl(),
-                    imageLoader = rememberAuthedImageLoader(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    text = name.firstOrNull()?.uppercase() ?: "?",
-                    style = if (size > 50.dp) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-        }
-    }
+    Avatar(
+        name = name,
+        avatarUrl = avatarUrl,
+        modifier = modifier,
+        size = size,
+    )
 }
 
 @Composable

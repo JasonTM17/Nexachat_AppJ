@@ -108,6 +108,17 @@ class RealtimeSessionReArmTest {
     /** Deterministic backoff: the retry strides are the real ones, jitterless. */
     private fun fixedPolicy() = ReconnectPolicy { 0.0 }
 
+    @Test
+    fun `jittered backoff stays within the configured cap and retry budget`() {
+        val maximumJitter = ReconnectPolicy { 0.2 }
+        val minimumJitter = ReconnectPolicy { -0.2 }
+
+        assertEquals(ReconnectPolicy.MAX_DELAY_MS, maximumJitter.delayMillis(Int.MAX_VALUE))
+        assertEquals(12_800L, minimumJitter.delayMillis(Int.MAX_VALUE))
+        assertTrue(maximumJitter.shouldRetry(ReconnectPolicy.MAX_ATTEMPTS - 1))
+        assertFalse(maximumJitter.shouldRetry(ReconnectPolicy.MAX_ATTEMPTS))
+    }
+
     /** Total virtual time of one full retry burst (attempts at 0,1,3,7,15s). */
     private val burstMillis: Long = (1L shl (ReconnectPolicy.MAX_ATTEMPTS - 1)) * 1_000L - 1_000L
 

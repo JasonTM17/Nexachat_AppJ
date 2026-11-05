@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="call_state_calling">Calling…</string>
+    <string name="call_state_incoming">Incoming call</string>
+    <string name="call_state_connecting">Connecting…</string>
+    <string name="call_state_connected">Voice call</string>
+    <string name="call_state_ended">Call ended</string>
+    <string name="call_state_busy">User is busy</string>
+    <string name="call_state_no_answer">No answer</string>
+    <string name="call_state_declined">Call declined</string>
+    <string name="call_state_failed">Call failed</string>
+    <string name="call_mute">Mute</string>
+    <string name="call_unmute">Unmute</string>
+    <string name="call_speaker">Speaker</string>
+    <string name="call_earpiece">Earpiece</string>
+    <string name="call_hang_up">Hang up</string>
+    <string name="call_cancel">Cancel call</string>
+    <string name="call_accept">Accept</string>
+    <string name="call_decline">Decline</string>
+    <string name="call_via_phone">Call via phone</string>
+    <string name="call_phone_unavailable">No phone number is available for this contact.</string>
+    <string name="call_mic_rationale">Microphone access is needed to make an audio call.</string>
+    <string name="call_mic_permission_needed">Allow microphone access to start the call.</string>
+    <string name="call_notifications_permission_needed">Notifications are off. Keep this call screen open to control the call.</string>
+    <string name="call_notifications_rationale">Allow notifications so you can answer and control calls when this screen is closed.</string>
+    <string name="call_permission_continue">Continue</string>
+    <string name="call_permission_cancel">Not now</string>
+    <string name="call_timer_content_description">Call duration %1$s</string>
+    <string name="call_notification_channel">Calls</string>
+    <string name="call_notification_ongoing_channel">Ongoing calls</string>
+    <string name="call_notification_incoming">Incoming voice call</string>
+    <string name="call_notification_ongoing">Voice call in progress</string>
+    <string name="call_notification_accept">Accept</string>
+    <string name="call_notification_decline">Decline</string>
+    <string name="call_notification_hang_up">Hang up</string>
+    <string name="call_peer_fallback">NexaChat call</string>
+    <string name="call_log_missed">Missed voice call</string>
+    <string name="call_log_declined">Declined voice call</string>
+    <string name="call_log_cancelled">Cancelled voice call</string>
+    <string name="call_log_busy">Call not completed: user busy</string>
+    <string name="call_log_failed">Voice call failed</string>
+    <string name="call_log_outgoing_completed">Outgoing voice call · %1$s</string>
+    <string name="call_log_incoming_completed">Incoming voice call · %1$s</string>
+</resources>

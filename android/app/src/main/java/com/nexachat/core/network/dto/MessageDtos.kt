@@ -102,3 +102,9 @@ data class SendMessageRequest(
 data class ReadRequest(
     val upToSeq: Long,
 )
+
+/** `PATCH /conversations/{id}/messages/{messageId}` body (F1). */
+@JsonClass(generateAdapter = true)
+data class EditMessageRequest(
+    val content: String,
+)

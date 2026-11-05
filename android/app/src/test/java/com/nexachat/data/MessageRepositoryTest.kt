@@ -2,6 +2,7 @@ package com.nexachat.data
 
 import app.cash.turbine.test
 import com.nexachat.core.common.ApiError
+import com.nexachat.core.common.Result
 import com.nexachat.core.database.ConversationDao
 import com.nexachat.core.database.ConversationEntity
 import com.nexachat.core.database.MessageDao
@@ -16,6 +17,7 @@ import com.nexachat.core.database.ReactionDao
 import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.dto.AttachmentDto
+import com.nexachat.core.network.dto.EditMessageRequest
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
 import com.nexachat.core.network.dto.ReactionRequest
@@ -35,8 +37,10 @@ import io.mockk.mockk
 import io.mockk.Runs
 import io.mockk.verify
 import java.io.IOException
+import java.time.Instant
 import java.util.Base64
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,6 +83,22 @@ class MessageRepositoryTest {
 
         override suspend fun upsertAll(messages: List<MessageEntity>) {
             messages.forEach { if (!rows.containsKey(it.id)) rows[it.id] = it }
+            bump()
+        }
+
+        override suspend fun update(message: MessageEntity) {
+            if (rows.containsKey(message.id)) {
+                rows[message.id] = message
+                bump()
+            }
+        }
+
+        override suspend fun byId(messageId: String): MessageEntity? = rows[messageId]
+
+        override suspend fun clearReplySnippets(messageId: String) {
+            for ((id, row) in rows.entries.toList()) {
+                if (row.replyToId == messageId) rows[id] = row.copy(replyToSnippet = null)
+            }
             bump()
         }
 
@@ -188,8 +208,28 @@ class MessageRepositoryTest {
                     lastMessageContent = content,
                     lastMessageSenderName = senderName,
                     lastMessageAt = at,
+                    lastMessageDeleted = false,
                 )
             }
+        }
+
+        override suspend fun updateLastMessageContent(
+            conversationId: String,
+            seq: Long,
+            content: String?,
+        ) {
+            val row = rows[conversationId] ?: return
+            if (row.lastMessageSeq == seq) {
+                rows[conversationId] = row.copy(
+                    lastMessageContent = content,
+                    lastMessageDeleted = false,
+                )
+            }
+        }
+
+        override suspend fun markLastMessageDeleted(conversationId: String) {
+            val row = rows[conversationId] ?: return
+            rows[conversationId] = row.copy(lastMessageContent = null, lastMessageDeleted = true)
         }
 
         override suspend fun incrementUnread(conversationId: String, delta: Int) {
@@ -388,6 +428,19 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun `new sends sort after persisted outbox rows despite a clock setback`() = runTest {
+        val persistedTime = System.currentTimeMillis() + 60_000L
+        outboxDao.insert(
+            OutboxEntity("cm-persisted", CONVERSATION_ID, "TEXT", "earlier", null, OutboxState.FAILED, persistedTime),
+        )
+
+        repository.send(CONVERSATION_ID, "later")
+
+        assertTrue(outboxDao.rows.getValue("cm-persisted").createdAt <
+            outboxDao.rows.values.single { it.content == "later" }.createdAt)
+    }
+
+    @Test
     fun `MESSAGE_CREATED with the same clientMessageId completes SENT dedup`() = runTest {
         repository.send(CONVERSATION_ID, "hello")
         val clientId = outboxDao.rows.keys.single()
@@ -476,6 +529,41 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun `REST RATE_LIMITED keeps the outbox row and retries after the window`() = runTest {
+        isOpenFlow.value = false
+        every { session.sendMessage(any(), any()) } returns false
+        var calls = 0
+        coEvery { messageApi.sendMessage(any(), any()) } coAnswers {
+            calls++
+            if (calls == 1) {
+                Response.error(429, "".toResponseBody())
+            } else {
+                Response.success(
+                    messageDto(
+                        id = "m-rate-limited",
+                        clientMessageId = secondArg<SendMessageRequest>().clientMessageId,
+                        senderId = "me-1",
+                    ),
+                )
+            }
+        }
+
+        repository.send(CONVERSATION_ID, "queued after rate limit")
+
+        val outbox = outboxDao.rows.values.single()
+        assertEquals(OutboxState.SENDING, outbox.state)
+        dispatcher.scheduler.advanceTimeBy(9_999)
+        dispatcher.scheduler.runCurrent()
+        assertEquals("retry ran before the 10s server window", 1, calls)
+        dispatcher.scheduler.advanceTimeBy(1)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(2, calls)
+        assertTrue(outboxDao.rows.isEmpty())
+        assertEquals(listOf("m-rate-limited"), messageDao.rows.keys.toList())
+    }
+
+    @Test
     fun `error-queue event marks the matching row FAILED`() = runTest {
         repository.send(CONVERSATION_ID, "hello")
         val clientId = outboxDao.rows.keys.single()
@@ -483,6 +571,21 @@ class MessageRepositoryTest {
         eventsFlow.emit(ChatEvent.SendRejected(code = "NOT_MEMBER", clientMessageId = clientId))
 
         assertEquals(OutboxState.FAILED, outboxDao.rows.values.single().state)
+    }
+
+    @Test
+    fun `error-queue RATE_LIMITED schedules an automatic retry`() = runTest {
+        repository.send(CONVERSATION_ID, "hello")
+        val clientId = outboxDao.rows.keys.single()
+
+        eventsFlow.emit(ChatEvent.SendRejected(code = "RATE_LIMITED", clientMessageId = clientId))
+
+        assertEquals(OutboxState.SENDING, outboxDao.rows.getValue(clientId).state)
+        dispatcher.scheduler.advanceTimeBy(10_000)
+        dispatcher.scheduler.runCurrent()
+
+        verify(exactly = 2) { session.sendMessage(CONVERSATION_ID, any()) }
+        assertEquals(OutboxState.SENDING, outboxDao.rows.getValue(clientId).state)
     }
 
     @Test
@@ -495,6 +598,29 @@ class MessageRepositoryTest {
 
         assertEquals(OutboxState.SENDING, outboxDao.rows.values.single().state)
         verify(atLeast = 2) { session.sendMessage(CONVERSATION_ID, any()) }
+    }
+
+    @Test
+    fun `manual retry joins the tail of the sending queue`() = runTest {
+        outboxDao.insert(
+            OutboxEntity("cm-failed", CONVERSATION_ID, "TEXT", "retry me", null, OutboxState.FAILED, 1L),
+        )
+        outboxDao.insert(
+            OutboxEntity("cm-waiting", CONVERSATION_ID, "TEXT", "older pending", null, OutboxState.SENDING, 2L),
+        )
+        val sentContents = mutableListOf<String>()
+        every { session.sendMessage(any(), any()) } answers {
+            sentContents += secondArg<SendMessageRequest>().content.orEmpty()
+            true
+        }
+
+        repository.retry("cm-failed")
+
+        assertEquals(listOf("older pending", "retry me"), sentContents)
+        assertTrue(
+            outboxDao.rows.getValue("cm-failed").createdAt >
+                outboxDao.rows.getValue("cm-waiting").createdAt,
+        )
     }
 
     @Test
@@ -911,6 +1037,34 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun `history distinguishes absent reactions from an explicit empty list`() = runTest {
+        messageDao.upsert(storedMessage("m-1", seq = 1))
+        val knownReaction = MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)
+        reactionDao.upsertAll(listOf(knownReaction))
+
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
+            Response.success(
+                page(
+                    hasMore = false,
+                    messageDto("m-1", null), // reactions absent: keep the current set
+                ),
+            ),
+            Response.success(
+                page(
+                    hasMore = false,
+                    messageDto("m-1", null).copy(reactions = emptyList()),
+                ),
+            ),
+        )
+
+        repository.refreshHistory(CONVERSATION_ID)
+        assertEquals(listOf(knownReaction), reactionDao.forMessage("m-1"))
+
+        repository.refreshHistory(CONVERSATION_ID)
+        assertTrue(reactionDao.forMessage("m-1").isEmpty())
+    }
+
+    @Test
     fun `refreshPins replaces the conversation pin set from the REST list`() = runTest {
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "stale", pinnedAt = 1L))
         coEvery { messageApi.getPins(CONVERSATION_ID) } returns
@@ -936,6 +1090,361 @@ class MessageRepositoryTest {
             assertTrue(awaitItem() is ApiError.Unknown)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ---- edit / delete / search ----
+
+    @Test
+    fun `edit writes optimistically then applies the authoritative server row`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
+        var captured: EditMessageRequest? = null
+        coEvery { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } answers {
+            captured = thirdArg()
+            Response.success(
+                messageDto("m-1", null, senderId = "me-1").copy(
+                    content = "new",
+                    editedAt = "2026-11-03T10:00:00Z",
+                ),
+            )
+        }
+
+        val result = repository.editMessage(CONVERSATION_ID, "m-1", "  new  ")
+
+        assertTrue(result is Result.Success)
+        assertEquals("new", captured?.content)
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("new", row.content)
+        assertEquals(isoToEpochMsOrNull("2026-11-03T10:00:00Z"), row.editedAtEpochMs)
+    }
+
+    @Test
+    fun `failed edit restores the previous content and editedAt`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
+        coEvery { messageApi.editMessage(any(), any(), any()) } returns
+            Response.error(403, "".toResponseBody())
+
+        val result = repository.editMessage(CONVERSATION_ID, "m-1", "new")
+
+        assertTrue(result is Result.Failure)
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("old", row.content)
+        assertEquals(null, row.editedAtEpochMs)
+    }
+
+    @Test
+    fun `edit response cannot restore an inbox preview after MESSAGE_DELETED`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
+        conversationDao.upsert(conversation(lastMessageSeq = 1, content = "old"))
+        coEvery { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } coAnswers {
+            eventsFlow.emit(
+                ChatEvent.MessageDeleted(
+                    conversationId = CONVERSATION_ID,
+                    messageId = "m-1",
+                    deletedAt = "2026-11-03T11:00:00Z",
+                ),
+            )
+            Response.success(
+                messageDto("m-1", null, senderId = "me-1").copy(
+                    content = "edited",
+                    editedAt = "2026-11-03T10:00:00Z",
+                ),
+            )
+        }
+
+        repository.editMessage(CONVERSATION_ID, "m-1", "edited")
+
+        assertTrue(messageDao.rows.getValue("m-1").deletedAtEpochMs != null)
+        assertEquals(null, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageContent)
+        assertEquals(true, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageDeleted)
+    }
+
+    @Test
+    fun `cancelling an edit rolls back its optimistic row`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
+        coEvery { messageApi.editMessage(any(), any(), any()) } coAnswers {
+            throw CancellationException("test cancellation")
+        }
+
+        try {
+            repository.editMessage(CONVERSATION_ID, "m-1", "edited")
+            org.junit.Assert.fail("expected cancellation")
+        } catch (_: CancellationException) {
+            // expected
+        }
+
+        assertEquals("old", messageDao.rows.getValue("m-1").content)
+        assertEquals(null, messageDao.rows.getValue("m-1").editedAtEpochMs)
+    }
+
+    @Test
+    fun `edit ignores blank, identical and non-owned content`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "same"))
+        messageDao.upsert(storedMessage("m-2", seq = 2)) // peer message
+
+        assertTrue(repository.editMessage(CONVERSATION_ID, "m-1", "   ") is Result.Failure)
+        assertTrue(repository.editMessage(CONVERSATION_ID, "m-1", "same") is Result.Success)
+        assertTrue(repository.editMessage(CONVERSATION_ID, "m-2", "mine now") is Result.Failure)
+
+        coVerify(exactly = 0) { messageApi.editMessage(any(), any(), any()) }
+    }
+
+    @Test
+    fun `MESSAGE_UPDATED applies once and duplicate broadcasts are idempotent`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
+        val event = ChatEvent.MessageUpdated(
+            message = messageDto("m-1", null, senderId = "me-1").copy(
+                content = "edited",
+                editedAt = "2026-11-03T10:00:00Z",
+            ),
+            conversationId = CONVERSATION_ID,
+            serverTs = null,
+        )
+
+        eventsFlow.emit(event)
+        eventsFlow.emit(event)
+
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("edited", row.content)
+        assertEquals(isoToEpochMsOrNull("2026-11-03T10:00:00Z"), row.editedAtEpochMs)
+    }
+
+    @Test
+    fun `MESSAGE_DELETED tombstones the row, drops reactions and the pin`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+
+        eventsFlow.emit(
+            ChatEvent.MessageDeleted(
+                conversationId = CONVERSATION_ID,
+                messageId = "m-1",
+                deletedAt = "2026-11-03T11:00:00Z",
+            ),
+        )
+
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("", row.content)
+        assertEquals(null, row.attachmentsJson)
+        assertEquals(isoToEpochMsOrNull("2026-11-03T11:00:00Z"), row.deletedAtEpochMs)
+        assertTrue(reactionDao.rows.isEmpty())
+        assertTrue(pinDao.rows.isEmpty())
+
+        // A replayed broadcast must keep the FIRST deletion timestamp.
+        eventsFlow.emit(
+            ChatEvent.MessageDeleted(
+                conversationId = CONVERSATION_ID,
+                messageId = "m-1",
+                deletedAt = "2026-11-04T11:00:00Z",
+            ),
+        )
+        assertEquals(
+            isoToEpochMsOrNull("2026-11-03T11:00:00Z"),
+            messageDao.rows.getValue("m-1").deletedAtEpochMs,
+        )
+    }
+
+    @Test
+    fun `history tombstones clear pins reactions replies and inbox preview`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        messageDao.upsert(storedMessage("m-2", seq = 2).copy(
+            replyToId = "m-1",
+            replyToSnippet = "bye",
+        ))
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(
+                page(
+                    hasMore = false,
+                    messageDto("m-1", null, senderId = "me-1").copy(
+                        deletedAt = "2026-11-03T11:00:00Z",
+                        reactions = listOf(ReactionSummaryDto(emoji = "👍", count = 1, reactedByMe = true)),
+                    ),
+                ),
+            )
+
+        repository.refreshHistory(CONVERSATION_ID)
+
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("", row.content)
+        assertEquals(null, row.attachmentsJson)
+        assertTrue(row.deletedAtEpochMs != null)
+        assertTrue(reactionDao.rows.isEmpty())
+        assertTrue(pinDao.rows.isEmpty())
+        assertEquals(null, messageDao.rows.getValue("m-2").replyToSnippet)
+        assertEquals(null, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageContent)
+        assertEquals(true, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageDeleted)
+    }
+
+    @Test
+    fun `delete optimistically tombstones and clears reactions and pin`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        messageDao.upsert(
+            storedMessage("m-2", seq = 2).copy(replyToId = "m-1", replyToSnippet = "bye"),
+        )
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        coEvery { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } returns
+            Response.success(Unit)
+
+        val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
+
+        assertTrue(result is Result.Success)
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("", row.content)
+        assertTrue(row.deletedAtEpochMs != null)
+        assertTrue(reactionDao.rows.isEmpty())
+        assertTrue(pinDao.rows.isEmpty())
+        // A reply pointing at the tombstone falls back to "unavailable".
+        assertEquals(null, messageDao.rows.getValue("m-2").replyToSnippet)
+    }
+
+    @Test
+    fun `failed delete restores the row, reactions and pin`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        coEvery { messageApi.deleteMessage(any(), any()) } returns
+            Response.error(403, "".toResponseBody())
+
+        val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
+
+        assertTrue(result is Result.Failure)
+        val row = messageDao.rows.getValue("m-1")
+        assertEquals("bye", row.content)
+        assertEquals(null, row.deletedAtEpochMs)
+        assertEquals(1, reactionDao.rows.size)
+        assertEquals(1, pinDao.rows.size)
+    }
+
+    @Test
+    fun `delete failure cannot roll back a concurrent MESSAGE_DELETED event`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
+        coEvery { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } coAnswers {
+            eventsFlow.emit(
+                ChatEvent.MessageDeleted(
+                    conversationId = CONVERSATION_ID,
+                    messageId = "m-1",
+                    deletedAt = "2026-11-03T11:00:00Z",
+                ),
+            )
+            Response.error(500, "".toResponseBody())
+        }
+
+        val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
+
+        assertTrue(result is Result.Failure)
+        assertTrue(messageDao.rows.getValue("m-1").deletedAtEpochMs != null)
+        assertTrue(reactionDao.rows.isEmpty())
+        assertTrue(pinDao.rows.isEmpty())
+        assertEquals(null, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageContent)
+        assertEquals(true, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageDeleted)
+    }
+
+    @Test
+    fun `cancelling a delete restores its optimistic state`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        reactionDao.upsertAll(
+            listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
+        )
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
+        coEvery { messageApi.deleteMessage(any(), any()) } coAnswers {
+            throw CancellationException("test cancellation")
+        }
+
+        try {
+            repository.deleteMessage(CONVERSATION_ID, "m-1")
+            org.junit.Assert.fail("expected cancellation")
+        } catch (_: CancellationException) {
+            // expected
+        }
+
+        assertEquals("bye", messageDao.rows.getValue("m-1").content)
+        assertEquals(null, messageDao.rows.getValue("m-1").deletedAtEpochMs)
+        assertEquals(1, reactionDao.rows.size)
+        assertEquals(1, pinDao.rows.size)
+        assertEquals("bye", conversationDao.rows.getValue(CONVERSATION_ID).lastMessageContent)
+        assertEquals(false, conversationDao.rows.getValue(CONVERSATION_ID).lastMessageDeleted)
+    }
+
+    @Test
+    fun `deleting the inbox-last message flips the neutral snippet flag`() = runTest {
+        messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
+        conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
+        coEvery { messageApi.deleteMessage(any(), any()) } returns Response.success(Unit)
+
+        repository.deleteMessage(CONVERSATION_ID, "m-1")
+
+        val row = conversationDao.rows.getValue(CONVERSATION_ID)
+        assertEquals(true, row.lastMessageDeleted)
+        assertEquals(null, row.lastMessageContent)
+    }
+
+    @Test
+    fun `deleting an already deleted message is an idempotent no-op`() = runTest {
+        messageDao.upsert(
+            ownMessage("m-1", seq = 1, content = "").copy(deletedAtEpochMs = 5L),
+        )
+
+        val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
+
+        assertTrue(result is Result.Success)
+        coVerify(exactly = 0) { messageApi.deleteMessage(any(), any()) }
+    }
+
+    @Test
+    fun `search writes through to Room and hydrates the page`() = runTest {
+        coEvery { messageApi.searchMessages(CONVERSATION_ID, "hi", any(), any()) } returns
+            Response.success(
+                MessagePageDto(
+                    items = listOf(
+                        messageDto("m-9", null, seq = 9).copy(content = "hi there"),
+                    ),
+                    nextBeforeSeq = 9,
+                    hasMore = true,
+                ),
+            )
+
+        val result = repository.searchMessages(CONVERSATION_ID, "  hi  ")
+
+        val page = (result as Result.Success).value
+        assertEquals(listOf("m-9"), page.items.map { it.id })
+        assertEquals("hi there", page.items.single().content)
+        assertTrue(page.hasMore)
+        assertEquals(9L, page.nextBeforeSeq)
+        assertEquals("hi there", messageDao.rows.getValue("m-9").content)
+    }
+
+    @Test
+    fun `search below the two-character floor never calls the API`() = runTest {
+        val result = repository.searchMessages(CONVERSATION_ID, " h ")
+
+        assertTrue(result is Result.Success)
+        assertTrue((result as Result.Success).value.items.isEmpty())
+        coVerify(exactly = 0) { messageApi.searchMessages(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `timestamp conversion accepts fractional offset instants and rejects invalid input`() {
+        val expected = Instant.parse("2026-11-03T10:00:00.123456789Z").toEpochMilli()
+
+        assertEquals(expected, isoToEpochMsOrNull("2026-11-03T12:00:00.123456789+02:00"))
+        assertEquals(null, isoToEpochMsOrNull("not-a-timestamp"))
     }
 
     // ---- jump to a message outside the loaded window ----
@@ -1015,6 +1524,36 @@ class MessageRepositoryTest {
         replyToSnippet = null,
         createdAt = seq,
         attachmentsJson = null,
+    )
+
+    private fun ownMessage(id: String, seq: Long, content: String) = MessageEntity(
+        id = id,
+        conversationId = CONVERSATION_ID,
+        seq = seq,
+        senderId = "me-1",
+        senderDisplayName = "Me",
+        type = "TEXT",
+        content = content,
+        clientMessageId = null,
+        replyToId = null,
+        replyToSenderName = null,
+        replyToSnippet = null,
+        createdAt = seq,
+        attachmentsJson = null,
+    )
+
+    private fun conversation(lastMessageSeq: Long, content: String?) = ConversationEntity(
+        id = CONVERSATION_ID,
+        type = "DIRECT",
+        title = null,
+        lastMessageSeq = lastMessageSeq,
+        lastMessageContent = content,
+        lastMessageSenderName = "Me",
+        lastMessageAt = lastMessageSeq,
+        unreadCount = 0,
+        otherUserName = "Lan",
+        otherUserAvatar = null,
+        avatarUrl = null,
     )
 
     private fun dto(entity: MessageEntity) = MessageDto(

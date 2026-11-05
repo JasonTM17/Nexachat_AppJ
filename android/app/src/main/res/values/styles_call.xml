@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NexaChat.Call" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/call_avatar_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">?android:attr/colorBackground</item>
+        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

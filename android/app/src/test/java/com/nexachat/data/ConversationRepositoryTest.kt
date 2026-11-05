@@ -1,6 +1,8 @@
 package com.nexachat.data
 
 import android.content.Context
+import android.content.ContentResolver
+import android.net.Uri
 import app.cash.turbine.test
 import com.nexachat.core.database.ConversationDao
 import com.nexachat.core.database.ConversationEntity
@@ -19,10 +21,13 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import java.util.Base64
+import java.io.InputStream
+import java.util.Arrays
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -47,6 +52,8 @@ class ConversationRepositoryTest {
     private val tokenStore = mockk<TokenStore>()
     private val context = mockk<Context>(relaxed = true)
     private val conversationDao = FakeConversationDao()
+    private val presenceRepository = mockk<PresenceRepository>(relaxed = true)
+    private val presenceFlow = MutableStateFlow<Map<String, PeerPresence>>(emptyMap())
     private val moshi = Moshi.Builder().build()
     private val chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 8)
 
@@ -60,6 +67,7 @@ class ConversationRepositoryTest {
     fun setUp() {
         every { session.events } returns chatEvents
         every { session.resyncRequests } returns MutableSharedFlow()
+        every { presenceRepository.presences } returns presenceFlow
         coEvery { tokenStore.readTokens() } returns
             TokenStore.Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
     }
@@ -71,6 +79,7 @@ class ConversationRepositoryTest {
             messageApi = messageApi,
             groupApi = groupApi,
             conversationDao = conversationDao,
+            presenceRepository = presenceRepository,
             session = session,
             tokenStore = tokenStore,
             moshi = moshi,
@@ -189,7 +198,7 @@ class ConversationRepositoryTest {
 
         // Pruning is only safe while this call carries no limit/cursor: an
         // optional-paging server would otherwise return page 1 only.
-        coVerify(exactly = 1) { messageApi.getConversations(limit = null, beforeSeq = null) }
+        coVerify(exactly = 1) { messageApi.getConversations(limit = null, cursor = null) }
     }
 
     @Test
@@ -205,6 +214,116 @@ class ConversationRepositoryTest {
         repository.refreshInbox()
 
         assertEquals(setOf("conv-a", "conv-b"), conversationDao.rows.keys)
+    }
+
+    @Test
+    fun `groupDetail follows the response cursor to later inbox pages`() = runTest {
+        buildRepository()
+        val firstPage = """[{"id":"conv-first","type":"GROUP","title":"First","members":[]}]"""
+        val secondPage = """[{"id":"conv-target","type":"GROUP","title":"Target","members":[]}]"""
+        val headers = okhttp3.Headers.Builder()
+            .add("X-Next-Cursor", "cursor-page-2")
+            .build()
+        coEvery {
+            messageApi.getConversations(limit = 100, cursor = null)
+        } returns Response.success(firstPage.toResponseBody(), headers)
+        coEvery {
+            messageApi.getConversations(limit = 100, cursor = "cursor-page-2")
+        } returns Response.success(secondPage.toResponseBody())
+
+        val result = repository.groupDetail("conv-target")
+
+        assertEquals("Target", (result as com.nexachat.core.common.Result.Success).value.title)
+        coVerify(exactly = 1) { messageApi.getConversations(limit = 100, cursor = null) }
+        coVerify(exactly = 1) {
+            messageApi.getConversations(limit = 100, cursor = "cursor-page-2")
+        }
+    }
+
+    @Test
+    fun `group avatar read stops after the configured byte cap`() = runTest {
+        buildRepository()
+        val uri = mockk<Uri>()
+        val maxBytes = 25 * 1024 * 1024
+        var consumed = 0
+        val input = object : InputStream() {
+            override fun read(): Int = if (consumed++ < maxBytes * 2) 0 else -1
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                val remaining = maxBytes * 2 - consumed
+                if (remaining <= 0) return -1
+                val count = minOf(length, remaining)
+                Arrays.fill(buffer, offset, offset + count, 0.toByte())
+                consumed += count
+                return count
+            }
+        }
+        val resolver = mockk<ContentResolver>()
+        every { context.contentResolver } returns resolver
+        every { resolver.openInputStream(uri) } returns input
+
+        val result = repository.setGroupAvatar("conv-g", uri)
+
+        assertTrue(result is com.nexachat.core.common.Result.Failure)
+        assertTrue(consumed <= maxBytes + 64 * 1024)
+        io.mockk.coVerify(exactly = 0) { groupApi.uploadAvatar(any(), any()) }
+    }
+
+    @Test
+    fun `a DIRECT row seeds peer presence and exposes it on the summary`() = runTest {
+        buildRepository()
+        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+            """
+            [{"id":"conv-d","type":"DIRECT",
+              "otherUser":{"userId":"u-peer","displayName":"Peer"},
+              "peerPresence":{"online":true,"lastSeenAt":null}}]
+            """.trimIndent().toResponseBody(),
+        )
+
+        repository.refreshInbox()
+        presenceFlow.value = mapOf("u-peer" to PeerPresence(online = true, lastSeenAtEpochMs = null))
+        val summary = repository.inboxFlow().first().single()
+
+        assertEquals("u-peer", summary.otherUserId)
+        assertEquals(PeerPresence(true, null), summary.peerPresence)
+        coVerify { presenceRepository.seed(mapOf("u-peer" to PeerPresence(true, null))) }
+    }
+
+    @Test
+    fun `a deleted last message is flagged for the neutral inbox snippet`() = runTest {
+        buildRepository()
+        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+            """
+            [{"id":"conv-d","type":"DIRECT",
+              "lastMessageSeq":7,
+              "lastMessage":{"seq":7,"type":"TEXT","content":null,
+                             "deletedAt":"2026-11-03T11:00:00Z"}}]
+            """.trimIndent().toResponseBody(),
+        )
+
+        repository.refreshInbox()
+        val summary = repository.inboxFlow().first().single()
+
+        assertEquals(true, summary.lastMessageDeleted)
+        assertEquals(null, summary.lastMessageContent)
+    }
+
+    @Test
+    fun `a DIRECT row without peer presence clears the stale presence seed`() = runTest {
+        buildRepository()
+        presenceFlow.value = mapOf("u-peer" to PeerPresence(online = true, lastSeenAtEpochMs = null))
+        every { presenceRepository.clear(any()) } answers {
+            presenceFlow.value = presenceFlow.value - firstArg<String>()
+        }
+        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+            """[{"id":"conv-d","type":"DIRECT","otherUser":{"userId":"u-peer"}}]"""
+                .toResponseBody(),
+        )
+
+        repository.refreshInbox()
+
+        assertTrue("stale peer presence remained visible", presenceFlow.value.isEmpty())
+        io.mockk.verify { presenceRepository.clear("u-peer") }
     }
 
     @Test
@@ -312,8 +431,28 @@ class ConversationRepositoryTest {
                     lastMessageContent = content,
                     lastMessageSenderName = senderName,
                     lastMessageAt = at,
+                    lastMessageDeleted = false,
                 )
             }
+        }
+
+        override suspend fun updateLastMessageContent(
+            conversationId: String,
+            seq: Long,
+            content: String?,
+        ) {
+            val row = rows[conversationId] ?: return
+            if (row.lastMessageSeq == seq) {
+                rows[conversationId] = row.copy(
+                    lastMessageContent = content,
+                    lastMessageDeleted = false,
+                )
+            }
+        }
+
+        override suspend fun markLastMessageDeleted(conversationId: String) {
+            val row = rows[conversationId] ?: return
+            rows[conversationId] = row.copy(lastMessageContent = null, lastMessageDeleted = true)
         }
 
         override suspend fun incrementUnread(conversationId: String, delta: Int) {

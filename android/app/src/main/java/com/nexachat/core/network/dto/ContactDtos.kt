@@ -64,7 +64,14 @@ data class ContactEnvelopeDto(
     val createdAt: String? = null,
 ) {
     fun unwrap(): ContactDto =
-        contact ?: ContactDto(contactUserId, userId, phone, displayName, aliasName, createdAt)
+        contact ?: ContactDto(
+            contactUserId = contactUserId,
+            userId = userId,
+            phone = phone,
+            displayName = displayName,
+            aliasName = aliasName,
+            createdAt = createdAt,
+        )
 }
 
 @JsonClass(generateAdapter = true)

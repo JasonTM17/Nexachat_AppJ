@@ -53,3 +53,22 @@ data class SendErrorDto(
     val clientMessageId: String? = null,
     val message: String? = null,
 )
+
+/** `MESSAGE_DELETED` payload (F2): `{messageId, deletedAt}`. */
+@JsonClass(generateAdapter = true)
+data class MessageDeletedDto(
+    val messageId: String? = null,
+    val deletedAt: String? = null,
+)
+
+/**
+ * `USER_ONLINE`/`USER_OFFLINE` payload (F3), delivered on
+ * `/user/queue/presence`: `{userId, online, lastSeenAt}`. [online] mirrors
+ * the event type but is tolerated as absent (older server builds).
+ */
+@JsonClass(generateAdapter = true)
+data class PresenceEventDto(
+    val userId: String? = null,
+    val online: Boolean? = null,
+    val lastSeenAt: String? = null,
+)

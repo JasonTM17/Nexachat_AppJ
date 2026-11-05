@@ -1,6 +1,23 @@
-# NexaChat ProGuard rules — release builds currently run with minify disabled.
-# Enable isMinifyEnabled only after adding keep rules for:
-#   - Moshi-generated adapters (handled by moshi-kotlin-codegen + its bundled rules)
-#   - Retrofit service interfaces / DTOs
-#   - Room entities and DAOs (Room ships consumer rules; verify before enabling)
-#   - STOMP frame models (reflection-free, but confirm after implementation)
+# Retrofit discovers service methods from runtime annotations and generic types.
+-keepattributes Signature,RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,AnnotationDefault
+-keep interface com.nexachat.core.network.*Api { *; }
+# This Retrofit API is nested under CallRepository, so it does not match the
+# core.network package rule above.
+-keep interface com.nexachat.call.core.CallRepository$Api { *; }
+
+# Moshi uses KSP-generated adapters for REST and STOMP DTOs. Preserve DTO names
+# and generated adapter classes because Moshi resolves generated adapters by name.
+-keep @com.squareup.moshi.JsonClass class com.nexachat.core.network.dto.** { *; }
+-keep class com.nexachat.core.network.dto.**JsonAdapter { *; }
+-keep @com.squareup.moshi.JsonClass class com.nexachat.core.network.stomp.dto.** { *; }
+-keep class com.nexachat.core.network.stomp.dto.**JsonAdapter { *; }
+
+# Room's runtime schema/DAO discovery depends on the entity and database types.
+-keep class com.nexachat.core.database.** { *; }
+
+# Hilt's application entry point is named by the Android manifest. Hilt modules
+# and generated components use direct references and the library's consumer rules.
+-keep class com.nexachat.NexaChatApp { *; }
+
+# Stream WebRTC resolves native bridge classes by name at runtime.
+-keep class org.webrtc.** { *; }

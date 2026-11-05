@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -20,6 +21,21 @@ interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun upsertAll(messages: List<MessageEntity>)
+
+    /** Full-row replace for an optimistic edit/delete and its restore path. */
+    @Update
+    suspend fun update(message: MessageEntity)
+
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    suspend fun byId(messageId: String): MessageEntity?
+
+    /**
+     * A tombstoned message can no longer be quoted: clear the embedded preview
+     * on every reply that points at it, so the "unavailable" render is honest
+     * immediately rather than after the next history page.
+     */
+    @Query("UPDATE messages SET replyToSnippet = NULL WHERE replyToId = :messageId")
+    suspend fun clearReplySnippets(messageId: String)
 
     /** Chronological stream for one conversation — UI sorts by `seq`, not time. */
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY seq ASC")
@@ -84,7 +100,7 @@ interface ConversationDao {
      */
     @Query(
         "UPDATE conversations SET lastMessageSeq = :seq, lastMessageContent = :content, " +
-            "lastMessageSenderName = :senderName, lastMessageAt = :at " +
+            "lastMessageSenderName = :senderName, lastMessageAt = :at, lastMessageDeleted = 0 " +
             "WHERE id = :conversationId AND :seq > lastMessageSeq",
     )
     suspend fun updateLastMessage(
@@ -94,6 +110,23 @@ interface ConversationDao {
         senderName: String?,
         at: Long,
     )
+
+    /**
+     * Edited last message → refresh the inbox snippet in place. Guarded on the
+     * same `seq` so a racing newer message keeps its own preview.
+     */
+    @Query(
+        "UPDATE conversations SET lastMessageContent = :content, lastMessageDeleted = 0 " +
+            "WHERE id = :conversationId AND lastMessageSeq = :seq",
+    )
+    suspend fun updateLastMessageContent(conversationId: String, seq: Long, content: String?)
+
+    /** Deleted last message → neutral snippet (the UI localizes the label). */
+    @Query(
+        "UPDATE conversations SET lastMessageContent = NULL, lastMessageDeleted = 1 " +
+            "WHERE id = :conversationId",
+    )
+    suspend fun markLastMessageDeleted(conversationId: String)
 
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     suspend fun incrementUnread(conversationId: String, delta: Int)

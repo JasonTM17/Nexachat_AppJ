@@ -30,7 +30,7 @@ class ReconnectPolicy @Inject constructor() {
         val shift = (failedAttempts - 1).coerceIn(0, MAX_SHIFT)
         val base = BASE_MS shl shift
         val jittered = base * (1 + jitterSource())
-        return jittered.toLong().coerceAtLeast(MIN_DELAY_MS)
+        return jittered.toLong().coerceIn(MIN_DELAY_MS, MAX_DELAY_MS)
     }
 
     /** Whether another attempt is allowed after [failedAttempts] failures. */

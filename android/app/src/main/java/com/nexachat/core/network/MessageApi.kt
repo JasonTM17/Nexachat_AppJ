@@ -2,6 +2,7 @@ package com.nexachat.core.network
 
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
+import com.nexachat.core.network.dto.EditMessageRequest
 import com.nexachat.core.network.dto.PinRequest
 import com.nexachat.core.network.dto.ReactionRequest
 import com.nexachat.core.network.dto.ReactionUpdateDto
@@ -12,6 +13,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -20,18 +22,17 @@ import retrofit2.http.Query
  * `/api/v1/conversations…` message endpoints (plan §10.2). Same `Response<T>`
  * convention as [AuthApi]/[UserApi] so callers see status + error envelope.
  *
- * [getConversations] deliberately returns the raw [ResponseBody]: the frozen
- * contract lists `beforeSeq`/`limit` params (suggesting a
- * `{items,nextBeforeSeq,hasMore}` envelope) but a bare JSON array is an
- * equally plausible server build — the repository decides after one lookahead
- * character instead of gambling on one shape.
+ * [getConversations] deliberately returns the raw [ResponseBody]: the server
+ * returns a bare array and, for paged requests, places the opaque next cursor
+ * in the `X-Next-Cursor` response header. The repository reads that header
+ * alongside the body.
  */
 interface MessageApi {
 
     @GET("api/v1/conversations")
     suspend fun getConversations(
-        @Query("beforeSeq") beforeSeq: Long? = null,
         @Query("limit") limit: Int? = null,
+        @Query("cursor") cursor: String? = null,
     ): Response<ResponseBody>
 
     /**
@@ -60,6 +61,33 @@ interface MessageApi {
         @Path("id") conversationId: String,
         @Body body: ReadRequest,
     ): Response<Unit>
+
+    /**
+     * Edit (F1): author only, TEXT only, non-deleted. The response is the
+     * hydrated message with `editedAt` set.
+     */
+    @PATCH("api/v1/conversations/{id}/messages/{messageId}")
+    suspend fun editMessage(
+        @Path("id") conversationId: String,
+        @Path("messageId") messageId: String,
+        @Body body: EditMessageRequest,
+    ): Response<MessageDto>
+
+    /** Soft delete for everyone (F2) — 204, idempotent, author only. */
+    @DELETE("api/v1/conversations/{id}/messages/{messageId}")
+    suspend fun deleteMessage(
+        @Path("id") conversationId: String,
+        @Path("messageId") messageId: String,
+    ): Response<Unit>
+
+    /** Search inside one conversation (F4) — newest-first, member only. */
+    @GET("api/v1/conversations/{id}/messages/search")
+    suspend fun searchMessages(
+        @Path("id") conversationId: String,
+        @Query("q") query: String,
+        @Query("limit") limit: Int = DEFAULT_SEARCH_LIMIT,
+        @Query("beforeSeq") beforeSeq: Long? = null,
+    ): Response<MessagePageDto>
 
     // ---- phase-10 interactions ----
 
@@ -99,5 +127,8 @@ interface MessageApi {
 
     companion object {
         const val DEFAULT_PAGE_SIZE = 30
+
+        /** Server cap for F4 search is 50; the default page is 20. */
+        const val DEFAULT_SEARCH_LIMIT = 20
     }
 }

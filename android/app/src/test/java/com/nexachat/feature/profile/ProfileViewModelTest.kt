@@ -6,10 +6,13 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.network.dto.UserDto
 import com.nexachat.data.AuthRepository
 import com.nexachat.data.ContactsRepository
+import com.nexachat.data.SettingsRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -27,6 +30,8 @@ class ProfileViewModelTest {
 
     private val contactsRepository: ContactsRepository = mockk()
     private val authRepository: AuthRepository = mockk()
+    private val settingsRepository: SettingsRepository = mockk()
+    private val showPresenceFlow = MutableStateFlow(true)
 
     private val me = UserDto(
         id = "me-1",
@@ -40,7 +45,8 @@ class ProfileViewModelTest {
         meResult: Result<UserDto> = Result.Success(me),
     ): ProfileViewModel {
         coEvery { contactsRepository.getMe() } returns meResult
-        return ProfileViewModel(contactsRepository, authRepository)
+        every { settingsRepository.showPresence } returns showPresenceFlow
+        return ProfileViewModel(contactsRepository, authRepository, settingsRepository)
     }
 
     @Test
@@ -263,5 +269,29 @@ class ProfileViewModelTest {
 
         coVerify(exactly = 0) { contactsRepository.uploadAvatar(other) }
         assertEquals(withAvatar, viewModel.uiState.value.user)
+    }
+
+    @Test
+    fun `presence toggle delegates to the settings repository`() = runTest {
+        coEvery { settingsRepository.setShowPresence(any()) } returns Result.Success(Unit)
+        val viewModel = createViewModel()
+
+        viewModel.setShowPresence(false)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { settingsRepository.setShowPresence(false) }
+        assertNull(viewModel.uiState.value.saveError)
+    }
+
+    @Test
+    fun `a rejected presence toggle surfaces the error`() = runTest {
+        coEvery { settingsRepository.setShowPresence(any()) } returns
+            Result.Failure(ApiError.RateLimited)
+        val viewModel = createViewModel()
+
+        viewModel.setShowPresence(false)
+        advanceUntilIdle()
+
+        assertEquals(ApiError.RateLimited, viewModel.uiState.value.saveError)
     }
 }

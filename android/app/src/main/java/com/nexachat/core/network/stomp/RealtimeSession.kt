@@ -9,6 +9,8 @@ import com.nexachat.core.network.dto.ReactionSummaryDto
 import com.nexachat.core.network.dto.ReactionUpdateDto
 import com.nexachat.core.network.dto.SendMessageRequest
 import com.nexachat.core.network.stomp.dto.ReadUpdateDto
+import com.nexachat.core.network.stomp.dto.MessageDeletedDto
+import com.nexachat.core.network.stomp.dto.PresenceEventDto
 import com.nexachat.core.network.stomp.dto.SendErrorDto
 import com.nexachat.core.network.stomp.dto.TypingSignalDto
 import com.nexachat.core.network.stomp.dto.WsEnvelope
@@ -39,8 +41,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Typed realtime events decoded from the WS envelope (plan §11.2). Event
- * types the client does not consume yet (MESSAGE_UPDATED, presence, …)
- * collapse into [Unknown] — forward-compatible by design.
+ * types the client does not consume collapse into [Unknown] —
+ * forward-compatible by design: an unrecognised push is ignored, never fatal.
  */
 sealed interface ChatEvent {
     val conversationId: String?
@@ -50,6 +52,30 @@ sealed interface ChatEvent {
         override val conversationId: String?,
         val serverTs: String?,
     ) : ChatEvent
+
+    /** `MESSAGE_UPDATED` (F1): the full hydrated message after an edit. */
+    data class MessageUpdated(
+        val message: MessageDto,
+        override val conversationId: String?,
+        val serverTs: String?,
+    ) : ChatEvent
+
+    /** `MESSAGE_DELETED` (F2): `{messageId, deletedAt}` — soft delete. */
+    data class MessageDeleted(
+        override val conversationId: String?,
+        val messageId: String?,
+        val deletedAt: String?,
+    ) : ChatEvent
+
+    /** `USER_ONLINE`/`USER_OFFLINE` (F3) on `/user/queue/presence`. */
+    data class Presence(
+        val userId: String?,
+        val online: Boolean,
+        val lastSeenAt: String?,
+        val serverTs: String? = null,
+    ) : ChatEvent {
+        override val conversationId: String? get() = null
+    }
 
     data class UserTyping(
         override val conversationId: String?,
@@ -141,6 +167,8 @@ class RealtimeSession @Inject constructor(
     private val sendErrorAdapter = moshi.adapter(SendErrorDto::class.java)
     private val reactionAdapter = moshi.adapter(ReactionUpdateDto::class.java)
     private val pinAdapter = moshi.adapter(PinUpdateDto::class.java)
+    private val messageDeletedAdapter = moshi.adapter(MessageDeletedDto::class.java)
+    private val presenceAdapter = moshi.adapter(PresenceEventDto::class.java)
     private val mapAdapter = moshi.adapter<Map<String, Any?>>(
         Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java),
     )
@@ -187,6 +215,9 @@ class RealtimeSession @Inject constructor(
     init {
         wantedSubscriptions += USER_INBOX_DESTINATION
         wantedSubscriptions += USER_ERRORS_DESTINATION
+        // Presence must be subscribed before the first peer event can land;
+        // re-subscribed on every Open like the other user queues.
+        wantedSubscriptions += USER_PRESENCE_DESTINATION
         scope.launch { observeTokens() }
         scope.launch { observeNetworkRegain() }
         scope.launch { collectFrames() }
@@ -444,6 +475,39 @@ class RealtimeSession @Inject constructor(
                 displayName = signal?.displayName,
             )
         }
+        EVENT_MESSAGE_UPDATED -> {
+            val message = envelope.payloadJson()
+                ?.let { runCatching { messageAdapter.fromJson(it) }.getOrNull() }
+            if (message != null) {
+                ChatEvent.MessageUpdated(
+                    message = message,
+                    conversationId = envelope.conversationId ?: message.conversationId,
+                    serverTs = envelope.serverTs,
+                )
+            } else {
+                ChatEvent.Unknown(envelope.eventType, envelope.conversationId)
+            }
+        }
+        EVENT_MESSAGE_DELETED -> {
+            val update = envelope.payloadJson()
+                ?.let { runCatching { messageDeletedAdapter.fromJson(it) }.getOrNull() }
+            ChatEvent.MessageDeleted(
+                conversationId = envelope.conversationId,
+                messageId = update?.messageId,
+                deletedAt = update?.deletedAt,
+            )
+        }
+        EVENT_USER_ONLINE, EVENT_USER_OFFLINE -> {
+            val presence = envelope.payloadJson()
+                ?.let { runCatching { presenceAdapter.fromJson(it) }.getOrNull() }
+            ChatEvent.Presence(
+                userId = presence?.userId,
+                // The event type is authoritative when the payload omits the flag.
+                online = presence?.online ?: (envelope.eventType == EVENT_USER_ONLINE),
+                lastSeenAt = presence?.lastSeenAt,
+                serverTs = envelope.serverTs,
+            )
+        }
         EVENT_MESSAGE_READ -> {
             val update = envelope.payloadJson()
                 ?.let { runCatching { readAdapter.fromJson(it) }.getOrNull() }
@@ -489,8 +553,13 @@ class RealtimeSession @Inject constructor(
         const val TOPIC_PREFIX = "/topic/conversations."
         const val USER_INBOX_DESTINATION = "/user/queue/inbox"
         const val USER_ERRORS_DESTINATION = "/user/queue/errors"
+        const val USER_PRESENCE_DESTINATION = "/user/queue/presence"
 
         const val EVENT_MESSAGE_CREATED = "MESSAGE_CREATED"
+        const val EVENT_MESSAGE_UPDATED = "MESSAGE_UPDATED"
+        const val EVENT_MESSAGE_DELETED = "MESSAGE_DELETED"
+        const val EVENT_USER_ONLINE = "USER_ONLINE"
+        const val EVENT_USER_OFFLINE = "USER_OFFLINE"
         const val EVENT_USER_TYPING = "USER_TYPING"
         const val EVENT_MESSAGE_READ = "MESSAGE_READ"
         const val EVENT_CONVERSATION_UPDATED = "CONVERSATION_UPDATED"

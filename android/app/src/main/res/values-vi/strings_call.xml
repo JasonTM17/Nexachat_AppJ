@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="call_state_calling">Đang gọi…</string>
+    <string name="call_state_incoming">Cuộc gọi đến</string>
+    <string name="call_state_connecting">Đang kết nối…</string>
+    <string name="call_state_connected">Cuộc gọi thoại</string>
+    <string name="call_state_ended">Cuộc gọi đã kết thúc</string>
+    <string name="call_state_busy">Người dùng đang bận</string>
+    <string name="call_state_no_answer">Không trả lời</string>
+    <string name="call_state_declined">Đã từ chối cuộc gọi</string>
+    <string name="call_state_failed">Cuộc gọi thất bại</string>
+    <string name="call_mute">Tắt mic</string>
+    <string name="call_unmute">Bật mic</string>
+    <string name="call_speaker">Loa ngoài</string>
+    <string name="call_earpiece">Loa trong</string>
+    <string name="call_hang_up">Kết thúc</string>
+    <string name="call_cancel">Hủy cuộc gọi</string>
+    <string name="call_accept">Trả lời</string>
+    <string name="call_decline">Từ chối</string>
+    <string name="call_via_phone">Gọi qua điện thoại</string>
+    <string name="call_phone_unavailable">Không có số điện thoại của liên hệ này.</string>
+    <string name="call_mic_rationale">Cần quyền truy cập micrô để thực hiện cuộc gọi thoại.</string>
+    <string name="call_mic_permission_needed">Hãy cho phép truy cập micrô để bắt đầu cuộc gọi.</string>
+    <string name="call_notifications_permission_needed">Thông báo đang tắt. Hãy giữ màn hình cuộc gọi mở để điều khiển.</string>
+    <string name="call_notifications_rationale">Cho phép thông báo để bạn có thể trả lời và điều khiển cuộc gọi khi đóng màn hình này.</string>
+    <string name="call_permission_continue">Tiếp tục</string>
+    <string name="call_permission_cancel">Để sau</string>
+    <string name="call_timer_content_description">Thời lượng cuộc gọi %1$s</string>
+    <string name="call_notification_channel">Cuộc gọi</string>
+    <string name="call_notification_ongoing_channel">Cuộc gọi đang diễn ra</string>
+    <string name="call_notification_incoming">Cuộc gọi thoại đến</string>
+    <string name="call_notification_ongoing">Đang trong cuộc gọi thoại</string>
+    <string name="call_notification_accept">Trả lời</string>
+    <string name="call_notification_decline">Từ chối</string>
+    <string name="call_notification_hang_up">Kết thúc</string>
+    <string name="call_peer_fallback">Cuộc gọi NexaChat</string>
+    <string name="call_log_missed">Cuộc gọi thoại nhỡ</string>
+    <string name="call_log_declined">Cuộc gọi thoại bị từ chối</string>
+    <string name="call_log_cancelled">Cuộc gọi thoại đã hủy</string>
+    <string name="call_log_busy">Không gọi được: người dùng đang bận</string>
+    <string name="call_log_failed">Cuộc gọi thoại thất bại</string>
+    <string name="call_log_outgoing_completed">Cuộc gọi thoại đi · %1$s</string>
+    <string name="call_log_incoming_completed">Cuộc gọi thoại đến · %1$s</string>
+</resources>

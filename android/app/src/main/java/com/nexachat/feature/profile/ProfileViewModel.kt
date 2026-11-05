@@ -8,6 +8,7 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.network.dto.UserDto
 import com.nexachat.data.AuthRepository
 import com.nexachat.data.ContactsRepository
+import com.nexachat.data.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 class ProfileViewModel @Inject constructor(
     private val contactsRepository: ContactsRepository,
     private val authRepository: AuthRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     data class UiState(
@@ -55,6 +57,9 @@ class ProfileViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    /** Presence privacy toggle (F3) — server-backed, optimistic in the repo. */
+    val showPresence: StateFlow<Boolean> = settingsRepository.showPresence
 
     init {
         load()
@@ -186,6 +191,20 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun consumeAvatarError() = _uiState.update { it.copy(avatarError = null) }
+
+    /**
+     * Privacy switch (F3). The repository flips the value optimistically and
+     * reverts on failure; the error lands in the same `saveError` slot the
+     * profile name edit uses.
+     */
+    fun setShowPresence(value: Boolean) {
+        viewModelScope.launch {
+            when (val result = settingsRepository.setShowPresence(value)) {
+                is Result.Success -> _uiState.update { it.copy(saveError = null) }
+                is Result.Failure -> _uiState.update { it.copy(saveError = result.error) }
+            }
+        }
+    }
 
     /** Clears the session locally and broadcasts LoggedOut — nav reacts globally. */
     fun logout() {

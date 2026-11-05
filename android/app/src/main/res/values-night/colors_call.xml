@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="call_avatar_background">#C0CCFF</color>
+    <color name="call_avatar_foreground">#152549</color>
+    <color name="call_avatar_bg_0">#312E81</color>
+    <color name="call_avatar_fg_0">#E0E7FF</color>
+    <color name="call_avatar_bg_1">#1E3A8A</color>
+    <color name="call_avatar_fg_1">#DBEAFE</color>
+    <color name="call_avatar_bg_2">#164E63</color>
+    <color name="call_avatar_fg_2">#CFFAFE</color>
+    <color name="call_avatar_bg_3">#134E4A</color>
+    <color name="call_avatar_fg_3">#CCFBF1</color>
+    <color name="call_avatar_bg_4">#064E3B</color>
+    <color name="call_avatar_fg_4">#D1FAE5</color>
+    <color name="call_avatar_bg_5">#78350F</color>
+    <color name="call_avatar_fg_5">#FEF3C7</color>
+    <color name="call_avatar_bg_6">#881337</color>
+    <color name="call_avatar_fg_6">#FFE4E6</color>
+    <color name="call_avatar_bg_7">#581C87</color>
+    <color name="call_avatar_fg_7">#F3E8FF</color>
+    <color name="call_accept_background">#216E4E</color>
+    <color name="call_decline_background">#B3261E</color>
+    <color name="call_end_background">#B3261E</color>
+</resources>

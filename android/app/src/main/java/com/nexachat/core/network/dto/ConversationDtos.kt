@@ -21,16 +21,24 @@ data class ConversationInboxDto(
     val lastMessageSenderName: String? = null,
     val lastMessageAt: String? = null,
     val unreadCount: Int? = null,
+    /** Caller read watermark from the current InboxEntry response. */
+    val lastReadSeq: Long? = null,
     val otherUser: OtherUserDto? = null,
     val otherUserName: String? = null,
     val otherUserAvatar: String? = null,
     /** The conversation's own avatar (GROUP rows) — absent on older servers. */
     val avatarUrl: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
+    /** DIRECT peer presence seed (F3); null for groups / hidden presence. */
+    val peerPresence: PeerPresenceDto? = null,
 ) {
     fun resolvedLastContent(): String? =
-        lastMessage?.content ?: lastMessage?.contentSnippet ?: lastMessageContent
-            ?: lastMessage?.type
+        if (lastMessage?.deletedAt != null) {
+            null
+        } else {
+            lastMessage?.content ?: lastMessage?.contentSnippet ?: lastMessageContent
+                ?: lastMessage?.type
+        }
 
     fun resolvedLastSender(): String? =
         lastMessage?.senderDisplayName ?: lastMessage?.senderName ?: lastMessageSenderName
@@ -43,6 +51,11 @@ data class ConversationInboxDto(
     fun resolvedOtherName(myUserId: String?): String? =
         otherUser?.displayName ?: otherUserName
             ?: members.firstOrNull { it.userId != null && it.userId != myUserId }?.displayName
+
+    /** Peer user id for DIRECT rows — keys the presence map. */
+    fun resolvedOtherId(myUserId: String?): String? =
+        otherUser?.userId
+            ?: members.firstOrNull { it.userId != null && it.userId != myUserId }?.userId
 
     /**
      * The member-≠-self fallback is DIRECT-only — a group row must never
@@ -71,6 +84,19 @@ data class InboxLastMessageDto(
     val senderName: String? = null,
     val senderDisplayName: String? = null,
     val createdAt: String? = null,
+    /** Set when the last message was soft-deleted; `content` is then null. */
+    val deletedAt: String? = null,
+)
+
+/**
+ * Peer presence seed on a DIRECT inbox row (F3). Omitted entirely for groups
+ * and when the peer hides their presence — [online] is then false and
+ * [lastSeenAt] null, so callers must not read absence as "offline".
+ */
+@JsonClass(generateAdapter = true)
+data class PeerPresenceDto(
+    val online: Boolean? = null,
+    val lastSeenAt: String? = null,
 )
 
 /** Nested `otherUser` projection variant for [ConversationInboxDto]. */
@@ -82,13 +108,13 @@ data class OtherUserDto(
 )
 
 /**
- * Envelope variant for the inbox list when the server mirrors the
- * `{items, nextBeforeSeq, hasMore}` convention of the messages endpoint.
- * ConversationRepository tolerates a bare JSON array as well.
+ * Legacy envelope variant for inbox pages. The current server returns a bare
+ * array and puts the opaque cursor in `X-Next-Cursor`; this remains tolerant of
+ * older builds that put paging metadata in the body.
  */
 @JsonClass(generateAdapter = true)
 data class ConversationsPageDto(
     val items: List<ConversationInboxDto> = emptyList(),
-    val nextBeforeSeq: Long? = null,
+    val nextCursor: String? = null,
     val hasMore: Boolean = false,
 )

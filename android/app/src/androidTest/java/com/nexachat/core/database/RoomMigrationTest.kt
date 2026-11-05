@@ -19,16 +19,15 @@ import org.junit.runner.RunWith
  * Instrumented proof that the Room migration chain is real.
  *
  * Two complementary checks:
- *  - [v6SchemaCreatesFromExportedJson] — the checked-in
- *    `schemas/…/6.json` must be usable by `MigrationTestHelper`, which is what
+ *  - [v7SchemaCreatesFromExportedJson] — the checked-in
+ *    `schemas/…/7.json` must be usable by `MigrationTestHelper`, which is what
  *    makes every future migration testable;
- *  - [migrateV1ToV6PreservesRowsAndBackfillsColumns] and
- *    [migrateV5ToV6AddsNullableRoleWithoutTouchingTheRest] — a hand-written
- *    legacy database (the schema as it shipped) is opened through
- *    [AppDatabase] with the production migrations. Room validates the
- *    resulting tables against the entities on open, so a wrong
- *    `ALTER`/index name fails here, and the assertions pin the data the
- *    upgrade must preserve.
+ *  - [migrateV1ToV7PreservesRowsAndBackfillsColumns] and
+ *    [migrateV6ToV7AddsEditDeleteAndInboxColumns] — a hand-written legacy
+ *    database (the schema as it shipped) is opened through [AppDatabase] with
+ *    the production migrations. Room validates the resulting tables against
+ *    the entities on open, so a wrong `ALTER`/index name fails here, and the
+ *    assertions pin the data the upgrade must preserve.
  *
  * The legacy DDL is intentionally literal: it is a snapshot of shipped
  * versions, not a second source of truth to keep in sync with the entities.
@@ -51,12 +50,12 @@ class RoomMigrationTest {
     }
 
     @Test
-    fun v6SchemaCreatesFromExportedJson() {
-        helper.createDatabase(EXPORTED_DB, 6).close()
+    fun v7SchemaCreatesFromExportedJson() {
+        helper.createDatabase(EXPORTED_DB, 7).close()
     }
 
     @Test
-    fun migrateV1ToV6PreservesRowsAndBackfillsColumns() {
+    fun migrateV1ToV7PreservesRowsAndBackfillsColumns() {
         createLegacyDatabase(version = 1, ddl = V1_SCHEMA) { db ->
             db.execSQL(
                 "INSERT INTO conversations (id, type, title, lastMessageSeq, " +
@@ -77,7 +76,44 @@ class RoomMigrationTest {
             )
         }
 
-        openMigrated().use(::assertV6ShapeAndPreservedRows)
+        openMigrated().use(::assertV7ShapeAndPreservedRows)
+    }
+
+    @Test
+    fun migrateV6ToV7AddsEditDeleteAndInboxColumns() {
+        createLegacyDatabase(version = 6, ddl = V6_SCHEMA) { db ->
+            db.execSQL(
+                "INSERT INTO conversations (id, type, title, lastMessageSeq, " +
+                    "lastMessageContent, lastMessageSenderName, lastMessageAt, " +
+                    "unreadCount, otherUserName, otherUserAvatar, peerReadSeq, avatarUrl, myRole) " +
+                    "VALUES ('c-1', 'DIRECT', NULL, 7, 'hi', 'Lan', 100, 3, 'Lan', NULL, 4, NULL, NULL)",
+            )
+            db.execSQL(
+                "INSERT INTO messages (id, conversationId, seq, senderId, " +
+                    "senderDisplayName, type, content, clientMessageId, replyToId, " +
+                    "replyToSenderName, replyToSnippet, createdAt, attachmentsJson) " +
+                    "VALUES ('m-1', 'c-1', 7, 'u-1', 'Lan', 'TEXT', 'hi', NULL, NULL, " +
+                    "NULL, NULL, 100, NULL)",
+            )
+        }
+
+        openMigrated().use { db ->
+            db.query(
+                "SELECT editedAtEpochMs, deletedAtEpochMs FROM messages",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+                assertTrue(cursor.isNull(1))
+            }
+            db.query(
+                "SELECT otherUserId, lastMessageDeleted, peerReadSeq FROM conversations",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+                assertEquals(0, cursor.getInt(1))
+                assertEquals(4L, cursor.getLong(2))
+            }
+        }
     }
 
     @Test
@@ -101,24 +137,32 @@ class RoomMigrationTest {
         }
     }
 
-    private fun assertV6ShapeAndPreservedRows(db: SupportSQLiteDatabase) {
-        db.query("SELECT title, unreadCount, peerReadSeq, avatarUrl, myRole FROM conversations")
-            .use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("Team", cursor.getString(0))
-                assertEquals(3, cursor.getInt(1))
-                assertEquals(0L, cursor.getLong(2))
-                assertTrue(cursor.isNull(3))
-                assertTrue(cursor.isNull(4))
-            }
-        db.query("SELECT id, content, replyToSenderName, replyToSnippet FROM messages")
-            .use { cursor ->
-                assertTrue(cursor.moveToFirst())
-                assertEquals("m-1", cursor.getString(0))
-                assertEquals("hi", cursor.getString(1))
-                assertTrue(cursor.isNull(2))
-                assertTrue(cursor.isNull(3))
-            }
+    private fun assertV7ShapeAndPreservedRows(db: SupportSQLiteDatabase) {
+        db.query(
+            "SELECT title, unreadCount, peerReadSeq, avatarUrl, myRole, " +
+                "otherUserId, lastMessageDeleted FROM conversations",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Team", cursor.getString(0))
+            assertEquals(3, cursor.getInt(1))
+            assertEquals(0L, cursor.getLong(2))
+            assertTrue(cursor.isNull(3))
+            assertTrue(cursor.isNull(4))
+            assertTrue(cursor.isNull(5))
+            assertEquals(0, cursor.getInt(6))
+        }
+        db.query(
+            "SELECT id, content, replyToSenderName, replyToSnippet, " +
+                "editedAtEpochMs, deletedAtEpochMs FROM messages",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("m-1", cursor.getString(0))
+            assertEquals("hi", cursor.getString(1))
+            assertTrue(cursor.isNull(2))
+            assertTrue(cursor.isNull(3))
+            assertTrue(cursor.isNull(4))
+            assertTrue(cursor.isNull(5))
+        }
         db.query("SELECT content, attachmentsJson FROM outbox").use { cursor ->
             assertTrue(cursor.moveToFirst())
             assertEquals("queued", cursor.getString(0))
@@ -148,6 +192,7 @@ class RoomMigrationTest {
                 AppDatabase.MIGRATION_3_4,
                 AppDatabase.MIGRATION_4_5,
                 AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7,
             )
             .allowMainThreadQueries()
             .build()
@@ -216,6 +261,11 @@ class RoomMigrationTest {
                 "`pinnedAt` INTEGER NOT NULL, PRIMARY KEY(`conversationId`, `messageId`))",
             "ALTER TABLE conversations ADD COLUMN peerReadSeq INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE conversations ADD COLUMN avatarUrl TEXT",
+        )
+
+        /** Schema as shipped in version 6 (before edit/delete + presence keys). */
+        val V6_SCHEMA = V5_SCHEMA + listOf(
+            "ALTER TABLE conversations ADD COLUMN myRole TEXT",
         )
     }
 }

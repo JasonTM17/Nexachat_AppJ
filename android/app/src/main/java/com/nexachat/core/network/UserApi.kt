@@ -8,7 +8,9 @@ import com.nexachat.core.network.dto.DirectConversationRequest
 import com.nexachat.core.network.dto.DirectConversationResponse
 import com.nexachat.core.network.dto.UpdateContactRequest
 import com.nexachat.core.network.dto.UpdateProfileRequest
+import com.nexachat.core.network.dto.UpdateUserSettingsRequest
 import com.nexachat.core.network.dto.UserDto
+import com.nexachat.core.network.dto.UserSettingsDto
 import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -42,6 +44,13 @@ interface UserApi {
 
     @GET("api/v1/users/me")
     suspend fun getMe(): Response<UserDto>
+
+    /** Presence privacy setting (F3) — GET/PATCH share the response shape. */
+    @GET("api/v1/users/me/settings")
+    suspend fun getSettings(): Response<UserSettingsDto>
+
+    @PATCH("api/v1/users/me/settings")
+    suspend fun updateSettings(@Body body: UpdateUserSettingsRequest): Response<UserSettingsDto>
 
     @PATCH("api/v1/users/me")
     suspend fun updateMe(@Body body: UpdateProfileRequest): Response<UserDto>

@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,6 +38,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -129,6 +132,7 @@ fun GroupDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item(key = "group-avatar") {
                 val avatarDescription = stringResource(R.string.group_change_avatar)
@@ -181,46 +185,67 @@ fun GroupDetailScreen(
                 }
             }
             items(state.members, key = { it.userId }) { member ->
-                MemberRow(
-                    member = member,
-                    isSelf = member.userId == state.myUserId,
-                    canRemove = state.iAmAdmin && member.userId != state.myUserId,
-                    onRemove = { viewModel.requestRemoveMember(member) },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MemberRow(
+                        member = member,
+                        isSelf = member.userId == state.myUserId,
+                        canRemove = state.iAmAdmin && member.userId != state.myUserId,
+                        onRemove = { viewModel.requestRemoveMember(member) },
+                        modifier = Modifier.widthIn(max = 640.dp),
+                    )
+                }
             }
             if (state.iAmAdmin) {
                 item(key = "add-member") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = viewModel::openAddMember)
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = stringResource(R.string.action_add_member),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 12.dp),
-                        )
+                        Row(
+                            modifier = Modifier
+                                .widthIn(max = 640.dp)
+                                .fillMaxWidth()
+                                .clickable(onClick = viewModel::openAddMember)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = stringResource(R.string.action_add_member),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 12.dp),
+                            )
+                        }
                     }
                 }
             }
             item(key = "leave") {
-                TextButton(
-                    onClick = viewModel::requestLeave,
-                    enabled = !state.busy,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = stringResource(R.string.action_leave_group),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    TextButton(
+                        onClick = viewModel::requestLeave,
+                        enabled = !state.busy,
+                        modifier = Modifier
+                            .widthIn(max = 640.dp)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_leave_group),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
             item(key = "loading") {
@@ -370,9 +395,10 @@ private fun MemberRow(
     isSelf: Boolean,
     canRemove: Boolean,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -393,8 +419,17 @@ private fun MemberRow(
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 if (member.isAdmin) {
-                    Badge(modifier = Modifier.padding(start = 8.dp)) {
-                        Text(stringResource(R.string.group_role_admin))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.padding(start = 8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.group_role_admin),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
                     }
                 }
             }
@@ -409,7 +444,7 @@ private fun MemberRow(
                 Icon(
                     imageVector = Icons.Filled.Delete,
                     contentDescription = stringResource(R.string.action_remove_member),
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
