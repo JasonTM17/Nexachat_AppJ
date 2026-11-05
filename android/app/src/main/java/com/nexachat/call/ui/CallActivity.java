@@ -92,6 +92,9 @@ public class CallActivity extends ComponentActivity {
         }
         callManager.attachMediaEngine(CallMediaEngineProvider.get(getApplicationContext()));
         currentSession = callManager.session().getValue();
+        if (hasOutgoingIntent() && !isInProgress(currentSession)) {
+            currentSession = null;
+        }
         render(currentSession);
         if (isInProgress(currentSession)) {
             startRequested = true;
@@ -112,6 +115,8 @@ public class CallActivity extends ComponentActivity {
                 if (session != null && session.getState() == CallState.ENDED) {
                     mainHandler.removeCallbacks(finishEndedScreen);
                     mainHandler.postDelayed(finishEndedScreen, ENDED_SCREEN_MS);
+                } else {
+                    mainHandler.removeCallbacks(finishEndedScreen);
                 }
             }
 
@@ -121,7 +126,16 @@ public class CallActivity extends ComponentActivity {
         };
         callManager.addListener(listener);
         currentSession = callManager.session().getValue();
+        if (hasOutgoingIntent() && !isInProgress(currentSession)) {
+            currentSession = null;
+        }
         render(currentSession);
+        if (currentSession != null && currentSession.getState() == CallState.ENDED) {
+            mainHandler.removeCallbacks(finishEndedScreen);
+            mainHandler.postDelayed(finishEndedScreen, ENDED_SCREEN_MS);
+        } else {
+            mainHandler.removeCallbacks(finishEndedScreen);
+        }
     }
 
     @Override protected void onResume() {
@@ -427,9 +441,10 @@ public class CallActivity extends ComponentActivity {
                 && session.getState() != CallState.ENDED;
     }
 
+    @SuppressLint("MissingSuperCall")
     @Override public void onBackPressed() {
         if (currentSession == null) {
-            super.onBackPressed();
+            finish();
             return;
         }
         CallState state = currentSession.getState();

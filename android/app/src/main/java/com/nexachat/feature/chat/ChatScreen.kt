@@ -696,7 +696,8 @@ fun ChatScreen(
                         var showOverflowMenu by remember { mutableStateOf(false) }
 
                         if (!state.isGroup) {
-                            val peerUserId = state.messages.firstOrNull { !it.mine }?.senderId.orEmpty()
+                            val peerUserId = state.otherUserId
+                                ?: state.messages.firstOrNull { !it.mine }?.senderId.orEmpty()
                             IconButton(
                                 onClick = {
                                     CallLauncher.start(
