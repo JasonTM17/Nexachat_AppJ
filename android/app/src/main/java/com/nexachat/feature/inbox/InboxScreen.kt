@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import com.nexachat.call.ui.CallLogResourceResolver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -217,8 +218,16 @@ private fun ConversationRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             } else {
+                val previewText = conversation.lastMessageContent.orEmpty().let { raw ->
+                    if (raw.startsWith("CALL|")) {
+                        val callLog = CallLogResourceResolver.fromSystemMessage(raw, false)
+                        stringResource(callLog.resourceId, *callLog.arguments)
+                    } else {
+                        raw
+                    }
+                }
                 Text(
-                    text = conversation.lastMessageContent.orEmpty(),
+                    text = previewText,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isUnread) FontWeight.Medium else FontWeight.Normal,
                     color = if (isUnread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
