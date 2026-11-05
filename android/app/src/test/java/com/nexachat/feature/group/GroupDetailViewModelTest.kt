@@ -16,7 +16,10 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,11 +39,15 @@ class GroupDetailViewModelTest {
     private val contactsRepository: ContactsRepository = mockk()
 
     private val conversationFlow = MutableStateFlow<ConversationSummary?>(null)
+    private val groupUpdateFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
     private lateinit var viewModel: GroupDetailViewModel
 
     private companion object {
         const val CONVERSATION_ID = "conv-1"
         const val MY_ID = "me-1"
+
+        /** Comfortably past the coalescing window (200 ms) in virtual time. */
+        const val PUSH_WINDOW_MS = 400L
     }
 
     private val me = GroupMember(
@@ -71,6 +78,7 @@ class GroupDetailViewModelTest {
     ): GroupDetailViewModel {
         every { conversationRepository.conversationFlow(CONVERSATION_ID) } returns
             conversationFlow
+        every { conversationRepository.groupUpdates(CONVERSATION_ID) } returns groupUpdateFlow
         coEvery { conversationRepository.myUserId() } returns MY_ID
         coEvery { conversationRepository.groupDetail(CONVERSATION_ID) } returns detail
         return GroupDetailViewModel(
@@ -95,6 +103,45 @@ class GroupDetailViewModelTest {
         assertEquals(MY_ID, state.myUserId)
         assertTrue(state.iAmAdmin)
         assertFalse(state.loading)
+    }
+
+    @Test
+    fun `remote group update refreshes the open member list`() = runTest {
+        val updatedMembers = listOf(me, lan, minh)
+        coEvery { conversationRepository.groupDetail(CONVERSATION_ID) } returns
+            Result.Success(GroupDetail("Weekend", updatedMembers))
+
+        groupUpdateFlow.emit(Unit)
+        advanceTimeBy(PUSH_WINDOW_MS)
+        runCurrent()
+
+        assertEquals(updatedMembers, viewModel.uiState.value.members)
+        coVerify(exactly = 2) { conversationRepository.groupDetail(CONVERSATION_ID) }
+    }
+
+    @Test
+    fun `a burst of group updates coalesces into one refetch`() = runTest {
+        repeat(5) { groupUpdateFlow.emit(Unit) }
+        advanceTimeBy(PUSH_WINDOW_MS)
+        runCurrent()
+
+        // init load + a single push-triggered fetch, not one per push.
+        coVerify(exactly = 2) { conversationRepository.groupDetail(CONVERSATION_ID) }
+    }
+
+    @Test
+    fun `a later group update still triggers its own refetch`() = runTest {
+        groupUpdateFlow.emit(Unit)
+        advanceTimeBy(PUSH_WINDOW_MS)
+        runCurrent()
+        coVerify(exactly = 2) { conversationRepository.groupDetail(CONVERSATION_ID) }
+
+        // A second, well-separated push is a new change — it must not be
+        // swallowed by the previous window.
+        groupUpdateFlow.emit(Unit)
+        advanceTimeBy(PUSH_WINDOW_MS)
+        runCurrent()
+        coVerify(exactly = 3) { conversationRepository.groupDetail(CONVERSATION_ID) }
     }
 
     @Test

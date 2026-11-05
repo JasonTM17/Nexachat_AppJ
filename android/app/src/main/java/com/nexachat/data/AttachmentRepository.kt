@@ -111,15 +111,22 @@ class AttachmentRepository @Inject constructor(
         send(AttachmentUploadEvent.Progress(0f))
         val meta = describe(uri)
         val bytes = try {
-            readBounded(uri, meta.sizeBytes)
+            withContext(Dispatchers.IO) { readBounded(uri, meta.sizeBytes) }
         } catch (e: OversizeException) {
             send(AttachmentUploadEvent.Failed(ApiError.Unknown(ERROR_TOO_LARGE)))
             return@channelFlow
         } catch (e: IOException) {
             send(AttachmentUploadEvent.Failed(ApiError.Network(e.message)))
             return@channelFlow
+        } catch (e: SecurityException) {
+            // The picker's read grant can be gone by upload time (task
+            // recreated, grant expired, process restored). This is a typed
+            // failure, never an exception escaping the flow into the caller's
+            // viewModelScope — that would kill the scope and the screen.
+            send(AttachmentUploadEvent.Failed(ApiError.Unknown(ERROR_UNREADABLE)))
+            return@channelFlow
         }
-        val mime = meta.mimeType ?: mimeHint ?: DEFAULT_MIME
+        val mime = resolveMime(meta.mimeType, mimeHint)
         val requestBody = ProgressRequestBody(
             delegate = bytes.toRequestBody(mime.toMediaTypeOrNull()),
             onProgress = { written, total ->
@@ -150,6 +157,23 @@ class AttachmentRepository @Inject constructor(
                 send(AttachmentUploadEvent.Failed(ApiError.Network(result.cause.message)))
         }
     }
+
+    /**
+     * Readings from `ContentResolver.getType` are frequently generic — some
+     * providers answer `application/octet-stream` (or nothing) for a HEIC
+     * photo. A specific picker hint must win over that, or the upload goes
+     * out as a FILE. A specific resolver type still wins over the hint:
+     * the provider read the actual bytes, the picker only knows the filter.
+     */
+    private fun resolveMime(resolverType: String?, hint: String?): String = when {
+        !isGenericMime(resolverType) -> resolverType!!
+        !isGenericMime(hint) -> hint!!
+        else -> DEFAULT_MIME
+    }
+
+    private fun isGenericMime(type: String?): Boolean =
+        type.isNullOrBlank() || type == "*/*" ||
+            type.equals(DEFAULT_MIME, ignoreCase = true)
 
     /**
      * Reads the picker stream with a hard ceiling — counting bytes as they
@@ -187,17 +211,24 @@ class AttachmentRepository @Inject constructor(
         displayName: String? = null,
     ): Result<File> = withContext(Dispatchers.IO) {
         when (val result = safeApiCall { attachmentApi.content(attachmentId) }) {
-            is ApiResult.Success -> try {
+            is ApiResult.Success -> {
                 val dir = File(context.cacheDir, CACHE_DIR_NAME).apply { mkdirs() }
                 val file = File(dir, attachmentId + "-" + sanitize(displayName))
-                result.body.byteStream().use { input ->
-                    file.outputStream().use { output -> input.copyTo(output) }
+                try {
+                    result.body.byteStream().use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    Result.Success(file)
+                } catch (e: CancellationException) {
+                    runCatching { file.delete() }
+                    throw e
+                } catch (e: IOException) {
+                    // Delete the truncated copy: a half-written file in the
+                    // cache is not "not downloaded yet", it is a corrupt file
+                    // ExoPlayer or ACTION_VIEW can still be handed.
+                    runCatching { file.delete() }
+                    Result.Failure(ApiError.Network(e.message))
                 }
-                Result.Success(file)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                Result.Failure(ApiError.Network(e.message))
             }
             is ApiResult.HttpError ->
                 Result.Failure(ApiError.from(result.status, result.errorCode))
@@ -216,6 +247,9 @@ class AttachmentRepository @Inject constructor(
     companion object {
         const val MAX_UPLOAD_BYTES = 25L * 1024L * 1024L
         const val ERROR_TOO_LARGE = "ATTACHMENT_TOO_LARGE"
+
+        /** The picked content URI can no longer be read (grant revoked/gone). */
+        const val ERROR_UNREADABLE = "ATTACHMENT_UNREADABLE"
         const val PART_FILE = "file"
         const val CACHE_DIR_NAME = "attachments"
 

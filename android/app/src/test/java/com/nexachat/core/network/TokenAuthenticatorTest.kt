@@ -116,6 +116,28 @@ class TokenAuthenticatorTest {
             .apply { if (prior != null) priorResponse(prior) }
             .build()
 
+    /**
+     * Blocks until [thread] is parked waiting for the refresher's mutex.
+     *
+     * The observable state replaces a fixed sleep: the test may only release
+     * the in-flight refresh once the sibling is genuinely queued, so it can
+     * neither race ahead (two refreshes) nor wait needlessly. The deadline is
+     * a failure bound, not a pause.
+     */
+    private fun awaitQueuedOnRefreshLock(thread: Thread, timeoutMs: Long = 10_000) {
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000
+        while (thread.isAlive &&
+            thread.state != Thread.State.WAITING &&
+            thread.state != Thread.State.TIMED_WAITING
+        ) {
+            assertTrue(
+                "second caller never queued on the refresh lock",
+                System.nanoTime() < deadline,
+            )
+            Thread.yield()
+        }
+    }
+
     // ------------------------------------------------------------- tests
 
     @Test
@@ -140,7 +162,7 @@ class TokenAuthenticatorTest {
         assertTrue("first caller never reached refresh", refreshEntered.await(10, TimeUnit.SECONDS))
 
         val t2 = thread { results += authenticator.authenticate(null, unauthorizedResponse()) }
-        Thread.sleep(300) // let t2 reach the mutex wait while t1 is mid-refresh
+        awaitQueuedOnRefreshLock(t2)
         releaseRefresh.countDown()
         t1.join(10_000)
         t2.join(10_000)

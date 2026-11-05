@@ -1,17 +1,21 @@
 package com.nexachat.data
 
 import android.content.Context
+import app.cash.turbine.test
 import com.nexachat.core.database.ConversationDao
 import com.nexachat.core.database.ConversationEntity
 import com.nexachat.core.network.GroupApi
 import com.nexachat.core.network.MessageApi
+import com.nexachat.core.network.dto.ConversationDto
 import com.nexachat.core.network.dto.ConversationInboxDto
 import com.nexachat.core.network.dto.ConversationMemberDto
+import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import java.util.Base64
@@ -20,6 +24,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
@@ -43,6 +48,7 @@ class ConversationRepositoryTest {
     private val context = mockk<Context>(relaxed = true)
     private val conversationDao = FakeConversationDao()
     private val moshi = Moshi.Builder().build()
+    private val chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 8)
 
     private lateinit var repository: ConversationRepository
 
@@ -52,7 +58,7 @@ class ConversationRepositoryTest {
 
     @Before
     fun setUp() {
-        every { session.events } returns MutableSharedFlow()
+        every { session.events } returns chatEvents
         every { session.resyncRequests } returns MutableSharedFlow()
         coEvery { tokenStore.readTokens() } returns
             TokenStore.Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
@@ -140,6 +146,86 @@ class ConversationRepositoryTest {
         val row = conversationDao.rows["conv-a"]!!
         assertEquals(42L, row.peerReadSeq)
         assertEquals("MEMBER", row.myRole)
+    }
+
+    @Test
+    fun `refreshInbox keeps a group this device just created when the payload predates it`() = runTest {
+        buildRepository()
+        coEvery { groupApi.createGroup(any()) } returns
+            Response.success(ConversationDto(id = "conv-new", type = "GROUP"))
+        // A GET already in flight when the create committed cannot list the
+        // new group — the reconcile prune must not delete it for that reason.
+        stubInbox(listOf(inboxDto("conv-old")))
+
+        repository.createGroup("New group", listOf("u-1"))
+        repository.refreshInbox()
+
+        assertEquals(setOf("conv-old", "conv-new"), conversationDao.rows.keys)
+    }
+
+    @Test
+    fun `a created group is pruned like any row once a payload has listed it`() = runTest {
+        buildRepository()
+        coEvery { groupApi.createGroup(any()) } returns
+            Response.success(ConversationDto(id = "conv-new", type = "GROUP"))
+        repository.createGroup("New group", listOf("u-1"))
+
+        stubInbox(listOf(inboxDto("conv-old"), inboxDto("conv-new")))
+        repository.refreshInbox()
+
+        // The protection is a one-shot grace window, not a permanent exemption.
+        stubInbox(listOf(inboxDto("conv-old")))
+        repository.refreshInbox()
+
+        assertEquals(setOf("conv-old"), conversationDao.rows.keys)
+    }
+
+    @Test
+    fun `refreshInbox asks for the complete inbox and never a page`() = runTest {
+        buildRepository()
+        stubInbox(listOf(inboxDto("conv-a")))
+
+        repository.refreshInbox()
+
+        // Pruning is only safe while this call carries no limit/cursor: an
+        // optional-paging server would otherwise return page 1 only.
+        coVerify(exactly = 1) { messageApi.getConversations(limit = null, beforeSeq = null) }
+    }
+
+    @Test
+    fun `a paginated inbox payload is never used to prune`() = runTest {
+        buildRepository()
+        conversationDao.upsertAll(
+            listOf(conversation("conv-a"), conversation("conv-b")),
+        )
+        // An envelope that admits another page is not the authoritative set.
+        coEvery { messageApi.getConversations(any(), any()) } returns
+            Response.success("""{"items":[{"id":"conv-a"}],"hasMore":true}""".toResponseBody())
+
+        repository.refreshInbox()
+
+        assertEquals(setOf("conv-a", "conv-b"), conversationDao.rows.keys)
+    }
+
+    @Test
+    fun `conversation updated signals only its matching group detail listener`() = runTest {
+        buildRepository()
+
+        repository.groupUpdates("conv-a").test {
+            runCurrent()
+            chatEvents.emit(ChatEvent.ConversationUpdated("conv-a"))
+            runCurrent()
+            assertEquals(Unit, awaitItem())
+
+            chatEvents.emit(ChatEvent.ConversationUpdated("conv-b"))
+            runCurrent()
+            expectNoEvents()
+
+            chatEvents.emit(ChatEvent.ConversationUpdated(null))
+            runCurrent()
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     private fun conversation(id: String) = ConversationEntity(

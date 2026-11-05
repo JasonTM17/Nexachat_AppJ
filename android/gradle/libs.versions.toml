@@ -26,6 +26,7 @@ junit = "4.13.2"
 mockk = "1.13.13"
 turbine = "1.2.0"
 androidx-test-ext-junit = "1.2.1"
+androidx-test-runner = "1.6.2"
 
 [libraries]
 # Compose (BOM-managed: ui / material3 / tooling / ui-test versions come from the BOM)
@@ -89,6 +90,8 @@ turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine
 
 # Instrumented tests
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-ext-junit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidx-test-runner" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

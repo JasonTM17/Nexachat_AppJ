@@ -131,6 +131,28 @@ class TokenStoreTest {
         }
     }
 
+    /** Ciphertext survives a keystore reset; the key that could read it does not. */
+    private class UndecryptableCipher : TokenCipher {
+        override fun encrypt(plaintext: ByteArray): ByteArray =
+            packGcm(ByteArray(AesGcmTokenCipher.IV_LENGTH), plaintext)
+
+        override fun decrypt(packed: ByteArray): ByteArray =
+            throw java.security.KeyException("key permanently invalidated")
+    }
+
+    @Test
+    fun `hasValidRefresh treats an undecryptable session as logged out`() = runTest {
+        // Presence of ciphertext is not a session: an invalidated keystore key
+        // leaves the prefs readable but useless. Reporting it as valid strands
+        // the app in the inbox — every request 401s, the WS loop can never
+        // authenticate, and nothing routes the user back to Login.
+        val resetStore = TokenStore(dataStore, UndecryptableCipher())
+        resetStore.saveTokens("a", 1L, "r")
+        assertNull(resetStore.readTokens())
+
+        assertFalse(resetStore.hasValidRefresh.first())
+    }
+
     @Test
     fun `clear removes the session`() = runTest {
         store.saveTokens("a", 1L, "r")

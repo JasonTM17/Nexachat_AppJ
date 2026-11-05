@@ -24,6 +24,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -142,6 +144,19 @@ class ConversationRepository @Inject constructor(
         extraBufferCapacity = 4,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+    private val groupUpdateIds = MutableSharedFlow<String>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Conversations created by this device whose row may not be in a GET
+     * /conversations response that was already in flight when the create
+     * committed. [refreshInbox] prunes everything the payload omits, so
+     * without this a brand-new group could be deleted from Room right after
+     * its write-through. Entries leave the set once a fetch lists them.
+     */
+    private val locallyCreatedIds = ConcurrentHashMap.newKeySet<String>()
 
     init {
         scope.launch { watchPushTriggers() }
@@ -162,25 +177,42 @@ class ConversationRepository @Inject constructor(
     fun conversationFlow(conversationId: String): Flow<ConversationSummary?> =
         conversationDao.observeById(conversationId).map { it?.toSummary() }
 
+    /** Signals server updates for a group whose detail screen is currently open. */
+    fun groupUpdates(conversationId: String): Flow<Unit> =
+        groupUpdateIds.filter { it == conversationId }.map { Unit }
+
     // ---- refresh ----
 
     /**
      * Pulls the inbox and writes rows through. Tolerant of the two plausible
      * response shapes — `{items,nextBeforeSeq,hasMore}` envelope or a bare
      * array (see MessageApi.getConversations).
+     *
+     * Invariant: the prune below assumes the payload is the caller's COMPLETE
+     * inbox. `GET /conversations` returns exactly that when it carries no
+     * `limit`/`cursor` (contract: optional keyset paging, default = full list),
+     * and this is the only caller without a limit. If paging is ever adopted
+     * here, this function must stop pruning from a page — page 2+ rows would
+     * be deleted — and rely on [InboxFetch.complete] alone to decide.
      */
     suspend fun refreshInbox(): Result<Unit> {
         val myId = currentUserId()
         return when (val result = fetchInboxItems()) {
             is Result.Success -> {
-                val rows = result.value.mapNotNull { it.toEntity(myId) }
+                val rows = result.value.items.mapNotNull { it.toEntity(myId) }
                 upsertPreservingClientColumns(rows)
                 // Authoritative full set — drop rows the server no longer
                 // returns (removed membership, deleted conversation). Without
                 // this a MEMBER_REMOVED leaves a dead row in the inbox that
-                // still opens and fails only on send.
-                if (rows.isEmpty()) conversationDao.clear()
-                else conversationDao.deleteAllExcept(rows.map { it.id })
+                // still opens and fails only on send. Rows this device just
+                // created survive until the first payload that lists them.
+                if (result.value.complete) {
+                    val fetchedIds = rows.mapTo(HashSet()) { it.id }
+                    val keep = fetchedIds + locallyCreatedIds
+                    if (keep.isEmpty()) conversationDao.clear()
+                    else conversationDao.deleteAllExcept(keep.toList())
+                    locallyCreatedIds.removeAll(fetchedIds)
+                }
                 Result.Success(Unit)
             }
             is Result.Failure -> result
@@ -207,6 +239,9 @@ class ConversationRepository @Inject constructor(
             is Result.Success -> {
                 // The 201 ConversationResponse carries no title — keep the
                 // requested one so the fresh chat/inbox row renders correctly.
+                // Registered before the write-through: a refresh already in
+                // flight must not prune the row it cannot know about yet.
+                locallyCreatedIds += result.value.id
                 upsertPreservingClientColumns(listOf(result.value.toEntity(fallbackTitle = trimmed)))
                 Result.Success(result.value.id)
             }
@@ -225,7 +260,7 @@ class ConversationRepository @Inject constructor(
         when (val result = fetchInboxItems(limit = MEMBERS_PAGE_LIMIT)) {
             is Result.Success -> {
                 val myId = currentUserId()
-                val inbox = result.value.firstOrNull { it.id == conversationId }
+                val inbox = result.value.items.firstOrNull { it.id == conversationId }
                     ?: return Result.Failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
                 upsertPreservingClientColumns(listOf(inbox.toEntity(myId)))
                 Result.Success(
@@ -320,9 +355,11 @@ class ConversationRepository @Inject constructor(
     private suspend fun watchPushTriggers() {
         session.events.collect { event ->
             when (event) {
-                is ChatEvent.ConversationUpdated,
-                is ChatEvent.MessageCreated,
-                -> refreshRequests.tryEmit(Unit)
+                is ChatEvent.ConversationUpdated -> {
+                    event.conversationId?.let { groupUpdateIds.tryEmit(it) }
+                    refreshRequests.tryEmit(Unit)
+                }
+                is ChatEvent.MessageCreated -> refreshRequests.tryEmit(Unit)
                 else -> Unit
             }
         }
@@ -425,29 +462,44 @@ class ConversationRepository @Inject constructor(
     /**
      * Shared fetch+parse behind [refreshInbox] and [groupDetail]: pulls the
      * inbox and tolerates both response shapes (envelope or bare array).
+     * [InboxFetch.complete] is false when the envelope admits another page —
+     * the caller must not treat that payload as the full set.
      */
-    private suspend fun fetchInboxItems(limit: Int? = null): Result<List<ConversationInboxDto>> =
+    private suspend fun fetchInboxItems(limit: Int? = null): Result<InboxFetch> =
         when (val result = call { messageApi.getConversations(limit = limit) }) {
             is Result.Success -> {
                 val body = runCatching { result.value.string().trim() }.getOrNull()
                     ?: return Result.Failure(ApiError.Network("body read failed"))
-                val items = parseInboxBody(body)
-                if (items == null) {
+                val page = parseInboxBody(body)
+                if (page == null) {
                     Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
                 } else {
-                    Result.Success(items)
+                    Result.Success(page)
                 }
             }
             is Result.Failure -> result
         }
 
-    private fun parseInboxBody(body: String): List<ConversationInboxDto>? = when {
-        body.isEmpty() -> emptyList()
+    private fun parseInboxBody(body: String): InboxFetch? = when {
+        body.isEmpty() -> InboxFetch(emptyList(), complete = true)
         body.startsWith("[") ->
             runCatching { listAdapter.fromJson(body) }.getOrNull()
+                ?.let { InboxFetch(it, complete = true) }
         else ->
-            runCatching { pageAdapter.fromJson(body) }.getOrNull()?.items
+            runCatching { pageAdapter.fromJson(body) }.getOrNull()
+                ?.let {
+                    InboxFetch(
+                        items = it.items,
+                        complete = !it.hasMore && it.nextBeforeSeq == null,
+                    )
+                }
     }
+
+    /** Inbox items plus whether the payload was the authoritative full set. */
+    private data class InboxFetch(
+        val items: List<ConversationInboxDto>,
+        val complete: Boolean,
+    )
 
     /** Collapses a `Result<ResponseBody>`-style call into `Result<Unit>`. */
     private fun <T> Result<T>.toUnitResult(): Result<Unit> = when (this) {

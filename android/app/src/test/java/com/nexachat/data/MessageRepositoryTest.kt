@@ -96,6 +96,11 @@ class MessageRepositoryTest {
         override suspend fun maxSeq(conversationId: String): Long =
             rows.values.filter { it.conversationId == conversationId }.maxOfOrNull { it.seq } ?: 0L
 
+        override suspend fun minSeq(conversationId: String): Long =
+            rows.values.filter { it.conversationId == conversationId }.minOfOrNull { it.seq } ?: 0L
+
+        override suspend fun exists(messageId: String): Boolean = rows.containsKey(messageId)
+
         override suspend fun deleteAll() {
             rows.clear()
             bump()
@@ -932,6 +937,98 @@ class MessageRepositoryTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    // ---- jump to a message outside the loaded window ----
+
+    @Test
+    fun `loadUntilLoaded returns immediately for an already stored message`() = runTest {
+        messageDao.upsert(storedMessage("m-9", seq = 9))
+
+        assertEquals(MessageJump.Found, repository.loadUntilLoaded(CONVERSATION_ID, "m-9"))
+        coVerify(exactly = 0) { messageApi.getMessages(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `loadUntilLoaded pages backwards until the target is stored`() = runTest {
+        messageDao.upsert(storedMessage("m-90", seq = 90))
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
+            Response.success(page(hasMore = true, dto(storedMessage("m-45", 45)))),
+            Response.success(page(hasMore = true, dto(storedMessage("m-10", 10)))),
+            Response.success(page(hasMore = true, dto(storedMessage("m-2", 2)))),
+        )
+
+        val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-2")
+
+        assertEquals(MessageJump.Found, jump)
+        assertTrue(messageDao.rows.containsKey("m-2"))
+        coVerify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
+        // Each page asked for history strictly before the then-oldest row.
+        coVerify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 45L, any(), any()) }
+        coVerify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 10L, any(), any()) }
+    }
+
+    @Test
+    fun `loadUntilLoaded stops after the page budget and reports not found`() = runTest {
+        messageDao.upsert(storedMessage("m-90", seq = 90))
+        // Every page claims more history but never contains the target.
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(page(hasMore = true, dto(storedMessage("m-x", seq = 1))))
+
+        val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-gone", maxPages = 3)
+
+        assertEquals(MessageJump.NotFound, jump)
+        coVerify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `loadUntilLoaded stops when the server reports no older history`() = runTest {
+        messageDao.upsert(storedMessage("m-5", seq = 5))
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(page(hasMore = false))
+
+        assertEquals(MessageJump.NotFound, repository.loadUntilLoaded(CONVERSATION_ID, "m-old"))
+        coVerify(exactly = 1) { messageApi.getMessages(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `loadUntilLoaded surfaces a page failure`() = runTest {
+        messageDao.upsert(storedMessage("m-5", seq = 5))
+        coEvery { messageApi.getMessages(any(), any(), any(), any()) } throws IOException("down")
+
+        val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-old")
+
+        assertTrue(jump is MessageJump.Failed)
+        assertTrue((jump as MessageJump.Failed).error is ApiError.Network)
+    }
+
+    private fun storedMessage(id: String, seq: Long) = MessageEntity(
+        id = id,
+        conversationId = CONVERSATION_ID,
+        seq = seq,
+        senderId = "u-other",
+        senderDisplayName = "Lan",
+        type = "TEXT",
+        content = id,
+        clientMessageId = null,
+        replyToId = null,
+        replyToSenderName = null,
+        replyToSnippet = null,
+        createdAt = seq,
+        attachmentsJson = null,
+    )
+
+    private fun dto(entity: MessageEntity) = MessageDto(
+        id = entity.id,
+        seq = entity.seq,
+        conversationId = entity.conversationId,
+        senderId = entity.senderId,
+        type = entity.type,
+        content = entity.content,
+        createdAt = "2026-11-03T09:12:04Z",
+    )
+
+    private fun page(hasMore: Boolean, vararg items: MessageDto) =
+        MessagePageDto(items = items.toList(), hasMore = hasMore)
 
     private companion object {
         const val CONVERSATION_ID = "c-1"

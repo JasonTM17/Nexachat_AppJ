@@ -7,12 +7,14 @@ import androidx.lifecycle.viewModelScope
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.dto.AttachmentDto
+import com.nexachat.core.network.dto.messageTypeForMime
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.data.AttachmentRepository
 import com.nexachat.data.AttachmentUploadEvent
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.ConversationRepository
 import com.nexachat.data.DeliveryStatus
+import com.nexachat.data.MessageJump
 import com.nexachat.data.MessageRepository
 import com.nexachat.feature.media.PendingAttachment
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,10 +22,14 @@ import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -111,6 +117,17 @@ class ChatViewModel @Inject constructor(
     private var lastTypingSentMs = 0L
     private var lastReadSeq = 0L
     private var loadingOlder = false
+
+    private val _jumpTargets = MutableSharedFlow<String>(
+        extraBufferCapacity = 4,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /**
+     * Ids the message list should scroll to. Emitted only once the target is
+     * in the loaded window, so the UI's index lookup cannot miss it.
+     */
+    val jumpTargets: SharedFlow<String> = _jumpTargets.asSharedFlow()
 
     val uiState: StateFlow<UiState> = combine(
         messageRepository.messagesFlow(conversationId),
@@ -217,6 +234,21 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch { messageRepository.retry(clientMessageId) }
     }
 
+    /**
+     * Quote / pin banner tap. A target outside the loaded window is paged in
+     * (bounded) before [jumpTargets] fires, so the reply a user came from is
+     * reachable even after restart or a long scroll.
+     */
+    fun jumpToMessage(messageId: String) {
+        viewModelScope.launch {
+            when (val jump = messageRepository.loadUntilLoaded(conversationId, messageId)) {
+                MessageJump.Found -> _jumpTargets.emit(messageId)
+                MessageJump.NotFound -> error.value = ApiError.Unknown(ERROR_MESSAGE_GONE)
+                is MessageJump.Failed -> error.value = jump.error
+            }
+        }
+    }
+
     // ---- interactions (phase-10) ----
 
     /**
@@ -246,11 +278,11 @@ class ChatViewModel @Inject constructor(
     }
 
     /**
-     * Pin/Unpin menu item. Offered unconditionally: DIRECT allows any member
-     * and GROUP requires ADMIN, but my role is not exposed on the chat
-     * screen's data path (ConversationEntity has no member rows) — the
-     * server's 403 lands on [interactionEvents] as a snackbar instead. This
-     * matches the GroupDetail "server is the real boundary" convention.
+     * Pin/Unpin menu item, reached only when [UiState.canPin] is true —
+     * DIRECT allows any member, GROUP only when my inbox row carries the
+     * ADMIN role (`ConversationEntity.myRole`). The server stays the real
+     * boundary: a role that changed after the last inbox refresh still
+     * answers 403, surfaced on [interactionEvents] as a snackbar.
      */
     fun togglePin(message: ChatMessage) {
         if (message.status != DeliveryStatus.SENT) return
@@ -309,7 +341,10 @@ class ChatViewModel @Inject constructor(
                                 content = local.displayName
                                     ?: event.attachment.originalName
                                     ?: local.type,
-                                type = local.type,
+                                type = messageTypeForMime(
+                                    event.attachment.mimeType?.takeIf(String::isNotBlank)
+                                        ?: local.mimeType,
+                                ),
                                 attachments = listOf(event.attachment),
                             )
                         }
@@ -370,6 +405,9 @@ class ChatViewModel @Inject constructor(
     companion object {
         const val TYPING_SEND_INTERVAL_MS = 3_000L
         const val PEER_TYPING_TTL_MS = 5_000L
+
+        /** The quoted/pinned message no longer exists within the page budget. */
+        const val ERROR_MESSAGE_GONE = "MESSAGE_NOT_FOUND"
         private const val KEY_INPUT = "chat_input"
     }
 }

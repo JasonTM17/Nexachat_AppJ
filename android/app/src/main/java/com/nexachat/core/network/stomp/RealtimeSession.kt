@@ -1,5 +1,6 @@
 package com.nexachat.core.network.stomp
 
+import com.nexachat.core.network.AppForegroundState
 import com.nexachat.core.network.NetworkMonitor
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.network.dto.MessageDto
@@ -28,10 +29,13 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Typed realtime events decoded from the WS envelope (plan §11.2). Event
@@ -104,9 +108,10 @@ sealed interface ChatEvent {
  * owned here (caller-owned per the StompClient contract) and driven by
  * [ReconnectPolicy]; after [ReconnectPolicy.MAX_ATTEMPTS] failures the session
  * reports `Failed(OFFLINE)` and is re-armed by [ensureConnected] from the next
- * user-driven repository call — or automatically when [NetworkMonitor]
- * reports a validated network regain (queued outbox rows should flush the
- * moment connectivity returns, not wait for the user to navigate).
+ * user-driven repository call, automatically when [NetworkMonitor] reports a
+ * validated network regain, on app foreground, or — while the app is on
+ * screen — by a bounded backoff timer, so a backend that recovers without a
+ * connectivity transition cannot leave the loop parked forever.
  *
  * Fan-in: every frame lands in [events] as a typed [ChatEvent] — repositories
  * filter by conversation, so per-screen subscription bookkeeping is just
@@ -124,6 +129,7 @@ class RealtimeSession @Inject constructor(
     private val moshi: Moshi,
     private val reconnectPolicy: ReconnectPolicy,
     private val networkMonitor: NetworkMonitor,
+    private val foreground: AppForegroundState,
     private val scope: CoroutineScope,
 ) {
 
@@ -250,13 +256,39 @@ class RealtimeSession @Inject constructor(
 
     private suspend fun runConnectionLoop() {
         var failures = 0
+        var parkedRounds = 0
         while (currentCoroutineContext().isActive) {
+            // STOMP CONNECT is authenticated after the HTTP upgrade. An expired
+            // JWT is rejected by the server without a stable auth ERROR frame,
+            // so refresh from the locally stored expiry before opening a socket.
+            // refreshIfNeeded shares the same mutex as HTTP 401 recovery and
+            // reuses a token another request may already have rotated.
+            val tokens = tokenStore.readTokens()
+            if (tokens != null && tokens.isAccessExpired()) {
+                when (tokenRefresher.refreshIfNeeded(tokens.accessToken)) {
+                    // A fresh token, or a transient outage: the attempt below
+                    // is the honest test — the server 401s (→ rotate) or the
+                    // socket fails (→ backoff).
+                    is TokenRefresher.Outcome.FreshToken,
+                    TokenRefresher.Outcome.TransientFailure,
+                    -> Unit
+                    // Definitive rejection already wiped the store and emitted
+                    // LoggedOut. Opening a socket can only fail, so end the
+                    // loop; the session observer cancels the rest of the app's
+                    // realtime work and navigation takes the user to Login.
+                    TokenRefresher.Outcome.Rejected,
+                    TokenRefresher.Outcome.NoRefreshToken,
+                    -> return
+                }
+            }
+
             stompClient.connect().collect { state ->
                 _state.value = state
                 when (state) {
                     is StompClient.State.Open -> {
                         _isOpen.value = true
                         failures = 0
+                        parkedRounds = 0
                         resubscribeWanted()
                         _resyncRequests.tryEmit(Unit)
                     }
@@ -276,17 +308,57 @@ class RealtimeSession @Inject constructor(
             failures++
             if (!reconnectPolicy.shouldRetry(failures)) {
                 _state.value = StompClient.State.Failed(StompClient.REASON_OFFLINE)
-                // Park (the job stays alive and cancellable) until a re-arm
-                // signal: network regain, a user action, or app foreground.
-                // A socket can die while connectivity never toggled — exiting
-                // here left the app permanently offline until navigation.
-                merge(networkMonitor.regained, rearmRequests).first()
+                parkedRounds++
+                parkUntilRearmed(parkedRounds)
                 failures = 0
                 continue
             }
             delay(reconnectPolicy.delayMillis(failures))
         }
     }
+
+    /**
+     * Parks the loop after the retry budget is spent.
+     *
+     * A network regain or a user action always re-arms it — in the background
+     * too, because a live socket keeps receiving messages while the app is
+     * behind another one. While the app is FOREGROUNDED with a usable stored
+     * session an exponential timer (capped at [PARKED_RETRY_MAX_MS]) also
+     * re-arms it, so a backend that comes back while connectivity never
+     * toggled is picked up without user navigation. Going to the background
+     * stops the timer (battery); going back to the foreground restarts it.
+     * Logout needs no handling here — it cancels this whole job upstream.
+     */
+    private suspend fun parkUntilRearmed(round: Int) {
+        while (currentCoroutineContext().isActive) {
+            val retryWhileParked =
+                foreground.isForeground.first() && tokenStore.hasValidRefresh.first()
+            if (!retryWhileParked) {
+                merge(networkMonitor.regained, rearmRequests).first()
+                return
+            }
+            val wakeUps = merge(
+                networkMonitor.regained.map { ParkWake.SIGNAL },
+                rearmRequests.map { ParkWake.SIGNAL },
+                // Transitions only: StateFlow-style flows replay their current
+                // value on subscribe, and that must not read as a change.
+                foreground.isForeground.drop(1).map { ParkWake.FOREGROUND },
+            )
+            when (withTimeoutOrNull(parkedRetryDelay(round)) { wakeUps.first() }) {
+                ParkWake.SIGNAL -> return
+                ParkWake.FOREGROUND -> Unit
+                null -> return
+            }
+        }
+    }
+
+    private fun parkedRetryDelay(round: Int): Long {
+        val shift = (round - 1).coerceIn(0, MAX_PARKED_SHIFT)
+        return (PARKED_RETRY_BASE_MS shl shift).coerceAtMost(PARKED_RETRY_MAX_MS)
+    }
+
+    /** Why a parked loop woke up — only a real signal reconnects immediately. */
+    private enum class ParkWake { SIGNAL, FOREGROUND }
 
     private fun resubscribeWanted() {
         for (destination in wantedSubscriptions) {
@@ -425,6 +497,11 @@ class RealtimeSession @Inject constructor(
         const val EVENT_REACTION_UPDATED = "REACTION_UPDATED"
         const val EVENT_PIN_UPDATED = "PIN_UPDATED"
 
+        /** First parked re-arm delay; doubles per round up to [PARKED_RETRY_MAX_MS]. */
+        const val PARKED_RETRY_BASE_MS = 5_000L
+        const val PARKED_RETRY_MAX_MS = 60_000L
+
+        private const val MAX_PARKED_SHIFT = 4
         private const val NORMAL_CODE = 1000
         private const val EVENTS_BUFFER = 128
         private const val RESYNC_BUFFER = 4

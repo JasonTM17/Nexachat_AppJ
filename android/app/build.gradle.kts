@@ -64,6 +64,18 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    sourceSets {
+        // Room's exported schema JSON doubles as an androidTest asset directory
+        // so MigrationTestHelper can open a database at an older version.
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
+}
+
+ksp {
+    // Checked-in schema JSON per database version — the input Room's
+    // MigrationTestHelper needs to validate a migration chain.
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 // Kotlin 2.0: the compose compiler is a Kotlin compiler plugin
@@ -121,6 +133,8 @@ dependencies {
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.android.compiler)

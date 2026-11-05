@@ -29,6 +29,14 @@ interface MessageDao {
     @Query("SELECT COALESCE(MAX(seq), 0) FROM messages WHERE conversationId = :conversationId")
     suspend fun maxSeq(conversationId: String): Long
 
+    /** Lowest stored seq — the page-back cursor when jumping to an old message. */
+    @Query("SELECT COALESCE(MIN(seq), 0) FROM messages WHERE conversationId = :conversationId")
+    suspend fun minSeq(conversationId: String): Long
+
+    /** Whether one message is already stored (quote/pin jump pre-check). */
+    @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE id = :messageId)")
+    suspend fun exists(messageId: String): Boolean
+
     @Query("DELETE FROM messages")
     suspend fun deleteAll()
 }

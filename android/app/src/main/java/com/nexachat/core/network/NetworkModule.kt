@@ -54,6 +54,11 @@ object NetworkModule {
         }
         .build()
 
+    /** Foreground signal the reconnect loop uses to bound its parked re-arm. */
+    @Provides
+    @Singleton
+    fun provideAppForegroundState(state: ProcessForegroundState): AppForegroundState = state
+
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, moshi: Moshi): Retrofit =

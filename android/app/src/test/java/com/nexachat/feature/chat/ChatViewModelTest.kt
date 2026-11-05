@@ -2,6 +2,7 @@ package com.nexachat.feature.chat
 
 import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
+import app.cash.turbine.test
 import com.nexachat.MainDispatcherRule
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.network.dto.AttachmentDto
@@ -15,6 +16,7 @@ import com.nexachat.data.ConversationRepository
 import com.nexachat.data.ConversationSummary
 import com.nexachat.data.DeliveryStatus
 import com.nexachat.data.LocalAttachment
+import com.nexachat.data.MessageJump
 import com.nexachat.data.MessageRepository
 import com.nexachat.data.TypingEvent
 import com.nexachat.feature.media.PendingAttachment
@@ -342,6 +344,40 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `server sniffed video MIME wins when picker cannot identify the URI`() = runTest {
+        val video = AttachmentDto(
+            id = "att-video",
+            originalName = "clip.mp4",
+            mimeType = "video/mp4",
+            sizeBytes = 4L,
+        )
+        coEvery { attachmentRepository.describe(uri) } returns LocalAttachment(
+            uri = uri,
+            displayName = "clip.mp4",
+            mimeType = null,
+            sizeBytes = 4L,
+            type = "FILE",
+        )
+        every { attachmentRepository.upload(uri, null) } returns
+            kotlinx.coroutines.flow.flowOf(AttachmentUploadEvent.Uploaded(video))
+        observeUi()
+        runCurrent()
+
+        viewModel.sendAttachments(listOf(uri))
+        runCurrent()
+
+        coVerify(exactly = 1) {
+            messageRepository.send(
+                conversationId = CONVERSATION_ID,
+                content = "clip.mp4",
+                replyToId = null,
+                type = "VIDEO",
+                attachments = listOf(video),
+            )
+        }
+    }
+
+    @Test
     fun `in-flight upload shows a pending row with progress`() = runTest {
         every { attachmentRepository.upload(any(), any()) } returns
             kotlinx.coroutines.flow.flow {
@@ -484,6 +520,49 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(ApiError.Unknown("PIN_LIMIT"), viewModel.uiState.value.error)
+    }
+
+    // ---- jump to a quoted / pinned message outside the loaded window ----
+
+    @Test
+    fun `jumpToMessage emits the scroll target once the message is loaded`() = runTest {
+        coEvery { messageRepository.loadUntilLoaded(CONVERSATION_ID, "m-old", any()) } returns
+            MessageJump.Found
+
+        viewModel.jumpTargets.test {
+            viewModel.jumpToMessage("m-old")
+            assertEquals("m-old", awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `jumpToMessage reports a target that is gone`() = runTest {
+        coEvery { messageRepository.loadUntilLoaded(any(), any(), any()) } returns
+            MessageJump.NotFound
+        observeUi()
+        runCurrent()
+
+        viewModel.jumpToMessage("m-gone")
+        runCurrent()
+
+        assertEquals(
+            ApiError.Unknown(ChatViewModel.ERROR_MESSAGE_GONE),
+            viewModel.uiState.value.error,
+        )
+    }
+
+    @Test
+    fun `jumpToMessage surfaces a history page failure`() = runTest {
+        coEvery { messageRepository.loadUntilLoaded(any(), any(), any()) } returns
+            MessageJump.Failed(ApiError.Network("down"))
+        observeUi()
+        runCurrent()
+
+        viewModel.jumpToMessage("m-old")
+        runCurrent()
+
+        assertEquals(ApiError.Network("down"), viewModel.uiState.value.error)
     }
 
     @Test

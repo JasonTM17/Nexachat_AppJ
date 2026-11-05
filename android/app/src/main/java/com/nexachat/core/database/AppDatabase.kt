@@ -9,11 +9,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * NexaChat local database — messages, inbox conversations, and the
  * optimistic-send outbox (plan §12.2 "Source of truth: Room").
  *
- * `exportSchema = false`: schema JSON export is a build-time convenience the
- * project does not consume — which also means Room `autoMigrations` are
- * impossible (they generate ALTERs from the exported schema diff). Schema
- * changes therefore use explicit [Migration] SQL, versioned like the
- * server's Flyway files.
+ * `exportSchema = true`: Room writes one JSON per database version under
+ * `app/schemas/com.nexachat.core.database.AppDatabase/` at build time. Those
+ * files are checked in and consumed by the instrumented migration tests
+ * (`room-testing`'s `MigrationTestHelper`), which is also why schema changes
+ * use explicit [Migration] SQL rather than `autoMigrations` — the diff Room
+ * would generate is only as good as the exported history.
  *
  * v2: `outbox.attachmentsJson` — pending attachment sends must survive a
  * process restart with their id list intact (phase-09 multimedia).
@@ -31,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PinnedMessageEntity::class,
     ],
     version = 6,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao

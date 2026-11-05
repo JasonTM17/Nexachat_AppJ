@@ -12,13 +12,17 @@ import com.nexachat.data.ConversationRepository
 import com.nexachat.data.GroupMember
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Backs `group/{conversationId}/detail` (phase-08 FR-D2/D4). The member list
@@ -34,6 +38,7 @@ import kotlinx.coroutines.launch
  * server still enforces).
  */
 @HiltViewModel
+@OptIn(FlowPreview::class)
 class GroupDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val conversationRepository: ConversationRepository,
@@ -77,6 +82,7 @@ class GroupDetailViewModel @Inject constructor(
 
     private val _events = Channel<Event>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+    private val memberRefreshMutex = Mutex()
 
     init {
         // Room stream keeps the title and avatar live across admin edits.
@@ -90,31 +96,41 @@ class GroupDetailViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            conversationRepository.groupUpdates(conversationId)
+                // A rename/add/remove fans out one CONVERSATION_UPDATED per
+                // affected client within milliseconds; without this window the
+                // open detail screen refetched the whole inbox once per push.
+                .debounce(PUSH_REFRESH_DEBOUNCE_MS)
+                .collect { refreshMembers() }
+        }
         loadMembers()
     }
 
     /** Fetches the member list (and title fallback) from the inbox payload. */
     fun loadMembers() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(loading = true) }
-            val myId = conversationRepository.myUserId()
-            when (val result = conversationRepository.groupDetail(conversationId)) {
-                is Result.Success -> _uiState.update { state ->
-                    state.copy(
-                        loading = false,
-                        title = result.value.title
-                            ?.takeIf { it.isNotBlank() }
-                            ?: state.title,
-                        members = result.value.members,
-                        myUserId = myId,
-                        iAmAdmin = result.value.members.any {
-                            it.userId == myId && it.isAdmin
-                        },
-                    )
-                }
-                is Result.Failure -> _uiState.update {
-                    it.copy(loading = false, error = result.error)
-                }
+        viewModelScope.launch { refreshMembers() }
+    }
+
+    private suspend fun refreshMembers() = memberRefreshMutex.withLock {
+        _uiState.update { it.copy(loading = true) }
+        val myId = conversationRepository.myUserId()
+        when (val result = conversationRepository.groupDetail(conversationId)) {
+            is Result.Success -> _uiState.update { state ->
+                state.copy(
+                    loading = false,
+                    title = result.value.title
+                        ?.takeIf { it.isNotBlank() }
+                        ?: state.title,
+                    members = result.value.members,
+                    myUserId = myId,
+                    iAmAdmin = result.value.members.any {
+                        it.userId == myId && it.isAdmin
+                    },
+                )
+            }
+            is Result.Failure -> _uiState.update {
+                it.copy(loading = false, error = result.error)
             }
         }
     }
@@ -212,8 +228,9 @@ class GroupDetailViewModel @Inject constructor(
 
     // ---- rename ----
 
-    fun openRename() =
+    fun openRename() {
         _uiState.update { it.copy(showRename = true, renameInput = it.title) }
+    }
 
     fun dismissRename() = _uiState.update { it.copy(showRename = false, renameInput = "") }
 
@@ -270,5 +287,13 @@ class GroupDetailViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private companion object {
+        /**
+         * Quiet window that folds a member/rename/avatar broadcast burst into
+         * one inbox fetch. Short enough that the open screen still feels live.
+         */
+        const val PUSH_REFRESH_DEBOUNCE_MS = 200L
     }
 }

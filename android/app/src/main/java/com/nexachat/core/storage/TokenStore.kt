@@ -70,12 +70,17 @@ class TokenStore @Inject constructor(
     }
 
     /**
-     * `true` while a refresh token is stored locally. This is a *presence*
-     * check only — the server is the real arbiter of validity (rotation/reuse
-     * detection); callers must attempt `refresh()` and handle its 401.
+     * `true` while a *usable* session is stored — all three prefs present and
+     * both opaque tokens decrypt with the current keystore key. A ciphertext
+     * that can no longer be decrypted (keystore key invalidated by a restore
+     * onto another device, a keystore reset, tampered prefs) must read as
+     * logged out: a presence-only check would send Splash to the inbox and
+     * start a reconnect loop that can never authenticate, with no route back
+     * to Login. The server remains the real arbiter of validity
+     * (rotation/reuse detection); callers still handle a 401 from `refresh()`.
      */
     val hasValidRefresh: Flow<Boolean> =
-        dataStore.data.map { prefs -> !prefs[Keys.REFRESH_TOKEN].isNullOrBlank() }
+        dataStore.data.map { prefs -> prefs.toTokens() != null }
 
     private fun Preferences.toTokens(): Tokens? {
         val access = this[Keys.ACCESS_TOKEN]?.decryptString() ?: return null

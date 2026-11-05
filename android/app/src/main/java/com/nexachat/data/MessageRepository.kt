@@ -99,6 +99,18 @@ data class ReadEvent(
     val upToSeq: Long?,
 )
 
+/** Outcome of paging history back to a message the user asked to see. */
+sealed interface MessageJump {
+    /** The message is stored, so the list can scroll to it. */
+    data object Found : MessageJump
+
+    /** Not reachable within the page budget — the message is gone or too old. */
+    data object NotFound : MessageJump
+
+    /** A page fetch failed; the caller surfaces [error] and may retry. */
+    data class Failed(val error: ApiError) : MessageJump
+}
+
 /**
  * The message pipeline (plan §12.2):
  *
@@ -270,6 +282,39 @@ class MessageRepository @Inject constructor(
             }
             is Result.Failure -> result
         }
+
+    /**
+     * Pages history backwards until [messageId] is stored, so a quote block or
+     * pin banner can scroll to a message outside the loaded window. Bounded by
+     * [maxPages]; each page goes through the same write-through as normal
+     * paging, so the list re-renders the target as soon as it lands.
+     */
+    suspend fun loadUntilLoaded(
+        conversationId: String,
+        messageId: String,
+        maxPages: Int = MAX_JUMP_PAGES,
+    ): MessageJump {
+        if (messageDao.exists(messageId)) return MessageJump.Found
+        if (messageDao.minSeq(conversationId) <= 0L) {
+            // Nothing loaded yet (cold screen, failed first page): pull the
+            // newest page before paging backwards from a non-existent cursor.
+            val first = refreshHistory(conversationId)
+            if (first is Result.Failure) return MessageJump.Failed(first.error)
+            if (messageDao.exists(messageId)) return MessageJump.Found
+        }
+        repeat(maxPages) {
+            val oldest = messageDao.minSeq(conversationId)
+            if (oldest <= 0L) return MessageJump.NotFound
+            when (val page = refreshHistory(conversationId, beforeSeq = oldest)) {
+                is Result.Success -> {
+                    if (messageDao.exists(messageId)) return MessageJump.Found
+                    if (!page.value.hasMore) return MessageJump.NotFound
+                }
+                is Result.Failure -> return MessageJump.Failed(page.error)
+            }
+        }
+        return MessageJump.NotFound
+    }
 
     /**
      * Write-through shared by history paging and reconnect resync: message
@@ -867,6 +912,9 @@ class MessageRepository @Inject constructor(
 
     private companion object {
         const val EVENT_BUFFER = 32
+
+        /** Jump-to-message page budget — 20 pages ≈ 600 messages of history. */
+        const val MAX_JUMP_PAGES = 20
 
         /** Envelope keys `GET /pins` may wrap the id list in. */
         val PIN_LIST_KEYS = listOf("items", "pins", "messageIds", "pinnedMessageIds")
