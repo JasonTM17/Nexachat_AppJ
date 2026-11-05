@@ -1,8 +1,11 @@
 # Keep the build context small and reproducible.
 target/
+**/target/
 .git/
 data/
 uploads/
+.env
+.env.*
 *.iml
 .idea/
 .vscode/

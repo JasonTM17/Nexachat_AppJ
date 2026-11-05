@@ -4,11 +4,37 @@
 #
 # Usage:  powershell -ExecutionPolicy Bypass -File .\demo\lan-up.ps1
 # ============================================================================
+if ($args.Count -gt 0) {
+  if ($args.Count -eq 1 -and $args[0] -in @('-h', '--help')) {
+    Write-Output @'
+Usage: demo/lan-up.ps1
+
+Start or reuse the NexaChat Compose demo, apply the idempotent demo seed, and
+print the exact HTTP/WebSocket URLs to enter in a phone build.
+The script refuses host ports 8080 or 5433 when a non-NexaChat listener owns
+them. Bash twin: demo/lan-up.sh.
+'@
+    exit 0
+  }
+  Write-Error "Unexpected argument(s): $($args -join ' ') (use --help)."
+  exit 2
+}
+
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
-$DbUser = 'nexachat'
-$DbName = 'nexachat'
+$DockerPortMappings = @(docker ps --filter label=com.docker.compose.project=nexachat --format '{{.Ports}}')
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker containers before checking host ports.' }
+foreach ($Port in @(8080, 5433)) {
+  $Listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+  if ($Listeners.Count -gt 0) {
+    $PublishedByNexaChat = $DockerPortMappings | Where-Object { $_ -match ":${Port}->" }
+    if (-not $PublishedByNexaChat) {
+      throw "TCP port $Port is held by a non-NexaChat listener; refusing to start."
+    }
+    Write-Host "==> Reusing NexaChat's existing listener on TCP $Port."
+  }
+}
 
 # --- 1. LAN IP ---------------------------------------------------------------
 $Candidates = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
@@ -35,11 +61,11 @@ Write-Host "==> LAN IP: $LanIp"
 
 # --- 2. Start services -------------------------------------------------------
 $AppImageBuilt = $false
-docker image inspect nexachat-app *> $null
+docker image inspect nexachat-app:1.0.0 *> $null
 if ($LASTEXITCODE -eq 0) { $AppImageBuilt = $true }
 
 if ($AppImageBuilt) {
-  Write-Host '==> Starting db + app (image nexachat-app found)'
+  Write-Host '==> Starting db + app (image nexachat-app:1.0.0 found)'
   docker compose up -d db app
 } else {
   Write-Host '==> Starting db only - app image not built yet.'
@@ -61,16 +87,28 @@ function Wait-Healthy([string]$Service) {
 }
 
 Write-Host '==> Waiting for db to be healthy...'
-[void](Wait-Healthy 'db')
+if (-not (Wait-Healthy 'db')) { throw 'The database did not become healthy; the demo seed was not applied.' }
+
+$DbCid = (docker compose ps -q db | Select-Object -First 1)
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($DbCid)) {
+  throw 'Could not identify the healthy Compose database container.'
+}
+$DbUser = (docker exec $DbCid printenv POSTGRES_USER).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the database user from its container.' }
+$DbName = (docker exec $DbCid printenv POSTGRES_DB).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not read the database name from its container.' }
+if ([string]::IsNullOrWhiteSpace($DbUser) -or [string]::IsNullOrWhiteSpace($DbName)) {
+  throw 'The running database container has no configured name or user.'
+}
 
 Write-Host '==> Applying demo seed (demo/seed.sql)...'
-$dbCid = (docker compose ps -q db)
-Get-Content demo/seed.sql -Raw | docker exec -i $dbCid psql -U $DbUser -d $DbName | Out-Null
+Get-Content demo/seed.sql -Raw | docker exec -i $DbCid psql -U $DbUser -d $DbName | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Applying demo/seed.sql failed.' }
 Write-Host '    Seed applied (re-runnable - ON CONFLICT DO NOTHING).'
 
 if ($AppImageBuilt) {
   Write-Host '==> Waiting for app to be healthy (Flyway + Spring Boot, up to ~3 min)...'
-  [void](Wait-Healthy 'app')
+  if (-not (Wait-Healthy 'app')) { throw 'The app did not become healthy.' }
 }
 
 # --- 4. Print connection info -------------------------------------------------
@@ -89,7 +127,8 @@ Write-Host @"
    Spare:    +84900000003  (Chi),  +84900000004  (Dung)
 
  Point the Android app at this machine:
-   android/.../core/common/AppConfig.kt -> API_BASE_URL
+   android/local.properties -> API_BASE_URL=http://${LanIp}:8080
+   (or: ./gradlew -PapiBaseUrl=http://${LanIp}:8080 assembleDebug)
    emulator default http://10.0.2.2:8080 already works.
  Details + troubleshooting: docs/demo-runbook.md
 ==================================================================

@@ -62,3 +62,14 @@ release/
 .codex/
 .devin/
 plans/
+
+# ---- Local tooling / profiling leftovers ----
+server/data/
+signing.properties
+captures/
+*.hprof
+.tmp_*
+desktop.ini
+
+# ---- Local-only capture evidence (not part of the submission) ----
+docs/evidence/

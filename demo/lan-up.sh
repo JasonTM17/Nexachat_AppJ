@@ -15,8 +15,74 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DB_USER=nexachat
-DB_NAME=nexachat
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<'USAGE'
+Usage: demo/lan-up.sh
+
+Start or reuse the NexaChat Compose demo, apply the idempotent demo seed, and
+print the exact HTTP/WebSocket URLs to enter in a phone build.
+The script refuses host ports 8080 or 5433 when a non-NexaChat listener owns
+them. PowerShell twin: demo/lan-up.ps1.
+USAGE
+  exit 0
+fi
+if [[ $# -ne 0 ]]; then
+  echo "ERROR: unexpected argument '$1' (use --help)." >&2
+  exit 2
+fi
+
+# Compose may already be publishing these ports for the NexaChat demo. Permit
+# only that exact project; any other host listener is a conflict.
+port_is_listening() {
+  local port="$1" output
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -NonInteractive -Command \
+      "if (Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1
+    return $?
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    output="$(ss -H -ltn "sport = :${port}" 2>/dev/null)" || return 2
+    [[ -n "${output}" ]]
+    return $?
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t >/dev/null 2>&1
+    return $?
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -ano -p tcp 2>/dev/null | awk -v suffix=":${port}" \
+      '$1 == "TCP" && $2 ~ (suffix "$") && ($4 == "LISTENING" || $4 == "LISTEN") { found=1 }
+       END { exit !found }'
+    return $?
+  fi
+  echo "ERROR: no supported TCP listener inspection command is available." >&2
+  return 2
+}
+
+nexachat_publishes_port() {
+  local port="$1" mappings
+  mappings="$(docker ps --filter label=com.docker.compose.project=nexachat \
+    --format '{{.Ports}}' 2>/dev/null || true)"
+  printf '%s\n' "${mappings}" | tr ',' '\n' | grep -Eq ":${port}->"
+}
+
+for port in 8080 5433; do
+  if port_is_listening "${port}"; then
+    if nexachat_publishes_port "${port}"; then
+      echo "==> Reusing NexaChat's existing listener on TCP ${port}."
+    else
+      echo "ERROR: TCP port ${port} is held by a non-NexaChat listener; refusing to start." >&2
+      exit 1
+    fi
+  else
+    status=$?
+    if [[ "${status}" -ne 1 ]]; then
+      echo "ERROR: could not safely inspect TCP port ${port}; refusing to start." >&2
+      exit "${status}"
+    fi
+  fi
+done
 
 # --- 1. LAN IP ---------------------------------------------------------------
 detect_lan_ip() {
@@ -48,12 +114,12 @@ echo "==> LAN IP: ${LAN_IP}"
 
 # --- 2. Start services -------------------------------------------------------
 APP_IMAGE_BUILT=0
-if docker image inspect nexachat-app >/dev/null 2>&1; then
+  if docker image inspect nexachat-app:1.0.0 >/dev/null 2>&1; then
   APP_IMAGE_BUILT=1
 fi
 
 if [ "${APP_IMAGE_BUILT}" -eq 1 ]; then
-  echo "==> Starting db + app (image nexachat-app found)"
+  echo "==> Starting db + app (image nexachat-app:1.0.0 found)"
   docker compose up -d db app
 else
   echo "==> Starting db only — app image not built yet."
@@ -78,14 +144,22 @@ wait_healthy() {
 echo "==> Waiting for db to be healthy..."
 wait_healthy db
 
+DB_CID="$(docker compose ps -q db)"
+DB_USER="$(docker exec "${DB_CID}" printenv POSTGRES_USER)"
+DB_NAME="$(docker exec "${DB_CID}" printenv POSTGRES_DB)"
+if [ -z "${DB_USER}" ] || [ -z "${DB_NAME}" ]; then
+  echo "ERROR: could not read the database name and user from the running container." >&2
+  exit 1
+fi
+
 echo "==> Applying demo seed (demo/seed.sql)..."
-docker exec -i "$(docker compose ps -q db)" \
+docker exec -i "${DB_CID}" \
   psql -U "${DB_USER}" -d "${DB_NAME}" < demo/seed.sql >/dev/null
 echo "    Seed applied (re-runnable — ON CONFLICT DO NOTHING)."
 
 if [ "${APP_IMAGE_BUILT}" -eq 1 ]; then
   echo "==> Waiting for app to be healthy (Flyway + Spring Boot, up to ~3 min)..."
-  wait_healthy app || true
+  wait_healthy app
 fi
 
 # --- 4. Print connection info -------------------------------------------------
@@ -104,7 +178,8 @@ cat <<EOF
    Spare:    +84900000003  (Chi),  +84900000004  (Dung)
 
  Point the Android app at this machine:
-   android/.../core/common/AppConfig.kt -> API_BASE_URL
+   android/local.properties -> API_BASE_URL=http://${LAN_IP}:8080
+   (or: ./gradlew -PapiBaseUrl=http://${LAN_IP}:8080 assembleDebug)
    emulator default http://10.0.2.2:8080 already works.
  Details + troubleshooting: docs/demo-runbook.md
 ==================================================================

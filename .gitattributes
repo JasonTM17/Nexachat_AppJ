@@ -1,0 +1,48 @@
+# Git normalisation rules for NexaChat.
+#
+# The repository stores LF for text so checkouts are reproducible across
+# Windows, macOS and Linux. `core.autocrlf=true` on a Windows workstation
+# otherwise rewrites every text file to CRLF on checkout and prints
+# "LF will be replaced by CRLF" on every `git status`.
+#
+# Safety: `git add --renormalize .` on the current tree stages no content
+# changes (verified in a throwaway clone; see docs/CONTRIBUTING.md).
+
+# Text files: auto-detect binary, keep LF in the index and in the working tree.
+* text=auto eol=lf
+
+# Shell scripts are executed by Git Bash / POSIX shells and must stay LF.
+*.sh eol=lf
+gradlew eol=lf
+
+# Windows-only scripts use CRLF so Notepad/cmd handle them cleanly.
+*.bat eol=crlf
+*.cmd eol=crlf
+*.ps1 eol=crlf
+
+# Binary assets — never diff, merge or line-convert.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.apk binary
+*.aab binary
+*.zip binary
+*.docx binary
+*.mp4 binary
+*.mp3 binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.ttf binary
+*.otf binary
+
+# Explicit binary marker for the generated report (also covered by *.docx).
+docs/report.docx binary
+
+# Markdown is always text.
+*.md text
+
+# Generated / vendored trees: keep them out of GitHub language statistics.
+docs/design/stitch/** linguist-generated=true
+android/app/schemas/** linguist-generated=true

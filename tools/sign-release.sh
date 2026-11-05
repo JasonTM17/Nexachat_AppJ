@@ -5,7 +5,7 @@
 # Inputs
 #   release/keystore/signing.properties   storeFile, keyAlias,
 #                                         keystore.storePassword, keyPassword
-#   $ANDROID_HOME / $ANDROID_SDK_ROOT     falls back to D:\Android\Sdk
+#   $ANDROID_HOME / $ANDROID_SDK_ROOT     must identify the local Android SDK
 #   $JAVA_HOME                            falls back to `java` on PATH
 #
 # Outputs (release/ is gitignored — never committed, never shipped)
@@ -14,6 +14,22 @@
 #
 # Requires: Git Bash (or any POSIX shell), JDK 17+, Android SDK build-tools.
 set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    cat <<'USAGE'
+Usage: tools/sign-release.sh [version-tag]
+
+Assemble, align, sign, and verify a release APK using local signing.properties.
+The output in release/ is regenerated for the supplied tag (default: v1.0.0).
+Requires ANDROID_HOME or ANDROID_SDK_ROOT, JDK 17+, and the local keystore.
+PowerShell twin: tools/sign-release.ps1.
+USAGE
+    exit 0
+fi
+if [[ $# -gt 1 ]]; then
+    echo "ERROR: expected at most one version tag (use --help)." >&2
+    exit 2
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -27,6 +43,8 @@ SIGNED_OUT="$OUT_DIR/nexachat-${VERSION_TAG}.apk"
 
 say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+
+[[ "$VERSION_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || fail "version tag may contain only letters, numbers, dot, underscore, and hyphen."
 
 # Convert Windows paths (D:\x or D:/x) to POSIX (/d/x) for bash use.
 to_unix() {
@@ -45,13 +63,16 @@ to_unix() {
 prop() { grep -E "^$2=" "$1" | head -n1 | cut -d= -f2- | tr -d '\r' ; }
 
 # ---- 0. Resolve tools --------------------------------------------------------
-SDK="$(to_unix "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-D:\\Android\\Sdk}}")"
+SDK_VALUE="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+[[ -n "$SDK_VALUE" ]] || fail "ANDROID_HOME or ANDROID_SDK_ROOT must point to the Android SDK."
+SDK="$(to_unix "$SDK_VALUE")"
 [[ -d "$SDK/build-tools" ]] || fail "Android SDK build-tools not found under '$SDK' (set ANDROID_HOME)."
 # Newest build-tools version wins (34.0.0 < 35.0.0 < 36.1.0).
 BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -n1)"
 [[ -n "$BT" && -f "$BT/lib/apksigner.jar" ]] || fail "apksigner.jar not found in newest build-tools dir."
 [[ -f "$BT/zipalign.exe" || -f "$BT/zipalign" ]] || fail "zipalign not found in $BT."
-ZIPALIGN="$BT/zipalign"
+# Windows build-tools ship zipalign.exe; POSIX images ship a bare zipalign.
+if [[ -f "$BT/zipalign.exe" ]]; then ZIPALIGN="$BT/zipalign.exe"; else ZIPALIGN="$BT/zipalign"; fi
 
 if [[ -n "${JAVA_HOME:-}" ]]; then
     JAVA_BIN="$(to_unix "$JAVA_HOME")/bin/java"

@@ -3,35 +3,39 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: nexachat
-      POSTGRES_USER: nexachat
-      POSTGRES_PASSWORD: nexachat
+      POSTGRES_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexachat -d nexachat"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # Backend API + WebSocket server. Local-dev `up -d db` is unaffected; the app
   # container talks to Postgres over the compose network at db:5432 (the host
   # 5433 mapping is only for tools/ITs on the developer machine).
   app:
+    image: nexachat-app:1.0.0
     build: ./server
     depends_on:
       db:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/nexachat
-      SPRING_DATASOURCE_USERNAME: nexachat
-      SPRING_DATASOURCE_PASSWORD: nexachat
-      # Passthrough: export JWT_SECRET for anything real; the fallback is the
-      # same dev secret as application.yml so a fresh clone still boots.
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-at-least-64-chars-long-0123456789}
-      STORAGE_ROOT: /app/data/uploads
+      DATABASE_URL: ${DATABASE_URL:-jdbc:postgresql://db:5432/nexachat}
+      DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      STORAGE_ROOT: ${STORAGE_ROOT:-/app/data/uploads}
+      NEXACHAT_SUMMARY_LLM_ENABLED: ${NEXACHAT_SUMMARY_LLM_ENABLED:-false}
+      NEXACHAT_SUMMARY_LLM_BASE_URL: ${NEXACHAT_SUMMARY_LLM_BASE_URL:-https://api.deepseek.com}
+      NEXACHAT_SUMMARY_LLM_MODEL: ${NEXACHAT_SUMMARY_LLM_MODEL:-deepseek-flash}
+      NEXACHAT_SUMMARY_LLM_API_KEY: ${NEXACHAT_SUMMARY_LLM_API_KEY:-}
     ports:
       - "8080:8080"
     volumes:

@@ -1,0 +1,41 @@
+# EditorConfig for NexaChat — keeps indentation and line endings consistent
+# across editors. https://editorconfig.org
+#
+# Measured against the current tree: Kotlin/Java max line length is 135
+# (p95 = 85), so max_line_length is set to 140 — a limit the code already
+# satisfies. No ktlint/spotless/detekt/Checkstyle plugin is configured in
+# build.gradle.kts or pom.xml, so no formatter-specific keys are declared.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Markdown uses two-space hard line breaks; trimming would change rendering.
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.{kt,kts,java}]
+indent_style = space
+indent_size = 4
+max_line_length = 140
+
+[*.{xml,yml,yaml,json,toml,properties}]
+indent_style = space
+indent_size = 2
+
+[*.sh]
+indent_style = space
+indent_size = 2
+
+[*.ps1]
+indent_style = space
+indent_size = 4
+
+[*.py]
+indent_style = space
+indent_size = 4

@@ -5,6 +5,13 @@ on:
   push:
     branches: [main, develop]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   server-test:
     runs-on: ubuntu-latest
@@ -14,7 +21,7 @@ jobs:
         env:
           POSTGRES_DB: nexachat
           POSTGRES_USER: nexachat
-          POSTGRES_PASSWORD: nexachat
+          POSTGRES_PASSWORD: nexachat-ci-password
         ports:
           - 5432:5432
         options: >-
@@ -23,8 +30,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
@@ -33,46 +41,86 @@ jobs:
         working-directory: server
         run: mvn -B verify
         env:
-          # Integration tests (*IT, failsafe) target the postgres service on :5432;
-          # locally they default to the compose DB on :5433.
+          # Integration tests use this job-local Postgres service on :5432.
           IT_DB_URL: jdbc:postgresql://localhost:5432/nexachat
           IT_DB_USER: nexachat
-          IT_DB_PASSWORD: nexachat
+          IT_DB_PASSWORD: nexachat-ci-password
+      - name: Upload server test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-test-reports
+          path: |
+            server/target/surefire-reports/**
+            server/target/failsafe-reports/**
+          if-no-files-found: ignore
+          retention-days: 7
 
   android-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      # The Gradle wrapper (gradlew + gradle-wrapper.jar) is committed.
-      - name: Android unit tests
+          cache-dependency-path: |
+            android/gradle/libs.versions.toml
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/build.gradle.kts
+            android/app/build.gradle.kts
+      - name: Android tests, lint and debug assembly
+        working-directory: android
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon
+      - name: Upload Android test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-test-reports
+          path: |
+            android/app/build/test-results/**
+            android/app/build/reports/lint-results*.html
+          if-no-files-found: ignore
+          retention-days: 7
+
+  repo-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check Markdown links
+        run: python tools/check-markdown-links.py
+      - name: Check shell syntax and style when available
+        shell: bash
         run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew testDebugUnitTest --stacktrace
-      - name: Android lint
-        run: |
-          cd android
-          ./gradlew lintDebug --stacktrace
+          bash -n demo/*.sh tools/*.sh
+          if command -v shellcheck >/dev/null 2>&1; then
+            shellcheck demo/*.sh tools/*.sh
+          else
+            echo "::notice::shellcheck is not installed on this runner; bash -n passed."
+          fi
 
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Block committed secrets
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Block committed secrets without echoing matched values
+        shell: bash
         run: |
-          # grep exit 0 = match found -> fail; exit 1 = clean -> pass.
-          # ci.yml is excluded so this pattern cannot match itself.
-          if grep -rE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}' \
+          if matches="$(grep -rIlE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}' \
               --include='*.kt' --include='*.java' --include='*.yml' \
-              --exclude='ci.yml' --exclude-dir='.git' . ; then
-            echo "::error::Possible committed secret — see matches above"
+              --exclude='ci.yml' --exclude-dir='.git' .)"; then
+            echo "::error::Possible committed secret pattern found in these files (values omitted):"
+            printf '%s\n' "$matches"
             exit 1
           else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "::error::Secret scan could not complete (grep status $status)."
+              exit "$status"
+            fi
             echo "No secret patterns found"
-            exit 0
           fi

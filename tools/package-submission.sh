@@ -21,13 +21,29 @@
 # (see .gitignore `!.env.example`); they ship as templates, content-checked
 # below to contain no real secrets.
 #
-# Zip backends tried in order: zip(1) → bsdtar (C:\Windows\System32\tar.exe
-# supports -a zip) → python3 zipfile → instruct PowerShell:
+# Zip backends tried in order: zip(1) → bsdtar available on PATH → Python
+# zipfile → instruct PowerShell:
 #   powershell -NoProfile -Command "Compress-Archive -Force -Path '<stage>\*' `
 #       -DestinationPath '<out.zip>'"
 #   (Compress-Archive is the last resort: it can silently skip very large
 #    archives and has historically had issues with files >2GB.)
 set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    cat <<'USAGE'
+Usage: tools/package-submission.sh [version-tag]
+
+Build and verify today's submission ZIP from the committed Git tree plus the
+matching signed/unsigned APKs (building/signing them when absent).
+The output for the current day is regenerated on repeat runs.
+PowerShell twin: tools/package-submission.ps1.
+USAGE
+    exit 0
+fi
+if [[ $# -gt 1 ]]; then
+    echo "ERROR: expected at most one version tag (use --help)." >&2
+    exit 2
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -42,6 +58,8 @@ say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
+[[ "$VERSION_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || fail "version tag may contain only letters, numbers, dot, underscore, and hyphen."
+
 to_unix() {
     local p="$1"
     if [[ "$p" =~ ^[A-Za-z]:[\\/] ]]; then
@@ -50,6 +68,7 @@ to_unix() {
     else echo "$p"; fi
 }
 to_win() { command -v cygpath >/dev/null 2>&1 && cygpath -w "$1" || echo "$1"; }
+TAR_BIN="$(command -v tar.exe || command -v bsdtar || command -v tar || true)"
 
 [[ -d .git ]] || fail "run from a git checkout — .git missing."
 [[ -f "$SIGNED" && -f "$UNSIGNED" ]] || {
@@ -102,11 +121,10 @@ zip_tree() {  # $@ = output zip; contents of $ROOT_DIR land at archive root
     local out="$1"
     if command -v zip >/dev/null 2>&1; then
         (cd "$ROOT_DIR" && zip -qr "$out" .)
-    elif [[ -x "$(to_unix 'C:\Windows\System32\tar.exe')" ]] \
-         && "$(to_unix 'C:\Windows\System32\tar.exe')" --version 2>/dev/null | grep -q bsdtar; then
-        # Windows-bundled bsdtar writes real zips via -a; dotglob catches .git/.
+    elif [[ -n "$TAR_BIN" ]] && "$TAR_BIN" --version 2>/dev/null | grep -q bsdtar; then
+        # bsdtar writes real zips via -a; dotglob catches .git/.
         (cd "$ROOT_DIR" && shopt -s dotglob nullglob \
-            && "$(to_unix 'C:\Windows\System32\tar.exe')" -a -c -f "$(to_win "$out")" -- *)
+            && "$TAR_BIN" -a -c -f "$(to_win "$out")" -- *)
     elif command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
         local PY; PY="$(command -v python3 || command -v python)"
         "$PY" - "$ROOT_DIR" "$(to_win "$out")" <<'PYEOF'
@@ -134,7 +152,7 @@ zip_tree "$(pwd)/$OUT"
 # ---- 5. Verify the archive ---------------------------------------------------
 list_zip() {
     if command -v unzip >/dev/null 2>&1; then unzip -Z1 "$1"
-    elif [[ -x "$(to_unix 'C:\Windows\System32\tar.exe')" ]]; then "$(to_unix 'C:\Windows\System32\tar.exe')" -tf "$1"
+    elif [[ -n "$TAR_BIN" ]]; then "$TAR_BIN" -tf "$1"
     else python3 -c "import zipfile,sys; [print(n) for n in zipfile.ZipFile(sys.argv[1]).namelist()]" "$1"
     fi
 }
@@ -157,7 +175,7 @@ ENVHITS="$(echo "$LIST" | grep -Ei '(^|/)\.env' || true)"
 say "PASS — submission zip verified"
 echo
 echo "  archive : $OUT"
-echo "  size    : $(du -h "$OUT" | cut -f1)  ($(stat -c%s "$OUT") bytes)"
+echo "  size    : $(du -h "$OUT" | cut -f1)  ($(wc -c < "$OUT" | tr -d ' ') bytes)"
 echo "  entries : $TOTAL"
 echo
 echo "  top-level entries:"
