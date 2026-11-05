@@ -19,6 +19,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import queue
+import threading
 import time
 import uuid
 from collections import deque
@@ -50,13 +52,21 @@ class StompConnection:
     def __init__(self, ws_url: str, access_token: str, label: str):
         self.label = label
         self.ws = websocket.create_connection(ws_url, timeout=10)
-        self.ws.settimeout(10)
+        # A dedicated reader owns every recv() so a short poll timeout can never
+        # interrupt a partially received frame or the heartbeat sender's send().
+        self.ws.settimeout(None)
+        self._inbox: queue.Queue = queue.Queue()
+        self._reader = threading.Thread(
+            target=self._read_loop, name=f"stomp-reader-{label}", daemon=True
+        )
+        self._reader.start()
         self._buffer = ""
         self._frames: deque = deque()
         self._observed_frames: deque = deque(maxlen=20)
         self._inbound_heartbeats = 0
         self._subscriptions = 0
-        self._next_heartbeat_at = time.monotonic() + HEARTBEAT_INTERVAL_SECONDS
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread = None
         self._send_frame(
             "CONNECT",
             {
@@ -67,6 +77,12 @@ class StompConnection:
             "",
         )
         self.wait_for(lambda frame: frame[0] == "CONNECTED", 10, "CONNECTED")
+        self._heartbeat_thread = threading.Thread(
+            target=self._send_heartbeats,
+            name=f"stomp-heartbeat-{label}",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
         self.subscribe("/user/queue/calls")
         self.subscribe("/user/queue/errors")
 
@@ -109,17 +125,23 @@ class StompConnection:
                     headers[key] = value
             self._frames.append((lines[0], headers, body))
 
+    def _read_loop(self) -> None:
+        while True:
+            try:
+                chunk = self.ws.recv()
+            except Exception as error:  # closed or reset: surface once to the consumer
+                self._inbox.put(error)
+                return
+            self._inbox.put(chunk)
+            if chunk is None:
+                return
+
     def _receive(self, timeout: float) -> None:
-        now = time.monotonic()
-        self._send_heartbeat_if_due(now)
-        until_heartbeat = max(0.1, self._next_heartbeat_at - time.monotonic())
-        self.ws.settimeout(max(0.1, min(timeout, until_heartbeat)))
         try:
-            chunk = self.ws.recv()
-        except websocket.WebSocketTimeoutException:
-            self._send_heartbeat_if_due(time.monotonic())
+            chunk = self._inbox.get(timeout=max(0.05, timeout))
+        except queue.Empty:
             return
-        if chunk is None:
+        if isinstance(chunk, Exception) or chunk is None:
             raise E2EFailure(f"{self.label}: socket closed while waiting for a frame")
         text = chunk if isinstance(chunk, str) else chunk.decode("utf-8")
         if not text.strip("\r\n"):
@@ -128,12 +150,13 @@ class StompConnection:
         self._buffer += text
         self._parse_buffer()
 
-    def _send_heartbeat_if_due(self, now: float) -> None:
-        if now < self._next_heartbeat_at:
-            return
-        # Match Android's raw STOMP client while calls can ring for 45 seconds.
-        self.ws.send("\n")
-        self._next_heartbeat_at = now + HEARTBEAT_INTERVAL_SECONDS
+    def _send_heartbeats(self) -> None:
+        while not self._heartbeat_stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                # Match Android's independent heartbeat coroutine during idle waits.
+                self.ws.send("\n")
+            except (websocket.WebSocketException, OSError):
+                return
 
     def wait_for(self, predicate, timeout: float, description: str):
         deadline = time.monotonic() + timeout
@@ -185,13 +208,16 @@ class StompConnection:
             self._receive(remaining)
 
     def close(self) -> None:
+        self._heartbeat_stop.set()
+        if self._heartbeat_thread is not None:
+            self._heartbeat_thread.join(timeout=1)
         try:
             self._send_frame("DISCONNECT", {}, "")
-        except OSError:
+        except (websocket.WebSocketException, OSError):
             pass
         try:
             self.ws.close()
-        except OSError:
+        except (websocket.WebSocketException, OSError):
             pass
 
 
@@ -399,7 +425,10 @@ def main() -> int:
         assert_new_call_line(client, caller_token, caller_conv, before, "MISSED", timeout_id)
         check(a._inbound_heartbeats >= 2,
               f"caller received only {a._inbound_heartbeats} server heartbeats during ringing")
-        print(f"[PASS] 45-second timeout ({elapsed:.1f}s), {a._inbound_heartbeats} server heartbeats, history, and system line")
+        print(
+            f"[PASS] 45-second timeout ({elapsed:.1f}s), "
+            f"{a._inbound_heartbeats} server heartbeats, history, and system line"
+        )
         return 0
     finally:
         for connection in connections:
