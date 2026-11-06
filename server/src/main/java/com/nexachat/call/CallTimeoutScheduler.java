@@ -1,6 +1,8 @@
 package com.nexachat.call;
 
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -18,13 +20,17 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class CallTimeoutScheduler {
 
+    private static final Logger log = LoggerFactory.getLogger(CallTimeoutScheduler.class);
     private static final long RETRY_DELAY_MILLIS = 25L;
+    private static final long PERSISTENCE_RETRY_DELAY_MILLIS = 1_000L;
+    static final int MAX_PERSISTENCE_RETRIES = 5;
 
     private final CallService callService;
     private final CallRegistry registry;
     private final long ringTimeoutMillis;
     private final ScheduledExecutorService scheduler;
     private final ConcurrentHashMap<UUID, ScheduledFuture<?>> scheduledCalls = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Integer> persistenceRetries = new ConcurrentHashMap<>();
 
     @Autowired
     public CallTimeoutScheduler(CallService callService, CallRegistry registry,
@@ -64,7 +70,20 @@ public class CallTimeoutScheduler {
 
     private void fire(UUID callId) {
         scheduledCalls.remove(callId);
-        callService.timeout(callId);
+        try {
+            callService.timeout(callId);
+        } catch (RuntimeException failure) {
+            boolean stillRinging = registry.find(callId)
+                    .filter(session -> session.state() == CallState.RINGING)
+                    .isPresent();
+            if (stillRinging) {
+                schedulePersistenceRetry(callId);
+            } else {
+                persistenceRetries.remove(callId);
+            }
+            return;
+        }
+        persistenceRetries.remove(callId);
         // The timer and the registry clock are independent: a timer that fires a
         // moment before the ring deadline leaves the call ringing, so it is
         // re-armed instead of being left to ring forever.
@@ -73,8 +92,25 @@ public class CallTimeoutScheduler {
                 .ifPresent(session -> scheduleTimeout(callId, RETRY_DELAY_MILLIS));
     }
 
+    private void schedulePersistenceRetry(UUID callId) {
+        int attempt = persistenceRetries.merge(callId, 1, Integer::sum);
+        if (attempt > MAX_PERSISTENCE_RETRIES) {
+            persistenceRetries.remove(callId);
+            log.warn("Stopped retrying call timeout persistence for {} after {} failed attempts",
+                    callId, attempt);
+            return;
+        }
+        scheduleTimeout(callId, backoffMillis(attempt));
+    }
+
+    static long backoffMillis(int failedAttempt) {
+        int exponent = Math.min(Math.max(failedAttempt, 1), MAX_PERSISTENCE_RETRIES) - 1;
+        return PERSISTENCE_RETRY_DELAY_MILLIS << exponent;
+    }
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCallTerminal(CallTerminalEvent event) {
+        persistenceRetries.remove(event.callId());
         ScheduledFuture<?> future = scheduledCalls.remove(event.callId());
         if (future != null) {
             future.cancel(false);
@@ -84,6 +120,10 @@ public class CallTimeoutScheduler {
     /** Defers the check until PresenceSessionRegistry has processed the same disconnect event. */
     public void checkDisconnectedUser(UUID userId, Runnable cleanup) {
         scheduler.schedule(cleanup, 50, TimeUnit.MILLISECONDS);
+    }
+
+    public void retryDisconnectedUser(Runnable cleanup, int failedAttempt) {
+        scheduler.schedule(cleanup, backoffMillis(failedAttempt), TimeUnit.MILLISECONDS);
     }
 
     @PreDestroy

@@ -3,9 +3,12 @@ package com.nexachat.call;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -70,6 +73,57 @@ class CallRegistryTest {
         assertThatThrownBy(() -> registry.end(callId, CONVERSATION, CALLER, START.plusSeconds(3)))
                 .isInstanceOf(CallException.class)
                 .extracting("code").isEqualTo(CallException.Code.CALL_NOT_FOUND);
+    }
+
+    @Test
+    void evictsTerminalCallsAfterFiveMinutesOfRegistryTime() {
+        MutableClock clock = new MutableClock(START);
+        CallRegistry registry = new CallRegistry(clock, 45_000);
+        UUID callId = UUID.randomUUID();
+        registry.invite(callId, CONVERSATION, CALLER, CALLEE, START);
+        registry.accept(callId, CONVERSATION, CALLEE, START);
+        registry.end(callId, CONVERSATION, CALLER, START);
+
+        clock.advance(Duration.ofMinutes(4).plusSeconds(59));
+        assertThat(registry.find(callId)).isPresent();
+
+        clock.advance(Duration.ofSeconds(1));
+        assertThat(registry.find(callId)).isEmpty();
+        assertThat(registry.activeCallForUser(CALLER)).isEmpty();
+        assertThat(registry.activeCallForUser(CALLEE)).isEmpty();
+    }
+
+    private static final class MutableClock extends Clock {
+        private final AtomicReference<Instant> instant;
+        private final ZoneId zone;
+
+        private MutableClock(Instant instant) {
+            this(new AtomicReference<>(instant), ZoneOffset.UTC);
+        }
+
+        private MutableClock(AtomicReference<Instant> instant, ZoneId zone) {
+            this.instant = instant;
+            this.zone = zone;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return zone;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return new MutableClock(instant, zone);
+        }
+
+        @Override
+        public Instant instant() {
+            return instant.get();
+        }
+
+        private void advance(Duration duration) {
+            instant.updateAndGet(current -> current.plus(duration));
+        }
     }
 
     private static CallRegistry registry(long timeoutMillis) {

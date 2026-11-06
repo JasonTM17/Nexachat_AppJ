@@ -13,11 +13,16 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Service
 public class CallService {
@@ -34,6 +39,8 @@ public class CallService {
     private final CallSystemMessageWriter systemMessageWriter;
     private final ApplicationEventPublisher eventPublisher;
     private final CallIceConfig iceConfig;
+    private final ReentrantReadWriteLock registryAccessLock = new ReentrantReadWriteLock(true);
+    private final ThreadLocal<MutationScope> mutationScope = new ThreadLocal<>();
 
     public CallService(CallRegistry registry,
                        @Lazy CallRecordRepository recordRepository,
@@ -61,17 +68,23 @@ public class CallService {
     @Transactional
     public void signal(UUID conversationId, UUID actorId, CallSignal signal) {
         validateEnvelope(signal);
-        switch (signal.type()) {
-            case INVITE -> invite(conversationId, actorId, signal);
-            case ACCEPT -> accept(conversationId, actorId, signal);
-            case REJECT -> terminate(conversationId, actorId, signal, CallEndReason.REJECTED,
-                    "CALL_REJECTED");
-            case CANCEL -> terminate(conversationId, actorId, signal, CallEndReason.CANCELLED,
-                    "CALL_CANCELLED");
-            case END -> terminate(conversationId, actorId, signal, CallEndReason.COMPLETED,
-                    "CALL_ENDED");
-            case SDP, ICE -> relay(conversationId, actorId, signal);
+        if (signal.type() == CallSignal.Type.SDP || signal.type() == CallSignal.Type.ICE) {
+            withRegistryRead(() -> relay(conversationId, actorId, signal));
+            return;
         }
+        withRegistryMutation(() -> {
+            switch (signal.type()) {
+                case INVITE -> invite(conversationId, actorId, signal);
+                case ACCEPT -> accept(conversationId, actorId, signal);
+                case REJECT -> terminate(conversationId, actorId, signal, CallEndReason.REJECTED,
+                        "CALL_REJECTED");
+                case CANCEL -> terminate(conversationId, actorId, signal, CallEndReason.CANCELLED,
+                        "CALL_CANCELLED");
+                case END -> terminate(conversationId, actorId, signal, CallEndReason.COMPLETED,
+                        "CALL_ENDED");
+                case SDP, ICE -> throw new IllegalStateException("Media frame entered the mutation path");
+            }
+        });
     }
 
     private void invite(UUID conversationId, UUID callerId, CallSignal signal) {
@@ -79,6 +92,7 @@ public class CallService {
         consume(callerId, "invite", 20);
         CallRegistry.Invitation invitation = registry.invite(signal.callId(), conversationId,
                 callerId, calleeId, registry.now());
+        recordRollback(() -> registry.rollback(invitation));
         CallSession call = invitation.session();
         if (invitation.busy()) {
             persistTerminal(call);
@@ -94,6 +108,7 @@ public class CallService {
     private void accept(UUID conversationId, UUID actorId, CallSignal signal) {
         CallRegistry.Transition transition = registry.accept(
                 signal.callId(), conversationId, actorId, registry.now());
+        recordRollback(() -> registry.rollback(transition));
         CallSession call = transition.session();
         if (transition.timedOut()) {
             finish(call, "CALL_TIMEOUT", call.callerId());
@@ -113,6 +128,7 @@ public class CallService {
             case COMPLETED -> registry.end(signal.callId(), conversationId, actorId, registry.now());
             default -> throw new IllegalStateException("Unsupported call action");
         };
+        recordRollback(() -> registry.rollback(transition));
         CallSession call = transition.session();
         finish(call, eventType, actorId);
     }
@@ -145,14 +161,18 @@ public class CallService {
 
     @Transactional
     public void timeout(UUID callId) {
-        registry.timeout(callId, registry.now()).ifPresent(transition ->
-                finish(transition.session(), "CALL_TIMEOUT", transition.session().callerId()));
+        withRegistryMutation(() -> registry.timeout(callId, registry.now()).ifPresent(transition -> {
+            recordRollback(() -> registry.rollback(transition));
+            finish(transition.session(), "CALL_TIMEOUT", transition.session().callerId());
+        }));
     }
 
     @Transactional
     public void disconnect(UUID userId) {
-        registry.failForUser(userId, registry.now()).ifPresent(transition ->
-                finish(transition.session(), "CALL_ENDED", userId));
+        withRegistryMutation(() -> registry.failForUser(userId, registry.now()).ifPresent(transition -> {
+            recordRollback(() -> registry.rollback(transition));
+            finish(transition.session(), "CALL_ENDED", userId);
+        }));
     }
 
     public CallIceConfig iceConfig() {
@@ -226,6 +246,96 @@ public class CallService {
         eventPublisher.publishEvent(new CallDelivery(recipientId, event));
     }
 
+    private void withRegistryMutation(Runnable operation) {
+        MutationLease lease = beginMutationScope();
+        try {
+            operation.run();
+        } catch (RuntimeException | Error failure) {
+            if (!lease.transactionManaged) {
+                lease.scope.rollback();
+            }
+            throw failure;
+        } finally {
+            if (lease.releaseOnExit) {
+                if (lease.removeOnExit) {
+                    mutationScope.remove();
+                }
+                registryAccessLock.writeLock().unlock();
+            }
+        }
+    }
+
+    private void withRegistryRead(Runnable operation) {
+        Lock lock = registryAccessLock.readLock();
+        lock.lock();
+        boolean transactionManaged = deferUnlockUntilCompletion(lock, null);
+        try {
+            operation.run();
+        } finally {
+            if (!transactionManaged) {
+                lock.unlock();
+            }
+        }
+    }
+
+    private MutationLease beginMutationScope() {
+        registryAccessLock.writeLock().lock();
+        MutationScope existing = mutationScope.get();
+        if (existing != null) {
+            return new MutationLease(existing, existing.transactionManaged, true, false);
+        }
+        boolean transactionManaged = TransactionSynchronizationManager.isSynchronizationActive()
+                && TransactionSynchronizationManager.isActualTransactionActive();
+        MutationScope scope = new MutationScope(transactionManaged);
+        mutationScope.set(scope);
+        if (transactionManaged) {
+            try {
+                deferUnlockUntilCompletion(registryAccessLock.writeLock(), scope);
+            } catch (RuntimeException | Error failure) {
+                mutationScope.remove();
+                throw failure;
+            }
+            return new MutationLease(scope, true, false, false);
+        }
+        return new MutationLease(scope, false, true, true);
+    }
+
+    private boolean deferUnlockUntilCompletion(Lock lock, MutationScope scope) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()
+                || !TransactionSynchronizationManager.isActualTransactionActive()) {
+            return false;
+        }
+        try {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    try {
+                        if (scope != null && status != STATUS_COMMITTED) {
+                            scope.rollback();
+                        }
+                    } finally {
+                        if (scope != null && mutationScope.get() == scope) {
+                            mutationScope.remove();
+                        }
+                        lock.unlock();
+                    }
+                }
+            });
+        } catch (RuntimeException | Error failure) {
+            lock.unlock();
+            throw failure;
+        }
+        return true;
+    }
+
+    private void recordRollback(Runnable rollback) {
+        MutationScope scope = mutationScope.get();
+        if (scope == null) {
+            throw new IllegalStateException("Call registry mutation scope is missing");
+        }
+        scope.rollbacks.add(rollback);
+    }
+
     private UUID directPeer(UUID conversationId, UUID callerId) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(CallException::notMember);
@@ -270,5 +380,29 @@ public class CallService {
 
     private static boolean exceedsUtf8Limit(String value, long limit) {
         return value.length() > limit || value.getBytes(StandardCharsets.UTF_8).length > limit;
+    }
+
+    private static final class MutationScope {
+        private final boolean transactionManaged;
+        private final List<Runnable> rollbacks = new ArrayList<>();
+        private boolean rolledBack;
+
+        private MutationScope(boolean transactionManaged) {
+            this.transactionManaged = transactionManaged;
+        }
+
+        private void rollback() {
+            if (rolledBack) {
+                return;
+            }
+            rolledBack = true;
+            for (int index = rollbacks.size() - 1; index >= 0; index--) {
+                rollbacks.get(index).run();
+            }
+        }
+    }
+
+    private record MutationLease(MutationScope scope, boolean transactionManaged,
+                                 boolean releaseOnExit, boolean removeOnExit) {
     }
 }

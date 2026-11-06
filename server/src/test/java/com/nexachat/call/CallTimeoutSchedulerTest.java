@@ -18,6 +18,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -65,6 +66,55 @@ class CallTimeoutSchedulerTest {
         executor.tasks.remove(0).run();
 
         assertThat(executor.tasks).isEmpty();
+    }
+
+    @Test
+    void persistenceFailureRetriesTimeoutWithoutEndingTheInMemoryCall() {
+        MutableClock clock = new MutableClock(START);
+        CallRegistry registry = new CallRegistry(clock, 45_000);
+        CallService service = mock(CallService.class);
+        RecordingScheduler executor = new RecordingScheduler();
+        CallTimeoutScheduler scheduler = new CallTimeoutScheduler(service, registry, 45_000, executor);
+        UUID callId = UUID.randomUUID();
+        UUID caller = UUID.randomUUID();
+        UUID callee = UUID.randomUUID();
+        registry.invite(callId, UUID.randomUUID(), caller, callee, START);
+        scheduler.onCallRinging(new CallRingingEvent(callId));
+        doThrow(new IllegalStateException("database unavailable")).when(service).timeout(callId);
+
+        clock.set(START.plusMillis(45_000));
+        executor.tasks.remove(0).run();
+
+        verify(service, times(1)).timeout(callId);
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.RINGING);
+        assertThat(executor.tasks).hasSize(1);
+        assertThat(executor.delays.get(1)).isEqualTo(1_000L);
+    }
+
+    @Test
+    void persistenceRetriesBackOffAndStopAfterFiveFailures() {
+        MutableClock clock = new MutableClock(START);
+        CallRegistry registry = new CallRegistry(clock, 45_000);
+        CallService service = mock(CallService.class);
+        RecordingScheduler executor = new RecordingScheduler();
+        CallTimeoutScheduler scheduler = new CallTimeoutScheduler(service, registry, 45_000, executor);
+        UUID callId = UUID.randomUUID();
+        registry.invite(callId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), START);
+        scheduler.onCallRinging(new CallRingingEvent(callId));
+        doThrow(new IllegalStateException("database unavailable")).when(service).timeout(callId);
+        clock.set(START.plusMillis(45_000));
+
+        executor.tasks.remove(0).run();
+        for (int retry = 1; retry <= CallTimeoutScheduler.MAX_PERSISTENCE_RETRIES; retry++) {
+            assertThat(executor.tasks).hasSize(1);
+            assertThat(executor.delays.remove(executor.delays.size() - 1))
+                    .isEqualTo(CallTimeoutScheduler.backoffMillis(retry));
+            executor.tasks.remove(0).run();
+        }
+
+        verify(service, times(1 + CallTimeoutScheduler.MAX_PERSISTENCE_RETRIES)).timeout(callId);
+        assertThat(executor.tasks).isEmpty();
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.RINGING);
     }
 
     private static final class MutableClock extends Clock {

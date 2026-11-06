@@ -8,6 +8,8 @@ import com.nexachat.message.CallSystemMessageWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -93,6 +95,94 @@ class CallServiceTest {
                 new CallSignal(CallSignal.Type.ACCEPT, UUID.randomUUID(), null, null)))
                 .isInstanceOf(CallException.class)
                 .extracting("code").isEqualTo(CallException.Code.CALL_NOT_FOUND);
+    }
+
+    @Test
+    void rollsBackInvitationAndReservationWhenCallRecordSaveFails() {
+        UUID callId = UUID.randomUUID();
+        when(recordRepository.save(any(CallRecord.class)))
+                .thenThrow(new IllegalStateException("database unavailable"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(registry.find(callId)).isEmpty();
+        assertThat(registry.activeCallForUser(callerId)).isEmpty();
+        assertThat(registry.activeCallForUser(calleeId)).isEmpty();
+        verify(eventPublisher, never()).publishEvent(any(CallRingingEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(CallDelivery.class));
+
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.RINGING);
+    }
+
+    @Test
+    void rollsBackRegistryAfterThePersistenceTransactionReportsFailure() {
+        UUID callId = UUID.randomUUID();
+        when(recordRepository.save(any(CallRecord.class)))
+                .thenThrow(new IllegalStateException("database unavailable"));
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        boolean synchronizationCompleted = false;
+        try {
+            assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                    new CallSignal(CallSignal.Type.INVITE, callId, null, null)))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(registry.find(callId)).isPresent();
+            for (TransactionSynchronization synchronization
+                    : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+            synchronizationCompleted = true;
+
+            assertThat(registry.find(callId)).isEmpty();
+            assertThat(registry.activeCallForUser(callerId)).isEmpty();
+            assertThat(registry.activeCallForUser(calleeId)).isEmpty();
+        } finally {
+            if (!synchronizationCompleted && TransactionSynchronizationManager.isSynchronizationActive()) {
+                for (TransactionSynchronization synchronization
+                        : TransactionSynchronizationManager.getSynchronizations()) {
+                    synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+                }
+            }
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+    }
+
+    @Test
+    void restoresActiveCallAndReservationsWhenTerminalRecordSaveFails() {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+        service.signal(conversationId, calleeId,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+        org.mockito.Mockito.clearInvocations(eventPublisher, systemMessageWriter);
+        when(recordRepository.save(any(CallRecord.class)))
+                .thenThrow(new IllegalStateException("database unavailable"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.END, callId, null, null)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+        assertThat(registry.activeCallForUser(callerId).orElseThrow().callId()).isEqualTo(callId);
+        assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(callId);
+        verify(systemMessageWriter, never()).write(any());
+        verify(eventPublisher, never()).publishEvent(any(CallTerminalEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(CallDelivery.class));
+
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.END, callId, null, null));
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.ENDED);
+        verify(systemMessageWriter, times(1)).write(any(CallSession.class));
     }
 
     @Test
