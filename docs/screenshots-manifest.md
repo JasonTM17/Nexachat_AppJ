@@ -302,3 +302,10 @@ python tools/e2e/device/adb_ui.py shot docs/design/screens/s2-01-action-sheet-li
 `seed-direct`, `mark-read`, `settings`, `send`) and
 `tools/e2e/device/realtime_probe.py` opens a second STOMP session
 (peer online/offline, live `MESSAGE_UPDATED`/`MESSAGE_DELETED`).
+
+## 5. README media (`docs/media/screens`)
+
+Seventeen PNGs for the repository README. Fixture accounts only (`UX Pass N`,
+`+849000006xx`), dark English unless the filename says `light` or `vi`.
+Capture notes and the file list are in [`docs/media/README.md`](media/README.md).
+No GIF is stored.

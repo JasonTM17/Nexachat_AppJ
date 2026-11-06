@@ -10,6 +10,22 @@ message sending available offline.
 > Java + Spring Boot (server) · PostgreSQL · STOMP over raw WebSocket.
 > Built for a viva defense — shipped behavior points to source; in-progress work is labeled.
 
+## Demo
+
+Captured on the `nexachat-audit` emulator against the local server. Accounts in the frames are fixtures (`UX Pass N`). The index is [`docs/media/README.md`](docs/media/README.md).
+
+<table>
+<tr>
+<td><img src="docs/media/screens/03-inbox-dark-en.png" width="180" alt="Inbox with unread badges and a call preview"></td>
+<td><img src="docs/media/screens/04-direct-chat-dark-en.png" width="180" alt="Direct chat with a reply, reaction, pin, and image"></td>
+<td><img src="docs/media/screens/12-summary-dark-en.png" width="180" alt="Local conversation summary"></td>
+<td><img src="docs/media/screens/06-group-detail-dark-en.png" width="180" alt="Group members"></td>
+<td><img src="docs/media/screens/13-inbox-light-vi.png" width="180" alt="Vietnamese inbox"></td>
+</tr>
+</table>
+
+Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: Kotlin and Java on Android (Jetpack Compose, Hilt, Room), Spring Boot 3, PostgreSQL, STOMP, WebRTC signaling.
+
 ## Quick start
 
 Before the first start, copy `.env.example` to `.env` and replace the local
