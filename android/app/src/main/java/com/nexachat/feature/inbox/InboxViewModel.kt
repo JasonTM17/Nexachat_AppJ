@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
+import com.nexachat.core.storage.TokenStore
 import com.nexachat.data.ConversationRepository
 import com.nexachat.data.ConversationSummary
+import com.nexachat.data.userIdFromJwt
+import com.squareup.moshi.Moshi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +26,13 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class InboxViewModel @Inject constructor(
     private val conversationRepository: ConversationRepository,
+    private val tokenStore: TokenStore? = null,
+    private val moshi: Moshi? = null,
 ) : ViewModel() {
 
     data class UiState(
         val conversations: List<ConversationSummary> = emptyList(),
+        val currentUserId: String? = null,
         val loading: Boolean = true,
         val error: ApiError? = null,
     ) {
@@ -38,6 +44,13 @@ class InboxViewModel @Inject constructor(
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            val accessToken = tokenStore?.readTokens()?.accessToken
+            val currentUserId = accessToken?.let { token ->
+                moshi?.let { adapter -> userIdFromJwt(token, adapter) }
+            }
+            _uiState.update { it.copy(currentUserId = currentUserId) }
+        }
         viewModelScope.launch {
             conversationRepository.inboxFlow().collect { conversations ->
                 _uiState.update { it.copy(conversations = conversations, loading = false) }

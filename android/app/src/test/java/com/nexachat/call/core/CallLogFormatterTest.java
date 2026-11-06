@@ -12,6 +12,18 @@ public final class CallLogFormatterTest {
 
         assertEquals(CallLogFormatter.OUTGOING_COMPLETED_KEY, formatted.getResourceKey());
         assertEquals("1:18", formatted.getArgs()[0]);
+        assertEquals(null, formatted.getCallerUserId());
+    }
+
+    @Test
+    public void fourPartTokenExposesCallerAndPreservesReasonAndDuration() {
+        CallLogFormatter.FormattedCallLog formatted = CallLogFormatter.fromSystemMessage(
+                "CALL|COMPLETED|78|caller-id",
+                CallSession.Direction.INCOMING);
+
+        assertEquals(CallLogFormatter.INCOMING_COMPLETED_KEY, formatted.getResourceKey());
+        assertEquals("1:18", formatted.getArgs()[0]);
+        assertEquals("caller-id", formatted.getCallerUserId());
     }
 
     @Test
@@ -24,5 +36,11 @@ public final class CallLogFormatterTest {
                 "CALL|BUSY|0", CallSession.Direction.OUTGOING).getResourceKey());
         assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
                 "CALL|BROKEN|0", CallSession.Direction.OUTGOING).getResourceKey());
+        assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|COMPLETED|0|", CallSession.Direction.OUTGOING).getResourceKey());
+        assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|COMPLETED|0|   ", CallSession.Direction.OUTGOING).getResourceKey());
+        assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|COMPLETED|0|caller-id|extra", CallSession.Direction.OUTGOING).getResourceKey());
     }
 }

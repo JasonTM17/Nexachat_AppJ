@@ -9,6 +9,9 @@
     <string name="call_state_no_answer">Không trả lời</string>
     <string name="call_state_declined">Đã từ chối cuộc gọi</string>
     <string name="call_state_failed">Cuộc gọi thất bại</string>
+    <string name="call_failure_peer_offline_reason">Người này hiện không trực tuyến nên chưa thể nhận cuộc gọi.</string>
+    <string name="call_failure_network_reason">Sự cố kết nối khiến cuộc gọi không thể thực hiện. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="call_failure_generic_reason">Không thể thực hiện cuộc gọi. Vui lòng thử lại.</string>
     <string name="call_mute">Tắt mic</string>
     <string name="call_unmute">Bật mic</string>
     <string name="call_speaker">Loa ngoài</string>

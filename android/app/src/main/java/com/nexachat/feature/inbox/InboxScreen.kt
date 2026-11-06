@@ -135,6 +135,7 @@ fun InboxScreen(
                             Column(modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
                                 ConversationRow(
                                     conversation = conversation,
+                                    currentUserId = state.currentUserId,
                                     formatTime = { epochMs ->
                                         resolveRelativeTimeLabel(
                                             epochMs = epochMs,
@@ -163,6 +164,7 @@ fun InboxScreen(
 @Composable
 private fun ConversationRow(
     conversation: ConversationSummary,
+    currentUserId: String?,
     formatTime: (Long) -> String,
     onClick: () -> Unit,
 ) {
@@ -220,7 +222,10 @@ private fun ConversationRow(
             } else {
                 val previewText = conversation.lastMessageContent.orEmpty().let { raw ->
                     if (raw.startsWith("CALL|")) {
-                        val callLog = CallLogResourceResolver.fromSystemMessage(raw, false)
+                        val callLog = CallLogResourceResolver.fromSystemMessage(
+                            raw,
+                            CallPreviewDirection.isOutgoing(raw, currentUserId),
+                        )
                         stringResource(callLog.resourceId, *callLog.arguments)
                     } else {
                         raw

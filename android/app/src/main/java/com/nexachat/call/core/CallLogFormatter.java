@@ -14,10 +14,16 @@ public final class CallLogFormatter {
 
     public static final class FormattedCallLog {
         private final String resourceKey;
+        private final String callerUserId;
         private final Object[] args;
 
         private FormattedCallLog(String resourceKey, Object... args) {
+            this(resourceKey, null, args);
+        }
+
+        private FormattedCallLog(String resourceKey, String callerUserId, Object[] args) {
             this.resourceKey = resourceKey;
+            this.callerUserId = callerUserId;
             this.args = args.clone();
         }
 
@@ -27,6 +33,10 @@ public final class CallLogFormatter {
 
         public Object[] getArgs() {
             return args.clone();
+        }
+
+        public String getCallerUserId() {
+            return callerUserId;
         }
     }
 
@@ -58,13 +68,17 @@ public final class CallLogFormatter {
         }
     }
 
-    /** Parses the server's stable {@code CALL|REASON|seconds} system-message content. */
+    /** Parses stable {@code CALL|REASON|seconds[|callerUserId]} system-message content. */
     public static FormattedCallLog fromSystemMessage(
             String content,
             CallSession.Direction direction) {
         if (content == null) return new FormattedCallLog(FAILED_KEY);
         String[] parts = content.split("\\|", -1);
-        if (parts.length != 3 || !"CALL".equals(parts[0])) {
+        if ((parts.length != 3 && parts.length != 4) || !"CALL".equals(parts[0])) {
+            return new FormattedCallLog(FAILED_KEY);
+        }
+        String callerUserId = parts.length == 4 ? parts[3] : null;
+        if (parts.length == 4 && callerUserId.trim().isEmpty()) {
             return new FormattedCallLog(FAILED_KEY);
         }
         CallEndReason reason;
@@ -75,7 +89,8 @@ public final class CallLogFormatter {
         } catch (IllegalArgumentException exception) {
             return new FormattedCallLog(FAILED_KEY);
         }
-        return format(reason, duration, direction);
+        FormattedCallLog formatted = format(reason, duration, direction);
+        return new FormattedCallLog(formatted.resourceKey, callerUserId, formatted.args);
     }
 
     private static String formatDuration(long durationSeconds) {

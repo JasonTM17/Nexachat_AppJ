@@ -398,30 +398,22 @@ public class CallActivity extends ComponentActivity {
         if (operation == PendingOperation.ACCEPT_INCOMING && currentSession != null) {
             callManager.reject(currentSession.getCallId());
         }
-        showPhoneFallbackDialog(R.string.call_mic_permission_needed);
+        showPhoneFallbackDialog(CallFailureDialogCopy.forPermissionDenied());
     }
 
     private void showCallError(CallError error) {
-        int messageRes = R.string.call_state_failed;
-        if (error != null) {
-            switch (error.getCode()) {
-                case BUSY: messageRes = R.string.call_state_busy; break;
-                case PEER_OFFLINE: messageRes = R.string.call_state_no_answer; break;
-                case MEDIA_UNAVAILABLE:
-                case NETWORK: messageRes = R.string.call_state_failed; break;
-                default: break;
-            }
-        }
-        showPhoneFallbackDialog(messageRes);
+        showPhoneFallbackDialog(CallFailureDialogCopy.forCode(
+                error == null ? null : error.getCode()));
     }
 
-    private void showPhoneFallbackDialog(int messageRes) {
+    private void showPhoneFallbackDialog(CallFailureDialogCopy copy) {
         if (callErrorDialogShown || isFinishing()) return;
         callErrorDialogShown = true;
         mainHandler.removeCallbacks(finishEndedScreen);
         String phone = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE);
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setMessage(messageRes)
+                .setTitle(copy.getTitleResource())
+                .setMessage(copy.getReasonResource())
                 .setNegativeButton(android.R.string.cancel, (dialog, which) -> finish());
         if (CallPermissionHelper.hasPhoneFallback(phone)) {
             builder.setPositiveButton(R.string.call_via_phone,
