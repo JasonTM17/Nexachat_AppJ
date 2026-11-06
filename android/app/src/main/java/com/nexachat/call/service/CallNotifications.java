@@ -190,7 +190,7 @@ public final class CallNotifications {
     }
 
     private static Context localizedAppContext(Context context) {
-        return AppLocaleManager.INSTANCE.wrapContext(context.getApplicationContext());
+        return AppLocaleManager.wrapContext(context.getApplicationContext());
     }
 
     private static String displayName(Context context, CallSession session) {

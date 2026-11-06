@@ -437,19 +437,19 @@ class MessageRepository @Inject constructor(
         newContent: String,
     ): Result<Unit> {
         val trimmed = newContent.trim()
-        if (trimmed.isEmpty()) return Result.Failure(ApiError.Unknown(ERROR_VALIDATION_FAILED))
+        if (trimmed.isEmpty()) return Result.failure(ApiError.Unknown(ERROR_VALIDATION_FAILED))
         val before = messageDao.byId(messageId)
-            ?: return Result.Failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
+            ?: return Result.failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
         // Mirror the server boundary locally: only the author may edit, and
         // only TEXT. The server remains authoritative for stale rows.
         if (!isMine(before.senderId)) {
-            return Result.Failure(ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR))
+            return Result.failure(ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR))
         }
         if (before.type != MessageDto.TYPE_TEXT) {
-            return Result.Failure(ApiError.Unknown(ERROR_VALIDATION_FAILED))
+            return Result.failure(ApiError.Unknown(ERROR_VALIDATION_FAILED))
         }
         if (before.deletedAtEpochMs != null) {
-            return Result.Failure(ApiError.Unknown(ERROR_MESSAGE_DELETED))
+            return Result.failure(ApiError.Unknown(ERROR_MESSAGE_DELETED))
         }
         if (before.content == trimmed) return Result.Success(Unit)
         val optimistic = before.copy(
@@ -483,7 +483,7 @@ class MessageRepository @Inject constructor(
                 }
                 is Result.Failure -> {
                     if (messageDao.byId(messageId) == optimistic) messageDao.update(before)
-                    result
+                    Result.cast(result)
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -507,9 +507,9 @@ class MessageRepository @Inject constructor(
         var rollback: DeleteRollback? = null
         try {
             val before = messageDao.byId(messageId)
-                ?: return Result.Failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
+                ?: return Result.failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
             if (!isMine(before.senderId)) {
-                return Result.Failure(ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR))
+                return Result.failure(ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR))
             }
             // Idempotent by contract: an already-tombstoned row is a local success.
             if (before.deletedAtEpochMs != null) return Result.Success(Unit)
@@ -622,7 +622,7 @@ class MessageRepository @Inject constructor(
                     ),
                 )
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
     }
 
@@ -728,7 +728,7 @@ class MessageRepository @Inject constructor(
             when (val result = call { messageApi.sendMessage(entry.conversationId, request) }) {
                 is Result.Success -> acknowledge(entry.conversationId, result.value)
                 is Result.Failure -> when (result.error) {
-                    ApiError.RateLimited -> scheduleRateLimitRetry()
+                    is ApiError.RateLimited -> scheduleRateLimitRetry()
                     is ApiError.Network -> Unit
                     else -> outboxDao.updateState(entry.clientMessageId, OutboxState.FAILED)
                 }
@@ -1017,7 +1017,7 @@ class MessageRepository @Inject constructor(
         when (val result = call { messageApi.getPins(conversationId) }) {
             is Result.Success -> {
                 val body = runCatching { result.value.string() }.getOrNull()
-                    ?: return Result.Failure(ApiError.Network("body read failed"))
+                    ?: return Result.failure(ApiError.Network("body read failed"))
                 val (pins, embedded) = parsePinsBody(conversationId, body)
                 // Pinned messages outside the loaded window still render:
                 // the server embeds full message rows (PinnedMessageView),
@@ -1028,7 +1028,7 @@ class MessageRepository @Inject constructor(
                 pinDao.replaceForConversation(conversationId, pins)
                 Result.Success(Unit)
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     /** Optimistic pin — revert + signal on failure (403 non-admin, PIN_LIMIT). */
@@ -1288,9 +1288,9 @@ class MessageRepository @Inject constructor(
         when (val result = safeApiCallCatching(block)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
-                Result.Failure(ApiError.from(result.status, result.errorCode))
+                Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
 
     /**

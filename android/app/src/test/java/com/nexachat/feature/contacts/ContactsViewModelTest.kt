@@ -125,12 +125,12 @@ class ContactsViewModelTest {
     @Test
     fun `search failure surfaces the error and clears results`() = runTest {
         coEvery { repository.searchByPhone(any()) } returns
-            Result.Failure(ApiError.RateLimited)
+            Result.failure(ApiError.RateLimited.INSTANCE)
         viewModel.onQueryChange("0912345678")
 
         viewModel.search()
 
-        assertEquals(ApiError.RateLimited, viewModel.uiState.value.error)
+        assertEquals(ApiError.RateLimited.INSTANCE, viewModel.uiState.value.error)
         assertTrue(viewModel.uiState.value.searchResults.isEmpty())
     }
 
@@ -151,12 +151,12 @@ class ContactsViewModelTest {
     @Test
     fun `duplicate add maps to the already-contact state`() = runTest {
         coEvery { repository.addContact(any()) } returns
-            Result.Failure(ApiError.PhoneExists)
+            Result.failure(ApiError.PhoneExists.INSTANCE)
         viewModel.onAddPhoneChange("0912345678")
 
         viewModel.confirmAdd()
 
-        assertEquals(ApiError.PhoneExists, viewModel.uiState.value.addError)
+        assertEquals(ApiError.PhoneExists.INSTANCE, viewModel.uiState.value.addError)
         assertFalse(viewModel.uiState.value.addDone)
         coVerify(exactly = 1) { repository.addContact("0912345678") }
     }
@@ -234,7 +234,7 @@ class ContactsViewModelTest {
     @Test
     fun `message failure surfaces the error and emits no event`() = runTest {
         coEvery { repository.openDirectConversation(any(), any()) } returns
-            Result.Failure(ApiError.Network())
+            Result.failure(ApiError.Network())
         viewModel.openContactDetail(contact)
 
         viewModel.events.test {

@@ -73,7 +73,7 @@ fun LanguageSettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            LanguageOption.entries.forEachIndexed { index, option ->
+            LanguageOption.values().forEachIndexed { index, option ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -99,7 +99,7 @@ fun LanguageSettingsScreen(
                         modifier = Modifier.padding(start = 16.dp),
                     )
                 }
-                if (index < LanguageOption.entries.size - 1) {
+                if (index < LanguageOption.values().size - 1) {
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(horizontal = 16.dp),

@@ -54,7 +54,7 @@ class SplashViewModelTest {
     @Test
     fun `stored token plus failed refresh navigates to login`() = runTest {
         every { tokenStore.hasValidRefresh } returns flowOf(true)
-        coEvery { repository.refresh() } returns Result.Failure(ApiError.InvalidCredentials)
+        coEvery { repository.refresh() } returns Result.failure(ApiError.InvalidCredentials.INSTANCE)
 
         val viewModel = SplashViewModel(tokenStore, repository)
 

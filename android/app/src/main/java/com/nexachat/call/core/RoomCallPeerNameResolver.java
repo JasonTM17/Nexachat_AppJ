@@ -23,7 +23,7 @@ public final class RoomCallPeerNameResolver implements CallPeerNameResolver {
 
     @Override
     public String unknownCallerDisplayName() {
-        return AppLocaleManager.INSTANCE.wrapContext(appContext)
+        return AppLocaleManager.wrapContext(appContext)
                 .getString(R.string.call_unknown_caller);
     }
 

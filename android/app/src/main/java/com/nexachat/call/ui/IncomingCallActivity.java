@@ -61,7 +61,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private final Runnable finishEndedScreen = this::finish;
 
     @Override protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(AppLocaleManager.INSTANCE.wrapContext(newBase));
+        super.attachBaseContext(AppLocaleManager.wrapContext(newBase));
     }
 
     @Override protected void onCreate(@Nullable Bundle savedInstanceState) {

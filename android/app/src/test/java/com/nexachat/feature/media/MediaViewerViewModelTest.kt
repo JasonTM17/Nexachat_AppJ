@@ -80,7 +80,7 @@ class MediaViewerViewModelTest {
     @Test
     fun `download failure surfaces the error and reload retries`() = runTest {
         coEvery { attachmentRepository.downloadToCache(any(), any()) } returns
-            Result.Failure(ApiError.Network("down"))
+            Result.failure(ApiError.Network("down"))
 
         val viewModel = createViewModel()
         assertEquals(ApiError.Network("down"), viewModel.uiState.value.error)
@@ -130,7 +130,7 @@ class MediaViewerViewModelTest {
     @Test
     fun `blank nav args degrade to nulls — the UI falls back to Attachment`() = runTest {
         coEvery { attachmentRepository.downloadToCache(any(), any()) } returns
-            Result.Failure(ApiError.Network("offline"))
+            Result.failure(ApiError.Network("offline"))
 
         val viewModel = createViewModel(name = "  ", mime = "  ")
 

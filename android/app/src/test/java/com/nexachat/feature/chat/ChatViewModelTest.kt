@@ -633,7 +633,7 @@ class ChatViewModelTest {
         observeUi()
         runCurrent()
         coEvery { messageRepository.editMessage(any(), any(), any()) } returns
-            Result.Failure(ApiError.Unknown("MESSAGE_DELETED"))
+            Result.failure(ApiError.Unknown("MESSAGE_DELETED"))
 
         viewModel.editMessage("m-1", "new")
         runCurrent()
@@ -653,7 +653,7 @@ class ChatViewModelTest {
         }
 
         coEvery { messageRepository.editMessage(any(), any(), any()) } returns
-            Result.Failure(ApiError.Unknown("NETWORK"))
+            Result.failure(ApiError.Unknown("NETWORK"))
         viewModel.actionEvents.test {
             viewModel.editMessage("m-1", "again")
             runCurrent()
@@ -672,7 +672,7 @@ class ChatViewModelTest {
         coVerify(exactly = 1) { messageRepository.deleteMessage(CONVERSATION_ID, "m-1") }
 
         coEvery { messageRepository.deleteMessage(any(), any()) } returns
-            Result.Failure(ApiError.Unknown("NOT_MESSAGE_AUTHOR"))
+            Result.failure(ApiError.Unknown("NOT_MESSAGE_AUTHOR"))
         viewModel.deleteMessage("m-2")
         runCurrent()
         assertEquals(
@@ -817,7 +817,7 @@ class ChatViewModelTest {
     @Test
     fun `search failure surfaces on the search state only`() = runTest {
         coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
-            Result.Failure(ApiError.Network("down"))
+            Result.failure(ApiError.Network("down"))
 
         viewModel.search("hi")
         advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)

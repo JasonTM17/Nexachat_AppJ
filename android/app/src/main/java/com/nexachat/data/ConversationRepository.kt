@@ -246,7 +246,7 @@ class ConversationRepository @Inject constructor(
                 }
                 Result.Success(Unit)
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
     }
 
@@ -276,7 +276,7 @@ class ConversationRepository @Inject constructor(
                 upsertPreservingClientColumns(listOf(result.value.toEntity(fallbackTitle = trimmed)))
                 Result.Success(result.value.id)
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
     }
 
@@ -303,13 +303,13 @@ class ConversationRepository @Inject constructor(
                         )
                     }
                     val nextCursor = result.value.nextCursor
-                        ?: return Result.Failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
+                        ?: return Result.failure(ApiError.Unknown("CONVERSATION_NOT_FOUND"))
                     if (!seenCursors.add(nextCursor)) {
-                        return Result.Failure(ApiError.Unknown("INVALID_INBOX_CURSOR"))
+                        return Result.failure(ApiError.Unknown("INVALID_INBOX_CURSOR"))
                     }
                     cursor = nextCursor
                 }
-                is Result.Failure -> return Result.Failure(result.error)
+                is Result.Failure -> return Result.failure(result.error)
             }
         }
     }
@@ -341,7 +341,7 @@ class ConversationRepository @Inject constructor(
                     ?.let { conversationDao.upsert(it) }
                 Result.Success(Unit)
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     /**
@@ -358,7 +358,7 @@ class ConversationRepository @Inject constructor(
                 }
             } catch (e: IOException) {
                 null
-            } ?: return@withContext Result.Failure(ApiError.Network("avatar read failed"))
+            } ?: return@withContext Result.failure(ApiError.Network("avatar read failed"))
             val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
                 ?: "image/jpeg"
             val part = MultipartBody.Part.createFormData(
@@ -373,7 +373,7 @@ class ConversationRepository @Inject constructor(
                         ?.let { conversationDao.upsert(it) }
                     Result.Success(Unit)
                 }
-                is Result.Failure -> result
+                is Result.Failure -> Result.cast(result)
             }
         }
 
@@ -409,7 +409,7 @@ class ConversationRepository @Inject constructor(
                 conversationDao.clear()
                 refreshInbox()
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     // ---- push triggers ----
@@ -543,7 +543,7 @@ class ConversationRepository @Inject constructor(
         return try {
             val response = messageApi.getConversations(limit = limit, cursor = cursor)
             if (!response.isSuccessful) {
-                return Result.Failure(
+                return Result.failure(
                     ApiError.from(
                         response.code(),
                         com.nexachat.core.network.dto.errorCodeOf(response.errorBody()?.string()),
@@ -551,16 +551,16 @@ class ConversationRepository @Inject constructor(
                 )
             }
             val responseBody = response.body()
-                ?: return Result.Failure(ApiError.Unknown("UNEXPECTED_EMPTY_BODY"))
+                ?: return Result.failure(ApiError.Unknown("UNEXPECTED_EMPTY_BODY"))
             val page = parseInboxBody(
                 body = responseBody.string().trim(),
                 headerCursor = response.headers()[NEXT_CURSOR_HEADER],
-            ) ?: return Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
+            ) ?: return Result.failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
             Result.Success(page)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: IOException) {
-            Result.Failure(ApiError.Network(error.message))
+            Result.failure(ApiError.Network(error.message))
         }
     }
 
@@ -591,7 +591,7 @@ class ConversationRepository @Inject constructor(
     /** Collapses a `Result<ResponseBody>`-style call into `Result<Unit>`. */
     private fun <T> Result<T>.toUnitResult(): Result<Unit> = when (this) {
         is Result.Success -> Result.Success(Unit)
-        is Result.Failure -> this
+        is Result.Failure -> Result.cast(this)
     }
 
     private suspend fun <T> call(
@@ -600,9 +600,9 @@ class ConversationRepository @Inject constructor(
         when (val result = safeApiCallCatching(block)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
-                Result.Failure(ApiError.from(result.status, result.errorCode))
+                Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
 
     /** Same empty-body cast guard as the other repositories. */

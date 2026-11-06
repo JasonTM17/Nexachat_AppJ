@@ -79,7 +79,7 @@ public class CallActivity extends ComponentActivity {
     private PowerManager.WakeLock proximityWakeLock;
 
     @Override protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(AppLocaleManager.INSTANCE.wrapContext(newBase));
+        super.attachBaseContext(AppLocaleManager.wrapContext(newBase));
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {

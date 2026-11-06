@@ -206,7 +206,7 @@ class GroupDetailViewModelTest {
     @Test
     fun `remove failure surfaces the error`() = runTest {
         coEvery { conversationRepository.removeGroupMember(any(), any()) } returns
-            Result.Failure(ApiError.Unknown("NOT_ADMIN"))
+            Result.failure(ApiError.Unknown("NOT_ADMIN"))
 
         viewModel.requestRemoveMember(lan)
         viewModel.confirmRemoveMember()
@@ -232,7 +232,7 @@ class GroupDetailViewModelTest {
     @Test
     fun `leave failure surfaces the error and emits no event`() = runTest {
         coEvery { conversationRepository.leaveGroup(any()) } returns
-            Result.Failure(ApiError.Network())
+            Result.failure(ApiError.Network())
 
         viewModel.events.test {
             viewModel.confirmLeave()
@@ -298,7 +298,7 @@ class GroupDetailViewModelTest {
     @Test
     fun `failed rename keeps the dialog and the typed title`() = runTest {
         coEvery { conversationRepository.renameGroup(any(), any()) } returns
-            Result.Failure(ApiError.Unknown("NETWORK"))
+            Result.failure(ApiError.Unknown("NETWORK"))
 
         viewModel.openRename()
         viewModel.onRenameInputChange("Kept title")
@@ -320,7 +320,7 @@ class GroupDetailViewModelTest {
 
     @Test
     fun `member fetch failure surfaces the error`() = runTest {
-        val viewModel = createViewModel(Result.Failure(ApiError.Network()))
+        val viewModel = createViewModel(Result.failure(ApiError.Network()))
 
         assertEquals(ApiError.Network(), viewModel.uiState.value.error)
         assertFalse(viewModel.uiState.value.loading)

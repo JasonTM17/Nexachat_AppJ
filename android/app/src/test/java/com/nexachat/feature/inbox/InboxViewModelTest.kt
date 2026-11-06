@@ -101,7 +101,7 @@ class InboxViewModelTest {
     fun `refresh failure surfaces the error but keeps the list`() = runTest {
         inboxFlow.value = listOf(conversation("c-1", unread = 1))
         coEvery { repository.refreshInbox() } returns
-            Result.Failure(ApiError.Network("down"))
+            Result.failure(ApiError.Network("down"))
 
         viewModel.refresh()
 
@@ -116,10 +116,10 @@ class InboxViewModelTest {
     @Test
     fun `successful refresh clears a previous error`() = runTest {
         coEvery { repository.refreshInbox() } returns
-            Result.Failure(ApiError.RateLimited)
+            Result.failure(ApiError.RateLimited.INSTANCE)
         viewModel.refresh()
         viewModel.uiState.test {
-            assertEquals(ApiError.RateLimited, awaitItem().error)
+            assertEquals(ApiError.RateLimited.INSTANCE, awaitItem().error)
             cancelAndIgnoreRemainingEvents()
         }
 

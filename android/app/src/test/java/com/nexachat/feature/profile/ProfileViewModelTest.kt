@@ -61,7 +61,7 @@ class ProfileViewModelTest {
 
     @Test
     fun `load failure surfaces the error and reload retries`() = runTest {
-        val viewModel = createViewModel(Result.Failure(ApiError.Network("down")))
+        val viewModel = createViewModel(Result.failure(ApiError.Network("down")))
         assertEquals(ApiError.Network("down"), viewModel.uiState.value.error)
         assertNull(viewModel.uiState.value.user)
 
@@ -122,7 +122,7 @@ class ProfileViewModelTest {
     @Test
     fun `save failure surfaces saveError and keeps the editor open`() = runTest {
         coEvery { contactsRepository.updateDisplayName(any()) } returns
-            Result.Failure(ApiError.Network("down"))
+            Result.failure(ApiError.Network("down"))
 
         val viewModel = createViewModel()
         viewModel.startEditName()
@@ -209,7 +209,7 @@ class ProfileViewModelTest {
     @Test
     fun `server failure keeps the dialog open with the error`() = runTest {
         coEvery { authRepository.changePassword(any(), any()) } returns
-            Result.Failure(ApiError.InvalidCredentials)
+            Result.failure(ApiError.InvalidCredentials.INSTANCE)
 
         val viewModel = createViewModel()
         viewModel.openAndFillPassword()
@@ -217,7 +217,7 @@ class ProfileViewModelTest {
 
         val state = viewModel.uiState.value
         assertTrue(state.showPasswordDialog)
-        assertEquals(ApiError.InvalidCredentials, state.passwordError)
+        assertEquals(ApiError.InvalidCredentials.INSTANCE, state.passwordError)
         assertFalse(state.passwordSaving)
     }
 
@@ -241,7 +241,7 @@ class ProfileViewModelTest {
     fun `avatar upload failure surfaces avatarError and keeps the old record`() = runTest {
         val uri = mockk<android.net.Uri>()
         coEvery { contactsRepository.uploadAvatar(uri) } returns
-            Result.Failure(ApiError.Network("avatar read failed"))
+            Result.failure(ApiError.Network("avatar read failed"))
 
         val viewModel = createViewModel()
         viewModel.uploadAvatar(uri)
@@ -286,12 +286,12 @@ class ProfileViewModelTest {
     @Test
     fun `a rejected presence toggle surfaces the error`() = runTest {
         coEvery { settingsRepository.setShowPresence(any()) } returns
-            Result.Failure(ApiError.RateLimited)
+            Result.failure(ApiError.RateLimited.INSTANCE)
         val viewModel = createViewModel()
 
         viewModel.setShowPresence(false)
         advanceUntilIdle()
 
-        assertEquals(ApiError.RateLimited, viewModel.uiState.value.saveError)
+        assertEquals(ApiError.RateLimited.INSTANCE, viewModel.uiState.value.saveError)
     }
 }

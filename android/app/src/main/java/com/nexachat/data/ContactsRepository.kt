@@ -93,7 +93,7 @@ class ContactsRepository @Inject constructor(
             }
         } catch (e: IOException) {
             null
-        } ?: return@withContext Result.Failure(ApiError.Network("avatar read failed"))
+        } ?: return@withContext Result.failure(ApiError.Network("avatar read failed"))
         val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
             ?: "image/jpeg"
         val part = MultipartBody.Part.createFormData(
@@ -103,7 +103,7 @@ class ContactsRepository @Inject constructor(
         )
         when (val uploaded = call { userApi.uploadAvatar(part) }) {
             is Result.Success -> call { userApi.getMe() }
-            is Result.Failure -> uploaded
+            is Result.Failure -> Result.cast(uploaded)
         }
     }
 
@@ -121,7 +121,7 @@ class ContactsRepository @Inject constructor(
             is Result.Success ->
                 Result.Success(result.value.mapNotNull { it.toContact() })
                     .also { _contacts.value = it.value }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     /**
@@ -144,8 +144,8 @@ class ContactsRepository @Inject constructor(
                         }
                         Result.Success(contact)
                     }
-                    ?: Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
-            is Result.Failure -> result
+                    ?: Result.failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
+            is Result.Failure -> Result.cast(result)
         }
 
     suspend fun setAlias(userId: String, aliasName: String?): Result<Contact> =
@@ -162,8 +162,8 @@ class ContactsRepository @Inject constructor(
                         }
                         Result.Success(updated)
                     }
-                    ?: Result.Failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
-            is Result.Failure -> result
+                    ?: Result.failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
+            is Result.Failure -> Result.cast(result)
         }
 
     suspend fun removeContact(userId: String): Result<Unit> =
@@ -194,7 +194,7 @@ class ContactsRepository @Inject constructor(
             }
         ) {
             is Result.Success -> Result.Success(result.value.id)
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     // ---- internals ----
@@ -216,20 +216,20 @@ class ContactsRepository @Inject constructor(
      * generic [ApiError.from] table applies.
      */
     private fun contactWriteError(httpStatus: Int, serverCode: String?): ApiError = when {
-        serverCode == "ALREADY_CONTACT" || serverCode == "PHONE_EXISTS" -> ApiError.PhoneExists
+        serverCode == "ALREADY_CONTACT" || serverCode == "PHONE_EXISTS" -> ApiError.PhoneExists.INSTANCE
         else -> ApiError.from(httpStatus, serverCode)
     }
 
     private suspend fun <T> call(
-        mapError: (Int, String?) -> ApiError = ApiError.Companion::from,
+        mapError: (Int, String?) -> ApiError = ApiError::from,
         block: suspend () -> retrofit2.Response<T>,
     ): Result<T> =
         when (val result = safeApiCallCatching(block)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
-                Result.Failure(mapError(result.status, result.errorCode))
+                Result.failure(mapError(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
 
     /**

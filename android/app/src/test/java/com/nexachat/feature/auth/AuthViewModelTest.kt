@@ -59,7 +59,7 @@ class AuthViewModelTest {
     @Test
     fun `login 401 shows InvalidCredentials and emits no event`() = runTest {
         coEvery { repository.login(any(), any()) } returns
-            Result.Failure(ApiError.InvalidCredentials)
+            Result.failure(ApiError.InvalidCredentials.INSTANCE)
         viewModel.onPhoneChange("0912345678")
         viewModel.onPasswordChange("wrong-pass")
 
@@ -68,7 +68,7 @@ class AuthViewModelTest {
             expectNoEvents()
             cancel()
         }
-        assertEquals(ApiError.InvalidCredentials, viewModel.uiState.value.error)
+        assertEquals(ApiError.InvalidCredentials.INSTANCE, viewModel.uiState.value.error)
         assertFalse(viewModel.uiState.value.loading)
     }
 
@@ -123,13 +123,13 @@ class AuthViewModelTest {
     @Test
     fun `register phone-exists error maps to PhoneExists`() = runTest {
         coEvery { repository.register(any(), any(), any()) } returns
-            Result.Failure(ApiError.PhoneExists)
+            Result.failure(ApiError.PhoneExists.INSTANCE)
         viewModel.onDisplayNameChange("Minh")
         viewModel.onPhoneChange("0912345678")
         viewModel.onPasswordChange("secret123")
 
         viewModel.register()
 
-        assertEquals(ApiError.PhoneExists, viewModel.uiState.value.error)
+        assertEquals(ApiError.PhoneExists.INSTANCE, viewModel.uiState.value.error)
     }
 }

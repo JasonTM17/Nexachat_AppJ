@@ -1,0 +1,174 @@
+package com.nexachat.core.common;
+
+import androidx.annotation.Nullable;
+import java.util.Objects;
+
+/**
+ * Domain-facing error vocabulary produced by parsing the server's error
+ * envelope ({@code {"error":{"code":…}}}). UI maps each variant to a string
+ * resource and never parses {@code message}.
+ *
+ * <p>The three codeless variants are singletons. {@link #equals} for those is
+ * type-based so they keep matching the old Kotlin objects.
+ */
+public sealed interface ApiError
+        permits ApiError.InvalidCredentials,
+                ApiError.PhoneExists,
+                ApiError.RateLimited,
+                ApiError.Network,
+                ApiError.Unknown {
+
+    /** 401 {@code INVALID_CREDENTIALS} (also reused for {@code WRONG_PASSWORD}). */
+    final class InvalidCredentials implements ApiError {
+        public static final InvalidCredentials INSTANCE = new InvalidCredentials();
+
+        private InvalidCredentials() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof InvalidCredentials;
+        }
+
+        @Override
+        public int hashCode() {
+            return InvalidCredentials.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "InvalidCredentials";
+        }
+    }
+
+    /** 409 {@code PHONE_EXISTS} on register. */
+    final class PhoneExists implements ApiError {
+        public static final PhoneExists INSTANCE = new PhoneExists();
+
+        private PhoneExists() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof PhoneExists;
+        }
+
+        @Override
+        public int hashCode() {
+            return PhoneExists.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "PhoneExists";
+        }
+    }
+
+    /** 429 / {@code RATE_LIMITED}. */
+    final class RateLimited implements ApiError {
+        public static final RateLimited INSTANCE = new RateLimited();
+
+        private RateLimited() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof RateLimited;
+        }
+
+        @Override
+        public int hashCode() {
+            return RateLimited.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "RateLimited";
+        }
+    }
+
+    /** Transport failure — no HTTP response at all. */
+    final class Network implements ApiError {
+        @Nullable private final String message;
+
+        public Network() {
+            this(null);
+        }
+
+        public Network(@Nullable String message) {
+            this.message = message;
+        }
+
+        @Nullable
+        public String getMessage() {
+            return message;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof Network network)) {
+                return false;
+            }
+            return Objects.equals(message, network.message);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(message);
+        }
+
+        @Override
+        public String toString() {
+            return "Network(message=" + message + ")";
+        }
+    }
+
+    /** Anything else; keeps the raw server {@code code} for logging/debug. */
+    final class Unknown implements ApiError {
+        @Nullable private final String code;
+
+        public Unknown() {
+            this(null);
+        }
+
+        public Unknown(@Nullable String code) {
+            this.code = code;
+        }
+
+        @Nullable
+        public String getCode() {
+            return code;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof Unknown unknown)) {
+                return false;
+            }
+            return Objects.equals(code, unknown.code);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(code);
+        }
+
+        @Override
+        public String toString() {
+            return "Unknown(code=" + code + ")";
+        }
+    }
+
+    static ApiError from(int httpStatus, @Nullable String serverCode) {
+        if ("INVALID_CREDENTIALS".equals(serverCode) || "WRONG_PASSWORD".equals(serverCode)) {
+            return InvalidCredentials.INSTANCE;
+        }
+        if ("PHONE_EXISTS".equals(serverCode)) {
+            return PhoneExists.INSTANCE;
+        }
+        if ("RATE_LIMITED".equals(serverCode) || httpStatus == 429) {
+            return RateLimited.INSTANCE;
+        }
+        return new Unknown(serverCode);
+    }
+}

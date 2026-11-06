@@ -227,13 +227,13 @@ class AttachmentRepository @Inject constructor(
                     // cache is not "not downloaded yet", it is a corrupt file
                     // ExoPlayer or ACTION_VIEW can still be handed.
                     runCatching { file.delete() }
-                    Result.Failure(ApiError.Network(e.message))
+                    Result.failure(ApiError.Network(e.message))
                 }
             }
             is ApiResult.HttpError ->
-                Result.Failure(ApiError.from(result.status, result.errorCode))
+                Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
     }
 

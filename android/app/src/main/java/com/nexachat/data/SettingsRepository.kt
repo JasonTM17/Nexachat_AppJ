@@ -85,7 +85,7 @@ class SettingsRepository @Inject constructor(
                 result.value.showPresence?.let { _showPresence.value = it }
                 Result.Success(Unit)
             }
-            is Result.Failure -> result
+            is Result.Failure -> Result.cast(result)
         }
 
     /**
@@ -103,7 +103,7 @@ class SettingsRepository @Inject constructor(
             }
             is Result.Failure -> {
                 _showPresence.value = previous
-                result
+                Result.cast(result)
             }
         }
     }
@@ -114,9 +114,9 @@ class SettingsRepository @Inject constructor(
         when (val result = safeApiCall(block)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
-                Result.Failure(ApiError.from(result.status, result.errorCode))
+                Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
 
     private companion object {

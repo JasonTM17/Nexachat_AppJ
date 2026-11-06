@@ -60,11 +60,11 @@ class AuthRepository @Inject constructor(
         when (tokenRefresher.refresh()) {
             is TokenRefresher.Outcome.FreshToken -> Result.Success(true)
             TokenRefresher.Outcome.TransientFailure ->
-                Result.Failure(ApiError.Network("refresh request failed"))
+                Result.failure(ApiError.Network("refresh request failed"))
             TokenRefresher.Outcome.Rejected ->
-                Result.Failure(ApiError.Unknown("SESSION_REJECTED"))
+                Result.failure(ApiError.Unknown("SESSION_REJECTED"))
             TokenRefresher.Outcome.NoRefreshToken ->
-                Result.Failure(ApiError.Unknown("NO_REFRESH_TOKEN"))
+                Result.failure(ApiError.Unknown("NO_REFRESH_TOKEN"))
         }
 
     /**
@@ -122,9 +122,9 @@ class AuthRepository @Inject constructor(
         when (val result = safeApiCallCatching(block)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
-                Result.Failure(ApiError.from(result.status, result.errorCode))
+                Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
-                Result.Failure(ApiError.Network(result.cause.message))
+                Result.failure(ApiError.Network(result.cause.message))
         }
 
     /**

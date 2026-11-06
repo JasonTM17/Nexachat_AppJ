@@ -121,7 +121,7 @@ class CreateGroupViewModelTest {
     @Test
     fun `create failure surfaces a typed error and emits no event`() = runTest {
         coEvery { conversationRepository.createGroup(any(), any()) } returns
-            Result.Failure(ApiError.Network())
+            Result.failure(ApiError.Network())
         viewModel.onTitleChange("Weekend")
         viewModel.toggleMember("u-1")
 
@@ -137,11 +137,11 @@ class CreateGroupViewModelTest {
     @Test
     fun `contacts load failure surfaces the error`() = runTest {
         coEvery { contactsRepository.contacts() } returns
-            Result.Failure(ApiError.RateLimited)
+            Result.failure(ApiError.RateLimited.INSTANCE)
 
         val viewModel = CreateGroupViewModel(contactsRepository, conversationRepository)
 
-        assertEquals(ApiError.RateLimited, viewModel.uiState.value.error)
+        assertEquals(ApiError.RateLimited.INSTANCE, viewModel.uiState.value.error)
         assertTrue(viewModel.uiState.value.contactsLoaded)
     }
 }
