@@ -45,7 +45,7 @@ public class CallActivity extends ComponentActivity {
     private static final int REQUEST_NOTIFICATIONS = 7211;
     private static final long ENDED_SCREEN_MS = 1600L;
     private static final String STATE_PENDING_PERMISSION = "call.pendingPermission";
-    private static final String STATE_START_REQUESTED = "call.startRequested";
+    private static final String STATE_CALL_ID = "call.callId";
 
     private enum PendingOperation { NONE, START_OUTGOING, ACCEPT_INCOMING }
 
@@ -73,6 +73,8 @@ public class CallActivity extends ComponentActivity {
     private CallManager.CallListener listener;
     private PendingOperation pendingOperation = PendingOperation.NONE;
     private boolean startRequested;
+    private String requestedCallId;
+    private CallActivityLaunchPolicy.Decision launchDecision;
     private boolean callErrorDialogShown;
     private PowerManager.WakeLock proximityWakeLock;
 
@@ -85,20 +87,34 @@ public class CallActivity extends ComponentActivity {
         setContentView(R.layout.activity_call);
         bindViews();
         if (savedInstanceState != null) {
-            startRequested = savedInstanceState.getBoolean(STATE_START_REQUESTED, false);
             pendingOperation = PendingOperation.values()[Math.max(0, Math.min(
                     PendingOperation.values().length - 1,
                     savedInstanceState.getInt(STATE_PENDING_PERMISSION, 0)))];
+            requestedCallId = savedInstanceState.getString(STATE_CALL_ID);
         }
         callManager.attachMediaEngine(CallMediaEngineProvider.get(getApplicationContext()));
-        currentSession = callManager.session().getValue();
-        if (hasOutgoingIntent() && !isInProgress(currentSession)) {
-            currentSession = null;
+        if (requestedCallId == null) {
+            requestedCallId = getIntent().getStringExtra(IncomingCallActivity.EXTRA_CALL_ID);
         }
+        CallSession managerSession = callManager.session().getValue();
+        boolean freshOutgoingRequest = hasOutgoingIntent()
+                && !CallNotificationActionRouter.ACTION_OPEN.equals(getIntent().getAction());
+        launchDecision = CallActivityLaunchPolicy.decide(
+                freshOutgoingRequest,
+                savedInstanceState != null,
+                requestedCallId,
+                getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
+                getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),
+                managerSession);
+        if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH) {
+            finish();
+            return;
+        }
+        currentSession = launchDecision == CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL
+                ? managerSession : null;
+        startRequested = currentSession != null;
         render(currentSession);
-        if (isInProgress(currentSession)) {
-            startRequested = true;
-        } else if (!startRequested && hasOutgoingIntent()) {
+        if (launchDecision == CallActivityLaunchPolicy.Decision.START_OUTGOING) {
             requestOperation(PendingOperation.START_OUTGOING);
         }
         bindActions();
@@ -107,6 +123,7 @@ public class CallActivity extends ComponentActivity {
 
     @Override protected void onStart() {
         super.onStart();
+        if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH || isFinishing()) return;
         listener = new CallManager.CallListener() {
             @Override public void onCallChanged(CallSession session) {
                 currentSession = session;
@@ -125,9 +142,36 @@ public class CallActivity extends ComponentActivity {
             }
         };
         callManager.addListener(listener);
-        currentSession = callManager.session().getValue();
-        if (hasOutgoingIntent() && !isInProgress(currentSession)) {
-            currentSession = null;
+        CallSession latestSession = callManager.session().getValue();
+        if (launchDecision == CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL) {
+            if (!CallActivityLaunchPolicy.matchesLiveCall(
+                    requestedCallId,
+                    getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
+                    getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),
+                    latestSession)) {
+                finish();
+                return;
+            }
+            currentSession = latestSession;
+        } else if (launchDecision == CallActivityLaunchPolicy.Decision.START_OUTGOING) {
+            if (CallActivityLaunchPolicy.isLive(latestSession)) {
+                if (!CallActivityLaunchPolicy.matchesLiveCall(
+                        requestedCallId,
+                        getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
+                        getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),
+                        latestSession)) {
+                    finish();
+                    return;
+                }
+                launchDecision = CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL;
+                currentSession = latestSession;
+                startRequested = true;
+            } else if (startRequested && latestSession != null
+                    && latestSession.getState() == CallState.ENDED) {
+                currentSession = latestSession;
+            } else {
+                currentSession = null;
+            }
         }
         render(currentSession);
         if (currentSession != null && currentSession.getState() == CallState.ENDED) {
@@ -160,7 +204,10 @@ public class CallActivity extends ComponentActivity {
     }
 
     @Override protected void onSaveInstanceState(Bundle outState) {
-        outState.putBoolean(STATE_START_REQUESTED, startRequested);
+        CallSession session = callManager.session().getValue();
+        if (CallActivityLaunchPolicy.isLive(session) && session.getCallId() != null) {
+            outState.putString(STATE_CALL_ID, session.getCallId());
+        }
         outState.putInt(STATE_PENDING_PERMISSION, pendingOperation.ordinal());
         super.onSaveInstanceState(outState);
     }
@@ -434,11 +481,6 @@ public class CallActivity extends ComponentActivity {
     private static boolean granted(int[] grantResults) {
         return grantResults != null && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-    }
-
-    private static boolean isInProgress(CallSession session) {
-        return session != null && session.getState() != CallState.IDLE
-                && session.getState() != CallState.ENDED;
     }
 
     @SuppressLint("MissingSuperCall")

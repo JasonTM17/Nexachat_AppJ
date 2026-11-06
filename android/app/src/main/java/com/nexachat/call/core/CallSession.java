@@ -90,4 +90,19 @@ public final class CallSession {
                 newMuted,
                 newSpeakerOn);
     }
+
+    CallSession withPeerDisplayName(String displayName) {
+        return new CallSession(
+                callId,
+                conversationId,
+                peerUserId,
+                displayName,
+                direction,
+                state,
+                endReason,
+                startedAtMs,
+                answeredAtMs,
+                muted,
+                speakerOn);
+    }
 }

@@ -16,6 +16,7 @@ public final class CallManagerTest {
     private ManualScheduler scheduler;
     private FakeSignaling signaling;
     private FakeMediaEngine media;
+    private FakePeerNameResolver peerNames;
     private long nowMs;
     private CallManager manager;
 
@@ -24,6 +25,7 @@ public final class CallManagerTest {
         scheduler = new ManualScheduler(() -> nowMs, millis -> nowMs += millis);
         signaling = new FakeSignaling();
         media = new FakeMediaEngine();
+        peerNames = new FakePeerNameResolver();
         nowMs = 1_000L;
         Executor direct = Runnable::run;
         manager = new CallManager(
@@ -34,7 +36,8 @@ public final class CallManagerTest {
                 () -> nowMs,
                 () -> "call-1",
                 50L,
-                false);
+                false,
+                peerNames);
         manager.attachMediaEngine(media);
         scheduler.runCurrent();
     }
@@ -93,6 +96,54 @@ public final class CallManagerTest {
         media.listener.onConnected();
         scheduler.runCurrent();
         assertEquals(CallState.ACTIVE, session().getState());
+    }
+
+    @Test
+    public void incomingCallerUsesResolvedLocalDisplayName() {
+        peerNames.result = "Alice";
+
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals("Alice", session().getPeerDisplayName());
+    }
+
+    @Test
+    public void missingIncomingCallerNameUsesLocalizedFallbackInsteadOfPeerId() {
+        peerNames.unknownName = "Người gọi không xác định";
+
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals("Người gọi không xác định", session().getPeerDisplayName());
+        assertFalse("peer-1".equals(session().getPeerDisplayName()));
+    }
+
+    @Test
+    public void lateIncomingCallerNameUpdatesThePublishedSession() {
+        peerNames.defer = true;
+        peerNames.unknownName = "Unknown caller";
+
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+        assertEquals("Unknown caller", session().getPeerDisplayName());
+
+        peerNames.resolveLater("Alice");
+        scheduler.runCurrent();
+
+        assertEquals("Alice", session().getPeerDisplayName());
+    }
+
+    @Test
+    public void incomingPeerIdIsNeverUsedAsDisplayName() {
+        String peerUuid = "d503c285-5b8a-4f48-b4e4-2db3c931c0be";
+        peerNames.result = peerUuid;
+
+        signaling.emit(invite("call-in", "conversation-1", peerUuid));
+        scheduler.runCurrent();
+
+        assertEquals("Unknown caller", session().getPeerDisplayName());
+        assertFalse(peerUuid.equals(session().getPeerDisplayName()));
     }
 
     @Test
@@ -374,6 +425,31 @@ public final class CallManagerTest {
 
         CallSignal lastSignal() {
             return sent.get(sent.size() - 1);
+        }
+    }
+
+    private static final class FakePeerNameResolver implements CallPeerNameResolver {
+        String unknownName = "Unknown caller";
+        String result;
+        boolean defer;
+        Callback pending;
+
+        @Override
+        public String unknownCallerDisplayName() {
+            return unknownName;
+        }
+
+        @Override
+        public void resolve(String conversationId, String peerUserId, Callback callback) {
+            if (defer) {
+                pending = callback;
+            } else {
+                callback.onResolved(result);
+            }
+        }
+
+        void resolveLater(String displayName) {
+            pending.onResolved(displayName);
         }
     }
 

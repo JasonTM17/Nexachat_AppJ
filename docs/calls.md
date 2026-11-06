@@ -143,6 +143,9 @@ negotiated by the Android client; signaling does not carry audio bytes.
 - Calls are audio-only. Group calls are out of scope.
 - An offline callee receives no push notification. The ring expires as a
   missed call and leaves a history row and localized chat line.
+- If Android notification permission is denied while NexaChat is backgrounded,
+  a direct activity launch may be blocked by Android; the incoming call may
+  expire as missed.
 - Presence privacy settings do not affect calling. A user who hides presence
   can still place and receive calls.
 - The audio path has not been verified between two real devices: the live E2E

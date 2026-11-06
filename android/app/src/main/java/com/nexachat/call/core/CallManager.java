@@ -46,6 +46,7 @@ public final class CallManager implements AutoCloseable {
 
     private final CallSignalingClient signaling;
     private final IceConfigSource iceConfigSource;
+    private final CallPeerNameResolver peerNameResolver;
     private final Scheduler scheduler;
     private final Executor ioExecutor;
     private final LongSupplier clock;
@@ -67,6 +68,14 @@ public final class CallManager implements AutoCloseable {
 
     /** Creates a manager backed by the app's authenticated call transport and REST API. */
     public CallManager(CallSignalingClient signaling, CallRepository repository) {
+        this(signaling, repository, fallbackOnlyNameResolver());
+    }
+
+    /** Creates a manager with an injectable local caller-name resolver. */
+    public CallManager(
+            CallSignalingClient signaling,
+            CallRepository repository,
+            CallPeerNameResolver peerNameResolver) {
         this(
                 signaling,
                 repository::getIceConfig,
@@ -75,7 +84,8 @@ public final class CallManager implements AutoCloseable {
                 System::currentTimeMillis,
                 () -> UUID.randomUUID().toString(),
                 RING_TIMEOUT_MS,
-                true);
+                true,
+                peerNameResolver);
     }
 
     CallManager(
@@ -87,8 +97,24 @@ public final class CallManager implements AutoCloseable {
             Supplier<String> callIdFactory,
             long ringTimeoutMs,
             boolean publishToAndroid) {
+        this(signaling, iceConfigSource, scheduler, ioExecutor, clock, callIdFactory,
+                ringTimeoutMs, publishToAndroid, fallbackOnlyNameResolver());
+    }
+
+    CallManager(
+            CallSignalingClient signaling,
+            IceConfigSource iceConfigSource,
+            Scheduler scheduler,
+            Executor ioExecutor,
+            LongSupplier clock,
+            Supplier<String> callIdFactory,
+            long ringTimeoutMs,
+            boolean publishToAndroid,
+            CallPeerNameResolver peerNameResolver) {
         this.signaling = signaling;
         this.iceConfigSource = iceConfigSource;
+        this.peerNameResolver = peerNameResolver == null
+                ? fallbackOnlyNameResolver() : peerNameResolver;
         this.scheduler = scheduler;
         this.ioExecutor = ioExecutor;
         this.clock = clock;
@@ -339,11 +365,12 @@ public final class CallManager implements AutoCloseable {
             return;
         }
 
+        String fallbackName = unknownCallerDisplayName(event.getFromUserId());
         setSession(new CallSession(
                 callId,
                 event.getConversationId(),
                 event.getFromUserId(),
-                event.getFromUserId(),
+                fallbackName,
                 CallSession.Direction.INCOMING,
                 CallState.INCOMING_RINGING,
                 null,
@@ -352,6 +379,80 @@ public final class CallManager implements AutoCloseable {
                 false,
                 false));
         scheduleRingTimeout(callId);
+        resolveIncomingPeerName(callId, event.getConversationId(), event.getFromUserId(), fallbackName);
+    }
+
+    private void resolveIncomingPeerName(
+            String callId,
+            String conversationId,
+            String peerUserId,
+            String fallbackName) {
+        try {
+            ioExecutor.execute(() -> {
+                try {
+                    peerNameResolver.resolve(conversationId, peerUserId, displayName ->
+                            scheduler.execute(() -> updateIncomingPeerName(
+                                    callId, conversationId, peerUserId, fallbackName, displayName)));
+                } catch (RuntimeException ignored) {
+                    // The already-published localized fallback remains safe if local lookup fails.
+                }
+            });
+        } catch (RuntimeException ignored) {
+            // The already-published localized fallback remains safe if the IO executor is unavailable.
+        }
+    }
+
+    private void updateIncomingPeerName(
+            String callId,
+            String conversationId,
+            String peerUserId,
+            String fallbackName,
+            String displayName) {
+        if (!matches(callId) || currentSession.getState() == CallState.ENDED
+                || currentSession.getDirection() != CallSession.Direction.INCOMING
+                || !same(conversationId, currentSession.getConversationId())
+                || !same(peerUserId, currentSession.getPeerUserId())) return;
+        String safeName = safeDisplayName(displayName, peerUserId);
+        if (safeName == null) safeName = fallbackName;
+        if (same(safeName, currentSession.getPeerDisplayName())) return;
+        currentSession = currentSession.withPeerDisplayName(safeName);
+        publishSession();
+    }
+
+    private String unknownCallerDisplayName(String peerUserId) {
+        String fallback = null;
+        try {
+            fallback = peerNameResolver.unknownCallerDisplayName();
+        } catch (RuntimeException ignored) {
+            // Fall through to a neutral non-identifier label.
+        }
+        String safeFallback = safeDisplayName(fallback, peerUserId);
+        return safeFallback == null ? "Unknown caller" : safeFallback;
+    }
+
+    private static String safeDisplayName(String displayName, String peerUserId) {
+        if (blank(displayName)) return null;
+        String value = displayName.trim();
+        if (!blank(peerUserId) && peerUserId.trim().equalsIgnoreCase(value)) return null;
+        return value;
+    }
+
+    private static boolean same(String left, String right) {
+        return left != null && left.equals(right);
+    }
+
+    private static CallPeerNameResolver fallbackOnlyNameResolver() {
+        return new CallPeerNameResolver() {
+            @Override
+            public String unknownCallerDisplayName() {
+                return "Unknown caller";
+            }
+
+            @Override
+            public void resolve(String conversationId, String peerUserId, Callback callback) {
+                if (callback != null) callback.onResolved(null);
+            }
+        };
     }
 
     private void handleCallError(CallEvent event) {

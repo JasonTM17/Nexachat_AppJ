@@ -16,6 +16,7 @@ import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.ui.CallActivity;
 import com.nexachat.call.ui.CallNotificationActionRouter;
+import com.nexachat.call.ui.CallNotificationPrivacyPolicy;
 import com.nexachat.call.ui.IncomingCallActivity;
 import com.nexachat.core.common.AppLocaleManager;
 
@@ -30,10 +31,13 @@ public final class CallNotifications {
 
     private CallNotifications() { }
 
-    public static void showIncoming(Context context, CallSession session) {
-        if (context == null || session == null || session.getState() != CallState.INCOMING_RINGING) return;
+    public static boolean showIncoming(Context context, CallSession session) {
+        if (context == null || session == null || session.getState() != CallState.INCOMING_RINGING) {
+            return false;
+        }
         Context appContext = localizedAppContext(context);
         ensureChannel(appContext);
+        if (!canPost(appContext, CHANNEL_ID)) return false;
         Intent openIntent = incomingActivityIntent(
                 appContext, session, CallNotificationActionRouter.ACTION_OPEN);
         Intent acceptIntent = incomingActivityIntent(
@@ -50,13 +54,16 @@ public final class CallNotifications {
                 pendingIntentFlags());
 
         String peerName = displayName(appContext, session);
+        CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.incoming(
+                peerName, appContext.getString(R.string.call_notification_incoming));
         NotificationCompat.Builder builder = new NotificationCompat.Builder(appContext, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.sym_action_call)
-                .setContentTitle(peerName)
-                .setContentText(appContext.getString(R.string.call_notification_incoming))
+                .setContentTitle(copy.getPrivateTitle())
+                .setContentText(copy.getPrivateText())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(publicVersion(appContext, CHANNEL_ID, copy))
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setContentIntent(open)
@@ -65,7 +72,7 @@ public final class CallNotifications {
                         appContext.getString(R.string.call_notification_accept), accept)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel,
                         appContext.getString(R.string.call_notification_decline), decline);
-        notifySafely(appContext, INCOMING_NOTIFICATION_ID, builder.build());
+        return notifySafely(appContext, INCOMING_NOTIFICATION_ID, builder.build());
     }
 
     public static void clearIncoming(Context context) {
@@ -80,6 +87,8 @@ public final class CallNotifications {
         String peerName = session == null ? appContext.getString(R.string.call_peer_fallback)
                 : displayName(appContext, session);
         String status = statusFor(appContext, session);
+        CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.ongoing(
+                peerName, status, appContext.getString(R.string.call_notification_ongoing));
         Intent openIntent = new Intent(appContext, CallActivity.class)
                 .putExtra(CallLauncher.EXTRA_CONVERSATION_ID,
                         session == null ? null : session.getConversationId())
@@ -88,6 +97,7 @@ public final class CallNotifications {
                 .putExtra(CallLauncher.EXTRA_PEER_NAME,
                         session == null ? peerName : session.getPeerDisplayName())
                 .putExtra(CallLauncher.EXTRA_PEER_PHONE, (String) null)
+                .putExtra(com.nexachat.call.ui.IncomingCallActivity.EXTRA_CALL_ID, callId(session))
                 .setAction(CallNotificationActionRouter.ACTION_OPEN);
         PendingIntent open = PendingIntent.getActivity(
                 appContext, ONGOING_NOTIFICATION_ID, openIntent, pendingIntentFlags());
@@ -98,11 +108,12 @@ public final class CallNotifications {
                 pendingIntentFlags());
         return new NotificationCompat.Builder(appContext, ONGOING_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.sym_action_call)
-                .setContentTitle(peerName)
-                .setContentText(status)
+                .setContentTitle(copy.getPrivateTitle())
+                .setContentText(copy.getPrivateText())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(publicVersion(appContext, ONGOING_CHANNEL_ID, copy))
                 .setOngoing(true)
                 .setContentIntent(open)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel,
@@ -155,7 +166,7 @@ public final class CallNotifications {
         channel.setDescription(context.getString(R.string.call_notification_incoming));
         channel.enableVibration(true);
         channel.setVibrationPattern(VIBRATION_PATTERN);
-        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
         AudioAttributes audioAttributes = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -174,7 +185,7 @@ public final class CallNotifications {
         channel.setDescription(context.getString(R.string.call_notification_ongoing));
         channel.enableVibration(false);
         channel.setSound(null, null);
-        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PRIVATE);
         manager.createNotificationChannel(channel);
     }
 
@@ -198,11 +209,40 @@ public final class CallNotifications {
         }
     }
 
-    private static void notifySafely(Context context, int id, android.app.Notification notification) {
+    private static android.app.Notification publicVersion(
+            Context context,
+            String channelId,
+            CallNotificationPrivacyPolicy.Content copy) {
+        return new NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.sym_action_call)
+                .setContentTitle(copy.getPublicTitle())
+                .setContentText(copy.getPublicText())
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build();
+    }
+
+    private static boolean canPost(Context context, String channelId) {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return false;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true;
+        NotificationManager manager = (NotificationManager)
+                context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return false;
+        NotificationChannel channel = manager.getNotificationChannel(channelId);
+        return channel == null || channel.getImportance() != NotificationManager.IMPORTANCE_NONE;
+    }
+
+    private static String callId(CallSession session) {
+        return session == null ? null : session.getCallId();
+    }
+
+    private static boolean notifySafely(Context context, int id, android.app.Notification notification) {
         try {
             NotificationManagerCompat.from(context).notify(id, notification);
+            return true;
         } catch (SecurityException ignored) {
             // Android 13+ may suppress notifications until the user grants POST_NOTIFICATIONS.
+            return false;
         }
     }
 }

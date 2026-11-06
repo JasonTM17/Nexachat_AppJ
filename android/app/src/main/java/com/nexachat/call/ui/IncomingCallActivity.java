@@ -67,7 +67,8 @@ public class IncomingCallActivity extends ComponentActivity {
     @Override protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         pendingAccept = savedInstanceState != null
-                && savedInstanceState.getBoolean(STATE_PENDING_ACCEPT, false);
+                && IncomingCallPermissionState.pendingAcceptAfterRecreation(
+                        savedInstanceState.getBoolean(STATE_PENDING_ACCEPT, false));
         setShowOnLockScreen();
         setContentView(R.layout.activity_incoming_call);
         initials = findViewById(R.id.incoming_initials);
@@ -210,8 +211,10 @@ public class IncomingCallActivity extends ComponentActivity {
     }
 
     private void requestAccept() {
-        if (pendingAccept || currentSession == null
-                || currentSession.getState() != CallState.INCOMING_RINGING) return;
+        if (!IncomingCallPermissionState.canStartAccept(
+                pendingAccept,
+                currentSession != null
+                        && currentSession.getState() == CallState.INCOMING_RINGING)) return;
         pendingAccept = true;
         boolean granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED;

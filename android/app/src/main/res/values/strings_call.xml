@@ -34,6 +34,7 @@
     <string name="call_notification_decline">Decline</string>
     <string name="call_notification_hang_up">Hang up</string>
     <string name="call_peer_fallback">NexaChat call</string>
+    <string name="call_unknown_caller">Unknown caller</string>
     <string name="call_log_missed">Missed voice call</string>
     <string name="call_log_declined">Declined voice call</string>
     <string name="call_log_cancelled">Cancelled voice call</string>
