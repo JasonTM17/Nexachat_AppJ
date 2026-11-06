@@ -58,11 +58,11 @@ class SettingsRepositoryTest {
         every { tokenStore.hasValidRefresh } returns hasSession
         every { sessionEvents.events } returns sessionSignals
         repository = SettingsRepository(
-            context = fakeContext(store),
-            userApi = userApi,
-            tokenStore = tokenStore,
-            sessionEvents = sessionEvents,
-            scope = backgroundScope,
+            fakeContext(store),
+            userApi,
+            tokenStore,
+            sessionEvents,
+            backgroundScope,
         )
         runCurrent()
     }
