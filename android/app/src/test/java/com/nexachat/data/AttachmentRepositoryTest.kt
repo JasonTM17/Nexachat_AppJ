@@ -8,9 +8,9 @@ import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.AttachmentApi
 import com.nexachat.core.network.dto.AttachmentDto
-import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.slot
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.Runs
@@ -35,6 +35,7 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.Call
 import retrofit2.Response
 
 /**
@@ -87,10 +88,13 @@ class AttachmentRepositoryTest {
     fun `upload emits monotonic progress ending at 1f then the dto`() = runTest {
         val bytes = "0123456789".toByteArray()
         stubResolver(bytes, size = bytes.size.toLong())
-        coEvery { attachmentApi.upload(any()) } coAnswers {
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        val partSlot = slot<MultipartBody.Part>()
+        every { attachmentApi.upload(capture(partSlot)) } returns uploadCall
+        every { uploadCall.execute() } answers {
             // Drive the real ProgressRequestBody — write the captured part
             // into a buffer so intermediate fractions actually fire.
-            firstArg<MultipartBody.Part>().body.writeTo(Buffer())
+            partSlot.captured.body.writeTo(Buffer())
             Response.success(dto)
         }
 
@@ -118,8 +122,11 @@ class AttachmentRepositoryTest {
                 return super.read(buffer, offset, length)
             }
         }
-        coEvery { attachmentApi.upload(any()) } coAnswers {
-            firstArg<MultipartBody.Part>().body.writeTo(Buffer())
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        val partSlot = slot<MultipartBody.Part>()
+        every { attachmentApi.upload(capture(partSlot)) } returns uploadCall
+        every { uploadCall.execute() } answers {
+            partSlot.captured.body.writeTo(Buffer())
             Response.success(dto.withMimeType("video/mp4"))
         }
 
@@ -158,8 +165,9 @@ class AttachmentRepositoryTest {
     @Test
     fun `http error maps to ApiError`() = runTest {
         stubResolver(ByteArray(4), size = 4)
-        coEvery { attachmentApi.upload(any()) } returns
-            Response.error(413, "".toResponseBody())
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        every { attachmentApi.upload(any()) } returns uploadCall
+        every { uploadCall.execute() } returns Response.error(413, "".toResponseBody())
 
         val events = repository.upload(uri).toList()
 
@@ -170,7 +178,9 @@ class AttachmentRepositoryTest {
     @Test
     fun `network failure maps to ApiError Network`() = runTest {
         stubResolver(ByteArray(4), size = 4)
-        coEvery { attachmentApi.upload(any()) } throws java.io.IOException("down")
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        every { attachmentApi.upload(any()) } returns uploadCall
+        every { uploadCall.execute() } throws java.io.IOException("down")
 
         val events = repository.upload(uri).toList()
 
@@ -187,9 +197,11 @@ class AttachmentRepositoryTest {
         // shipped that upload as a FILE.
         stubResolver(ByteArray(4), mime = "application/octet-stream", size = 4)
         val sentType = AtomicReference<String?>(null)
-        coEvery { attachmentApi.upload(any()) } coAnswers {
-            val part = firstArg<MultipartBody.Part>()
-            sentType.set(part.body.contentType()?.toString())
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        val partSlot = slot<MultipartBody.Part>()
+        every { attachmentApi.upload(capture(partSlot)) } returns uploadCall
+        every { uploadCall.execute() } answers {
+            sentType.set(partSlot.captured.body.contentType()?.toString())
             Response.success(dto)
         }
 
@@ -202,9 +214,11 @@ class AttachmentRepositoryTest {
     fun `specific resolver type still beats a generic hint`() = runTest {
         stubResolver(ByteArray(4), mime = "video/mp4", size = 4)
         val sentType = AtomicReference<String?>(null)
-        coEvery { attachmentApi.upload(any()) } coAnswers {
-            val part = firstArg<MultipartBody.Part>()
-            sentType.set(part.body.contentType()?.toString())
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        val partSlot = slot<MultipartBody.Part>()
+        every { attachmentApi.upload(capture(partSlot)) } returns uploadCall
+        every { uploadCall.execute() } answers {
+            sentType.set(partSlot.captured.body.contentType()?.toString())
             Response.success(dto)
         }
 
@@ -217,9 +231,11 @@ class AttachmentRepositoryTest {
     fun `no usable type on either side falls back to octet-stream`() = runTest {
         stubResolver(ByteArray(4), mime = null, size = 4)
         val sentType = AtomicReference<String?>(null)
-        coEvery { attachmentApi.upload(any()) } coAnswers {
-            val part = firstArg<MultipartBody.Part>()
-            sentType.set(part.body.contentType()?.toString())
+        val uploadCall = mockk<Call<AttachmentDto>>()
+        val partSlot = slot<MultipartBody.Part>()
+        every { attachmentApi.upload(capture(partSlot)) } returns uploadCall
+        every { uploadCall.execute() } answers {
+            sentType.set(partSlot.captured.body.contentType()?.toString())
             Response.success(dto)
         }
 
@@ -252,7 +268,9 @@ class AttachmentRepositoryTest {
     fun `failed download leaves no truncated file in the cache`() = runTest {
         val cacheDir = java.nio.file.Files.createTempDirectory("nexa-attachments").toFile()
         every { context.cacheDir } returns cacheDir
-        coEvery { attachmentApi.content("att-1") } returns Response.success(cutBody())
+        val contentCall = mockk<Call<ResponseBody>>()
+        every { attachmentApi.content("att-1") } returns contentCall
+        every { contentCall.execute() } returns Response.success(cutBody())
 
         val result = repository.downloadToCache("att-1", "pic.png")
 

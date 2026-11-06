@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
@@ -541,22 +542,26 @@ class ConversationRepository @Inject constructor(
         cursor: String? = null,
     ): Result<InboxFetch> {
         return try {
-            val response = messageApi.getConversations(limit = limit, cursor = cursor)
-            if (!response.isSuccessful) {
-                return Result.failure(
-                    ApiError.from(
-                        response.code(),
-                        com.nexachat.core.network.dto.ErrorResponse.errorCodeOf(response.errorBody()?.string()),
-                    ),
-                )
+            var responseBody: ResponseBody? = null
+            var headerCursor: String? = null
+            val call = ResponseCapturingCall(messageApi.getConversations(limit, cursor)) { response ->
+                responseBody = response.body()
+                headerCursor = response.headers()[NEXT_CURSOR_HEADER]
             }
-            val responseBody = response.body()
-                ?: return Result.failure(ApiError.Unknown("UNEXPECTED_EMPTY_BODY"))
-            val page = parseInboxBody(
-                body = responseBody.string().trim(),
-                headerCursor = response.headers()[NEXT_CURSOR_HEADER],
-            ) ?: return Result.failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
-            Result.Success(page)
+            when (val result = safeApiCallCatching(call)) {
+                is ApiResult.Success -> {
+                    val body = responseBody
+                        ?: return Result.failure(ApiError.Unknown("UNEXPECTED_EMPTY_BODY"))
+                    val page = parseInboxBody(
+                        body = body.string().trim(),
+                        headerCursor = headerCursor,
+                    ) ?: return Result.failure(ApiError.Unknown("UNEXPECTED_SHAPE"))
+                    Result.Success(page)
+                }
+                is ApiResult.HttpError ->
+                    Result.failure(ApiError.from(result.status, result.errorCode))
+                is ApiResult.NetworkError -> Result.failure(ApiError.Network(result.cause.message))
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: IOException) {
@@ -595,9 +600,9 @@ class ConversationRepository @Inject constructor(
     }
 
     private suspend fun <T> call(
-        block: suspend () -> retrofit2.Response<T>,
+        block: () -> retrofit2.Call<T>,
     ): Result<T> =
-        when (val result = safeApiCallCatching(block)) {
+        when (val result = safeApiCallCatching(block())) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
                 Result.failure(ApiError.from(result.status, result.errorCode))
@@ -607,10 +612,10 @@ class ConversationRepository @Inject constructor(
 
     /** Same empty-body cast guard as the other repositories. */
     private suspend fun <T> safeApiCallCatching(
-        block: suspend () -> retrofit2.Response<T>,
+        call: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(block)
+            safeApiCall(call)
         } catch (_: ClassCastException) {
             ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
         }
@@ -627,4 +632,14 @@ class ConversationRepository @Inject constructor(
         const val MAX_AVATAR_BYTES = 25 * 1024 * 1024
         const val AVATAR_READ_BUFFER_BYTES = 64 * 1024
     }
+}
+
+/** Keeps inbox response headers while the body and HTTP errors use safeApiCall. */
+private class ResponseCapturingCall<T>(
+    private val delegate: retrofit2.Call<T>,
+    private val capture: (retrofit2.Response<T>) -> Unit,
+) : retrofit2.Call<T> by delegate {
+    override fun execute(): retrofit2.Response<T> = delegate.execute().also(capture)
+
+    override fun clone(): retrofit2.Call<T> = ResponseCapturingCall(delegate.clone(), capture)
 }

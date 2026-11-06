@@ -127,8 +127,8 @@ class AttachmentRepository @Inject constructor(
         }
         val mime = resolveMime(meta.mimeType, mimeHint)
         val requestBody = ProgressRequestBody(
-            delegate = bytes.toRequestBody(mime.toMediaTypeOrNull()),
-            onProgress = { written, total ->
+            bytes.toRequestBody(mime.toMediaTypeOrNull()),
+            ProgressRequestBody.ProgressListener { written, total ->
                 if (total > 0L) {
                     trySend(
                         AttachmentUploadEvent.Progress(
@@ -143,7 +143,7 @@ class AttachmentRepository @Inject constructor(
             meta.displayName ?: DEFAULT_FILENAME,
             requestBody,
         )
-        when (val result = safeApiCall { attachmentApi.upload(part) }) {
+        when (val result = safeApiCall(attachmentApi.upload(part))) {
             is ApiResult.Success -> {
                 // Terminal clamp — the body counter may never have hit exactly
                 // 1f when the server replies before the last flush lands.
@@ -209,7 +209,7 @@ class AttachmentRepository @Inject constructor(
         attachmentId: String,
         displayName: String? = null,
     ): Result<File> = withContext(Dispatchers.IO) {
-        when (val result = safeApiCall { attachmentApi.content(attachmentId) }) {
+        when (val result = safeApiCall(attachmentApi.content(attachmentId))) {
             is ApiResult.Success -> {
                 val dir = File(context.cacheDir, CACHE_DIR_NAME).apply { mkdirs() }
                 val file = File(dir, attachmentId + "-" + sanitize(displayName))

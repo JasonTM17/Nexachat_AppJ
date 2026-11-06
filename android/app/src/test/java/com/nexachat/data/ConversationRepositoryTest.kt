@@ -20,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import java.util.Base64
 import java.io.InputStream
 import java.util.Arrays
@@ -36,6 +37,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.Call
 import retrofit2.Response
 
 /**
@@ -88,9 +90,13 @@ class ConversationRepositoryTest {
         )
     }
 
+    private fun <T> Response<T>.asCall(): Call<T> = mockk<Call<T>> {
+        every { execute() } returns this@asCall
+    }
+
     private fun stubInbox(items: List<ConversationInboxDto>) {
-        coEvery { messageApi.getConversations(any(), any()) } returns
-            Response.success(inboxAdapter.toJson(items).toResponseBody())
+        every { messageApi.getConversations(any(), any()) } returns
+            Response.success(inboxAdapter.toJson(items).toResponseBody()).asCall()
     }
 
     @Test
@@ -160,8 +166,8 @@ class ConversationRepositoryTest {
     @Test
     fun `refreshInbox keeps a group this device just created when the payload predates it`() = runTest {
         buildRepository()
-        coEvery { groupApi.createGroup(any()) } returns
-            Response.success(ConversationDto("conv-new", "GROUP"))
+        every { groupApi.createGroup(any()) } returns
+            Response.success(ConversationDto("conv-new", "GROUP")).asCall()
         // A GET already in flight when the create committed cannot list the
         // new group — the reconcile prune must not delete it for that reason.
         stubInbox(listOf(inboxDto("conv-old")))
@@ -175,8 +181,8 @@ class ConversationRepositoryTest {
     @Test
     fun `a created group is pruned like any row once a payload has listed it`() = runTest {
         buildRepository()
-        coEvery { groupApi.createGroup(any()) } returns
-            Response.success(ConversationDto("conv-new", "GROUP"))
+        every { groupApi.createGroup(any()) } returns
+            Response.success(ConversationDto("conv-new", "GROUP")).asCall()
         repository.createGroup("New group", listOf("u-1"))
 
         stubInbox(listOf(inboxDto("conv-old"), inboxDto("conv-new")))
@@ -198,7 +204,7 @@ class ConversationRepositoryTest {
 
         // Pruning is only safe while this call carries no limit/cursor: an
         // optional-paging server would otherwise return page 1 only.
-        coVerify(exactly = 1) { messageApi.getConversations(limit = null, cursor = null) }
+        verify(exactly = 1) { messageApi.getConversations(null, null) }
     }
 
     @Test
@@ -208,8 +214,8 @@ class ConversationRepositoryTest {
             listOf(conversation("conv-a"), conversation("conv-b")),
         )
         // An envelope that admits another page is not the authoritative set.
-        coEvery { messageApi.getConversations(any(), any()) } returns
-            Response.success("""{"items":[{"id":"conv-a"}],"hasMore":true}""".toResponseBody())
+        every { messageApi.getConversations(any(), any()) } returns
+            Response.success("""{"items":[{"id":"conv-a"}],"hasMore":true}""".toResponseBody()).asCall()
 
         repository.refreshInbox()
 
@@ -224,19 +230,19 @@ class ConversationRepositoryTest {
         val headers = okhttp3.Headers.Builder()
             .add("X-Next-Cursor", "cursor-page-2")
             .build()
-        coEvery {
-            messageApi.getConversations(limit = 100, cursor = null)
-        } returns Response.success(firstPage.toResponseBody(), headers)
-        coEvery {
-            messageApi.getConversations(limit = 100, cursor = "cursor-page-2")
-        } returns Response.success(secondPage.toResponseBody())
+        every {
+            messageApi.getConversations(100, null)
+        } returns Response.success(firstPage.toResponseBody(), headers).asCall()
+        every {
+            messageApi.getConversations(100, "cursor-page-2")
+        } returns Response.success(secondPage.toResponseBody()).asCall()
 
         val result = repository.groupDetail("conv-target")
 
         assertEquals("Target", (result as com.nexachat.core.common.Result.Success).value.title)
-        coVerify(exactly = 1) { messageApi.getConversations(limit = 100, cursor = null) }
-        coVerify(exactly = 1) {
-            messageApi.getConversations(limit = 100, cursor = "cursor-page-2")
+        verify(exactly = 1) { messageApi.getConversations(100, null) }
+        verify(exactly = 1) {
+            messageApi.getConversations(100, "cursor-page-2")
         }
     }
 
@@ -266,19 +272,19 @@ class ConversationRepositoryTest {
 
         assertTrue(result is com.nexachat.core.common.Result.Failure)
         assertTrue(consumed <= maxBytes + 64 * 1024)
-        io.mockk.coVerify(exactly = 0) { groupApi.uploadAvatar(any(), any()) }
+        io.mockk.verify(exactly = 0) { groupApi.uploadAvatar(any(), any()) }
     }
 
     @Test
     fun `a DIRECT row seeds peer presence and exposes it on the summary`() = runTest {
         buildRepository()
-        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+        every { messageApi.getConversations(any(), any()) } returns Response.success(
             """
             [{"id":"conv-d","type":"DIRECT",
               "otherUser":{"userId":"u-peer","displayName":"Peer"},
               "peerPresence":{"online":true,"lastSeenAt":null}}]
             """.trimIndent().toResponseBody(),
-        )
+        ).asCall()
 
         repository.refreshInbox()
         presenceFlow.value = mapOf("u-peer" to PeerPresence(online = true, lastSeenAtEpochMs = null))
@@ -292,14 +298,14 @@ class ConversationRepositoryTest {
     @Test
     fun `a deleted last message is flagged for the neutral inbox snippet`() = runTest {
         buildRepository()
-        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+        every { messageApi.getConversations(any(), any()) } returns Response.success(
             """
             [{"id":"conv-d","type":"DIRECT",
               "lastMessageSeq":7,
               "lastMessage":{"seq":7,"type":"TEXT","content":null,
                              "deletedAt":"2026-11-03T11:00:00Z"}}]
             """.trimIndent().toResponseBody(),
-        )
+        ).asCall()
 
         repository.refreshInbox()
         val summary = repository.inboxFlow().first().single()
@@ -315,10 +321,10 @@ class ConversationRepositoryTest {
         every { presenceRepository.clear(any()) } answers {
             presenceFlow.value = presenceFlow.value - firstArg<String>()
         }
-        coEvery { messageApi.getConversations(any(), any()) } returns Response.success(
+        every { messageApi.getConversations(any(), any()) } returns Response.success(
             """[{"id":"conv-d","type":"DIRECT","otherUser":{"userId":"u-peer"}}]"""
                 .toResponseBody(),
-        )
+        ).asCall()
 
         repository.refreshInbox()
 

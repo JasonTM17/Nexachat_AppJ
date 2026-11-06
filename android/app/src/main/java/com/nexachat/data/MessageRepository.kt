@@ -315,7 +315,16 @@ class MessageRepository @Inject constructor(
         conversationId: String,
         beforeSeq: Long? = null,
     ): Result<MessagePageDto> =
-        when (val result = call { messageApi.getMessages(conversationId, beforeSeq) }) {
+        when (
+            val result = call {
+                messageApi.getMessages(
+                    conversationId,
+                    beforeSeq,
+                    null,
+                    MessageApi.DEFAULT_PAGE_SIZE,
+                )
+            }
+        ) {
             is Result.Success -> {
                 storeHistoryItems(conversationId, result.value.items)
                 Result.Success(result.value)
@@ -526,7 +535,10 @@ class MessageRepository @Inject constructor(
             reactionDao.deleteForMessage(messageId)
             pinDao.delete(conversationId, messageId)
             if (wasLast) conversationDao.markLastMessageDeleted(conversationId)
-            return when (val result = call { messageApi.deleteMessage(conversationId, messageId) }) {
+            return when (
+                val result = call { messageApi.deleteMessage(conversationId, messageId) }
+                    .toUnitResult()
+            ) {
                 is Result.Success -> {
                     messageDao.clearReplySnippets(messageId)
                     Result.Success(Unit)
@@ -596,10 +608,10 @@ class MessageRepository @Inject constructor(
         return when (
             val result = call {
                 messageApi.searchMessages(
-                    conversationId = conversationId,
-                    query = trimmed,
-                    limit = limit.coerceIn(1, MAX_SEARCH_LIMIT),
-                    beforeSeq = beforeSeq,
+                    conversationId,
+                    trimmed,
+                    limit.coerceIn(1, MAX_SEARCH_LIMIT),
+                    beforeSeq,
                 )
             }
         ) {
@@ -754,7 +766,7 @@ class MessageRepository @Inject constructor(
         val last = lastMarkedRead[conversationId] ?: 0L
         if (upToSeq <= last) return
         lastMarkedRead[conversationId] = upToSeq
-        when (call { messageApi.markRead(conversationId, ReadRequest(upToSeq)) }) {
+        when (call { messageApi.markRead(conversationId, ReadRequest(upToSeq)) }.toUnitResult()) {
             is Result.Success -> conversationDao.clearUnread(conversationId)
             is Result.Failure -> Unit // best-effort — next open/message retries
         }
@@ -1082,7 +1094,14 @@ class MessageRepository @Inject constructor(
             return
         }
         while (true) {
-            val result = call { messageApi.getMessages(conversationId, afterSeq = afterSeq) }
+            val result = call {
+                messageApi.getMessages(
+                    conversationId,
+                    null,
+                    afterSeq,
+                    MessageApi.DEFAULT_PAGE_SIZE,
+                )
+            }
             val page = (result as? Result.Success)?.value ?: return
             storeHistoryItems(conversationId, page.items)
             val entities = page.items.mapNotNull { it.toEntity(conversationId) }
@@ -1282,10 +1301,15 @@ class MessageRepository @Inject constructor(
 
     // ---- internals ----
 
+    private fun <T> Result<T>.toUnitResult(): Result<Unit> = when (this) {
+        is Result.Success -> Result.Success(Unit)
+        is Result.Failure -> Result.cast(this)
+    }
+
     private suspend fun <T> call(
-        block: suspend () -> retrofit2.Response<T>,
+        block: () -> retrofit2.Call<T>,
     ): Result<T> =
-        when (val result = safeApiCallCatching(block)) {
+        when (val result = safeApiCallCatching(block())) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
                 Result.failure(ApiError.from(result.status, result.errorCode))
@@ -1299,10 +1323,10 @@ class MessageRepository @Inject constructor(
      * (same guard as the other repositories).
      */
     private suspend fun <T> safeApiCallCatching(
-        block: suspend () -> retrofit2.Response<T>,
+        call: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(block)
+            safeApiCall(call)
         } catch (_: ClassCastException) {
             ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
         }

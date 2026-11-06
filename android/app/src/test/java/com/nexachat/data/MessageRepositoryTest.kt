@@ -30,13 +30,13 @@ import com.nexachat.core.storage.TokenStore
 import com.nexachat.core.network.dto.SendMessageRequest
 import com.squareup.moshi.Moshi
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.Runs
 import io.mockk.verify
 import java.io.IOException
+import okhttp3.ResponseBody
 import java.time.Instant
 import java.util.Base64
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +52,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import retrofit2.Call
 import retrofit2.Response
 
 /**
@@ -381,6 +382,17 @@ class MessageRepositoryTest {
         "2026-11-03T09:12:04Z",
     )
 
+    private fun <T> Response<T>.asCall(beforeExecute: () -> Unit = {}): Call<T> = mockk<Call<T>> {
+        every { execute() } answers {
+            beforeExecute()
+            this@asCall
+        }
+    }
+
+    private fun <T> failedCall(error: Throwable): Call<T> = mockk<Call<T>> {
+        every { execute() } throws error
+    }
+
     @Before
     fun setUp() {
         every { session.events } returns eventsFlow
@@ -394,9 +406,9 @@ class MessageRepositoryTest {
         every { sessionEvents.events } returns logoutFlow
         coEvery { tokenStore.readTokens() } returns
             TokenStore.Tokens(jwtFor("me-1"), Long.MAX_VALUE, "refresh")
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
-            Response.success(MessagePageDto())
-        coEvery { messageApi.markRead(any(), any()) } returns Response.success(Unit)
+        every { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(MessagePageDto()).asCall()
+        every { messageApi.markRead(any(), any()) } returns Response.success<Void>(204, null).asCall()
 
         repository = MessageRepository(
             messageApi = messageApi,
@@ -475,8 +487,8 @@ class MessageRepositoryTest {
         // while the REST fallback quietly works.
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false
-        coEvery { messageApi.sendMessage(any(), any()) } returns
-            Response.error(500, "".toResponseBody(null))
+        every { messageApi.sendMessage(any(), any()) } returns
+            Response.error<MessageDto>(500, "".toResponseBody(null)).asCall()
 
         repository.send(CONVERSATION_ID, "wake the loop")
 
@@ -487,7 +499,7 @@ class MessageRepositoryTest {
     fun `send while WS is down falls back to the REST post`() = runTest {
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false
-        coEvery { messageApi.sendMessage(any(), any()) } answers {
+        every { messageApi.sendMessage(any(), any()) } answers {
             // Server echoes the idempotency key — the ack path needs it.
             Response.success(
                 messageDto(
@@ -495,21 +507,21 @@ class MessageRepositoryTest {
                     clientMessageId = secondArg<SendMessageRequest>().clientMessageId,
                     senderId = "me-1",
                 ),
-            )
+            ).asCall()
         }
 
         repository.send(CONVERSATION_ID, "offline hi")
 
         assertTrue(outboxDao.rows.isEmpty())
         assertEquals("m-2", messageDao.rows.keys.single())
-        coVerify(exactly = 1) { messageApi.sendMessage(CONVERSATION_ID, any()) }
+        verify(exactly = 1) { messageApi.sendMessage(CONVERSATION_ID, any()) }
     }
 
     @Test
     fun `send with no connectivity stays SENDING for the next flush`() = runTest {
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false
-        coEvery { messageApi.sendMessage(any(), any()) } throws IOException("offline")
+        every { messageApi.sendMessage(any(), any()) } returns failedCall(IOException("offline"))
 
         repository.send(CONVERSATION_ID, "queued")
 
@@ -520,8 +532,8 @@ class MessageRepositoryTest {
     fun `server rejection marks the outbox row FAILED`() = runTest {
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false
-        coEvery { messageApi.sendMessage(any(), any()) } returns
-            Response.error(403, "".toResponseBody())
+        every { messageApi.sendMessage(any(), any()) } returns
+            Response.error<MessageDto>(403, "".toResponseBody()).asCall()
 
         repository.send(CONVERSATION_ID, "rejected")
 
@@ -533,10 +545,10 @@ class MessageRepositoryTest {
         isOpenFlow.value = false
         every { session.sendMessage(any(), any()) } returns false
         var calls = 0
-        coEvery { messageApi.sendMessage(any(), any()) } coAnswers {
+        every { messageApi.sendMessage(any(), any()) } answers {
             calls++
             if (calls == 1) {
-                Response.error(429, "".toResponseBody())
+                Response.error<MessageDto>(429, "".toResponseBody()).asCall()
             } else {
                 Response.success(
                     messageDto(
@@ -544,7 +556,7 @@ class MessageRepositoryTest {
                         clientMessageId = secondArg<SendMessageRequest>().clientMessageId,
                         senderId = "me-1",
                     ),
-                )
+                ).asCall()
             }
         }
 
@@ -824,8 +836,8 @@ class MessageRepositoryTest {
                 ),
             )
         }
-        coEvery {
-            messageApi.getMessages(CONVERSATION_ID, null, 100L, any())
+        every {
+            messageApi.getMessages(CONVERSATION_ID, null, 100L, MessageApi.DEFAULT_PAGE_SIZE)
         } returns Response.success(
             MessagePageDto(
                 listOf(
@@ -835,9 +847,9 @@ class MessageRepositoryTest {
                 ),
                 true,
             ),
-        )
-        coEvery {
-            messageApi.getMessages(CONVERSATION_ID, null, 103L, any())
+        ).asCall()
+        every {
+            messageApi.getMessages(CONVERSATION_ID, null, 103L, MessageApi.DEFAULT_PAGE_SIZE)
         } returns Response.success(
             MessagePageDto(
                 listOf(
@@ -846,13 +858,20 @@ class MessageRepositoryTest {
                 ),
                 false,
             ),
-        )
+        ).asCall()
 
         repository.resyncForward(CONVERSATION_ID)
 
         // All five missed rows landed — the gap is closed, not just the newest page.
         assertEquals(105, messageDao.rows.size)
-        coVerify { messageApi.getMessages(CONVERSATION_ID, null, 103L, any()) }
+        verify {
+            messageApi.getMessages(
+                CONVERSATION_ID,
+                null,
+                103L,
+                MessageApi.DEFAULT_PAGE_SIZE,
+            )
+        }
     }
 
     @Test
@@ -871,8 +890,8 @@ class MessageRepositoryTest {
                 ),
             )
         }
-        coEvery {
-            messageApi.getMessages(CONVERSATION_ID, null, 3L, any())
+        every {
+            messageApi.getMessages(CONVERSATION_ID, null, 3L, MessageApi.DEFAULT_PAGE_SIZE)
         } returns Response.success(
             MessagePageDto(
                 listOf(
@@ -881,16 +900,23 @@ class MessageRepositoryTest {
                 ),
                 false,
             ),
-        )
-        coEvery { messageApi.getPins(CONVERSATION_ID) } returns
-            Response.success("[]".toResponseBody())
+        ).asCall()
+        every { messageApi.getPins(CONVERSATION_ID) } returns
+            Response.success("[]".toResponseBody()).asCall()
 
         repository.openConversation(CONVERSATION_ID)
 
         assertEquals(5, messageDao.rows.size)
-        coVerify { messageApi.getMessages(CONVERSATION_ID, null, 3L, any()) }
+        verify {
+            messageApi.getMessages(
+                CONVERSATION_ID,
+                null,
+                3L,
+                MessageApi.DEFAULT_PAGE_SIZE,
+            )
+        }
         // The read watermark covers the freshly fetched rows too.
-        coVerify { messageApi.markRead(CONVERSATION_ID, any()) }
+        verify { messageApi.markRead(CONVERSATION_ID, any()) }
     }
 
     // ---- phase-10 interactions ----
@@ -959,7 +985,7 @@ class MessageRepositoryTest {
     fun `toggleReaction writes optimistically then applies the server summary`() = runTest {
         var optimisticAtCall: MessageReactionEntity? = null
         var captured: ReactionRequest? = null
-        coEvery { messageApi.toggleReaction("m-1", any()) } answers {
+        every { messageApi.toggleReaction("m-1", any()) } answers {
             optimisticAtCall = reactionDao.rows["m-1" to "👍"]
             captured = secondArg()
             Response.success(
@@ -967,7 +993,7 @@ class MessageRepositoryTest {
                     "m-1",
                     listOf(ReactionSummaryDto("👍", 5, true)),
                 ),
-            )
+            ).asCall()
         }
 
         repository.toggleReaction("m-1", CONVERSATION_ID, "👍")
@@ -995,8 +1021,8 @@ class MessageRepositoryTest {
                 ),
             ),
         )
-        coEvery { messageApi.toggleReaction(any(), any()) } returns
-            Response.error(403, "".toResponseBody())
+        every { messageApi.toggleReaction(any(), any()) } returns
+            Response.error<ReactionUpdateDto>(403, "".toResponseBody()).asCall()
 
         repository.interactionEvents.test {
             repository.toggleReaction("m-1", CONVERSATION_ID, "👍")
@@ -1022,8 +1048,8 @@ class MessageRepositoryTest {
             listOf(ReactionSummaryDto("👍", 2, false)),
             "2026-11-03T09:12:04Z",
         )
-        coEvery { messageApi.getMessages(CONVERSATION_ID, null, null, any()) } returns
-            Response.success(MessagePageDto(listOf(replyDto), false))
+        every { messageApi.getMessages(CONVERSATION_ID, null, null, any()) } returns
+            Response.success(MessagePageDto(listOf(replyDto), false)).asCall()
 
         repository.refreshHistory(CONVERSATION_ID)
 
@@ -1040,19 +1066,19 @@ class MessageRepositoryTest {
         val knownReaction = MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)
         reactionDao.upsertAll(listOf(knownReaction))
 
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
+        every { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
             Response.success(
                 page(
                     hasMore = false,
                     messageDto("m-1", null), // reactions absent: keep the current set
                 ),
-            ),
+            ).asCall(),
             Response.success(
                 page(
                     hasMore = false,
                     messageDto("m-1", null).withReactions(emptyList()),
                 ),
-            ),
+            ).asCall(),
         )
 
         repository.refreshHistory(CONVERSATION_ID)
@@ -1065,8 +1091,8 @@ class MessageRepositoryTest {
     @Test
     fun `refreshPins replaces the conversation pin set from the REST list`() = runTest {
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "stale", pinnedAt = 1L))
-        coEvery { messageApi.getPins(CONVERSATION_ID) } returns
-            Response.success("[\"m-1\",\"m-2\"]".toResponseBody())
+        every { messageApi.getPins(CONVERSATION_ID) } returns
+            Response.success("[\"m-1\",\"m-2\"]".toResponseBody()).asCall()
 
         repository.refreshPins(CONVERSATION_ID)
 
@@ -1078,8 +1104,8 @@ class MessageRepositoryTest {
 
     @Test
     fun `pin failure removes the optimistic row and signals an error`() = runTest {
-        coEvery { messageApi.pinMessage(CONVERSATION_ID, any()) } returns
-            Response.error(409, "".toResponseBody())
+        every { messageApi.pinMessage(CONVERSATION_ID, any()) } returns
+            Response.error<ResponseBody>(409, "".toResponseBody()).asCall()
 
         repository.interactionEvents.test {
             repository.pinMessage(CONVERSATION_ID, "m-1")
@@ -1096,14 +1122,14 @@ class MessageRepositoryTest {
     fun `edit writes optimistically then applies the authoritative server row`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
         var captured: EditMessageRequest? = null
-        coEvery { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } answers {
+        every { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } answers {
             captured = thirdArg()
             Response.success(
                 messageDto("m-1", null, senderId = "me-1").withContent(
                     "new",
                     "2026-11-03T10:00:00Z",
                 ),
-            )
+            ).asCall()
         }
 
         val result = repository.editMessage(CONVERSATION_ID, "m-1", "  new  ")
@@ -1118,8 +1144,8 @@ class MessageRepositoryTest {
     @Test
     fun `failed edit restores the previous content and editedAt`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
-        coEvery { messageApi.editMessage(any(), any(), any()) } returns
-            Response.error(403, "".toResponseBody())
+        every { messageApi.editMessage(any(), any(), any()) } returns
+            Response.error<MessageDto>(403, "".toResponseBody()).asCall()
 
         val result = repository.editMessage(CONVERSATION_ID, "m-1", "new")
 
@@ -1133,20 +1159,21 @@ class MessageRepositoryTest {
     fun `edit response cannot restore an inbox preview after MESSAGE_DELETED`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "old"))
-        coEvery { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } coAnswers {
-            eventsFlow.emit(
-                ChatEvent.MessageDeleted(
-                    conversationId = CONVERSATION_ID,
-                    messageId = "m-1",
-                    deletedAt = "2026-11-03T11:00:00Z",
-                ),
-            )
+        every { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } answers {
             Response.success(
                 messageDto("m-1", null, senderId = "me-1").withContent(
                     "edited",
                     "2026-11-03T10:00:00Z",
                 ),
-            )
+            ).asCall {
+                eventsFlow.tryEmit(
+                    ChatEvent.MessageDeleted(
+                        conversationId = CONVERSATION_ID,
+                        messageId = "m-1",
+                        deletedAt = "2026-11-03T11:00:00Z",
+                    ),
+                )
+            }
         }
 
         repository.editMessage(CONVERSATION_ID, "m-1", "edited")
@@ -1159,9 +1186,8 @@ class MessageRepositoryTest {
     @Test
     fun `cancelling an edit rolls back its optimistic row`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
-        coEvery { messageApi.editMessage(any(), any(), any()) } coAnswers {
-            throw CancellationException("test cancellation")
-        }
+        every { messageApi.editMessage(any(), any(), any()) } returns
+            failedCall(CancellationException("test cancellation"))
 
         try {
             repository.editMessage(CONVERSATION_ID, "m-1", "edited")
@@ -1183,7 +1209,7 @@ class MessageRepositoryTest {
         assertTrue(repository.editMessage(CONVERSATION_ID, "m-1", "same") is Result.Success)
         assertTrue(repository.editMessage(CONVERSATION_ID, "m-2", "mine now") is Result.Failure)
 
-        coVerify(exactly = 0) { messageApi.editMessage(any(), any(), any()) }
+        verify(exactly = 0) { messageApi.editMessage(any(), any(), any()) }
     }
 
     @Test
@@ -1255,7 +1281,7 @@ class MessageRepositoryTest {
         )
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
+        every { messageApi.getMessages(any(), any(), any(), any()) } returns
             Response.success(
                 page(
                     hasMore = false,
@@ -1264,7 +1290,7 @@ class MessageRepositoryTest {
                         listOf(ReactionSummaryDto("👍", 1, true)),
                     ),
                 ),
-            )
+            ).asCall()
 
         repository.refreshHistory(CONVERSATION_ID)
 
@@ -1289,8 +1315,8 @@ class MessageRepositoryTest {
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
-        coEvery { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } returns
-            Response.success(Unit)
+        every { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } returns
+            Response.success<Void>(204, null).asCall()
 
         val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
 
@@ -1311,8 +1337,8 @@ class MessageRepositoryTest {
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
-        coEvery { messageApi.deleteMessage(any(), any()) } returns
-            Response.error(403, "".toResponseBody())
+        every { messageApi.deleteMessage(any(), any()) } returns
+            Response.error<Void>(403, "".toResponseBody()).asCall()
 
         val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
 
@@ -1332,15 +1358,16 @@ class MessageRepositoryTest {
         )
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
-        coEvery { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } coAnswers {
-            eventsFlow.emit(
-                ChatEvent.MessageDeleted(
-                    conversationId = CONVERSATION_ID,
-                    messageId = "m-1",
-                    deletedAt = "2026-11-03T11:00:00Z",
-                ),
-            )
-            Response.error(500, "".toResponseBody())
+        every { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } answers {
+            Response.error<Void>(500, "".toResponseBody()).asCall {
+                eventsFlow.tryEmit(
+                    ChatEvent.MessageDeleted(
+                        conversationId = CONVERSATION_ID,
+                        messageId = "m-1",
+                        deletedAt = "2026-11-03T11:00:00Z",
+                    ),
+                )
+            }
         }
 
         val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
@@ -1361,9 +1388,8 @@ class MessageRepositoryTest {
         )
         pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
-        coEvery { messageApi.deleteMessage(any(), any()) } coAnswers {
-            throw CancellationException("test cancellation")
-        }
+        every { messageApi.deleteMessage(any(), any()) } returns
+            failedCall(CancellationException("test cancellation"))
 
         try {
             repository.deleteMessage(CONVERSATION_ID, "m-1")
@@ -1384,7 +1410,7 @@ class MessageRepositoryTest {
     fun `deleting the inbox-last message flips the neutral snippet flag`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "bye"))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
-        coEvery { messageApi.deleteMessage(any(), any()) } returns Response.success(Unit)
+        every { messageApi.deleteMessage(any(), any()) } returns Response.success<Void>(204, null).asCall()
 
         repository.deleteMessage(CONVERSATION_ID, "m-1")
 
@@ -1402,19 +1428,19 @@ class MessageRepositoryTest {
         val result = repository.deleteMessage(CONVERSATION_ID, "m-1")
 
         assertTrue(result is Result.Success)
-        coVerify(exactly = 0) { messageApi.deleteMessage(any(), any()) }
+        verify(exactly = 0) { messageApi.deleteMessage(any(), any()) }
     }
 
     @Test
     fun `search writes through to Room and hydrates the page`() = runTest {
-        coEvery { messageApi.searchMessages(CONVERSATION_ID, "hi", any(), any()) } returns
+        every { messageApi.searchMessages(CONVERSATION_ID, "hi", any(), any()) } returns
             Response.success(
                 MessagePageDto(
                     listOf(messageDto("m-9", null, seq = 9).withContent("hi there")),
                     9L,
                     true,
                 ),
-            )
+            ).asCall()
 
         val result = repository.searchMessages(CONVERSATION_ID, "  hi  ")
 
@@ -1432,7 +1458,7 @@ class MessageRepositoryTest {
 
         assertTrue(result is Result.Success)
         assertTrue((result as Result.Success).value.items.isEmpty())
-        coVerify(exactly = 0) { messageApi.searchMessages(any(), any(), any(), any()) }
+        verify(exactly = 0) { messageApi.searchMessages(any(), any(), any(), any()) }
     }
 
     @Test
@@ -1450,55 +1476,56 @@ class MessageRepositoryTest {
         messageDao.upsert(storedMessage("m-9", seq = 9))
 
         assertEquals(MessageJump.Found, repository.loadUntilLoaded(CONVERSATION_ID, "m-9"))
-        coVerify(exactly = 0) { messageApi.getMessages(any(), any(), any(), any()) }
+        verify(exactly = 0) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 
     @Test
     fun `loadUntilLoaded pages backwards until the target is stored`() = runTest {
         messageDao.upsert(storedMessage("m-90", seq = 90))
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
-            Response.success(page(hasMore = true, dto(storedMessage("m-45", 45)))),
-            Response.success(page(hasMore = true, dto(storedMessage("m-10", 10)))),
-            Response.success(page(hasMore = true, dto(storedMessage("m-2", 2)))),
+        every { messageApi.getMessages(any(), any(), any(), any()) } returnsMany listOf(
+            Response.success(page(hasMore = true, dto(storedMessage("m-45", 45)))).asCall(),
+            Response.success(page(hasMore = true, dto(storedMessage("m-10", 10)))).asCall(),
+            Response.success(page(hasMore = true, dto(storedMessage("m-2", 2)))).asCall(),
         )
 
         val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-2")
 
         assertEquals(MessageJump.Found, jump)
         assertTrue(messageDao.rows.containsKey("m-2"))
-        coVerify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
+        verify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
         // Each page asked for history strictly before the then-oldest row.
-        coVerify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 45L, any(), any()) }
-        coVerify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 10L, any(), any()) }
+        verify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 45L, any(), any()) }
+        verify(exactly = 1) { messageApi.getMessages(CONVERSATION_ID, 10L, any(), any()) }
     }
 
     @Test
     fun `loadUntilLoaded stops after the page budget and reports not found`() = runTest {
         messageDao.upsert(storedMessage("m-90", seq = 90))
         // Every page claims more history but never contains the target.
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
-            Response.success(page(hasMore = true, dto(storedMessage("m-x", seq = 1))))
+        every { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(page(hasMore = true, dto(storedMessage("m-x", seq = 1)))).asCall()
 
         val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-gone", maxPages = 3)
 
         assertEquals(MessageJump.NotFound, jump)
-        coVerify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
+        verify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 
     @Test
     fun `loadUntilLoaded stops when the server reports no older history`() = runTest {
         messageDao.upsert(storedMessage("m-5", seq = 5))
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } returns
-            Response.success(page(hasMore = false))
+        every { messageApi.getMessages(any(), any(), any(), any()) } returns
+            Response.success(page(hasMore = false)).asCall()
 
         assertEquals(MessageJump.NotFound, repository.loadUntilLoaded(CONVERSATION_ID, "m-old"))
-        coVerify(exactly = 1) { messageApi.getMessages(any(), any(), any(), any()) }
+        verify(exactly = 1) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 
     @Test
     fun `loadUntilLoaded surfaces a page failure`() = runTest {
         messageDao.upsert(storedMessage("m-5", seq = 5))
-        coEvery { messageApi.getMessages(any(), any(), any(), any()) } throws IOException("down")
+        every { messageApi.getMessages(any(), any(), any(), any()) } returns
+            failedCall(IOException("down"))
 
         val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-old")
 
