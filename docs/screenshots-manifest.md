@@ -12,6 +12,16 @@ that referenced `docs/screenshots/` and the deleted `03-inbox-light-en`,
 superseded — those files carried probe/e2e strings and were removed; their
 replacements are the `s2-*` re-captures below.
 
+## Shared evidence frames
+
+These byte-identical pairs intentionally share an evidence frame because each
+frame shows both named states:
+
+- `docs/screenshots/06c-direct-typing-vi.png` and
+  `docs/screenshots/12a-reply-quote-vi.png`: the typing indicator and reply quote.
+- `docs/design/screens/s2-03-edited-label-light-vi.png` and
+  `docs/design/screens/s2-05-tombstone-light-vi.png`: edited labels and deleted-message tombstones.
+
 ## 0. Capture environment
 
 - AVD `nexachat-audit` (Android 15, `google_apis/x86_64`, Pixel 6 profile,
@@ -212,23 +222,21 @@ Screenshots captured on headless Android 15 AVD `nexachat-audit` (`emulator-5558
 | `s7-14-chat-fontscale200-dark-en.png` | Direct chat conversation at accessibility font scale 2.0 (English, dark theme): bubbles and timestamps scale cleanly | dark / en |
 | `s7-15-settings-language-switch-live-dark.png` | Profile Settings language selection screen showing live in-app language switching (System default / Tiếng Việt / English) | dark / vi |
 
-## 2.8. Stage 8 — Call-failure reasons and viewer-relative call direction (s8-*)
+## 2.8. Stage 8 — Call-failure reasons and viewer-relative call direction (`s8-*`)
 
-Captured on the nexachat-audit AVD (emulator-5558, Android 15, 1080×2400) against the live backend on localhost:8080. Validates specific offline and busy failure reasons, plus viewer-relative inbox call previews in Vietnamese and English.
+Captured on the `nexachat-audit` AVD (`emulator-5558`, Android 15, 1080×2400) against the live backend on `localhost:8080`. Validates specific offline and busy failure reasons, plus viewer-relative inbox call previews in Vietnamese and English.
 
 | File | Screen / evidence | Theme / locale |
 |---|---|---|
-| s8-01-call-offline-error-dialog-dark-vi.png | Airplane-mode outgoing call failure with title “Cuộc gọi thất bại” and a specific connection-reason line | dark / vi |
-| s8-02-call-offline-error-dialog-dark-en.png | Airplane-mode outgoing call failure with title “Call failed” and a specific connection-reason line | dark / en |
-| s8-03-inbox-outgoing-call-dark-vi.png | Inbox preview for the viewer-placed call (“Cuộc gọi thoại đi · 0:00”) | dark / vi |
-| s8-04-inbox-outgoing-call-dark-en.png | Inbox preview for the viewer-placed call (“Outgoing voice call · 0:00”) | dark / en |
-| s8-05-inbox-incoming-call-dark-vi.png | Inbox preview for the call received from the peer (“Cuộc gọi thoại đến · 0:00”) | dark / vi |
-| s8-06-inbox-incoming-call-dark-en.png | Inbox preview for the call received from the peer (“Incoming voice call · 0:00”) | dark / en |
-| s8-07-call-busy-error-dialog-dark-vi.png | Busy-peer failure with title “Cuộc gọi thất bại” and reason “Người dùng đang bận” | dark / vi |
+| `s8-01-call-offline-error-dialog-dark-vi.png` | Airplane-mode outgoing call failure with title “Cuộc gọi thất bại” and a specific connection-reason line | dark / vi |
+| `s8-02-call-offline-error-dialog-dark-en.png` | Airplane-mode outgoing call failure with title “Call failed” and a specific connection-reason line | dark / en |
+| `s8-03-inbox-outgoing-call-dark-vi.png` | Inbox preview for the viewer-placed call (“Cuộc gọi thoại đi · 0:00”) | dark / vi |
+| `s8-04-inbox-outgoing-call-dark-en.png` | Inbox preview for the viewer-placed call (“Outgoing voice call · 0:00”) | dark / en |
+| `s8-05-inbox-incoming-call-dark-vi.png` | Inbox preview for the call received from the peer (“Cuộc gọi thoại đến · 0:00”) | dark / vi |
+| `s8-06-inbox-incoming-call-dark-en.png` | Inbox preview for the call received from the peer (“Incoming voice call · 0:00”) | dark / en |
+| `s8-07-call-busy-error-dialog-dark-vi.png` | Busy-peer failure with title “Cuộc gọi thất bại” and reason “Người dùng đang bận” | dark / vi |
 
 Fixture accounts, conversations, call records, and messages were removed after capture; targeted row counts were verified as zero.
-
-
 
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 

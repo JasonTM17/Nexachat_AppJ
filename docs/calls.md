@@ -9,6 +9,7 @@ busy reservation; PostgreSQL stores the call history through the additive
 Disconnecting a participant's last STOMP session ends that participant's call.
 The broker's 10 s STOMP heartbeat keeps an idle ringing caller's socket alive,
 and the ring timer re-arms itself if it fires a moment before the deadline.
+Registry changes roll back with failed persistence transactions; terminal registry entries are evicted on the next access after five minutes.
 
 Each terminal call writes one `SYSTEM` conversation message through the server's
 existing system-message path. Its `content` is the stable, non-localized value
@@ -16,8 +17,9 @@ existing system-message path. Its `content` is the stable, non-localized value
 `CALL|COMPLETED|18|<callerUserId>` or `CALL|MISSED|0|<callerUserId>`). The
 caller remains the system message sender. Android renders the token as a
 localized call-log line and compares the caller ID with the signed-in user to
-choose outgoing or incoming wording; older three-part rows have no caller ID
-and keep the incoming wording. The server does not store localized copy. The
+choose outgoing or incoming wording. Older three-part rows have no caller ID:
+a completed row uses a direction-neutral label, and the other outcomes do not
+encode direction. The server does not store localized copy. The
 winning terminal transition owns the history and message write, so concurrent
 terminal frames cannot create extra system lines.
 
@@ -140,6 +142,15 @@ negotiated by the Android client; signaling does not carry audio bytes.
 - Call state and STOMP delivery use the single-node in-memory registry and
   SimpleBroker. Multiple server instances need shared call coordination and a
   broker relay.
+- Call-control mutations share one fair lock until their database transaction
+  completes. SDP and ICE relays hold the matching read lock for that same span,
+  so a slow commit can delay media frames for other calls. That serialization
+  fits this single-node demo; it is not a throughput claim.
+- A failed timeout or last-session disconnect history write is retried five
+  times with exponential backoff (1s, 2s, 4s, 8s, 16s) and then stopped. A
+  disconnect retry also stops if that user is online again. A lasting database
+  outage can leave the in-memory call reserved without a history row until
+  restart.
 - The default ICE configuration has public STUN only and no TURN. Strict NAT
   or mobile networks may not establish media; a shared LAN/Wi-Fi path is the
   expected demo environment.
@@ -155,8 +166,8 @@ negotiated by the Android client; signaling does not carry audio bytes.
   and on-device verification exercised signaling, SDP/ICE relay, mute/speaker
   routing and teardown, but not an audio stream between two WebRTC endpoints.
 - New inbox call previews compare the token's caller ID with the signed-in
-  user. Older three-part `CALL|...` rows lack a caller ID and retain incoming
-  phrasing because their direction cannot be recovered.
+  user. Older three-part `CALL|...` rows lack a caller ID. A completed row uses
+  a direction-neutral label; the other outcomes do not encode direction.
 
 ## Verification
 

@@ -87,7 +87,7 @@ nexachat/
 |---|---|---:|---|---|
 | R1 | Bài nộp đầy đủ, đúng cấu trúc | 5 | ✅ | `docs/packaging-checklist.md` (C1–C12), `.git` full history, `docs/report.docx`, APK release |
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
-| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 227 string entries mỗi bên (225 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
+| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 218 string entries mỗi bên (216 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
 | R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Test status do CI run hiện tại báo (`.github/workflows/ci.yml`); `RoomMigrationTest` cover migration chain Room v1→v7 (xem §13.1) |
 | R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 66 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
@@ -615,9 +615,9 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
 
 ### 10.1. i18n
 
-- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **227 string
-  entries mỗi bên (225 translatable), parity 100%** — gồm
-  `strings_call.xml` (45 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
+- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **218 string
+  entries mỗi bên (216 translatable), parity 100%** — gồm
+  `strings_call.xml` (46 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
   kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
 - Đổi ngôn ngữ trong Settings, persist: không có `androidx.appcompat` trong
   dependency graph → dùng **framework `android.app.LocaleManager` (API 33+,
@@ -723,8 +723,8 @@ lý thuyết:
 11. **Group-update debounce** — `CONVERSATION_UPDATED` burst (đổi tên + add/remove
     member) chỉ gọi `refreshMembers()` một lần sau 200 ms
     (`GroupDetailViewModel.PUSH_REFRESH_DEBOUNCE_MS`).
-12. **Minimal UI copy** — `splash_tagline` ("Connecting…") bị bỏ khỏi cả EN/VI
-    (227/227 entries); splash chỉ giữ logo, tên app và progress indicator.
+12. **Minimal UI copy** — `splash_tagline` ("Connecting…") bị bỏ khỏi cả EN/VI;
+    splash chỉ giữ logo, tên app và progress indicator.
 
 ---
 
@@ -748,7 +748,7 @@ Snapshot lịch sử tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/
 | Android unit (53 class) | 411 | 0 / 0 |
 | Android instrumented `RoomMigrationTest` | 4 | chạy trên emulator, không chạy trong CI |
 
-String-key parity: 227/227 entries mỗi locale (225 translatable), 0 missing cả
+String-key parity: 218/218 entries mỗi locale (216 translatable), 0 missing cả
 hai chiều — xem §10.1 và `docs/i18n-audit.md`.
 
 | Tầng | Công cụ | Trạng thái |
