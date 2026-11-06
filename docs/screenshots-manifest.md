@@ -251,6 +251,21 @@ UI polish pass. Fixture names are `UX Pass 1` and `UX Pass 2`.
 | `s9-04-inbox-font130-dark-en.png` | Inbox at font scale 1.3 | dark / en |
 | `s9-05-login-validation-dark-en.png` | Empty sign-in shows the phone and password errors | dark / en |
 
+## 2.10 Inventory — round-2 reference frames (`s10-*`)
+
+Captured on `nexachat-audit` port 5558 after the Java and contact-copy pass.
+Demo mode was not set, so the status bar shows the device clock. No fixture
+name or phone number is visible in these frames. The landscape login column
+scrolls; the sign-in button meets the gesture bar until the column is scrolled.
+
+| File | Screen / evidence | Theme / locale |
+|---|---|---|
+| `s10-login-light-en.png` | Sign-in, light | light / en |
+| `s10-register-light-en.png` | Create account | light / en |
+| `s10-inbox-light-en.png` | Empty inbox after a fixture sign-in | light / en |
+| `s10-login-dark-en.png` | Sign-in, dark | dark / en |
+| `s10-login-dark-landscape.png` | Sign-in, dark landscape | dark / en |
+
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 
 - No probe/e2e/test strings: the demo data was re-seeded and the two

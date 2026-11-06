@@ -105,8 +105,8 @@ cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (
 - [ ] `docs/rtm.md` — requirement traceability matrix.
 - [ ] `docs/demo-runbook.md` — preflight + 8-minute script + fallbacks.
 - [ ] `docs/known-limitations.md` — honest limitations.
-- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (220/220
-      entries, 218 translatable) and per-screen rotation evidence.
+- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (221/221
+      entries, 219 translatable) and per-screen rotation evidence.
 - [ ] `docs/interactions-demo.md` — creative feature playbook.
 - [ ] `docs/screenshots/` (22 feature shots) + `docs/design/screens/`
       (21 design-system shots) + `docs/design/design-notes.md`.

@@ -1411,8 +1411,8 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
   the floor.
 - *"Where does i18n fit M3?"* — User-facing strings are externalized in
   paired English and Vietnamese resource files. The base `strings.xml` has
-  134 entries per locale (132 translatable); `strings_call.xml` adds 46 and
-  `strings_summary.xml` adds 40, for 220 entries (218 translatable) per locale.
+  135 entries per locale (133 translatable); `strings_call.xml` adds 46 and
+  `strings_summary.xml` adds 40, for 221 entries (219 translatable) per locale.
   Each file pair has matching resource names. The linked i18n audit contains
   the fuller review.
 
@@ -1422,9 +1422,9 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
 
 **Model answer.** Pure Android resource resolution: paired resource files
 under `values/` (English default) and `values-vi/`. The base `strings.xml`
-contains 134 entries per locale (132 marked translatable), `strings_call.xml`
-adds 46 and `strings_summary.xml` adds 40, for 220 entries total
-(218 translatable) per locale. Each English/Vietnamese file pair has matching names.
+contains 135 entries per locale (133 marked translatable), `strings_call.xml`
+adds 46 and `strings_summary.xml` adds 40, for 221 entries total
+(219 translatable) per locale. Each English/Vietnamese file pair has matching names.
 Strings are referenced via `stringResource()` in composables; switching is
 the `AppLocaleManager` path of Q6.1 — the framework picks `values-vi` once the
 configuration locale is `vi`. The current counts and the exact counting command

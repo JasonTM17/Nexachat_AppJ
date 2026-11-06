@@ -87,7 +87,7 @@ nexachat/
 |---|---|---:|---|---|
 | R1 | Bài nộp đầy đủ, đúng cấu trúc | 5 | ✅ | `docs/packaging-checklist.md` (C1–C12), `.git` full history, `docs/report.docx`, APK release |
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
-| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 220 string entries mỗi bên (218 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
+| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 221 string entries mỗi bên (219 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
 | R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Test status do CI run hiện tại báo (`.github/workflows/ci.yml`); `RoomMigrationTest` cover migration chain Room v1→v7 (xem §13.1) |
 | R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 66 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
@@ -615,8 +615,8 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
 
 ### 10.1. i18n
 
-- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **220 string
-  entries mỗi bên (218 translatable), parity 100%** — gồm
+- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **221 string
+  entries mỗi bên (219 translatable), parity 100%** — gồm
   `strings_call.xml` (46 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
   kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
 - Đổi ngôn ngữ trong Settings, persist: không có `androidx.appcompat` trong
@@ -738,7 +738,8 @@ thật của đúng revision.
 
 Snapshot lịch sử tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/failsafe của
 `mvn -B verify` và XML `testDebugUnitTest`). Các số này không mô tả commit sau
-`e6bcb3b`:
+`e6bcb3b`. Một lần chạy local sau vòng Java/test (chưa phải CI): surefire 426,
+failsafe 70, Android JVM 505 test / 76 class, lint 89 warning và 0 error.
 
 | Tầng | Số test | Fail/Skip |
 |---|---:|---|
@@ -748,7 +749,7 @@ Snapshot lịch sử tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/
 | Android unit (53 class) | 411 | 0 / 0 |
 | Android instrumented `RoomMigrationTest` | 4 | chạy trên emulator, không chạy trong CI |
 
-String-key parity: 220/220 entries mỗi locale (218 translatable), 0 missing cả
+String-key parity: 221/221 entries mỗi locale (219 translatable), 0 missing cả
 hai chiều — xem §10.1 và `docs/i18n-audit.md`.
 
 | Tầng | Công cụ | Trạng thái |

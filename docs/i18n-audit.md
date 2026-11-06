@@ -44,14 +44,14 @@ PY
 
 | Resource pair | EN entries | VI entries | Translatable EN/VI | Name sets |
 | --- | ---: | ---: | ---: | --- |
-| `values/strings.xml` ↔ `values-vi/strings.xml` | 134 | 134 | 132 / 132 | identical |
+| `values/strings.xml` ↔ `values-vi/strings.xml` | 135 | 135 | 133 / 133 | identical |
 | `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 46 | 46 | 46 / 46 | identical |
 | `values/strings_summary.xml` ↔ `values-vi/strings_summary.xml` | 40 | 40 | 40 / 40 | identical |
-| **Total per locale** | **220** | **220** | **218 / 218** | **identical** |
+| **Total per locale** | **221** | **221** | **219 / 219** | **identical** |
 
 - Missing from VI: **none**.
 - Missing from EN: **none**.
-- Translatable keys: **218** of 220 (the 2 `language_name_*` endonyms are
+- Translatable keys: **219** of 221 (the 2 `language_name_*` endonyms are
   `translatable="false"` by design).
 - `strings_call.xml` carries the call-specific labels (state names, permission
   rationales, call controls, notification channels, localized call-log lines).
@@ -115,7 +115,7 @@ packages resolves through `stringResource(R.string.*)` or `getString(R.string.*)
 
 ## 4. Verdict
 
-- Resource key coverage: **220/220 = 100 %** (0 missing either direction).
+- Resource key coverage: **221/221 = 100 %** (0 missing either direction).
 - Translatable strings localized: **216/216 = 100 %** (2 endonyms are
   `translatable="false"` by design).
 - Hardcoded prose in UI: **0 hits**; only 2 symbols and 3 numeric/size-format

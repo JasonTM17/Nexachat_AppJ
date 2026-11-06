@@ -73,7 +73,7 @@ Defined in `com.nexachat.core.ui.theme.Shape.kt`:
 | `SettingsRow` | `com/nexachat/core/ui/components/SettingsRow.kt` | Interactive preference row with leading icon, chevron/value trailing affordance, destructive styling mode, >= 48dp touch target. |
 | `EmptyState` | `com/nexachat/core/ui/components/EmptyState.kt` | Calm centered empty state supporting vector illustrations (`ic_empty_chat.xml`), single concise helper line. |
 | `NexaMotion` | `com/nexachat/core/ui/components/Motion.kt` | Restrained animation specs (150ms fade/slide), respecting `LocalReduceMotion` and system animator duration scale. |
-| `LinkUtils` | `com/nexachat/core/ui/components/LinkUtils.kt` | Safe URI parsing using `java.net.URI`, strictly allowing `http`/`https` protocols while rejecting `file`, `javascript`, and `intent`. |
+| `LinkUtils` | `com/nexachat/core/ui/components/LinkUtils.java` | Safe URI parsing using `java.net.URI`, strictly allowing `http`/`https` protocols while rejecting `file`, `javascript`, and `intent`. |
 
 ---
 
