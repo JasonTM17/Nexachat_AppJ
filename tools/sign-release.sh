@@ -53,8 +53,8 @@ to_unix() {
         if command -v cygpath >/dev/null 2>&1; then
             cygpath -u "$p"; return
         fi
-        local drive="${p:0:1}"
-        echo "/${drive,,}${p:2}" | tr '\\' '/'
+        local drive="${p:0:1}" rest="${p:2}"
+        echo "/${drive,,}${rest//\\//}"
     else
         echo "$p"
     fi
@@ -68,7 +68,7 @@ SDK_VALUE="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 SDK="$(to_unix "$SDK_VALUE")"
 [[ -d "$SDK/build-tools" ]] || fail "Android SDK build-tools not found under '$SDK' (set ANDROID_HOME)."
 # Newest build-tools version wins (34.0.0 < 35.0.0 < 36.1.0).
-BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -n1)"
+BT="$(printf '%s\n' "$SDK"/build-tools/*/ | sort -V | tail -n1)"
 [[ -n "$BT" && -f "$BT/lib/apksigner.jar" ]] || fail "apksigner.jar not found in newest build-tools dir."
 [[ -f "$BT/zipalign.exe" || -f "$BT/zipalign" ]] || fail "zipalign not found in $BT."
 # Windows build-tools ship zipalign.exe; POSIX images ship a bare zipalign.

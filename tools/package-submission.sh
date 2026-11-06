@@ -64,7 +64,7 @@ to_unix() {
     local p="$1"
     if [[ "$p" =~ ^[A-Za-z]:[\\/] ]]; then
         command -v cygpath >/dev/null 2>&1 && { cygpath -u "$p"; return; }
-        local drive="${p:0:1}"; echo "/${drive,,}${p:2}" | tr '\\' '/'
+        local drive="${p:0:1}" rest="${p:2}"; echo "/${drive,,}${rest//\\//}"
     else echo "$p"; fi
 }
 to_win() { command -v cygpath >/dev/null 2>&1 && cygpath -w "$1" || echo "$1"; }
