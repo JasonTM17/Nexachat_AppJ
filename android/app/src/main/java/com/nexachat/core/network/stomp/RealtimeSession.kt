@@ -419,15 +419,15 @@ class RealtimeSession @Inject constructor(
     /** STOMP SEND to `/app/conversations/{id}/messages`. `false` = not queued. */
     fun sendMessage(conversationId: String, request: SendMessageRequest): Boolean =
         stompClient.send(
-            destination = "$APP_PREFIX/conversations/$conversationId/messages",
-            json = sendAdapter.toJson(request),
+            "$APP_PREFIX/conversations/$conversationId/messages",
+            sendAdapter.toJson(request),
         )
 
     /** Typing ping — plan §11.2: empty body `{}`, client-throttled upstream. */
     fun sendTyping(conversationId: String): Boolean =
         stompClient.send(
-            destination = "$APP_PREFIX/conversations/$conversationId/typing",
-            json = "{}",
+            "$APP_PREFIX/conversations/$conversationId/typing",
+            "{}",
         )
 
     // ---- inbound frames ----

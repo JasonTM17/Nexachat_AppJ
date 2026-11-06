@@ -72,7 +72,7 @@ class PresenceRepositoryTest {
         val networkMonitor = mockk<NetworkMonitor>()
         every { networkMonitor.regained } returns MutableSharedFlow()
         val foreground = object : AppForegroundState {
-            override val isForeground = flowOf(false)
+            override fun getIsForeground() = flowOf(false)
         }
         val realtimeSession = RealtimeSession(
             stompClient = stompClient,

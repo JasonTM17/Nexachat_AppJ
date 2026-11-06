@@ -64,7 +64,8 @@ class RealtimeSessionReArmTest {
     /** Foreground flag the parked re-arm consults; backgrounded by default. */
     private class FakeForeground(initial: Boolean = false) : AppForegroundState {
         private val state = MutableStateFlow(initial)
-        override val isForeground: Flow<Boolean> = state
+
+        override fun getIsForeground(): Flow<Boolean> = state
 
         fun set(value: Boolean) {
             state.value = value

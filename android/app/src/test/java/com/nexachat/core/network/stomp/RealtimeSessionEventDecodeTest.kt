@@ -52,7 +52,7 @@ class RealtimeSessionEventDecodeTest {
             every { regained } returns MutableSharedFlow()
         }
         val foreground = object : AppForegroundState {
-            override val isForeground = flowOf(false)
+            override fun getIsForeground() = flowOf(false)
         }
         return RealtimeSession(
             stompClient = stompClient,
@@ -118,7 +118,7 @@ class RealtimeSessionEventDecodeTest {
             every { regained } returns MutableSharedFlow()
         }
         val foreground = object : AppForegroundState {
-            override val isForeground = flowOf(false)
+            override fun getIsForeground() = flowOf(false)
         }
         RealtimeSession(
             stompClient = stompClient,
