@@ -6,6 +6,7 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.AuthApi
 import com.nexachat.core.network.SessionEvents
+import com.nexachat.core.network.TokenRefreshOutcome
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.network.dto.AuthResponse
 import com.nexachat.core.network.dto.ChangePasswordRequest
@@ -58,12 +59,12 @@ class AuthRepository @Inject constructor(
      */
     suspend fun refresh(): Result<Boolean> =
         when (tokenRefresher.refresh()) {
-            is TokenRefresher.Outcome.FreshToken -> Result.Success(true)
-            TokenRefresher.Outcome.TransientFailure ->
+            is TokenRefreshOutcome.FreshToken -> Result.Success(true)
+            is TokenRefreshOutcome.TransientFailure ->
                 Result.failure(ApiError.Network("refresh request failed"))
-            TokenRefresher.Outcome.Rejected ->
+            is TokenRefreshOutcome.Rejected ->
                 Result.failure(ApiError.Unknown("SESSION_REJECTED"))
-            TokenRefresher.Outcome.NoRefreshToken ->
+            is TokenRefreshOutcome.NoRefreshToken ->
                 Result.failure(ApiError.Unknown("NO_REFRESH_TOKEN"))
         }
 

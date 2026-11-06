@@ -11,6 +11,7 @@ import com.nexachat.core.network.dto.RefreshRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenCipher;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.concurrent.CancellationException;
@@ -66,9 +67,9 @@ public final class TokenRefresherTest {
         Harness harness = Harness.seeded();
         harness.api.failure = new IOException("offline");
 
-        TokenRefresher.Outcome outcome = harness.refresh();
+        TokenRefreshOutcome outcome = harness.refresh();
 
-        assertSame(TokenRefresher.Outcome.TransientFailure.INSTANCE, outcome);
+        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, outcome);
         assertEquals("rt-live", harness.readTokens().getRefreshToken());
         assertTrue(harness.events.getEvents().getReplayCache().isEmpty());
     }
@@ -104,9 +105,9 @@ public final class TokenRefresherTest {
         Harness harness = Harness.seeded();
         harness.api.status = status;
 
-        TokenRefresher.Outcome outcome = harness.refresh();
+        TokenRefreshOutcome outcome = harness.refresh();
 
-        assertSame(TokenRefresher.Outcome.TransientFailure.INSTANCE, outcome);
+        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, outcome);
         assertEquals("access-live", harness.readTokens().getAccessToken());
         assertEquals("rt-live", harness.readTokens().getRefreshToken());
         assertTrue(harness.events.getEvents().getReplayCache().isEmpty());
@@ -116,9 +117,9 @@ public final class TokenRefresherTest {
         Harness harness = Harness.seeded();
         harness.api.status = status;
 
-        TokenRefresher.Outcome outcome = harness.refresh();
+        TokenRefreshOutcome outcome = harness.refresh();
 
-        assertSame(TokenRefresher.Outcome.Rejected.INSTANCE, outcome);
+        assertSame(TokenRefreshOutcome.Rejected.INSTANCE, outcome);
         assertNull(harness.readTokens());
         assertEquals(
                 SessionEvents.Event.LoggedOut.INSTANCE,
@@ -142,16 +143,16 @@ public final class TokenRefresherTest {
             return harness;
         }
 
-        TokenRefresher.Outcome refresh() throws InterruptedException {
-            Function2<CoroutineScope, Continuation<? super TokenRefresher.Outcome>, Object> call =
+        TokenRefreshOutcome refresh() throws InterruptedException {
+            Function2<CoroutineScope, Continuation<? super TokenRefreshOutcome>, Object> call =
                     (scope, continuation) -> refresher.refresh(continuation);
-            return (TokenRefresher.Outcome) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, call);
+            return (TokenRefreshOutcome) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, call);
         }
 
-        TokenStore.Tokens readTokens() throws InterruptedException {
-            Function2<CoroutineScope, Continuation<? super TokenStore.Tokens>, Object> read =
+        Tokens readTokens() throws InterruptedException {
+            Function2<CoroutineScope, Continuation<? super Tokens>, Object> read =
                     (scope, continuation) -> store.readTokens(continuation);
-            return (TokenStore.Tokens) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, read);
+            return (Tokens) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, read);
         }
     }
 

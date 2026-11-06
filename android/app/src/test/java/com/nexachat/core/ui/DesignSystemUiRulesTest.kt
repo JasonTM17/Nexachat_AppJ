@@ -147,7 +147,7 @@ class DesignSystemUiRulesTest {
 
     @Test
     fun resolveDateSeparatorLabelBuckets() {
-        val labels = DateSeparatorLabels(today = "Hôm nay", yesterday = "Hôm qua")
+        val labels = DateSeparatorLabels("Hôm nay", "Hôm qua")
         val nowCal = Calendar.getInstance().apply {
             set(2026, Calendar.NOVEMBER, 5, 12, 0, 0)
         }

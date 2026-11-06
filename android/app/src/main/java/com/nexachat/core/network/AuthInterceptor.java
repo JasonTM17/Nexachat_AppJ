@@ -1,6 +1,7 @@
 package com.nexachat.core.network;
 
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
 import java.io.IOException;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -34,9 +35,9 @@ public final class AuthInterceptor implements Interceptor {
             return chain.proceed(request);
         }
 
-        Function2<CoroutineScope, Continuation<? super TokenStore.Tokens>, Object> readTokens =
+        Function2<CoroutineScope, Continuation<? super Tokens>, Object> readTokens =
                 (scope, continuation) -> tokenStore.readTokens(continuation);
-        final TokenStore.Tokens tokens;
+        final Tokens tokens;
         try {
             tokens = BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, readTokens);
         } catch (InterruptedException interrupted) {

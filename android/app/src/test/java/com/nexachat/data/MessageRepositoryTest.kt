@@ -27,6 +27,7 @@ import com.nexachat.core.network.dto.ReplyRefDto
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
+import com.nexachat.core.storage.Tokens
 import com.nexachat.core.network.dto.SendMessageRequest
 import com.squareup.moshi.Moshi
 import io.mockk.coEvery
@@ -405,7 +406,7 @@ class MessageRepositoryTest {
         every { session.ensureConnected() } just Runs
         every { sessionEvents.events } returns logoutFlow
         coEvery { tokenStore.readTokens() } returns
-            TokenStore.Tokens(jwtFor("me-1"), Long.MAX_VALUE, "refresh")
+            Tokens(jwtFor("me-1"), Long.MAX_VALUE, "refresh")
         every { messageApi.getMessages(any(), any(), any(), any()) } returns
             Response.success(MessagePageDto()).asCall()
         every { messageApi.markRead(any(), any()) } returns Response.success<Void>(204, null).asCall()

@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp
 
 import com.nexachat.core.network.AppForegroundState
 import com.nexachat.core.network.NetworkMonitor
+import com.nexachat.core.network.TokenRefreshOutcome
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.PinUpdateDto
@@ -300,15 +301,15 @@ class RealtimeSession @Inject constructor(
                     // A fresh token, or a transient outage: the attempt below
                     // is the honest test — the server 401s (→ rotate) or the
                     // socket fails (→ backoff).
-                    is TokenRefresher.Outcome.FreshToken,
-                    TokenRefresher.Outcome.TransientFailure,
+                    is TokenRefreshOutcome.FreshToken,
+                    is TokenRefreshOutcome.TransientFailure,
                     -> Unit
                     // Definitive rejection already wiped the store and emitted
                     // LoggedOut. Opening a socket can only fail, so end the
                     // loop; the session observer cancels the rest of the app's
                     // realtime work and navigation takes the user to Login.
-                    TokenRefresher.Outcome.Rejected,
-                    TokenRefresher.Outcome.NoRefreshToken,
+                    is TokenRefreshOutcome.Rejected,
+                    is TokenRefreshOutcome.NoRefreshToken,
                     -> return
                 }
             }

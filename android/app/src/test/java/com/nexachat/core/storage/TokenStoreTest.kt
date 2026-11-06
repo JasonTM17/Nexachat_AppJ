@@ -113,7 +113,7 @@ class TokenStoreTest {
         assertEquals("access-jwt-123", tokens?.accessToken)
         assertEquals(1_700_000_000_000L, tokens?.accessTokenExpiresAtEpochMs)
         assertEquals("refresh-opaque-456", tokens?.refreshToken)
-        assertFalse(tokens?.isAccessExpired(nowEpochMs = 1_600_000_000_000L) ?: true)
+        assertFalse(tokens?.isAccessExpired(1_600_000_000_000L) ?: true)
     }
 
     @Test

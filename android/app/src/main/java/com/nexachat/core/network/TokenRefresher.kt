@@ -39,29 +39,15 @@ class TokenRefresher @Inject constructor(
     private val authApi: Provider<AuthApi>,
 ) {
 
-    sealed interface Outcome {
-        /** A usable access token exists — just rotated or already fresh. */
-        data class FreshToken(val accessToken: String) : Outcome
-
-        /** 400/401/403 — the refresh token itself was rejected; tokens already wiped + LoggedOut emitted. */
-        data object Rejected : Outcome
-
-        /** 408/429/5xx/IO — tokens kept; caller may retry later. */
-        data object TransientFailure : Outcome
-
-        /** Nothing stored to refresh with. */
-        data object NoRefreshToken : Outcome
-    }
-
     private val mutex = Mutex()
 
     /**
      * Forced rotation for session restore at launch. Serialized with the 401
      * path so a concurrent 401 can't present the token we're about to revoke.
      */
-    suspend fun refresh(): Outcome = mutex.withLock {
+    suspend fun refresh(): TokenRefreshOutcome = mutex.withLock {
         val refreshToken = tokenStore.readTokens()?.refreshToken
-            ?: return Outcome.NoRefreshToken
+            ?: return TokenRefreshOutcome.NoRefreshToken.INSTANCE
         performRefresh(refreshToken)
     }
 
@@ -70,15 +56,15 @@ class TokenRefresher @Inject constructor(
      * lock, the stored access token differs from the one the server rejected —
      * reuse it without a second network call.
      */
-    suspend fun refreshIfNeeded(failedAccessToken: String?): Outcome = mutex.withLock {
-        val tokens = tokenStore.readTokens() ?: return Outcome.NoRefreshToken
+    suspend fun refreshIfNeeded(failedAccessToken: String?): TokenRefreshOutcome = mutex.withLock {
+        val tokens = tokenStore.readTokens() ?: return TokenRefreshOutcome.NoRefreshToken.INSTANCE
         if (failedAccessToken != null && tokens.accessToken != failedAccessToken) {
-            return Outcome.FreshToken(tokens.accessToken)
+            return TokenRefreshOutcome.FreshToken(tokens.accessToken)
         }
         performRefresh(tokens.refreshToken)
     }
 
-    private suspend fun performRefresh(refreshToken: String): Outcome =
+    private suspend fun performRefresh(refreshToken: String): TokenRefreshOutcome =
         try {
             val response = try {
                 withContext(Dispatchers.IO) {
@@ -102,19 +88,19 @@ class TokenRefresher @Inject constructor(
                             body.accessTokenExpiresIn * 1_000L,
                         refresh = body.refreshToken,
                     )
-                    Outcome.FreshToken(body.accessToken)
+                    TokenRefreshOutcome.FreshToken(body.accessToken)
                 }
                 isDefinitiveRejection(response.code()) -> {
                     // 400 validation, 401 TOKEN_INVALID/EXPIRED/REUSED, 403 forbidden.
                     // 408 and 429 are not session death: the refresh token is still valid.
                     tokenStore.clear()
                     sessionEvents.emitLoggedOut()
-                    Outcome.Rejected
+                    TokenRefreshOutcome.Rejected.INSTANCE
                 }
-                else -> Outcome.TransientFailure
+                else -> TokenRefreshOutcome.TransientFailure.INSTANCE
             }
         } catch (_: IOException) {
-            Outcome.TransientFailure
+            TokenRefreshOutcome.TransientFailure.INSTANCE
         }
 
     /** Contract rejections that mean this refresh token cannot be retried. */

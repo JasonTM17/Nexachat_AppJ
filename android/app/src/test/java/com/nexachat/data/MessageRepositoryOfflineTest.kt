@@ -13,6 +13,7 @@ import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
+import com.nexachat.core.storage.Tokens
 import com.squareup.moshi.Moshi
 import io.mockk.coEvery
 import io.mockk.every
@@ -102,7 +103,7 @@ class MessageRepositoryOfflineTest {
         every { sessionEvents.events } returns
             MutableSharedFlow<SessionEvents.Event>(extraBufferCapacity = 4)
         coEvery { tokenStore.readTokens() } returns
-            TokenStore.Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
+            Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
 
         repository = MessageRepository(
             messageApi = unreachableApi(),

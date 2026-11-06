@@ -44,13 +44,13 @@ public final class TokenAuthenticator implements Authenticator {
         }
 
         String failedAccessToken = bearerToken(failedRequest);
-        Function2<CoroutineScope, Continuation<? super TokenRefresher.Outcome>, Object> refresh =
+        Function2<CoroutineScope, Continuation<? super TokenRefreshOutcome>, Object> refresh =
                 (scope, continuation) ->
                         tokenRefresher.refreshIfNeeded(failedAccessToken, continuation);
 
-        final TokenRefresher.Outcome outcome;
+        final TokenRefreshOutcome outcome;
         try {
-            outcome = (TokenRefresher.Outcome) BuildersKt.runBlocking(
+            outcome = (TokenRefreshOutcome) BuildersKt.runBlocking(
                     EmptyCoroutineContext.INSTANCE,
                     refresh);
         } catch (InterruptedException interrupted) {
@@ -58,9 +58,9 @@ public final class TokenAuthenticator implements Authenticator {
             throw new IOException("token refresh interrupted", interrupted);
         }
 
-        if (outcome instanceof TokenRefresher.Outcome.FreshToken) {
+        if (outcome instanceof TokenRefreshOutcome.FreshToken) {
             String accessToken =
-                    ((TokenRefresher.Outcome.FreshToken) outcome).getAccessToken();
+                    ((TokenRefreshOutcome.FreshToken) outcome).getAccessToken();
             return retryWith(failedRequest, accessToken);
         }
         return null;

@@ -5,6 +5,7 @@ import com.nexachat.core.network.AppForegroundState
 import com.nexachat.core.network.NetworkMonitor
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.storage.TokenStore
+import com.nexachat.core.storage.Tokens
 import com.squareup.moshi.Moshi
 import io.mockk.coEvery
 import io.mockk.every
@@ -101,7 +102,7 @@ class RealtimeSessionEventDecodeTest {
         val tokenStore = mockk<TokenStore>()
         every { tokenStore.hasValidRefresh } returns MutableStateFlow(true)
         coEvery { tokenStore.readTokens() } returns
-            TokenStore.Tokens("access", Long.MAX_VALUE, "refresh")
+            Tokens("access", Long.MAX_VALUE, "refresh")
         val stompClient = mockk<StompClient>(relaxed = true) {
             every { frames } returns this@RealtimeSessionEventDecodeTest.frames
             every { subscriptionIdFor(any()) } returns null

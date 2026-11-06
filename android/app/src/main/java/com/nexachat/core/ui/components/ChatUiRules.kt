@@ -91,11 +91,6 @@ fun resolveBubbleShape(position: MessageGroupPosition, mine: Boolean): RoundedCo
 fun shouldShowDateSeparator(prevMessageEpochMs: Long?, currentMessageEpochMs: Long): Boolean =
     ChatTimeRules.shouldShowDateSeparator(prevMessageEpochMs, currentMessageEpochMs)
 
-data class DateSeparatorLabels(
-    val today: String,
-    val yesterday: String,
-)
-
 /**
  * Pure UI presentation rule: formats a date separator label.
  * Returns [DateSeparatorLabels.today] if on same day as [nowEpochMs],

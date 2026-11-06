@@ -5,7 +5,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -35,15 +34,6 @@ class TokenStore @Inject constructor(
     private val cipher: TokenCipher,
 ) {
 
-    data class Tokens(
-        val accessToken: String,
-        val accessTokenExpiresAtEpochMs: Long,
-        val refreshToken: String,
-    ) {
-        fun isAccessExpired(nowEpochMs: Long = System.currentTimeMillis()): Boolean =
-            nowEpochMs >= accessTokenExpiresAtEpochMs
-    }
-
     private object Keys {
         val ACCESS_TOKEN = stringPreferencesKey("access_token")
         val ACCESS_EXPIRES_AT = longPreferencesKey("access_expires_at")
@@ -52,9 +42,9 @@ class TokenStore @Inject constructor(
 
     suspend fun saveTokens(access: String, accessExpiresAtEpochMs: Long, refresh: String) {
         dataStore.edit { prefs ->
-            prefs[Keys.ACCESS_TOKEN] = cipher.encrypt(access.toByteArray(Charsets.UTF_8)).b64()
+            prefs[Keys.ACCESS_TOKEN] = TokenEncoding.b64(cipher.encrypt(access.toByteArray(Charsets.UTF_8)))
             prefs[Keys.ACCESS_EXPIRES_AT] = accessExpiresAtEpochMs
-            prefs[Keys.REFRESH_TOKEN] = cipher.encrypt(refresh.toByteArray(Charsets.UTF_8)).b64()
+            prefs[Keys.REFRESH_TOKEN] = TokenEncoding.b64(cipher.encrypt(refresh.toByteArray(Charsets.UTF_8)))
         }
     }
 
@@ -90,10 +80,6 @@ class TokenStore @Inject constructor(
     }
 
     private fun String.decryptString(): String? = runCatching {
-        String(cipher.decrypt(b64decode()), Charsets.UTF_8)
+        String(cipher.decrypt(TokenEncoding.b64decode(this)), Charsets.UTF_8)
     }.getOrNull()
-
-    private fun ByteArray.b64(): String = Base64.getEncoder().encodeToString(this)
-
-    private fun String.b64decode(): ByteArray = Base64.getDecoder().decode(this)
 }

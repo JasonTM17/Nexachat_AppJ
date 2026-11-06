@@ -14,6 +14,7 @@ import com.nexachat.core.network.dto.ConversationMemberDto
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
+import com.nexachat.core.storage.Tokens
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import io.mockk.coEvery
@@ -71,7 +72,7 @@ class ConversationRepositoryTest {
         every { session.resyncRequests } returns MutableSharedFlow()
         every { presenceRepository.presences } returns presenceFlow
         coEvery { tokenStore.readTokens() } returns
-            TokenStore.Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
+            Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
     }
 
     private fun TestScope.buildRepository() {

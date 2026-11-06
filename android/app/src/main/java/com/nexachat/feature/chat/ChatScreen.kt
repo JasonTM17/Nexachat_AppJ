@@ -811,7 +811,7 @@ fun ChatScreen(
             val todayStr = stringResource(R.string.time_today)
             val yesterdayStr = stringResource(R.string.time_yesterday)
             val dateLabels = remember(todayStr, yesterdayStr) {
-                DateSeparatorLabels(today = todayStr, yesterday = yesterdayStr)
+                DateSeparatorLabels(todayStr, yesterdayStr)
             }
 
             Box(

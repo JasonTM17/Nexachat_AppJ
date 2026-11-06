@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import com.nexachat.core.network.AppForegroundState
 import com.nexachat.core.network.NetworkMonitor
+import com.nexachat.core.network.TokenRefreshOutcome
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.storage.TokenCipher
 import com.nexachat.core.storage.TokenStore
@@ -130,7 +131,7 @@ class RealtimeSessionReArmTest {
         val tokenRefresher = mockk<TokenRefresher>()
         coEvery { tokenRefresher.refreshIfNeeded("expired-access") } coAnswers {
             store.saveTokens("fresh-access", Long.MAX_VALUE, "rotated-refresh")
-            TokenRefresher.Outcome.FreshToken("fresh-access")
+            TokenRefreshOutcome.FreshToken("fresh-access")
         }
         val monitor = mockk<NetworkMonitor> {
             every { regained } returns MutableSharedFlow()
@@ -395,7 +396,7 @@ class RealtimeSessionReArmTest {
         }
         val tokenRefresher = mockk<TokenRefresher>()
         coEvery { tokenRefresher.refreshIfNeeded("expired-access") } returns
-            TokenRefresher.Outcome.Rejected
+            TokenRefreshOutcome.Rejected.INSTANCE
         val monitor = mockk<NetworkMonitor> { every { regained } returns MutableSharedFlow() }
         val stompClient = stompClientStub { flowOf(StompClient.State.Failed("boom")) }
 
