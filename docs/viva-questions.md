@@ -1886,5 +1886,5 @@ Kotlin files are not converted (`android/app/src/main/java/com/nexachat/call/**`
 | 7 | Testing & deployment | Q7.1 – Q7.8 |
 | 8 | Call signaling & AI summary | Q8.1 – Q8.7 |
 
-**67 Q&A total.** Claims cite current source where practical; where the honest answer is
+**66 Q&A total.** Claims cite current source where practical; where the honest answer is
 "we deferred it", the answer says so and points at `docs/known-limitations.md`.

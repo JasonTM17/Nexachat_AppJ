@@ -64,7 +64,7 @@ Provider selection uses the persisted `users.ai_summary_consent` value. The LLM 
 - Without the operator key or without the caller's consent no text leaves the server.
 - With both, the server sends only usable message text, after redaction: phone numbers, emails, URL paths and queries, long digit strings, token-like strings; sender names become stable labels (`U1`, `U2`, ...). Message ids never leave the server (the model cites short indexes).
 - Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits and deletes change the cache key.
-- Messages of other members are sent on the requester's behalf. There is no per-conversation veto yet (see known limitations).
+- Eligible text from every participant in the window, including the requester, is sent on the requester's behalf. There is no per-conversation veto yet (see known limitations).
 
 ## Operator configuration
 

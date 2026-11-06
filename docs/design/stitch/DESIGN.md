@@ -154,7 +154,7 @@ Typography balances structured legibility and dense communication needs:
 
 - **Headlines (`Roboto Flex`)**: Variable, mechanical precision provides clear structural signposts in top app bars, channel titles, and settings views without crowding the viewport.
 - **Body & Labels (`Inter`)**: Engineered for screen legibility at dense scale. Used across chat message threads, timestamps, user tags, and pill chips.
-- **Hierarchy Rules**: 
+- **Hierarchy Rules**:
   - Chat feed names and channel headers utilize `title-md`.
   - Message contents render via `body-md` (mobile standard) or `body-lg` (expanded desktop panels).
   - Timestamps, delivery statuses, and badge counters use `label-sm` to maintain visual restraint.
