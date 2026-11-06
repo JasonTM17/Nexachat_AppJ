@@ -53,8 +53,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -519,12 +521,16 @@ private fun SummaryContentSections(
                 }
 
                 summary.actionItems.forEach { action ->
-                    SummaryActionItemRow(
-                        action = action,
-                        messageSeqMap = messageSeqMap,
-                        localMessageIds = localMessageIds,
-                        onCitationClick = onCitationClick,
-                    )
+                    val actionKey = SummaryActionKeyHelper.getActionItemKey(action)
+                    key(actionKey) {
+                        SummaryActionItemRow(
+                            action = action,
+                            messageSeqMap = messageSeqMap,
+                            localMessageIds = localMessageIds,
+                            onCitationClick = onCitationClick,
+                            actionKey = actionKey,
+                        )
+                    }
                 }
             }
         }
@@ -642,8 +648,9 @@ private fun SummaryActionItemRow(
     messageSeqMap: Map<String, Long?>,
     localMessageIds: Set<String>,
     onCitationClick: (String) -> Unit,
+    actionKey: String = SummaryActionKeyHelper.getActionItemKey(action),
 ) {
-    val checked = remember { mutableStateOf(false) }
+    val checked = rememberSaveable(actionKey) { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
