@@ -40,10 +40,10 @@ class TokenRefresher @Inject constructor(
         /** A usable access token exists — just rotated or already fresh. */
         data class FreshToken(val accessToken: String) : Outcome
 
-        /** Server said 4xx — session is dead; tokens already wiped + LoggedOut emitted. */
+        /** 400/401/403 — the refresh token itself was rejected; tokens already wiped + LoggedOut emitted. */
         data object Rejected : Outcome
 
-        /** Network/5xx — tokens kept; caller may retry later. */
+        /** 408/429/5xx/IO — tokens kept; caller may retry later. */
         data object TransientFailure : Outcome
 
         /** Nothing stored to refresh with. */
@@ -89,8 +89,9 @@ class TokenRefresher @Inject constructor(
                     )
                     Outcome.FreshToken(body.accessToken)
                 }
-                response.code() in 400..499 -> {
-                    // TOKEN_INVALID / TOKEN_REUSED: session is dead server-side.
+                isDefinitiveRejection(response.code()) -> {
+                    // 400 validation, 401 TOKEN_INVALID/EXPIRED/REUSED, 403 forbidden.
+                    // 408 and 429 are not session death: the refresh token is still valid.
                     tokenStore.clear()
                     sessionEvents.emitLoggedOut()
                     Outcome.Rejected
@@ -100,4 +101,8 @@ class TokenRefresher @Inject constructor(
         } catch (_: IOException) {
             Outcome.TransientFailure
         }
+
+    /** Contract rejections that mean this refresh token cannot be retried. */
+    private fun isDefinitiveRejection(status: Int): Boolean =
+        status == 400 || status == 401 || status == 403
 }

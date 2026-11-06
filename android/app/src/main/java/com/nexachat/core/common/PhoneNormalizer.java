@@ -23,7 +23,7 @@ public final class PhoneNormalizer {
     }
 
     public static String toE164(String raw, String defaultRegion) {
-        String trimmed = raw.trim();
+        String trimmed = WhitespaceTrim.trim(raw);
         if (trimmed.isEmpty()) {
             return trimmed;
         }

@@ -1,5 +1,6 @@
 package com.nexachat.core.ui.components;
 
+import com.nexachat.core.common.WhitespaceTrim;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,7 +27,7 @@ public final class LinkUtils {
 
     /** Returns the trimmed URL when the scheme is http or https, otherwise null. */
     public static String sanitizeLinkUrl(String url) {
-        String trimmed = url.trim();
+        String trimmed = WhitespaceTrim.trim(url);
         if (trimmed.isEmpty()) {
             return null;
         }
@@ -53,7 +54,7 @@ public final class LinkUtils {
      * The range end matches Kotlin {@code IntRange} (inclusive).
      */
     public static List<Pair<IntRange, String>> extractHttpLinks(String text) {
-        if (text.trim().isEmpty()) {
+        if (WhitespaceTrim.trim(text).isEmpty()) {
             return Collections.emptyList();
         }
         Matcher matcher = URL_PATTERN.matcher(text);

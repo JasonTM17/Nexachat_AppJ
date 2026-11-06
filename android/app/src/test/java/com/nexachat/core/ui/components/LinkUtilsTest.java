@@ -19,6 +19,12 @@ public final class LinkUtilsTest {
     }
 
     @Test
+    public void sanitizesUrlsWrappedInNbspOrEmSpace() {
+        assertEquals("https://example.test", LinkUtils.sanitizeLinkUrl("\u00A0https://example.test\u00A0"));
+        assertEquals("https://example.test", LinkUtils.sanitizeLinkUrl("\u2003https://example.test\u2003"));
+    }
+
+    @Test
     public void rejectsEmptyMalformedAndNonWebSchemes() {
         assertNull(LinkUtils.sanitizeLinkUrl(""));
         assertNull(LinkUtils.sanitizeLinkUrl("   "));

@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  *  - stored + `refresh()` succeeds         → [NavEvent.ToInbox] (new tokens saved)
  *  - stored + `refresh()` fails transient  → [NavEvent.ToInbox] — offline at
  *    launch keeps the session; the first real API call re-auths or logs out
- *  - stored + `refresh()` definitively 4xx → [NavEvent.ToLogin]
+ *  - stored + `refresh()` rejected (400/401/403) → [NavEvent.ToLogin]
  */
 @HiltViewModel
 class SplashViewModel @Inject constructor(

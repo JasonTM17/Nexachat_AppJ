@@ -28,6 +28,12 @@ public final class PhoneNormalizerTest {
     }
 
     @Test
+    public void trimsNbspAndEmSpaceAroundUnparseableInput() {
+        assertEquals("xin số", PhoneNormalizer.toE164("\u00A0xin số\u00A0"));
+        assertEquals("xin số", PhoneNormalizer.toE164("\u2003xin số\u2003"));
+    }
+
+    @Test
     public void invalidDefaultRegionDoesNotCrashOrRewriteInput() {
         assertEquals("0912345678", PhoneNormalizer.toE164("0912345678", "?"));
     }
