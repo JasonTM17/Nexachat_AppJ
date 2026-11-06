@@ -12,6 +12,7 @@ import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenCipher;
 import com.nexachat.core.storage.TokenStore;
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.concurrent.CancellationException;
 import javax.inject.Provider;
 import kotlin.Unit;
@@ -156,12 +157,12 @@ public final class TokenRefresherTest {
 
     private static final class PassThroughCipher implements TokenCipher {
         @Override
-        public byte[] encrypt(byte[] plaintext) {
+        public byte[] encrypt(byte[] plaintext) throws GeneralSecurityException, IOException {
             return plaintext.clone();
         }
 
         @Override
-        public byte[] decrypt(byte[] packed) {
+        public byte[] decrypt(byte[] packed) throws GeneralSecurityException, IOException {
             return packed.clone();
         }
     }

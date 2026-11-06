@@ -22,7 +22,7 @@ import org.junit.Test
 
 /**
  * JVM coverage for the honest parts of token persistence:
- *  - [packGcm]/[unpackGcm] — the IV||ciphertext framing itself;
+ *  - [AesGcmTokenCipher.packGcm]/[AesGcmTokenCipher.unpackGcm] — the IV||ciphertext framing itself;
  *  - [TokenStore] — serialization + DataStore flow mapping, using a fake
  *    cipher (XOR, but framed by the *real* pack/unpack) and an in-memory
  *    DataStore. AndroidKeyStore/Cipher stay untested here by design — the
@@ -36,10 +36,10 @@ class TokenStoreTest {
         private val fakeIv = ByteArray(AesGcmTokenCipher.IV_LENGTH) { (it + 1).toByte() }
 
         override fun encrypt(plaintext: ByteArray): ByteArray =
-            packGcm(fakeIv, plaintext.map { (it.toInt() xor XOR).toByte() }.toByteArray())
+            AesGcmTokenCipher.packGcm(fakeIv, plaintext.map { (it.toInt() xor XOR).toByte() }.toByteArray())
 
         override fun decrypt(packed: ByteArray): ByteArray {
-            val (_, ciphertext) = unpackGcm(packed)
+            val (_, ciphertext) = AesGcmTokenCipher.unpackGcm(packed)
             return ciphertext.map { (it.toInt() xor XOR).toByte() }.toByteArray()
         }
 
@@ -68,11 +68,11 @@ class TokenStoreTest {
         val iv = ByteArray(AesGcmTokenCipher.IV_LENGTH) { it.toByte() }
         val ciphertext = byteArrayOf(10, 20, 30)
 
-        val packed = packGcm(iv, ciphertext)
+        val packed = AesGcmTokenCipher.packGcm(iv, ciphertext)
 
         assertEquals(AesGcmTokenCipher.IV_LENGTH + ciphertext.size, packed.size)
         assertArrayEquals(iv, packed.copyOfRange(0, AesGcmTokenCipher.IV_LENGTH))
-        val (unpackedIv, unpackedCt) = unpackGcm(packed)
+        val (unpackedIv, unpackedCt) = AesGcmTokenCipher.unpackGcm(packed)
         assertArrayEquals(iv, unpackedIv)
         assertArrayEquals(ciphertext, unpackedCt)
     }
@@ -80,10 +80,10 @@ class TokenStoreTest {
     @Test
     fun `packGcm rejects non-12-byte iv and unpackGcm rejects short input`() {
         assertThrows(IllegalArgumentException::class.java) {
-            packGcm(ByteArray(8), byteArrayOf(1))
+            AesGcmTokenCipher.packGcm(ByteArray(8), byteArrayOf(1))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            unpackGcm(ByteArray(AesGcmTokenCipher.IV_LENGTH))
+            AesGcmTokenCipher.unpackGcm(ByteArray(AesGcmTokenCipher.IV_LENGTH))
         }
     }
 
@@ -134,7 +134,7 @@ class TokenStoreTest {
     /** Ciphertext survives a keystore reset; the key that could read it does not. */
     private class UndecryptableCipher : TokenCipher {
         override fun encrypt(plaintext: ByteArray): ByteArray =
-            packGcm(ByteArray(AesGcmTokenCipher.IV_LENGTH), plaintext)
+            AesGcmTokenCipher.packGcm(ByteArray(AesGcmTokenCipher.IV_LENGTH), plaintext)
 
         override fun decrypt(packed: ByteArray): ByteArray =
             throw java.security.KeyException("key permanently invalidated")
