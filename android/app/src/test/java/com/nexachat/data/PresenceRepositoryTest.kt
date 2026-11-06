@@ -161,7 +161,7 @@ class PresenceRepositoryTest {
         runCurrent()
         assertTrue(repository.presences.value.isNotEmpty())
 
-        sessionSignals.emit(SessionEvents.Event.LoggedOut)
+        sessionSignals.emit(SessionEvents.Event.LoggedOut.INSTANCE)
         runCurrent()
 
         assertTrue(repository.presences.value.isEmpty())

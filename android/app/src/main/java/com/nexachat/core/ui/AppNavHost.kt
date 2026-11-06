@@ -72,7 +72,7 @@ fun AppNavHost() {
     LaunchedEffect(sessionEvents) {
         sessionEvents.events.collectLatest { event ->
             when (event) {
-                SessionEvents.Event.LoggedOut -> navController.navigate(Routes.LOGIN) {
+                is SessionEvents.Event.LoggedOut -> navController.navigate(Routes.LOGIN) {
                     popUpTo(0) { inclusive = true }
                 }
             }

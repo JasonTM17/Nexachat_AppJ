@@ -214,7 +214,7 @@ class TokenAuthenticatorTest {
         val result = authenticator.authenticate(null, unauthorizedResponse(bearerToken = STALE_ACCESS))
 
         assertNull(result) // definitive rejection → request is not retried
-        assertEquals(SessionEvents.Event.LoggedOut, firstEvent.await())
+        assertEquals(SessionEvents.Event.LoggedOut.INSTANCE, firstEvent.await())
         assertNull(store.readTokens())
     }
 

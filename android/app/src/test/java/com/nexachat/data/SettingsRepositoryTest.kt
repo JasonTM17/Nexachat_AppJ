@@ -136,7 +136,7 @@ class SettingsRepositoryTest {
         repository.refreshShowPresence()
         assertEquals(false, repository.showPresence.value)
 
-        sessionSignals.emit(SessionEvents.Event.LoggedOut)
+        sessionSignals.emit(SessionEvents.Event.LoggedOut.INSTANCE)
         runCurrent()
 
         assertEquals(true, repository.showPresence.value)
