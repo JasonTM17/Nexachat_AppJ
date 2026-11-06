@@ -50,17 +50,15 @@ item h. Reproduce: open a chat, then rotate during each state.
 | State rotated | Result | Status |
 | --- | --- | --- |
 | In-chat search (query + results) | Query and results survive rotation | ✅ pass |
-| Message action sheet | Sheet is dismissed on rotation (its state was not saveable) | ⚠️ D5 (Medium) — client defect, no data loss |
-| Edit mode | **App crash**: `IllegalStateException: MutableState(value=ChatMessage(…)) cannot be saved using the current SaveableStateRegistry` | ❌ D1 (Critical) — **open** |
+| Message action sheet | Sheet survives rotation (id-based saveable state) | ✅ pass — D5 fixed (`s3-02-sheet-rotated-landscape-dark-vi.png`) |
+| Edit mode | Edit banner, snippet and draft survive rotation without crash | ✅ pass — D1 fixed (`s3-03-edit-rotated-portrait-dark-vi.png`) |
 
-D1 status: no `reports/agy-feat3.md` exists in this audit round, so per the audit
-rule the defect is recorded as **open**. The current source already stores only
-the message id (`editingMessageId`) and re-resolves the message through
-`MessageResolver.resolveForEdit` (`feature/chat/ChatScreen.kt:193-195`), which is
-the recommended fix pattern, but a device re-check is required before the row can
-be closed. The action-sheet state is likewise id-based and saveable
-(`actionSheetMessageId`, `ChatScreen.kt:188`), so D5 needs the same device
-re-check.
+D1 and D5 were closed by the Round 3 device pass (`reports/agy-feat3.md`):
+the action sheet survives rotation to landscape and edit mode no longer
+crashes. The source stores only the message id
+(`editingMessageId`/`actionSheetMessageId`) and re-resolves through
+`MessageResolver` (`feature/chat/ChatScreen.kt:188,193-195`), with unit tests in
+`MessageResolverTest` and mutation proof recorded in the device report.
 
 ## Typing indicator (verified, no changes)
 

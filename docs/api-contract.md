@@ -1,8 +1,8 @@
 # NexaChat REST API Contract
 
 > Endpoint catalog for the current REST contract. Routes below are derived from
-> controllers under `server/src/main/java/com/nexachat/`. The in-progress summary
-> route is called out separately and is not release-verified. The WebSocket /
+> controllers under `server/src/main/java/com/nexachat/`. The summary
+> route is documented in its own section. The WebSocket /
 > STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
 
 ## Conventions
@@ -316,12 +316,10 @@ state-machine contract.
 ## In-progress summary API
 
 The current worktree also contains `POST /api/v1/conversations/{conversationId}/summary`.
-The route is implemented in `SummaryController`, but the separate summary document
-still labels the feature in progress. It is not part of the release-verified contract.
-The draft request/response shape and proposed provider behavior are in
-[`docs/ai-summary.md`](ai-summary.md). Current source requires conversation membership
-and at least five usable messages; see the source and the feature owner report for
-current behavior before treating the draft as a shipped API.
+The route is implemented in `SummaryController` and is shipped. The request and
+response shapes, consent rules and provider behavior are specified in
+[`docs/ai-summary.md`](ai-summary.md). The server requires conversation membership
+and at least five usable messages.
 
 ## WebSocket / STOMP
 

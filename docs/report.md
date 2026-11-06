@@ -63,11 +63,10 @@ Multi-language · Rotation — cộng Creative Feature **Message Interactions**
 (Reply/Quote + Emoji Reaction + Pin).
 
 **Out-of-scope** (nói rõ để tránh overclaim): end-to-end encryption, đồng bộ
-danh bạ máy, microservices/Kubernetes, admin dashboard, FCM push notification.
-Voice/video call (WebRTC) đang **in progress**: server đã có signaling, ICE
-config và direct-call history; Android đã có call core/media/UI trong repo
-nhưng chưa verify đầy đủ — chưa dùng trong demo. Mỗi mục loại đều có lý do và hướng phát
-triển được ghi ở §15.
+danh bạ máy, microservices/Kubernetes, admin dashboard, FCM push notification,
+video call. Voice call 1-1 (audio) và AI catch-up summary ship như hai tính
+năng ngoài rubric (§6.6, §6.7). Mỗi mục loại đều có lý do và hướng phát triển
+được ghi ở §15.
 
 **Cấu trúc repo** (monorepo, một `.git` duy nhất):
 
@@ -88,13 +87,16 @@ nexachat/
 |---|---|---:|---|---|
 | R1 | Bài nộp đầy đủ, đúng cấu trúc | 5 | ✅ | `docs/packaging-checklist.md` (C1–C12), `.git` full history, `docs/report.docx`, APK release |
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
-| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 186 string entries mỗi bên (184 translatable, gồm `strings_call.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
+| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 223 string entries mỗi bên (221 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
 | R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Test status do CI run hiện tại báo (`.github/workflows/ci.yml`); `RoomMigrationTest` cover migration chain Room v1→v7 (xem §13.1) |
-| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 62 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
+| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 67 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
 cụ thể — không ghi "end-to-end encryption", không ghi "scalable triệu user".
+
+**Ngoài rubric:** voice call 1-1 (audio) và AI catch-up summary đã ship
+(§6.6, §6.7, §13.4) — không thay cho bất kỳ tiêu chí nào trong R1–R6.
 
 ---
 
@@ -137,6 +139,17 @@ không mất history/draft/scroll, không gọi lại API.
 **Module H — Creative (Message Interactions):** reply/quote kể cả cross-type;
 reaction emoji toggle (PK composite = idempotent); pin ≤3/conversation
 (DIRECT: member nào cũng pin; GROUP: chỉ ADMIN).
+
+**Module I — Voice Calls (extra):** 1-1 audio call qua STOMP signaling; server
+authoritative state machine (RINGING→ACTIVE→ENDED), per-user busy reservation,
+ICE config, call history và call-log SYSTEM message; Android call
+core/media/service/UI (incoming/outgoing, mute/speaker, foreground service);
+ring timeout 45 s.
+
+**Module J — AI Catch-up Summary (extra):** `POST /conversations/{id}/summary`
+với local extractive engine (mặc định) hoặc LLM engine (DeepSeek) khi consent +
+operator key; mọi item có citation `messageIds`; consent `aiSummaryConsent`
+mặc định tắt; Android summary UI với badge "Cục bộ"/"AI".
 
 ### 3.2. Non-functional requirements (NFR)
 
@@ -252,7 +265,7 @@ bền vững; reconnect chỉ cần `GET messages?afterSeq=` để resync.
 | T6 | Token | TokenStore tự viết: AES/GCM key trong Android Keystore + DataStore | ~100 dòng, không phụ thuộc lib deprecating |
 | T8 | Picker | Photo Picker + SAF | Không cần runtime permission |
 | T9 | Backend | Spring Boot 3.4.1 MVC, Java 17 | Blocking model đơn giản, khớp JPA |
-| T10 | DB access | Spring Data JPA + Flyway | Migration versioned V1–V6 (V4 presence, V5 calls, V6 summaries — summary in progress) |
+| T10 | DB access | Spring Data JPA + Flyway | Migration versioned V1–V6 (V4 presence, V5 calls, V6 summaries) |
 | T11 | DB | PostgreSQL 16 | JSONB/constraint mạnh; BIGSERIAL ordering |
 | T12 | Realtime | **STOMP over WebSocket + SimpleBroker**, không SockJS | Frame semantics + authZ theo destination có sẵn; client native không cần browser fallback |
 | T13 | Auth | **SĐT + password + JWT access/refresh rotation** | OTP cần SMS gateway trả phí, khó test LAN; rubric không đòi verify ownership |
@@ -319,7 +332,7 @@ cùng transaction.
 |---|---|---|
 | `call_records` | `call_id` UUID PK, `conversation_id` FK CASCADE, `caller_id`/`callee_id` FK CASCADE, `state` CHECK(RINGING/ACTIVE/ENDED), `end_reason` CHECK(COMPLETED/REJECTED/CANCELLED/MISSED/BUSY/FAILED), `started_at`, `answered_at`, `ended_at`, `duration_seconds` | `ck_call_participants_distinct`, `ck_call_terminal_fields`, `ck_call_answered_state`, `ck_call_duration_nonnegative`; 3 index theo conversation/caller/callee + `started_at` |
 
-**V6__conversation_summaries.sql** — summary (in progress):
+**V6__conversation_summaries.sql** — summary:
 
 | Bảng/Thay đổi | Cột | Thiết kế |
 |---|---|---|
@@ -433,16 +446,20 @@ Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 
 Call signaling rides STOMP (`SEND /app/calls/{id}/signal`, events on
 `/user/queue/calls`); full frame/state-machine contract in `docs/calls.md`.
-Android media/UI đang **in progress** — chưa verify đa thiết bị.
+Android call core/media/UI đã ship; live E2E `tools/e2e/calls/call_e2e.py`
+xanh (invite/accept/SDP-ICE/end/busy/reject/cancel + timeout 45 s) và màn
+hình call trên emulator (`docs/design/screens/s6-*`) đã chụp.
 
-### 6.7. Summary — `SummaryController` (in progress)
+### 6.7. Summary — `SummaryController`
 
 | Method & path | Auth | Success | Errors chính |
 |---|---|---|---|
 | `POST /conversations/{id}/summary` | member | 200 summary payload (local extractive hoặc LLM nếu consent + operator key) | 400 · 403 NOT_MEMBER · 404 · 429 |
 
-Route tồn tại trong worktree nhưng `docs/ai-summary.md` đánh dấu **in progress**;
-chưa thuộc release-verified contract.
+Route đã ship: local extractive engine mặc định; LLM engine (DeepSeek) chỉ
+khi `aiSummaryConsent=true` **và** operator key tồn tại. Android summary UI
+hiển thị badge "Cục bộ" (LOCAL) hoặc "AI" (LLM); contract đầy đủ ở
+`docs/ai-summary.md`.
 
 **Tổng: 40 REST endpoint + `/actuator/health`.** Gửi tin có hai đường — WS
 (chính) và REST POST (fallback) — cùng đi qua `MessageService.send()` → một nơi
@@ -456,6 +473,8 @@ enforce authZ + idempotency.
 SockJS** (client native, không cần browser fallback). JWT nằm trong
 `Authorization` header của frame `CONNECT` — không query param (token trong URL
 lọt vào access log). `heart-beat:10000,10000` → phát hiện kết nối chết ~30s.
+SimpleBroker chạy heartbeat scheduler 10 s, nên client idle (ví dụ đang đổ
+chuông) vẫn nhận heartbeat thay vì bị guard 30 s đóng socket.
 
 ### 7.1. Destinations
 
@@ -487,6 +506,7 @@ Mọi event cùng format — client parse một lần:
 | `USER_TYPING` | conversationId, senderId | typing frame |
 | `CONVERSATION_UPDATED` | title/avatar/members thay đổi | tạo nhóm, đổi nhóm, member add/remove |
 | `USER_ONLINE` / `USER_OFFLINE` | `{userId, online, lastSeenAt}` | presence thay đổi (F3) |
+| `CALL_INVITE` / `CALL_ACCEPTED` / `CALL_REJECTED` / `CALL_CANCELLED` / `CALL_ENDED` / `CALL_BUSY` / `CALL_TIMEOUT` / `CALL_SDP` / `CALL_ICE` | `{callId, conversationId, fromUserId, payload}` | call state thay đổi (xem `docs/calls.md`) |
 
 ### 7.3. Điểm thiết kế then chốt
 
@@ -595,9 +615,9 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
 
 ### 10.1. i18n
 
-- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **186 string
-  entries mỗi bên (184 translatable), parity 100%** — gồm cả
-  `values/strings_call.xml` + `values-vi/strings_call.xml` (44 entries mỗi bên);
+- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **223 string
+  entries mỗi bên (221 translatable), parity 100%** — gồm
+  `strings_call.xml` (41 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
   kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
 - Đổi ngôn ngữ trong Settings, persist: không có `androidx.appcompat` trong
   dependency graph → dùng **framework `android.app.LocaleManager` (API 33+,
@@ -704,7 +724,7 @@ lý thuyết:
     member) chỉ gọi `refreshMembers()` một lần sau 200 ms
     (`GroupDetailViewModel.PUSH_REFRESH_DEBOUNCE_MS`).
 12. **Minimal UI copy** — `splash_tagline` ("Connecting…") bị bỏ khỏi cả EN/VI
-    (186/186 entries); splash chỉ giữ logo, tên app và progress indicator.
+    (223/223 entries); splash chỉ giữ logo, tên app và progress indicator.
 
 ---
 
@@ -715,6 +735,20 @@ lý thuyết:
 Số test và trạng thái pass/fail là revision-specific; báo cáo này **không** ghi
 số cố định. Dùng CI run hiện tại (`.github/workflows/ci.yml`) cho kết quả chạy
 thật của đúng revision.
+
+Đợt đếm tươi tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/failsafe của
+`mvn -B verify` và XML `testDebugUnitTest`):
+
+| Tầng | Số test | Fail/Skip |
+|---|---:|---|
+| Server surefire (unit, 64 class) | 400 | 0 / 0 |
+| Server failsafe (`*IT`, 12 class, Postgres thật) | 68 | 0 / 0 |
+| **Server total** | **468** | **0 / 0** |
+| Android unit (53 class) | 411 | 0 / 0 |
+| Android instrumented `RoomMigrationTest` | 4 | chạy trên emulator, không chạy trong CI |
+
+String-key parity: 223/223 entries mỗi locale (221 translatable), 0 missing cả
+hai chiều — xem §10.1 và `docs/i18n-audit.md`.
 
 | Tầng | Công cụ | Trạng thái |
 |---|---|---|
@@ -776,7 +810,7 @@ no-ops, concurrent single-loop), `RealtimeSessionEventDecodeTest`,
 `MessageRepositoryOfflineTest`, `ContactDtosTest`, `ConversationDtosTest`,
 call core/media/ui tests (`CallManagerTest`, `CallFrameCodecTest`,
 `CallUiModelMapperTest`, …), and summary tests (`SummaryViewModelTest`,
-`SummaryRepositoryTest`, `AiConsentRepositoryTest` — in progress).
+`SummaryRepositoryTest`, `AiConsentRepositoryTest`, `SummaryUiRulesTest`).
 
 ### 13.4. Live E2E & on-device verification
 
@@ -807,9 +841,11 @@ edit (`MessageController` PATCH + `MESSAGE_UPDATED` realtime), delete (dialog +
 tombstone + `MESSAGE_DELETED`), in-chat search (`MessageRepository` — highlight
 + jump), forward picker (`ForwardFilter`), presence header + inbox dot
 (`PresenceService`/`PresenceSessionRegistry`), theme SYSTEM/LIGHT/DARK
-(`ThemeMapper`/`SettingsRepository`) áp dụng tức thì. Caveat còn lại: D1 crash
-khi xoay trong edit (open), D2 presence offline lag ~1–2 phút, D3 "Xem" không
-điều hướng, D4 status-bar dark-on-dark.
+(`ThemeMapper`/`SettingsRepository`) áp dụng tức thì. Các defect D1 (crash xoay
+trong edit), D2 (presence offline lag), D3 ("Xem" không điều hướng), D4
+(status-bar dark-on-dark), D5 (action sheet đóng khi xoay) và D6 (search lỗi
+hiển thị "không tìm thấy") đã fix và verify lại trên device ở đợt Round 3
+(`s3-01`…`s3-08`, `docs/screenshots-manifest.md` §2.1).
 
 Các luồng tương tác cũng được lái qua **chính UI của release APK** (không
 chỉ REST): long-press bubble → sheet 6 emoji + Reply + Pin → react 👍
@@ -921,6 +957,20 @@ trong DB.
 
 **(f) Realtime reconnect after access-token expiry (two API 35 emulators, debug and signed release APKs):** access JWT TTL is 900 seconds. Wi-Fi and mobile data were disabled past that TTL, then restored on both devices. The existing An/Binh sessions stayed logged in; Binh sent `JWT_AFTER_EXPIRY_20261104`, which appeared in An's open chat through STOMP, and Binh received `Seen`. `/actuator/health` stayed `UP`, and server logs after network restoration showed no new expired-JWT CONNECT rejection. This covers the server's dropped-CONNECT behavior: the client now checks local token expiry and refreshes through the shared `TokenRefresher` before each STOMP attempt. The signed release APK was also rebuilt from this source with `tools/sign-release.sh`; `apksigner verify` passed, `adb install -r` succeeded on both API 35 emulators, both processes were running, and neither logcat had `FATAL EXCEPTION`. The 900-second expiry test was then repeated with the current signed release on both emulators: An (5556) stayed offline more than 15 minutes after fresh login while Binh (5554) stayed online; after network restoration, Binh sent `ok`, An received it over STOMP, and Binh saw `Đã xem`. Backend stayed UP, and the post-restore server log sample contained no expired-JWT CONNECT rejection.
 
+**(g) Voice calls & AI catch-up summary on device:** the live call E2E
+(`tools/e2e/calls/call_e2e.py`) passes against the running server —
+invite/accept/SDP-ICE relay/end, busy, reject, cancel, and the production 45 s
+ring timeout, with the caller receiving server heartbeats while ringing. The
+Android call screens were driven on an API 35 emulator (outgoing/incoming,
+connected, mute, speaker, landscape, font scale, permission paths and localized
+call-log lines) — `s6-*`. The summary sheet was driven against the live backend
+with the local engine ("Cục bộ" badge) and the consent-gated LLM path ("AI"
+badge, `deepseek-flash`), including scope chips, citations, share-into-chat,
+landscape, consent dialog and offline retry — `s4-*`/`s5-*`. Honest boundary:
+the device run paired the emulator with a STOMP script rather than a second
+WebRTC endpoint, so two-way audio between real devices is unverified; this is
+recorded in `docs/known-limitations.md`.
+
 ### 13.5. Tái hiện / Reproduce
 
 ```bash
@@ -982,13 +1032,14 @@ màn giữ draft (45s) → test suites xanh (60s) → kiến trúc + ERD + log (
 
 Đầy đủ ở `docs/known-limitations.md`; tóm tắt trung thực:
 
-### 15.1. Ngoài phạm vi & đang làm — Out of scope & in progress
+### 15.1. Ngoài phạm vi & hạn chế đã biết — Out of scope & known limits
 
 | Hạn chế | Vì sao | Hướng phát triển |
 |---|---|---|
 | Không E2E encryption | Threat model chọn = JWT + TLS; E2EE không nằm trong MVP | Key exchange per-conversation + client crypto |
-| Voice/video call (WebRTC) — in progress | Server signaling + ICE config + direct-call history đã ship; Android call core/media/UI đã có trong repo nhưng chưa verify đa thiết bị | Hoàn thiện + verify media path trên nhiều thiết bị |
-| AI summary — in progress | Server route + consent + Flyway V6 + Android data layer đã có; chưa có UI và chưa verify đầy đủ | Hoàn thiện UI + verify provider/consent flow |
+| Voice call audio path | Voice call 1-1 (audio) đã ship (signaling, ICE, history, Android UI); audio do WebRTC negotiate. | Audio chưa verify giữa hai thiết bị thật; test 2 thiết bị + TURN trước khi claim media journey |
+| Voice call infrastructure | Call state + STOMP dùng in-memory registry + SimpleBroker single-node; STUN only, chưa có TURN. | Broker relay + shared call state + TURN cho mạng khắt khe |
+| AI summary limits | Summary đã ship (local extractive + LLM DeepSeek khi consent). | LLM call chưa verify thật trên device; consent account-level, chưa có per-conversation veto |
 | Không FCM push | Optional tier; demo foreground đủ | Integration point đã vẽ sẵn |
 | SimpleBroker 1 instance | Đúng cho demo/deploy 1 node | Broker relay RabbitMQ + rate-limit bucket ra Redis/JDBC |
 
@@ -1052,11 +1103,11 @@ WebSocket, tìm & thêm bằng SĐT E.164, quản lý tài khoản với JWT ref
 rotation + reuse detection, media/file upload-first với magic-byte hardening,
 i18n Vi/En 100% parity, rotation an toàn, và creative feature Message
 Interactions trên nền schema V1–V6 có kiểm soát bằng Flyway (V4 presence,
-V5 calls, V6 summaries — summary in progress).
+V5 calls, V6 summaries).
 
 Chất lượng được chứng minh bằng CI run hiện tại (`.github/workflows/ci.yml`);
 `RoomMigrationTest` cover migration chain Room v1→v7 trên emulator API 35;
 deploy một lệnh `docker compose up`; demo LAN có runbook + fallback.
-Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, voice
-call và AI summary còn in progress) — mỗi hạn chế kèm hướng phát triển rõ
-ràng, đúng nguyên tắc "không overclaim" của đồ án.
+Các hạn chế được khai báo trung thực (không E2E, SimpleBroker 1 node, audio
+call chưa verify 2 thiết bị, STUN only, inbox call-preview direction) — mỗi
+hạn chế kèm hướng phát triển rõ ràng, đúng nguyên tắc "không overclaim" của đồ án.

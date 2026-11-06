@@ -191,7 +191,8 @@ technical limitation. Jetpack Compose is a Kotlin-only UI toolkit, so every
 `@Composable` screen and preview stays Kotlin — that is framework necessity.
 All **new** non-Compose Android code is written in Java: pure-logic helpers
 (`PresenceFormatter`, `SearchHighlightHelper`, `ThemeMapper`, `ForwardFilter`,
-`MessageUiRules`, `MessageResolver`, `SearchUiRules`, `ChatUiRules`), the call
+`MessageUiRules`, `MessageResolver`, `SearchUiRules`, `SummaryUiRules`,
+`PresenceTickerHelper`), the call
 core/media/service/UI layer, the summary data layer, the Hilt modules (`di/`),
 and their unit tests. Existing Kotlin files (ViewModels, repositories, screens)
 are not converted; edits to them stay Kotlin. The server is Java throughout.
@@ -1405,9 +1406,10 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
   the floor.
 - *"Where does i18n fit M3?"* — User-facing strings are externalized in
   paired English and Vietnamese resource files. The base `strings.xml` has
-  140 entries per locale (138 translatable); `strings_call.xml` adds 43
-  translatable entries per locale. Each file pair has matching resource
-  names. The linked i18n audit contains the fuller review.
+  142 entries per locale (140 translatable); `strings_call.xml` adds 41 and
+  `strings_summary.xml` adds 40, for 223 entries (221 translatable) per locale.
+  Each file pair has matching resource names. The linked i18n audit contains
+  the fuller review.
 
 ### Q6.5 — Bilingual song ngữ implement ở tầng nào? Có missing key không?
 
@@ -1415,9 +1417,9 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
 
 **Model answer.** Pure Android resource resolution: paired resource files
 under `values/` (English default) and `values-vi/`. The base `strings.xml`
-contains 142 entries per locale (140 marked translatable), and
-`strings_call.xml` adds 44 translatable entries, for 186 entries total
-(184 translatable) per locale. Each English/Vietnamese file pair has matching names.
+contains 142 entries per locale (140 marked translatable), `strings_call.xml`
+adds 41 and `strings_summary.xml` adds 40, for 223 entries total
+(221 translatable) per locale. Each English/Vietnamese file pair has matching names.
 Strings are referenced via `stringResource()` in composables; switching is
 the `AppLocaleManager` path of Q6.1 — the framework picks `values-vi` once the
 configuration locale is `vi`. The current counts and the exact counting command
@@ -1667,7 +1669,7 @@ Compose supplies `SPRING_DATASOURCE_*` so a fresh clone still boots
 
 ---
 
-## 8. Call signaling & AI summary (in progress)
+## 8. Call signaling & AI summary
 
 ### Q8.1 — Call signaling: state machine RINGING→ACTIVE→ENDED và vì sao server-authoritative?
 
@@ -1747,6 +1749,123 @@ local and prevents the external call (`SummaryProviderSelector`,
 - *"Can consent be changed at runtime?"* — Yes, through the settings endpoint;
   the next summary request uses the new value.
 
+### Q8.4 — Summary privacy: những gì thực sự rời khỏi server?
+
+*What actually leaves the server for a summary, and what is redacted?*
+
+**Model answer.** Two gates must both be open before any message text leaves
+the server: the operator configured an LLM key **and** enabled the LLM path,
+**and** the requesting user's persisted `aiSummaryConsent` is `true`. The
+adapter re-checks that persisted value immediately before the outbound call,
+so consent revoked after provider selection still blocks it. The server sends
+only usable text from the window (`TEXT`, not deleted, not system, each message
+truncated to 1,000 characters), passed through `Redactor`: emails, URL paths and
+queries (the bare domain is kept), phone numbers of 7–15 digits, long digit
+strings and token-like strings become `[REDACTED_*]` markers; sender names
+become stable labels `U1..Un`; message ids never leave the server — the prompt
+carries short indexes and the server maps them back, dropping unknown indexes.
+Every item must cite at least one valid message id inside the input window or
+the provider output is rejected (`SummaryProviderSelector.validateCitations`).
+Any failure falls back to the local engine with a `fallbackReason`, so the
+endpoint never returns `503`. Without the key or consent, no text leaves the
+server at all (`Redactor`, `PromptBuilder`, `SummaryProviderSelector`,
+`docs/ai-summary.md`).
+
+**Follow-up traps.**
+- *"Is consent per conversation?"* — No, it is account-level; there is no
+  per-conversation veto yet (`docs/known-limitations.md`).
+- *"Can the LLM see message ids?"* — No. Ids stay server-side; the model cites
+  short indexes that are resolved back to ids after validation.
+- *"What if the LLM invents an uncited claim?"* — Items without a valid
+  in-window citation are rejected; on validation failure the whole result
+  degrades to local instead of returning unverifiable text.
+- *"What is stored?"* — Prompts and raw model output are not stored; only the
+  validated summary is cached for 24 hours, and edits/deletes change the cache
+  key via the window's content hash.
+
+### Q8.5 — STOMP heartbeats: tại sao một caller đang đổ chuông cần chúng?
+
+*Why does a ringing caller need STOMP heartbeats?*
+
+**Model answer.** Heartbeats are negotiated in `CONNECT`
+(`heart-beat:10000,10000`). Spring's SimpleBroker only answers the client's
+heartbeat header when it has a scheduler; without `.setTaskScheduler(...)` it
+advertises `0,0`. The Android client has a 30 s liveness guard — if no frame
+arrives it treats the socket as dead and reconnects. A ringing caller is idle:
+no message frames flow while it waits for the callee, so without server
+heartbeats the client would tear down a perfectly healthy socket mid-ring.
+`WebSocketConfig` sets `.setHeartbeatValue(new long[] {10_000, 10_000})` and a
+single-thread `stomp-heartbeat-` scheduler, so the server emits a beat every
+10 s and at least two beats fit inside the 30 s guard even with jitter. The
+call E2E asserts the caller received server heartbeats while ringing; the same
+beats keep presence/typing subscriptions alive on idle screens
+(`config/WebSocketConfig.java:57-76`, `tools/e2e/calls/call_e2e.py`).
+
+**Follow-up traps.**
+- *"Why 10 s and not exactly 30 s?"* — Two beats must fit inside the guard, so
+  the interval has to be comfortably below 30 s; 10 s leaves margin for
+  scheduling delay.
+- *"Is this SockJS?"* — No. It is raw STOMP 1.2 over WebSocket; heartbeats are
+  newline frames negotiated by the `heart-beat` header.
+- *"What happens without it?"* — An idle ringing caller trips the guard,
+  reconnects, and the ring can drop even though both peers are still online.
+
+### Q8.6 — Ring-timer re-arm: race giữa timer và registry clock
+
+*What is the ring-timer re-arm race and how is it fixed?*
+
+**Model answer.** When a call enters `RINGING`, `CallTimeoutScheduler`
+schedules a timeout using the registry's clock and `ringTimeoutMillis`
+(default 45000). The timer thread and the registry clock are independent, so a
+timer can fire a fraction of a second before the registry considers the ring
+deadline reached; `CallService.timeout` then declines to end the call because
+it is still `RINGING`. Without a re-arm the call would ring forever. The fix
+re-checks the registry after firing: if the session is still `RINGING`, the
+timer re-arms itself with a small delay (`RETRY_DELAY_MILLIS = 25 ms`) computed
+from the registry clock, so the next firing lands after the real deadline.
+Terminal events cancel the scheduled future (`CallTimeoutScheduler.java:53-74`,
+`CallTimeoutSchedulerTest`).
+
+**Follow-up traps.**
+- *"Why not schedule exactly 45 s ahead?"* — The registry compares against its
+  own `Clock`, which can be a hair ahead of the timer; the re-arm makes the
+  outcome converge regardless of that skew.
+- *"Could it loop forever?"* — No. Each re-arm recomputes the remaining delay
+  from a clock that advances, and a terminal transition cancels the future.
+- *"How is it verified?"* — The live E2E runs the production 45 s timeout and
+  asserts the timeout is not early; unit tests cover scheduling, cancellation
+  and the re-arm path.
+
+### Q8.7 — Tại sao call core/media và summary data layer là Java?
+
+*Why are the new call and summary layers Java?*
+
+**Model answer.** Because of the project language rule, not a technical
+constraint (Q1.7): Jetpack Compose is Kotlin-only, so `@Composable` screens
+stay Kotlin; all **new** non-UI logic is Java. The call feature is the largest
+new Java surface — `call/core` (`CallManager`, `CallRepository`,
+`CallFrameCodec`, `CallLogFormatter`, call state machine), `call/media`
+(`WebRtcMediaEngine`, `CallAudioRoutePolicy`), `call/service` (foreground
+service, notification action router) and `call/ui` (`CallActivity` /
+`IncomingCallActivity` as Java activities with XML layouts, plus
+`CallUiModelMapper`, `CallLogResourceResolver`). The summary data layer
+(`summary/*.java`, `AiConsentRepository`, `SummaryRepository`,
+`CitationResolver`) is Java too. The Compose screens that present them
+(`SummaryBottomSheet.kt`) stay Kotlin and call the Java helpers; existing
+Kotlin files are not converted (`android/app/src/main/java/com/nexachat/call/**`,
+`android/app/src/main/java/com/nexachat/summary/**`).
+
+**Follow-up traps.**
+- *"Why not write the call engine in Kotlin?"* — The rule is a project/course
+  decision (Java-focused review), not a language limitation; the only hard
+  boundary is Compose's Kotlin compiler plugins.
+- *"Does the mix break Hilt or tests?"* — No; both languages compile to JVM
+  bytecode, Hilt's generated code is language-agnostic, and the Java helpers
+  have plain JUnit tests (`call/**/*Test.java`, `summary/*Test.java`).
+- *"Is the call screen really not Compose?"* — Correct for the call UI:
+  `CallActivity`/`IncomingCallActivity` are Java activities with XML layouts,
+  launched from the Kotlin chat screen via `CallLauncher`.
+
 ---
 
 ## Quick index — mục lục nhanh
@@ -1760,7 +1879,7 @@ local and prevents the external call (`SummaryProviderSelector`,
 | 5 | Offline & persistence | Q5.1 – Q5.6 |
 | 6 | i18n / state / UX | Q6.1 – Q6.6 |
 | 7 | Testing & deployment | Q7.1 – Q7.8 |
-| 8 | Call signaling & AI summary (in progress) | Q8.1 – Q8.3 |
+| 8 | Call signaling & AI summary | Q8.1 – Q8.7 |
 
-**62 Q&A total.** Claims cite current source where practical; where the honest answer is
+**67 Q&A total.** Claims cite current source where practical; where the honest answer is
 "we deferred it", the answer says so and points at `docs/known-limitations.md`.

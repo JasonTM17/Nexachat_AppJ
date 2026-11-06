@@ -7,6 +7,8 @@ SimpleBroker. An in-memory registry owns each call's transitions and per-user
 busy reservation; PostgreSQL stores the call history through the additive
 `V5__calls.sql` migration. A ringing invite expires after 45 seconds.
 Disconnecting a participant's last STOMP session ends that participant's call.
+The broker's 10 s STOMP heartbeat keeps an idle ringing caller's socket alive,
+and the ring timer re-arms itself if it fires a moment before the deadline.
 
 Each terminal call writes one `SYSTEM` conversation message through the server's
 existing system-message path. Its `content` is the stable, non-localized value
@@ -143,3 +145,18 @@ negotiated by the Android client; signaling does not carry audio bytes.
   missed call and leaves a history row and localized chat line.
 - Presence privacy settings do not affect calling. A user who hides presence
   can still place and receive calls.
+- The audio path has not been verified between two real devices: the live E2E
+  and on-device verification exercised signaling, SDP/ICE relay, mute/speaker
+  routing and teardown, but not an audio stream between two WebRTC endpoints.
+- The inbox preview renders a `CALL|...` line as the incoming phrasing for both
+  directions; only the chat bubble knows the viewer's direction.
+
+## Verification
+
+- `python tools/e2e/calls/call_e2e.py` passes against a live server: invite →
+  accept → SDP/ICE relay → end, busy, reject, cancel, and the production 45 s
+  ring timeout. The run asserts the timeout is not early and that the caller
+  received server heartbeats while ringing.
+- Android call screens are captured on an API 35 emulator in
+  `docs/design/screens/s6-*` (outgoing/incoming, connected, mute, speaker,
+  landscape, font scale, permission paths and localized call-log lines).

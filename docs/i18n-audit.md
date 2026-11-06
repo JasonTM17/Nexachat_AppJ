@@ -3,10 +3,12 @@
 Read-only audit. Sources: `android/app/src/main/res/values/strings.xml`,
 `android/app/src/main/res/values-vi/strings.xml`,
 `android/app/src/main/res/values/strings_call.xml`,
-`android/app/src/main/res/values-vi/strings_call.xml`, and the Kotlin/Java
+`android/app/src/main/res/values-vi/strings_call.xml`,
+`android/app/src/main/res/values/strings_summary.xml`,
+`android/app/src/main/res/values-vi/strings_summary.xml`, and the Kotlin/Java
 sources under `android/app/src/main/java/com/nexachat` (`feature/**`, `call/**`,
-`core/ui/**`). No source or resource file was modified.
-Counts re-verified against the tree on 2026-11-05.
+`summary/**`, `core/ui/**`). No source or resource file was modified.
+Counts re-verified against the tree on 2026-11-06.
 
 ## Counting command
 
@@ -20,6 +22,8 @@ files = [
     "android/app/src/main/res/values-vi/strings.xml",
     "android/app/src/main/res/values/strings_call.xml",
     "android/app/src/main/res/values-vi/strings_call.xml",
+    "android/app/src/main/res/values/strings_summary.xml",
+    "android/app/src/main/res/values-vi/strings_summary.xml",
 ]
 sets = {}
 for f in files:
@@ -32,6 +36,7 @@ for f in files:
     print(f"{f}: {len(names)} entries, {len(translatable)} translatable")
 print("base parity:", sets[files[0]] == sets[files[1]])
 print("call parity:", sets[files[2]] == sets[files[3]])
+print("summary parity:", sets[files[4]] == sets[files[5]])
 PY
 ```
 
@@ -40,17 +45,20 @@ PY
 | Resource pair | EN entries | VI entries | Translatable EN/VI | Name sets |
 | --- | ---: | ---: | ---: | --- |
 | `values/strings.xml` ↔ `values-vi/strings.xml` | 142 | 142 | 140 / 140 | identical |
-| `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 44 | 44 | 44 / 44 | identical |
-| **Total per locale** | **186** | **186** | **184 / 184** | **identical** |
+| `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 41 | 41 | 41 / 41 | identical |
+| `values/strings_summary.xml` ↔ `values-vi/strings_summary.xml` | 40 | 40 | 40 / 40 | identical |
+| **Total per locale** | **223** | **223** | **221 / 221** | **identical** |
 
 - Missing from VI: **none**.
 - Missing from EN: **none**.
-- Translatable keys: **184** of 186 (the 2 `language_name_*` endonyms are
+- Translatable keys: **221** of 223 (the 2 `language_name_*` endonyms are
   `translatable="false"` by design).
 - `strings_call.xml` carries the call-specific labels (state names, permission
-  rationales, call controls, settings section titles). It was added after the
-  original 96-key audit and is now inside the audit scope; both locales carry the
-  same 44 names.
+  rationales, call controls, notification channels, localized call-log lines).
+  It was added after the original 96-key audit and is now inside the audit scope;
+  both locales carry the same 41 names.
+- `strings_summary.xml` carries the summary sheet, engine-badge, scope-chip,
+  consent-dialog and settings strings; both locales carry the same 40 names.
 - Present but identical in VI: `app_name` and `pinned_count` (`%1$d/%2$d`,
   numeric format) — both intentional.
 - Untranslated English leaking through resources: **none**.
@@ -101,18 +109,18 @@ The `formatBytes()` locale behavior is correct: KB/MB use
 renders a comma decimal separator. Unit tokens (B/KB/MB) are SI-neutral.
 
 The call UI (`call/ui/*.java`) resolves every user-visible string through
-`R.string.call_*`; no hardcoded prose was found there. Every other user-visible
-value in the scanned packages resolves through `stringResource(R.string.*)` or
-`getString(R.string.*)`.
+`R.string.call_*`, and the summary UI through `R.string.summary_*`; no hardcoded
+prose was found in either. Every other user-visible value in the scanned
+packages resolves through `stringResource(R.string.*)` or `getString(R.string.*)`.
 
 ## 4. Verdict
 
-- Resource key coverage: **186/186 = 100 %** (0 missing either direction).
-- Translatable strings localized: **184/184 = 100 %** (2 endonyms are
+- Resource key coverage: **223/223 = 100 %** (0 missing either direction).
+- Translatable strings localized: **221/221 = 100 %** (2 endonyms are
   `translatable="false"` by design).
 - Hardcoded prose in UI: **0 hits**; only 2 symbols and 3 numeric/size-format
   templates were found.
-- Translation quality: **184/184 clean = 100 %** — the six previously flagged VI
+- Translation quality: **221/221 clean = 100 %** — the six previously flagged VI
   entries are all fixed, and the `formatBytes()` locale behavior is correct.
 
 Overall: clean i18n pass. The remaining `SĐT` vs "số điện thoại" register split

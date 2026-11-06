@@ -78,13 +78,13 @@ cd android
 server/src/main/java/com/nexachat/
   auth/ user/ contact/ conversation/ message/ attachment/ presence/ call/ summary/ ws/ common/ config/
 android/app/src/main/java/com/nexachat/
-  call/                        Java call core/media/service/UI (voice calls in progress)
+  call/                        Java call core/media/service/UI
   core/{common,database,network,storage,ui}/
   data/                       repositories (Room write-through, outbox, resync)
   di/                         Hilt modules (call, summary)
   feature/{auth,chat,contacts,group,inbox,interactions,media,profile,splash}/
-  summary/                    Java summary data layer (summary UI in progress)
-server/src/main/resources/db/migration/   Flyway V1–V6 (V6 summary work in progress)
+  summary/                    Java summary data layer
+server/src/main/resources/db/migration/   Flyway V1–V6
 android/gradle/libs.versions.toml         dependency version catalog
 docs/                                     contracts, security, runbooks, audits
 demo/                                    seed.sql + LAN scripts
@@ -105,7 +105,7 @@ tools/                                    report generator + release packaging
 - Fill in `.github/pull_request_template.md`.
 - Checklist:
   - [ ] Tests run and green (`mvn -B verify`, `./gradlew :app:testDebugUnitTest :app:lintDebug`).
-  - [ ] New user-facing strings have matching EN/VI resource names in paired files under `values/` and `values-vi/` (including `strings_call.xml` for call labels).
+  - [ ] New user-facing strings have matching EN/VI resource names in paired files under `values/` and `values-vi/` (`strings.xml`, `strings_call.xml`, `strings_summary.xml`).
   - [ ] No secrets, keystores, `.env*`, `local.properties`, `release/` or `server/data` in the diff.
   - [ ] Documentation updated when behaviour or contracts change (`docs/`).
   - [ ] Every line can be explained under defence questioning (explain-back rule).
@@ -126,10 +126,10 @@ tools/                                    report generator + release packaging
 python tools/build-report.py    # requires python-docx >= 1.1
 ```
 
-Not run during this audit: it writes `docs/report.docx`, which is outside the
-repository-professionalism ownership. python-docx 1.2.0 is installed.
-`docs/report.md` is canonical; the generator is a hardcoded mirror, so update
-both together and regenerate after content changes.
+`docs/report.md` is canonical; `tools/build-report.py` parses it directly, so
+edit only the markdown and regenerate. The script verifies the generated
+document (heading/table counts, no leftover markdown artefacts) before
+replacing the previous `.docx`.
 
 ## Never commit
 

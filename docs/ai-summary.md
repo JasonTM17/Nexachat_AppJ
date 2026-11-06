@@ -1,6 +1,6 @@
 # Conversation catch-up summary
 
-Status: contract (implementation in progress). Plan: `plans/261105-1957-conversation-catch-up-ai-summary`.
+Status: shipped (route, engines, consent, Flyway V6 and Android UI).
 
 ## What it does
 

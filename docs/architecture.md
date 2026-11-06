@@ -39,7 +39,7 @@ flowchart LR
             ATT["attachment"]
             PRES["presence"]
             CALL["call signaling"]
-            SUM["summary (in progress)"]
+            SUM["summary"]
             COMMON["common: errors, logging,<br/>config, E.164 util"]
         end
         WS["WebSocket/STOMP layer<br/>@MessageMapping +<br/>ChannelInterceptor authZ"]
@@ -82,7 +82,7 @@ flowchart TB
         ATT["attachment"]
         PRES["presence"]
         CALL["call signaling"]
-        SUM["summary (in progress)"]
+        SUM["summary"]
         COMMON["common: errors, logging,<br/>config, E.164 util"]
     end
 ```

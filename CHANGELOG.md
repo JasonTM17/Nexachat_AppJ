@@ -19,17 +19,20 @@ after the tag.
   `last_seen_at` / `show_presence` columns (Flyway `V4__presence.sql`,
   `unaccent` extension), a `presence` server package, and Room v7 migration
   (`android/app/schemas/.../7.json`).
-- Conversation summary work is in progress: the repository currently contains
-  a draft `POST /api/v1/conversations/{id}/summary` route and Flyway V6 schema;
-  see `docs/ai-summary.md` for its draft contract and current limitations.
+- Conversation catch-up summary: `POST /api/v1/conversations/{id}/summary`
+  with an extractive local engine, an optional DeepSeek-backed LLM engine,
+  citation-backed items, Flyway V6 schema, consent-gated provider selection,
+  per-user rate limits, and an Android summary UI with EN/VI engine badges
+  (`docs/ai-summary.md`).
 - User settings: `GET`/`PATCH /api/v1/users/me/settings`, a theme mode
   (system/light/dark) stored locally, a server-backed show-presence toggle,
   plus a settings screen.
 - Text-only message forwarding in the client; attachments are not forwarded.
-- Call signaling over STOMP, authenticated ICE configuration and direct-call
-  history, backed by a server call registry and persisted terminal records.
-  Android has Java call core/media/UI code, but the voice-call flow is still in
-  progress and not yet a verified demo feature.
+- Voice calls: STOMP signaling, authenticated ICE configuration and
+  direct-call history backed by a server call registry and persisted terminal
+  records; Android call core/media/service/UI with incoming/outgoing screens,
+  a foreground service, localized call log and EN/VI resources. Live E2E
+  (`tools/e2e/calls/call_e2e.py`) and on-device screenshots (`s6-*`) verified.
 - REST message rate limiting: per-user edit/delete (30/min) and search
   (60/min) buckets via `MessageRateLimitInterceptor`, configurable in
   `application.yml`.
@@ -57,6 +60,11 @@ after the tag.
 
 - Deleted messages clear stale reply snippets in Room instead of waiting for
   the next history page.
+- The STOMP SimpleBroker now runs a heartbeat scheduler (10 s), so an idle
+  ringing caller keeps receiving server heartbeats instead of tripping the
+  client's 30 s liveness guard.
+- The ring-timeout timer re-arms itself when it fires a moment before the ring
+  deadline, instead of leaving a call ringing forever.
 - A stale offline presence seed can no longer demote an online peer.
 - Group-detail inbox refresh no longer prunes a conversation created while a
   `GET /conversations` was in flight.

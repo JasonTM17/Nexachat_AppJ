@@ -14,9 +14,9 @@ Every document in the repository, grouped by purpose. Start with
 
 | Doc | Contents |
 |---|---|
-| [docs/api-contract.md](api-contract.md) | Current REST contract; the in-progress summary route is called out separately |
+| [docs/api-contract.md](api-contract.md) | Current REST contract, including the summary and call routes |
 | [docs/websocket-protocol.md](websocket-protocol.md) | STOMP destinations, envelope, delivery guarantees, limits |
-| [docs/calls.md](calls.md) | Call signaling, call events, REST configuration and history — Android media/UI in progress |
+| [docs/calls.md](calls.md) | Call signaling, call events, REST configuration, history and Android UI |
 
 ## Security & privacy
 
@@ -59,7 +59,7 @@ Every document in the repository, grouped by purpose. Start with
 | [docs/report.docx](report.docx) | Generated report (regenerate with `tools/build-report.py`) |
 | [docs/viva-questions.md](viva-questions.md) | Defence question bank with code citations |
 | [docs/known-limitations.md](known-limitations.md) | Honest deferred work — read before the viva |
-| [docs/ai-summary.md](ai-summary.md) | Conversation summary contract and consent model — feature in progress |
+| [docs/ai-summary.md](ai-summary.md) | Conversation summary contract, engines and consent model |
 
 ## Design
 

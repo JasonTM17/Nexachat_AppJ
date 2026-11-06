@@ -39,9 +39,11 @@ Rubric coverage — the full mapping with test evidence is in
 | R2 — group chat | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | R3 — preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
 | R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
-| R3 — i18n | Vi/En resource parity: 186 string entries per locale (184 translatable; base and call-specific files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
+| R3 — i18n | Vi/En resource parity: 223 string entries per locale (221 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
 | R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
 | R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractions`, `core/ui/ForwardFilter` |
+| Extra — voice calls | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
+| Extra — AI catch-up summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary` |
 | R5 — UI + tests | Material 3, ≥48dp touch targets and shared state components; test status is reported by the current CI run | `core/ui`, `server/src/test`, `app/src/test` |
 | R6 — presentation | This README, `docs/`, viva question bank | `docs/viva-questions.md` |
 | R1 — submission | Monorepo + packaging checklist | `docs/packaging-checklist.md` |
@@ -62,12 +64,12 @@ flowchart LR
     subgraph Server["server/ — Spring Boot 3.4 modular monolith"]
         SEC["SecurityConfig<br/>JWT filter · stateless"]
         INT["StompAuthChannelInterceptor<br/>CONNECT authN · SUB/SEND authZ"]
-        SVC["Services: auth · user · contact<br/>conversation · message · attachment · presence · call signaling · summary (in progress)"]
+        SVC["Services: auth · user · contact<br/>conversation · message · attachment · presence · call signaling · summary"]
         EVT["@TransactionalEventListener<br/>AFTER_COMMIT broadcast"]
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V6 (summary work in progress)<br/>seq · watermarks · idempotency · calls")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V6<br/>seq · watermarks · idempotency · calls")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -96,7 +98,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Jetpack Compose (BOM 2024.12.01) + Material 3, Navigation |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V6 (V6 summary work in progress), `ddl-auto: validate` | Room 2.6.1 (v7, explicit migrations), DataStore and SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V6, `ddl-auto: validate` | Room 2.6.1 (v7, explicit migrations), DataStore and SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap | Coil 2.7, media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 DI, Retrofit 2.11 + Moshi, coroutines 1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle + version catalog, JUnit4/MockK/Turbine |
@@ -211,16 +213,16 @@ nexachat/
 ├─ android/   Kotlin + Java core modules + Jetpack Compose app
 │  ├─ app/src/main/java/com/nexachat/
 │  │  ├─ core/       common · database (Room) · network (Retrofit, stomp/) · storage · ui
-│  │  ├─ call/       Java call core/media/service/UI — Android voice calls in progress
+│  │  ├─ call/       Java call core/media/service/UI
 │  │  ├─ data/       repositories (Room write-through, outbox, resync)
 │  │  ├─ di/         Hilt modules (call, summary)
 │  │  ├─ feature/    auth · chat · contacts · group · inbox · interactions · media · profile · splash
-│  │  └─ summary/    Java summary data layer — summary UI in progress
+│  │  └─ summary/    Java summary data layer
 │  ├─ app/schemas/   Room-exported schema JSON (migration-test assets)
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V6   # V6 summary work in progress
+│  ├─ src/main/resources/db/migration/V1–V6   # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      contracts, security, runbooks, audits, viva bank (index: docs/README.md)
 │  ├─ design/       design tokens + Stitch references + live screenshots
