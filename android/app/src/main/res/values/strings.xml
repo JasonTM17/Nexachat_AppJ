@@ -60,6 +60,7 @@
     <!-- Contacts errors -->
     <string name="error_already_contact">Already in your contacts</string>
     <string name="error_user_not_found">No user with this phone number</string>
+    <string name="error_cannot_add_self">You can\'t add your own number</string>
 
     <!-- Profile -->
     <string name="profile_title">Profile</string>

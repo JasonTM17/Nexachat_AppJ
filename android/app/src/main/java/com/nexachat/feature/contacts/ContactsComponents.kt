@@ -50,6 +50,7 @@ internal fun contactErrorMessage(error: ApiError): String = when (error) {
     is ApiError.Network -> stringResource(R.string.error_network)
     is ApiError.Unknown -> when (error.code) {
         "USER_NOT_FOUND" -> stringResource(R.string.error_user_not_found)
+        SelfContactGuard.ERROR_CODE -> stringResource(R.string.error_cannot_add_self)
         else -> stringResource(R.string.error_generic)
     }
 }

@@ -135,7 +135,11 @@ fun ChatBubble(
                 Text(
                     text = message.senderDisplayName,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (mine) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
                 )
             }
 
@@ -183,7 +187,11 @@ fun ChatBubble(
                         color = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     )
                 } else {
-                    val linkColor = if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary
+                    val linkColor = if (mine) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
                     val textColor = if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
 
                     val annotatedText = buildAnnotatedString {
@@ -285,7 +293,7 @@ private fun BubbleDeliveryMark(message: ChatMessage, seen: Boolean) {
             Text(
                 text = stringResource(R.string.msg_seen),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         } else {
             Icon(

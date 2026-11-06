@@ -55,6 +55,9 @@ class ContactsViewModelTest {
         // before construction.
         every { repository.contactsFlow } returns contactsFlow
         coEvery { repository.contacts() } returns Result.Success(emptyList())
+        coEvery { repository.getMe() } returns Result.Success(
+            UserDto(id = "me", phone = "+84900000001", displayName = "Me", avatarUrl = null),
+        )
         viewModel = ContactsViewModel(SavedStateHandle(), repository)
     }
 
@@ -240,5 +243,19 @@ class ContactsViewModelTest {
             cancel()
         }
         assertEquals(ApiError.Network(), viewModel.uiState.value.detailError)
+    }
+
+    @Test
+    fun `adding the signed-in phone shows a dedicated error and does not call the server`() = runTest {
+        coEvery { repository.getMe() } returns Result.Success(
+            UserDto(id = "me", phone = "+84912345678", displayName = "Me", avatarUrl = null),
+        )
+        viewModel.onAddPhoneChange("0912 345 678")
+
+        viewModel.confirmAdd()
+
+        assertEquals(ApiError.Unknown(SelfContactGuard.ERROR_CODE), viewModel.uiState.value.addError)
+        assertFalse(viewModel.uiState.value.adding)
+        coVerify(exactly = 0) { repository.addContact(any()) }
     }
 }

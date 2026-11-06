@@ -60,6 +60,7 @@
     <!-- Contacts errors -->
     <string name="error_already_contact">Đã có trong danh bạ</string>
     <string name="error_user_not_found">Không có người dùng với SĐT này</string>
+    <string name="error_cannot_add_self">Không thể thêm chính số của bạn</string>
 
     <!-- Profile -->
     <string name="profile_title">Hồ sơ</string>

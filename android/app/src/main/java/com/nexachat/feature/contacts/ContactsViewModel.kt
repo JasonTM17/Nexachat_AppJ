@@ -184,6 +184,12 @@ class ContactsViewModel @Inject constructor(
         if (phone.isEmpty() || state.adding) return
         viewModelScope.launch {
             _uiState.update { it.copy(adding = true, addError = null) }
+            if (rejectOwnPhone(phone) { error ->
+                    _uiState.update { it.copy(adding = false, addError = error) }
+                }
+            ) {
+                return@launch
+            }
             when (val result = contactsRepository.addContact(phone)) {
                 is Result.Success -> _uiState.update {
                     it.copy(adding = false, addDone = true)
@@ -207,6 +213,19 @@ class ContactsViewModel @Inject constructor(
                 addError = null,
             )
         }
+
+    /**
+     * Blocks adding the signed-in phone before the request. A failed profile
+     * lookup falls through so the server remains the authority.
+     */
+    private suspend fun rejectOwnPhone(phone: String, onReject: (ApiError) -> Unit): Boolean {
+        val me = contactsRepository.getMe()
+        if (me is Result.Success && SelfContactGuard.isOwnPhone(phone, me.value.phone)) {
+            onReject(ApiError.Unknown(SelfContactGuard.ERROR_CODE))
+            return true
+        }
+        return false
+    }
 
     // ---- detail sheet ----
 
@@ -298,6 +317,12 @@ class ContactsViewModel @Inject constructor(
         if (_uiState.value.detailBusy) return
         viewModelScope.launch {
             _uiState.update { it.copy(detailBusy = true, detailError = null) }
+            if (rejectOwnPhone(user.phone) { error ->
+                    _uiState.update { it.copy(detailBusy = false, detailError = error) }
+                }
+            ) {
+                return@launch
+            }
             when (val result = contactsRepository.addContact(user.phone)) {
                 is Result.Success -> _uiState.update { state ->
                     state.copy(detailBusy = false, detailContact = result.value)
