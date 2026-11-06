@@ -174,7 +174,7 @@ fun ChatBubble(
                 } else {
                     rawContent
                 }
-                val links = remember(contentText) { extractHttpLinks(contentText) }
+                val links = remember(contentText) { LinkUtils.extractHttpLinks(contentText) }
 
                 if (links.isEmpty()) {
                     Text(
@@ -215,7 +215,7 @@ fun ChatBubble(
                         onClick = { offset ->
                             annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
                                 .firstOrNull()?.let { annotation ->
-                                    val safeUrl = sanitizeLinkUrl(annotation.item)
+                                    val safeUrl = LinkUtils.sanitizeLinkUrl(annotation.item)
                                     if (safeUrl != null) {
                                         try {
                                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl))

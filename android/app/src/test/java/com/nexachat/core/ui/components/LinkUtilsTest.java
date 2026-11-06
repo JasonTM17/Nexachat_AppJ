@@ -14,24 +14,24 @@ public final class LinkUtilsTest {
 
     @Test
     public void sanitizesOnlyHttpSchemesAndTrimsSurroundingWhitespace() {
-        assertEquals("HTTPS://example.test/path?q=hello", LinkUtilsKt.sanitizeLinkUrl("  HTTPS://example.test/path?q=hello  "));
-        assertEquals("http://example.test", LinkUtilsKt.sanitizeLinkUrl("http://example.test"));
+        assertEquals("HTTPS://example.test/path?q=hello", LinkUtils.sanitizeLinkUrl("  HTTPS://example.test/path?q=hello  "));
+        assertEquals("http://example.test", LinkUtils.sanitizeLinkUrl("http://example.test"));
     }
 
     @Test
     public void rejectsEmptyMalformedAndNonWebSchemes() {
-        assertNull(LinkUtilsKt.sanitizeLinkUrl(""));
-        assertNull(LinkUtilsKt.sanitizeLinkUrl("   "));
-        assertNull(LinkUtilsKt.sanitizeLinkUrl("javascript:alert(1)"));
-        assertNull(LinkUtilsKt.sanitizeLinkUrl("file:///private/document"));
-        assertNull(LinkUtilsKt.sanitizeLinkUrl("content://provider/item"));
-        assertNull(LinkUtilsKt.sanitizeLinkUrl("https://example.test/has a space"));
+        assertNull(LinkUtils.sanitizeLinkUrl(""));
+        assertNull(LinkUtils.sanitizeLinkUrl("   "));
+        assertNull(LinkUtils.sanitizeLinkUrl("javascript:alert(1)"));
+        assertNull(LinkUtils.sanitizeLinkUrl("file:///private/document"));
+        assertNull(LinkUtils.sanitizeLinkUrl("content://provider/item"));
+        assertNull(LinkUtils.sanitizeLinkUrl("https://example.test/has a space"));
     }
 
     @Test
     public void extractsMultipleLinksWithCorrectUtf16RangesAfterVietnameseTextAndEmoji() {
         String text = "Chào 👋 https://example.test/a và http://nexa.test";
-        List<Pair<IntRange, String>> links = LinkUtilsKt.extractHttpLinks(text);
+        List<Pair<IntRange, String>> links = LinkUtils.extractHttpLinks(text);
 
         assertEquals(2, links.size());
         assertEquals("https://example.test/a", links.get(0).getSecond());
@@ -44,6 +44,6 @@ public final class LinkUtilsTest {
 
     @Test
     public void blankTextProducesNoLinks() {
-        assertTrue(LinkUtilsKt.extractHttpLinks(" \t\n ").isEmpty());
+        assertTrue(LinkUtils.extractHttpLinks(" \t\n ").isEmpty());
     }
 }

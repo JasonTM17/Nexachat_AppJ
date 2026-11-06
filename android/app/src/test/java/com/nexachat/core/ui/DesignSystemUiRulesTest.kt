@@ -10,7 +10,7 @@ import com.nexachat.core.ui.components.resolveBubbleShape
 import com.nexachat.core.ui.components.resolveDateSeparatorLabel
 import com.nexachat.core.ui.components.resolveGroupPosition
 import com.nexachat.core.ui.components.resolveRelativeTimeLabel
-import com.nexachat.core.ui.components.sanitizeLinkUrl
+import com.nexachat.core.ui.components.LinkUtils.sanitizeLinkUrl
 import com.nexachat.core.ui.components.shouldShowDateSeparator
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.DeliveryStatus
