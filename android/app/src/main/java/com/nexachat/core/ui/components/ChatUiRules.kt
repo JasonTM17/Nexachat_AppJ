@@ -3,9 +3,6 @@ package com.nexachat.core.ui.components
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.nexachat.data.ChatMessage
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 
 /**
@@ -123,13 +120,8 @@ fun resolveBubbleShape(position: MessageGroupPosition, mine: Boolean): RoundedCo
  * [prevMessageEpochMs] and [currentMessageEpochMs] (in chronological order).
  * Returns true if [prevMessageEpochMs] is null (first message in thread) or crosses midnight.
  */
-fun shouldShowDateSeparator(prevMessageEpochMs: Long?, currentMessageEpochMs: Long): Boolean {
-    if (prevMessageEpochMs == null) return true
-    val cal1 = Calendar.getInstance().apply { timeInMillis = prevMessageEpochMs }
-    val cal2 = Calendar.getInstance().apply { timeInMillis = currentMessageEpochMs }
-    return cal1.get(Calendar.YEAR) != cal2.get(Calendar.YEAR) ||
-        cal1.get(Calendar.DAY_OF_YEAR) != cal2.get(Calendar.DAY_OF_YEAR)
-}
+fun shouldShowDateSeparator(prevMessageEpochMs: Long?, currentMessageEpochMs: Long): Boolean =
+    ChatTimeRules.shouldShowDateSeparator(prevMessageEpochMs, currentMessageEpochMs)
 
 data class DateSeparatorLabels(
     val today: String,
@@ -147,26 +139,7 @@ fun resolveDateSeparatorLabel(
     nowEpochMs: Long,
     labels: DateSeparatorLabels,
     locale: Locale = Locale.getDefault(),
-): String {
-    val calMsg = Calendar.getInstance().apply { timeInMillis = messageEpochMs }
-    val calNow = Calendar.getInstance().apply { timeInMillis = nowEpochMs }
-
-    val msgYear = calMsg.get(Calendar.YEAR)
-    val nowYear = calNow.get(Calendar.YEAR)
-    val msgDay = calMsg.get(Calendar.DAY_OF_YEAR)
-    val nowDay = calNow.get(Calendar.DAY_OF_YEAR)
-
-    val isToday = msgYear == nowYear && msgDay == nowDay
-    val isYesterday = (msgYear == nowYear && msgDay == nowDay - 1) ||
-        (msgYear == nowYear - 1 && nowDay == 1 && msgDay == calMsg.getActualMaximum(Calendar.DAY_OF_YEAR))
-
-    return when {
-        isToday -> labels.today
-        isYesterday -> labels.yesterday
-        msgYear == nowYear -> SimpleDateFormat("dd/MM", locale).format(Date(messageEpochMs))
-        else -> SimpleDateFormat("dd/MM/yyyy", locale).format(Date(messageEpochMs))
-    }
-}
+): String = ChatTimeRules.resolveDateSeparatorLabel(messageEpochMs, nowEpochMs, labels, locale)
 
 /**
  * Pure UI presentation rule: relative timestamp formatting for inbox rows.
@@ -182,25 +155,4 @@ fun resolveRelativeTimeLabel(
     justNowLabel: String,
     yesterdayLabel: String,
     locale: Locale = Locale.getDefault(),
-): String {
-    val diff = (nowEpochMs - epochMs).coerceAtLeast(0)
-    val calMsg = Calendar.getInstance().apply { timeInMillis = epochMs }
-    val calNow = Calendar.getInstance().apply { timeInMillis = nowEpochMs }
-
-    val msgYear = calMsg.get(Calendar.YEAR)
-    val nowYear = calNow.get(Calendar.YEAR)
-    val msgDay = calMsg.get(Calendar.DAY_OF_YEAR)
-    val nowDay = calNow.get(Calendar.DAY_OF_YEAR)
-
-    val isToday = msgYear == nowYear && msgDay == nowDay
-    val isYesterday = (msgYear == nowYear && msgDay == nowDay - 1) ||
-        (msgYear == nowYear - 1 && nowDay == 1 && msgDay == calMsg.getActualMaximum(Calendar.DAY_OF_YEAR))
-
-    return when {
-        diff < 60_000L -> justNowLabel
-        isToday -> SimpleDateFormat("HH:mm", locale).format(Date(epochMs))
-        isYesterday -> yesterdayLabel
-        msgYear == nowYear -> SimpleDateFormat("dd/MM", locale).format(Date(epochMs))
-        else -> SimpleDateFormat("dd/MM/yy", locale).format(Date(epochMs))
-    }
-}
+): String = ChatTimeRules.resolveRelativeTimeLabel(epochMs, nowEpochMs, justNowLabel, yesterdayLabel, locale)

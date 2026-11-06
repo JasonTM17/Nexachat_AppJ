@@ -9,7 +9,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import java.util.Locale
 
 /**
  * A picked item staged above the input bar while its upload runs
@@ -57,10 +56,4 @@ fun rememberAuthedImageLoader(): ImageLoader {
  * decides the decimal separator (vi_VN uses a comma); the B/KB/MB unit tokens
  * themselves are SI-neutral.
  */
-internal fun formatBytes(bytes: Long?): String {
-    if (bytes == null || bytes < 0) return ""
-    if (bytes < 1024) return "$bytes B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return String.format(Locale.getDefault(), "%.1f KB", kb)
-    return String.format(Locale.getDefault(), "%.1f MB", kb / 1024.0)
-}
+internal fun formatBytes(bytes: Long?): String = FormatBytes.format(bytes)

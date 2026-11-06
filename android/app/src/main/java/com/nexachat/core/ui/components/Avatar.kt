@@ -60,12 +60,7 @@ val AvatarPaletteDark = listOf(
 /**
  * Pure UI presentation rule: computes a deterministic palette index 0..7 from a user name.
  */
-fun avatarPaletteIndex(name: String): Int {
-    val trimmed = name.trim().lowercase()
-    if (trimmed.isEmpty()) return 0
-    val hash = trimmed.fold(0) { acc, c -> (acc * 31 + c.code) }
-    return (hash and 0x7FFFFFFF) % AvatarPaletteLight.size
-}
+fun avatarPaletteIndex(name: String): Int = AvatarPalette.avatarPaletteIndex(name)
 
 /**
  * Pure UI presentation rule: returns the deterministic container & text colors for [name].

@@ -1567,22 +1567,18 @@ internal enum class BubbleContainerColorRole {
  * FAILED messages always highlight as ERROR regardless of sender;
  * otherwise outgoing (mine) messages use MINE tint and incoming use PEER tint.
  */
-internal fun resolveBubbleContainerRole(status: DeliveryStatus, mine: Boolean): BubbleContainerColorRole = when {
-    status == DeliveryStatus.FAILED -> BubbleContainerColorRole.ERROR
-    mine -> BubbleContainerColorRole.MINE
-    else -> BubbleContainerColorRole.PEER
-}
+internal fun resolveBubbleContainerRole(status: DeliveryStatus, mine: Boolean): BubbleContainerColorRole = ChatBubbleRules.resolveBubbleContainerRole(status, mine)
 
 /**
  * Pure UI presentation rule: only messages confirmed SENT by the server can be replied to or pinned.
  * Pending (SENDING) and FAILED outbox messages lack permanent server IDs.
  */
-internal fun isMessageReplyable(status: DeliveryStatus): Boolean = status == DeliveryStatus.SENT
+internal fun isMessageReplyable(status: DeliveryStatus): Boolean = ChatBubbleRules.isMessageReplyable(status)
 
 /**
  * Pure UI presentation rule: retry affordance is visible and actionable only on FAILED messages.
  */
-internal fun isRetryAffordanceVisible(status: DeliveryStatus): Boolean = status == DeliveryStatus.FAILED
+internal fun isRetryAffordanceVisible(status: DeliveryStatus): Boolean = ChatBubbleRules.isRetryAffordanceVisible(status)
 
 /**
  * Pure UI presentation rule: Seen ("Đã xem") receipt display.
@@ -1596,12 +1592,11 @@ internal fun isSeenReceiptVisible(
     mine: Boolean,
     messageSeq: Long?,
     peerReadSeq: Long,
-): Boolean = !isGroup && mine && (messageSeq ?: Long.MAX_VALUE) <= peerReadSeq
+): Boolean = ChatBubbleRules.isSeenReceiptVisible(isGroup, mine, messageSeq, peerReadSeq)
 
 /**
  * Pure UI presentation rule: resolves the 0-indexed position within a reverseLayout LazyColumn
  * for [targetId]. Under reverseLayout, index 0 is the newest message (last element of [messages]).
  * Returns -1 if [targetId] is not found in [messages].
  */
-internal fun findMessageReversedIndex(messages: List<ChatMessage>, targetId: String): Int =
-    messages.asReversed().indexOfFirst { it.id == targetId }
+internal fun findMessageReversedIndex(messages: List<ChatMessage>, targetId: String): Int = ChatBubbleRules.findMessageReversedIndex(messages, targetId)
