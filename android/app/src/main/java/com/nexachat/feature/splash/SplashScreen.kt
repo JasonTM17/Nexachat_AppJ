@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nexachat.R
+import com.nexachat.feature.auth.SplashNavEvent
 import com.nexachat.feature.auth.SplashViewModel
 import kotlinx.coroutines.flow.collectLatest
 
@@ -40,8 +41,8 @@ fun SplashScreen(
     LaunchedEffect(Unit) {
         viewModel.navEvents.collectLatest { event ->
             when (event) {
-                SplashViewModel.NavEvent.ToLogin -> onNavigateToLogin()
-                SplashViewModel.NavEvent.ToInbox -> onNavigateToInbox()
+                is SplashNavEvent.ToLogin -> onNavigateToLogin()
+                is SplashNavEvent.ToInbox -> onNavigateToInbox()
             }
         }
     }

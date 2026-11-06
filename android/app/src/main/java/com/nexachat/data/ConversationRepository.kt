@@ -219,9 +219,7 @@ class ConversationRepository @Inject constructor(
                 val presenceSeeds = result.value.items.mapNotNull { dto ->
                     val presence = dto.peerPresence ?: return@mapNotNull null
                     val peerId = dto.resolvedOtherId(myId) ?: return@mapNotNull null
-                    peerId to PeerPresence(
-                        online = presence.online == true,
-                        lastSeenAtEpochMs = isoToEpochMsOrNull(presence.lastSeenAt),
+                    peerId to PeerPresence(presence.online == true, isoToEpochMsOrNull(presence.lastSeenAt),
                     )
                 }.toMap()
                 presenceRepository.seed(presenceSeeds)

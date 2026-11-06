@@ -32,7 +32,7 @@ class SplashViewModelTest {
         val viewModel = SplashViewModel(tokenStore, repository)
 
         viewModel.navEvents.test {
-            assertEquals(SplashViewModel.NavEvent.ToLogin, awaitItem())
+            assertEquals(SplashNavEvent.ToLogin.INSTANCE, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
         io.mockk.coVerify(exactly = 0) { repository.refresh() }
@@ -46,7 +46,7 @@ class SplashViewModelTest {
         val viewModel = SplashViewModel(tokenStore, repository)
 
         viewModel.navEvents.test {
-            assertEquals(SplashViewModel.NavEvent.ToInbox, awaitItem())
+            assertEquals(SplashNavEvent.ToInbox.INSTANCE, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -59,7 +59,7 @@ class SplashViewModelTest {
         val viewModel = SplashViewModel(tokenStore, repository)
 
         viewModel.navEvents.test {
-            assertEquals(SplashViewModel.NavEvent.ToLogin, awaitItem())
+            assertEquals(SplashNavEvent.ToLogin.INSTANCE, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }

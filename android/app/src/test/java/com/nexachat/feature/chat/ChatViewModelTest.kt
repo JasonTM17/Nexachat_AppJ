@@ -834,7 +834,7 @@ class ChatViewModelTest {
             otherUserName = "Peer",
             otherUserAvatar = null,
             avatarUrl = null,
-            peerPresence = PeerPresence(online = true, lastSeenAtEpochMs = 1_700_000_000_000L),
+            peerPresence = PeerPresence(true, 1_700_000_000_000L),
         )
         runCurrent()
 

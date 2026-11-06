@@ -51,9 +51,9 @@ class PresenceRepositoryTest {
 
     private fun TestScope.build() {
         repository = PresenceRepository(
-            session = session,
-            sessionEvents = sessionEvents,
-            scope = backgroundScope,
+            session,
+            sessionEvents,
+            backgroundScope,
         )
         // Start the init collectors before the first emission — a SharedFlow
         // with no subscriber drops it.
@@ -85,9 +85,9 @@ class PresenceRepositoryTest {
             backgroundScope,
         )
         repository = PresenceRepository(
-            session = realtimeSession,
-            sessionEvents = sessionEvents,
-            scope = backgroundScope,
+            realtimeSession,
+            sessionEvents,
+            backgroundScope,
         )
         runCurrent()
         return frames
@@ -138,7 +138,7 @@ class PresenceRepositoryTest {
         chatEvents.emit(ChatEvent.Presence("u-1", true, null))
         runCurrent()
 
-        repository.seed(mapOf("u-1" to PeerPresence(online = false, lastSeenAtEpochMs = 5L)))
+        repository.seed(mapOf("u-1" to PeerPresence(false, 5L)))
 
         assertEquals(PeerPresence(true, null), repository.presences.value["u-1"])
     }
@@ -146,10 +146,10 @@ class PresenceRepositoryTest {
     @Test
     fun `a seed promotes an offline peer to online`() = runTest {
         build()
-        repository.seed(mapOf("u-1" to PeerPresence(online = false, lastSeenAtEpochMs = 5L)))
+        repository.seed(mapOf("u-1" to PeerPresence(false, 5L)))
         assertEquals(PeerPresence(false, 5L), repository.presences.value["u-1"])
 
-        repository.seed(mapOf("u-1" to PeerPresence(online = true, lastSeenAtEpochMs = null)))
+        repository.seed(mapOf("u-1" to PeerPresence(true, null)))
 
         assertEquals(PeerPresence(true, null), repository.presences.value["u-1"])
     }
@@ -170,7 +170,7 @@ class PresenceRepositoryTest {
     @Test
     fun `offline event is not overwritten by a stale inbox seed`() = runTest {
         val frames = buildWithProductionRealtime()
-        repository.seed(mapOf("u-1" to PeerPresence(online = true, lastSeenAtEpochMs = null)))
+        repository.seed(mapOf("u-1" to PeerPresence(true, null)))
 
         emitFrame(
             frames,
@@ -180,15 +180,13 @@ class PresenceRepositoryTest {
             frames,
             """{"eventType":"USER_OFFLINE","conversationId":null,"serverTs":"2026-11-05T14:47:15.000Z","payload":{"userId":"u-1","online":false,"lastSeenAt":"2026-11-05T14:47:10.000Z"}}""",
         )
-        val offline = PeerPresence(
-            online = false,
-            lastSeenAtEpochMs = isoToEpochMsOrNull("2026-11-05T14:47:10.000Z"),
+        val offline = PeerPresence(false, isoToEpochMsOrNull("2026-11-05T14:47:10.000Z"),
         )
         assertEquals(offline, repository.presences.value["u-1"])
 
         // This models an inbox request that started while the peer was online
         // and returned after the newer offline event had already been applied.
-        repository.seed(mapOf("u-1" to PeerPresence(online = true, lastSeenAtEpochMs = null)))
+        repository.seed(mapOf("u-1" to PeerPresence(true, null)))
 
         assertEquals(offline, repository.presences.value["u-1"])
     }
@@ -203,9 +201,7 @@ class PresenceRepositoryTest {
         emitFrame(frames, offline)
         emitFrame(frames, online) // delayed copy of the older online state
 
-        val expectedOffline = PeerPresence(
-            online = false,
-            lastSeenAtEpochMs = isoToEpochMsOrNull("2026-11-05T14:47:10.000Z"),
+        val expectedOffline = PeerPresence(false, isoToEpochMsOrNull("2026-11-05T14:47:10.000Z"),
         )
         assertEquals(expectedOffline, repository.presences.value["u-1"])
 

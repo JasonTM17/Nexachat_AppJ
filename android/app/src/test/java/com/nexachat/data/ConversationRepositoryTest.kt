@@ -288,7 +288,7 @@ class ConversationRepositoryTest {
         ).asCall()
 
         repository.refreshInbox()
-        presenceFlow.value = mapOf("u-peer" to PeerPresence(online = true, lastSeenAtEpochMs = null))
+        presenceFlow.value = mapOf("u-peer" to PeerPresence(true, null))
         val summary = repository.inboxFlow().first().single()
 
         assertEquals("u-peer", summary.otherUserId)
@@ -318,7 +318,7 @@ class ConversationRepositoryTest {
     @Test
     fun `a DIRECT row without peer presence clears the stale presence seed`() = runTest {
         buildRepository()
-        presenceFlow.value = mapOf("u-peer" to PeerPresence(online = true, lastSeenAtEpochMs = null))
+        presenceFlow.value = mapOf("u-peer" to PeerPresence(true, null))
         every { presenceRepository.clear(any()) } answers {
             presenceFlow.value = presenceFlow.value - firstArg<String>()
         }
