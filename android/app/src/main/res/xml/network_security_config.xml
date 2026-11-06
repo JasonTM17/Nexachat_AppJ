@@ -3,8 +3,8 @@
   Cleartext HTTP is disabled globally. The only exception is 10.0.2.2 — the
   Android emulator's alias for the host machine's localhost — so debug builds
   can talk to the local dev server (http://10.0.2.2:8080) without TLS.
-  TODO(before release): confirm no additional demo LAN domains need cleartext;
-  production traffic must be HTTPS only.
+  LAN demo hosts are covered by the debug source set override; release builds
+  keep this restrictive config, so production traffic must be HTTPS/WSS only.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
