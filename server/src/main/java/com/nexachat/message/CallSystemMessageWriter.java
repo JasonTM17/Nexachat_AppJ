@@ -14,7 +14,8 @@ public class CallSystemMessageWriter {
     }
 
     public void write(CallSession call) {
-        String content = "CALL|" + call.endReason().name() + "|" + call.durationSeconds();
+        String content = "CALL|" + call.endReason().name() + "|" + call.durationSeconds()
+                + "|" + call.callerId();
         messageService.postSystemMessage(call.callerId(), call.conversationId(), content);
     }
 }

@@ -166,7 +166,7 @@ class CallFlowIT {
         List<JsonNode> callLines = callLinesAfter(conversationId, alice, beforeSeq);
         assertThat(callLines).hasSize(1);
         assertThat(callLines.get(0).get("content").asText()).isEqualTo("CALL|COMPLETED|"
-                + completed.get("durationSeconds").asLong());
+                + completed.get("durationSeconds").asLong() + "|" + alice.id());
         assertThat(getJson("/api/v1/calls/ice-config", alice).get("iceServers")).isNotEmpty();
     }
 
@@ -228,7 +228,7 @@ class CallFlowIT {
         assertThat(callHistoryItem(history, callId).get("endReason").asText()).isEqualTo("CANCELLED");
         assertThat(callLinesAfter(conversationId, alice, beforeSeq)).singleElement()
                 .satisfies(message -> assertThat(message.path("content").asText())
-                        .isEqualTo("CALL|CANCELLED|0"));
+                        .isEqualTo("CALL|CANCELLED|0|" + alice.id()));
     }
 
     @Test
@@ -254,7 +254,7 @@ class CallFlowIT {
         assertThat(callHistoryItem(history, callId).get("endReason").asText()).isEqualTo("MISSED");
         assertThat(callLinesAfter(conversationId, alice, beforeSeq)).singleElement()
                 .satisfies(message -> assertThat(message.path("content").asText())
-                        .isEqualTo("CALL|MISSED|0"));
+                        .isEqualTo("CALL|MISSED|0|" + alice.id()));
     }
 
     @Test
@@ -276,7 +276,7 @@ class CallFlowIT {
         assertThat(callHistoryItem(history, callId).get("endReason").asText()).isEqualTo("FAILED");
         assertThat(callLinesAfter(conversationId, alice, beforeSeq)).singleElement()
                 .satisfies(message -> assertThat(message.path("content").asText())
-                        .startsWith("CALL|FAILED|"));
+                        .startsWith("CALL|FAILED|").endsWith("|" + alice.id()));
     }
 
     @Test
