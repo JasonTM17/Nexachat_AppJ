@@ -95,7 +95,7 @@ class SettingsRepositoryTest {
     fun `setShowPresence applies optimistically then accepts the server value`() = runTest {
         build()
         coEvery { userApi.updateSettings(UpdateUserSettingsRequest(false)) } returns
-            Response.success(UserSettingsDto(showPresence = false))
+            Response.success(UserSettingsDto(false as Boolean?))
 
         val result = repository.setShowPresence(false)
 
@@ -120,7 +120,7 @@ class SettingsRepositoryTest {
     fun `refreshShowPresence loads the server flag once a session exists`() = runTest {
         build()
         coEvery { userApi.getSettings() } returns
-            Response.success(UserSettingsDto(showPresence = false))
+            Response.success(UserSettingsDto(false as Boolean?))
 
         hasSession.value = true
         runCurrent()
@@ -132,7 +132,7 @@ class SettingsRepositoryTest {
     fun `logout resets the privacy flag to the permissive default`() = runTest {
         build()
         coEvery { userApi.getSettings() } returns
-            Response.success(UserSettingsDto(showPresence = false))
+            Response.success(UserSettingsDto(false as Boolean?))
         repository.refreshShowPresence()
         assertEquals(false, repository.showPresence.value)
 
