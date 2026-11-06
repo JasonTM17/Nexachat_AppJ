@@ -238,6 +238,19 @@ Captured on the `nexachat-audit` AVD (`emulator-5558`, Android 15, 1080×2400) a
 
 Fixture accounts, conversations, call records, and messages were removed after capture; targeted row counts were verified as zero.
 
+## 2.9 Inventory — UI pass reference frames (`s9-*`)
+
+Captured on `nexachat-audit` (1080×2400, dark, en, demo clock 9:41) after the
+UI polish pass. Fixture names are `UX Pass 1` and `UX Pass 2`.
+
+| File | Screen / evidence | Theme / locale |
+|---|---|---|
+| `s9-01-inbox-dark-en.png` | Inbox with one direct row | dark / en |
+| `s9-02-chat-landscape-draft-dark-en.png` | Landscape direct chat; the composer still holds the typed draft | dark / en |
+| `s9-03-profile-dark-en.png` | Profile: language, theme, presence, summary consent, sign out | dark / en |
+| `s9-04-inbox-font130-dark-en.png` | Inbox at font scale 1.3 | dark / en |
+| `s9-05-login-validation-dark-en.png` | Empty sign-in shows the phone and password errors | dark / en |
+
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 
 - No probe/e2e/test strings: the demo data was re-seeded and the two
