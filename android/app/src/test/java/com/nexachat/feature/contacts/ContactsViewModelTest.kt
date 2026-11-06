@@ -35,12 +35,7 @@ class ContactsViewModelTest {
     private val contactsFlow = MutableStateFlow<List<Contact>?>(null)
     private lateinit var viewModel: ContactsViewModel
 
-    private val user = UserDto(
-        id = "u-1",
-        phone = "+84912345678",
-        displayName = "Lan",
-        avatarUrl = null,
-    )
+    private val user = UserDto("u-1", "+84912345678", "Lan", null)
     private val contact = Contact(
         userId = "u-1",
         phone = "+84912345678",
@@ -56,7 +51,7 @@ class ContactsViewModelTest {
         every { repository.contactsFlow } returns contactsFlow
         coEvery { repository.contacts() } returns Result.Success(emptyList())
         coEvery { repository.getMe() } returns Result.Success(
-            UserDto(id = "me", phone = "+84900000001", displayName = "Me", avatarUrl = null),
+            UserDto("me", "+84900000001", "Me", null),
         )
         viewModel = ContactsViewModel(SavedStateHandle(), repository)
     }
@@ -248,7 +243,7 @@ class ContactsViewModelTest {
     @Test
     fun `adding the signed-in phone shows a dedicated error and does not call the server`() = runTest {
         coEvery { repository.getMe() } returns Result.Success(
-            UserDto(id = "me", phone = "+84912345678", displayName = "Me", avatarUrl = null),
+            UserDto("me", "+84912345678", "Me", null),
         )
         viewModel.onAddPhoneChange("0912 345 678")
 

@@ -66,12 +66,7 @@ class ChatViewModelTest {
     private companion object {
         const val CONVERSATION_ID = "c-1"
         const val TARGET_CONVERSATION_ID = "c-target"
-        val ATTACHMENT = AttachmentDto(
-            id = "att-1",
-            originalName = "pic.png",
-            mimeType = "image/png",
-            sizeBytes = 12L,
-        )
+        val ATTACHMENT = AttachmentDto("att-1", "pic.png", "image/png", 12L)
     }
 
     private fun message(
@@ -348,12 +343,7 @@ class ChatViewModelTest {
 
     @Test
     fun `server sniffed video MIME wins when picker cannot identify the URI`() = runTest {
-        val video = AttachmentDto(
-            id = "att-video",
-            originalName = "clip.mp4",
-            mimeType = "video/mp4",
-            sizeBytes = 4L,
-        )
+        val video = AttachmentDto("att-video", "clip.mp4", "video/mp4", 4L)
         coEvery { attachmentRepository.describe(uri) } returns LocalAttachment(
             uri = uri,
             displayName = "clip.mp4",

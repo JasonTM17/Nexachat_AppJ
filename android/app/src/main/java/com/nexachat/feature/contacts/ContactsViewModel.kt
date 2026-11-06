@@ -248,10 +248,10 @@ class ContactsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 detailUser = UserDto(
-                    id = contact.userId,
-                    phone = contact.phone,
-                    displayName = contact.displayName,
-                    avatarUrl = null,
+                    contact.userId,
+                    contact.phone,
+                    contact.displayName,
+                    null,
                 ),
                 detailContact = contact,
                 aliasInput = contact.aliasName.orEmpty(),

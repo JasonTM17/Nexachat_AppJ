@@ -76,10 +76,10 @@ class TokenAuthenticatorTest {
 
     private fun authResponse(accessToken: String, refreshToken: String): AuthResponse =
         AuthResponse(
-            user = UserDto(id = "user-1", phone = "+84905551122", displayName = "IT User"),
-            accessToken = accessToken,
-            accessTokenExpiresIn = 900,
-            refreshToken = refreshToken,
+            UserDto("user-1", "+84905551122", "IT User"),
+            accessToken,
+            900,
+            refreshToken,
         )
 
     /**

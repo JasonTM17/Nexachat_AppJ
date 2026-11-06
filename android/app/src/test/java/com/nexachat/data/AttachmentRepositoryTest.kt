@@ -56,12 +56,7 @@ class AttachmentRepositoryTest {
 
     private lateinit var repository: AttachmentRepository
 
-    private val dto = AttachmentDto(
-        id = "att-1",
-        originalName = "pic.png",
-        mimeType = "image/png",
-        sizeBytes = 4L,
-    )
+    private val dto = AttachmentDto("att-1", "pic.png", "image/png", 4L)
 
     private fun stubResolver(
         bytes: ByteArray,
@@ -125,7 +120,7 @@ class AttachmentRepositoryTest {
         }
         coEvery { attachmentApi.upload(any()) } coAnswers {
             firstArg<MultipartBody.Part>().body.writeTo(Buffer())
-            Response.success(dto.copy(mimeType = "video/mp4"))
+            Response.success(dto.withMimeType("video/mp4"))
         }
 
         repository.upload(uri).toList()

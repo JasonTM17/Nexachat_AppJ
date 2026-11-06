@@ -711,12 +711,12 @@ class MessageRepository @Inject constructor(
         // the socket doesn't stay silently dead while REST still works.
         session.ensureConnected()
         val request = SendMessageRequest(
-            clientMessageId = entry.clientMessageId,
-            type = entry.type,
-            content = entry.content,
-            replyToId = entry.replyToId,
+            entry.clientMessageId,
+            entry.type,
+            entry.content,
+            entry.replyToId,
             // WS SEND and the REST fallback both carry the same ids (plan §11.2).
-            attachmentIds = entry.attachments().mapNotNull { it.id },
+            entry.attachments().mapNotNull { it.id },
         )
         if (session.sendMessage(entry.conversationId, request)) {
             return // ack arrives as MESSAGE_CREATED → onMessageCreated

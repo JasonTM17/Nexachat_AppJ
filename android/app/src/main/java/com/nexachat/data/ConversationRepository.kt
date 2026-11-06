@@ -264,7 +264,7 @@ class ConversationRepository @Inject constructor(
         val trimmed = title.trim()
         return when (
             val result = call {
-                groupApi.createGroup(CreateGroupRequest(title = trimmed, memberIds = memberIds))
+                groupApi.createGroup(CreateGroupRequest(trimmed, memberIds))
             }
         ) {
             is Result.Success -> {
@@ -331,7 +331,7 @@ class ConversationRepository @Inject constructor(
             val result = call {
                 groupApi.updateConversation(
                     conversationId,
-                    UpdateConversationRequest(title = title.trim()),
+                    UpdateConversationRequest(title.trim()),
                 )
             }
         ) {
@@ -546,7 +546,7 @@ class ConversationRepository @Inject constructor(
                 return Result.failure(
                     ApiError.from(
                         response.code(),
-                        com.nexachat.core.network.dto.errorCodeOf(response.errorBody()?.string()),
+                        com.nexachat.core.network.dto.ErrorResponse.errorCodeOf(response.errorBody()?.string()),
                     ),
                 )
             }

@@ -33,12 +33,7 @@ class ProfileViewModelTest {
     private val settingsRepository: SettingsRepository = mockk()
     private val showPresenceFlow = MutableStateFlow(true)
 
-    private val me = UserDto(
-        id = "me-1",
-        phone = "+84900000000",
-        displayName = "Son",
-        avatarUrl = null,
-    )
+    private val me = UserDto("me-1", "+84900000000", "Son", null)
 
     /** Builds the VM after stubbing the init-block getMe() it always runs. */
     private fun createViewModel(
@@ -89,7 +84,7 @@ class ProfileViewModelTest {
 
     @Test
     fun `saveDisplayName posts the trimmed name and updates the user`() = runTest {
-        val renamed = me.copy(displayName = "Tien Son")
+        val renamed = me.withDisplayName("Tien Son")
         coEvery { contactsRepository.updateDisplayName(any()) } returns
             Result.Success(renamed)
 
@@ -224,7 +219,7 @@ class ProfileViewModelTest {
     @Test
     fun `avatar upload success refreshes the user record from the repo`() = runTest {
         val uri = mockk<android.net.Uri>()
-        val withAvatar = me.copy(avatarUrl = "/api/v1/files/avatars/me-1.png")
+        val withAvatar = me.withAvatarUrl("/api/v1/files/avatars/me-1.png")
         coEvery { contactsRepository.uploadAvatar(uri) } returns Result.Success(withAvatar)
 
         val viewModel = createViewModel()
@@ -256,7 +251,7 @@ class ProfileViewModelTest {
     fun `a second pick while uploading is ignored`() = runTest {
         val uri = mockk<android.net.Uri>()
         val other = mockk<android.net.Uri>()
-        val withAvatar = me.copy(avatarUrl = "/api/v1/files/avatars/me-1.png")
+        val withAvatar = me.withAvatarUrl("/api/v1/files/avatars/me-1.png")
         coEvery { contactsRepository.uploadAvatar(any()) } coAnswers {
             kotlinx.coroutines.delay(50)
             Result.Success(withAvatar)

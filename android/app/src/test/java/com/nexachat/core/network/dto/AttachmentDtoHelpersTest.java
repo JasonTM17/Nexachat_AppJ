@@ -10,15 +10,15 @@ public final class AttachmentDtoHelpersTest {
 
     @Test
     public void mapsSupportedMimeFamiliesToWireMessageTypes() {
-        assertEquals(MessageDto.TYPE_IMAGE, AttachmentDtosKt.messageTypeForMime("image/jpeg"));
-        assertEquals(MessageDto.TYPE_VIDEO, AttachmentDtosKt.messageTypeForMime("video/mp4"));
-        assertEquals(MessageDto.TYPE_AUDIO, AttachmentDtosKt.messageTypeForMime("audio/ogg"));
+        assertEquals(MessageDto.TYPE_IMAGE, AttachmentDto.messageTypeForMime("image/jpeg"));
+        assertEquals(MessageDto.TYPE_VIDEO, AttachmentDto.messageTypeForMime("video/mp4"));
+        assertEquals(MessageDto.TYPE_AUDIO, AttachmentDto.messageTypeForMime("audio/ogg"));
     }
 
     @Test
     public void unknownAndMissingMimeTypesUseFileMessageType() {
-        assertEquals(MessageDto.TYPE_FILE, AttachmentDtosKt.messageTypeForMime("application/pdf"));
-        assertEquals(MessageDto.TYPE_FILE, AttachmentDtosKt.messageTypeForMime(null));
+        assertEquals(MessageDto.TYPE_FILE, AttachmentDto.messageTypeForMime("application/pdf"));
+        assertEquals(MessageDto.TYPE_FILE, AttachmentDto.messageTypeForMime(null));
     }
 
     @Test

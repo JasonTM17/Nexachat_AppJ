@@ -1,0 +1,75 @@
+package com.nexachat.core.network.dto;
+
+import androidx.annotation.Nullable;
+import androidx.annotation.NonNull;
+import java.util.List;
+import java.util.Objects;
+
+/** Reflective Moshi bean. Absent JSON keeps the no-arg defaults. */
+public final class ConversationDto {
+    private final String id;
+    @Nullable private final String type;
+    @Nullable private final String title;
+    @Nullable private final String avatarUrl;
+    @Nullable private final List<ConversationMemberDto> members;
+    @Nullable private final String createdAt;
+
+    public ConversationDto() {
+        this(null, null, null, null, List.of(), null);
+    }
+
+    public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
+        this.id = id;
+        this.type = type;
+        this.title = title;
+        this.avatarUrl = avatarUrl;
+        this.members = members == null ? List.of() : members;
+        this.createdAt = createdAt;
+    }
+
+    public ConversationDto(String id, String type) {
+        this(id, type, null, null, List.of(), null);
+    }
+
+    @NonNull public String getId() {
+        return id;
+    }
+
+    @Nullable public String getType() {
+        return type;
+    }
+
+    @Nullable public String getTitle() {
+        return title;
+    }
+
+    @Nullable public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    @NonNull public List<ConversationMemberDto> getMembers() {
+        return members;
+    }
+
+    @Nullable public String getCreatedAt() {
+        return createdAt;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof ConversationDto that)) {
+            return false;
+        }
+        return Objects.equals(id, that.id)
+                && Objects.equals(type, that.type)
+                && Objects.equals(title, that.title)
+                && Objects.equals(avatarUrl, that.avatarUrl)
+                && Objects.equals(members, that.members)
+                && Objects.equals(createdAt, that.createdAt);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, type, title, avatarUrl, members, createdAt);
+    }
+}

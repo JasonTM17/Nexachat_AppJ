@@ -371,14 +371,14 @@ class MessageRepositoryTest {
         senderId: String = "u-other",
         seq: Long = 1,
     ) = MessageDto(
-        id = id,
-        seq = seq,
-        conversationId = CONVERSATION_ID,
-        senderId = senderId,
-        clientMessageId = clientMessageId,
-        type = "TEXT",
-        content = "hi",
-        createdAt = "2026-11-03T09:12:04Z",
+        id,
+        seq,
+        CONVERSATION_ID,
+        senderId,
+        clientMessageId,
+        "TEXT",
+        "hi",
+        "2026-11-03T09:12:04Z",
     )
 
     @Before
@@ -768,7 +768,7 @@ class MessageRepositoryTest {
 
     @Test
     fun `send with attachments persists them on the outbox and sends attachmentIds`() = runTest {
-        val attachment = AttachmentDto(id = "att-1", mimeType = "image/png", originalName = "pic.png")
+        val attachment = AttachmentDto("att-1", "pic.png", "image/png")
         var captured: SendMessageRequest? = null
         every { session.sendMessage(any(), any()) } answers {
             captured = secondArg()
@@ -828,23 +828,23 @@ class MessageRepositoryTest {
             messageApi.getMessages(CONVERSATION_ID, null, 100L, any())
         } returns Response.success(
             MessagePageDto(
-                items = listOf(
+                listOf(
                     messageDto("m-101", null, seq = 101),
                     messageDto("m-102", null, seq = 102),
                     messageDto("m-103", null, seq = 103),
                 ),
-                hasMore = true,
+                true,
             ),
         )
         coEvery {
             messageApi.getMessages(CONVERSATION_ID, null, 103L, any())
         } returns Response.success(
             MessagePageDto(
-                items = listOf(
+                listOf(
                     messageDto("m-104", null, seq = 104),
                     messageDto("m-105", null, seq = 105),
                 ),
-                hasMore = false,
+                false,
             ),
         )
 
@@ -875,11 +875,11 @@ class MessageRepositoryTest {
             messageApi.getMessages(CONVERSATION_ID, null, 3L, any())
         } returns Response.success(
             MessagePageDto(
-                items = listOf(
+                listOf(
                     messageDto("m-4", null, seq = 4),
                     messageDto("m-5", null, seq = 5),
                 ),
-                hasMore = false,
+                false,
             ),
         )
         coEvery { messageApi.getPins(CONVERSATION_ID) } returns
@@ -902,8 +902,8 @@ class MessageRepositoryTest {
                 conversationId = CONVERSATION_ID,
                 messageId = "m-1",
                 reactions = listOf(
-                    ReactionSummaryDto(emoji = "👍", count = 2, userIds = listOf("me-1", "u-2")),
-                    ReactionSummaryDto(emoji = "❤️", count = 1, userIds = listOf("u-3")),
+                    ReactionSummaryDto("👍", 2, listOf("me-1", "u-2")),
+                    ReactionSummaryDto("❤️", 1, listOf("u-3")),
                 ),
             ),
         )
@@ -920,7 +920,7 @@ class MessageRepositoryTest {
             ChatEvent.ReactionUpdated(
                 conversationId = CONVERSATION_ID,
                 messageId = "m-1",
-                reactions = listOf(ReactionSummaryDto(emoji = "🔥", count = 1)),
+                reactions = listOf(ReactionSummaryDto("🔥", 1)),
             ),
         )
         assertEquals(
@@ -964,10 +964,8 @@ class MessageRepositoryTest {
             captured = secondArg()
             Response.success(
                 ReactionUpdateDto(
-                    messageId = "m-1",
-                    reactions = listOf(
-                        ReactionSummaryDto(emoji = "👍", count = 5, reactedByMe = true),
-                    ),
+                    "m-1",
+                    listOf(ReactionSummaryDto("👍", 5, true)),
                 ),
             )
         }
@@ -1014,18 +1012,18 @@ class MessageRepositoryTest {
     @Test
     fun `history refresh stores embedded reactions and the reply preview`() = runTest {
         val replyDto = MessageDto(
-            id = "m-2",
-            seq = 2,
-            conversationId = CONVERSATION_ID,
-            senderId = "u-other",
-            type = "TEXT",
-            content = "answer",
-            replyTo = ReplyRefDto(id = "m-1", senderName = "Lan", snippet = "question"),
-            reactions = listOf(ReactionSummaryDto(emoji = "👍", count = 2, reactedByMe = false)),
-            createdAt = "2026-11-03T09:12:04Z",
+            "m-2",
+            2L,
+            CONVERSATION_ID,
+            "u-other",
+            "TEXT",
+            "answer",
+            ReplyRefDto("m-1", "Lan", "question"),
+            listOf(ReactionSummaryDto("👍", 2, false)),
+            "2026-11-03T09:12:04Z",
         )
         coEvery { messageApi.getMessages(CONVERSATION_ID, null, null, any()) } returns
-            Response.success(MessagePageDto(items = listOf(replyDto), hasMore = false))
+            Response.success(MessagePageDto(listOf(replyDto), false))
 
         repository.refreshHistory(CONVERSATION_ID)
 
@@ -1052,7 +1050,7 @@ class MessageRepositoryTest {
             Response.success(
                 page(
                     hasMore = false,
-                    messageDto("m-1", null).copy(reactions = emptyList()),
+                    messageDto("m-1", null).withReactions(emptyList()),
                 ),
             ),
         )
@@ -1101,9 +1099,9 @@ class MessageRepositoryTest {
         coEvery { messageApi.editMessage(CONVERSATION_ID, "m-1", any()) } answers {
             captured = thirdArg()
             Response.success(
-                messageDto("m-1", null, senderId = "me-1").copy(
-                    content = "new",
-                    editedAt = "2026-11-03T10:00:00Z",
+                messageDto("m-1", null, senderId = "me-1").withContent(
+                    "new",
+                    "2026-11-03T10:00:00Z",
                 ),
             )
         }
@@ -1144,9 +1142,9 @@ class MessageRepositoryTest {
                 ),
             )
             Response.success(
-                messageDto("m-1", null, senderId = "me-1").copy(
-                    content = "edited",
-                    editedAt = "2026-11-03T10:00:00Z",
+                messageDto("m-1", null, senderId = "me-1").withContent(
+                    "edited",
+                    "2026-11-03T10:00:00Z",
                 ),
             )
         }
@@ -1192,9 +1190,9 @@ class MessageRepositoryTest {
     fun `MESSAGE_UPDATED applies once and duplicate broadcasts are idempotent`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
         val event = ChatEvent.MessageUpdated(
-            message = messageDto("m-1", null, senderId = "me-1").copy(
-                content = "edited",
-                editedAt = "2026-11-03T10:00:00Z",
+            message = messageDto("m-1", null, senderId = "me-1").withContent(
+                "edited",
+                "2026-11-03T10:00:00Z",
             ),
             conversationId = CONVERSATION_ID,
             serverTs = null,
@@ -1261,9 +1259,9 @@ class MessageRepositoryTest {
             Response.success(
                 page(
                     hasMore = false,
-                    messageDto("m-1", null, senderId = "me-1").copy(
-                        deletedAt = "2026-11-03T11:00:00Z",
-                        reactions = listOf(ReactionSummaryDto(emoji = "👍", count = 1, reactedByMe = true)),
+                    messageDto("m-1", null, senderId = "me-1").withDeletedAt(
+                        "2026-11-03T11:00:00Z",
+                        listOf(ReactionSummaryDto("👍", 1, true)),
                     ),
                 ),
             )
@@ -1412,11 +1410,9 @@ class MessageRepositoryTest {
         coEvery { messageApi.searchMessages(CONVERSATION_ID, "hi", any(), any()) } returns
             Response.success(
                 MessagePageDto(
-                    items = listOf(
-                        messageDto("m-9", null, seq = 9).copy(content = "hi there"),
-                    ),
-                    nextBeforeSeq = 9,
-                    hasMore = true,
+                    listOf(messageDto("m-9", null, seq = 9).withContent("hi there")),
+                    9L,
+                    true,
                 ),
             )
 
@@ -1557,17 +1553,17 @@ class MessageRepositoryTest {
     )
 
     private fun dto(entity: MessageEntity) = MessageDto(
-        id = entity.id,
-        seq = entity.seq,
-        conversationId = entity.conversationId,
-        senderId = entity.senderId,
-        type = entity.type,
-        content = entity.content,
-        createdAt = "2026-11-03T09:12:04Z",
+        entity.id,
+        entity.seq,
+        entity.conversationId,
+        entity.senderId,
+        entity.type,
+        entity.content,
+        "2026-11-03T09:12:04Z",
     )
 
     private fun page(hasMore: Boolean, vararg items: MessageDto) =
-        MessagePageDto(items = items.toList(), hasMore = hasMore)
+        MessagePageDto(items.toList(), hasMore)
 
     private companion object {
         const val CONVERSATION_ID = "c-1"

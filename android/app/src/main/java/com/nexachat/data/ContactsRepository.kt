@@ -108,7 +108,7 @@ class ContactsRepository @Inject constructor(
     }
 
     suspend fun updateDisplayName(displayName: String): Result<UserDto> =
-        call { userApi.updateMe(UpdateProfileRequest(displayName = displayName.trim())) }
+        call { userApi.updateMe(UpdateProfileRequest(displayName.trim())) }
 
     suspend fun searchByPhone(rawPhone: String): Result<List<UserDto>> =
         call { userApi.searchUsers(phone = PhoneNormalizer.toE164(rawPhone)) }
@@ -133,7 +133,7 @@ class ContactsRepository @Inject constructor(
         when (
             val result = call(
                 mapError = ::contactWriteError,
-            ) { userApi.addContact(AddContactRequest(phone = PhoneNormalizer.toE164(rawPhone))) }
+            ) { userApi.addContact(AddContactRequest(PhoneNormalizer.toE164(rawPhone))) }
         ) {
             is Result.Success ->
                 result.value.unwrap().toContact()
@@ -151,7 +151,7 @@ class ContactsRepository @Inject constructor(
     suspend fun setAlias(userId: String, aliasName: String?): Result<Contact> =
         when (
             val result = call {
-                userApi.updateContact(userId, UpdateContactRequest(aliasName = aliasName))
+                userApi.updateContact(userId, UpdateContactRequest(aliasName))
             }
         ) {
             is Result.Success ->
@@ -187,8 +187,8 @@ class ContactsRepository @Inject constructor(
             val result = call {
                 userApi.openDirectConversation(
                     DirectConversationRequest(
-                        userId = userId,
-                        phone = if (userId == null) phone?.let { PhoneNormalizer.toE164(it) } else null,
+                        userId,
+                        if (userId == null) phone?.let { PhoneNormalizer.toE164(it) } else null,
                     ),
                 )
             }

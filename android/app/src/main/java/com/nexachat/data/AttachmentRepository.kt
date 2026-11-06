@@ -9,7 +9,6 @@ import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.AttachmentApi
 import com.nexachat.core.network.ProgressRequestBody
 import com.nexachat.core.network.dto.AttachmentDto
-import com.nexachat.core.network.dto.messageTypeForMime
 import com.nexachat.core.network.safeApiCall
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -95,7 +94,7 @@ class AttachmentRepository @Inject constructor(
             displayName = name ?: uri.lastPathSegment,
             mimeType = mime,
             sizeBytes = size,
-            type = messageTypeForMime(mime),
+            type = AttachmentDto.messageTypeForMime(mime),
         )
     }
 

@@ -25,8 +25,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideMoshi(): Moshi =
-        // No KotlinJsonAdapterFactory on the classpath — every DTO uses
-        // @JsonClass(generateAdapter = true) (ksp codegen adapters).
+        // No KotlinJsonAdapterFactory — REST and STOMP DTOs are reflective Java beans.
         Moshi.Builder().build()
 
     @Provides

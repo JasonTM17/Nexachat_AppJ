@@ -161,7 +161,7 @@ class ConversationRepositoryTest {
     fun `refreshInbox keeps a group this device just created when the payload predates it`() = runTest {
         buildRepository()
         coEvery { groupApi.createGroup(any()) } returns
-            Response.success(ConversationDto(id = "conv-new", type = "GROUP"))
+            Response.success(ConversationDto("conv-new", "GROUP"))
         // A GET already in flight when the create committed cannot list the
         // new group — the reconcile prune must not delete it for that reason.
         stubInbox(listOf(inboxDto("conv-old")))
@@ -176,7 +176,7 @@ class ConversationRepositoryTest {
     fun `a created group is pruned like any row once a payload has listed it`() = runTest {
         buildRepository()
         coEvery { groupApi.createGroup(any()) } returns
-            Response.success(ConversationDto(id = "conv-new", type = "GROUP"))
+            Response.success(ConversationDto("conv-new", "GROUP"))
         repository.createGroup("New group", listOf("u-1"))
 
         stubInbox(listOf(inboxDto("conv-old"), inboxDto("conv-new")))
@@ -366,17 +366,12 @@ class ConversationRepositoryTest {
         type: String = "GROUP",
         title: String? = "T",
         members: List<ConversationMemberDto> = listOf(member(MY_ID, "MEMBER")),
-    ) = ConversationInboxDto(
-        id = id,
-        type = type,
-        title = title,
-        members = members,
-    )
+    ) = ConversationInboxDto(id, type, title, members)
 
     private fun member(userId: String, role: String) = ConversationMemberDto(
-        userId = userId,
-        displayName = "n-$userId",
-        role = role,
+        userId,
+        "n-$userId",
+        role,
     )
 
     private fun jwtFor(userId: String): String {

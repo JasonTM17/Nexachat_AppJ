@@ -8,7 +8,6 @@ import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
-import com.nexachat.core.network.dto.messageTypeForMime
 import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.data.AttachmentRepository
@@ -520,7 +519,7 @@ class ChatViewModel @Inject constructor(
                                 content = local.displayName
                                     ?: event.attachment.originalName
                                     ?: local.type,
-                                type = messageTypeForMime(
+                                type = AttachmentDto.messageTypeForMime(
                                     event.attachment.mimeType?.takeIf(String::isNotBlank)
                                         ?: local.mimeType,
                                 ),

@@ -1,13 +1,13 @@
 package com.nexachat.summary;
 
-import com.nexachat.core.network.dto.AuthDtosKt;
+import com.nexachat.core.network.dto.ErrorResponse;
 import java.io.IOException;
 
 final class SummaryErrorMapper {
     private SummaryErrorMapper() { }
 
     static SummaryError fromHttp(int status, String errorBody) {
-        String code = AuthDtosKt.errorCodeOf(errorBody);
+        String code = ErrorResponse.errorCodeOf(errorBody);
         if (status == 429 || "RATE_LIMITED".equals(code)) {
             return SummaryError.RATE_LIMITED;
         }

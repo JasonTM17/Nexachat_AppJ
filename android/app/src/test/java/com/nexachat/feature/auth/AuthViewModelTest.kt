@@ -29,10 +29,10 @@ class AuthViewModelTest {
     private lateinit var viewModel: AuthViewModel
 
     private val authResponse = AuthResponse(
-        user = UserDto(id = "u-1", phone = "+84912345678", displayName = "Minh", avatarUrl = null),
-        accessToken = "access-token",
-        accessTokenExpiresIn = 900,
-        refreshToken = "refresh-token",
+        UserDto("u-1", "+84912345678", "Minh", null),
+        "access-token",
+        900,
+        "refresh-token",
     )
 
     @Before

@@ -35,16 +35,16 @@ class AuthRepository @Inject constructor(
         authCall {
             authApi.register(
                 RegisterRequest(
-                    phone = PhoneNormalizer.toE164(phone),
-                    password = password,
-                    displayName = displayName.trim(),
+                    PhoneNormalizer.toE164(phone),
+                    password,
+                    displayName.trim(),
                 ),
             )
         }.also { result -> (result as? Result.Success)?.let { persist(it.value) } }
 
     suspend fun login(phone: String, password: String): Result<AuthResponse> =
         authCall {
-            authApi.login(LoginRequest(phone = PhoneNormalizer.toE164(phone), password = password))
+            authApi.login(LoginRequest(PhoneNormalizer.toE164(phone), password))
         }.also { result -> (result as? Result.Success)?.let { persist(it.value) } }
 
     /**
@@ -98,11 +98,7 @@ class AuthRepository @Inject constructor(
         val keepToken = tokenStore.readTokens()?.refreshToken
         return authCall {
             authApi.changePassword(
-                ChangePasswordRequest(
-                    oldPassword = oldPassword,
-                    newPassword = newPassword,
-                    refreshToken = keepToken,
-                ),
+                ChangePasswordRequest(oldPassword, newPassword, keepToken),
             )
         }
     }

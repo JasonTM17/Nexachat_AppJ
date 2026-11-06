@@ -1,6 +1,6 @@
 package com.nexachat.core.network
 
-import com.nexachat.core.network.dto.errorCodeOf
+import com.nexachat.core.network.dto.ErrorResponse
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import retrofit2.Response
@@ -36,7 +36,7 @@ suspend fun <T> safeApiCall(block: suspend () -> Response<T>): ApiResult<T> =
         } else {
             ApiResult.HttpError(
                 status = response.code(),
-                errorCode = errorCodeOf(response.errorBody()?.string()),
+                errorCode = ErrorResponse.errorCodeOf(response.errorBody()?.string()),
             )
         }
     } catch (e: CancellationException) {

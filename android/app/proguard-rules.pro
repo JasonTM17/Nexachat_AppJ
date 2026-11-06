@@ -5,12 +5,10 @@
 # core.network package rule above.
 -keep interface com.nexachat.call.core.CallRepository$Api { *; }
 
-# Moshi uses KSP-generated adapters for REST and STOMP DTOs. Preserve DTO names
-# and generated adapter classes because Moshi resolves generated adapters by name.
--keep @com.squareup.moshi.JsonClass class com.nexachat.core.network.dto.** { *; }
--keep class com.nexachat.core.network.dto.**JsonAdapter { *; }
--keep @com.squareup.moshi.JsonClass class com.nexachat.core.network.stomp.dto.** { *; }
--keep class com.nexachat.core.network.stomp.dto.**JsonAdapter { *; }
+# Moshi binds these beans by reflection (fields + no-arg constructor). R8 must
+# keep the classes, members, and generic signatures.
+-keep class com.nexachat.core.network.dto.** { *; }
+-keep class com.nexachat.core.network.stomp.dto.** { *; }
 
 # Room's runtime schema/DAO discovery depends on the entity and database types.
 -keep class com.nexachat.core.database.** { *; }
