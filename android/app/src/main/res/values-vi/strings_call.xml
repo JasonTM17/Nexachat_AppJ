@@ -43,6 +43,7 @@
     <string name="call_log_cancelled">Cuộc gọi thoại đã hủy</string>
     <string name="call_log_busy">Không gọi được: người dùng đang bận</string>
     <string name="call_log_failed">Cuộc gọi thoại thất bại</string>
+    <string name="call_log_neutral_completed">Cuộc gọi thoại · %1$s</string>
     <string name="call_log_outgoing_completed">Cuộc gọi thoại đi · %1$s</string>
     <string name="call_log_incoming_completed">Cuộc gọi thoại đến · %1$s</string>
 </resources>

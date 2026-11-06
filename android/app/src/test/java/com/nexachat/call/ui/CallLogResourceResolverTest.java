@@ -36,14 +36,23 @@ public class CallLogResourceResolverTest {
 
     @Test public void serverCallLogMessageResolvesLocalizedTextAndDurationArguments() {
         CallLogResourceResolver.ResolvedCallLog outgoing =
-                CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61", true);
+                CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61|caller-id", true);
         assertEquals(R.string.call_log_outgoing_completed, outgoing.getResourceId());
         assertEquals("1:01", outgoing.getArguments()[0]);
 
         CallLogResourceResolver.ResolvedCallLog incoming =
-                CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61", false);
+                CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61|caller-id", false);
         assertEquals(R.string.call_log_incoming_completed, incoming.getResourceId());
         assertEquals("1:01", incoming.getArguments()[0]);
+    }
+
+    @Test public void legacyCompletedRowsResolveToDirectionNeutralLabel() {
+        for (boolean outgoing : new boolean[] {true, false}) {
+            CallLogResourceResolver.ResolvedCallLog legacy =
+                    CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61", outgoing);
+            assertEquals(R.string.call_log_neutral_completed, legacy.getResourceId());
+            assertEquals("1:01", legacy.getArguments()[0]);
+        }
     }
 
     @Test public void malformedServerCallLogFallsBackToLocalizedFailure() {

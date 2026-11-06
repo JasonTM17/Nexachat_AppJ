@@ -17,8 +17,6 @@
     <string name="error_current_password_required">Nhập mật khẩu hiện tại</string>
     <string name="action_sign_in">Đăng nhập</string>
     <string name="action_create_account">Tạo tài khoản</string>
-    <string name="action_show">Hiện</string>
-    <string name="action_hide">Ẩn</string>
 
     <!-- Auth field validation -->
     <string name="error_phone_required">Nhập số điện thoại</string>
@@ -83,13 +81,11 @@
     <string name="msg_seen">Đã xem</string>
     <string name="chat_offline">Mất kết nối</string>
     <string name="cd_send">Gửi</string>
-    <string name="cd_retry">Thử lại</string>
     <string name="cd_group_info">Thông tin nhóm</string>
     <string name="cd_attach">Đính kèm</string>
     <string name="cd_remove_attachment">Xóa tệp đính kèm</string>
     <string name="cd_open_attachment">Mở tệp đính kèm</string>
     <string name="cd_delivered">Đã gửi</string>
-    <string name="action_close">Đóng</string>
 
     <!-- Message interactions -->
     <string name="action_reply">Trả lời</string>
@@ -99,7 +95,6 @@
     <string name="pinned_count">%1$d/%2$d</string>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
-    <string name="cd_pinned">Tin nhắn đã ghim</string>
     <string name="action_jump_to_message">Chuyển tới tin nhắn</string>
     <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
 
@@ -131,7 +126,6 @@
     <string name="time_just_now">Vừa xong</string>
     <string name="cd_scroll_to_bottom">Cuộn xuống dưới</string>
     <string name="cd_password_visibility">Hiển thị mật khẩu</string>
-    <string name="settings_title">Cài đặt</string>
     <string name="settings_section_account">Tài khoản</string>
     <string name="settings_section_session">Phiên đăng nhập</string>
 
@@ -184,9 +178,4 @@
     <string name="theme_dark">Tối</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
 
-    <!-- Error Mapping for Edit/Delete -->
-    <string name="error_not_message_author">Bạn chỉ có thể sửa hoặc xoá tin nhắn của mình</string>
-    <string name="error_message_deleted">Tin nhắn đã bị xoá</string>
-    <string name="error_message_not_found">Không tìm thấy tin nhắn</string>
-    <string name="error_validation_failed">Nội dung tin nhắn không hợp lệ</string>
 </resources>

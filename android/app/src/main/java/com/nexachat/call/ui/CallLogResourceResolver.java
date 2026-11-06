@@ -34,6 +34,9 @@ public final class CallLogResourceResolver {
         if (CallLogFormatter.INCOMING_COMPLETED_KEY.equals(resourceKey)) {
             return R.string.call_log_incoming_completed;
         }
+        if (CallLogFormatter.NEUTRAL_COMPLETED_KEY.equals(resourceKey)) {
+            return R.string.call_log_neutral_completed;
+        }
         return R.string.call_log_failed;
     }
 

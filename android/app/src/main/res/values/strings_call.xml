@@ -43,6 +43,7 @@
     <string name="call_log_cancelled">Cancelled voice call</string>
     <string name="call_log_busy">Call not completed: user busy</string>
     <string name="call_log_failed">Voice call failed</string>
+    <string name="call_log_neutral_completed">Voice call · %1$s</string>
     <string name="call_log_outgoing_completed">Outgoing voice call · %1$s</string>
     <string name="call_log_incoming_completed">Incoming voice call · %1$s</string>
 </resources>

@@ -9,6 +9,7 @@ public final class CallLogFormatter {
     public static final String CANCELLED_KEY = "call_log_cancelled";
     public static final String BUSY_KEY = "call_log_busy";
     public static final String FAILED_KEY = "call_log_failed";
+    public static final String NEUTRAL_COMPLETED_KEY = "call_log_neutral_completed";
     public static final String OUTGOING_COMPLETED_KEY = "call_log_outgoing_completed";
     public static final String INCOMING_COMPLETED_KEY = "call_log_incoming_completed";
 
@@ -88,6 +89,9 @@ public final class CallLogFormatter {
             duration = Math.max(0L, Long.parseLong(parts[2]));
         } catch (IllegalArgumentException exception) {
             return new FormattedCallLog(FAILED_KEY);
+        }
+        if (callerUserId == null && reason == CallEndReason.COMPLETED) {
+            return new FormattedCallLog(NEUTRAL_COMPLETED_KEY, formatDuration(duration));
         }
         FormattedCallLog formatted = format(reason, duration, direction);
         return new FormattedCallLog(formatted.resourceKey, callerUserId, formatted.args);
