@@ -30,9 +30,6 @@ import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
-import java.time.Instant
-import java.time.OffsetDateTime
-import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -1354,25 +1351,11 @@ class MessageRepository @Inject constructor(
 }
 
 /** ISO-8601 → epoch ms, tolerating `…Z` and offset forms; null when absent/invalid. */
-internal fun isoToEpochMsOrNull(iso: String?): Long? {
-    if (iso.isNullOrBlank()) return null
-    return runCatching { Instant.parse(iso).toEpochMilli() }
-        .recoverCatching { OffsetDateTime.parse(iso).toInstant().toEpochMilli() }
-        .getOrNull()
-}
+internal fun isoToEpochMsOrNull(iso: String?): Long? = TimeAndJwt.isoToEpochMsOrNull(iso)
 
 /** ISO-8601 → epoch ms, tolerating `…Z` and offset forms; falls back to now(). */
-internal fun isoToEpochMs(iso: String?): Long =
-    isoToEpochMsOrNull(iso) ?: System.currentTimeMillis()
+internal fun isoToEpochMs(iso: String?): Long = TimeAndJwt.isoToEpochMs(iso)
 
 /** Extracts the `sub` claim from a JWT without a JWT library (payload part only). */
-internal fun userIdFromJwt(accessToken: String, moshi: Moshi): String? {
-    val parts = accessToken.split('.')
-    if (parts.size < 2) return null
-    val payload = runCatching {
-        String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8)
-    }.getOrNull() ?: return null
-    val claims = runCatching { moshi.adapter(Map::class.java).fromJson(payload) }.getOrNull()
-        ?: return null
-    return claims["sub"] as? String
-}
+internal fun userIdFromJwt(accessToken: String, moshi: Moshi): String? =
+    TimeAndJwt.userIdFromJwt(accessToken, moshi)

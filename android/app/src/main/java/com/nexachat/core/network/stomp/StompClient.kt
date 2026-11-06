@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -320,7 +319,4 @@ class StompClient @Inject constructor(
  * `https` transparently means `wss` (TLS) during the upgrade.
  */
 internal fun wsEndpointUrl(baseUrl: String): HttpUrl =
-    baseUrl.toHttpUrl()
-        .newBuilder()
-        .addPathSegment("ws")
-        .build()
+    WsEndpoint.fromBaseUrl(baseUrl)

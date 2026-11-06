@@ -112,8 +112,4 @@ fun LanguageSettingsScreen(
 
 /** Row label for a [LanguageOption] — endonyms for real languages. */
 @StringRes
-internal fun languageOptionLabel(option: LanguageOption): Int = when (option) {
-    LanguageOption.SYSTEM -> R.string.language_system_default
-    LanguageOption.VIETNAMESE -> R.string.language_name_vietnamese
-    LanguageOption.ENGLISH -> R.string.language_name_english
-}
+internal fun languageOptionLabel(option: LanguageOption): Int = LanguageLabels.label(option)

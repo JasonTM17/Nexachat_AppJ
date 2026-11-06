@@ -4,7 +4,6 @@ import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import java.time.Instant
-import java.time.OffsetDateTime
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -129,9 +128,5 @@ class PresenceRepository @Inject constructor(
         }
     }
 
-    private fun parseEventTime(serverTs: String?): Instant? = serverTs?.let { value ->
-        runCatching { Instant.parse(value) }.getOrElse {
-            runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
-        }
-    }
+    private fun parseEventTime(serverTs: String?): Instant? = PresenceTime.parseEventTime(serverTs)
 }

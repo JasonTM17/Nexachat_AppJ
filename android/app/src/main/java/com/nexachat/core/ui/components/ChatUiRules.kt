@@ -26,29 +26,7 @@ fun resolveGroupPosition(
     messages: List<ChatMessage>,
     index: Int,
     maxGroupIntervalMs: Long = 5 * 60 * 1000L,
-): MessageGroupPosition {
-    if (index !in messages.indices) return MessageGroupPosition.SINGLE
-    val current = messages[index]
-
-    val prev = messages.getOrNull(index - 1)
-    val hasPrevSame = prev != null &&
-        prev.senderId == current.senderId &&
-        prev.mine == current.mine &&
-        (current.createdAtEpochMs - prev.createdAtEpochMs) in 0..maxGroupIntervalMs
-
-    val next = messages.getOrNull(index + 1)
-    val hasNextSame = next != null &&
-        next.senderId == current.senderId &&
-        next.mine == current.mine &&
-        (next.createdAtEpochMs - current.createdAtEpochMs) in 0..maxGroupIntervalMs
-
-    return when {
-        !hasPrevSame && !hasNextSame -> MessageGroupPosition.SINGLE
-        !hasPrevSame && hasNextSame -> MessageGroupPosition.FIRST
-        hasPrevSame && hasNextSame -> MessageGroupPosition.MIDDLE
-        else -> MessageGroupPosition.LAST
-    }
-}
+): MessageGroupPosition = MessageGroupRules.resolveGroupPosition(messages, index, maxGroupIntervalMs)
 
 /**
  * Pure UI presentation rule: returns the asymmetric [RoundedCornerShape] based on
