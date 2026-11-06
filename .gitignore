@@ -31,6 +31,10 @@ google-services.json
 secrets.properties
 **/local.properties
 
+# ---- Local report values (contain user-supplied submission data) ----
+values*.json
+!values.example.json
+
 # ---- IDE ----
 .idea/
 *.iml

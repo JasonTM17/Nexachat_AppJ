@@ -105,8 +105,8 @@ cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (
 - [ ] `docs/rtm.md` — requirement traceability matrix.
 - [ ] `docs/demo-runbook.md` — preflight + 8-minute script + fallbacks.
 - [ ] `docs/known-limitations.md` — honest limitations.
-- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (227/227
-      entries, 225 translatable) and per-screen rotation evidence.
+- [ ] `docs/i18n-audit.md` + `docs/rotation-audit.md` — Vi/En parity (218/218
+      entries, 216 translatable) and per-screen rotation evidence.
 - [ ] `docs/interactions-demo.md` — creative feature playbook.
 - [ ] `docs/screenshots/` (22 feature shots) + `docs/design/screens/`
       (21 design-system shots) + `docs/design/design-notes.md`.
@@ -129,11 +129,7 @@ cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (
       media, interactions, profile, and language settings. Inventory:
       `docs/screenshots-manifest.md`. Plus 21 live design-system screenshots
       (EN/VI + dark) in `docs/design/screens/`.
-- [ ] **Member names / MSSV** — replace `{{MEMBER_*}}`, `{{MSSV_*}}`,
-      `{{GROUP_NAME}}`, `{{COURSE_NAME}}`, `{{INSTRUCTOR}}`, `{{SEMESTER}}`,
-      `{{DATE}}`, `{{PCT_*}}`, `{{AI_AREA_*}}` placeholders in
-      `docs/report.md`, then re-run `python tools/build-report.py` to
-      regenerate `docs/report.docx`.
+- [ ] **Member names / MSSV** — run `python tools/fill-placeholders.py --example`, copy it to ignored `values.json`, fill the fields, then run `python tools/fill-placeholders.py --values values.json` and `python tools/build-report.py`.
 - [ ] **Demo video (fallback, RK-3)** — record the 8-minute runbook script
       end-to-end; keep on the demo laptop.
 - [ ] **Rehearsal log** — run the demo script ≥3 times (C11); note pass/fail
