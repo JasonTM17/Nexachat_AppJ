@@ -55,14 +55,14 @@ class RealtimeSessionEventDecodeTest {
             override fun getIsForeground() = flowOf(false)
         }
         return RealtimeSession(
-            stompClient = stompClient,
-            tokenStore = tokenStore,
-            tokenRefresher = mockk<TokenRefresher>(relaxed = true),
-            moshi = Moshi.Builder().build(),
-            reconnectPolicy = ReconnectPolicy(),
-            networkMonitor = monitor,
-            foreground = foreground,
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            stompClient,
+            tokenStore,
+            mockk<TokenRefresher>(relaxed = true),
+            Moshi.Builder().build(),
+            ReconnectPolicy(),
+            monitor,
+            foreground,
+            CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
         )
     }
 
@@ -121,14 +121,14 @@ class RealtimeSessionEventDecodeTest {
             override fun getIsForeground() = flowOf(false)
         }
         RealtimeSession(
-            stompClient = stompClient,
-            tokenStore = tokenStore,
-            tokenRefresher = mockk<TokenRefresher>(relaxed = true),
-            moshi = Moshi.Builder().build(),
-            reconnectPolicy = ReconnectPolicy(),
-            networkMonitor = monitor,
-            foreground = foreground,
-            scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+            stompClient,
+            tokenStore,
+            mockk<TokenRefresher>(relaxed = true),
+            Moshi.Builder().build(),
+            ReconnectPolicy(),
+            monitor,
+            foreground,
+            CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
         )
         advanceUntilIdle()
 

@@ -90,7 +90,7 @@ class TokenRefresher @Inject constructor(
                     )
                     TokenRefreshOutcome.FreshToken(body.accessToken)
                 }
-                isDefinitiveRejection(response.code()) -> {
+                TokenRefreshRules.isDefinitiveRejection(response.code()) -> {
                     // 400 validation, 401 TOKEN_INVALID/EXPIRED/REUSED, 403 forbidden.
                     // 408 and 429 are not session death: the refresh token is still valid.
                     tokenStore.clear()
@@ -102,10 +102,6 @@ class TokenRefresher @Inject constructor(
         } catch (_: IOException) {
             TokenRefreshOutcome.TransientFailure.INSTANCE
         }
-
-    /** Contract rejections that mean this refresh token cannot be retried. */
-    private fun isDefinitiveRejection(status: Int): Boolean =
-        status == 400 || status == 401 || status == 403
 }
 
 /** Lets a thrown [CancellationException] survive [withContext] unchanged. */

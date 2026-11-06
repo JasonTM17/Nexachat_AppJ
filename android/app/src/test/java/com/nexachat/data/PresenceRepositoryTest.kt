@@ -75,14 +75,14 @@ class PresenceRepositoryTest {
             override fun getIsForeground() = flowOf(false)
         }
         val realtimeSession = RealtimeSession(
-            stompClient = stompClient,
-            tokenStore = tokenStore,
-            tokenRefresher = mockk<TokenRefresher>(relaxed = true),
-            moshi = Moshi.Builder().build(),
-            reconnectPolicy = ReconnectPolicy(),
-            networkMonitor = networkMonitor,
-            foreground = foreground,
-            scope = backgroundScope,
+            stompClient,
+            tokenStore,
+            mockk<TokenRefresher>(relaxed = true),
+            Moshi.Builder().build(),
+            ReconnectPolicy(),
+            networkMonitor,
+            foreground,
+            backgroundScope,
         )
         repository = PresenceRepository(
             session = realtimeSession,
@@ -108,12 +108,12 @@ class PresenceRepositoryTest {
     fun `online and offline pushes update the map`() = runTest {
         build()
 
-        chatEvents.emit(ChatEvent.Presence("u-1", online = true, lastSeenAt = null))
+        chatEvents.emit(ChatEvent.Presence("u-1", true, null))
         runCurrent()
         assertEquals(PeerPresence(true, null), repository.presences.value["u-1"])
 
         chatEvents.emit(
-            ChatEvent.Presence("u-1", online = false, lastSeenAt = "2026-11-03T09:12:04Z"),
+            ChatEvent.Presence("u-1", false, "2026-11-03T09:12:04Z"),
         )
         runCurrent()
         assertEquals(
@@ -126,7 +126,7 @@ class PresenceRepositoryTest {
     fun `hidden presence never invents a last-seen value`() = runTest {
         build()
 
-        chatEvents.emit(ChatEvent.Presence("u-1", online = false, lastSeenAt = null))
+        chatEvents.emit(ChatEvent.Presence("u-1", false, null))
         runCurrent()
 
         assertEquals(PeerPresence(false, null), repository.presences.value["u-1"])
@@ -135,7 +135,7 @@ class PresenceRepositoryTest {
     @Test
     fun `a stale offline seed never demotes a peer already online`() = runTest {
         build()
-        chatEvents.emit(ChatEvent.Presence("u-1", online = true, lastSeenAt = null))
+        chatEvents.emit(ChatEvent.Presence("u-1", true, null))
         runCurrent()
 
         repository.seed(mapOf("u-1" to PeerPresence(online = false, lastSeenAtEpochMs = 5L)))
@@ -157,7 +157,7 @@ class PresenceRepositoryTest {
     @Test
     fun `logout clears every cached presence`() = runTest {
         build()
-        chatEvents.emit(ChatEvent.Presence("u-1", online = true, lastSeenAt = null))
+        chatEvents.emit(ChatEvent.Presence("u-1", true, null))
         runCurrent()
         assertTrue(repository.presences.value.isNotEmpty())
 

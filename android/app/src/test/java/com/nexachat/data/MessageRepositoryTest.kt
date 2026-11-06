@@ -460,9 +460,9 @@ class MessageRepositoryTest {
 
         eventsFlow.emit(
             ChatEvent.MessageCreated(
-                message = messageDto(id = "m-1", clientMessageId = clientId, senderId = "me-1"),
-                conversationId = CONVERSATION_ID,
-                serverTs = null,
+                messageDto(id = "m-1", clientMessageId = clientId, senderId = "me-1"),
+                CONVERSATION_ID,
+                null,
             ),
         )
 
@@ -472,9 +472,9 @@ class MessageRepositoryTest {
         // A redelivery of the same event never produces a second row.
         eventsFlow.emit(
             ChatEvent.MessageCreated(
-                message = messageDto(id = "m-1", clientMessageId = clientId, senderId = "me-1"),
-                conversationId = CONVERSATION_ID,
-                serverTs = null,
+                messageDto(id = "m-1", clientMessageId = clientId, senderId = "me-1"),
+                CONVERSATION_ID,
+                null,
             ),
         )
         assertEquals(1, messageDao.rows.size)
@@ -581,7 +581,7 @@ class MessageRepositoryTest {
         repository.send(CONVERSATION_ID, "hello")
         val clientId = outboxDao.rows.keys.single()
 
-        eventsFlow.emit(ChatEvent.SendRejected(code = "NOT_MEMBER", clientMessageId = clientId))
+        eventsFlow.emit(ChatEvent.SendRejected("NOT_MEMBER", clientId))
 
         assertEquals(OutboxState.FAILED, outboxDao.rows.values.single().state)
     }
@@ -591,7 +591,7 @@ class MessageRepositoryTest {
         repository.send(CONVERSATION_ID, "hello")
         val clientId = outboxDao.rows.keys.single()
 
-        eventsFlow.emit(ChatEvent.SendRejected(code = "RATE_LIMITED", clientMessageId = clientId))
+        eventsFlow.emit(ChatEvent.SendRejected("RATE_LIMITED", clientId))
 
         assertEquals(OutboxState.SENDING, outboxDao.rows.getValue(clientId).state)
         dispatcher.scheduler.advanceTimeBy(10_000)
@@ -656,9 +656,9 @@ class MessageRepositoryTest {
 
         eventsFlow.emit(
             ChatEvent.MessageCreated(
-                message = messageDto(id = "m-7", clientMessageId = null, senderId = "u-other", seq = 7),
-                conversationId = CONVERSATION_ID,
-                serverTs = null,
+                messageDto(id = "m-7", clientMessageId = null, senderId = "u-other", seq = 7),
+                CONVERSATION_ID,
+                null,
             ),
         )
 
@@ -688,9 +688,9 @@ class MessageRepositoryTest {
         // My own watermark echoing back over the topic must not count as a peer receipt.
         eventsFlow.emit(
             ChatEvent.MessageRead(
-                conversationId = CONVERSATION_ID,
-                userId = "me-1",
-                upToSeq = 99,
+                CONVERSATION_ID,
+                "me-1",
+                99L,
             ),
         )
         assertEquals(0L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
@@ -698,18 +698,18 @@ class MessageRepositoryTest {
         // The peer's watermark persists monotonically — stale replays can't rewind it.
         eventsFlow.emit(
             ChatEvent.MessageRead(
-                conversationId = CONVERSATION_ID,
-                userId = "u-other",
-                upToSeq = 42,
+                CONVERSATION_ID,
+                "u-other",
+                42L,
             ),
         )
         assertEquals(42L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
 
         eventsFlow.emit(
             ChatEvent.MessageRead(
-                conversationId = CONVERSATION_ID,
-                userId = "u-other",
-                upToSeq = 10,
+                CONVERSATION_ID,
+                "u-other",
+                10L,
             ),
         )
         assertEquals(42L, conversationDao.rows[CONVERSATION_ID]?.peerReadSeq)
@@ -926,9 +926,9 @@ class MessageRepositoryTest {
     fun `REACTION_UPDATED replaces the stored summary for the message`() = runTest {
         eventsFlow.emit(
             ChatEvent.ReactionUpdated(
-                conversationId = CONVERSATION_ID,
-                messageId = "m-1",
-                reactions = listOf(
+                CONVERSATION_ID,
+                "m-1",
+                listOf(
                     ReactionSummaryDto("👍", 2, listOf("me-1", "u-2")),
                     ReactionSummaryDto("❤️", 1, listOf("u-3")),
                 ),
@@ -945,9 +945,9 @@ class MessageRepositoryTest {
         // A second event replaces the whole set — stale emojis are gone.
         eventsFlow.emit(
             ChatEvent.ReactionUpdated(
-                conversationId = CONVERSATION_ID,
-                messageId = "m-1",
-                reactions = listOf(ReactionSummaryDto("🔥", 1)),
+                CONVERSATION_ID,
+                "m-1",
+                listOf(ReactionSummaryDto("🔥", 1)),
             ),
         )
         assertEquals(
@@ -1169,9 +1169,9 @@ class MessageRepositoryTest {
             ).asCall {
                 eventsFlow.tryEmit(
                     ChatEvent.MessageDeleted(
-                        conversationId = CONVERSATION_ID,
-                        messageId = "m-1",
-                        deletedAt = "2026-11-03T11:00:00Z",
+                        CONVERSATION_ID,
+                        "m-1",
+                        "2026-11-03T11:00:00Z",
                     ),
                 )
             }
@@ -1217,12 +1217,12 @@ class MessageRepositoryTest {
     fun `MESSAGE_UPDATED applies once and duplicate broadcasts are idempotent`() = runTest {
         messageDao.upsert(ownMessage("m-1", seq = 1, content = "old"))
         val event = ChatEvent.MessageUpdated(
-            message = messageDto("m-1", null, senderId = "me-1").withContent(
+            messageDto("m-1", null, senderId = "me-1").withContent(
                 "edited",
                 "2026-11-03T10:00:00Z",
             ),
-            conversationId = CONVERSATION_ID,
-            serverTs = null,
+            CONVERSATION_ID,
+            null,
         )
 
         eventsFlow.emit(event)
@@ -1243,9 +1243,9 @@ class MessageRepositoryTest {
 
         eventsFlow.emit(
             ChatEvent.MessageDeleted(
-                conversationId = CONVERSATION_ID,
-                messageId = "m-1",
-                deletedAt = "2026-11-03T11:00:00Z",
+                CONVERSATION_ID,
+                "m-1",
+                "2026-11-03T11:00:00Z",
             ),
         )
 
@@ -1259,9 +1259,9 @@ class MessageRepositoryTest {
         // A replayed broadcast must keep the FIRST deletion timestamp.
         eventsFlow.emit(
             ChatEvent.MessageDeleted(
-                conversationId = CONVERSATION_ID,
-                messageId = "m-1",
-                deletedAt = "2026-11-04T11:00:00Z",
+                CONVERSATION_ID,
+                "m-1",
+                "2026-11-04T11:00:00Z",
             ),
         )
         assertEquals(
@@ -1363,9 +1363,9 @@ class MessageRepositoryTest {
             Response.error<Void>(500, "".toResponseBody()).asCall {
                 eventsFlow.tryEmit(
                     ChatEvent.MessageDeleted(
-                        conversationId = CONVERSATION_ID,
-                        messageId = "m-1",
-                        deletedAt = "2026-11-03T11:00:00Z",
+                        CONVERSATION_ID,
+                        "m-1",
+                        "2026-11-03T11:00:00Z",
                     ),
                 )
             }

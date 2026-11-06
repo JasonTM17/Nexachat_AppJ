@@ -86,14 +86,14 @@ class RealtimeSessionReArmTest {
         foreground: AppForegroundState = FakeForeground(),
         reconnectPolicy: ReconnectPolicy = ReconnectPolicy(),
     ) = RealtimeSession(
-        stompClient = stompClient,
-        tokenStore = tokenStore,
-        tokenRefresher = tokenRefresher,
-        moshi = mockk(relaxed = true),
-        reconnectPolicy = reconnectPolicy,
-        networkMonitor = monitor,
-        foreground = foreground,
-        scope = scope,
+        stompClient,
+        tokenStore,
+        tokenRefresher,
+        mockk(relaxed = true),
+        reconnectPolicy,
+        monitor,
+        foreground,
+        scope,
     )
 
     /**
