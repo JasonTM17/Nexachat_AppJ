@@ -12,11 +12,14 @@ and the ring timer re-arms itself if it fires a moment before the deadline.
 
 Each terminal call writes one `SYSTEM` conversation message through the server's
 existing system-message path. Its `content` is the stable, non-localized value
-`CALL|<END_REASON>|<durationSeconds>` (for example, `CALL|COMPLETED|18` or
-`CALL|MISSED|0`). Android renders that value as a localized call-log line; the
-server does not store localized copy. The winning terminal transition owns the
-history and message write, so concurrent terminal frames cannot create extra
-system lines.
+`CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (for example,
+`CALL|COMPLETED|18|<callerUserId>` or `CALL|MISSED|0|<callerUserId>`). The
+caller remains the system message sender. Android renders the token as a
+localized call-log line and compares the caller ID with the signed-in user to
+choose outgoing or incoming wording; older three-part rows have no caller ID
+and keep the incoming wording. The server does not store localized copy. The
+winning terminal transition owns the history and message write, so concurrent
+terminal frames cannot create extra system lines.
 
 ## Lifecycle
 
@@ -151,8 +154,9 @@ negotiated by the Android client; signaling does not carry audio bytes.
 - The audio path has not been verified between two real devices: the live E2E
   and on-device verification exercised signaling, SDP/ICE relay, mute/speaker
   routing and teardown, but not an audio stream between two WebRTC endpoints.
-- The inbox preview renders a `CALL|...` line as the incoming phrasing for both
-  directions; only the chat bubble knows the viewer's direction.
+- New inbox call previews compare the token's caller ID with the signed-in
+  user. Older three-part `CALL|...` rows lack a caller ID and retain incoming
+  phrasing because their direction cannot be recovered.
 
 ## Verification
 

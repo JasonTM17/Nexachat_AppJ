@@ -45,18 +45,18 @@ PY
 | Resource pair | EN entries | VI entries | Translatable EN/VI | Name sets |
 | --- | ---: | ---: | ---: | --- |
 | `values/strings.xml` ↔ `values-vi/strings.xml` | 142 | 142 | 140 / 140 | identical |
-| `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 42 | 42 | 42 / 42 | identical |
+| `values/strings_call.xml` ↔ `values-vi/strings_call.xml` | 45 | 45 | 45 / 45 | identical |
 | `values/strings_summary.xml` ↔ `values-vi/strings_summary.xml` | 40 | 40 | 40 / 40 | identical |
-| **Total per locale** | **224** | **224** | **222 / 222** | **identical** |
+| **Total per locale** | **227** | **227** | **225 / 225** | **identical** |
 
 - Missing from VI: **none**.
 - Missing from EN: **none**.
-- Translatable keys: **222** of 224 (the 2 `language_name_*` endonyms are
+- Translatable keys: **225** of 227 (the 2 `language_name_*` endonyms are
   `translatable="false"` by design).
 - `strings_call.xml` carries the call-specific labels (state names, permission
   rationales, call controls, notification channels, localized call-log lines).
   It was added after the original 96-key audit and is now inside the audit scope;
-  both locales carry the same 42 names.
+  both locales carry the same 45 names.
 - `strings_summary.xml` carries the summary sheet, engine-badge, scope-chip,
   consent-dialog and settings strings; both locales carry the same 40 names.
 - Present but identical in VI: `app_name` and `pinned_count` (`%1$d/%2$d`,
@@ -115,12 +115,12 @@ packages resolves through `stringResource(R.string.*)` or `getString(R.string.*)
 
 ## 4. Verdict
 
-- Resource key coverage: **224/224 = 100 %** (0 missing either direction).
-- Translatable strings localized: **222/222 = 100 %** (2 endonyms are
+- Resource key coverage: **227/227 = 100 %** (0 missing either direction).
+- Translatable strings localized: **225/225 = 100 %** (2 endonyms are
   `translatable="false"` by design).
 - Hardcoded prose in UI: **0 hits**; only 2 symbols and 3 numeric/size-format
   templates were found.
-- Translation quality: **222/222 clean = 100 %** — the six previously flagged VI
+- Translation quality: **225/225 clean = 100 %** — the six previously flagged VI
   entries are all fixed, and the `formatBytes()` locale behavior is correct.
 
 Overall: clean i18n pass. The remaining `SĐT` vs "số điện thoại" register split
