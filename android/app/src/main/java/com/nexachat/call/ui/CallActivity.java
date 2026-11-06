@@ -102,6 +102,7 @@ public class CallActivity extends ComponentActivity {
         launchDecision = CallActivityLaunchPolicy.decide(
                 freshOutgoingRequest,
                 savedInstanceState != null,
+                pendingOperation == PendingOperation.START_OUTGOING,
                 requestedCallId,
                 getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
                 getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),

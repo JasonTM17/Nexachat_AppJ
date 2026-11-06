@@ -12,6 +12,7 @@ public final class CallActivityLaunchPolicy {
     public static Decision decide(
             boolean freshOutgoingRequest,
             boolean restoredActivity,
+            boolean pendingOutgoingStart,
             String requestedCallId,
             String conversationId,
             String peerUserId,
@@ -22,7 +23,15 @@ public final class CallActivityLaunchPolicy {
             }
             return Decision.ATTACH_TO_LIVE_CALL;
         }
-        if (restoredActivity || !freshOutgoingRequest) return Decision.FINISH;
+        if (restoredActivity) {
+            // Permission dialogs recreate the activity before a call id exists.
+            // A saved call id with no live session is process death: do not restart.
+            if (pendingOutgoingStart && requestedCallId == null) {
+                return Decision.START_OUTGOING;
+            }
+            return Decision.FINISH;
+        }
+        if (!freshOutgoingRequest) return Decision.FINISH;
         return Decision.START_OUTGOING;
     }
 

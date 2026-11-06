@@ -11,7 +11,7 @@ public final class CallActivityLaunchPolicyTest {
         assertEquals(
                 CallActivityLaunchPolicy.Decision.FINISH,
                 CallActivityLaunchPolicy.decide(
-                        false, true, "call-1", "conversation-1", "peer-1", CallSession.idle()));
+                        false, true, false, "call-1", "conversation-1", "peer-1", CallSession.idle()));
     }
 
     @Test
@@ -19,7 +19,7 @@ public final class CallActivityLaunchPolicyTest {
         assertEquals(
                 CallActivityLaunchPolicy.Decision.START_OUTGOING,
                 CallActivityLaunchPolicy.decide(
-                        true, false, null, "conversation-1", "peer-1", CallSession.idle()));
+                        true, false, false, null, "conversation-1", "peer-1", CallSession.idle()));
     }
 
     @Test
@@ -27,7 +27,7 @@ public final class CallActivityLaunchPolicyTest {
         assertEquals(
                 CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL,
                 CallActivityLaunchPolicy.decide(
-                        false, true, "call-1", "conversation-1", "peer-1", liveSession()));
+                        false, true, false, "call-1", "conversation-1", "peer-1", liveSession()));
     }
 
     @Test
@@ -35,7 +35,23 @@ public final class CallActivityLaunchPolicyTest {
         assertEquals(
                 CallActivityLaunchPolicy.Decision.FINISH,
                 CallActivityLaunchPolicy.decide(
-                        false, false, "call-1", "conversation-1", "peer-1", CallSession.idle()));
+                        false, false, false, "call-1", "conversation-1", "peer-1", CallSession.idle()));
+    }
+
+    @Test
+    public void restoredPendingOutgoingBeforeCallIdResumes() {
+        assertEquals(
+                CallActivityLaunchPolicy.Decision.START_OUTGOING,
+                CallActivityLaunchPolicy.decide(
+                        true, true, true, null, "conversation-1", "peer-1", CallSession.idle()));
+    }
+
+    @Test
+    public void restoredPendingOutgoingWithSavedCallIdDoesNotRestart() {
+        assertEquals(
+                CallActivityLaunchPolicy.Decision.FINISH,
+                CallActivityLaunchPolicy.decide(
+                        true, true, true, "call-1", "conversation-1", "peer-1", CallSession.idle()));
     }
 
     private static CallSession liveSession() {
