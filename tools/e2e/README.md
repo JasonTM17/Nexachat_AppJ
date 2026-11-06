@@ -32,6 +32,7 @@ login. Tokens are never printed.
 bash tools/e2e/smoke-api.sh              # or: pwsh tools/e2e/smoke-api.ps1
 python tools/e2e/stomp_e2e.py            # ~30 s: events, presence, rate limit
 python tools/e2e/perf_e2e.py             # ~35 s: 550-message corpus + latency
+python tools/e2e/summary/summary_e2e.py    # AI summary API (fixture +849000003xx)
 ```
 
 Optional: `--base-url http://host:8080` on any script; `--bulk/--samples` for
