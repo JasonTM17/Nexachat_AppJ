@@ -49,8 +49,8 @@ import kotlinx.coroutines.flow.collectLatest
 /**
  * Create-group screen (phase-08 FR-D1): name field + contact multi-select
  * (checkbox rows: avatar letter, name, phone). The create button stays
- * disabled until [CreateGroupViewModel.UiState.canCreate]; a successful
- * create emits [CreateGroupViewModel.Event.Created] → `chat/{id}`.
+ * disabled until [CreateGroupUiState.canCreate]; a successful
+ * create emits [CreateGroupEvent.Created] → `chat/{id}`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +71,7 @@ fun CreateGroupScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                is CreateGroupViewModel.Event.Created -> onCreated(event.conversationId)
+                is CreateGroupEvent.Created -> onCreated(event.conversationId)
             }
         }
     }

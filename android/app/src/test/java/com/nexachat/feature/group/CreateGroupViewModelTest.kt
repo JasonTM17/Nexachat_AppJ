@@ -106,7 +106,7 @@ class CreateGroupViewModelTest {
         viewModel.events.test {
             viewModel.create()
             assertEquals(
-                CreateGroupViewModel.Event.Created("conv-9"),
+                CreateGroupEvent.Created("conv-9"),
                 awaitItem(),
             )
             cancelAndIgnoreRemainingEvents()
