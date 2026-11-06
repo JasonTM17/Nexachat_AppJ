@@ -24,7 +24,7 @@ class MessageRateLimitInterceptorTest {
 
     private final RateLimitService rateLimitService = mock(RateLimitService.class);
     private final MessageRateLimitInterceptor interceptor =
-            new MessageRateLimitInterceptor(rateLimitService, 30, 60);
+            new MessageRateLimitInterceptor(rateLimitService, 30, 10, 30, 60);
     private final UUID userId = UUID.randomUUID();
 
     @AfterEach
@@ -55,24 +55,62 @@ class MessageRateLimitInterceptorTest {
 
         assertThat(error.getCode()).isEqualTo(ApiErrorCode.RATE_LIMITED);
         assertThat(error.getHttpStatus()).isEqualTo(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS.value());
+        assertThat(error.getDetails()).containsEntry("retryAfterSeconds", 17L);
     }
 
     @Test
-    void unrelatedConversationReadIsNotLimited() {
+    void restMessageSendAllowsThirtiethRejectsThirtyFirstAndSeparatesPrincipals() {
+        RateLimitService realRateLimitService = new RateLimitService();
+        MessageRateLimitInterceptor sendInterceptor =
+                new MessageRateLimitInterceptor(realRateLimitService, 30, 10, 30, 60);
+        UUID firstUserId = UUID.randomUUID();
+        UUID secondUserId = UUID.randomUUID();
+        authenticate(firstUserId);
+        String path = "/api/v1/conversations/" + UUID.randomUUID() + "/messages";
+
+        for (int request = 0; request < 30; request++) {
+            assertThat(preHandle(sendInterceptor, "POST", path)).isTrue();
+        }
+        ApiException error = catchThrowableOfType(ApiException.class,
+                () -> preHandle(sendInterceptor, "POST", path));
+
+        assertThat(error.getCode()).isEqualTo(ApiErrorCode.RATE_LIMITED);
+        assertThat(error.getHttpStatus()).isEqualTo(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS.value());
+        assertThat(error.getDetails()).containsKey("retryAfterSeconds");
+
+        authenticate(secondUserId);
+        assertThat(preHandle(sendInterceptor, "POST", path)).isTrue();
+    }
+
+    @Test
+    void otherMethodsAndMessageSubroutesAreNotLimitedBySendBucket() {
         authenticate();
 
         assertThat(preHandle("GET", "/api/v1/conversations/room/messages")).isTrue();
+        assertThat(preHandle("PATCH", "/api/v1/conversations/room/messages")).isTrue();
+        assertThat(preHandle("POST", "/api/v1/conversations/room/read")).isTrue();
+        assertThat(preHandle("POST", "/api/v1/messages/message/reactions")).isTrue();
+        assertThat(preHandle("POST", "/api/v1/conversations/room/messages/message/reactions")).isTrue();
         org.mockito.Mockito.verifyNoInteractions(rateLimitService);
     }
 
     private void authenticate() {
+        authenticate(userId);
+    }
+
+    private void authenticate(UUID authenticatedUserId) {
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(new JwtPrincipal(userId), "", java.util.List.of()));
+                new UsernamePasswordAuthenticationToken(
+                        new JwtPrincipal(authenticatedUserId), "", java.util.List.of()));
     }
 
     private boolean preHandle(String method, String path) {
+        return preHandle(interceptor, method, path);
+    }
+
+    private boolean preHandle(MessageRateLimitInterceptor target, String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);
-        return interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
+        return target.preHandle(request, new MockHttpServletResponse(), new Object());
     }
 }

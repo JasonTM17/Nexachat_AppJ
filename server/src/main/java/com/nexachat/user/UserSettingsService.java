@@ -2,7 +2,11 @@ package com.nexachat.user;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.presence.PresenceSessionState;
+import com.nexachat.presence.UserPresenceChangedEvent;
 import com.nexachat.user.dto.UserSettingsResponse;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,9 +16,18 @@ import java.util.UUID;
 public class UserSettingsService {
 
     private final UserRepository userRepository;
+    private final ConversationMemberRepository memberRepository;
+    private final PresenceSessionState sessionState;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserSettingsService(UserRepository userRepository) {
+    public UserSettingsService(UserRepository userRepository,
+                               ConversationMemberRepository memberRepository,
+                               PresenceSessionState sessionState,
+                               ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.memberRepository = memberRepository;
+        this.sessionState = sessionState;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -34,7 +47,12 @@ public class UserSettingsService {
             Boolean aiSummaryConsent) {
         User user = findUser(userId);
         if (showPresence != null) {
+            boolean changed = user.isShowPresence() != showPresence;
             user.changeShowPresence(showPresence);
+            if (changed && sessionState.isOnline(userId)) {
+                eventPublisher.publishEvent(new UserPresenceChangedEvent(
+                        userId, showPresence, null, memberRepository.findDirectPeerUserIds(userId)));
+            }
         }
         if (aiSummaryConsent != null) {
             user.changeAiSummaryConsent(aiSummaryConsent);

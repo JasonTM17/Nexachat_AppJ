@@ -87,6 +87,9 @@
 - `POST /conversations/{id}/messages` is idempotent per `clientMessageId`:
   retrying the same key returns and re-broadcasts the stored message instead of
   duplicating it; receivers deduplicate by message id.
+- REST message sends are limited to 30 requests per 10 seconds per authenticated
+  user by default; excess requests return `429 RATE_LIMITED` with
+  `details.retryAfterSeconds` (configured by the STOMP message-window properties).
 - `POST /contacts`, `PATCH /contacts/{id}`, `DELETE /contacts/{id}` and
   `POST /conversations/{id}/read` are safe to retry.
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
@@ -313,7 +316,7 @@ Call signaling uses STOMP `SEND /app/calls/{conversationId}/signal` and events
 on `/user/queue/calls`; see [`docs/calls.md`](calls.md) for its frame and
 state-machine contract.
 
-## In-progress summary API
+## Conversation summary API
 
 The current worktree also contains `POST /api/v1/conversations/{conversationId}/summary`.
 The route is implemented in `SummaryController` and is shipped. The request and

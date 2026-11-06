@@ -120,10 +120,12 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 
 Presence is counted per authenticated STOMP session in memory. Only a user's
 DIRECT-conversation peers receive that user's state, and only while the subject
-has `show_presence=true`; group members do not receive presence. If a user
-hides their own presence, their state is omitted from peer inboxes and no
-presence events are sent to those peers. This setting is one-way: it does not
-hide peers' presence from that user. The last disconnect persists
+has `show_presence=true`; group members do not receive presence. If an online
+user hides their own presence, peers receive `USER_OFFLINE` with
+`lastSeenAt:null`; showing it again while online sends `USER_ONLINE`. Hidden
+users are omitted from peer inboxes, and disconnecting while hidden sends no
+duplicate event. This setting is one-way: it does not hide peers' presence from
+that user. The last disconnect persists
 `users.last_seen_at`; offline delivery is delayed up to five seconds, so a
 reconnect in that window cancels the transient offline event. This registry
 and Spring `SimpleBroker` are single-node only; multiple backend instances

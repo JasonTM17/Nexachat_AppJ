@@ -2,6 +2,7 @@ package com.nexachat.message;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.message.dto.SendMessageRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,7 @@ class MessageFeatureFlowIT {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private MessageService messageService;
 
     private record TestUser(UUID id, String accessToken) { }
 
@@ -414,7 +416,7 @@ class MessageFeatureFlowIT {
     void historyAndSearchPageLimitsHaveExactHasMoreAtTheirBoundaries() throws Exception {
         UUID conversationId = openDirect(alice, bob);
         for (int i = 0; i < 101; i++) {
-            send(conversationId, alice, "bulk-match-" + i);
+            seedMessage(conversationId, alice, "bulk-match-" + i);
         }
 
         JsonNode historyZero = objectMapper.readTree(mockMvc.perform(get(
@@ -555,6 +557,12 @@ class MessageFeatureFlowIT {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         return UUID.fromString(body.get("id").asText());
+    }
+
+    private UUID seedMessage(UUID conversationId, TestUser sender, String content) {
+        return messageService.send(sender.id(), conversationId,
+                new SendMessageRequest(UUID.randomUUID(), "TEXT", content, null, List.of()))
+                .message().id();
     }
 
     private org.springframework.test.web.servlet.ResultActions patchMessage(

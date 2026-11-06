@@ -84,6 +84,7 @@ class PresenceFlowIT {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private SimpUserRegistry simpUserRegistry;
+    @Autowired private PresenceSessionState presenceSessionState;
 
     private record TestUser(UUID id, String accessToken) { }
 
@@ -172,6 +173,69 @@ class PresenceFlowIT {
         hiddenAlice.disconnect();
         bobSession.disconnect();
         carolSession.disconnect();
+    }
+
+    @Test
+    void onlineVisibilityChangesPublishCommittedPresenceWithoutLastSeen() throws Exception {
+        mockMvc.perform(patch("/api/v1/users/me/settings")
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"showPresence\":false}"))
+                .andExpect(status().isOk());
+
+        StompSession bobSession = connect(bob);
+        BlockingQueue<String> bobPresence = subscribe(bobSession, bob, "/user/queue/presence");
+        StompSession aliceSession = connect(alice);
+        try {
+            await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() ->
+                    assertThat(presenceSessionState.isOnline(alice.id())).isTrue());
+
+            mockMvc.perform(patch("/api/v1/users/me/settings")
+                            .header("Authorization", "Bearer " + alice.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"showPresence\":true}"))
+                    .andExpect(status().isOk());
+            JsonNode online = readFrame(bobPresence);
+            assertThat(online.get("eventType").asText()).isEqualTo("USER_ONLINE");
+            assertThat(online.get("payload").get("lastSeenAt").isNull()).isTrue();
+
+            mockMvc.perform(patch("/api/v1/users/me/settings")
+                            .header("Authorization", "Bearer " + alice.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"showPresence\":false}"))
+                    .andExpect(status().isOk());
+            JsonNode hidden = readFrame(bobPresence);
+            assertThat(hidden.get("eventType").asText()).isEqualTo("USER_OFFLINE");
+            assertThat(hidden.get("payload").get("online").asBoolean()).isFalse();
+            assertThat(hidden.get("payload").has("lastSeenAt")).isTrue();
+            assertThat(hidden.get("payload").get("lastSeenAt").isNull()).isTrue();
+            assertThat(peerPresence(bob, conversationId)).isNull();
+
+            mockMvc.perform(patch("/api/v1/users/me/settings")
+                            .header("Authorization", "Bearer " + alice.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"showPresence\":false}"))
+                    .andExpect(status().isOk());
+            assertThat(bobPresence.poll(300, TimeUnit.MILLISECONDS)).isNull();
+
+            mockMvc.perform(patch("/api/v1/users/me/settings")
+                            .header("Authorization", "Bearer " + alice.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"showPresence\":true}"))
+                    .andExpect(status().isOk());
+            JsonNode visibleAgain = readFrame(bobPresence);
+            assertThat(visibleAgain.get("eventType").asText()).isEqualTo("USER_ONLINE");
+            assertThat(visibleAgain.get("payload").get("online").asBoolean()).isTrue();
+            assertThat(visibleAgain.get("payload").has("lastSeenAt")).isTrue();
+            assertThat(visibleAgain.get("payload").get("lastSeenAt").isNull()).isTrue();
+        } finally {
+            if (aliceSession.isConnected()) {
+                aliceSession.disconnect();
+            }
+            if (bobSession.isConnected()) {
+                bobSession.disconnect();
+            }
+        }
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.nexachat.message;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.message.dto.SendMessageRequest;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -111,6 +113,8 @@ class MessageFlowIT {
     private HikariDataSource dataSource;
     @Autowired
     private SimpUserRegistry simpUserRegistry;
+    @Autowired
+    private MessageService messageService;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -198,6 +202,13 @@ class MessageFlowIT {
         return UUID.fromString(objectMapper
                 .readTree(result.getResponse().getContentAsString())
                 .get("id").asText());
+    }
+
+    private MessageResponse seedMessage(UUID conversationId, TestUser sender,
+                                        UUID clientMessageId, String content) {
+        return messageService.send(sender.id(), conversationId,
+                new SendMessageRequest(clientMessageId, "TEXT", content, null, List.of()))
+                .message();
     }
 
     private JsonNode inboxEntryFor(UUID conversationId, TestUser user) throws Exception {
@@ -317,7 +328,8 @@ class MessageFlowIT {
         Integer messagesBeforeStorm = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM messages WHERE conversation_id = ?", Integer.class, conversationId);
         String stormRunId = UUID.randomUUID().toString();
-        UUID targetMessageId = sendRest(conversationId, alice, "storm target");
+        UUID targetMessageId = seedMessage(
+                conversationId, alice, UUID.randomUUID(), "storm target").id();
         StompSession bobSession = connect(bob);
         try {
             BlockingQueue<String> topic = subscribeToQueue(
@@ -337,8 +349,9 @@ class MessageFlowIT {
                             throw new IllegalStateException("50-thread message storm gate timed out");
                         }
                         if (index < sendCount) {
+                            TestUser sender = index % 2 == 0 ? alice : bob;
                             return postJson("/api/v1/conversations/" + conversationId + "/messages",
-                                    alice.accessToken(),
+                                    sender.accessToken(),
                                     Map.of("clientMessageId", UUID.randomUUID().toString(),
                                             "type", "TEXT",
                                             "content", "storm-send-" + stormRunId + "-" + index))
@@ -527,22 +540,17 @@ class MessageFlowIT {
         UUID conversationId = openDirectConversation(alice, carol);
 
         // --- 35 messages in, page them 30+5 ---
+        // Seed through the shared service so this history/read test does not
+        // spend its bulk fixture against the REST send throttle tested separately.
         List<UUID> sentIds = new ArrayList<>();
         List<Long> sentSeqs = new ArrayList<>();
         List<UUID> clientMessageIds = new ArrayList<>();
         for (int i = 1; i <= 35; i++) {
             UUID clientMessageId = UUID.randomUUID();
             clientMessageIds.add(clientMessageId);
-            MvcResult result = postJson(
-                    "/api/v1/conversations/" + conversationId + "/messages",
-                    alice.accessToken(),
-                    Map.of("clientMessageId", clientMessageId.toString(),
-                            "type", "TEXT", "content", "msg-" + i))
-                    .andExpect(status().isCreated())
-                    .andReturn();
-            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-            sentIds.add(UUID.fromString(body.get("id").asText()));
-            sentSeqs.add(body.get("seq").asLong());
+            MessageResponse created = seedMessage(conversationId, alice, clientMessageId, "msg-" + i);
+            sentIds.add(created.id());
+            sentSeqs.add(created.seq());
         }
         assertThat(new HashSet<>(sentIds)).hasSize(35);
 
@@ -658,7 +666,7 @@ class MessageFlowIT {
     @Test
     void nonMemberCannotReadWriteOrWatermark() throws Exception {
         UUID conversationId = openDirectConversation();
-        sendRest(conversationId, alice, "private");
+        seedMessage(conversationId, alice, UUID.randomUUID(), "private");
 
         getJson("/api/v1/conversations/" + conversationId + "/messages", carol.accessToken())
                 .andExpect(status().isForbidden())
