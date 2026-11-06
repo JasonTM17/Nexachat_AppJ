@@ -1,3 +1,5 @@
+"""Offline unit tests for call E2E diagnostics; no live backend is required."""
+
 import json
 import time
 import unittest
