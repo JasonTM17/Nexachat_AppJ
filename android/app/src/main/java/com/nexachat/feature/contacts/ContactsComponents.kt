@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import com.nexachat.core.ui.components.Avatar
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
-import com.nexachat.core.common.absoluteMediaUrl
 import com.nexachat.feature.media.rememberAuthedImageLoader
 
 /**

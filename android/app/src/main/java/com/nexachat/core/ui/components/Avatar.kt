@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
-import com.nexachat.core.common.absoluteMediaUrl
+import com.nexachat.core.common.AppConfig
 import com.nexachat.feature.media.rememberAuthedImageLoader
 
 import com.nexachat.core.ui.MessageUiRules
@@ -120,7 +120,7 @@ fun Avatar(
     ) {
         if (!avatarUrl.isNullOrBlank()) {
             SubcomposeAsyncImage(
-                model = avatarUrl.absoluteMediaUrl(),
+                model = AppConfig.absoluteMediaUrl(avatarUrl),
                 imageLoader = rememberAuthedImageLoader(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,

@@ -74,7 +74,7 @@ import coil.compose.AsyncImage
 import com.nexachat.R
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.AppLocaleManager
-import com.nexachat.core.common.absoluteMediaUrl
+import com.nexachat.core.common.AppConfig
 import com.nexachat.core.ui.ThemeMapper
 import com.nexachat.core.ui.components.ErrorState
 import com.nexachat.core.ui.components.LoadingState
@@ -346,7 +346,7 @@ private fun ProfileContent(
                 ) {
                     if (user.avatarUrl != null) {
                         AsyncImage(
-                            model = user.avatarUrl.absoluteMediaUrl(),
+                            model = AppConfig.absoluteMediaUrl(user.avatarUrl),
                             imageLoader = imageLoader,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
