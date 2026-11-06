@@ -116,11 +116,11 @@ packages resolves through `stringResource(R.string.*)` or `getString(R.string.*)
 ## 4. Verdict
 
 - Resource key coverage: **221/221 = 100 %** (0 missing either direction).
-- Translatable strings localized: **216/216 = 100 %** (2 endonyms are
+- Translatable strings localized: **219/219 = 100 %** (2 endonyms are
   `translatable="false"` by design).
 - Hardcoded prose in UI: **0 hits**; only 2 symbols and 3 numeric/size-format
   templates were found.
-- Translation quality: **216/216 clean = 100 %** — the six previously flagged VI
+- Translation quality: **219/219 clean = 100 %** — the six previously flagged VI
   entries are all fixed, and the `formatBytes()` locale behavior is correct.
 
 Overall: clean i18n pass. The remaining `SĐT` vs "số điện thoại" register split

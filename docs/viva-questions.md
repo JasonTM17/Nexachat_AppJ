@@ -1242,9 +1242,12 @@ than a silent revert.
 *On logout or session death, how is local state cleaned?*
 
 **Model answer.** Server-side truth and client storage are wiped together.
-`TokenRefresher` is the single rejection funnel: a `TOKEN_INVALID`/
-`TOKEN_REUSED` (4xx) from `/auth/refresh` → `tokenStore.clear()` +
-`SessionEvents.emitLoggedOut()` (`core/network/TokenRefresher.kt:92-97`).
+`TokenRefresher` is the single rejection funnel: `400`/`401`/`403` from
+`/auth/refresh` (validation failure, `TOKEN_INVALID` / `TOKEN_EXPIRED` /
+`TOKEN_REUSED`, forbidden) → `tokenStore.clear()` +
+`SessionEvents.emitLoggedOut()`. `408`, `429`, `5xx`, and `IOException` keep
+the stored tokens and return a transient failure, because the server
+rate-limits refresh (30/5 min per IP) and a throttle must not log the user out.
 `MessageRepository.wipeOnLogout` subscribes that event and clears *every*
 Room table — messages, conversations, outbox, reactions, pins — plus the
 in-memory `lastMarkedRead` and `activeConversation`

@@ -604,7 +604,7 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
   down → giữ SENDING; tap-to-retry / flush khi reconnect.
 - **Token refresh single-flight:** OkHttp `Authenticator` bắt 401 →
   `TokenRepository.refresh()` bọc Mutex (n request 401 vẫn chỉ 1 call
-  refresh) → retry request. Refresh fail → logout → navigate Login.
+  refresh) → retry request. 400/401/403 on refresh → logout → Login; 408/429/5xx keep the session.
 - **UDF:** `ChatUiState = combine(roomMessages, outbox, typingFlow, wsStatus)`
   → `stateIn(WhileSubscribed)`; one-shot event qua Channel + receiveAsFlow.
 - **Permissions tối thiểu:** Photo Picker/SAF không cần runtime permission.
