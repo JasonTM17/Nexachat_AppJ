@@ -6,16 +6,6 @@ import com.nexachat.data.ChatMessage
 import java.util.Locale
 
 /**
- * Visual position of a message within a sequence of consecutive messages from the same sender.
- */
-enum class MessageGroupPosition {
-    SINGLE,
-    FIRST,
-    MIDDLE,
-    LAST,
-}
-
-/**
  * Pure UI presentation rule: resolves [MessageGroupPosition] for a message at [index]
  * in a chronological list of [messages] (oldest at index 0, newest at index messages.size - 1).
  *

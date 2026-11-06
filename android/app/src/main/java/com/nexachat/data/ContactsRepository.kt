@@ -246,7 +246,7 @@ class ContactsRepository @Inject constructor(
         try {
             safeApiCall(retrofitCall)
         } catch (_: ClassCastException) {
-            ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
+            ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }
 
     private companion object {

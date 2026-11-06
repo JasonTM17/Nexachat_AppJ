@@ -1325,7 +1325,7 @@ class MessageRepository @Inject constructor(
         try {
             safeApiCall(call)
         } catch (_: ClassCastException) {
-            ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
+            ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }
 
     private companion object {

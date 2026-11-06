@@ -43,17 +43,8 @@ import com.nexachat.feature.media.rememberAuthedImageLoader
  * `USER_NOT_FOUND` is a normal "nobody with that phone" state.
  */
 @Composable
-internal fun contactErrorMessage(error: ApiError): String = when (error) {
-    is ApiError.InvalidCredentials -> stringResource(R.string.error_invalid_credentials)
-    is ApiError.PhoneExists -> stringResource(R.string.error_already_contact)
-    is ApiError.RateLimited -> stringResource(R.string.error_rate_limited)
-    is ApiError.Network -> stringResource(R.string.error_network)
-    is ApiError.Unknown -> when (error.code) {
-        "USER_NOT_FOUND" -> stringResource(R.string.error_user_not_found)
-        SelfContactGuard.ERROR_CODE -> stringResource(R.string.error_cannot_add_self)
-        else -> stringResource(R.string.error_generic)
-    }
-}
+internal fun contactErrorMessage(error: ApiError): String =
+    stringResource(ContactErrorIds.messageId(error))
 
 /**
  * Avatar: server image via the authed loader when [avatarUrl] is set,
