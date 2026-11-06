@@ -67,7 +67,7 @@ replacements are the `s2-*` re-captures below.
 ## 2. Inventory — Stage 2 features (`s2-*`, captured on the emulator)
 
 Every screen below was captured on the running app; the functional checks that
-back them are in `plans/.../reports/deepseek-device.md`.
+back them are in the device verification report `deepseek-device.md`.
 
 | File | Screen / evidence | Theme / locale |
 |---|---|---|
@@ -189,6 +189,28 @@ Screenshots captured on `emulator-5558` validating the live backend summary inte
 | `s6-13-chat-missed-call-line-vi.png` | Direct chat conversation rendering localized cancelled call bubble ("Cuộc gọi thoại đã hủy") | dark / vi |
 | `s6-14-permission-dialog-mic-vi.png` | System `RECORD_AUDIO` permission request dialog triggered on call initiation | dark / vi |
 | `s6-15-permission-denied-fallback-dialog-vi.png` | Informational dialog on microphone permission denial explaining mic requirement for calling | dark / vi |
+
+## 2.7. Stage 7 — Offline / Airplane-mode and core-flow regression pass (`s7-*`, captured on emulator-5558)
+
+Screenshots captured on headless Android 15 AVD `nexachat-audit` (`emulator-5558`, 1080×2400 / 2400×1080) against live backend on `localhost:8080`, validating offline message queuing, tap-to-retry affordance, atomic reconnection dispatch, offline attachment error handling, offline cached inbox with localized call-log previews, offline call initiation error handling, rotation and process death (`am kill`) in chat and summary sheet, live locale switching, and font scale 2.0:
+
+| File | Screen / evidence | Theme / locale |
+|---|---|---|
+| `s7-01-offline-chat-pending-retry-dark-vi.png` | Open chat with Airplane mode ON: composed message displays in pending/sending state with "Không có kết nối. Kiểm tra mạng" banner and "Mất kết nối" top bar | dark / vi |
+| `s7-02-online-chat-delivered-resume-dark-vi.png` | Open chat after Airplane mode OFF: queued message delivered exactly once with "Đã gửi" mark, peer presence and typing resume ("Đang hoạt động" + dot) | dark / vi |
+| `s7-03-attachment-send-offline-failed-dark-vi.png` | Attachment send attempted while offline: displays "Không có kết nối. Kiểm tra mạng" error and "!" error state on pending attachment strip card with remove button | dark / vi |
+| `s7-04-inbox-cached-offline-call-log-dark-vi.png` | Cached inbox rows displayed offline in Vietnamese dark theme: direct chat row shows localized call log preview ("Cuộc gọi thoại đến · 0:03") | dark / vi |
+| `s7-05-inbox-cached-offline-call-log-dark-en.png` | Cached inbox rows displayed offline in English dark theme: direct chat row shows localized call log preview ("Incoming voice call · 0:03") | dark / en |
+| `s7-06-call-offline-error-dialog-dark-vi.png` | Outgoing call initiation while offline: shows clear modal error dialog ("Cuộc gọi thất bại" + "HỦY") | dark / vi |
+| `s7-07-chat-rotation-landscape-dark-vi.png` | Direct chat surviving configuration change to landscape (2400×1080): message list, pinned banner, and composer intact | dark / vi |
+| `s7-08-chat-process-death-restored-dark-vi.png` | Direct chat restored after background process death (`am kill`): full message history, pinned item, and delivery states preserved | dark / vi |
+| `s7-09-summary-sheet-rotation-landscape-dark-vi.png` | Summary bottom sheet surviving configuration change to landscape (2400×1080) with summary scope and content intact | dark / vi |
+| `s7-10-summary-sheet-process-death-restored-dark-vi.png` | Summary bottom sheet restored after background process death (`am kill`): `rememberSaveable` sheet state remains open and recovers content | dark / vi |
+| `s7-11-inbox-fontscale200-dark-vi.png` | Conversation inbox at accessibility font scale 2.0 (Vietnamese, dark theme): full text legibility without clipping | dark / vi |
+| `s7-12-chat-fontscale200-dark-vi.png` | Direct chat conversation at accessibility font scale 2.0 (Vietnamese, dark theme): message bubbles scale properly with clean wrap | dark / vi |
+| `s7-13-inbox-fontscale200-dark-en.png` | Conversation inbox at accessibility font scale 2.0 (English, dark theme): complete text hierarchy without truncation | dark / en |
+| `s7-14-chat-fontscale200-dark-en.png` | Direct chat conversation at accessibility font scale 2.0 (English, dark theme): bubbles and timestamps scale cleanly | dark / en |
+| `s7-15-settings-language-switch-live-dark.png` | Profile Settings language selection screen showing live in-app language switching (System default / Tiếng Việt / English) | dark / vi |
 
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 
