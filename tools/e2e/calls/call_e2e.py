@@ -251,7 +251,8 @@ def message_sequence(client: Client, token: str, conversation_id: str) -> int:
 
 
 def assert_new_call_line(client: Client, token: str, conversation_id: str,
-                         before_seq: int, reason: str, call_id: str) -> None:
+                         before_seq: int, reason: str, call_id: str,
+                         caller_id: str) -> None:
     response = client.get(
         f"/api/v1/conversations/{conversation_id}/messages",
         token=token,
@@ -264,7 +265,7 @@ def assert_new_call_line(client: Client, token: str, conversation_id: str,
         and str(item.get("content", "")).startswith(f"CALL|{reason}|")
     ]
     item = history_item(client, token, conversation_id, call_id)
-    expected = f"CALL|{reason}|{item.get('durationSeconds')}"
+    expected = f"CALL|{reason}|{item.get('durationSeconds')}|{caller_id}"
     check(len(lines) == 1 and lines[0].get("content") == expected,
           f"expected exactly one {expected} system line, got {len(lines)}")
 
@@ -335,7 +336,8 @@ def main() -> int:
         expect_reason(ended_b, "COMPLETED")
         check(history_item(client, caller_token, caller_conv, call_id)["endReason"] == "COMPLETED",
               "completed call missing from history")
-        assert_new_call_line(client, caller_token, caller_conv, before, "COMPLETED", call_id)
+        assert_new_call_line(client, caller_token, caller_conv, before, "COMPLETED", call_id,
+                             caller_id)
         print("[PASS] invite, accept, SDP/ICE relay, end, history, and one system line")
 
         # Put B in a separate call so A can receive a true BUSY response.
@@ -360,12 +362,13 @@ def main() -> int:
         ), "busy callee unexpectedly received CALL_BUSY")
         check(history_item(client, caller_token, caller_conv, busy_id)["endReason"] == "BUSY",
               "busy call missing from history")
-        assert_new_call_line(client, caller_token, caller_conv, a_before, "BUSY", busy_id)
+        assert_new_call_line(client, caller_token, caller_conv, a_before, "BUSY", busy_id,
+                             caller_id)
         c.send_call(busy_conv, signal("END", active_busy_id))
         c.wait_event("CALL_ENDED", active_busy_id)
         b.wait_event("CALL_ENDED", active_busy_id)
         assert_new_call_line(client, busy_peer["accessToken"], busy_conv, c_before,
-                             "COMPLETED", active_busy_id)
+                             "COMPLETED", active_busy_id, busy_peer["user"]["id"])
         print("[PASS] busy callee notified only through CALL_BUSY to caller")
 
         # Rejection.
@@ -380,7 +383,8 @@ def main() -> int:
         expect_reason(rejected_b, "REJECTED")
         check(history_item(client, caller_token, caller_conv, reject_id)["endReason"] == "REJECTED",
               "rejected call missing from history")
-        assert_new_call_line(client, caller_token, caller_conv, before, "REJECTED", reject_id)
+        assert_new_call_line(client, caller_token, caller_conv, before, "REJECTED", reject_id,
+                             caller_id)
         print("[PASS] reject and call history")
 
         # Caller cancellation while still ringing.
@@ -395,7 +399,8 @@ def main() -> int:
         expect_reason(cancelled_b, "CANCELLED")
         check(history_item(client, caller_token, caller_conv, cancel_id)["endReason"] == "CANCELLED",
               "cancelled call missing from history")
-        assert_new_call_line(client, caller_token, caller_conv, before, "CANCELLED", cancel_id)
+        assert_new_call_line(client, caller_token, caller_conv, before, "CANCELLED", cancel_id,
+                             caller_id)
         print("[PASS] cancel and call history")
 
         # Production/default timeout (no test-only fast flag).
@@ -422,7 +427,8 @@ def main() -> int:
               f"timeout arrived early after {elapsed:.1f}s")
         check(history_item(client, caller_token, caller_conv, timeout_id)["endReason"] == "MISSED",
               "missed call missing from history")
-        assert_new_call_line(client, caller_token, caller_conv, before, "MISSED", timeout_id)
+        assert_new_call_line(client, caller_token, caller_conv, before, "MISSED", timeout_id,
+                             caller_id)
         check(a._inbound_heartbeats >= 2,
               f"caller received only {a._inbound_heartbeats} server heartbeats during ringing")
         print(
