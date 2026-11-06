@@ -120,8 +120,8 @@ class StompClient @Inject constructor(
                 socket = webSocket
                 lastInboundMs = System.currentTimeMillis()
                 val connectFrame = StompFrame(
-                    command = StompCommand.CONNECT,
-                    headers = linkedMapOf(
+                    StompCommand.CONNECT,
+                    linkedMapOf(
                         "accept-version" to "1.2",
                         "host" to wsUrl.host,
                         "heart-beat" to "$HEARTBEAT_MS,$HEARTBEAT_MS",
@@ -223,12 +223,12 @@ class StompClient @Inject constructor(
      */
     fun send(destination: String, json: String): Boolean = sendFrame(
         StompFrame(
-            command = StompCommand.SEND,
-            headers = linkedMapOf(
+            StompCommand.SEND,
+            linkedMapOf(
                 "destination" to destination,
                 "content-type" to "application/json",
             ),
-            body = json,
+            json,
         ),
     )
 
@@ -244,8 +244,8 @@ class StompClient @Inject constructor(
         }
         sendFrame(
             StompFrame(
-                command = StompCommand.SUBSCRIBE,
-                headers = linkedMapOf(
+                StompCommand.SUBSCRIBE,
+                linkedMapOf(
                     "id" to id,
                     "destination" to destination,
                     "ack" to "auto",
@@ -271,8 +271,8 @@ class StompClient @Inject constructor(
         subscriptionIds.remove(destination)?.let { id ->
             sendFrame(
                 StompFrame(
-                    command = StompCommand.UNSUBSCRIBE,
-                    headers = linkedMapOf("id" to id),
+                    StompCommand.UNSUBSCRIBE,
+                    linkedMapOf("id" to id),
                 ),
             )
         }

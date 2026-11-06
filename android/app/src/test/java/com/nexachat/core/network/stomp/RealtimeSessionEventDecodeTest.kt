@@ -91,9 +91,9 @@ class RealtimeSessionEventDecodeTest {
     }
 
     private fun messageFrame(json: String) = StompFrame(
-        command = StompCommand.MESSAGE,
-        headers = linkedMapOf("subscription" to "sub-1"),
-        body = json,
+        StompCommand.MESSAGE,
+        linkedMapOf("subscription" to "sub-1"),
+        json,
     )
 
     @Test
@@ -223,9 +223,9 @@ class RealtimeSessionEventDecodeTest {
         session.events.test {
             frames.emit(
                 StompFrame(
-                    command = StompCommand.MESSAGE,
-                    headers = linkedMapOf("subscription" to "errors-sub"),
-                    body = """{"code":"RATE_LIMITED","clientMessageId":"client-1"}""",
+                    StompCommand.MESSAGE,
+                    linkedMapOf("subscription" to "errors-sub"),
+                    """{"code":"RATE_LIMITED","clientMessageId":"client-1"}""",
                 ),
             )
             val limited = awaitItem() as ChatEvent.SendRejected
@@ -234,9 +234,9 @@ class RealtimeSessionEventDecodeTest {
 
             frames.emit(
                 StompFrame(
-                    command = StompCommand.MESSAGE,
-                    headers = linkedMapOf("subscription" to "errors-sub"),
-                    body = """{"code":"INTERNAL_ERROR"}""",
+                    StompCommand.MESSAGE,
+                    linkedMapOf("subscription" to "errors-sub"),
+                    """{"code":"INTERNAL_ERROR"}""",
                 ),
             )
             val internal = awaitItem() as ChatEvent.SendRejected
@@ -270,9 +270,9 @@ class RealtimeSessionEventDecodeTest {
         session.events.test {
             frames.emit(
                 StompFrame(
-                    command = StompCommand.MESSAGE,
-                    headers = linkedMapOf("subscription" to "sub-1"),
-                    body = "not json",
+                    StompCommand.MESSAGE,
+                    linkedMapOf("subscription" to "sub-1"),
+                    "not json",
                 ),
             )
             frames.emit(

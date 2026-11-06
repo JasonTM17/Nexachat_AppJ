@@ -96,9 +96,9 @@ class PresenceRepositoryTest {
     private suspend fun TestScope.emitFrame(frames: MutableSharedFlow<StompFrame>, body: String) {
         frames.emit(
             StompFrame(
-                command = StompCommand.MESSAGE,
-                headers = linkedMapOf("subscription" to "presence-sub"),
-                body = body,
+                StompCommand.MESSAGE,
+                linkedMapOf("subscription" to "presence-sub"),
+                body,
             ),
         )
         runCurrent()

@@ -37,8 +37,8 @@ class StompCodecTest {
     fun `CONNECT headers carry accept-version host heart-beat and Authorization`() {
         val encoded = StompCodec.encode(
             StompFrame(
-                command = StompCommand.CONNECT,
-                headers = linkedMapOf(
+                StompCommand.CONNECT,
+                linkedMapOf(
                     "accept-version" to "1.2",
                     "host" to "10.0.2.2",
                     "heart-beat" to "10000,10000",
@@ -149,8 +149,8 @@ class StompCodecTest {
         val toEncode = listOf(
             frame(body = "{\"clientMessageId\":\"c-1\"}"),
             StompFrame(
-                command = StompCommand.SUBSCRIBE,
-                headers = linkedMapOf(
+                StompCommand.SUBSCRIBE,
+                linkedMapOf(
                     "id" to "sub-1",
                     "destination" to "/topic/conversations.c-1",
                     "ack" to "auto",
