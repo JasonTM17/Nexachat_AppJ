@@ -292,6 +292,21 @@ class GroupDetailViewModelTest {
             conversationRepository.renameGroup(CONVERSATION_ID, "New name")
         }
         assertFalse(viewModel.uiState.value.showRename)
+        assertEquals("", viewModel.uiState.value.renameInput)
+    }
+
+    @Test
+    fun `failed rename keeps the dialog and the typed title`() = runTest {
+        coEvery { conversationRepository.renameGroup(any(), any()) } returns
+            Result.Failure(ApiError.Unknown("NETWORK"))
+
+        viewModel.openRename()
+        viewModel.onRenameInputChange("Kept title")
+        viewModel.confirmRename()
+
+        assertTrue(viewModel.uiState.value.showRename)
+        assertEquals("Kept title", viewModel.uiState.value.renameInput)
+        assertEquals(ApiError.Unknown("NETWORK"), viewModel.uiState.value.error)
     }
 
     @Test

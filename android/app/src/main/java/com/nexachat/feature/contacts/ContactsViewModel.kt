@@ -210,16 +210,20 @@ class ContactsViewModel @Inject constructor(
 
     // ---- detail sheet ----
 
-    fun openUserDetail(user: UserDto) =
+    fun openUserDetail(user: UserDto) {
+        // The combined uiState holds the shared cache. The backing flow does not,
+        // so a lookup here must read the repository cache directly.
+        val known = contactsRepository.contactsFlow.value
+            ?.firstOrNull { it.userId == user.id }
         _uiState.update {
             it.copy(
                 detailUser = user,
-                detailContact = it.contacts.firstOrNull { c -> c.userId == user.id },
-                aliasInput = it.contacts.firstOrNull { c -> c.userId == user.id }
-                    ?.aliasName.orEmpty(),
+                detailContact = known,
+                aliasInput = known?.aliasName.orEmpty(),
                 detailError = null,
             )
         }
+    }
 
     fun openContactDetail(contact: Contact) =
         _uiState.update {

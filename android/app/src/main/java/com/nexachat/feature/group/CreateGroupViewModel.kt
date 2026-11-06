@@ -56,6 +56,10 @@ class CreateGroupViewModel @Inject constructor(
 
     // Loaded in init (not the composable) so rotation never refetches (FR-G1).
     init {
+        loadContacts()
+    }
+
+    fun loadContacts() {
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true, error = null) }
             when (val result = contactsRepository.contacts()) {

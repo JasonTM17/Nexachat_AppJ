@@ -241,11 +241,13 @@ class GroupDetailViewModel @Inject constructor(
         val title = _uiState.value.renameInput.trim()
         if (title.isEmpty() || _uiState.value.busy) return
         viewModelScope.launch {
-            _uiState.update { it.copy(busy = true, showRename = false) }
+            _uiState.update { it.copy(busy = true) }
             when (val result = conversationRepository.renameGroup(conversationId, title)) {
-                is Result.Success -> _uiState.update { it.copy(busy = false) }
+                is Result.Success -> _uiState.update {
+                    it.copy(busy = false, showRename = false, renameInput = "")
+                }
                 is Result.Failure -> _uiState.update {
-                    it.copy(busy = false, error = result.error)
+                    it.copy(busy = false, error = result.error, showRename = true)
                 }
             }
         }

@@ -77,6 +77,7 @@ import androidx.lifecycle.Observer
 import com.nexachat.R
 import com.nexachat.core.ui.SummaryUiRules
 import com.nexachat.summary.SummaryActionItem
+import com.nexachat.summary.SummaryError
 import com.nexachat.summary.SummaryItem
 import com.nexachat.summary.SummaryResponse
 import com.nexachat.summary.SummaryScope
@@ -160,8 +161,9 @@ fun SummaryBottomSheet(
                         )
                     }
 
-                    // Badges: Local vs AI
+                    // Badges: Local vs AI — only after a result names the engine.
                     val summary = uiState.summary
+                    if (SummaryUiRules.shouldShowEngineBadge(summary?.generatedBy)) {
                     val isLlm = SummaryUiRules.isLlmGenerated(summary?.generatedBy)
                     Row(
                         modifier = Modifier.padding(top = 4.dp),
@@ -205,6 +207,7 @@ fun SummaryBottomSheet(
                                 }
                             }
                         }
+                    }
                     }
                 }
 
@@ -301,7 +304,15 @@ fun SummaryBottomSheet(
                     }
                 }
                 SummaryUiState.Status.IDLE -> {
-                    SummarySkeleton()
+                    if (SummaryUiRules.restoredSummaryMissing(uiState.status, uiState.lastSummaryId)) {
+                        SummaryErrorView(
+                            error = SummaryError.UNKNOWN,
+                            onRetry = { viewModel.retry() },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    } else {
+                        SummarySkeleton()
+                    }
                 }
             }
 
@@ -666,7 +677,7 @@ private fun SummaryActionItemRow(
             colors = CheckboxDefaults.colors(
                 checkedColor = MaterialTheme.colorScheme.primary,
             ),
-            modifier = Modifier.size(24.dp).padding(top = 2.dp),
+            modifier = Modifier.padding(top = 2.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -675,7 +686,11 @@ private fun SummaryActionItemRow(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     textDecoration = if (checked.value) TextDecoration.LineThrough else TextDecoration.None,
                 ),
-                color = if (checked.value) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                color = if (checked.value) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
             )
 
             // Owner / deadline tag
@@ -751,7 +766,7 @@ private fun CitationChip(
             color = if (isAvailable) {
                 MaterialTheme.colorScheme.onSecondaryContainer
             } else {
-                MaterialTheme.colorScheme.outline
+                MaterialTheme.colorScheme.onSurfaceVariant
             },
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )

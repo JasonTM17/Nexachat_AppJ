@@ -39,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.CreateGroupListRules
 import com.nexachat.core.ui.components.EmptyState
+import com.nexachat.core.ui.components.ErrorState
 import com.nexachat.core.ui.components.LoadingState
 import com.nexachat.feature.contacts.InitialAvatar
 import kotlinx.coroutines.flow.collectLatest
@@ -60,6 +62,11 @@ fun CreateGroupScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val errorMessage = state.error?.let { groupErrorMessage(it) }
+    val showLoadError = CreateGroupListRules.showLoadError(
+        state.loading,
+        state.contacts.isEmpty(),
+        state.error != null,
+    )
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -68,8 +75,8 @@ fun CreateGroupScreen(
             }
         }
     }
-    LaunchedEffect(errorMessage) {
-        if (errorMessage != null) {
+    LaunchedEffect(errorMessage, showLoadError) {
+        if (errorMessage != null && !showLoadError) {
             snackbarHostState.showSnackbar(errorMessage)
             viewModel.dismissError()
         }
@@ -115,6 +122,10 @@ fun CreateGroupScreen(
             ) {
                 when {
                     state.loading && !state.contactsLoaded -> LoadingState()
+                    showLoadError -> ErrorState(
+                        message = errorMessage ?: stringResource(R.string.error_generic),
+                        onRetry = viewModel::loadContacts,
+                    )
                     state.contacts.isEmpty() -> EmptyState(
                         message = stringResource(R.string.contacts_empty),
                         icon = Icons.Outlined.Person,

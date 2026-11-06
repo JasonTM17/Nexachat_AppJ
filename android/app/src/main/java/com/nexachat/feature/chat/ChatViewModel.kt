@@ -55,6 +55,7 @@ data class ChatSearchState(
 /** One-shot chat action results the UI may surface (e.g. a forward toast). */
 sealed interface ChatActionEvent {
     data class MessageForwarded(val targetConversationId: String) : ChatActionEvent
+    data class MessageEdited(val messageId: String) : ChatActionEvent
 }
 
 /**
@@ -321,7 +322,7 @@ class ChatViewModel @Inject constructor(
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             when (val result = messageRepository.editMessage(conversationId, messageId, trimmed)) {
-                is Result.Success -> Unit
+                is Result.Success -> _actionEvents.tryEmit(ChatActionEvent.MessageEdited(messageId))
                 is Result.Failure -> error.value = result.error
             }
         }

@@ -155,6 +155,7 @@
     <string name="search_in_chat_placeholder">Search in conversation...</string>
     <string name="search_in_chat_no_results">No messages found</string>
     <string name="search_in_chat_error">Could not search messages</string>
+    <string name="search_in_chat_too_short">Type at least 2 characters</string>
     <string name="cd_search_in_chat">Search in chat</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_call">Call</string>
@@ -163,6 +164,7 @@
     <string name="forward_title">Forward message</string>
     <string name="forward_search_placeholder">Search conversations...</string>
     <string name="forward_send">Send</string>
+    <string name="forward_no_matches">No conversations match</string>
 
     <!-- Presence -->
     <string name="presence_active_now">Active now</string>

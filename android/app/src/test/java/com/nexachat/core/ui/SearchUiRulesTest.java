@@ -38,6 +38,18 @@ public class SearchUiRulesTest {
         assertFalse(SearchUiRules.shouldShowEmpty(false, false, 0, null));
         assertFalse(SearchUiRules.shouldShowEmpty(false, true, 0, "hello"));
         assertFalse(SearchUiRules.shouldShowEmpty(false, false, 2, "hello"));
+        assertFalse("One character is below the server minimum, not an empty result",
+                SearchUiRules.shouldShowEmpty(false, false, 0, "a"));
+    }
+
+    @Test
+    public void shouldShowQueryTooShort_onlyForASingleCharacter() {
+        assertTrue(SearchUiRules.shouldShowQueryTooShort("a"));
+        assertTrue(SearchUiRules.shouldShowQueryTooShort(" a "));
+        assertFalse(SearchUiRules.shouldShowQueryTooShort(""));
+        assertFalse(SearchUiRules.shouldShowQueryTooShort("  "));
+        assertFalse(SearchUiRules.shouldShowQueryTooShort(null));
+        assertFalse(SearchUiRules.shouldShowQueryTooShort("ab"));
     }
 
     @Test

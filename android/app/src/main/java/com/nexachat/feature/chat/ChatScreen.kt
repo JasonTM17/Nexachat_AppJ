@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -113,6 +115,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -124,6 +127,7 @@ import com.nexachat.call.CallLauncher
 import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.ui.ForwardFilter
+import com.nexachat.core.ui.ForwardPickerRules
 import com.nexachat.core.ui.MessageResolver
 import com.nexachat.core.ui.MessageUiRules
 import com.nexachat.core.ui.PresenceFormatter
@@ -320,6 +324,12 @@ fun ChatScreen(
     LaunchedEffect(viewModel) {
         viewModel.actionEvents.collect { event ->
             when (event) {
+                is ChatActionEvent.MessageEdited -> {
+                    if (editingMessageId == event.messageId) {
+                        editingMessageId = null
+                        editInput = ""
+                    }
+                }
                 is ChatActionEvent.MessageForwarded -> {
                     val result = snackbarHostState.showSnackbar(
                         message = context.getString(R.string.forwarded_snackbar),
@@ -444,12 +454,15 @@ fun ChatScreen(
                             Text(
                                 text = emoji,
                                 style = MaterialTheme.typography.headlineSmall,
+                                textAlign = TextAlign.Center,
                                 modifier = Modifier
+                                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                     .clip(CircleShape)
                                     .clickable {
                                         viewModel.toggleReaction(msg, emoji)
                                         actionSheetMessageId = null
                                     }
+                                    .wrapContentSize()
                                     .padding(8.dp),
                             )
                         }
@@ -1004,8 +1017,6 @@ fun ChatScreen(
                         onSend = {
                             if (editingMessage != null) {
                                 viewModel.editMessage(editingMessage.id, editInput.trim())
-                                editingMessageId = null
-                                editInput = ""
                             } else {
                                 viewModel.send()
                             }
@@ -1090,7 +1101,7 @@ private fun EditMessageBanner(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
+            IconButton(onClick = onCancel) {
                 Icon(
                     imageVector = Icons.Filled.Close,
                     contentDescription = stringResource(R.string.cd_cancel_edit),
@@ -1127,6 +1138,7 @@ private fun ForwardConversationSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .padding(bottom = 24.dp),
         ) {
             Text(
@@ -1145,11 +1157,32 @@ private fun ForwardConversationSheet(
                 singleLine = true,
             )
 
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(280.dp),
             ) {
+                when (ForwardPickerRules.body(
+                    inboxState.loading && inboxState.conversations.isEmpty(),
+                    inboxState.error != null && inboxState.conversations.isEmpty(),
+                    filteredConversations.size,
+                )) {
+                    ForwardPickerRules.Body.LOADING -> CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                    ForwardPickerRules.Body.ERROR -> EmptyState(
+                        message = stringResource(R.string.error_generic),
+                        iconResId = R.drawable.ic_empty_chat,
+                        actionLabel = stringResource(R.string.action_retry),
+                        onAction = inboxViewModel::refresh,
+                    )
+                    ForwardPickerRules.Body.EMPTY -> EmptyState(
+                        message = stringResource(
+                            if (query.isBlank()) R.string.inbox_empty else R.string.forward_no_matches,
+                        ),
+                        iconResId = R.drawable.ic_empty_chat,
+                    )
+                    ForwardPickerRules.Body.LIST -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(filteredConversations, key = { it.id }) { conv ->
                     Row(
                         modifier = Modifier
@@ -1173,6 +1206,8 @@ private fun ForwardConversationSheet(
                             onClick = { selectedId = conv.id },
                         )
                     }
+                }
+            }
                 }
             }
 
@@ -1214,6 +1249,13 @@ private fun SearchOverlay(
                     iconResId = R.drawable.ic_empty_chat,
                     actionLabel = stringResource(R.string.action_retry),
                     onAction = onRetry,
+                )
+            }
+        } else if (SearchUiRules.shouldShowQueryTooShort(searchState.query)) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(
+                    message = stringResource(R.string.search_in_chat_too_short),
+                    iconResId = R.drawable.ic_empty_chat,
                 )
             }
         } else if (SearchUiRules.shouldShowEmpty(searchState.error != null, searchState.loading, searchState.results.size, searchState.query)) {

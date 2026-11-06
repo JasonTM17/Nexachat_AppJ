@@ -642,6 +642,26 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `edit success emits MessageEdited and failure does not`() = runTest {
+        coEvery { messageRepository.editMessage(any(), any(), any()) } returns Result.Success(Unit)
+
+        viewModel.actionEvents.test {
+            viewModel.editMessage("m-1", "updated")
+            runCurrent()
+            assertEquals(ChatActionEvent.MessageEdited("m-1"), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        coEvery { messageRepository.editMessage(any(), any(), any()) } returns
+            Result.Failure(ApiError.Unknown("NETWORK"))
+        viewModel.actionEvents.test {
+            viewModel.editMessage("m-1", "again")
+            runCurrent()
+            expectNoEvents()
+        }
+    }
+
+    @Test
     fun `deleteMessage delegates and surfaces failures`() = runTest {
         observeUi()
         runCurrent()

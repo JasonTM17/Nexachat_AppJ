@@ -46,6 +46,21 @@ public final class SummaryUiRules {
         return "LLM".equalsIgnoreCase(generatedBy);
     }
 
+    /** An engine badge is meaningful only after a summary names its engine. */
+    public static boolean shouldShowEngineBadge(String generatedBy) {
+        return generatedBy != null && !generatedBy.trim().isEmpty();
+    }
+
+    /**
+     * Process death keeps the summary id but drops the in-memory body.
+     * IDLE plus a saved id is a cache miss, not a fresh request still in flight.
+     */
+    public static boolean restoredSummaryMissing(SummaryUiState.Status status, String lastSummaryId) {
+        return status == SummaryUiState.Status.IDLE
+                && lastSummaryId != null
+                && !lastSummaryId.trim().isEmpty();
+    }
+
     /**
      * Checks if a cited message ID can be jumped to in the current loaded message list.
      *

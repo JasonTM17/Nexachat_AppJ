@@ -79,7 +79,7 @@ fun UnreadBanner(
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(48.dp)
                     .semantics { role = Role.Button },
             ) {
                 Icon(

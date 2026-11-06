@@ -28,10 +28,22 @@ public final class SearchUiRules {
      * and query is non-blank.
      */
     public static boolean shouldShowEmpty(boolean hasError, boolean loading, int resultCount, String query) {
-        if (hasError || loading || resultCount > 0) {
+        if (hasError || loading || resultCount > 0 || shouldShowQueryTooShort(query)) {
             return false;
         }
         return query != null && !query.trim().isEmpty();
+    }
+
+    /**
+     * A one-character query never reaches the server (minimum is two).
+     * The UI must not present that as a completed search with zero hits.
+     */
+    public static boolean shouldShowQueryTooShort(String query) {
+        if (query == null) {
+            return false;
+        }
+        String trimmed = query.trim();
+        return !trimmed.isEmpty() && trimmed.length() < 2;
     }
 
     /**

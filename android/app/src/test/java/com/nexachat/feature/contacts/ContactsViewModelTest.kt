@@ -200,6 +200,16 @@ class ContactsViewModelTest {
     }
 
     @Test
+    fun `search result for an existing contact opens the contact actions`() = runTest {
+        contactsFlow.value = listOf(contact)
+
+        viewModel.openUserDetail(user)
+
+        assertEquals(contact.userId, viewModel.uiState.value.detailContact?.userId)
+        assertEquals(user.id, viewModel.uiState.value.detailUser?.id)
+    }
+
+    @Test
     fun `messageSelected emits OpenConversation with the returned id`() = runTest {
         coEvery { repository.openDirectConversation(any(), any()) } returns
             Result.Success("conv-42")

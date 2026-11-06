@@ -50,6 +50,24 @@ public class SummaryUiRulesTest {
     }
 
     @Test
+    public void shouldShowEngineBadge_onlyWhenAnEngineIsNamed() {
+        assertTrue(SummaryUiRules.shouldShowEngineBadge("LOCAL"));
+        assertTrue(SummaryUiRules.shouldShowEngineBadge("LLM"));
+        assertFalse(SummaryUiRules.shouldShowEngineBadge(null));
+        assertFalse(SummaryUiRules.shouldShowEngineBadge(""));
+        assertFalse(SummaryUiRules.shouldShowEngineBadge("  "));
+    }
+
+    @Test
+    public void restoredSummaryMissing_whenIdleStillHoldsAnId() {
+        assertTrue(SummaryUiRules.restoredSummaryMissing(SummaryUiState.Status.IDLE, "sum-1"));
+        assertFalse(SummaryUiRules.restoredSummaryMissing(SummaryUiState.Status.IDLE, null));
+        assertFalse(SummaryUiRules.restoredSummaryMissing(SummaryUiState.Status.IDLE, "  "));
+        assertFalse(SummaryUiRules.restoredSummaryMissing(SummaryUiState.Status.LOADING, "sum-1"));
+        assertFalse(SummaryUiRules.restoredSummaryMissing(SummaryUiState.Status.READY, "sum-1"));
+    }
+
+    @Test
     public void isCitationJumpable_resolvesOnlyWhenPresentInLocalSet() {
         Set<String> localIds = new HashSet<>();
         localIds.add("msg-1");

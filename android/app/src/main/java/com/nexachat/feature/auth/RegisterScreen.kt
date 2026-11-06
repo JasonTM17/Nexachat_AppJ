@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.AuthConfirmRules
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -48,7 +49,8 @@ fun RegisterScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
     var confirmPassword by rememberSaveable { mutableStateOf("") }
-    var confirmMismatch by rememberSaveable { mutableStateOf(false) }
+    var confirmChecked by rememberSaveable { mutableStateOf(false) }
+    val confirmMismatch = AuthConfirmRules.showMismatch(confirmChecked, state.password, confirmPassword)
 
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
@@ -59,9 +61,8 @@ fun RegisterScreen(
     }
 
     fun submit() {
-        if (confirmPassword != state.password) {
-            confirmMismatch = true
-        } else {
+        confirmChecked = true
+        if (!AuthConfirmRules.showMismatch(true, state.password, confirmPassword)) {
             viewModel.register()
         }
     }
@@ -130,10 +131,7 @@ fun RegisterScreen(
 
             PasswordField(
                 value = confirmPassword,
-                onValueChange = {
-                    confirmPassword = it
-                    confirmMismatch = false
-                },
+                onValueChange = { confirmPassword = it },
                 labelRes = R.string.auth_confirm_password_label,
                 isError = confirmMismatch,
                 errorRes = R.string.error_password_mismatch,

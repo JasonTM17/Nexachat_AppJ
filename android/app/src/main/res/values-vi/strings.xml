@@ -153,6 +153,7 @@
     <string name="search_in_chat_placeholder">Tìm trong cuộc trò chuyện...</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
     <string name="search_in_chat_error">Không thể tìm kiếm tin nhắn</string>
+    <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
     <string name="cd_search_in_chat">Tìm kiếm trong cuộc trò chuyện</string>
     <string name="cd_clear_search">Xoá tìm kiếm</string>
     <string name="cd_call">Gọi điện</string>
@@ -161,6 +162,7 @@
     <string name="forward_title">Chuyển tiếp tin nhắn</string>
     <string name="forward_search_placeholder">Tìm cuộc trò chuyện...</string>
     <string name="forward_send">Gửi</string>
+    <string name="forward_no_matches">Không có cuộc trò chuyện phù hợp</string>
 
     <!-- Presence -->
     <string name="presence_active_now">Đang hoạt động</string>
