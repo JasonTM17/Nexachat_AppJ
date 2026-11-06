@@ -8,11 +8,10 @@ import com.nexachat.core.network.dto.UpdateUserSettingsRequest
 import com.nexachat.core.network.dto.UserSettingsDto
 import com.nexachat.core.storage.TokenStore
 import io.mockk.Runs
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +22,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Call
 import retrofit2.Response
 
 /**
@@ -94,21 +94,23 @@ class SettingsRepositoryTest {
     @Test
     fun `setShowPresence applies optimistically then accepts the server value`() = runTest {
         build()
-        coEvery { userApi.updateSettings(UpdateUserSettingsRequest(false)) } returns
-            Response.success(UserSettingsDto(false as Boolean?))
+        val updateCall = mockk<Call<UserSettingsDto>>()
+        every { userApi.updateSettings(UpdateUserSettingsRequest(false)) } returns updateCall
+        every { updateCall.execute() } returns Response.success(UserSettingsDto(false as Boolean?))
 
         val result = repository.setShowPresence(false)
 
         assertTrue(result is com.nexachat.core.common.Result.Success)
         assertEquals(false, repository.showPresence.value)
-        coVerify(exactly = 1) { userApi.updateSettings(UpdateUserSettingsRequest(false)) }
+        verify(exactly = 1) { userApi.updateSettings(UpdateUserSettingsRequest(false)) }
     }
 
     @Test
     fun `rejected presence toggle reverts to the previous value`() = runTest {
         build()
-        coEvery { userApi.updateSettings(any()) } returns
-            Response.error(429, "".toResponseBody())
+        val updateCall = mockk<Call<UserSettingsDto>>()
+        every { userApi.updateSettings(any()) } returns updateCall
+        every { updateCall.execute() } returns Response.error(429, "".toResponseBody())
 
         val result = repository.setShowPresence(false)
 
@@ -119,8 +121,9 @@ class SettingsRepositoryTest {
     @Test
     fun `refreshShowPresence loads the server flag once a session exists`() = runTest {
         build()
-        coEvery { userApi.getSettings() } returns
-            Response.success(UserSettingsDto(false as Boolean?))
+        val settingsCall = mockk<Call<UserSettingsDto>>()
+        every { userApi.getSettings() } returns settingsCall
+        every { settingsCall.execute() } returns Response.success(UserSettingsDto(false as Boolean?))
 
         hasSession.value = true
         runCurrent()
@@ -131,8 +134,9 @@ class SettingsRepositoryTest {
     @Test
     fun `logout resets the privacy flag to the permissive default`() = runTest {
         build()
-        coEvery { userApi.getSettings() } returns
-            Response.success(UserSettingsDto(false as Boolean?))
+        val settingsCall = mockk<Call<UserSettingsDto>>()
+        every { userApi.getSettings() } returns settingsCall
+        every { settingsCall.execute() } returns Response.success(UserSettingsDto(false as Boolean?))
         repository.refreshShowPresence()
         assertEquals(false, repository.showPresence.value)
 

@@ -9,9 +9,10 @@ import com.nexachat.core.network.dto.RefreshRequest
 import com.nexachat.core.network.dto.UserDto
 import com.nexachat.core.storage.TokenCipher
 import com.nexachat.core.storage.TokenStore
-import io.mockk.coEvery
-import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.coVerify
+import io.mockk.verify
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -34,6 +35,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import retrofit2.Call
 import retrofit2.Response as RetrofitResponse
 
 /**
@@ -148,13 +150,15 @@ class TokenAuthenticatorTest {
         val refreshEntered = CountDownLatch(1)
         val releaseRefresh = CountDownLatch(1)
         val api = mockk<AuthApi>()
-        coEvery { api.refresh(any()) } coAnswers {
+        val refreshCall = mockk<Call<AuthResponse>>()
+        every { refreshCall.execute() } answers {
             // Hold the first refresh open so the second caller is forced to
             // queue on the authenticator's mutex — that is the overlap.
             refreshEntered.countDown()
             releaseRefresh.await(10, TimeUnit.SECONDS)
             RetrofitResponse.success(authResponse(NEW_ACCESS, "rt-new"))
         }
+        every { api.refresh(any()) } returns refreshCall
         val authenticator = TokenAuthenticator(TokenRefresher(store, SessionEvents(), Provider { api }))
 
         val results = ConcurrentLinkedQueue<Request?>()
@@ -167,7 +171,7 @@ class TokenAuthenticatorTest {
         t1.join(10_000)
         t2.join(10_000)
 
-        coVerify(exactly = 1) { api.refresh(RefreshRequest("rt-stale")) }
+        verify(exactly = 1) { api.refresh(RefreshRequest("rt-stale")) }
         assertEquals(2, results.size)
         // Winner retried with the refreshed token; the queued sibling re-read the
         // store, saw the access token had already rotated, and reused it.
@@ -189,7 +193,7 @@ class TokenAuthenticatorTest {
         val retried = authenticator.authenticate(null, unauthorizedResponse(bearerToken = STALE_ACCESS))
 
         assertEquals("Bearer $NEW_ACCESS", retried?.header(AuthInterceptor.HEADER_AUTHORIZATION))
-        coVerify(exactly = 0) { api.refresh(any()) }
+        verify(exactly = 0) { api.refresh(any()) }
     }
 
     @Test
@@ -197,11 +201,13 @@ class TokenAuthenticatorTest {
         val store = newStore()
         store.saveTokens(access = STALE_ACCESS, accessExpiresAtEpochMs = 0L, refresh = "rt-dead")
         val api = mockk<AuthApi>()
-        coEvery { api.refresh(any()) } returns RetrofitResponse.error<AuthResponse>(
+        val refreshCall = mockk<Call<AuthResponse>>()
+        every { refreshCall.execute() } returns RetrofitResponse.error(
             401,
             """{"error":{"code":"TOKEN_REUSED","message":"refresh token reused"}}"""
                 .toResponseBody("application/json".toMediaType()),
         )
+        every { api.refresh(any()) } returns refreshCall
         val sessionEvents = SessionEvents()
         val authenticator = TokenAuthenticator(TokenRefresher(store, sessionEvents, Provider { api }))
 
@@ -233,7 +239,7 @@ class TokenAuthenticatorTest {
         assertNull(result)
         coVerify(exactly = 0) { store.readTokens() }
         coVerify(exactly = 0) { store.clear() }
-        coVerify(exactly = 0) { api.refresh(any()) }
+        verify(exactly = 0) { api.refresh(any()) }
     }
 
     @Test
@@ -247,7 +253,7 @@ class TokenAuthenticatorTest {
         val result = authenticator.authenticate(null, unauthorizedResponse(priorResponses = 2))
 
         assertNull(result)
-        coVerify(exactly = 0) { api.refresh(any()) }
+        verify(exactly = 0) { api.refresh(any()) }
     }
 
     private companion object {

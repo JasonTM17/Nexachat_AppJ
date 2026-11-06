@@ -25,8 +25,12 @@ import kotlinx.coroutines.flow.Flow;
 import kotlinx.coroutines.flow.MutableStateFlow;
 import kotlinx.coroutines.flow.StateFlowKt;
 import okhttp3.MediaType;
+import okhttp3.Request;
 import okhttp3.ResponseBody;
+import okio.Timeout;
 import org.junit.Test;
+import retrofit2.Call;
+import retrofit2.Callback;
 import retrofit2.Response;
 
 import static org.junit.Assert.assertEquals;
@@ -207,54 +211,114 @@ public final class TokenRefresherTest {
         }
 
         @Override
-        public Object refresh(RefreshRequest body, Continuation<? super Response<AuthResponse>> continuation) {
-            if (failure instanceof RuntimeException) {
-                throw (RuntimeException) failure;
-            }
-            if (failure instanceof IOException) {
-                return sneakyThrow(failure);
-            }
+        public Call<AuthResponse> refresh(RefreshRequest body) {
             if (failure != null) {
-                return sneakyThrow(failure);
+                return new ScriptedCall<>(null, failure);
             }
             ResponseBody error = ResponseBody.create(
                     MediaType.parse("application/json"),
                     "{\"error\":{\"code\":\"REFRESH_REJECTED\"}}"
             );
-            return Response.error(status, error);
+            return new ScriptedCall<>(Response.error(status, error), null);
         }
 
         @Override
-        public Object register(RegisterRequest body, Continuation<? super Response<AuthResponse>> continuation) {
+        public Call<AuthResponse> register(RegisterRequest body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Object login(LoginRequest body, Continuation<? super Response<AuthResponse>> continuation) {
+        public Call<AuthResponse> login(LoginRequest body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Object logout(LogoutRequest body, Continuation<? super Response<Unit>> continuation) {
+        public Call<Void> logout(LogoutRequest body) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Object logoutAll(Continuation<? super Response<Unit>> continuation) {
+        public Call<Void> logoutAll() {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Object changePassword(
-                ChangePasswordRequest body,
-                Continuation<? super Response<Unit>> continuation
-        ) {
+        public Call<Void> changePassword(ChangePasswordRequest body) {
             throw new UnsupportedOperationException();
         }
 
         @SuppressWarnings("unchecked")
         private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
             throw (E) throwable;
+        }
+    }
+
+    private static final class ScriptedCall<T> implements Call<T> {
+        private static final Request REQUEST = new Request.Builder()
+                .url("https://nexachat.test/api/v1/auth/refresh")
+                .build();
+
+        private final Response<T> response;
+        private final Throwable failure;
+        private boolean executed;
+        private boolean canceled;
+
+        ScriptedCall(Response<T> response, Throwable failure) {
+            this.response = response;
+            this.failure = failure;
+        }
+
+        @Override
+        public Response<T> execute() throws IOException {
+            if (executed) {
+                throw new IllegalStateException("already executed");
+            }
+            executed = true;
+            if (canceled) {
+                throw new IOException("canceled");
+            }
+            if (failure instanceof RuntimeException) {
+                throw (RuntimeException) failure;
+            }
+            if (failure != null) {
+                return ScriptedAuthApi.sneakyThrow(failure);
+            }
+            return response;
+        }
+
+        @Override
+        public void enqueue(Callback<T> callback) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean isExecuted() {
+            return executed;
+        }
+
+        @Override
+        public void cancel() {
+            canceled = true;
+        }
+
+        @Override
+        public boolean isCanceled() {
+            return canceled;
+        }
+
+        @Override
+        public Call<T> clone() {
+            return new ScriptedCall<>(response, failure);
+        }
+
+        @Override
+        public Request request() {
+            return REQUEST;
+        }
+
+        @Override
+        public Timeout timeout() {
+            return Timeout.NONE;
         }
     }
 }

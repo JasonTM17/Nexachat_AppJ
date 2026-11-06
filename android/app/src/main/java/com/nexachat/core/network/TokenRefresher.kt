@@ -4,11 +4,14 @@ import com.nexachat.core.network.dto.AuthResponse
 import com.nexachat.core.network.dto.RefreshRequest
 import com.nexachat.core.storage.TokenStore
 import java.io.IOException
+import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * THE single flight path for refresh-token rotation (plan §12.2).
@@ -77,7 +80,19 @@ class TokenRefresher @Inject constructor(
 
     private suspend fun performRefresh(refreshToken: String): Outcome =
         try {
-            val response = authApi.get().refresh(RefreshRequest(refreshToken))
+            val response = try {
+                withContext(Dispatchers.IO) {
+                    try {
+                        authApi.get().refresh(RefreshRequest(refreshToken)).execute()
+                    } catch (cancelled: CancellationException) {
+                        // withContext replaces a thrown CancellationException, which
+                        // would hide the exact instance callers and tests observe.
+                        throw CarriedCancellation(cancelled)
+                    }
+                }
+            } catch (carried: CarriedCancellation) {
+                throw carried.cause ?: carried
+            }
             val body = response.body()
             when {
                 response.isSuccessful && body != null -> {
@@ -106,3 +121,8 @@ class TokenRefresher @Inject constructor(
     private fun isDefinitiveRejection(status: Int): Boolean =
         status == 400 || status == 401 || status == 403
 }
+
+/** Lets a thrown [CancellationException] survive [withContext] unchanged. */
+private class CarriedCancellation(
+    cause: CancellationException,
+) : RuntimeException(cause)

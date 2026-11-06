@@ -80,7 +80,7 @@ class SettingsRepository @Inject constructor(
 
     /** Pulls the authoritative flag; a failure keeps the current value. */
     suspend fun refreshShowPresence(): Result<Unit> =
-        when (val result = call { userApi.getSettings() }) {
+        when (val result = call(userApi.getSettings())) {
             is Result.Success -> {
                 result.value.showPresence?.let { _showPresence.value = it }
                 Result.Success(Unit)
@@ -96,7 +96,7 @@ class SettingsRepository @Inject constructor(
         val previous = _showPresence.value
         if (previous == value) return Result.Success(Unit)
         _showPresence.value = value
-        return when (val result = call { userApi.updateSettings(UpdateUserSettingsRequest(value)) }) {
+        return when (val result = call(userApi.updateSettings(UpdateUserSettingsRequest(value)))) {
             is Result.Success -> {
                 result.value.showPresence?.let { _showPresence.value = it }
                 Result.Success(Unit)
@@ -109,9 +109,9 @@ class SettingsRepository @Inject constructor(
     }
 
     private suspend fun <T> call(
-        block: suspend () -> retrofit2.Response<T>,
+        retrofitCall: retrofit2.Call<T>,
     ): Result<T> =
-        when (val result = safeApiCall(block)) {
+        when (val result = safeApiCall(retrofitCall)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
                 Result.failure(ApiError.from(result.status, result.errorCode))

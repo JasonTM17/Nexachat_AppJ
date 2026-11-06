@@ -16,6 +16,7 @@ import com.nexachat.core.network.safeApiCall
 import com.nexachat.core.storage.TokenStore
 import javax.inject.Inject
 import javax.inject.Singleton
+import retrofit2.Call
 
 /**
  * Auth boundary for the rest of the app: speaks Retrofit to `/api/v1/auth/…`,
@@ -32,7 +33,7 @@ class AuthRepository @Inject constructor(
 ) {
 
     suspend fun register(phone: String, password: String, displayName: String): Result<AuthResponse> =
-        authCall {
+        authCall(
             authApi.register(
                 RegisterRequest(
                     PhoneNormalizer.toE164(phone),
@@ -40,12 +41,11 @@ class AuthRepository @Inject constructor(
                     displayName.trim(),
                 ),
             )
-        }.also { result -> (result as? Result.Success)?.let { persist(it.value) } }
+        ).also { result -> (result as? Result.Success)?.let { persist(it.value) } }
 
     suspend fun login(phone: String, password: String): Result<AuthResponse> =
-        authCall {
-            authApi.login(LoginRequest(PhoneNormalizer.toE164(phone), password))
-        }.also { result -> (result as? Result.Success)?.let { persist(it.value) } }
+        authCall(authApi.login(LoginRequest(PhoneNormalizer.toE164(phone), password)))
+            .also { result -> (result as? Result.Success)?.let { persist(it.value) } }
 
     /**
      * Rotates the refresh token via [TokenRefresher] — the SAME mutex the OkHttp
@@ -74,7 +74,7 @@ class AuthRepository @Inject constructor(
     suspend fun logout(): Result<Unit> {
         val refreshToken = tokenStore.readTokens()?.refreshToken
         if (refreshToken != null) {
-            safeApiCall { authApi.logout(LogoutRequest(refreshToken)) } // ignore outcome
+            safeApiCall(authApi.logout(LogoutRequest(refreshToken))) // ignore outcome
         }
         tokenStore.clear()
         sessionEvents.emitLoggedOut()
@@ -86,7 +86,7 @@ class AuthRepository @Inject constructor(
      * same local clear + global nav as [logout]. Bearer-auth, so no body.
      */
     suspend fun logoutAll(): Result<Unit> {
-        safeApiCall { authApi.logoutAll() } // ignore outcome
+        safeApiCall(authApi.logoutAll()) // ignore outcome
         tokenStore.clear()
         sessionEvents.emitLoggedOut()
         return Result.Success(Unit)
@@ -96,11 +96,11 @@ class AuthRepository @Inject constructor(
         // Passing the live refresh token keeps THIS session; the server revokes
         // every OTHER device instead of kicking the user out right after.
         val keepToken = tokenStore.readTokens()?.refreshToken
-        return authCall {
+        return authCallUnit(
             authApi.changePassword(
                 ChangePasswordRequest(oldPassword, newPassword, keepToken),
             )
-        }
+        )
     }
 
     // ---- internals ----
@@ -114,9 +114,19 @@ class AuthRepository @Inject constructor(
         )
     }
 
-    private suspend fun <T> authCall(block: suspend () -> retrofit2.Response<T>): Result<T> =
-        when (val result = safeApiCallCatching(block)) {
+    private suspend fun <T> authCall(call: Call<T>): Result<T> =
+        when (val result = safeApiCallCatching(call)) {
             is ApiResult.Success -> Result.Success(result.body)
+            is ApiResult.HttpError ->
+                Result.failure(ApiError.from(result.status, result.errorCode))
+            is ApiResult.NetworkError ->
+                Result.failure(ApiError.Network(result.cause.message))
+        }
+
+    /** Empty Retrofit {@code Call<Void>} success maps directly to the app's Unit result. */
+    private suspend fun authCallUnit(call: Call<Void>): Result<Unit> =
+        when (val result = safeApiCallCatching(call)) {
+            is ApiResult.Success -> Result.Success(Unit)
             is ApiResult.HttpError ->
                 Result.failure(ApiError.from(result.status, result.errorCode))
             is ApiResult.NetworkError ->
@@ -129,10 +139,10 @@ class AuthRepository @Inject constructor(
      * Convert that ClassCastException into a domain failure instead of a crash.
      */
     private suspend fun <T> safeApiCallCatching(
-        block: suspend () -> retrofit2.Response<T>,
+        call: Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(block)
+            safeApiCall(call)
         } catch (_: ClassCastException) {
             ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
         }

@@ -70,7 +70,7 @@ class ContactsRepository @Inject constructor(
     val contactsFlow: StateFlow<List<Contact>?> = _contacts.asStateFlow()
 
     suspend fun getMe(): Result<UserDto> =
-        call { userApi.getMe() }
+        call(userApi.getMe())
 
     /**
      * Avatar upload (FR-A5): streams the picked image as multipart `file`,
@@ -101,23 +101,23 @@ class ContactsRepository @Inject constructor(
             uri.lastPathSegment ?: "avatar",
             bytes.toRequestBody(mime.toMediaTypeOrNull()),
         )
-        when (val uploaded = call { userApi.uploadAvatar(part) }) {
-            is Result.Success -> call { userApi.getMe() }
+        when (val uploaded = call(userApi.uploadAvatar(part))) {
+            is Result.Success -> call(userApi.getMe())
             is Result.Failure -> Result.cast(uploaded)
         }
     }
 
     suspend fun updateDisplayName(displayName: String): Result<UserDto> =
-        call { userApi.updateMe(UpdateProfileRequest(displayName.trim())) }
+        call(userApi.updateMe(UpdateProfileRequest(displayName.trim())))
 
     suspend fun searchByPhone(rawPhone: String): Result<List<UserDto>> =
-        call { userApi.searchUsers(phone = PhoneNormalizer.toE164(rawPhone)) }
+        call(userApi.searchUsers(PhoneNormalizer.toE164(rawPhone), null))
 
     suspend fun searchByName(prefix: String): Result<List<UserDto>> =
-        call { userApi.searchUsers(q = prefix.trim()) }
+        call(userApi.searchUsers(null, prefix.trim()))
 
     suspend fun contacts(): Result<List<Contact>> =
-        when (val result = call { userApi.getContacts() }) {
+        when (val result = call(userApi.getContacts())) {
             is Result.Success ->
                 Result.Success(result.value.mapNotNull { it.toContact() })
                     .also { _contacts.value = it.value }
@@ -132,8 +132,9 @@ class ContactsRepository @Inject constructor(
     suspend fun addContact(rawPhone: String): Result<Contact> =
         when (
             val result = call(
+                userApi.addContact(AddContactRequest(PhoneNormalizer.toE164(rawPhone))),
                 mapError = ::contactWriteError,
-            ) { userApi.addContact(AddContactRequest(PhoneNormalizer.toE164(rawPhone))) }
+            )
         ) {
             is Result.Success ->
                 result.value.unwrap().toContact()
@@ -150,9 +151,7 @@ class ContactsRepository @Inject constructor(
 
     suspend fun setAlias(userId: String, aliasName: String?): Result<Contact> =
         when (
-            val result = call {
-                userApi.updateContact(userId, UpdateContactRequest(aliasName))
-            }
+            val result = call(userApi.updateContact(userId, UpdateContactRequest(aliasName)))
         ) {
             is Result.Success ->
                 result.value.unwrap().toContact()
@@ -166,13 +165,16 @@ class ContactsRepository @Inject constructor(
             is Result.Failure -> Result.cast(result)
         }
 
-    suspend fun removeContact(userId: String): Result<Unit> =
-        call { userApi.removeContact(userId) }
-            .also { result ->
-                if (result is Result.Success) {
-                    _contacts.update { list -> list?.filterNot { it.userId == userId } }
-                }
+    suspend fun removeContact(userId: String): Result<Unit> {
+        val result = call(userApi.removeContact(userId))
+        return when (result) {
+            is Result.Success -> {
+                _contacts.update { list -> list?.filterNot { it.userId == userId } }
+                Result.Success(Unit)
             }
+            is Result.Failure -> Result.cast(result)
+        }
+    }
 
     /**
      * Opens (or creates) the direct conversation with [userId] — falling back
@@ -184,14 +186,14 @@ class ContactsRepository @Inject constructor(
      */
     suspend fun openDirectConversation(userId: String? = null, phone: String? = null): Result<String> =
         when (
-            val result = call {
+            val result = call(
                 userApi.openDirectConversation(
                     DirectConversationRequest(
                         userId,
                         if (userId == null) phone?.let { PhoneNormalizer.toE164(it) } else null,
                     ),
-                )
-            }
+                ),
+            )
         ) {
             is Result.Success -> Result.Success(result.value.id)
             is Result.Failure -> Result.cast(result)
@@ -221,10 +223,10 @@ class ContactsRepository @Inject constructor(
     }
 
     private suspend fun <T> call(
+        retrofitCall: retrofit2.Call<T>,
         mapError: (Int, String?) -> ApiError = ApiError::from,
-        block: suspend () -> retrofit2.Response<T>,
     ): Result<T> =
-        when (val result = safeApiCallCatching(block)) {
+        when (val result = safeApiCallCatching(retrofitCall)) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
                 Result.failure(mapError(result.status, result.errorCode))
@@ -239,10 +241,10 @@ class ContactsRepository @Inject constructor(
      * (same guard as AuthRepository).
      */
     private suspend fun <T> safeApiCallCatching(
-        block: suspend () -> retrofit2.Response<T>,
+        retrofitCall: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(block)
+            safeApiCall(retrofitCall)
         } catch (_: ClassCastException) {
             ApiResult.HttpError(status = 200, errorCode = "UNEXPECTED_EMPTY_BODY")
         }
