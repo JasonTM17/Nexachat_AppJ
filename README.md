@@ -39,7 +39,7 @@ Rubric coverage — the full mapping with test evidence is in
 | R2 — group chat | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | R3 — preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
 | R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
-| R3 — i18n | Vi/En resource parity: 223 string entries per locale (221 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
+| R3 — i18n | Vi/En resource parity: 224 string entries per locale (222 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
 | R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
 | R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractions`, `core/ui/ForwardFilter` |
 | Extra — voice calls | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
@@ -138,9 +138,17 @@ mvn spring-boot:run           # Flyway migrates on first boot
 
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
 REST base: `http://localhost:8080/api/v1` · WebSocket: `ws://localhost:8080/ws`.
-Seed data (demo accounts below) is optional: 
-`docker exec -i nexachat-db-1 psql -U nexachat -d nexachat < demo/seed.sql`
-(host `psql`: add `-p 5433`).
+From the repository root, seed data (demo accounts below) is optional:
+
+```sh
+docker compose exec -T db psql -U nexachat -d nexachat < demo/seed.sql
+```
+
+With host `psql`, run this from the repository root instead:
+
+```sh
+psql -h localhost -p 5433 -U nexachat -d nexachat < demo/seed.sql
+```
 
 ## Quickstart — android
 

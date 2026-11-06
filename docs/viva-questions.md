@@ -335,14 +335,15 @@ logs). Three gates (`ws/StompAuthChannelInterceptor.java:103-224`): CONNECT
 parses the Bearer token into a `StompUserPrincipal` (fail → frame dropped, no
 CONNECTED reply); SUBSCRIBE allows `/topic/conversations.{uuid}` only when
 `conversation_members` contains the session user — `existsByConversation_IdAndUser_Id`
-— and `/user/queue/*` freely because the user-destination resolver maps it to
-*this* session's queue and cannot name another user's; SEND re-runs the same
+— and only `/user/queue/{inbox,errors,presence,calls}` (`USER_QUEUE`,
+`StompAuthChannelInterceptor.java:81`). Any other `/user/queue/*` destination
+is denied. SEND re-runs the same
 membership check on `/app/conversations/{uuid}/(messages|typing|read)` before
 the frame can reach a `@MessageMapping`. Everything else is deny-by-default,
 and denial is silent — return `null`, the frame is dropped, the sender
-observes a subscription that never delivers. 20 unit tests cover the matrix,
-including the per-user message/typing rate-limit buckets
-(`StompAuthChannelInterceptorTest`).
+observes a subscription that never delivers. 27 unit tests in
+`StompAuthChannelInterceptorTest` cover the matrix,
+including the per-user message/typing rate-limit buckets.
 
 **Follow-up traps.**
 - *"Why re-check membership at SEND when the service checks too?"* — The
@@ -841,7 +842,10 @@ through the deleted message.
 **Model answer.** Presence is scoped to DIRECT peers because that is the only
 place the UI shows it (chat header + inbox dot); groups receive no presence, and
 the `show_presence` setting is one-way — hiding your own state does not hide
-others' state from you. The five-second delay is a **coalescing window**: when a
+others' state from you. Hiding while online publishes `USER_OFFLINE` with
+`lastSeenAt` null to direct peers; showing it again while online publishes
+`USER_ONLINE`. A disconnect while already hidden does not send a second
+offline event. The five-second delay is a **coalescing window**: when a
 session disconnects, the server waits up to 5 s before emitting `USER_OFFLINE`,
 so a quick reconnect (network blip, activity switch, heartbeat timeout) cancels
 the transient offline event instead of flickering the peer's UI. The delay is
@@ -953,7 +957,8 @@ the bounded ≤3 list costs a constant number of queries.
 the member row's `role`. Pinning: in DIRECT, **any member** may pin/unpin;
 in GROUP, **ADMIN only** — `requirePinRole` throws `NOT_ADMIN` for a
 non-admin group member (`PinService.java:192-198`). The same rule is
-  surfaced client-side: `conversations.myRole` (Room v7) persists the
+  surfaced client-side: `conversations.myRole` (added in Room v6 by
+  `MIGRATION_5_6`, still present in Room v7) persists the
 caller's member row from the inbox payload, `ChatViewModel.canPin =
 !isGroup || myRole == "ADMIN"` gates the long-press Pin item, and the
 server remains the real boundary if the gate is bypassed. Group
@@ -1406,8 +1411,8 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
   the floor.
 - *"Where does i18n fit M3?"* — User-facing strings are externalized in
   paired English and Vietnamese resource files. The base `strings.xml` has
-  142 entries per locale (140 translatable); `strings_call.xml` adds 41 and
-  `strings_summary.xml` adds 40, for 223 entries (221 translatable) per locale.
+  142 entries per locale (140 translatable); `strings_call.xml` adds 42 and
+  `strings_summary.xml` adds 40, for 224 entries (222 translatable) per locale.
   Each file pair has matching resource names. The linked i18n audit contains
   the fuller review.
 
@@ -1418,8 +1423,8 @@ reply/pin only on `SENT` messages (`replyable = status == SENT`).
 **Model answer.** Pure Android resource resolution: paired resource files
 under `values/` (English default) and `values-vi/`. The base `strings.xml`
 contains 142 entries per locale (140 marked translatable), `strings_call.xml`
-adds 41 and `strings_summary.xml` adds 40, for 223 entries total
-(221 translatable) per locale. Each English/Vietnamese file pair has matching names.
+adds 42 and `strings_summary.xml` adds 40, for 224 entries total
+(222 translatable) per locale. Each English/Vietnamese file pair has matching names.
 Strings are referenced via `stringResource()` in composables; switching is
 the `AppLocaleManager` path of Q6.1 — the framework picks `values-vi` once the
 configuration locale is `vi`. The current counts and the exact counting command
@@ -1519,7 +1524,7 @@ Postgres locally rather than creating a fresh test container. CI points
 `StompAuthChannelInterceptorTest` covers CONNECT with
 missing/garbage/expired token; SUBSCRIBE to a conversation topic as a
 non-member; SUBSCRIBE to a foreign-shaped destination (deny-by-default);
-SEND to a non-member conversation; `/user/queue/*` allowed (session-bound);
+SEND to a non-member conversation; only `/user/queue/{inbox,errors,presence,calls}` is allowed;
 denied frames are dropped by the interceptor. **Service layer** tests the
 `NOT_MEMBER` path per use case: `MessageServiceTest`, `ReactionServiceTest`,
 `PinServiceTest`, `GroupServiceTest`, and `AttachmentServiceTest`. The ITs

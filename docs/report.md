@@ -87,10 +87,10 @@ nexachat/
 |---|---|---:|---|---|
 | R1 | Bài nộp đầy đủ, đúng cấu trúc | 5 | ✅ | `docs/packaging-checklist.md` (C1–C12), `.git` full history, `docs/report.docx`, APK release |
 | R2 | Chat 1-1, chat nhóm, tìm kiếm, thêm bằng SĐT, quản lý tài khoản | 20 | ✅ | Module `auth`/`user`/`contact`/`conversation`/`message`; IT: `AuthFlowIT`, `ContactConversationIT`, `GroupFlowIT`, `MessageFlowIT` |
-| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 223 string entries mỗi bên (221 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
+| R3 | Đa ngôn ngữ, multimedia/file, xoay màn hình | 15 | ✅ | `values/`+`values-vi/` 224 string entries mỗi bên (222 translatable, gồm `strings_call.xml` + `strings_summary.xml`) — `docs/i18n-audit.md`; `attachment` module + magic-byte sniff; `docs/rotation-audit.md` |
 | R4 | Chức năng sáng tạo | 5 | ✅ | Message Interactions: reply/react/pin — migration `V3__interactions.sql`, `ReactionController`, `PinController`, `InteractionFlowIT` |
 | R5 | Giao diện rõ ràng + toàn bộ unit test pass | 15 | ✅ | Test status do CI run hiện tại báo (`.github/workflows/ci.yml`); `RoomMigrationTest` cover migration chain Room v1→v7 (xem §13.1) |
-| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 67 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
+| R6 | Thuyết trình, demo, vấn đáp | 40 | ✅ | `docs/demo-runbook.md` (kịch bản 8 phút + fallback), 66 câu vấn đáp trong `docs/viva-questions.md`, mỗi quyết định kèm "vì sao" |
 
 **Nguyên tắc xuyên suốt:** mọi claim trong bảng này trace được về file/test
 cụ thể — không ghi "end-to-end encryption", không ghi "scalable triệu user".
@@ -155,7 +155,7 @@ mặc định tắt; Android summary UI với badge "Cục bộ"/"AI".
 
 | ID | Nhóm | Yêu cầu | Đạt bằng |
 |---|---|---|---|
-| NFR-1 | Performance | Tin nhắn tới đối phương <500ms LAN; inbox <1s; paginate 30 tin | `idx_msg_conv_seq`, denormalized `last_message_*`, inbox projection 1 query |
+| NFR-1 | Performance | Mục tiêu thiết kế: tin nhắn tới đối phương <500ms LAN; inbox <1s; paginate 30 tin. Chưa có biên bản đo latency gắn revision. | Index `idx_msg_conv_seq`, `last_message_*` denormalized, inbox một query — hỗ trợ mục tiêu, không phải số đo |
 | NFR-2 | Reliability | Reconnect ≤5 lần backoff + jitter; send idempotent 100% | `clientMessageId` + `UNIQUE(sender_id, client_message_id)`; resync REST |
 | NFR-3 | Security | bcrypt; JWT HS256 secret ≥256-bit từ env; mọi endpoint cần Bearer trừ whitelist; WSS ở prod | `SecurityConfig`, `JwtAuthFilter`, `application-prod.yml` fail-fast khi thiếu `JWT_SECRET` |
 | NFR-4 | Usability | Material 3; mọi màn có Loading/Empty/Error/Retry; touch target ≥48dp | `core/ui/components` shared states; đợt a11y đã sửa vi phạm 48dp thật |
@@ -409,12 +409,12 @@ Rate limit: login/register 10 req/5 phút, refresh 30 req/5 phút (Bucket4j,
 | `GET /conversations` | Bearer | 200 `InboxEntry[]` sort `lastMessageSeq DESC`; optional `limit` (1–100) + `cursor` (keyset, `X-Next-Cursor`) | 401 |
 | `POST /conversations/group {title, memberIds[]}` | Bearer | 201 | 400 |
 | `PATCH /conversations/{id}` | member ADMIN | 200 → broadcast CONVERSATION_UPDATED | 403 NOT_ADMIN |
-| `POST /conversations/{id}/members {userIds[]}` | ADMIN | 200 | 403 · 404 |
+| `POST /conversations/{id}/members {userIds[]}` | ADMIN | 204 | 403 · 404 |
 | `DELETE /conversations/{id}/members/{userId}` | ADMIN | 204 | 403 |
 | `POST /conversations/{id}/leave` | member | 204 | 403 |
 | `POST /conversations/{id}/avatar` (multipart) | ADMIN | 200 `{avatarUrl}` → broadcast CONVERSATION_UPDATED | 403 · 413 · 415 MIME_NOT_ALLOWED |
 | `GET /conversations/{id}/messages?beforeSeq=&afterSeq=&limit=` | member | 200 `MessagePageResponse{items,nextBeforeSeq,hasMore}` | 403 NOT_MEMBER · 404 |
-| `POST /conversations/{id}/messages` | member | 201 / 200 dedup hit — REST fallback của đường WS | 403 · 404 · 400 |
+| `POST /conversations/{id}/messages` | member | 201 / 200 dedup hit — REST fallback của đường WS | 403 · 404 · 400 · 429 |
 | `PATCH /conversations/{id}/messages/{messageId}` | message author | 200 `MessageResponse`; identical content = no-op | 403 NOT_MESSAGE_AUTHOR · 404 · 409 MESSAGE_DELETED · 429 |
 | `DELETE /conversations/{id}/messages/{messageId}` | message author | 204 (idempotent soft delete) | 403 NOT_MESSAGE_AUTHOR · 404 · 429 |
 | `GET /conversations/{id}/messages/search?q=` | member | 200 `MessagePageResponse` (literal, case/accent-insensitive) | 403 · 404 · 429 |
@@ -615,9 +615,9 @@ lại vẫn có history; rotation chỉ là recomposition, không re-fetch.
 
 ### 10.1. i18n
 
-- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **223 string
-  entries mỗi bên (221 translatable), parity 100%** — gồm
-  `strings_call.xml` (41 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
+- `values/strings.xml` (EN mặc định) + `values-vi/strings.xml`: **224 string
+  entries mỗi bên (222 translatable), parity 100%** — gồm
+  `strings_call.xml` (42 mỗi bên) và `strings_summary.xml` (40 mỗi bên);
   kiểm chứng `docs/i18n-audit.md` (0 missing, 0 leak).
 - Đổi ngôn ngữ trong Settings, persist: không có `androidx.appcompat` trong
   dependency graph → dùng **framework `android.app.LocaleManager` (API 33+,
@@ -724,7 +724,7 @@ lý thuyết:
     member) chỉ gọi `refreshMembers()` một lần sau 200 ms
     (`GroupDetailViewModel.PUSH_REFRESH_DEBOUNCE_MS`).
 12. **Minimal UI copy** — `splash_tagline` ("Connecting…") bị bỏ khỏi cả EN/VI
-    (223/223 entries); splash chỉ giữ logo, tên app và progress indicator.
+    (224/224 entries); splash chỉ giữ logo, tên app và progress indicator.
 
 ---
 
@@ -736,8 +736,9 @@ Số test và trạng thái pass/fail là revision-specific; báo cáo này **kh
 số cố định. Dùng CI run hiện tại (`.github/workflows/ci.yml`) cho kết quả chạy
 thật của đúng revision.
 
-Đợt đếm tươi tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/failsafe của
-`mvn -B verify` và XML `testDebugUnitTest`):
+Snapshot lịch sử tại HEAD `e6bcb3b` (2026-11-06, đọc từ XML surefire/failsafe của
+`mvn -B verify` và XML `testDebugUnitTest`). Các số này không mô tả commit sau
+`e6bcb3b`:
 
 | Tầng | Số test | Fail/Skip |
 |---|---:|---|
@@ -747,7 +748,7 @@ thật của đúng revision.
 | Android unit (53 class) | 411 | 0 / 0 |
 | Android instrumented `RoomMigrationTest` | 4 | chạy trên emulator, không chạy trong CI |
 
-String-key parity: 223/223 entries mỗi locale (221 translatable), 0 missing cả
+String-key parity: 224/224 entries mỗi locale (222 translatable), 0 missing cả
 hai chiều — xem §10.1 và `docs/i18n-audit.md`.
 
 | Tầng | Công cụ | Trạng thái |
@@ -891,7 +892,7 @@ UI bug trực tiếp):
 | Member (không phải ADMIN) vẫn thấy menu "Pin" trong group — bấm vào mới bị server 403 với lỗi chung chung | Server enforce đúng (group pin = ADMIN-only) nhưng client không biết role của chính mình: `ConversationSummary` chỉ có cột Room, không ai persist `members[].role` của caller → long-press menu luôn render "Pin" | Room v6: `conversations.myRole` (`MIGRATION_5_6`) map từ `members[myId].role` trong inbox payload; upsert merge-preserve khi payload thiếu members[]; `ChatViewModel.canPin = !isGroup || myRole == "ADMIN"`; `ChatScreen` chỉ render item Pin khi `canPin`. Verify release APK 2 máy: B (Binh=MEMBER) long-press → menu chỉ còn reaction + Reply; A (An=ADMIN) → Pin vẫn hiện; +1 `ChatViewModelTest` (member ẩn, admin/direct hiện, role null → ẩn) |
 | Member bị admin kick nhưng group **vẫn nằm trong inbox** của họ mãi mãi — mở được chat cache, chỉ fail khi send | `refreshInbox` chỉ `upsert` các row server trả về mà không xóa row vắng mặt trong set authoritative — MEMBER_REMOVED (kèm push `CONVERSATION_UPDATED` tới `/queue/inbox` của chính nạn nhân) trigger refresh đúng nhưng row cũ không ai delete | `ConversationDao.deleteAllExcept(ids)` + `refreshInbox` reconcile: set trả về là authoritative full → row không có trong set bị xóa (`clear()` khi list rỗng vì `NOT IN ()` invalid SQLite). Verify release APK: REST remove Binh khỏi "Nhom Do An" → row biến mất ngay trên inbox của B (trước fix: preview "An Nguyen removed Binh" cập nhật mà row vẫn ở lại); +4 `ConversationRepositoryTest` (drop stale, empty→clear, role map, merge-preserve) |
 
-Regression test mới: `RealtimeSessionReArmTest` (9 case — expired-access
+Regression test mới: `RealtimeSessionReArmTest` (15 case — expired-access
 refresh before CONNECT, regain re-arm parked loop, `ensureConnected` wake
 không cần network, `onAppForeground` wake khi login / no-op khi logout,
 regain khi logout không spin, regain khi socket sống là no-op, 50 luồng
