@@ -5,15 +5,15 @@
 > named `phase-11-creative.md`; its title says "Phase 10" and the roadmap calls it
 > **P9** — the naming is inconsistent in the plan set).
 > **Repo snapshot:** final frozen tree on `main` (2026-11-05). The feature is
-> fully shipped: server, Android data layer, Compose UI, and tests.
+> fully shipped: server, Android data layer, XML Views + ViewBinding UI, and tests.
 
 ## 0. Read this first — evidence status
 
 The feature is **fully implemented**: the server side is complete (migration,
 entities, repositories, services, controllers, WS broadcast), the Android data
 layer is complete (DTOs, Retrofit API, Room, repository, typed WS events,
-ViewModel state), the **Compose UI is wired** (`ChatInteractions.kt` +
-`ChatScreen.kt`), and the **TC-INT tests are written and green**
+ViewModel + LiveData state), the **chat UI is wired** (`ChatInteractionsViews.java` +
+`ChatFragment.java`), and the **TC-INT tests are written and green**
 (`InteractionFlowIT`, `ReactionServiceTest`, `PinServiceTest`).
 
 | P9 piece | Status | Evidence |
@@ -32,12 +32,12 @@ ViewModel state), the **Compose UI is wired** (`ChatInteractions.kt` +
 | `REACTION_UPDATED` / `PIN_UPDATED` broadcast | **SHIPPED** | `ReactionUpdatedEvent.java`; `PinUpdatedEvent.java`; `InteractionBroadcastListener.java:35-47` |
 | Event vocabulary | **SHIPPED** | `server/.../ws/WsEventType.java:16-17` |
 | Error codes `NOT_MEMBER` 403, `NOT_ADMIN` 403, `MESSAGE_NOT_FOUND` 404, `PIN_LIMIT` 409 | **SHIPPED** | `server/.../common/error/ApiErrorCode.java:25-27,30` |
-| Android DTOs + Retrofit methods | **SHIPPED** | `android/.../core/network/dto/InteractionDtos.kt`; `core/network/MessageApi.kt:64-98` |
-| Android Room entities/DAOs + DB migration | **SHIPPED** | `core/database/Entities.kt:100-126`; `Daos.kt:115-195`; `AppDatabase.kt:30-31,40-41,63-64` |
-| Android typed WS events | **SHIPPED** | `core/network/stomp/RealtimeSession.kt:63-79,322-339` |
-| Android repository: toggle/pin/unpin/optimistic reconcile | **SHIPPED** | `data/MessageRepository.kt:446-579` |
-| Android ViewModel state + actions | **SHIPPED** | `feature/chat/ChatViewModel.kt:57-89,133-136,200-255` |
-| Android Compose UI (ReactionBar / ReplyPreview / PinnedBanner) | **SHIPPED** | `feature/chat/ChatInteractions.kt`; wired in `ChatScreen.kt` (reaction bar + reply + pin gated by `replyable` / `canPin`) |
+| Android DTOs + Retrofit methods | **SHIPPED** | `core/network/dto/ReactionRequest.java`, `PinRequest.java`, `ReactionUpdateDto.java`, `PinUpdateDto.java`; `core/network/MessageApi.java:74-93` |
+| Android Room entities/DAOs + DB migration | **SHIPPED** | `MessageReactionEntity.java`, `PinnedMessageEntity.java`; `ReactionDao.java`, `PinDao.java`; `AppDatabase.java:16-31,43-64` |
+| Android typed WS events | **SHIPPED** | `core/network/stomp/RealtimeSession.java:431-438`; `core/network/stomp/ChatEvent.java` |
+| Android repository: toggle/pin/unpin/optimistic reconcile | **SHIPPED** | `data/MessageRepository.java:460-540,876-540,908-1010` |
+| Android ViewModel state + actions | **SHIPPED** | `feature/chat/ChatViewModel.java:264-268,470-499,283-285` |
+| Android UI (reactions / reply banner / pin banner) | **SHIPPED** | `feature/chat/ChatInteractionsViews.java`; wired in `ChatFragment.java` (long-press actions + reply/pin banners gated by `canPin`) |
 | Tests TC-INT-01..04 | **SHIPPED** | `InteractionFlowIT.java:176-380`; `ReactionServiceTest`; `PinServiceTest` in `server/src/test` |
 
 **Migration number:** `phase-11-creative.md:13` says `V2__interactions.sql`, but
@@ -89,8 +89,8 @@ verify as `password123` only after a reset — `DELETE FROM users WHERE phone
 LIKE '+8490000%';` then re-apply `demo/seed.sql`.
 
 **Status key for steps:** **[S]** = shipped behaviour (verified in repo), **[C]** =
-contract/implementation behaviour. The Compose UI is wired, so every UI step
-below is driven by the real app; the server endpoints can also be exercised
+contract/implementation behaviour. The Fragment/ViewBinding UI is wired, so every
+UI step below is driven by the real app; the server endpoints can also be exercised
 with `curl` if needed.
 
 ### 2.0 Preflight (30 min before)
@@ -106,14 +106,14 @@ with `curl` if needed.
 1. **[S]** Phone B opens the direct chat with An.
 2. **[S]** Swipe right on An's message **"Bình ơi, họp lúc 3 giờ chiều đúng
    không?"** (`seq=1`, id `00000000-0000-4000-8000-000000000001`, `seed.sql:87-89`).
-3. **[S]** A `ReplyPreview` appears above the composer showing the quoted
-   snippet (planned UI: `feature/interactions/README.md:5`).
+3. **[S]** A reply banner appears above the composer showing the quoted
+   snippet (`ChatInteractionsViews.bindReplyBanner` — `ChatFragment.java:263`).
 4. **[S]** Type `Oke, 3 giờ phòng 2A nhé.` and tap **Send**.
 5. **[S]** The client sends STOMP `SEND /app/conversations/aaaaaaaa-…/messages`
    with body
    `{"clientMessageId":"…","type":"TEXT","content":"Oke, 3 giờ phòng 2A nhé.","replyToId":"00000000-0000-4000-8000-000000000001","attachmentIds":[]}`
    (`docs/websocket-protocol.md:55`; `SendMessageRequest.java:26`;
-   `ChatViewModel.kt:221-226`).
+   `ChatViewModel.java:264-268`).
 6. **[S]** Both phones receive `MESSAGE_CREATED` on
    `/topic/conversations.aaaaaaaa-…` with `payload.replyToId` and the embedded
    `payload.replyTo` preview (`MessageResponse.java:19-35`).
@@ -128,8 +128,8 @@ with `curl` if needed.
 
 1. **[S]** Phone A long-presses Binh's message **"Được, bao mình."** (`seq=6`,
    id `00000000-0000-4000-8000-000000000006`, `seed.sql:102-104`).
-2. **[S]** The `ReactionBar` appears (`feature/interactions/README.md:4`);
-   tap **👍**.
+2. **[S]** Long-press opens the message action sheet; tap **👍** (reaction picker
+   via `ChatInteractionsViews.showMessageActions` / `showReactionPicker`).
 3. **[S]** `POST /api/v1/messages/00000000-0000-4000-8000-000000000006/reactions`
    with `{"emoji":"👍"}` → **204** (`ReactionController.java:38-45`).
 4. **[S]** Server broadcasts `REACTION_UPDATED` on
@@ -160,11 +160,11 @@ with `curl` if needed.
 5. **[S]** Server broadcasts `PIN_UPDATED` on `/topic/conversations.bbbbbbbb-…`
    with payload `{"messageId":"…","pinned":true}` (`PinUpdatedPayload.java:10`;
    `InteractionBroadcastListener.java:42-47`). A `PinnedBanner` appears at the
-   top of the chat on **both** phones.
-6. **[S]** Tap the `PinnedBanner` → the list pages backwards (bounded, ~20
+   top of the chat on **both** phones (`ChatInteractionsViews.bindPinnedBanner`).
+6. **[S]** Tap the pin banner → the list pages backwards (bounded, ~20
    pages ≈ 600 messages) and jumps to the pinned message
    (`MessageRepository.loadUntilLoaded`, `MAX_JUMP_PAGES = 20`;
-   `ChatScreen.kt:125-137`).
+   `ChatFragment.java:251`; `ChatViewModel.java:283-285`).
 7. **[S]** *(Optional, proves the cap)* Pin two more messages → 3 pins OK; a
    4th `POST /pins` → **409 `PIN_LIMIT`** (`PinService.java:143-145`;
    `ApiErrorCode.java:30`). Show the error toast.
@@ -190,7 +190,7 @@ with `curl` if needed.
   demo).
 - If the WS socket is down: the REST send path still works
   (`docs/api-contract.md:211`), and reactions/pins are REST anyway. On reconnect
-  the client resyncs via REST (`MessageRepository.kt:692-707`).
+  the client resyncs via REST (`MessageRepository.java:864-869,1021-1041`).
 - If the UI is unavailable on the day: drive the same endpoints with `curl`
   against the LAN IP and show the `REACTION_UPDATED` / `PIN_UPDATED` frames in
   the server log — the contract is the proof.
@@ -320,7 +320,7 @@ the same pattern as `MessageService`/`MessageBroadcastListener`
 - The payload is a **full-state replace**, not a delta, so out-of-order or
   replayed frames are idempotent: `ReactionUpdatedPayload` carries the whole
   `reactions[]` set and clients replace their cache
-  (`ReactionUpdatedPayload.java:7-12`; `MessageRepository.kt:525-531`).
+  (`ReactionUpdatedPayload.java:7-12`; `MessageRepository.java:876-540`).
 - Like `markRead`, the pin event is published even on a no-op — a replayed frame
   states the truth and receivers converge (`PinService.java:42-46,164-165`).
 
@@ -433,9 +433,9 @@ guarantees existence, not context. A missing target returns
 **Q8. A client was offline while someone reacted or pinned. How does it catch
 up — WS or REST?**
 A. REST is the source of truth; WS is push only. On reconnect the client fires
-a resync request (`RealtimeSession.kt:127-131,180`) and pages history with
-`afterSeq` (`MessageRepository.kt:692-707`); pins are refreshed with
-`GET /pins` (`MessageRepository.kt:630`) and reactions are re-read with the
+a resync request (`RealtimeSession.java:191-192,262`) and pages history with
+`afterSeq` (`MessageRepository.java:1021-1041`); pins are refreshed with
+`GET /pins` (`MessageRepository.java:974`) and reactions are re-read with the
 message payload (`MessageService.reactionsByMessage`,
 `MessageService.java:473-483`). Missed `REACTION_UPDATED` / `PIN_UPDATED`
 frames are not replayed — the REST resync closes the gap
@@ -463,18 +463,22 @@ persist-before-broadcast sufficient.
       assembly (`MessageResponse.java`; `MessageService.java:436-501`).
 
 **Done (Android data layer):**
-- [x] `InteractionDtos.kt` + `MessageApi` methods (`MessageApi.kt:64-98`).
+- [x] Interaction DTOs + `MessageApi` methods (`MessageApi.java:74-93`;
+      `ReactionRequest.java`, `PinRequest.java`, `ReactionUpdateDto.java`,
+      `PinUpdateDto.java`).
 - [x] Room `MessageReactionEntity` / `PinnedMessageEntity` + DAOs + DB migration
-      (`Entities.kt:120-141`; `Daos.kt:160-188`; `AppDatabase.kt:31-32,62-92`).
-- [x] Typed `ChatEvent.ReactionUpdated` / `PinUpdated` (`RealtimeSession.kt:70-86`).
-- [x] Repository optimistic toggle/pin/unpin + reconcile (`MessageRepository.kt:560-685`).
-- [x] `ChatViewModel` reply/pin state + actions (`ChatViewModel.kt:72-99,259-296`).
+      (`MessageReactionEntity.java`; `ReactionDao.java`; `PinnedMessageEntity.java`;
+      `PinDao.java`; `AppDatabase.java:43-64`).
+- [x] Typed `ChatEvent.ReactionUpdated` / `PinUpdated` (`ChatEvent.java`;
+      decode in `RealtimeSession.java:431-438`).
+- [x] Repository optimistic toggle/pin/unpin + reconcile (`MessageRepository.java:460-540,908-1010`).
+- [x] `ChatViewModel` reply/pin state + actions (`ChatViewModel.java:264-268,470-499`).
 
-**Done (Compose UI + tests):**
-- [x] **Compose UI** — `ReactionBarRow` / `ReactionChipsRow` / `ReplyQuoteBlock` /
-      `ReplyPreviewBar` / `PinnedBanner` (`feature/chat/ChatInteractions.kt`),
-      wired into `ChatScreen.kt` (reaction bar + reply + pin gated by
-      `replyable` / `canPin`).
+**Done (XML Views UI + tests):**
+- [x] **Fragment UI** — `ChatInteractionsViews.showMessageActions` /
+      `showReactionPicker` / `bindReplyBanner` / `bindPinnedBanner`
+      (`feature/chat/ChatInteractionsViews.java`), wired into `ChatFragment.java`
+      (reply + pin banners and long-press actions gated by `canPin` / message state).
 - [x] **Tests TC-INT-01..04** — `InteractionFlowIT`: react twice → remove;
       non-admin group pin → 403; 4th pin → 409; reply DTO end-to-end
       (`InteractionFlowIT.java:176-380`).
@@ -507,12 +511,14 @@ persist-before-broadcast sufficient.
 `server/src/main/java/com/nexachat/conversation/ConversationMember.java`,
 `ConversationRepository.java`, `GroupService.java`.
 
-**Android (shipped data layer):** `android/app/src/main/java/com/nexachat/core/network/dto/InteractionDtos.kt`,
-`core/network/dto/MessageDtos.kt`, `core/network/MessageApi.kt`,
-`core/network/stomp/RealtimeSession.kt`, `core/network/stomp/dto/WsDtos.kt`,
-`core/database/Entities.kt`, `core/database/Daos.kt`, `core/database/AppDatabase.kt`,
-`core/database/DatabaseModule.kt`, `data/MessageRepository.kt`,
-`feature/chat/ChatViewModel.kt`, `feature/interactions/README.md`.
+**Android (shipped data + UI):** `android/app/src/main/java/com/nexachat/core/network/dto/ReactionRequest.java`,
+`PinRequest.java`, `ReactionUpdateDto.java`, `PinUpdateDto.java`, `MessageDto.java`,
+`core/network/MessageApi.java`, `core/network/stomp/RealtimeSession.java`,
+`core/network/stomp/ChatEvent.java`, `core/network/stomp/dto/WsEnvelope.java`,
+`MessageReactionEntity.java`, `PinnedMessageEntity.java`, `ReactionDao.java`,
+`PinDao.java`, `core/database/AppDatabase.java`, `core/database/DatabaseModule.java`,
+`data/MessageRepository.java`, `feature/chat/ChatViewModel.java`,
+`feature/chat/ChatInteractionsViews.java`, `feature/chat/ChatFragment.java`.
 
 **Contract / docs:** `docs/websocket-protocol.md`, `docs/api-contract.md`,
 `docs/security.md`, `docs/rtm.md`, `docs/demo-runbook.md`,
