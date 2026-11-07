@@ -36,12 +36,7 @@ class ContactsViewModelTest {
     private lateinit var viewModel: ContactsViewModel
 
     private val user = UserDto("u-1", "+84912345678", "Lan", null)
-    private val contact = Contact(
-        userId = "u-1",
-        phone = "+84912345678",
-        displayName = "Lan",
-        aliasName = null,
-    )
+    private val contact = Contact("u-1", "+84912345678", "Lan", null)
 
     @Before
     fun setUp() {

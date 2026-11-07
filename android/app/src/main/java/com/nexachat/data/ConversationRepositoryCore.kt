@@ -90,31 +90,6 @@ data class ConversationSummary(
  * false and the UI hides ADMIN-only affordances (best-effort gate; the
  * server remains the real authorization boundary).
  */
-data class GroupMember(
-    val userId: String,
-    val displayName: String,
-    val phone: String?,
-    val avatarUrl: String?,
-    val role: String?,
-) {
-    val isAdmin: Boolean get() = role == ROLE_ADMIN
-
-    companion object {
-        const val ROLE_ADMIN = "ADMIN"
-    }
-}
-
-/**
- * Detail projection for `group/{id}/detail`. Members are fetch-only —
- * `ConversationEntity` does not persist them, so this is resolved from the
- * inbox payload (`ConversationInboxDto.members`) rather than Room. [title]
- * doubles as a fallback header while the Room row is still absent.
- */
-data class GroupDetail(
-    val title: String?,
-    val members: List<GroupMember>,
-)
-
 /** Conversation `type` wire value for groups (DIRECT lives in the companion below). */
 private const val TYPE_GROUP = "GROUP"
 
@@ -295,8 +270,8 @@ internal class ConversationRepositoryCore(
                         upsertPreservingClientColumns(listOf(inbox.toEntity(myId)))
                         return Result.Success(
                             GroupDetail(
-                                title = inbox.title,
-                                members = inbox.members.mapNotNull { it.toGroupMember() },
+                                inbox.title,
+                                inbox.members.mapNotNull { it.toGroupMember() },
                             ),
                         )
                     }
@@ -474,11 +449,11 @@ internal class ConversationRepositoryCore(
     private fun ConversationMemberDto.toGroupMember(): GroupMember? =
         userId?.let { id ->
             GroupMember(
-                userId = id,
-                displayName = displayName ?: phone.orEmpty(),
-                phone = phone,
-                avatarUrl = avatarUrl,
-                role = role,
+                id,
+                displayName ?: phone.orEmpty(),
+                phone,
+                avatarUrl,
+                role,
             )
         }
 

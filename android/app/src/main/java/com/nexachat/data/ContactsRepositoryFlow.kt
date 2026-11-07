@@ -109,7 +109,7 @@ internal object ContactsRepositoryFlow {
                     ?.let { contact ->
                         cache.update {
                             (listOf(contact) + (it ?: emptyList()))
-                                .distinctBy(Contact::userId)
+                                .distinctBy(Contact::getUserId)
                         }
                         Result.Success(contact)
                     }
@@ -176,12 +176,12 @@ internal object ContactsRepositoryFlow {
     private fun ContactDto.toContact(): Contact? {
         val id = resolvedUserId ?: return null
         return Contact(
-            userId = id,
-            phone = phone.orEmpty(),
-            displayName = displayName ?: phone.orEmpty(),
-            aliasName = aliasName,
-            avatarUrl = avatarUrl,
-            createdAt = createdAt,
+            id,
+            phone.orEmpty(),
+            displayName ?: phone.orEmpty(),
+            aliasName,
+            avatarUrl,
+            createdAt,
         )
     }
 

@@ -30,16 +30,8 @@ class CreateGroupViewModelTest {
     private val conversationRepository: ConversationRepository = mockk()
     private lateinit var viewModel: CreateGroupViewModel
 
-    private val contactA = Contact(
-        userId = "u-1",
-        phone = "+84911111111",
-        displayName = "Lan",
-    )
-    private val contactB = Contact(
-        userId = "u-2",
-        phone = "+84922222222",
-        displayName = "Minh",
-    )
+    private val contactA = Contact("u-1", "+84911111111", "Lan")
+    private val contactB = Contact("u-2", "+84922222222", "Minh")
 
     @Before
     fun setUp() {

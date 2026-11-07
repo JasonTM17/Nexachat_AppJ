@@ -50,27 +50,9 @@ class GroupDetailViewModelTest {
         const val PUSH_WINDOW_MS = 400L
     }
 
-    private val me = GroupMember(
-        userId = MY_ID,
-        displayName = "Me",
-        phone = "+84900000000",
-        avatarUrl = null,
-        role = GroupMember.ROLE_ADMIN,
-    )
-    private val lan = GroupMember(
-        userId = "u-lan",
-        displayName = "Lan",
-        phone = "+84911111111",
-        avatarUrl = null,
-        role = "MEMBER",
-    )
-    private val minh = GroupMember(
-        userId = "u-minh",
-        displayName = "Minh",
-        phone = "+84922222222",
-        avatarUrl = null,
-        role = null,
-    )
+    private val me = GroupMember(MY_ID, "Me", "+84900000000", null, GroupMember.ROLE_ADMIN)
+    private val lan = GroupMember("u-lan", "Lan", "+84911111111", null, "MEMBER")
+    private val minh = GroupMember("u-minh", "Minh", "+84922222222", null, null)
 
     /** Builds the VM after stubbing everything its init block touches. */
     private fun createViewModel(
@@ -144,7 +126,7 @@ class GroupDetailViewModelTest {
 
     @Test
     fun `missing role on my member row hides admin affordances`() = runTest {
-        val meNoRole = me.copy(role = null)
+        val meNoRole = GroupMember(me.userId, me.displayName, me.phone, me.avatarUrl, null)
         val viewModel = createViewModel(
             Result.Success(GroupDetail("Weekend", listOf(meNoRole, lan))),
         )
@@ -155,7 +137,7 @@ class GroupDetailViewModelTest {
     @Test
     fun `title falls back to the Room row when the fetch has none`() = runTest {
         val viewModel = createViewModel(
-            Result.Success(GroupDetail(title = null, members = listOf(me, lan))),
+            Result.Success(GroupDetail(null, listOf(me, lan))),
         )
         conversationFlow.value = ConversationSummary(
             id = CONVERSATION_ID,
@@ -244,8 +226,8 @@ class GroupDetailViewModelTest {
     fun `add-member picker excludes current members`() = runTest {
         coEvery { contactsRepository.contacts() } returns Result.Success(
             listOf(
-                Contact(userId = "u-lan", phone = "+84911111111", displayName = "Lan"),
-                Contact(userId = "u-new", phone = "+84933333333", displayName = "Hoa"),
+                Contact("u-lan", "+84911111111", "Lan"),
+                Contact("u-new", "+84933333333", "Hoa"),
             ),
         )
 
@@ -260,7 +242,7 @@ class GroupDetailViewModelTest {
     fun `addSelectedMembers posts ids, closes the picker and refetches`() = runTest {
         coEvery { contactsRepository.contacts() } returns Result.Success(
             listOf(
-                Contact(userId = "u-new", phone = "+84933333333", displayName = "Hoa"),
+                Contact("u-new", "+84933333333", "Hoa"),
             ),
         )
         coEvery { conversationRepository.addGroupMembers(any(), any()) } returns
