@@ -234,7 +234,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void render() {
         if (binding == null) return;
-        binding.chatToolbar.setTitle(state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName());
+        String peerTitle = state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName();
+        binding.chatToolbar.setTitle(peerTitle);
+        if (binding.chatHeaderAvatar != null) {
+            binding.chatHeaderAvatar.setName(peerTitle);
+        }
         String subtitle = state.getPeerTyping() ? getString(R.string.chat_typing)
                 : !state.getConnected() ? getString(R.string.chat_offline)
                 : !state.isGroup() && state.getPeerPresence() != null

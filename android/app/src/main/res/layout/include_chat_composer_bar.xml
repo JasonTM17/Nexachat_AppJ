@@ -9,15 +9,17 @@
     android:gravity="center_vertical"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
-    android:paddingHorizontal="@dimen/space_sm"
-    android:paddingVertical="6dp">
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="8dp">
 
     <ImageButton
         android:id="@+id/attachButton"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/bg_date_separator"
+        android:backgroundTint="?attr/colorSurfaceVariant"
         android:contentDescription="@string/cd_attach"
+        android:padding="10dp"
         android:src="@drawable/ic_attach_file"
         app:tint="?attr/colorOnSurfaceVariant" />
 
@@ -31,15 +33,18 @@
         android:hint="@string/chat_input_hint"
         android:maxLines="5"
         android:minHeight="@dimen/min_touch_target"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="10dp" />
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="11dp"
+        android:textColor="?attr/colorOnSurface"
+        android:textColorHint="?attr/colorOnSurfaceVariant" />
 
     <ImageButton
         android:id="@+id/sendButton"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/bg_unread_badge"
         android:contentDescription="@string/cd_send"
+        android:padding="10dp"
         android:src="@drawable/ic_send"
-        app:tint="?attr/colorPrimary" />
+        app:tint="?attr/colorOnPrimary" />
 </LinearLayout>
