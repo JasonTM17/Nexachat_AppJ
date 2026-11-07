@@ -69,8 +69,8 @@ jobs:
           cache-dependency-path: |
             android/gradle/libs.versions.toml
             android/gradle/wrapper/gradle-wrapper.properties
-            android/build.gradle.kts
-            android/app/build.gradle.kts
+            android/build.gradle
+            android/app/build.gradle
       - name: Android tests, lint and debug assembly
         working-directory: android
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           if matches="$(grep -rIlE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}' \
-              --include='*.kt' --include='*.java' --include='*.yml' \
+              --include='*.java' --include='*.gradle' --include='*.yml' \
               --exclude='ci.yml' --exclude-dir='.git' .)"; then
             echo "::error::Possible committed secret pattern found in these files (values omitted):"
             printf '%s\n' "$matches"

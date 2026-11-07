@@ -8,10 +8,10 @@ testing the project, and the contribution rules.
 
 | Tool | Version | Notes |
 |---|---|---|
-| JDK | 17 (target) | `server/pom.xml` → `java.version=17`; Gradle `jvmToolchain(17)`; CI uses Temurin 17. Use JDK 17 for the supported build configuration. |
+| JDK | 17 (target) | `server/pom.xml` → `java.version=17`; Gradle `compileOptions` Java 17; CI uses Temurin 17. Use JDK 17 for the supported build configuration. |
 | Maven | 3.9+ | Verified: Apache Maven 3.9.12. There is **no** `server/mvnw` wrapper — use the system `mvn`. |
 | Android SDK | compileSdk/targetSdk 35, minSdk 26 | `ANDROID_HOME` / `ANDROID_SDK_ROOT` set; `android/local.properties` carries `sdk.dir` (gitignored). |
-| Gradle | 8.10 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.7.3, Kotlin 2.0.21, KSP 2.0.21-1.0.27, Hilt 2.52. |
+| Gradle | 8.10 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.7.3, Java 17, Hilt 2.52 (`annotationProcessor`), Room 2.6.1 (`room-rxjava3`), RxJava 3.1.8. |
 | Docker Desktop | recent | Verified: Docker Compose v5.6.0. PostgreSQL 16 runs on host port 5433. |
 | Python | 3.x + `python-docx` | Only for regenerating `docs/report.docx`. Verified: Python 3.14.2, python-docx 1.2.0. |
 | `adb` | Android SDK platform-tools | For installing the app on a device/emulator. |
@@ -112,10 +112,10 @@ tools/                                    report generator + release packaging
 
 ## Code style
 
-- Kotlin/Java: 4-space indent; keep lines within 140 characters (current max 135).
+- Java: 4-space indent; keep lines within 140 characters (current max 135).
 - XML/YAML/JSON/TOML: 2-space indent. Shell: 2-space; PowerShell/Python: 4-space.
 - Repository stores LF for text (`.gitattributes`); do not commit CRLF text files.
-- No formatter plugin (ktlint/spotless/detekt/Checkstyle) is configured; match
+- No formatter plugin (spotless/Checkstyle) is configured; match
   the surrounding code style instead of reformatting whole files.
 
 ## Regenerating `docs/report.docx`
