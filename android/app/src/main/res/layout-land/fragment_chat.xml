@@ -78,8 +78,7 @@
                 android:layout_height="@dimen/min_touch_target"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/cd_search_in_chat"
-                android:src="@drawable/ic_search"
-                android:visibility="gone" />
+                android:src="@drawable/ic_search" />
 
             <ImageButton
                 android:id="@+id/infoButton"
@@ -96,8 +95,7 @@
                 android:layout_height="@dimen/min_touch_target"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/summary_title"
-                android:src="@drawable/ic_auto_awesome"
-                android:visibility="gone" />
+                android:src="@drawable/ic_auto_awesome" />
 
             <ImageButton
                 android:id="@+id/moreButton"

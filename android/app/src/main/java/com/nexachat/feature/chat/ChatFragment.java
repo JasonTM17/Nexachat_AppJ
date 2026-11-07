@@ -241,6 +241,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.chatSubtitle.setText(subtitle);
         binding.chatSubtitle.setVisibility(subtitle.isEmpty() ? View.GONE : View.VISIBLE);
         binding.callButton.setVisibility(state.isGroup() ? View.GONE : View.VISIBLE);
+        binding.infoButton.setVisibility(state.isGroup() ? View.VISIBLE : View.GONE);
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
         if (state.getError() != null) binding.chatError.setText(ChatErrorText.messageId(state.getError()));
         renderPinned();
