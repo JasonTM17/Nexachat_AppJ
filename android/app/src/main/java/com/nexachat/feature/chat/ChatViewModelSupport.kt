@@ -310,20 +310,20 @@ internal class ChatViewModelSupport(
                     ?: return@launch
                 updatePending {
                     it + PendingAttachment(
-                        localId = localId,
-                        uri = uri,
-                        displayName = local.displayName,
-                        mimeType = local.mimeType,
-                        type = local.type,
-                        progress = 0f,
-                        state = PendingAttachment.PendingState.UPLOADING,
+                        localId,
+                        uri,
+                        local.displayName,
+                        local.mimeType,
+                        local.type,
+                        0f,
+                        PendingAttachment.PendingState.UPLOADING,
                     )
                 }
                 attachmentRepository.upload(uri, local.mimeType).collect { event ->
                     when (event) {
                         is AttachmentUploadEvent.Progress -> updatePending { rows ->
                             rows.map { row ->
-                                if (row.localId == localId) row.copy(progress = event.fraction) else row
+                                if (row.localId == localId) row.withProgress(event.fraction) else row
                             }
                         }
                         is AttachmentUploadEvent.Uploaded -> {
@@ -345,7 +345,7 @@ internal class ChatViewModelSupport(
                         is AttachmentUploadEvent.Failed -> updatePending { rows ->
                             rows.map { row ->
                                 if (row.localId == localId) {
-                                    row.copy(state = PendingAttachment.PendingState.FAILED)
+                                    row.withState(PendingAttachment.PendingState.FAILED)
                                 } else {
                                     row
                                 }
