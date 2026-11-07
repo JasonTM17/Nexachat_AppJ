@@ -1,55 +1,60 @@
 package com.nexachat.feature.auth;
 
+import androidx.annotation.NonNull;
+import androidx.lifecycle.LiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
+import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AuthRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.channels.Channel;
-import kotlinx.coroutines.flow.Flow;
 
-/**
- * Session-restore logic behind SplashScreen (phase-05 M1: kill app → reopen must not
- * require login). Emits exactly one {@link SplashNavEvent}.
- */
+/** Session restore behind SplashScreen; emits exactly one navigation destination. */
 @HiltViewModel
 public final class SplashViewModel extends ViewModel {
 
-    private final Channel<SplashNavEvent> navEventsChannel =
-            SplashViewModelSupportKt.newSplashNavChannel();
-    private final Flow<SplashNavEvent> navEvents =
-            SplashViewModelSupportKt.splashNavEvents(navEventsChannel);
+    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final OneShotLiveData<SplashNavEvent> navEvents = new OneShotLiveData<>();
 
     @Inject
     public SplashViewModel(TokenStore tokenStore, AuthRepository authRepository) {
         Objects.requireNonNull(tokenStore, "tokenStore");
         Objects.requireNonNull(authRepository, "authRepository");
-        TokenStore store = tokenStore;
-        AuthRepository repository = authRepository;
-        launch(
-                (scope, continuation) ->
-                        SplashViewModelSupportKt.splashEmitRestoreDestination(
-                                store, repository, navEventsChannel, continuation));
+
+        disposables.add(tokenStore.getHasValidRefresh()
+                .first(false)
+                .subscribeOn(Schedulers.io())
+                .flatMap(hasRefresh -> hasRefresh
+                        ? authRepository.refresh().map(SplashViewModel::destinationFor)
+                        : Single.just(SplashNavEvent.ToLogin.INSTANCE))
+                .subscribe(
+                        navEvents::postValue,
+                        error -> navEvents.postValue(SplashNavEvent.ToLogin.INSTANCE)));
     }
 
-    public Flow<SplashNavEvent> getNavEvents() {
+    @NonNull
+    public LiveData<SplashNavEvent> getNavEvents() {
         return navEvents;
     }
 
-    private void launch(Function2<CoroutineScope, Continuation<? super Unit>, Object> block) {
-        BuildersKt.launch(
-                ViewModelKt.getViewModelScope(this),
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                block);
+    private static SplashNavEvent destinationFor(Result<Boolean> result) {
+        if (result instanceof Result.Success<?>) {
+            return SplashNavEvent.ToInbox.INSTANCE;
+        }
+        ApiError error = ((Result.Failure<?>) result).getError();
+        return error instanceof ApiError.Network
+                ? SplashNavEvent.ToInbox.INSTANCE
+                : SplashNavEvent.ToLogin.INSTANCE;
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 }

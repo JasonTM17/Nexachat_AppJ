@@ -1,38 +1,35 @@
 package com.nexachat.feature.inbox;
 
 import androidx.annotation.Nullable;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
+import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.ConversationRepository;
+import com.nexachat.data.TimeAndJwt;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.UnaryOperator;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
 /**
- * Backs InboxScreen (plan §12.1 feature/inbox). The list is a pure Room stream
- * via {@link ConversationRepository#inboxFlow()} — WS pushes only trigger repository
- * refreshes, so the VM never handles frames. Unread badges come straight from
- * {@code unreadCount}; {@link InboxUiState#getTotalUnread()} feeds any app-level badge.
+ * Backs InboxScreen. Room remains the render source; repository refreshes run
+ * off the UI thread and update the inbox stream.
  */
 @HiltViewModel
 public final class InboxViewModel extends ViewModel {
 
     private final ConversationRepository conversationRepository;
-    private final MutableStateFlow<InboxUiState> mutableUiState =
-            StateFlowKt.MutableStateFlow(new InboxUiState());
-    private final StateFlow<InboxUiState> uiState = mutableUiState;
+    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final MutableLiveData<InboxUiState> mutableUiState =
+            new MutableLiveData<>(new InboxUiState());
+    private InboxUiState currentState = mutableUiState.getValue();
 
     @Inject
     public InboxViewModel(
@@ -51,58 +48,53 @@ public final class InboxViewModel extends ViewModel {
         start(null, null);
     }
 
-    public StateFlow<InboxUiState> getUiState() {
-        return uiState;
+    public LiveData<InboxUiState> getUiState() {
+        return mutableUiState;
     }
 
     /** Pulls the authoritative inbox from REST (launch + user refresh). */
     public void refresh() {
-        CoroutineScope scope = ViewModelKt.getViewModelScope(this);
-        BuildersKt.launch(
-                scope,
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                new Function2<CoroutineScope, Continuation<? super Unit>, Object>() {
-                    @Override
-                    public Object invoke(
-                            CoroutineScope coroutineScope, Continuation<? super Unit> continuation) {
-                        return InboxViewModelSupportKt.inboxRefreshInbox(
-                                conversationRepository, mutableUiState, continuation);
-                    }
-                });
+        disposables.add(conversationRepository.refreshInbox()
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?>
+                                ? state.withError(null)
+                                : state.withError(((Result.Failure<?>) result).getError())),
+                        error -> updateState(state -> state.withError(
+                                new ApiError.Network(error.getMessage())))));
     }
 
     private void start(@Nullable TokenStore tokenStore, @Nullable Moshi moshi) {
-        CoroutineScope scope = ViewModelKt.getViewModelScope(this);
         if (tokenStore != null && moshi != null) {
-            TokenStore store = tokenStore;
-            Moshi json = moshi;
-            BuildersKt.launch(
-                    scope,
-                    EmptyCoroutineContext.INSTANCE,
-                    CoroutineStart.DEFAULT,
-                    new Function2<CoroutineScope, Continuation<? super Unit>, Object>() {
-                        @Override
-                        public Object invoke(
-                                CoroutineScope coroutineScope,
-                                Continuation<? super Unit> continuation) {
-                            return InboxViewModelSupportKt.inboxLoadCurrentUserId(
-                                    store, json, mutableUiState, continuation);
-                        }
-                    });
+            disposables.add(tokenStore.readTokens()
+                    .map(tokens -> Optional.ofNullable(
+                            TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi)))
+                    .defaultIfEmpty(Optional.empty())
+                    .subscribeOn(Schedulers.io())
+                    .subscribe(
+                            userId -> updateState(state -> state.withCurrentUserId(
+                                    userId.orElse(null))),
+                            error -> updateState(state -> state.withCurrentUserId(null))));
         }
-        BuildersKt.launch(
-                scope,
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                new Function2<CoroutineScope, Continuation<? super Unit>, Object>() {
-                    @Override
-                    public Object invoke(
-                            CoroutineScope coroutineScope, Continuation<? super Unit> continuation) {
-                        return InboxViewModelSupportKt.inboxCollectConversationRows(
-                                conversationRepository, mutableUiState, continuation);
-                    }
-                });
+
+        disposables.add(conversationRepository.inboxFlow()
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        conversations -> updateState(state ->
+                                state.withConversations(conversations, false)),
+                        error -> updateState(state -> state.withError(
+                                new ApiError.Network(error.getMessage())))));
         refresh();
+    }
+
+    private synchronized void updateState(UnaryOperator<InboxUiState> reducer) {
+        currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
+        mutableUiState.postValue(currentState);
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 }

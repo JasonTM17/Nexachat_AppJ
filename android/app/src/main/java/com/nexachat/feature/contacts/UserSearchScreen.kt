@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
 import com.nexachat.core.ui.components.EmptyState
@@ -51,10 +52,12 @@ fun UserSearchScreen(
     onOpenConversation: (String) -> Unit,
     viewModel: ContactsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.asFlow().collectAsStateWithLifecycle(
+        viewModel.uiState.value ?: ContactsViewModel.UiState(),
+    )
 
     LaunchedEffect(Unit) {
-        viewModel.events.collectLatest { event ->
+        viewModel.events.asFlow().collectLatest { event ->
             when (event) {
                 is ContactsViewModel.Event.OpenConversation ->
                     onOpenConversation(event.conversationId)

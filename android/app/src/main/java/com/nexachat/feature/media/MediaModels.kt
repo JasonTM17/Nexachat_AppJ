@@ -1,6 +1,5 @@
 package com.nexachat.feature.media
 
-import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -9,25 +8,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-
-/**
- * A picked item staged above the input bar while its upload runs
- * (phase-09 send pipeline). Rows are keyed by [localId] — the server
- * attachment id only exists after [PendingState.UPLOADED], at which point
- * the row leaves the strip and the optimistic outbox bubble takes over.
- */
-data class PendingAttachment(
-    val localId: String,
-    val uri: Uri,
-    val displayName: String?,
-    val mimeType: String?,
-    /** Derived wire type (IMAGE/VIDEO/AUDIO/FILE). */
-    val type: String,
-    val progress: Float,
-    val state: PendingState,
-) {
-    enum class PendingState { UPLOADING, FAILED }
-}
 
 /** Lets plain Compose code reach the authed [ImageLoader] singleton. */
 @EntryPoint

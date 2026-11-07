@@ -130,8 +130,10 @@ fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     appSettingsViewModel: AppSettingsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val showPresence by viewModel.showPresence.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.observeAsState(
+        viewModel.uiState.value ?: ProfileViewModel.UiState(),
+    )
+    val showPresence by viewModel.showPresence.observeAsState(true)
     val themeMode by appSettingsViewModel.themeMode.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val passwordChangedMessage = stringResource(R.string.profile_password_changed)
