@@ -310,6 +310,57 @@ class LlmSummaryProviderTest {
         assertThat(complexResult.model()).isEqualTo("deepseek-flash");
     }
 
+    @Test
+    void whenLocalServerModelFailsRoutineWindowEscalatesToCloud() throws Exception {
+        java.util.List<String> attemptedModels = new java.util.ArrayList<>();
+        startServer(exchange -> {
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            com.fasterxml.jackson.databind.JsonNode root = new ObjectMapper().readTree(body);
+            String model = root.path("model").asText();
+            attemptedModels.add(model);
+            if ("qwen2.5:3b".equals(model)) {
+                // Local model server error (e.g. out of memory or crash)
+                respond(exchange, 500, "{\"error\":\"Local GPU OOM\"}");
+            } else {
+                // Cloud model succeeds
+                respond(exchange, 200, response("{\"overview\":\"Cloud overview\",\"keyPoints\":[],\"decisions\":[],\"actionItems\":[],\"questions\":[],\"topics\":[]}"));
+            }
+        });
+
+        UUID caller = UUID.randomUUID();
+        SummaryConsentRepository consentRepository = mock(SummaryConsentRepository.class);
+        when(consentRepository.isConsented(caller)).thenReturn(true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new JwtPrincipal(caller), null, List.of()));
+
+        LlmProperties properties = new LlmProperties();
+        properties.setEnabled(true);
+        properties.setApiKey("cloud-key");
+        properties.setModel("deepseek-flash");
+        properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        properties.setLocalEnabled(true);
+        properties.setLocalModel("qwen2.5:3b");
+        properties.setLocalApiKey("local-ollama");
+        properties.setLocalBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+
+        client = new LlmClient(properties, new ObjectMapper());
+        SummaryComplexityAssessor assessor = new SummaryComplexityAssessor(10, 1000, 3);
+        LlmSummaryProvider provider = new LlmSummaryProvider(
+                properties, client, new PromptBuilder(new ObjectMapper(), new Redactor()),
+                new LlmOutputValidator(), new CircuitBreaker(Clock.systemUTC()), consentRepository, assessor);
+
+        List<SummaryMessage> routineMsgs = List.of(
+                new SummaryMessage(UUID.randomUUID(), 1, caller, "User", "Hello", Instant.EPOCH, null),
+                new SummaryMessage(UUID.randomUUID(), 2, caller, "User", "World", Instant.EPOCH, null)
+        );
+        SummaryWindow routineWindow = new SummaryWindow(UUID.randomUUID(), 1, 2, routineMsgs);
+
+        ProviderResult result = provider.summarize(routineWindow, SummaryLanguage.EN);
+        // Verified: it first tried Local (qwen2.5:3b), and upon failure smoothly escalated to Cloud (deepseek-flash)
+        assertThat(attemptedModels).contains("qwen2.5:3b", "deepseek-flash");
+        assertThat(result.model()).isEqualTo("deepseek-flash");
+    }
+
     private LlmSummaryProvider provider(
             LlmProperties properties, LlmClient llmClient, SummaryConsentRepository consentRepository) {
         return new LlmSummaryProvider(properties, llmClient,
