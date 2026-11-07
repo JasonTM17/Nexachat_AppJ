@@ -15,29 +15,29 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * Pure UI presentation logic unit tests for Chat presentation.
- * Verifies real production functions in {@link ChatScreenKt}:
- * - {@link ChatScreenKt#isMessageReplyable(DeliveryStatus)}
- * - {@link ChatScreenKt#isRetryAffordanceVisible(DeliveryStatus)}
- * - {@link ChatScreenKt#isSeenReceiptVisible(boolean, boolean, Long, long)}
- * - {@link ChatScreenKt#resolveBubbleContainerRole(DeliveryStatus, boolean)}
+ * Verifies real production functions in {@link ChatBubbleRules}:
+ * - {@link ChatBubbleRules#isMessageReplyable(DeliveryStatus)}
+ * - {@link ChatBubbleRules#isRetryAffordanceVisible(DeliveryStatus)}
+ * - {@link ChatBubbleRules#isSeenReceiptVisible(boolean, boolean, Long, long)}
+ * - {@link ChatBubbleRules#resolveBubbleContainerRole(DeliveryStatus, boolean)}
  */
 public class ChatUiLogicTest {
 
     @Test
     public void replyableGateAllowsOnlySentMessages() {
-        assertTrue("SENT messages must be replyable", ChatScreenKt.isMessageReplyable(DeliveryStatus.SENT));
-        assertFalse("SENDING messages must not be replyable", ChatScreenKt.isMessageReplyable(DeliveryStatus.SENDING));
-        assertFalse("FAILED messages must not be replyable", ChatScreenKt.isMessageReplyable(DeliveryStatus.FAILED));
+        assertTrue("SENT messages must be replyable", ChatBubbleRules.isMessageReplyable(DeliveryStatus.SENT));
+        assertFalse("SENDING messages must not be replyable", ChatBubbleRules.isMessageReplyable(DeliveryStatus.SENDING));
+        assertFalse("FAILED messages must not be replyable", ChatBubbleRules.isMessageReplyable(DeliveryStatus.FAILED));
     }
 
     @Test
     public void retryAffordanceVisibleOnlyForFailedMessages() {
         assertTrue("FAILED messages must expose retry affordance",
-                ChatScreenKt.isRetryAffordanceVisible(DeliveryStatus.FAILED));
+                ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED));
         assertFalse("SENDING messages must not show retry affordance",
-                ChatScreenKt.isRetryAffordanceVisible(DeliveryStatus.SENDING));
+                ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.SENDING));
         assertFalse("SENT messages must not show retry affordance",
-                ChatScreenKt.isRetryAffordanceVisible(DeliveryStatus.SENT));
+                ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.SENT));
     }
 
     @Test
@@ -47,27 +47,27 @@ public class ChatUiLogicTest {
         // Direct 1-1 chat, own message, sequence number <= peer watermark -> visible
         assertTrue(
                 "Own message with seq <= peer watermark in direct chat should show Seen",
-                ChatScreenKt.isSeenReceiptVisible(false, true, 10L, peerReadSeq));
+                ChatBubbleRules.isSeenReceiptVisible(false, true, 10L, peerReadSeq));
 
         // Direct 1-1 chat, own message, sequence number exactly equal to peer watermark -> visible
         assertTrue(
                 "Own message with seq == peer watermark in direct chat should show Seen",
-                ChatScreenKt.isSeenReceiptVisible(false, true, 15L, peerReadSeq));
+                ChatBubbleRules.isSeenReceiptVisible(false, true, 15L, peerReadSeq));
 
         // Direct 1-1 chat, own message, sequence number > peer watermark -> not visible
         assertFalse(
                 "Own message with seq > peer watermark should not show Seen",
-                ChatScreenKt.isSeenReceiptVisible(false, true, 20L, peerReadSeq));
+                ChatBubbleRules.isSeenReceiptVisible(false, true, 20L, peerReadSeq));
 
         // Direct 1-1 chat, incoming peer message (mine = false) -> never show own seen receipt
         assertFalse(
                 "Incoming peer message should never show Seen mark",
-                ChatScreenKt.isSeenReceiptVisible(false, false, 10L, peerReadSeq));
+                ChatBubbleRules.isSeenReceiptVisible(false, false, 10L, peerReadSeq));
 
         // Direct 1-1 chat, own message with null seq (pending) -> not visible
         assertFalse(
                 "Pending message without sequence number should not show Seen",
-                ChatScreenKt.isSeenReceiptVisible(false, true, null, peerReadSeq));
+                ChatBubbleRules.isSeenReceiptVisible(false, true, null, peerReadSeq));
     }
 
     @Test
@@ -75,7 +75,7 @@ public class ChatUiLogicTest {
         // Group chat watermark cannot attribute individual reader -> always false
         assertFalse(
                 "Group chat message should never show 1-1 Seen receipt",
-                ChatScreenKt.isSeenReceiptVisible(true, true, 10L, 100L));
+                ChatBubbleRules.isSeenReceiptVisible(true, true, 10L, 100L));
     }
 
     @Test
@@ -83,24 +83,24 @@ public class ChatUiLogicTest {
         // FAILED messages always resolve to ERROR container tint regardless of ownership
         assertEquals(
                 BubbleContainerColorRole.ERROR,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.FAILED, true));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.FAILED, true));
         assertEquals(
                 BubbleContainerColorRole.ERROR,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.FAILED, false));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.FAILED, false));
 
         // SENT / SENDING messages use ownership role
         assertEquals(
                 BubbleContainerColorRole.MINE,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.SENT, true));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.SENT, true));
         assertEquals(
                 BubbleContainerColorRole.MINE,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.SENDING, true));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.SENDING, true));
         assertEquals(
                 BubbleContainerColorRole.PEER,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.SENT, false));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.SENT, false));
         assertEquals(
                 BubbleContainerColorRole.PEER,
-                ChatScreenKt.resolveBubbleContainerRole(DeliveryStatus.SENDING, false));
+                ChatBubbleRules.resolveBubbleContainerRole(DeliveryStatus.SENDING, false));
     }
 
     @Test
@@ -115,15 +115,15 @@ public class ChatUiLogicTest {
         // index 1 -> middle message (m2)
         // index 2 -> oldest message (m1)
         assertEquals("Newest message must map to reverseLayout index 0",
-                0, ChatScreenKt.findMessageReversedIndex(messages, "msg-3"));
+                0, ChatBubbleRules.findMessageReversedIndex(messages, "msg-3"));
         assertEquals("Middle message must map to reverseLayout index 1",
-                1, ChatScreenKt.findMessageReversedIndex(messages, "msg-2"));
+                1, ChatBubbleRules.findMessageReversedIndex(messages, "msg-2"));
         assertEquals("Oldest message must map to reverseLayout index 2",
-                2, ChatScreenKt.findMessageReversedIndex(messages, "msg-1"));
+                2, ChatBubbleRules.findMessageReversedIndex(messages, "msg-1"));
         assertEquals("Non-existent message id must return -1",
-                -1, ChatScreenKt.findMessageReversedIndex(messages, "msg-unknown"));
+                -1, ChatBubbleRules.findMessageReversedIndex(messages, "msg-unknown"));
         assertEquals("Empty message list must return -1",
-                -1, ChatScreenKt.findMessageReversedIndex(Collections.emptyList(), "msg-1"));
+                -1, ChatBubbleRules.findMessageReversedIndex(Collections.emptyList(), "msg-1"));
     }
 
     private static ChatMessage testMessage(String id) {

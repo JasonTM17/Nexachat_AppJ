@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp;
 
 import androidx.annotation.NonNull;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -29,6 +30,14 @@ public final class StompFrame {
         this.command = command;
         this.headers = headers;
         this.body = body;
+    }
+
+    public StompFrame(
+            @NonNull String command,
+            @NonNull Map<String, String> headers,
+            @NonNull String body
+    ) {
+        this(command, new LinkedHashMap<>(headers), body);
     }
 
     @NonNull

@@ -66,7 +66,7 @@ public final class NetworkCharacterizationTest {
         store.clear().blockingAwait();
         release.countDown();
         refresh.join(10_000);
-        assertNull(store.readTokens().blockingGet(null));
+        assertNull(store.readTokens().blockingGet());
         verify(store, never()).saveTokens(anyString(), anyLong(), anyString());
     }
 
@@ -74,7 +74,8 @@ public final class NetworkCharacterizationTest {
     public void reconnectResubscribesAndPreservesDuplicateDeliveries() {
         TestScheduler scheduler = new TestScheduler();
         TokenStore store = tokenStore(new Tokens("access", Long.MAX_VALUE, "refresh"));
-        PublishProcessor<StompFrame> frameSource = PublishProcessor.<StompFrame>create().toSerialized();
+        io.reactivex.rxjava3.processors.FlowableProcessor<StompFrame> frameSource =
+                PublishProcessor.<StompFrame>create().toSerialized();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(frameSource.onBackpressureBuffer());
         when(stomp.subscribe(any())).thenReturn(Flowable.empty());
@@ -104,7 +105,7 @@ public final class NetworkCharacterizationTest {
         assertEquals(((ChatEvent.MessageCreated) events.get(0)).getMessage().getId(),
                 ((ChatEvent.MessageCreated) events.get(1)).getMessage().getId());
 
-        scheduler.advanceTimeBy(2L, TimeUnit.SECONDS);
+        scheduler.advanceTimeBy(1_300L, TimeUnit.MILLISECONDS);
         verify(stomp, times(2)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
         session.ensureConnected();
         scheduler.triggerActions();

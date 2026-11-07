@@ -46,7 +46,7 @@
 
     <fragment
         android:id="@+id/chatFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$ChatHostFragment"
+        android:name="com.nexachat.feature.chat.ChatFragment"
         android:label="@string/chat_title">
         <argument
             android:name="conversationId"

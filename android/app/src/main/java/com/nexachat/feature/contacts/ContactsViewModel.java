@@ -55,8 +55,11 @@ public final class ContactsViewModel extends ViewModel {
         disposables.add(contactsRepository.getContactsFlow()
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        contacts -> {
-                            List<Contact> snapshot = List.copyOf(contacts);
+                        contactsOpt -> {
+                            if (contactsOpt.isEmpty()) {
+                                return;
+                            }
+                            List<Contact> snapshot = List.copyOf(contactsOpt.get());
                             synchronized (this) {
                                 currentContacts = snapshot;
                             }

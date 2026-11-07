@@ -81,10 +81,14 @@ public final class RealtimeSessionReArmTest {
         assertEquals(ReconnectPolicy.MAX_ATTEMPTS, connects.get());
         foreground.onNext(true);
         scheduler.triggerActions();
-        scheduler.advanceTimeBy(RealtimeSession.PARKED_RETRY_MAX_MS + 1, TimeUnit.MILLISECONDS);
-        assertTrue(connects.get() > ReconnectPolicy.MAX_ATTEMPTS);
+        scheduler.advanceTimeBy(RealtimeSession.PARKED_RETRY_BASE_MS - 100L, TimeUnit.MILLISECONDS);
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        scheduler.advanceTimeBy(200L, TimeUnit.MILLISECONDS);
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS + 1, connects.get());
         foreground.onNext(false);
+        scheduler.advanceTimeBy(25, TimeUnit.SECONDS);
         int stopped = connects.get();
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS * 2, stopped);
         scheduler.advanceTimeBy(5 * RealtimeSession.PARKED_RETRY_MAX_MS, TimeUnit.MILLISECONDS);
         assertEquals(stopped, connects.get());
     }

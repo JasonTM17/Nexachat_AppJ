@@ -7,7 +7,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -57,7 +56,7 @@ public final class InboxFragment extends Fragment {
         binding.errorState.setOnRetry(viewModel::refresh);
         binding.emptyState.setMessage(getString(R.string.inbox_empty));
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+        viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
     }
 

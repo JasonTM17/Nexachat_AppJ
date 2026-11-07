@@ -18,7 +18,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.DiffUtil;
@@ -115,10 +114,11 @@ public final class GroupDetailFragment extends Fragment {
                 viewModel.openRename();
             }
         });
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+        viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
-        FlowLiveDataConversions.asLiveData(viewModel.getEvents())
-                .observe(getViewLifecycleOwner(), event -> {
+        viewModel.getEvents()
+                .observe(getViewLifecycleOwner(), raw -> {
+                    GroupDetailEvent event = raw == null ? null : raw.consume();
                     if (event instanceof GroupDetailEvent.ExitToInbox) {
                         NavHostFragment.findNavController(this).popBackStack(R.id.inboxFragment, false);
                     }

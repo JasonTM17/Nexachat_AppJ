@@ -25,7 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.Unit;
+import com.nexachat.core.common.Unit;
 import retrofit2.Call;
 
 /**

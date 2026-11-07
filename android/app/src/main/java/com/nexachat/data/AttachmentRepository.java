@@ -71,10 +71,15 @@ public final class AttachmentRepository {
     }
 
     @NonNull
+    public Flowable<AttachmentUploadEvent> upload(@NonNull Uri uri) {
+        return upload(uri, null);
+    }
+
+    @NonNull
     public Flowable<AttachmentUploadEvent> upload(
             @NonNull Uri uri,
             @Nullable String mimeHint) {
-        return Flowable.create(rawEmitter -> {
+        return Flowable.<AttachmentUploadEvent>create(rawEmitter -> {
             FlowableEmitter<AttachmentUploadEvent> emitter = rawEmitter.serialize();
             emitter.onNext(new AttachmentUploadEvent.Progress(0f));
 

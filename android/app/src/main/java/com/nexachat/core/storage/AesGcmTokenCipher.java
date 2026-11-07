@@ -11,7 +11,6 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.inject.Inject;
-import kotlin.Pair;
 
 /**
  * AES/GCM cipher whose key lives in AndroidKeyStore.
@@ -82,7 +81,7 @@ public final class AesGcmTokenCipher implements TokenCipher {
 
     @Override
     public byte[] decrypt(byte[] packed) throws GeneralSecurityException, IOException {
-        Pair<byte[], byte[]> ivAndCiphertext = unpackGcm(packed);
+        UnpackedGcm ivAndCiphertext = unpackGcm(packed);
         byte[] iv = ivAndCiphertext.getFirst();
         byte[] ciphertext = ivAndCiphertext.getSecond();
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
@@ -106,13 +105,31 @@ public final class AesGcmTokenCipher implements TokenCipher {
         return out;
     }
 
+    public static final class UnpackedGcm {
+        private final byte[] first;
+        private final byte[] second;
+
+        public UnpackedGcm(byte[] first, byte[] second) {
+            this.first = first;
+            this.second = second;
+        }
+
+        public byte[] getFirst() {
+            return first;
+        }
+
+        public byte[] getSecond() {
+            return second;
+        }
+    }
+
     /** Splits a {@link #packGcm} blob back into {@code (iv, ciphertext)}. */
-    public static Pair<byte[], byte[]> unpackGcm(byte[] packed) {
+    public static UnpackedGcm unpackGcm(byte[] packed) {
         if (packed.length <= IV_LENGTH) {
             throw new IllegalArgumentException("Packed token too short: " + packed.length + " bytes");
         }
         byte[] iv = Arrays.copyOfRange(packed, 0, IV_LENGTH);
         byte[] ciphertext = Arrays.copyOfRange(packed, IV_LENGTH, packed.length);
-        return new Pair<>(iv, ciphertext);
+        return new UnpackedGcm(iv, ciphertext);
     }
 }

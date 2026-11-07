@@ -46,6 +46,7 @@ import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
 import com.nexachat.summary.SummaryViewModel;
+import dagger.hilt.android.AndroidEntryPoint;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -53,15 +54,10 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.FlowKt;
-import kotlinx.coroutines.rx3.RxConvertKt;
-import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 
 /** View-based direct/group chat. The ViewModel remains the owner of message state and actions. */
+@AndroidEntryPoint
 public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
     private static final String ARG_CONVERSATION_ID = "conversationId";
     private final CompositeDisposable subscriptions = new CompositeDisposable();
@@ -188,23 +184,39 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void observeViewModel() {
-        observe(viewModel.getUiState(), next -> { state = next; render(); });
-        observe(viewModel.getSearchState(), next -> { searchState = next; renderSearchResults(); });
-        observe(viewModel.getJumpTargets(), id -> jumpToLoadedMessage(id));
-        observe(viewModel.getActionEvents(), event -> {
-            if (event instanceof ChatActionEvent.MessageEdited) render();
-            if (event instanceof ChatActionEvent.MessageForwarded forwarded) Snackbar.make(binding.getRoot(), R.string.forwarded_snackbar, Snackbar.LENGTH_LONG)
-                    .setAction(R.string.action_view, v -> openConversation(forwarded.getTargetConversationId())).show();
+        viewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
+            if (next != null) {
+                state = next;
+                render();
+            }
         });
-        observe(inboxViewModel.getUiState(), this::renderUnread);
+        viewModel.getSearchState().observe(getViewLifecycleOwner(), next -> {
+            if (next != null) {
+                searchState = next;
+                renderSearchResults();
+            }
+        });
+        viewModel.getJumpTargets().observe(getViewLifecycleOwner(), raw -> {
+            String id = raw == null ? null : raw.consume();
+            if (id != null) {
+                jumpToLoadedMessage(id);
+            }
+        });
+        viewModel.getActionEvents().observe(getViewLifecycleOwner(), raw -> {
+            ChatActionEvent event = raw == null ? null : raw.consume();
+            if (event instanceof ChatActionEvent.MessageEdited) render();
+            if (event instanceof ChatActionEvent.MessageForwarded forwarded) {
+                Snackbar.make(binding.getRoot(), R.string.forwarded_snackbar, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_view, v -> openConversation(forwarded.getTargetConversationId()))
+                        .show();
+            }
+        });
+        inboxViewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
+            if (next != null) {
+                renderUnread(next);
+            }
+        });
         summaryViewModel.state().observe(getViewLifecycleOwner(), this::renderSummaryState);
-    }
-
-    private <T> void observe(Flow<T> flow, io.reactivex.rxjava3.functions.Consumer<T> consumer) {
-        subscriptions.add(RxConvertKt.asFlowable(flow, EmptyCoroutineContext.INSTANCE)
-                .observeOn(AndroidSchedulers.mainThread()).subscribe(consumer, error -> {
-                    if (binding != null) Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
-                }));
     }
 
     private void render() {

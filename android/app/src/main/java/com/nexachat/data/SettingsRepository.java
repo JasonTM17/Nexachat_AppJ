@@ -21,7 +21,7 @@ import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.Unit;
+import com.nexachat.core.common.Unit;
 
 /**
  * Local preferences (theme) plus the server-backed privacy flag.

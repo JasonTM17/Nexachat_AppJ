@@ -17,7 +17,6 @@ import dagger.hilt.InstallIn;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import dagger.hilt.components.SingletonComponent;
 import javax.inject.Singleton;
-import kotlinx.coroutines.CoroutineScope;
 import retrofit2.Retrofit;
 
 /** Hilt bindings for the Java call core. */
@@ -51,9 +50,8 @@ public final class CallModule {
     public static CallSignalingClient provideCallSignalingClient(
             RealtimeSession realtimeSession,
             StompClient stompClient,
-            CoroutineScope scope,
             Moshi moshi) {
-        return new StompCallSignalingClient(realtimeSession, stompClient, scope, moshi);
+        return new StompCallSignalingClient(realtimeSession, stompClient, moshi);
     }
 
     @Provides

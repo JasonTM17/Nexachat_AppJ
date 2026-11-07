@@ -102,7 +102,7 @@ public final class TokenStoreTest {
 
         assertEquals(AesGcmTokenCipher.IV_LENGTH + ciphertext.length, packed.length);
         assertArrayEquals(iv, java.util.Arrays.copyOfRange(packed, 0, AesGcmTokenCipher.IV_LENGTH));
-        kotlin.Pair<byte[], byte[]> unpacked = AesGcmTokenCipher.unpackGcm(packed);
+        AesGcmTokenCipher.UnpackedGcm unpacked = AesGcmTokenCipher.unpackGcm(packed);
         assertArrayEquals(iv, unpacked.getFirst());
         assertArrayEquals(ciphertext, unpacked.getSecond());
     }

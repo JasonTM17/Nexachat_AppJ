@@ -1,8 +1,6 @@
 package com.nexachat.core.ui;
 
-import androidx.compose.ui.graphics.Color;
-import com.nexachat.core.ui.components.AvatarColorPair;
-import com.nexachat.core.ui.components.AvatarKt;
+import com.nexachat.core.ui.components.AvatarPalette;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
 import com.nexachat.core.ui.components.LinkUtils;
@@ -10,7 +8,6 @@ import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
 
-import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
@@ -229,9 +226,9 @@ public class DesignSystemUiRulesTest {
 
     @Test
     public void avatarPaletteIndexIsDeterministicAndNormalised() {
-        int idx1 = AvatarKt.avatarPaletteIndex("Nguyen Van A");
-        int idx2 = AvatarKt.avatarPaletteIndex("nguyen van a");
-        int idx3 = AvatarKt.avatarPaletteIndex("  Nguyen Van A  ");
+        int idx1 = AvatarPalette.avatarPaletteIndex("Nguyen Van A");
+        int idx2 = AvatarPalette.avatarPaletteIndex("nguyen van a");
+        int idx3 = AvatarPalette.avatarPaletteIndex("  Nguyen Van A  ");
         assertEquals("Case and trimming differences must produce identical palette index", idx1, idx2);
         assertEquals(idx1, idx3);
         assertTrue("Palette index must be in range 0..7", idx1 >= 0 && idx1 <= 7);
@@ -239,10 +236,10 @@ public class DesignSystemUiRulesTest {
 
     @Test
     public void extractInitialsHandlesSingleAndMultipleWords() {
-        assertEquals("NA", AvatarKt.extractInitials("Nguyen An"));
-        assertEquals("B", AvatarKt.extractInitials("Binh"));
-        assertEquals("?", AvatarKt.extractInitials(""));
-        assertEquals("?", AvatarKt.extractInitials("   "));
+        assertEquals("NA", AvatarPalette.extractInitials("Nguyen An"));
+        assertEquals("B", AvatarPalette.extractInitials("Binh"));
+        assertEquals("?", AvatarPalette.extractInitials(""));
+        assertEquals("?", AvatarPalette.extractInitials("   "));
     }
 
     @Test
@@ -250,17 +247,17 @@ public class DesignSystemUiRulesTest {
         // Test all 8 palette hues in both Light and Dark modes against their initials text color
         String[] names = {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"};
         for (String name : names) {
-            AvatarColorPair lightColors = AvatarKt.avatarColorsForName(name, false);
+            AvatarPalette.ColorPair lightColors = AvatarPalette.avatarColorsForName(name, false);
             double lightRatio = computeContrastRatio(
-                    colorValue(lightColors, "container"),
-                    colorValue(lightColors, "onContainer"));
+                    lightColors.getContainer(),
+                    lightColors.getOnContainer());
             assertTrue("Light mode avatar '" + name + "' contrast " + lightRatio + " must be >= 4.5:1",
                     lightRatio >= 4.5);
 
-            AvatarColorPair darkColors = AvatarKt.avatarColorsForName(name, true);
+            AvatarPalette.ColorPair darkColors = AvatarPalette.avatarColorsForName(name, true);
             double darkRatio = computeContrastRatio(
-                    colorValue(darkColors, "container"),
-                    colorValue(darkColors, "onContainer"));
+                    darkColors.getContainer(),
+                    darkColors.getOnContainer());
             assertTrue("Dark mode avatar '" + name + "' contrast " + darkRatio + " must be >= 4.5:1",
                     darkRatio >= 4.5);
         }
@@ -321,22 +318,7 @@ public class DesignSystemUiRulesTest {
         assertEquals(bottomEnd, radii.bottomEndDp, 0.001);
     }
 
-    /**
-     * Reads the packed Compose {@code Color} value out of an {@link AvatarColorPair}.
-     * Compose value-class accessors are name-mangled on the JVM, so a Java test reaches
-     * the backing field reflectively. Temporary bridge; Compose is removed in B4.
-     */
-    private static long colorValue(AvatarColorPair pair, String fieldName) {
-        try {
-            Field field = AvatarColorPair.class.getDeclaredField(fieldName);
-            field.setAccessible(true);
-            return field.getLong(pair);
-        } catch (ReflectiveOperationException e) {
-            throw new AssertionError("Cannot read AvatarColorPair." + fieldName, e);
-        }
-    }
-
-    private static double computeContrastRatio(long c1, long c2) {
+    private static double computeContrastRatio(int c1, int c2) {
         double l1 = relativeLuminance(c1);
         double l2 = relativeLuminance(c2);
         double lighter = Math.max(l1, l2);
@@ -344,22 +326,14 @@ public class DesignSystemUiRulesTest {
         return (lighter + 0.05) / (darker + 0.05);
     }
 
-    private static double relativeLuminance(long c) {
-        double r = channel(c, "getRed-impl");
-        double g = channel(c, "getGreen-impl");
-        double b = channel(c, "getBlue-impl");
+    private static double relativeLuminance(int argb) {
+        double r = ((argb >> 16) & 0xFF) / 255.0;
+        double g = ((argb >> 8) & 0xFF) / 255.0;
+        double b = (argb & 0xFF) / 255.0;
         return 0.2126 * channelValue(r) + 0.7152 * channelValue(g) + 0.0722 * channelValue(b);
     }
 
     private static double channelValue(double v) {
         return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-    }
-
-    private static double channel(long color, String method) {
-        try {
-            return (Float) Color.class.getMethod(method, long.class).invoke(null, color);
-        } catch (ReflectiveOperationException e) {
-            throw new AssertionError("Cannot call Color." + method, e);
-        }
     }
 }

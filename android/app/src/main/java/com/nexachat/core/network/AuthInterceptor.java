@@ -1,6 +1,5 @@
 package com.nexachat.core.network;
 
-import com.nexachat.core.common.BlockingCalls;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import java.io.IOException;
@@ -33,10 +32,13 @@ public final class AuthInterceptor implements Interceptor {
 
         final Tokens tokens;
         try {
-            tokens = BlockingCalls.readTokens(tokenStore);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IOException("token read interrupted", interrupted);
+            tokens = tokenStore.readTokens().blockingGet();
+        } catch (RuntimeException ex) {
+            if (ex.getCause() instanceof InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("token read interrupted", interrupted);
+            }
+            throw ex;
         }
         String accessToken = tokens == null ? null : tokens.getAccessToken();
         Request authenticated = accessToken == null

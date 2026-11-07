@@ -23,7 +23,7 @@ import javax.inject.Singleton;
  *
  * <p>RxDataStore performs reads and writes asynchronously on its configured IO
  * scheduler. The API never blocks the caller; Kotlin callers may bridge with
- * kotlinx-coroutines-rx3 at their call sites.
+ * RxJava3 streams at their call sites.
  */
 @Singleton
 public final class TokenStore {
@@ -107,6 +107,11 @@ public final class TokenStore {
         return dataStore.data()
                 .map(preferences -> toTokens(preferences) != null)
                 .distinctUntilChanged();
+    }
+
+    @NonNull
+    public Flowable<Boolean> getHasValidRefresh() {
+        return hasValidRefresh();
     }
 
     @Nullable

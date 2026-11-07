@@ -6,7 +6,7 @@ import java.util.function.Consumer;
 
 /**
  * Repository result: a value or a typed {@link ApiError}. Distinct from
- * {@code kotlin.Result} because failures carry the parsed error-envelope code.
+ * Typed outcome wrapper carrying the parsed error-envelope code on failure.
  */
 public sealed interface Result<T> permits Result.Success, Result.Failure {
 

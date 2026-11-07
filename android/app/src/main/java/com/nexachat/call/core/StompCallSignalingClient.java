@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import kotlinx.coroutines.CoroutineScope;
 
 /** Java adapter for the existing authenticated raw-STOMP connection. */
 public final class StompCallSignalingClient implements CallSignalingClient {
@@ -18,7 +17,6 @@ public final class StompCallSignalingClient implements CallSignalingClient {
 
     private final RealtimeSession realtimeSession;
     private final StompClient stompClient;
-    private final CoroutineScope scope;
     private final CallFrameCodec codec;
     private final CallQueueSubscriptions subscriptions;
     private final Object lock = new Object();
@@ -33,11 +31,9 @@ public final class StompCallSignalingClient implements CallSignalingClient {
     public StompCallSignalingClient(
             RealtimeSession realtimeSession,
             StompClient stompClient,
-            CoroutineScope scope,
             Moshi moshi) {
         this.realtimeSession = Objects.requireNonNull(realtimeSession, "realtimeSession");
         this.stompClient = Objects.requireNonNull(stompClient, "stompClient");
-        this.scope = Objects.requireNonNull(scope, "scope");
         this.codec = new CallFrameCodec(Objects.requireNonNull(moshi, "moshi"));
         this.subscriptions = new CallQueueSubscriptions(new CallQueueSubscriptions.Transport() {
             @Override

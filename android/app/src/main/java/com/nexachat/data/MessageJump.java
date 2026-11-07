@@ -6,16 +6,16 @@ import java.util.Objects;
 /** Outcome of paging history back to a message the user asked to see. */
 public sealed interface MessageJump permits MessageJump.FoundValue, MessageJump.NotFoundValue, MessageJump.Failed {
     /** The message is stored, so the list can scroll to it. */
-    MessageJump Found = FoundValue.INSTANCE;
+    FoundValue Found = FoundValue.INSTANCE;
     /** The message is gone or older than the page budget. */
-    MessageJump NotFound = NotFoundValue.INSTANCE;
+    NotFoundValue NotFound = NotFoundValue.INSTANCE;
 
     final class FoundValue implements MessageJump {
-        private static final FoundValue INSTANCE = new FoundValue();
+        public static final FoundValue INSTANCE = new FoundValue();
         private FoundValue() {}
     }
     final class NotFoundValue implements MessageJump {
-        private static final NotFoundValue INSTANCE = new NotFoundValue();
+        public static final NotFoundValue INSTANCE = new NotFoundValue();
         private NotFoundValue() {}
     }
     final class Failed implements MessageJump {

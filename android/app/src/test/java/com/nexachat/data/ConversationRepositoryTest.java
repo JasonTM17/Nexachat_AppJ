@@ -404,8 +404,11 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
-        public Flowable<Optional<ConversationEntity>> observeById(String conversationId) {
-            return inbox.map(ignored -> Optional.ofNullable(rows.get(conversationId)))
+        public Flowable<List<ConversationEntity>> observeById(String conversationId) {
+            return inbox.map(ignored -> {
+                        ConversationEntity row = rows.get(conversationId);
+                        return row == null ? Collections.<ConversationEntity>emptyList() : List.of(row);
+                    })
                     .distinctUntilChanged();
         }
 

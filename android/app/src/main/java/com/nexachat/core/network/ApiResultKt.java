@@ -22,7 +22,8 @@ public final class ApiResultKt {
     @NonNull
     public static <T> Single<ApiResult<T>> safeApiCall(@NonNull Call<T> call) {
         return Single.<ApiResult<T>>create(emitter -> {
-            Call<T> active = call.clone();
+            Call<T> cloned = call.isExecuted() ? call.clone() : null;
+            Call<T> active = cloned != null ? cloned : call;
             emitter.setCancellable(active::cancel);
             try {
                 emitter.onSuccess(fromResponse(active.execute()));

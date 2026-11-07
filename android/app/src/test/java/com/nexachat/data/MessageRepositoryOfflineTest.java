@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.common.Unit;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.MessageDao;
 import com.nexachat.core.database.MessageEntity;
@@ -73,7 +74,10 @@ public class MessageRepositoryOfflineTest {
         when(messageDao.byId(anyString())).thenAnswer(call -> Maybe.fromCallable(row::get));
         when(messageDao.update(any())).thenAnswer(call -> Completable.fromAction(() -> row.set(call.getArgument(0))));
         when(reactionDao.forMessage(anyString())).thenReturn(Single.just(java.util.Collections.emptyList()));
+        when(reactionDao.deleteForMessage(anyString())).thenReturn(Completable.complete());
+        when(reactionDao.upsertAll(any())).thenReturn(Completable.complete());
         when(pinDao.find(anyString(), anyString())).thenReturn(Maybe.empty());
+        when(pinDao.delete(anyString(), anyString())).thenReturn(Completable.complete());
         when(conversationDao.byId(anyString())).thenReturn(Maybe.empty());
         when(session.getEvents()).thenReturn(Flowable.<ChatEvent>empty());
         when(session.getIsOpen()).thenReturn(io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(true));

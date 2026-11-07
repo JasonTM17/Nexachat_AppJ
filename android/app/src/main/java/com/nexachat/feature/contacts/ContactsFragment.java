@@ -15,7 +15,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -83,9 +82,9 @@ public final class ContactsFragment extends Fragment {
         binding.errorState.setOnRetry(viewModel::loadContacts);
         binding.emptyState.setMessage(getString(R.string.contacts_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+        viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
-        FlowLiveDataConversions.asLiveData(viewModel.getEvents())
+        viewModel.getEvents()
                 .observe(getViewLifecycleOwner(), event -> {
                     if (event instanceof ContactsViewModel.Event.OpenConversation open) {
                         Bundle args = new Bundle();

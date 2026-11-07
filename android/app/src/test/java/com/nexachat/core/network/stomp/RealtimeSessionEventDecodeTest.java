@@ -18,18 +18,19 @@ import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.observers.TestObserver;
+import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
+import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import org.junit.Test;
 
 public final class RealtimeSessionEventDecodeTest {
 
-    private final PublishProcessor<StompFrame> frames = PublishProcessor.<StompFrame>create().toSerialized();
+    private final FlowableProcessor<StompFrame> frames = PublishProcessor.<StompFrame>create().toSerialized();
 
     @Test
     public void messageCreatedDecodesFullPayload() {
         RealtimeSession session = session(false, null);
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":\"c-1\","
                 + "\"serverTs\":\"2026-11-03T09:12:04Z\",\"payload\":{\"id\":\"m-1\","
                 + "\"seq\":1,\"conversationId\":\"c-1\",\"senderId\":\"u-1\","
@@ -37,7 +38,7 @@ public final class RealtimeSessionEventDecodeTest {
         ChatEvent.MessageCreated event = (ChatEvent.MessageCreated) observer.awaitCount(1).values().get(0);
         assertEquals("c-1", event.getConversationId());
         assertEquals("m-1", event.getMessage().getId());
-        assertEquals(1L, event.getMessage().getSeq());
+        assertEquals(Long.valueOf(1L), event.getMessage().getSeq());
         assertEquals("hello", event.getMessage().getContent());
     }
 
@@ -53,7 +54,7 @@ public final class RealtimeSessionEventDecodeTest {
     @Test
     public void messageUpdatedDecodesFullPayload() {
         RealtimeSession session = session(false, null);
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_UPDATED\",\"conversationId\":\"c-1\","
                 + "\"serverTs\":\"2026-11-03T10:00:00Z\",\"payload\":{\"id\":\"m-1\","
                 + "\"seq\":1,\"conversationId\":\"c-1\",\"senderId\":\"u-1\","
@@ -68,7 +69,7 @@ public final class RealtimeSessionEventDecodeTest {
     @Test
     public void messageDeletedDecodesIdAndTime() {
         RealtimeSession session = session(false, null);
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_DELETED\",\"conversationId\":\"c-1\","
                 + "\"payload\":{\"messageId\":\"m-1\",\"deletedAt\":\"2026-11-03T11:00:00Z\"}}"));
         ChatEvent.MessageDeleted event = (ChatEvent.MessageDeleted) observer.awaitCount(1).values().get(0);
@@ -80,7 +81,7 @@ public final class RealtimeSessionEventDecodeTest {
     @Test
     public void onlineAndOfflineDecodePresenceAndLastSeen() {
         RealtimeSession session = session(false, null);
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"USER_ONLINE\",\"serverTs\":\"2026-11-03T11:59:00.000Z\","
                 + "\"payload\":{\"userId\":\"u-2\",\"online\":true}}"));
         frames.onNext(message("{\"eventType\":\"USER_OFFLINE\",\"serverTs\":\"2026-11-03T12:00:05.000Z\","
@@ -99,7 +100,7 @@ public final class RealtimeSessionEventDecodeTest {
     @Test
     public void errorQueueDecodesBothCodes() {
         RealtimeSession session = session(false, "errors-sub");
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(new StompFrame(StompCommand.MESSAGE,
                 java.util.Collections.singletonMap("subscription", "errors-sub"),
                 "{\"code\":\"RATE_LIMITED\",\"clientMessageId\":\"client-1\"}"));
@@ -118,7 +119,7 @@ public final class RealtimeSessionEventDecodeTest {
     @Test
     public void unknownTypesAndMalformedFramesDoNotKillStream() {
         RealtimeSession session = session(false, null);
-        TestObserver<ChatEvent> observer = session.getEvents().test();
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("not json"));
         frames.onNext(message("{\"eventType\":\"FUTURE_EVENT\",\"conversationId\":\"c-1\",\"payload\":{\"x\":1}}"));
         frames.onNext(message("{\"eventType\":\"USER_ONLINE\",\"payload\":{\"userId\":\"u-3\",\"online\":true}}"));

@@ -11,7 +11,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavOptions;
 import androidx.navigation.fragment.NavHostFragment;
@@ -71,10 +70,11 @@ public final class CreateGroupFragment extends Fragment {
             @Override public void afterTextChanged(Editable e) {}
         });
         binding.createButton.setOnClickListener(v -> viewModel.create());
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+        viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
-        FlowLiveDataConversions.asLiveData(viewModel.getEvents())
-                .observe(getViewLifecycleOwner(), event -> {
+        viewModel.getEvents()
+                .observe(getViewLifecycleOwner(), raw -> {
+                    CreateGroupEvent event = raw == null ? null : raw.consume();
                     if (event instanceof CreateGroupEvent.Created created) {
                         Bundle args = new Bundle();
                         args.putString("conversationId", created.getConversationId());

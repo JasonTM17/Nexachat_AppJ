@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModelStore;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.common.Unit;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
@@ -134,9 +135,9 @@ public final class ChatViewModelTest {
         when(messageRepository.loadUntilLoaded(anyString(), anyString(), anyInt()))
                 .thenReturn(Single.just(MessageJump.NotFound.INSTANCE));
         when(messageRepository.editMessage(anyString(), anyString(), anyString()))
-                .thenReturn(Single.just(new Result.Success<>(kotlin.Unit.INSTANCE)));
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(messageRepository.deleteMessage(anyString(), anyString()))
-                .thenReturn(Single.just(new Result.Success<>(kotlin.Unit.INSTANCE)));
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(messageRepository.searchMessages(anyString(), anyString(), nullable(Long.class), anyInt()))
                 .thenReturn(Single.just(new Result.Success<>(
                         new MessageSearchResult(List.of(), false, null))));
@@ -709,7 +710,7 @@ public final class ChatViewModelTest {
     @Test
     public void consumedActionEventDoesNotReplayAfterObserverReattaches() {
         when(messageRepository.editMessage(anyString(), anyString(), anyString()))
-                .thenReturn(Single.just(new Result.Success<>(kotlin.Unit.INSTANCE)));
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         AtomicReference<ChatSingleLiveEvent.Event<ChatActionEvent>> first = new AtomicReference<>();
         androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<ChatActionEvent>> firstObserver = first::set;
         viewModel.getActionEvents().observeForever(firstObserver);

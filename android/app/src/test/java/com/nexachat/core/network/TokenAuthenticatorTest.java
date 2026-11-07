@@ -90,7 +90,7 @@ public final class TokenAuthenticatorTest {
                 okhttp3.ResponseBody.create(okhttp3.MediaType.parse("application/json"),
                         "{\"error\":{\"code\":\"TOKEN_REUSED\"}}")));
         SessionEvents events = new SessionEvents();
-        io.reactivex.rxjava3.observers.TestObserver<SessionEvents.Event> observer = events.getEvents().test();
+        io.reactivex.rxjava3.subscribers.TestSubscriber<SessionEvents.Event> observer = events.getEvents().test();
         Request retry = authenticator(store, api, events).authenticate(null, unauthorized(OLD));
         assertNull(retry);
         assertNull(current(store));
@@ -136,7 +136,7 @@ public final class TokenAuthenticatorTest {
     }
 
     private static Tokens current(TokenStore store) {
-        return store.readTokens().blockingGet(null);
+        return store.readTokens().blockingGet();
     }
 
     private static AuthResponse auth(String access, String refresh) {

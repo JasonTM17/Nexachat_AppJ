@@ -3,7 +3,6 @@ package com.nexachat.call.core;
 import android.content.Context;
 import com.nexachat.R;
 import com.nexachat.core.common.AppLocaleManager;
-import com.nexachat.core.common.BlockingCalls;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 
@@ -47,9 +46,11 @@ public final class RoomCallPeerNameResolver implements CallPeerNameResolver {
     private ConversationEntity loadConversation(String conversationId) {
         if (!hasText(conversationId)) return null;
         try {
-            return BlockingCalls.conversationById(conversationDao, conversationId);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
+            return conversationDao.byId(conversationId).blockingGet();
+        } catch (RuntimeException exception) {
+            if (exception.getCause() instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             return null;
         }
     }

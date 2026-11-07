@@ -60,7 +60,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.Unit;
+import com.nexachat.core.common.Unit;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
 
@@ -380,7 +380,7 @@ public final class MessageRepository {
                             if (reaction != null) rows.add(reaction);
                         }
                     }).ignoreElements();
-                    return collect.andThen(reactionDao.replaceForMessages(owners, rows));
+                    return collect.andThen(Completable.defer(() -> reactionDao.replaceForMessages(owners, rows)));
                 }));
     }
 
@@ -394,11 +394,11 @@ public final class MessageRepository {
         if (trimmed.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_VALIDATION_FAILED)));
         AtomicReference<MessageEntity> optimisticRef = new AtomicReference<>();
         AtomicReference<MessageEntity> beforeRef = new AtomicReference<>();
-        return messageDao.byId(messageId).map(Optional::of).defaultIfEmpty(Optional.empty()).flatMap(beforeOpt -> {
+        return messageDao.byId(messageId).map(Optional::of).defaultIfEmpty(Optional.empty()).<Result<Unit>>flatMap(beforeOpt -> {
             if (beforeOpt.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND)));
             MessageEntity before = beforeOpt.get();
             beforeRef.set(before);
-            return isMine(before.getSenderId()).flatMap(mine -> {
+            return isMine(before.getSenderId()).<Result<Unit>>flatMap(mine -> {
                 if (!mine) return Single.just(Result.failure(new ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR)));
                 if (!MessageDto.TYPE_TEXT.equals(before.getType())) {
                     return Single.just(Result.failure(new ApiError.Unknown(ERROR_VALIDATION_FAILED)));
@@ -412,7 +412,7 @@ public final class MessageRepository {
                 optimisticRef.set(optimistic);
                 return messageDao.update(optimistic).andThen(call(messageApi.editMessage(conversationId,
                                 messageId, new EditMessageRequest(trimmed))))
-                        .flatMap(result -> {
+                        .<Result<Unit>>flatMap(result -> {
                             if (result instanceof Result.Success<?> success) {
                                 MessageDto dto = (MessageDto) success.getValue();
                                 MessageEntity server = toEntity(dto, conversationId);
@@ -424,7 +424,7 @@ public final class MessageRepository {
                                                 ? server.getEditedAtEpochMs() : optimistic.getEditedAtEpochMs(),
                                         server.getDeletedAtEpochMs(), server.getReplyToSnippet());
                                 return messageDao.byId(messageId).map(Optional::of).defaultIfEmpty(Optional.empty())
-                                        .flatMap(current -> {
+                                        .<Result<Unit>>flatMap(current -> {
                                             if (current.isEmpty() || !sameMessage(current.get(), optimistic)) {
                                                 return Single.just(new Result.Success<>(Unit.INSTANCE));
                                             }
@@ -461,10 +461,11 @@ public final class MessageRepository {
      * state only if no newer update replaced it. A concurrent delete event wins.
      */
     public Single<Result<Unit>> deleteMessage(String conversationId, String messageId) {
-        if (!pendingDeleteIds.add(messageId)) return Single.just(new Result.Success<>(Unit.INSTANCE));
-        confirmedDeleteIds.remove(messageId);
-        AtomicReference<DeleteRollback> rollbackRef = new AtomicReference<>();
-        Single<Result<Unit>> operation = messageDao.byId(messageId).map(Optional::of)
+        return Single.defer(() -> {
+            if (!pendingDeleteIds.add(messageId)) return Single.just(new Result.Success<>(Unit.INSTANCE));
+            confirmedDeleteIds.remove(messageId);
+            AtomicReference<DeleteRollback> rollbackRef = new AtomicReference<>();
+            Single<Result<Unit>> operation = messageDao.byId(messageId).map(Optional::of)
                 .defaultIfEmpty(Optional.empty()).flatMap(beforeOpt -> {
                     if (beforeOpt.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND)));
                     MessageEntity before = beforeOpt.get();
@@ -523,6 +524,7 @@ public final class MessageRepository {
                 .doOnSuccess(ignored -> clearDeleteState(messageId))
                 .doOnError(ignored -> clearDeleteState(messageId))
                 .subscribeOn(Schedulers.io());
+        });
     }
 
     private void clearDeleteState(String messageId) {
@@ -576,12 +578,12 @@ public final class MessageRepository {
         }
         return call(messageApi.searchMessages(conversationId, trimmed,
                         Math.max(1, Math.min(limit, MAX_SEARCH_LIMIT)), beforeSeq))
-                .flatMap(result -> {
+                .<Result<MessageSearchResult>>flatMap(result -> {
                     if (!(result instanceof Result.Success<?> success)) return Single.just(Result.cast(result));
                     MessagePageDto page = (MessagePageDto) success.getValue();
                     return storeHistoryItems(conversationId, page.getItems())
                             .andThen(currentUserId().map(Optional::of).defaultIfEmpty(Optional.empty()))
-                            .map(myIdOpt -> {
+                            .<Result<MessageSearchResult>>map(myIdOpt -> {
                                 List<ChatMessage> items = new ArrayList<>();
                                 for (MessageDto dto : page.getItems()) {
                                     MessageEntity entity = toEntity(dto, conversationId);
@@ -686,7 +688,7 @@ public final class MessageRepository {
             SendMessageRequest request = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
                     entry.getContent(), entry.getReplyToId(), attachmentIds(entry));
             if (session.sendMessage(entry.getConversationId(), request)) return Completable.complete();
-            if (Boolean.TRUE.equals(session.getIsOpen().getValue())) return Completable.complete();
+            if (session.isCurrentlyOpen()) return Completable.complete();
             return call(messageApi.sendMessage(entry.getConversationId(), request)).flatMapCompletable(result -> {
                 if (result instanceof Result.Success<?> success) {
                     return acknowledge(entry.getConversationId(), (MessageDto) success.getValue());
@@ -787,7 +789,7 @@ public final class MessageRepository {
     }
 
     private Completable updateInboxProjection(MessageEntity entity) {
-        return isMine(entity.getSenderId()).flatMap(mine -> {
+        return isMine(entity.getSenderId()).flatMapCompletable(mine -> {
             boolean openHere = Objects.equals(activeConversation.get(), entity.getConversationId());
             Completable update = conversationDao.updateLastMessage(entity.getConversationId(), entity.getSeq(),
                     entity.getContent() != null ? entity.getContent() : entity.getType(),
@@ -970,7 +972,7 @@ public final class MessageRepository {
      * and writes the complete set through Room.
      */
     public Single<Result<Unit>> refreshPins(String conversationId) {
-        return call(messageApi.getPins(conversationId)).flatMap(result -> {
+        return call(messageApi.getPins(conversationId)).<Result<Unit>>flatMap(result -> {
             if (!(result instanceof Result.Success<?> success)) return Single.just(Result.cast(result));
             try {
                 String body = ((ResponseBody) success.getValue()).string();
@@ -1209,7 +1211,7 @@ public final class MessageRepository {
      * unexpected-empty-body failure instead of escaping the stream.
      */
     private <T> Single<Result<T>> call(Call<T> call) {
-        return ApiResultKt.safeApiCall(call).map(result -> {
+        return ApiResultKt.safeApiCall(call).<Result<T>>map(result -> {
             if (result instanceof ApiResult.Success<?> success) {
                 @SuppressWarnings("unchecked") T body = (T) success.getBody();
                 return new Result.Success<>(body);

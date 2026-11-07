@@ -33,6 +33,7 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.disposables.SerialDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.File;
 import java.util.ArrayList;
@@ -802,6 +803,7 @@ public final class ChatViewModel extends ViewModel {
         public boolean isPeerTyping() { return peerTyping; }
         public boolean getPeerTyping() { return peerTyping; }
         @Nullable public String getPeerName() { return peerName; }
+        public boolean isGroup() { return group; }
         public boolean getIsGroup() { return group; }
         public boolean isCanPin() { return canPin; }
         public boolean getCanPin() { return canPin; }
@@ -829,7 +831,7 @@ public final class ChatViewModel extends ViewModel {
         private UiState withMessages(List<ChatMessage> nextMessages) {
             List<ChatMessage> pending = nextMessages.stream()
                     .filter(message -> message.getStatus() != DeliveryStatus.SENT)
-                    .toList();
+                    .collect(java.util.stream.Collectors.toList());
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerPresence, otherUserId);

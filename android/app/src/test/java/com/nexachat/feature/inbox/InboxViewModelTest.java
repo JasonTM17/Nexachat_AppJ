@@ -11,7 +11,7 @@ import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Collections;
 import java.util.List;
-import kotlin.Unit;
+import com.nexachat.core.common.Unit;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -37,7 +37,7 @@ public final class InboxViewModelTest {
         inboxFlow = BehaviorProcessor.createDefault(Collections.emptyList());
         when(repository.inboxFlow()).thenReturn(inboxFlow);
         when(repository.refreshInbox()).thenReturn(Single.just(
-                new Result.Success<>(Unit.INSTANCE)));
+                new Result.Success<Void>(null)));
         viewModel = new InboxViewModel(repository);
     }
 
@@ -103,7 +103,7 @@ public final class InboxViewModelTest {
         assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getError());
 
         when(repository.refreshInbox()).thenReturn(Single.just(
-                new Result.Success<>(Unit.INSTANCE)));
+                new Result.Success<Void>(null)));
         viewModel.refresh();
 
         assertNull(viewModel.getUiState().getValue().getError());

@@ -37,7 +37,7 @@ public final class TokenRefresherTest {
     @Test public void serverErrorPreservesTokens() { assertPreserved(503); }
 
     @Test
-    public void ioExceptionPreservesTokensAndDoesNotLogOut() {
+    public void ioExceptionPreservesTokensAndDoesNotLogOut() throws Exception {
         Harness harness = new Harness();
         Call<AuthResponse> call = mock(Call.class);
         when(harness.api.refresh(any())).thenReturn(call);
@@ -56,7 +56,7 @@ public final class TokenRefresherTest {
     }
 
     @Test
-    public void cancellationPropagatesAndKeepsTokens() {
+    public void cancellationPropagatesAndKeepsTokens() throws Exception {
         Harness harness = new Harness();
         CancellationException cancelled = new CancellationException("cancelled");
         Call<AuthResponse> call = mock(Call.class);
@@ -91,11 +91,21 @@ public final class TokenRefresherTest {
     }
 
     private static Call<AuthResponse> responseCall(int status) {
-        Call<AuthResponse> call = mock(Call.class);
         ResponseBody error = ResponseBody.create(MediaType.parse("application/json"),
                 "{\"error\":{\"code\":\"REFRESH_REJECTED\"}}");
-        when(call.execute()).thenReturn(Response.error(status, error));
-        return call;
+        Response<AuthResponse> response = Response.error(status, error);
+        return new Call<>() {
+            @Override public Response<AuthResponse> execute() { return response; }
+            @Override public void enqueue(retrofit2.Callback<AuthResponse> callback) { throw new UnsupportedOperationException(); }
+            @Override public boolean isExecuted() { return false; }
+            @Override public void cancel() {}
+            @Override public boolean isCanceled() { return false; }
+            @Override public Call<AuthResponse> clone() { return this; }
+            @Override public okhttp3.Request request() {
+                return new okhttp3.Request.Builder().url("http://localhost/").build();
+            }
+            @Override public okio.Timeout timeout() { return okio.Timeout.NONE; }
+        };
     }
 
     private static final class Harness {
@@ -103,7 +113,7 @@ public final class TokenRefresherTest {
         final SessionEvents events = new SessionEvents();
         final AuthApi api = mock(AuthApi.class);
         final TokenRefresher refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
-        Tokens current() { return store.readTokens().blockingGet(null); }
+        Tokens current() { return store.readTokens().blockingGet(); }
     }
 
     private static TokenStore newStore(Tokens initial) {

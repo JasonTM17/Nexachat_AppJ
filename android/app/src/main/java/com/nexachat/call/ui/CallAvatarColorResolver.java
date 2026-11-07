@@ -5,7 +5,7 @@ import android.content.res.ColorStateList;
 import android.widget.TextView;
 import androidx.core.content.ContextCompat;
 import com.nexachat.R;
-import com.nexachat.core.ui.components.AvatarKt;
+import com.nexachat.core.ui.components.AvatarPalette;
 
 /** Applies the existing app avatar palette index to a native call-screen initials view. */
 public final class CallAvatarColorResolver {
@@ -26,7 +26,7 @@ public final class CallAvatarColorResolver {
 
     public static void apply(Context context, TextView initialsView, String name) {
         if (context == null || initialsView == null) return;
-        int index = AvatarKt.avatarPaletteIndex(name == null ? "" : name);
+        int index = AvatarPalette.avatarPaletteIndex(name == null ? "" : name);
         initialsView.setBackgroundTintList(ColorStateList.valueOf(
                 ContextCompat.getColor(context, BACKGROUND_RESOURCES[index])));
         initialsView.setTextColor(ContextCompat.getColor(context, FOREGROUND_RESOURCES[index]));

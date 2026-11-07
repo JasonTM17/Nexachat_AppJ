@@ -2,9 +2,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
 }
 
@@ -104,7 +101,6 @@ android {
     }
 
     buildFeatures {
-        compose = true
         buildConfig = true
         viewBinding = true
     }
@@ -136,26 +132,21 @@ gradle.taskGraph.whenReady {
     }
 }
 
-// Kotlin 2.0: the compose compiler is a Kotlin compiler plugin
-// (org.jetbrains.kotlin.plugin.compose) — no kotlinCompilerExtensionVersion needed.
-kotlin {
-    jvmToolchain(17)
-}
-
 dependencies {
-    // Compose (versions managed by the BOM)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.bundles.compose)
-
-    // Activity / Navigation / Lifecycle
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
+    // Activity / Navigation / Lifecycle / Views
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.navigation.fragment)
+    implementation(libs.androidx.navigation.ui)
+    implementation(libs.androidx.swiperefreshlayout)
     implementation(libs.bundles.lifecycle)
 
-    // Hilt DI + Compose navigation integration
+    // Hilt DI (Java annotationProcessor)
     implementation(libs.hilt.android)
-    ksp(libs.hilt.android.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
+    annotationProcessor(libs.hilt.android.compiler)
 
     // Room — local source of truth (offline-first, plan §12.2)
     implementation(libs.bundles.room)
@@ -163,17 +154,18 @@ dependencies {
 
     // Network — Retrofit/REST + OkHttp (also used for the STOMP-over-WS client)
     implementation(libs.bundles.network)
-    ksp(libs.moshi.kotlin.codegen)
 
     // Local storage — TokenStore / prefs (plan §12.1 core/storage)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.datastore.rxjava3)
+
+    // Reactive streams (RxJava3)
+    implementation(libs.rxjava)
+    implementation(libs.rxandroid)
 
     // Image loading (avatars, media messages)
-    implementation(libs.coil.compose)
-    implementation(libs.androidx.compose.material.icons.extended)
-
-    // Coroutines
-    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.glide)
+    annotationProcessor(libs.glide.compiler)
 
     // Media playback — voice/video messages
     implementation(libs.bundles.media3)
@@ -184,45 +176,17 @@ dependencies {
     // E.164 phone normalization
     implementation(libs.libphonenumber)
 
-    // Java-first stack: RxJava3 data layer, Views/XML UI (Compose and coroutines are removed at the end)
-    implementation(libs.rxjava)
-    implementation(libs.rxandroid)
-    implementation(libs.androidx.room.rxjava3)
-    implementation(libs.androidx.datastore.rxjava3)
-    implementation(libs.kotlinx.coroutines.rx3)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.material)
-    implementation(libs.androidx.constraintlayout)
-    implementation(libs.androidx.recyclerview)
-    implementation(libs.androidx.fragment)
-    implementation(libs.androidx.navigation.fragment)
-    implementation(libs.androidx.navigation.ui)
-    implementation(libs.androidx.lifecycle.livedata)
-    implementation(libs.androidx.lifecycle.viewmodel)
-    implementation(libs.androidx.swiperefreshlayout)
-    implementation(libs.glide)
-    annotationProcessor(libs.glide.compiler)
-    testImplementation(libs.mockito.core)
-    testImplementation(libs.androidx.arch.core.testing)
-
-    // Debug-only
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
     // Unit tests
     testImplementation(libs.bundles.unit.test)
 
     // Instrumented tests
-    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.room.testing)
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.hilt.android.testing)
-    kspAndroidTest(libs.hilt.android.compiler)
+    androidTestAnnotationProcessor(libs.hilt.android.compiler)
 }
 
-// Kotlin call sites use named arguments against these Java constructors.
 tasks.withType<org.gradle.api.tasks.compile.JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
 }

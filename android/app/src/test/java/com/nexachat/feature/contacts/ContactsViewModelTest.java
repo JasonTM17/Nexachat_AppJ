@@ -48,7 +48,7 @@ public final class ContactsViewModelTest {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
         repository = mock(ContactsRepository.class);
         contactsFlow = BehaviorProcessor.createDefault(Collections.emptyList());
-        when(repository.getContactsFlow()).thenReturn(contactsFlow);
+        when(repository.getContactsFlow()).thenReturn(contactsFlow.map(java.util.Optional::of));
         when(repository.contacts()).thenReturn(Single.just(
                 new Result.Success<>(Collections.emptyList())));
         when(repository.getMe()).thenReturn(Single.just(new Result.Success<>(
@@ -225,14 +225,14 @@ public final class ContactsViewModelTest {
     @Test
     public void messageFailureSurfacesErrorAndEmitsNoEvent() {
         when(repository.openDirectConversation(any(), any()))
-                .thenReturn(Single.just(Result.failure(ApiError.Network(null))));
+                .thenReturn(Single.just(Result.failure(new ApiError.Network(null))));
         List<ContactsViewModel.Event> events = observeEvents();
         viewModel.openContactDetail(contact);
 
         viewModel.messageSelected();
 
         assertTrue(events.isEmpty());
-        assertEquals(ApiError.Network(null), viewModel.getUiState().getValue().getDetailError());
+        assertEquals(new ApiError.Network(null), viewModel.getUiState().getValue().getDetailError());
     }
 
     @Test

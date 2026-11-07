@@ -163,7 +163,9 @@ public final class ConversationRepository implements AutoCloseable {
         return Flowable.combineLatest(
                         conversationDao.observeById(conversationId),
                         presenceRepository.getPresences(),
-                        (row, presence) -> row.map(entity -> toSummary(entity, presence)))
+                        (rows, presence) -> rows.isEmpty()
+                                ? Optional.<ConversationSummary>empty()
+                                : Optional.of(toSummary(rows.get(0), presence)))
                 .distinctUntilChanged()
                 .subscribeOn(Schedulers.io());
     }
@@ -293,13 +295,16 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> setGroupAvatar(@NonNull String conversationId, @NonNull Uri uri) {
-        return Single.fromCallable(() -> readBoundedAvatar(uri))
+        return Maybe.fromCallable(() -> readBoundedAvatar(uri))
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
                 .subscribeOn(Schedulers.io())
-                .flatMap(bytes -> {
-                    if (bytes == null) {
+                .flatMap(bytesOpt -> {
+                    if (bytesOpt.isEmpty()) {
                         return Single.just(Result.<Void>failure(
                                 new ApiError.Network("avatar read failed")));
                     }
+                    byte[] bytes = bytesOpt.get();
                     String mime = resolveMime(uri);
                     String fileName = uri.getLastPathSegment() != null
                             ? uri.getLastPathSegment()
@@ -382,8 +387,7 @@ public final class ConversationRepository implements AutoCloseable {
     private Single<Optional<String>> currentUserIdOptional() {
         return currentUserId()
                 .map(Optional::of)
-                .defaultIfEmpty(Optional.empty())
-                .toSingle();
+                .defaultIfEmpty(Optional.empty());
     }
 
     private Single<Result<GroupDetail>> groupDetailPage(
@@ -756,7 +760,7 @@ public final class ConversationRepository implements AutoCloseable {
             BiFunction<Integer, String, ApiError> mapError) {
         if (result instanceof ApiResult.Success<?> success) {
             Object body = success.getBody();
-            if (body == null || "kotlin.Unit".equals(body.getClass().getName())) {
+            if (body == null || body instanceof com.nexachat.core.common.Unit) {
                 return Result.<T>failure(new ApiError.Unknown(ERROR_UNEXPECTED_EMPTY_BODY));
             }
             @SuppressWarnings("unchecked")

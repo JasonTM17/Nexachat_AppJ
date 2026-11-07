@@ -10,7 +10,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.media3.common.MediaItem;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -73,7 +72,7 @@ public final class MediaViewerFragment extends Fragment {
         ui.viewerToolbar.setOnMenuItemClickListener(this::onToolbarMenuItem);
 
         viewModel = new ViewModelProvider(this).get(MediaViewerViewModel.class);
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+        viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
     }
 

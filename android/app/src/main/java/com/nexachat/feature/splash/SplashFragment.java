@@ -7,7 +7,6 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import com.nexachat.R;
@@ -28,7 +27,7 @@ public final class SplashFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(SplashViewModel.class);
-        FlowLiveDataConversions.asLiveData(viewModel.getNavEvents()).observe(getViewLifecycleOwner(), event -> {
+        viewModel.getNavEvents().observe(getViewLifecycleOwner(), event -> {
             if (event instanceof SplashNavEvent.ToInbox) {
                 NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
                         new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.splashFragment, true).build());

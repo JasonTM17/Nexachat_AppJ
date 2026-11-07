@@ -72,7 +72,7 @@ import org.junit.Before;
 import org.junit.Test;
 import retrofit2.Call;
 import retrofit2.Response;
-import kotlin.Unit;
+import com.nexachat.core.common.Unit;
 
 /** RxJava repository coverage. DAO mocks implement the Room Rx contracts in memory. */
 public class MessageRepositoryTest {
@@ -97,7 +97,7 @@ public class MessageRepositoryTest {
     private io.reactivex.rxjava3.processors.BehaviorProcessor<Integer> reactionChanges;
     private io.reactivex.rxjava3.processors.BehaviorProcessor<Integer> pinChanges;
     private io.reactivex.rxjava3.processors.PublishProcessor<ChatEvent> events;
-    private io.reactivex.rxjava3.processors.PublishProcessor<Unit> resyncRequests;
+    private io.reactivex.rxjava3.processors.PublishProcessor<Object> resyncRequests;
     private io.reactivex.rxjava3.processors.PublishProcessor<SessionEvents.Event> logoutEvents;
     private io.reactivex.rxjava3.processors.BehaviorProcessor<Boolean> isOpen;
     private TestScheduler timer;
@@ -432,7 +432,7 @@ public class MessageRepositoryTest {
         assertEquals(OutboxState.SENDING, outbox.get(clientId).getState());
         timer.advanceTimeBy(10_000, TimeUnit.MILLISECONDS);
         timer.triggerActions();
-        verify(session, times(2)).sendMessage(CONVERSATION_ID, any());
+        verify(session, times(2)).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
         assertEquals(OutboxState.SENDING, outbox.get(clientId).getState());
     }
 
@@ -442,7 +442,7 @@ public class MessageRepositoryTest {
         await(outboxDao.updateState(clientId, OutboxState.FAILED));
         await(repository.retry(clientId));
         assertEquals(OutboxState.SENDING, outbox.values().iterator().next().getState());
-        verify(session, times(2)).sendMessage(CONVERSATION_ID, any());
+        verify(session, times(2)).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
     }
 
     @Test public void manualRetryJoinsTailOfSendingQueue() {
@@ -485,7 +485,7 @@ public class MessageRepositoryTest {
         assertEquals(DeliveryStatus.SENT, merged.get(0).getStatus());
         assertEquals(DeliveryStatus.SENDING, merged.get(1).getStatus());
         assertTrue(merged.get(1).getMine());
-        subscriber.dispose();
+        subscriber.cancel();
     }
 
     @Test public void currentUserIdDecodesJwtSubject() {
@@ -521,7 +521,7 @@ public class MessageRepositoryTest {
         ChatMessage pending = subscriber.values().get(0).get(0);
         assertEquals(DeliveryStatus.SENDING, pending.getStatus());
         assertEquals(List.of(attachment), pending.getAttachments());
-        subscriber.dispose();
+        subscriber.cancel();
     }
 
     @Test public void textSendsCarryNoAttachmentIds() {
@@ -556,7 +556,7 @@ public class MessageRepositoryTest {
         await(repository.openConversation(CONVERSATION_ID));
         assertEquals(5, messages.size());
         verify(messageApi).getMessages(CONVERSATION_ID, null, 3L, MessageApi.DEFAULT_PAGE_SIZE);
-        verify(messageApi).markRead(CONVERSATION_ID, any());
+        verify(messageApi).markRead(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
     }
 
     @Test public void reactionUpdatedReplacesStoredSummary() {
@@ -585,7 +585,7 @@ public class MessageRepositoryTest {
         assertEquals("m-9", pinned.get(0).getId());
         events.onNext(new ChatEvent.PinUpdated(CONVERSATION_ID, "m-9", false));
         assertTrue(subscriber.values().get(subscriber.values().size() - 1).isEmpty());
-        subscriber.dispose();
+        subscriber.cancel();
     }
 
     @Test public void toggleReactionOptimisticallyAppliesServerSummary() {
@@ -613,7 +613,7 @@ public class MessageRepositoryTest {
         assertEquals(3, restored.getCount());
         assertEquals(false, restored.getReactedByMe());
         assertTrue(subscriber.values().get(0) instanceof ApiError.Unknown);
-        subscriber.dispose();
+        subscriber.cancel();
     }
 
     @Test public void historyRefreshStoresEmbeddedReactionsAndReplyPreview() {
@@ -660,7 +660,7 @@ public class MessageRepositoryTest {
         await(repository.pinMessage(CONVERSATION_ID, "m-1"));
         assertTrue(pins.isEmpty());
         assertTrue(subscriber.values().get(0) instanceof ApiError.Unknown);
-        subscriber.dispose();
+        subscriber.cancel();
     }
 
     @Test public void editOptimisticallyAppliesAuthoritativeServerRow() {
@@ -705,7 +705,7 @@ public class MessageRepositoryTest {
 
     @Test public void disposeDuringEditRollsBackOptimisticRow() {
         await(messageDao.upsert(own("m-1", 1L, "old")));
-        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.io());
+        RxJavaPlugins.setIoSchedulerHandler(null);
         CountDownLatch networkStarted = new CountDownLatch(1);
         CountDownLatch releaseNetwork = new CountDownLatch(1);
         when(messageApi.editMessage(anyString(), anyString(), any())).thenReturn(blockingCall(networkStarted, releaseNetwork));
@@ -811,7 +811,7 @@ public class MessageRepositoryTest {
         await(reactionDao.upsertAll(List.of(new MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true))));
         await(pinDao.upsert(new PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L)));
         await(conversationDao.upsert(conversation(1L, "bye")));
-        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.io());
+        RxJavaPlugins.setIoSchedulerHandler(null);
         CountDownLatch networkStarted = new CountDownLatch(1);
         CountDownLatch releaseNetwork = new CountDownLatch(1);
         Call<Void> pending = blockingCall(networkStarted, releaseNetwork);
@@ -820,7 +820,10 @@ public class MessageRepositoryTest {
         awaitLatch(networkStarted);
         observer.dispose();
         releaseNetwork.countDown();
-        awaitCondition(() -> "bye".equals(messages.get("m-1").getContent()));
+        awaitCondition(() -> "bye".equals(messages.get("m-1").getContent())
+                && reactions.size() == 1
+                && pins.size() == 1
+                && !conversations.get(CONVERSATION_ID).getLastMessageDeleted());
         assertEquals("bye", messages.get("m-1").getContent()); assertNull(messages.get("m-1").getDeletedAtEpochMs());
         assertEquals(1, reactions.size()); assertEquals(1, pins.size());
         assertEquals("bye", conversations.get(CONVERSATION_ID).getLastMessageContent());
@@ -850,7 +853,7 @@ public class MessageRepositoryTest {
         MessageSearchResult page = ((Result.Success<MessageSearchResult>) result).getValue();
         assertEquals(List.of("m-9"), page.getItems().stream().map(ChatMessage::getId).toList());
         assertEquals("hi there", page.getItems().get(0).getContent()); assertTrue(page.getHasMore());
-        assertEquals(9L, page.getNextBeforeSeq()); assertEquals("hi there", messages.get("m-9").getContent());
+        assertEquals(Long.valueOf(9L), page.getNextBeforeSeq()); assertEquals("hi there", messages.get("m-9").getContent());
     }
 
     @Test public void shortSearchDoesNotCallApi() {
@@ -862,7 +865,7 @@ public class MessageRepositoryTest {
 
     @Test public void timestampConversionHandlesFractionalOffsetsAndInvalidInput() {
         long expected = Instant.parse("2026-11-03T10:00:00.123456789Z").toEpochMilli();
-        assertEquals(expected, TimeAndJwt.isoToEpochMsOrNull("2026-11-03T12:00:00.123456789+02:00"));
+        assertEquals(Long.valueOf(expected), TimeAndJwt.isoToEpochMsOrNull("2026-11-03T12:00:00.123456789+02:00"));
         assertNull(TimeAndJwt.isoToEpochMsOrNull("not-a-timestamp"));
     }
 
@@ -917,26 +920,57 @@ public class MessageRepositoryTest {
 
     private static <T> Call<T> responseCall(Response<T> response) { return responseCall(response, () -> {}); }
     private static <T> Call<T> responseCall(Response<T> response, Runnable beforeExecute) {
-        Call<T> call = mock(Call.class);
-        try { when(call.execute()).thenAnswer(invocation -> { beforeExecute.run(); return response; }); }
-        catch (Exception impossible) { throw new AssertionError(impossible); }
-        return call;
+        return new StubCall<>(() -> {
+            beforeExecute.run();
+            return response;
+        });
     }
     private static <T> Call<T> failedCall(Throwable error) {
-        Call<T> call = mock(Call.class);
-        try { doAnswer(invocation -> { throw error; }).when(call).execute(); }
-        catch (Exception impossible) { throw new AssertionError(impossible); }
-        return call;
+        return new StubCall<>(() -> {
+            if (error instanceof IOException io) throw io;
+            if (error instanceof RuntimeException runtime) throw runtime;
+            throw new RuntimeException(error);
+        });
     }
     private static <T> Call<T> blockingCall(CountDownLatch started, CountDownLatch release) {
-        Call<T> call = mock(Call.class);
-        try { when(call.execute()).thenAnswer(invocation -> {
+        return new StubCall<>(() -> {
             started.countDown();
-            release.await(5, TimeUnit.SECONDS);
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
             throw new IOException("disposed request");
-        }); }
-        catch (Exception impossible) { throw new AssertionError(impossible); }
-        return call;
+        });
+    }
+
+    @FunctionalInterface
+    private interface CallAction<T> {
+        Response<T> execute() throws IOException;
+    }
+
+    private static final class StubCall<T> implements Call<T> {
+        private final CallAction<T> action;
+        private volatile boolean executed;
+        private volatile boolean canceled;
+
+        StubCall(CallAction<T> action) {
+            this.action = action;
+        }
+
+        @Override public Response<T> execute() throws IOException {
+            executed = true;
+            return action.execute();
+        }
+        @Override public void enqueue(retrofit2.Callback<T> callback) { throw new UnsupportedOperationException(); }
+        @Override public boolean isExecuted() { return executed; }
+        @Override public void cancel() { canceled = true; }
+        @Override public boolean isCanceled() { return canceled; }
+        @Override public Call<T> clone() { return new StubCall<>(action); }
+        @Override public okhttp3.Request request() {
+            return new okhttp3.Request.Builder().url("http://localhost/").build();
+        }
+        @Override public okio.Timeout timeout() { return okio.Timeout.NONE; }
     }
     private static void awaitLatch(CountDownLatch latch) {
         try { assertTrue("timed out waiting for request", latch.await(5, TimeUnit.SECONDS)); }
@@ -999,7 +1033,7 @@ public class MessageRepositoryTest {
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
                 row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted);
     }
-    private static String eqConversation() { return CONVERSATION_ID; }
+    private static String eqConversation() { return org.mockito.ArgumentMatchers.eq(CONVERSATION_ID); }
 
     private static <T> T await(Single<T> source) {
         TestObserver<T> observer = source.test();

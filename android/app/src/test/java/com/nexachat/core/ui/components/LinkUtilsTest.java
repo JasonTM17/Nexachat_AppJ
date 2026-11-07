@@ -1,7 +1,7 @@
 package com.nexachat.core.ui.components;
 
-import kotlin.Pair;
-import kotlin.ranges.IntRange;
+import com.nexachat.core.ui.components.LinkUtils.IntRange;
+import com.nexachat.core.ui.components.LinkUtils.Pair;
 import org.junit.Test;
 
 import java.util.List;

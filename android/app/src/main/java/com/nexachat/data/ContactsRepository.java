@@ -290,7 +290,7 @@ public final class ContactsRepository {
                     if (result instanceof ApiResult.Success<?> success) {
                         @SuppressWarnings("unchecked")
                         T body = (T) success.getBody();
-                        if (body == null || "kotlin.Unit".equals(body.getClass().getName())) {
+                        if (body == null || body instanceof com.nexachat.core.common.Unit) {
                             return Result.<T>failure(
                                     new ApiError.Unknown(ERROR_UNEXPECTED_EMPTY_BODY));
                         }

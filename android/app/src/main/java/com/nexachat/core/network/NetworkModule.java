@@ -1,14 +1,11 @@
 package com.nexachat.core.network;
 
-import android.content.Context;
-import coil.ImageLoader;
 import com.nexachat.BuildConfig;
 import com.nexachat.core.common.AppConfig;
 import com.squareup.moshi.Moshi;
 import dagger.Module;
 import dagger.Provides;
 import dagger.hilt.InstallIn;
-import dagger.hilt.android.qualifiers.ApplicationContext;
 import dagger.hilt.components.SingletonComponent;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Singleton;
@@ -63,7 +60,6 @@ public final class NetworkModule {
     @Singleton
     public static Retrofit provideRetrofit(OkHttpClient okHttpClient, Moshi moshi) {
         return new Retrofit.Builder()
-                // Kotlin's String.toHttpUrl() — OkHttp 4 Java interop: HttpUrl.get(String); normalizes trailing '/'.
                 .baseUrl(HttpUrl.get(AppConfig.API_BASE_URL))
                 .client(okHttpClient)
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
@@ -98,20 +94,5 @@ public final class NetworkModule {
     @Singleton
     public static AttachmentApi provideAttachmentApi(Retrofit retrofit) {
         return retrofit.create(AttachmentApi.class);
-    }
-
-    /**
-     * Coil loader wired to the auth-intercepted OkHttp client — attachment
-     * content endpoints require {@code Authorization}, which the default loader
-     * cannot supply. Inject/pass explicitly wherever media bytes are fetched.
-     */
-    @Provides
-    @Singleton
-    public static ImageLoader provideImageLoader(
-            @ApplicationContext Context context,
-            OkHttpClient okHttpClient) {
-        return new ImageLoader.Builder(context)
-                .okHttpClient(okHttpClient)
-                .build();
     }
 }

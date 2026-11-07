@@ -16,7 +16,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import com.nexachat.R;
@@ -83,9 +82,9 @@ public final class ProfileFragment extends Fragment {
         binding.logoutRow.setOnClickListener(v -> new AlertDialog.Builder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d,w) -> viewModel.logout()).show());
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
         binding.logoutAllRow.setOnClickListener(v -> new AlertDialog.Builder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d,w) -> viewModel.logoutAll()).show());
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState()).observe(getViewLifecycleOwner(), this::render);
-        FlowLiveDataConversions.asLiveData(viewModel.getShowPresence()).observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
-        FlowLiveDataConversions.asLiveData(settingsViewModel.getThemeMode()).observe(getViewLifecycleOwner(), mode -> binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(mode, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark))));
+        viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
+        settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(mode, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark))));
     }
 
     private void render(ProfileViewModel.UiState state) {

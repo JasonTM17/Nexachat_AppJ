@@ -75,4 +75,18 @@ public final class PendingAttachment {
     }
 
     public enum PendingState { UPLOADING, FAILED }
+
+    @NonNull
+    public static String formatBytes(@Nullable Long bytes) {
+        if (bytes == null || bytes < 0L) {
+            return "";
+        }
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        if (bytes < 1024L * 1024L) {
+            return String.format(java.util.Locale.getDefault(), "%.1f KB", bytes / 1024.0);
+        }
+        return String.format(java.util.Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0));
+    }
 }

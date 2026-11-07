@@ -10,7 +10,6 @@ import android.view.inputmethod.EditorInfo;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import com.nexachat.R;
@@ -41,8 +40,8 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.registerButton.setOnClickListener(v -> submit());
         binding.secondaryAction.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.loginFragment));
-        FlowLiveDataConversions.asLiveData(viewModel.getUiState()).observe(getViewLifecycleOwner(), this::render);
-        FlowLiveDataConversions.asLiveData(viewModel.getEvents()).observe(getViewLifecycleOwner(), e -> {
+        viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
             if (e == AuthViewModel.Event.LoggedIn) NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
                     new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.registerFragment, true).build());
         });

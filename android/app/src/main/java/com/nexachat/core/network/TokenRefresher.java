@@ -48,7 +48,7 @@ public final class TokenRefresher {
             return tokenStore.readTokens()
                     .map(Tokens::getRefreshToken)
                     .flatMapSingle(token -> performRefresh(token, startedGeneration))
-                    .toSingle(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+                    .defaultIfEmpty(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
         });
     }
 
@@ -68,7 +68,7 @@ public final class TokenRefresher {
                     }
                     return performRefresh(tokens.getRefreshToken(), startedGeneration);
                 })
-                .toSingle(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+                .defaultIfEmpty(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
         })
                 .map(TokenRefresher::freshToken);
     }

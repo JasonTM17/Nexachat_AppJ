@@ -6,7 +6,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
-import androidx.lifecycle.FlowLiveDataConversions;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -18,13 +17,16 @@ import com.nexachat.data.ThemeMode;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import dagger.hilt.android.EntryPointAccessors;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 
 /**
- * Single-activity XML host (B1 foundation). Compose {@link com.nexachat.MainActivity} remains the launcher until B4.
- * Locale and theme mirror {@link com.nexachat.MainActivity}; forced logout mirrors {@link AppNavHost}.
+ * Single-activity XML Navigation host for NexaChat.
  */
 @AndroidEntryPoint
 public class NexaHostActivity extends AppCompatActivity {
+
+    private final CompositeDisposable disposables = new CompositeDisposable();
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -38,15 +40,22 @@ public class NexaHostActivity extends AppCompatActivity {
 
         AppSettingsViewModel settings =
                 new ViewModelProvider(this).get(AppSettingsViewModel.class);
-        FlowLiveDataConversions.asLiveData(settings.getThemeMode())
-                .observe(this, this::applyThemeMode);
+        settings.getThemeMode().observe(this, this::applyThemeMode);
 
         SessionEvents sessionEvents =
                 EntryPointAccessors.fromApplication(
                                 getApplicationContext(), SessionEventsEntryPoint.class)
                         .sessionEvents();
-        FlowLiveDataConversions.asLiveData(sessionEvents.getEvents())
-                .observe(this, this::onSessionEvent);
+        disposables.add(
+                sessionEvents.getEvents()
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(this::onSessionEvent, ignored -> { }));
+    }
+
+    @Override
+    protected void onDestroy() {
+        disposables.clear();
+        super.onDestroy();
     }
 
     private void applyThemeMode(@Nullable ThemeMode mode) {

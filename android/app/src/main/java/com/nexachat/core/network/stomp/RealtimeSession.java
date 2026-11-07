@@ -129,7 +129,7 @@ public final class RealtimeSession {
     }
 
     /** Deterministic scheduler seam for reconnect policy tests. */
-    RealtimeSession(
+    public RealtimeSession(
             @NonNull StompClient stompClient,
             @NonNull TokenStore tokenStore,
             @NonNull TokenRefresher tokenRefresher,
@@ -167,9 +167,6 @@ public final class RealtimeSession {
 
         subscriptions.add(tokenStore.getHasValidRefresh().subscribe(this::onTokenPresence));
         subscriptions.add(networkMonitor.getIsOnline()
-                .filter(Boolean::booleanValue)
-                .subscribe(ignored -> { if (hasSession && !isCurrentlyOpen()) ensureConnected(); }));
-        subscriptions.add(foreground.getIsForeground()
                 .filter(Boolean::booleanValue)
                 .subscribe(ignored -> { if (hasSession && !isCurrentlyOpen()) ensureConnected(); }));
         subscriptions.add(stompClient.getFrames().subscribe(this::dispatch));
@@ -245,7 +242,6 @@ public final class RealtimeSession {
         SerialDisposable attemptHolder = new SerialDisposable();
         connection.set(attemptHolder);
         Flowable<StompClient.State> prepared = tokenStore.readTokens()
-                .subscribeOn(Schedulers.io())
                 .flatMapPublisher(tokens -> {
                     Single<Boolean> valid = tokens.isAccessExpired()
                             ? tokenRefresher.refreshIfNeeded(tokens.getAccessToken()).map(Optional::isPresent)
