@@ -65,7 +65,7 @@ import kotlinx.coroutines.flow.collectLatest
  * Group detail (phase-08 FR-D2/D4): member list with ADMIN badges, add/remove
  * member (ADMIN-only affordances — hidden when the wire `role` is absent),
  * rename dialog, and self-leave. Everything renders from
- * [GroupDetailViewModel.UiState]; [GroupDetailViewModel.Event.ExitToInbox]
+ * [GroupDetailUiState]; [GroupDetailEvent.ExitToInbox]
  * pops back to the inbox after a successful leave.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,7 +89,7 @@ fun GroupDetailScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collectLatest { event ->
             when (event) {
-                GroupDetailViewModel.Event.ExitToInbox -> onExitToInbox()
+                is GroupDetailEvent.ExitToInbox -> onExitToInbox()
             }
         }
     }

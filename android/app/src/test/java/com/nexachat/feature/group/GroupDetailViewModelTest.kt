@@ -82,11 +82,9 @@ class GroupDetailViewModelTest {
         coEvery { conversationRepository.myUserId() } returns MY_ID
         coEvery { conversationRepository.groupDetail(CONVERSATION_ID) } returns detail
         return GroupDetailViewModel(
-            savedStateHandle = SavedStateHandle(
-                mapOf("conversationId" to CONVERSATION_ID),
-            ),
-            conversationRepository = conversationRepository,
-            contactsRepository = contactsRepository,
+            SavedStateHandle(mapOf("conversationId" to CONVERSATION_ID)),
+            conversationRepository,
+            contactsRepository,
         )
     }
 
@@ -223,7 +221,7 @@ class GroupDetailViewModelTest {
             viewModel.requestLeave()
             assertTrue(viewModel.uiState.value.confirmLeave)
             viewModel.confirmLeave()
-            assertEquals(GroupDetailViewModel.Event.ExitToInbox, awaitItem())
+            assertEquals(GroupDetailEvent.ExitToInbox.INSTANCE, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 1) { conversationRepository.leaveGroup(CONVERSATION_ID) }
