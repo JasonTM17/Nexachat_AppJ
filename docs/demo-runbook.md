@@ -42,8 +42,8 @@ detects the LAN IP, and prints the URLs + accounts.
 ## 2. Pointing the app at the backend
 
 The Android client's base URL is a `buildConfigField` resolved at build
-time (`app/build.gradle.kts` → `BuildConfig.API_BASE_URL` →
-`core/common/AppConfig.kt`). Override it **without touching source** —
+time (`app/build.gradle` → `BuildConfig.API_BASE_URL` →
+`core/common/AppConfig.java`). Override it **without touching source** —
 put one line in `android/local.properties` and rebuild:
 
 ```properties
@@ -124,7 +124,7 @@ must be WSS/HTTPS anyway. So the LAN demo needs **only** the
 | `docker compose up -d db` fails: port already in use | Local Postgres or old container holds 5433 | Edit compose `db.ports` host side, e.g. `"15433:5432"` (app is unaffected — it reaches `db:5432` internally); update `DATABASE_URL`/IT envs accordingly |
 | `app` container unhealthy | DB not healthy yet, or bad `JWT_SECRET` env | `docker compose logs app`; Flyway runs on boot — first start takes ~30–60 s |
 | Phone browser can't open `…:8080/actuator/health` | Firewall or different subnet | Windows firewall rule (§3.3); confirm same Wi-Fi; try hotspot fallback |
-| WS won't connect (REST works) | Wrong IP in `API_BASE_URL`, refresh session expired/revoked, or proxy stripping `Upgrade` | Confirm backend health and `AppConfig.kt`; the app refreshes access JWT before STOMP CONNECT while its refresh session is valid; log in again only if that session expired/revoked; inspect `docker compose logs app` for the STOMP handshake |
+| WS won't connect (REST works) | Wrong IP in `API_BASE_URL`, refresh session expired/revoked, or proxy stripping `Upgrade` | Confirm backend health and `AppConfig.java`; the app refreshes access JWT before STOMP CONNECT while its refresh session is valid; log in again only if that session expired/revoked; inspect `docker compose logs app` for the STOMP handshake |
 | Cleartext HTTP blocked on physical phone | A release (non-debug) build — release keeps the restrictive `10.0.2.2`-only config | Rebuild `assembleDebug` — debug builds permit cleartext to any host (§2) |
 | Emulator can't reach backend | — | Default `10.0.2.2` already maps to host `localhost`; verify `docker compose ps` and host `curl localhost:8080/actuator/health` |
 | Seeded users "wrong password" | Rows from a pre-`password123` seed still present (an old draft used `demo@1234`) | `DELETE FROM users WHERE phone LIKE '+8490000%';` then re-apply `demo/seed.sql` |

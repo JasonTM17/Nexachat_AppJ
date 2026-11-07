@@ -40,8 +40,10 @@ Run on a **clean machine** (fresh clone from the zip) before archiving:
       templates are expected).
 - [ ] APK `release` is signed with the LOCAL keystore (keystore itself is
       never committed/submitted); tag `v1.0.0` exists.
-- [ ] Fresh-clone verification: `docker compose up -d db` → `mvn -B verify`
-      green → `demo/seed.sql` loads → 2 devices log in and chat over LAN.
+- [ ] Fresh-clone verification: `docker compose up -d db app` → `mvn -B verify`
+      green → `demo/seed.sql` loads → 2 devices log in and chat over LAN
+      (Android client: Java 17, Fragments, ViewBinding, Room RxJava 3, RxJava 3,
+      Glide; unit tests JUnit 4 + Mockito).
 - [ ] CI on the final commit is all green (server-test, android-test,
       secret-scan).
 - [ ] `git shortlog -sn` shows balanced contributions across members
@@ -72,8 +74,9 @@ cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (
       `adb install release/nexachat-*.apk &&
        adb shell am start -n com.nexachat/com.nexachat.MainActivity &&
        sleep 5 && adb shell pidof com.nexachat` must print a PID and logcat
-      must show no `FATAL EXCEPTION`. Unit/IT tests cannot see DI-init or
-      theme-window defects — this gate exists because one launch crash
+      must show no `FATAL EXCEPTION`. Unit/IT tests cannot see Hilt wiring,
+      Fragment/ViewBinding inflation, or theme-window defects — this gate exists
+      because one launch crash
       (`unexpected scheme: ws`) shipped past 418 green tests.
 - [ ] Install on 2+ devices: `adb -s <device> install
       app/build/outputs/apk/debug/app-debug.apk` (debug variant — required for
@@ -119,7 +122,7 @@ cd ../android && ./gradlew testDebugUnitTest        # final XML run: 202 tests (
 | Suite | Command | Expected |
 |---|---|---|
 | Server unit + integration | `docker compose up -d db` then `cd server && mvn -B verify` | final XML run: 310 tests green (280 unit + 30 IT on real Postgres via env-JDBC; local default `localhost:5433`) |
-| Android unit | `cd android && ./gradlew testDebugUnitTest` | final XML run: 202 green (20 classes) |
+| Android unit | `cd android && ./gradlew testDebugUnitTest` | final XML run: 202 green (20 classes); JUnit 4 + Mockito (+ RxJava TestObserver where async) |
 | CI equivalent | `.github/workflows/ci.yml` | server-test (postgres svc `:5432` + `IT_DB_*` env), android-test, secret-scan |
 
 ## Remaining submission TODO (team inputs and final packaging)
