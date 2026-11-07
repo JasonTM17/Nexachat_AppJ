@@ -9,7 +9,8 @@
     android:gravity="center_vertical"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
-    android:padding="@dimen/space_sm">
+    android:paddingHorizontal="@dimen/space_sm"
+    android:paddingVertical="6dp">
 
     <ImageButton
         android:id="@+id/attachButton"
@@ -17,7 +18,8 @@
         android:layout_height="@dimen/min_touch_target"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_attach"
-        android:src="@drawable/ic_attach_file" />
+        android:src="@drawable/ic_attach_file"
+        android:tint="?attr/colorOnSurfaceVariant" />
 
     <com.google.android.material.textfield.TextInputEditText
         android:id="@+id/messageInput"
@@ -27,8 +29,10 @@
         android:layout_weight="1"
         android:background="@drawable/bg_composer_pill"
         android:hint="@string/chat_input_hint"
+        android:maxLines="5"
         android:minHeight="@dimen/min_touch_target"
-        android:paddingHorizontal="@dimen/space_md" />
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp" />
 
     <ImageButton
         android:id="@+id/sendButton"
@@ -36,5 +40,6 @@
         android:layout_height="@dimen/min_touch_target"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_send"
-        android:src="@drawable/ic_send" />
+        android:src="@drawable/ic_send"
+        android:tint="?attr/colorPrimary" />
 </LinearLayout>
