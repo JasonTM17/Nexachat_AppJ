@@ -60,6 +60,6 @@
     <color name="colorOutline">@color/slate_border</color>
     <color name="colorOutlineVariant">@color/slate_divider</color>
 
-    <color name="bubble_mine">@color/brand_indigo_container</color>
-    <color name="bubble_other">@color/surface_container_high_light</color>
+    <color name="bubble_mine">@color/brand_indigo</color>
+    <color name="bubble_other">@color/surface_container_low_light</color>
 </resources>

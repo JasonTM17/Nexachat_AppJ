@@ -101,8 +101,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/action_create_account" />
+                    android:minHeight="40dp"
+                    android:text="@string/action_create_account"
+                    android:textColor="@android:color/white"
+                    app:backgroundTint="@color/colorPrimary"
+                    app:cornerRadius="8dp" />
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/secondaryAction"
                     style="@style/Widget.Material3.Button.TextButton"

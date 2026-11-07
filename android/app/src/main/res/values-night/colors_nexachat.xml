@@ -45,6 +45,6 @@
     <color name="colorErrorContainer">@color/error_container_light</color>
     <color name="colorOnErrorContainer">@color/on_error_container_light</color>
 
-    <color name="bubble_mine">@color/brand_indigo_container</color>
+    <color name="bubble_mine">#FF4F46E5</color>
     <color name="bubble_other">@color/surface_container_high_light</color>
 </resources>

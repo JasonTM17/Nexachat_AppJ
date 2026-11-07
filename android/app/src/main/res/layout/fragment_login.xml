@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
@@ -64,8 +65,7 @@
                         android:hint="@string/auth_password_label"
                         app:endIconDrawable="@drawable/ic_visibility"
                         app:endIconContentDescription="@string/cd_password_visibility"
-                        app:endIconMode="password_toggle"
-                        xmlns:app="http://schemas.android.com/apk/res-auto">
+                        app:endIconMode="password_toggle">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/passwordInput"
@@ -89,7 +89,10 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
-                        android:minHeight="@dimen/min_touch_target" />
+                        android:minHeight="40dp"
+                        android:textColor="@android:color/white"
+                        app:backgroundTint="@color/colorPrimary"
+                        app:cornerRadius="8dp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/secondaryAction"

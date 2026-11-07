@@ -25,16 +25,22 @@
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/space_sm"
         android:layout_weight="1"
-        android:background="@drawable/bg_composer_pill"
+        android:background="@drawable/bg_composer_field"
         android:hint="@string/chat_input_hint"
-        android:minHeight="@dimen/min_touch_target"
-        android:paddingHorizontal="@dimen/space_md" />
+        android:minHeight="40dp"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="8dp" />
 
     <ImageButton
         android:id="@+id/sendButton"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/bg_send_button"
         android:contentDescription="@string/cd_send"
-        android:src="@drawable/ic_send" />
+        android:minWidth="40dp"
+        android:minHeight="40dp"
+        android:padding="@dimen/space_sm"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_send"
+        app:tint="?attr/colorOnPrimary" />
 </LinearLayout>

@@ -10,31 +10,104 @@
         android:id="@+id/chatToolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
+        app:contentInsetEnd="0dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationContentDescription="@string/cd_back"
-        app:navigationIcon="@drawable/ic_arrow_back" />
+        app:navigationIcon="@drawable/ic_arrow_back">
 
-    <HorizontalScrollView
-        android:id="@+id/chatToolbarActions"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:scrollbars="none"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/chatToolbar">
         <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
-            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/infoButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_group_info" android:src="@drawable/ic_info" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/summaryButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/action_more_options" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackgroundBorderless"/>
+
+            <LinearLayout
+                android:id="@+id/chatIdentity"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.nexachat.core.ui.components.AvatarView
+                    android:id="@+id/chatAvatar"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/chatTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <TextView
+                        android:id="@+id/chatSubtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorPrimary"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/callButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/cd_call"
+                android:src="@drawable/ic_call" />
+
+            <ImageButton
+                android:id="@+id/searchInChatButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/cd_search_in_chat"
+                android:src="@drawable/ic_search"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/infoButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/cd_group_info"
+                android:src="@drawable/ic_info"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/summaryButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/summary_title"
+                android:src="@drawable/ic_auto_awesome"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/moreButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_more_options"
+                android:src="@drawable/ic_more_vert" />
         </LinearLayout>
-    </HorizontalScrollView>
+    </com.google.android.material.appbar.MaterialToolbar>
 
     <include
         android:id="@+id/pinnedBanner"
@@ -43,7 +116,7 @@
         android:layout_height="wrap_content"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/chatToolbarActions" />
+        app:layout_constraintTop_toBottomOf="@id/chatToolbar" />
 
     <include
         android:id="@+id/replyEditBanner"

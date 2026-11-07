@@ -3,6 +3,7 @@ package com.nexachat.feature.chat.adapter;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
+import android.util.TypedValue;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -61,8 +62,8 @@ public final class MessageBubbleBinder {
         if (bubble == null) {
             return;
         }
-        applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
         applyBubbleColors(root.getContext(), bubble, message, item.isPulsing());
+        applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
 
         wireGestures(root, message);
 
@@ -143,12 +144,13 @@ public final class MessageBubbleBinder {
             ChatMessage message,
             boolean pulsing
     ) {
-        int colorRes;
+        int color;
         if (pulsing) {
-            colorRes = resolveThemeColor(context, com.google.android.material.R.attr.colorTertiaryContainer);
+            color = resolveThemeColor(context, com.google.android.material.R.attr.colorTertiaryContainer);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
-            colorRes = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
+            color = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
         } else {
+            int colorRes;
             switch (ChatBubbleRules.resolveBubbleContainerRole(message.getStatus(), message.getMine())) {
                 case ERROR:
                     colorRes = R.color.colorErrorContainer;
@@ -161,14 +163,28 @@ public final class MessageBubbleBinder {
                     colorRes = R.color.bubble_other;
                     break;
             }
+            color = ContextCompat.getColor(context, colorRes);
         }
-        bubble.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(context, colorRes)));
+        bubble.setBackgroundTintList(ColorStateList.valueOf(color));
     }
 
+    /**
+     * Theme attrs resolve to a packed ARGB int, not an {@code R.color} id.
+     * {@code ContextCompat.getColor} rejects that int ({@code 0xff2b2930} crashed
+     * the tombstone row). A leftover resource reference is loaded by its id.
+     */
     private static int resolveThemeColor(android.content.Context context, int attr) {
-        android.util.TypedValue value = new android.util.TypedValue();
-        context.getTheme().resolveAttribute(attr, value, true);
-        return value.data;
+        TypedValue value = new TypedValue();
+        boolean resolved = context.getTheme().resolveAttribute(attr, value, true);
+        if (resolved
+                && value.type >= TypedValue.TYPE_FIRST_COLOR_INT
+                && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+            return value.data;
+        }
+        if (value.resourceId != 0) {
+            return ContextCompat.getColor(context, value.resourceId);
+        }
+        return ContextCompat.getColor(context, R.color.bubble_other);
     }
 
     private void bindReplyQuote(View root, ChatMessage message) {
@@ -223,6 +239,15 @@ public final class MessageBubbleBinder {
 
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
         MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
+        int bodyColor = message.getMine() && !tombstone
+                ? android.graphics.Color.WHITE
+                : resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+        if (body != null) {
+            body.setTextColor(bodyColor);
+        }
+        if (fileName != null) {
+            fileName.setTextColor(bodyColor);
+        }
 
         if (tombstone) {
             if (body != null) {
@@ -338,6 +363,16 @@ public final class MessageBubbleBinder {
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
+        int metaColor = message.getMine()
+                && !MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
+                ? 0xB3FFFFFF
+                : resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+        if (edited != null) {
+            edited.setTextColor(metaColor);
+        }
+        if (time != null) {
+            time.setTextColor(metaColor);
+        }
         if (edited != null) {
             boolean showEdited = MessageUiRules.isEdited(
                     message.getEditedAtEpochMs(),

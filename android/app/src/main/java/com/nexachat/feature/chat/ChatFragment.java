@@ -230,14 +230,17 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void render() {
         if (binding == null) return;
-        binding.chatToolbar.setTitle(state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName());
+        String title = state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName();
+        binding.chatToolbar.setTitle(null);
+        binding.chatTitle.setText(title);
+        binding.chatAvatar.setName(title);
         String subtitle = state.getPeerTyping() ? getString(R.string.chat_typing)
                 : !state.getConnected() ? getString(R.string.chat_offline)
                 : !state.isGroup() && state.getPeerPresence() != null
                     ? getString(state.getPeerPresence().getOnline() ? R.string.presence_active_now : R.string.chat_offline) : "";
-        binding.chatToolbar.setSubtitle(subtitle);
+        binding.chatSubtitle.setText(subtitle);
+        binding.chatSubtitle.setVisibility(subtitle.isEmpty() ? View.GONE : View.VISIBLE);
         binding.callButton.setVisibility(state.isGroup() ? View.GONE : View.VISIBLE);
-        binding.infoButton.setVisibility(state.isGroup() ? View.VISIBLE : View.GONE);
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
         if (state.getError() != null) binding.chatError.setText(ChatErrorText.messageId(state.getError()));
         renderPinned();
@@ -300,6 +303,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void renderUnread(InboxUiState inbox) {
         ConversationSummary row = inbox.getConversations().stream().filter(c -> conversationId.equals(c.getId())).findFirst().orElse(null);
+        if (row != null && binding != null) {
+            binding.chatAvatar.setAvatarUrl(row.getDisplayAvatar());
+        }
         int unread = row == null ? 0 : row.getUnreadCount();
         binding.unreadBanner.setVisibility(unread >= 20 ? View.VISIBLE : View.GONE);
         if (unread >= 20) binding.unreadBanner.setText(getString(R.string.summary_overflow_action) + " (" + unread + ")");
@@ -379,8 +385,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showMoreOptions() {
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        java.util.List<Runnable> actions = new java.util.ArrayList<>();
+        labels.add(getString(R.string.action_search));
+        actions.add(() -> setSearchOpen(true));
+        labels.add(getString(R.string.summary_overflow_action));
+        actions.add(this::showSummary);
+        if (state.isGroup()) {
+            labels.add(getString(R.string.group_detail_title));
+            actions.add(() -> binding.infoButton.performClick());
+        }
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setItems(new CharSequence[]{getString(R.string.summary_overflow_action)}, (dialog, which) -> showSummary()).show();
+                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> actions.get(which).run())
+                .show();
     }
 
     private void showSummary() {

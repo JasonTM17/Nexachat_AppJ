@@ -11,49 +11,53 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorSurface"
-        app:layout_scrollFlags="scroll|enterAlways" />
-
-        <LinearLayout
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="end"
-            android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/space_sm">
-            <ImageButton
-                android:id="@+id/contactsButton"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/contacts_title"
-                android:src="@drawable/ic_people" />
-            <ImageButton
-                android:id="@+id/searchButton"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/search_title"
-                android:src="@drawable/ic_search" />
-            <ImageButton
-                android:id="@+id/profileButton"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/profile_title"
-                android:src="@drawable/ic_account_circle" />
-        </LinearLayout>
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:layout_scrollFlags="scroll|enterAlways">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_gravity="end"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/contactsButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/contacts_title"
+                    android:src="@drawable/ic_people" />
+
+                <ImageButton
+                    android:id="@+id/searchButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/search_title"
+                    android:src="@drawable/ic_search" />
+
+                <ImageButton
+                    android:id="@+id/profileButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/profile_title"
+                    android:src="@drawable/ic_account_circle" />
+            </LinearLayout>
+        </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
-        xmlns:app="http://schemas.android.com/apk/res-auto">
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/conversationList"
             android:layout_width="match_parent"
@@ -61,15 +65,16 @@
             android:clipToPadding="false"
             android:padding="@dimen/space_sm" />
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/createGroupFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
         android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/space_lg"
+        android:layout_margin="@dimen/space_md"
         android:contentDescription="@string/group_create_title"
-        app:srcCompat="@drawable/ic_add"
-        xmlns:app="http://schemas.android.com/apk/res-auto" />
+        app:fabSize="normal"
+        app:srcCompat="@drawable/ic_add" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"
