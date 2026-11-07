@@ -35,6 +35,14 @@
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
+    <string name="inbox_search_hint">Tìm kiếm cuộc trò chuyện, bạn bè, thẻ...</string>
+    <string name="inbox_active_now_header">ĐANG HOẠT ĐỘNG</string>
+    <string name="inbox_view_all">Xem tất cả</string>
+    <string name="inbox_filter_all">Tất cả</string>
+    <string name="inbox_filter_unread">Chưa đọc</string>
+    <string name="inbox_filter_direct">Trực tiếp</string>
+    <string name="inbox_filter_groups">Nhóm</string>
+    <string name="inbox_your_status">Tin của bạn</string>
 
     <!-- Contacts & user search -->
     <string name="contacts_title">Danh bạ</string>

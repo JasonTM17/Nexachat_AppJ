@@ -1,12 +1,15 @@
 package com.nexachat.feature.inbox.adapter;
 
+import android.content.Context;
 import android.graphics.Typeface;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -125,6 +128,11 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                         yesterdayLabel
                 ));
                 time.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+                int timeColor = resolveThemeColor(
+                        itemView.getContext(),
+                        unread ? com.google.android.material.R.attr.colorPrimary : com.google.android.material.R.attr.colorOnSurfaceVariant
+                );
+                time.setTextColor(timeColor);
             } else {
                 time.setVisibility(View.GONE);
             }
@@ -137,6 +145,17 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             }
 
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));
+        }
+
+        private static int resolveThemeColor(@NonNull Context context, int attr) {
+            TypedValue value = new TypedValue();
+            if (!context.getTheme().resolveAttribute(attr, value, true)) {
+                return 0;
+            }
+            if (value.resourceId != 0) {
+                return ContextCompat.getColor(context, value.resourceId);
+            }
+            return value.data;
         }
     }
 }
