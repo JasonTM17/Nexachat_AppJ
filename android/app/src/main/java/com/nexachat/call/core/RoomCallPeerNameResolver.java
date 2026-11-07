@@ -3,13 +3,9 @@ package com.nexachat.call.core;
 import android.content.Context;
 import com.nexachat.R;
 import com.nexachat.core.common.AppLocaleManager;
+import com.nexachat.core.common.BlockingCalls;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
 
 /** Resolves an incoming caller from the locally cached direct-conversation row. */
 public final class RoomCallPeerNameResolver implements CallPeerNameResolver {
@@ -51,16 +47,7 @@ public final class RoomCallPeerNameResolver implements CallPeerNameResolver {
     private ConversationEntity loadConversation(String conversationId) {
         if (!hasText(conversationId)) return null;
         try {
-            return BuildersKt.runBlocking(
-                    EmptyCoroutineContext.INSTANCE,
-                    new Function2<CoroutineScope, Continuation<? super ConversationEntity>, Object>() {
-                        @Override
-                        public Object invoke(
-                                CoroutineScope scope,
-                                Continuation<? super ConversationEntity> continuation) {
-                            return conversationDao.byId(conversationId, continuation);
-                        }
-                    });
+            return BlockingCalls.conversationById(conversationDao, conversationId);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return null;

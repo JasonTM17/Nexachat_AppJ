@@ -1,15 +1,11 @@
 package com.nexachat.core.network;
 
+import com.nexachat.core.common.BlockingCalls;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import java.io.IOException;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
 import okhttp3.Interceptor;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -35,11 +31,9 @@ public final class AuthInterceptor implements Interceptor {
             return chain.proceed(request);
         }
 
-        Function2<CoroutineScope, Continuation<? super Tokens>, Object> readTokens =
-                (scope, continuation) -> tokenStore.readTokens(continuation);
         final Tokens tokens;
         try {
-            tokens = BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, readTokens);
+            tokens = BlockingCalls.readTokens(tokenStore);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IOException("token read interrupted", interrupted);

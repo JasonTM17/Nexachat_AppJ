@@ -1,13 +1,9 @@
 package com.nexachat.core.network;
 
+import com.nexachat.core.common.BlockingCalls;
 import java.io.IOException;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
 import okhttp3.Authenticator;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -44,15 +40,10 @@ public final class TokenAuthenticator implements Authenticator {
         }
 
         String failedAccessToken = bearerToken(failedRequest);
-        Function2<CoroutineScope, Continuation<? super TokenRefreshOutcome>, Object> refresh =
-                (scope, continuation) ->
-                        tokenRefresher.refreshIfNeeded(failedAccessToken, continuation);
 
         final TokenRefreshOutcome outcome;
         try {
-            outcome = (TokenRefreshOutcome) BuildersKt.runBlocking(
-                    EmptyCoroutineContext.INSTANCE,
-                    refresh);
+            outcome = BlockingCalls.refreshIfNeeded(tokenRefresher, failedAccessToken);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IOException("token refresh interrupted", interrupted);
