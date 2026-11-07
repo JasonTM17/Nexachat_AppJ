@@ -1,5 +1,6 @@
 package com.nexachat.summary;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,12 +18,21 @@ public class SummaryProviderSelector {
     private final String configuredProvider;
     private final boolean llmEnabled;
     private final boolean operatorKeyConfigured;
+    private final SummaryComplexityAssessor complexityAssessor;
 
+    public SummaryProviderSelector(
+            List<SummaryProvider> providers, String configuredProvider, boolean llmEnabled, String operatorApiKey) {
+        this(providers, configuredProvider, llmEnabled, operatorApiKey, new SummaryComplexityAssessor(12, 1500, 4));
+    }
+
+    @Autowired
     public SummaryProviderSelector(
             List<SummaryProvider> providers,
             @Value("${nexachat.summary.provider:auto}") String configuredProvider,
             @Value("${nexachat.summary.llm.enabled:false}") boolean llmEnabled,
-            @Value("${nexachat.summary.llm.api-key:}") String operatorApiKey) {
+            @Value("${nexachat.summary.llm.api-key:}") String operatorApiKey,
+            SummaryComplexityAssessor complexityAssessor) {
+        this.complexityAssessor = complexityAssessor;
         this.localProvider = findProvider(providers, "LOCAL");
         this.llmProvider = providers.stream()
                 .filter(provider -> provider.id().equals("LLM"))
@@ -34,6 +44,18 @@ public class SummaryProviderSelector {
         }
         this.llmEnabled = llmEnabled;
         this.operatorKeyConfigured = operatorApiKey != null && !operatorApiKey.isBlank();
+    }
+
+    /**
+     * Local-first routing: the local engine serves routine windows; the LLM tier
+     * (e.g. DeepSeek) is used only for complex windows or an explicit refresh.
+     */
+    public PreparedSummaryProvider prepare(boolean consented, SummaryWindow window, boolean refresh) {
+        PreparedSummaryProvider base = prepare(consented);
+        if (base.provider().id().equals("LLM") && !complexityAssessor.isComplex(window, refresh)) {
+            return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
+        }
+        return base;
     }
 
     public PreparedSummaryProvider prepare(boolean consented) {

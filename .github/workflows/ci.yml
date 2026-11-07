@@ -124,3 +124,29 @@ jobs:
             fi
             echo "No secret patterns found"
           fi
+
+  publish-container:
+    # Publishes the server image to GitHub Packages (ghcr.io) after all gates pass on main.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [server-test, android-test, repo-hygiene, secret-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and push to ghcr.io
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          IMAGE="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')/nexachat-server"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker build -f server/Dockerfile \
+            --label "org.opencontainers.image.source=https://github.com/$REPO" \
+            --label "org.opencontainers.image.revision=$SHA" \
+            -t "$IMAGE:latest" -t "$IMAGE:sha-${SHA::7}" server
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:sha-${SHA::7}"

@@ -40,7 +40,7 @@ public class SummaryService {
         }
 
         String contentHash = contentHash(window);
-        PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent());
+        PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
         if (!request.refresh()) {
             var cached = cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
                     contentHash, prepared.cacheProvider(), request.language());

@@ -118,3 +118,7 @@ The script loads `.env` into the process environment, runs the real adapter path
 (`LlmClient` → `PromptBuilder` → `LlmOutputValidator`), and prints only status, latency,
 token counts, the schema/citation validation verdict, and the number of items per
 section. It is skipped unless `RUN_LIVE_LLM=1`.
+
+## Local-first routing (complexity gate)
+
+Even with consent and an operator key, routine windows are summarized by the built-in local engine with no external call. The cloud LLM (DeepSeek or any OpenAI-compatible endpoint, including a local Ollama/vLLM server via `NEXACHAT_SUMMARY_LLM_BASE_URL`) is used only when a window is complex or the user explicitly refreshes in AI mode. A window is complex when it has at least `NEXACHAT_SUMMARY_COMPLEXITY_MIN_MESSAGES` messages (default 12), `..._MIN_CHARS` characters (1500) or `..._MIN_PARTICIPANTS` senders (4). If the LLM fails, the service falls back to the local engine.

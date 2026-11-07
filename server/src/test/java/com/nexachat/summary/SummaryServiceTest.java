@@ -62,7 +62,7 @@ class SummaryServiceTest {
 
         assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
                 .isInstanceOf(SummaryTooFewMessagesException.class);
-        verify(providerSelector, never()).prepare(org.mockito.ArgumentMatchers.anyBoolean());
+        verify(providerSelector, never()).prepare(org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean());
     }
 
     @Test
@@ -73,7 +73,7 @@ class SummaryServiceTest {
         SummaryCacheEntry entry = cacheEntry(generated, "LLM");
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, true));
-        when(providerSelector.prepare(true)).thenReturn(prepared);
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
         when(cacheRepository.replace(eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
                 eq("LLM"), eq(SummaryLanguage.EN), eq(generated))).thenReturn(entry);
@@ -97,7 +97,7 @@ class SummaryServiceTest {
         SummaryCacheEntry entry = cacheEntry(previouslyGenerated, "LOCAL");
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, false));
-        when(providerSelector.prepare(false)).thenReturn(prepared);
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
                 SummaryService.contentHash(window), "LOCAL", SummaryLanguage.EN))
                 .thenReturn(Optional.of(entry));
@@ -119,7 +119,7 @@ class SummaryServiceTest {
         SummaryCacheEntry entry = cacheEntry(generated, "LOCAL");
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, true));
-        when(providerSelector.prepare(true)).thenReturn(prepared);
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
                 SummaryService.contentHash(window), "LLM", SummaryLanguage.EN))
                 .thenReturn(Optional.empty());
