@@ -7,7 +7,7 @@ import androidx.core.content.ContextCompat;
 import com.nexachat.R;
 
 /**
- * Deterministic avatar container/on colors — mirrors {@code AvatarPaletteLight/Dark} in Avatar.kt.
+ * Deterministic avatar container/on colors for light and dark palettes.
  */
 public final class AvatarColors {
 

@@ -22,7 +22,7 @@ counts for the exact revision under review.
 | R3 — đa ngôn ngữ | FR-F1..F2 | `app/core/common/LocaleManager`, `res/values*` | `AppLocaleManagerTest`, `StringParityTest` | Script bước 8 |
 | R3 — multimedia/file | FR-E1..E4 | `server/attachment`, `StorageService`; `app/feature/media` | `AttachmentFlowIT`, `AttachmentServiceTest`, `LocalStorageServiceTest`, `MagicBytesTest`, `AttachmentRepositoryTest` | Script bước 6 |
 | R3 — xoay màn hình | FR-G1 | `ChatViewModel`, `SavedStateHandle`, Room | `ChatViewModelTest`, `docs/rotation-audit.md` | Script bước 8 |
-| R4 — sáng tạo | FR-H1..H3 | `server/message` (reactions/pins/reply); `app/feature/chat/ChatInteractions.kt` | `InteractionFlowIT`, `ReactionServiceTest`, `PinServiceTest`, `MessageRepositoryTest` | Script bước 7 |
+| R4 — sáng tạo | FR-H1..H3 | `server/message` (reactions/pins/reply); `app/feature/chat/ChatInteractionsViews.java` | `InteractionFlowIT`, `ReactionServiceTest`, `PinServiceTest`, `MessageRepositoryTest` | Script bước 7 |
 | R4 — chuyển tiếp text | F5 forward | `app/feature/chat`, `app/core/ui` | `ForwardFilterTest`, `ChatViewModelTest` | Demo chuyển tiếp text; attachment không được chuyển tiếp |
 | R3 — theme | F6 local theme | `app/core/ui`, `app/data` | `ThemeMapperTest`, `SettingsRepositoryTest` | Demo SYSTEM/LIGHT/DARK trên thiết bị |
 | Extra — voice calls | Call signaling + Android call UI | `server/call`; `app/call` | `CallFlowIT`, `CallServiceTest`, `CallRegistryTest`, `CallStateMachineTest`, `CallTimeoutSchedulerTest`, `CallControllerTest`, `CallManagerTest`, `CallFrameCodecTest`, `CallUiModelMapperTest`, `CallLogFormatterTest` | Live E2E `tools/e2e/calls/call_e2e.py`; screenshots `s6-*` |

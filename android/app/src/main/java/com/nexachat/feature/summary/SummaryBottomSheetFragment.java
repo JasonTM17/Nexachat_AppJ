@@ -37,7 +37,7 @@ import java.util.Set;
 import javax.inject.Inject;
 
 /**
- * Bottom sheet for conversation catch-up summaries (parity with {@code SummaryBottomSheet.kt}).
+ * Bottom sheet for conversation catch-up summaries.
  */
 @AndroidEntryPoint
 public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment {

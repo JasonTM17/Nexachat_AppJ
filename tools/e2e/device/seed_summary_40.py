@@ -31,7 +31,7 @@ MESSAGES = [
     ("+84900000203", "Châu có câu hỏi: Kích thước phông chữ tối đa trên Android app hỗ trợ đến mức nào?"),
     ("+84900000202", "Ứng dụng hỗ trợ tốt đến mức font scale 2.0 (200%), giao diện tự động bật cuộn khi tràn."),
     ("+84900000203", "Câu hỏi thứ hai: Khi người dùng xoay ngang màn hình thì bottom sheet có giữ nguyên trạng thái không?"),
-    ("+84900000202", "Có nhé, toàn bộ trạng thái ID được lưu qua rememberSaveable nên không bị đóng khi xoay."),
+    ("+84900000202", "Có nhé, toàn bộ trạng thái ID được lưu qua SavedStateHandle nên không bị đóng khi xoay."),
     ("+84900000203", "Trường hợp cuộc trò chuyện có dưới 5 tin nhắn thì giao diện hiển thị thế nào?"),
     ("+84900000202", "Giao diện sẽ hiển thị thông báo thân thiện: Cuộc trò chuyện chưa đủ tin nhắn để tóm tắt."),
     ("+84900000203", "Khi người dùng bấm vào một trích dẫn trong bản tóm tắt thì điều gì xảy ra?"),

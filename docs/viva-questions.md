@@ -11,10 +11,9 @@
 *Which language is used for the Android client?*
 
 **Trả lời.** Client Android và server đều dùng Java 17. Cây Android hiện có
-386 tệp Java trong source tree, bao gồm mã ứng dụng và kiểm thử. Có thể kiểm tra
-cấu hình tương thích Java trong `android/app/build.gradle.kts` và các lớp dưới
-`android/app/src/main/java/`. Ngôn ngữ build script không làm thay đổi ngôn ngữ
-của mã ứng dụng.
+385 tệp Java trong source tree, bao gồm mã ứng dụng và kiểm thử. Có thể kiểm tra
+cấu hình tương thích Java trong `android/app/build.gradle` và các lớp dưới
+`android/app/src/main/java/`. Toàn bộ Gradle build scripts (`settings.gradle`, `build.gradle`, `app/build.gradle`) cũng dùng Groovy DSL chuẩn.
 
 **Câu hỏi gài.** *“Vậy UI cũng là Java?”* — Đúng. Activity, Fragment, ViewModel,
 adapter và logic ứng dụng đều là lớp Java; layout được khai báo bằng Android

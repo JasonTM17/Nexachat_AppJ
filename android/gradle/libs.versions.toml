@@ -1,5 +1,5 @@
 # NexaChat version catalog — single source of truth for every dependency.
-# Rule: no hardcoded version strings inside build.gradle.kts files.
+# Rule: no hardcoded version strings inside build.gradle files.
 
 [versions]
 agp = "8.7.3"

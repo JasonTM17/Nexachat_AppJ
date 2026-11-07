@@ -136,6 +136,6 @@ replacing the previous `.docx`.
 `release/` (keystore, signing properties, built APKs), `.env*`, `*.keystore`,
 `*.jks`, `keystore.properties`, `signing.properties`, `local.properties`,
 `google-services.json`, `server/data/`, `server/uploads/`, `demo/backups/`,
-build outputs (`build/`, `target/`, `.gradle/`, `.kotlin/`), `docs/evidence/`,
+build outputs (`build/`, `target/`, `.gradle/`), `docs/evidence/`,
 and the `.agentkit/`, `.agents/`, `.claude/`, `.codex/`, `.devin/`, `plans/`
 workspace directories. `.gitignore` and the CI secret scan enforce most of this.
