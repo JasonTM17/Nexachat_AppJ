@@ -145,7 +145,7 @@ class TokenAuthenticatorTest {
     @Test
     fun `concurrent 401s sharing one token trigger exactly one refresh`() = runTest {
         val store = newStore()
-        store.saveTokens(access = STALE_ACCESS, accessExpiresAtEpochMs = 0L, refresh = "rt-stale")
+        store.saveTokens(STALE_ACCESS, 0L, "rt-stale")
 
         val refreshEntered = CountDownLatch(1)
         val releaseRefresh = CountDownLatch(1)
@@ -184,7 +184,7 @@ class TokenAuthenticatorTest {
     @Test
     fun `stored token already rotated retries with it without calling refresh`() = runTest {
         val store = newStore()
-        store.saveTokens(access = NEW_ACCESS, accessExpiresAtEpochMs = Long.MAX_VALUE, refresh = "rt-current")
+        store.saveTokens(NEW_ACCESS, Long.MAX_VALUE, "rt-current")
         val api = mockk<AuthApi>()
         val authenticator = TokenAuthenticator(TokenRefresher(store, SessionEvents(), Provider { api }))
 
@@ -199,7 +199,7 @@ class TokenAuthenticatorTest {
     @Test
     fun `refresh 401 clears tokens and emits LoggedOut`() = runTest {
         val store = newStore()
-        store.saveTokens(access = STALE_ACCESS, accessExpiresAtEpochMs = 0L, refresh = "rt-dead")
+        store.saveTokens(STALE_ACCESS, 0L, "rt-dead")
         val api = mockk<AuthApi>()
         val refreshCall = mockk<Call<AuthResponse>>()
         every { refreshCall.execute() } returns RetrofitResponse.error(
@@ -245,7 +245,7 @@ class TokenAuthenticatorTest {
     @Test
     fun `third chained 401 gives up instead of storming`() = runTest {
         val store = newStore()
-        store.saveTokens(access = STALE_ACCESS, accessExpiresAtEpochMs = 0L, refresh = "rt-1")
+        store.saveTokens(STALE_ACCESS, 0L, "rt-1")
         val api = mockk<AuthApi>()
         val authenticator = TokenAuthenticator(TokenRefresher(store, SessionEvents(), Provider { api }))
 

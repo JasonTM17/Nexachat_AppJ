@@ -87,10 +87,9 @@ internal object AuthRepositoryFlow {
 
     private suspend fun persist(tokenStore: TokenStore, auth: AuthResponse) {
         tokenStore.saveTokens(
-            access = auth.accessToken,
-            accessExpiresAtEpochMs = System.currentTimeMillis() +
-                auth.accessTokenExpiresIn * 1_000L,
-            refresh = auth.refreshToken,
+            auth.accessToken,
+            System.currentTimeMillis() + auth.accessTokenExpiresIn * 1_000L,
+            auth.refreshToken,
         )
     }
 

@@ -324,13 +324,13 @@ fun ChatScreen(
     LaunchedEffect(viewModel) {
         viewModel.actionEvents.collect { event ->
             when (event) {
-                is ChatActionEvent.MessageEdited -> {
+                is ChatViewModel.ChatActionEvent.MessageEdited -> {
                     if (editingMessageId == event.messageId) {
                         editingMessageId = null
                         editInput = ""
                     }
                 }
-                is ChatActionEvent.MessageForwarded -> {
+                is ChatViewModel.ChatActionEvent.MessageForwarded -> {
                     val result = snackbarHostState.showSnackbar(
                         message = context.getString(R.string.forwarded_snackbar),
                         actionLabel = context.getString(R.string.action_view),
@@ -1226,7 +1226,7 @@ private fun ForwardConversationSheet(
 
 @Composable
 private fun SearchOverlay(
-    searchState: ChatSearchState,
+    searchState: ChatViewModel.ChatSearchState,
     timeFormat: SimpleDateFormat,
     onSelectResult: (ChatMessage) -> Unit,
     onLoadMore: () -> Unit,

@@ -128,19 +128,15 @@ class ChatViewModelTest {
         every { session.sendTyping(any()) } returns true
 
         viewModel = ChatViewModel(
-            savedStateHandle = SavedStateHandle(mapOf("conversationId" to CONVERSATION_ID)),
-            messageRepository = messageRepository,
-            conversationRepository = conversationRepository,
-            attachmentRepository = attachmentRepository,
-            session = session,
+            SavedStateHandle(mapOf("conversationId" to CONVERSATION_ID)),
+            messageRepository,
+            conversationRepository,
+            attachmentRepository,
+            session,
         )
     }
 
-    /**
-     * [ChatViewModel.uiState] is `stateIn(WhileSubscribed)` — a live collector
-     * is what keeps the upstream combine running. Then `.value` reads are
-     * deterministic under the unconfined test dispatcher.
-     */
+    /** Mirrors screen collection; MainDispatcherRule keeps state reads deterministic. */
     private fun kotlinx.coroutines.test.TestScope.observeUi() {
         backgroundScope.launch { viewModel.uiState.collect {} }
     }
@@ -281,16 +277,16 @@ class ChatViewModelTest {
     @Test
     fun `draft input is restored from SavedStateHandle`() = runTest {
         val restored = ChatViewModel(
-            savedStateHandle = SavedStateHandle(
+            SavedStateHandle(
                 mapOf(
                     "conversationId" to CONVERSATION_ID,
                     "chat_input" to "nháp tay",
                 ),
             ),
-            messageRepository = messageRepository,
-            conversationRepository = conversationRepository,
-            attachmentRepository = attachmentRepository,
-            session = session,
+            messageRepository,
+            conversationRepository,
+            attachmentRepository,
+            session,
         )
         backgroundScope.launch { restored.uiState.collect {} }
         runCurrent()
@@ -638,7 +634,7 @@ class ChatViewModelTest {
         viewModel.actionEvents.test {
             viewModel.editMessage("m-1", "updated")
             runCurrent()
-            assertEquals(ChatActionEvent.MessageEdited("m-1"), awaitItem())
+            assertEquals(ChatViewModel.ChatActionEvent.MessageEdited("m-1"), awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
 
@@ -682,7 +678,7 @@ class ChatViewModelTest {
             runCurrent()
 
             assertEquals(
-                ChatActionEvent.MessageForwarded(TARGET_CONVERSATION_ID),
+                ChatViewModel.ChatActionEvent.MessageForwarded(TARGET_CONVERSATION_ID),
                 awaitItem(),
             )
             cancelAndIgnoreRemainingEvents()
@@ -801,7 +797,7 @@ class ChatViewModelTest {
 
         viewModel.clearSearch()
 
-        assertEquals(ChatSearchState(), viewModel.searchState.value)
+        assertEquals(ChatViewModel.ChatSearchState(), viewModel.searchState.value)
     }
 
     @Test

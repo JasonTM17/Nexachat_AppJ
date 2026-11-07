@@ -83,10 +83,9 @@ class TokenRefresher @Inject constructor(
             when {
                 response.isSuccessful && body != null -> {
                     tokenStore.saveTokens(
-                        access = body.accessToken,
-                        accessExpiresAtEpochMs = System.currentTimeMillis() +
-                            body.accessTokenExpiresIn * 1_000L,
-                        refresh = body.refreshToken,
+                        body.accessToken,
+                        System.currentTimeMillis() + body.accessTokenExpiresIn * 1_000L,
+                        body.refreshToken,
                     )
                     TokenRefreshOutcome.FreshToken(body.accessToken)
                 }

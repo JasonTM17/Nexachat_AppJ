@@ -97,9 +97,9 @@ class TokenStoreTest {
     @Test
     fun `saveTokens persists encrypted values and readTokens round-trips`() = runTest {
         store.saveTokens(
-            access = "access-jwt-123",
-            accessExpiresAtEpochMs = 1_700_000_000_000L,
-            refresh = "refresh-opaque-456",
+            "access-jwt-123",
+            1_700_000_000_000L,
+            "refresh-opaque-456",
         )
 
         // Stored prefs hold Base64 ciphertext — never the plaintext token.
