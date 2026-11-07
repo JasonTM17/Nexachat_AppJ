@@ -54,6 +54,13 @@
         app:layout_constraintStart_toStartOf="parent" android:layout_marginStart="0dp"
         app:layout_constraintTop_toBottomOf="@id/pinnedBanner" />
 
+    <TextView android:id="@+id/unreadBanner" android:layout_width="0dp" android:layout_height="wrap_content" android:background="?attr/colorSecondaryContainer" android:gravity="center" android:minHeight="48dp" android:padding="@dimen/space_sm" android:textColor="?attr/colorOnSecondaryContainer" android:visibility="gone" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/replyEditBanner" />
+
+    <LinearLayout android:id="@+id/chatSearchBar" android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="horizontal" android:visibility="gone" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toBottomOf="@id/unreadBanner">
+        <com.google.android.material.textfield.TextInputEditText android:id="@+id/chatSearchInput" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:hint="@string/search_in_chat_placeholder" android:singleLine="true" />
+        <ImageButton android:id="@+id/closeChatSearch" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_clear_search" android:src="@drawable/ic_close" android:background="?attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/messageList"
         android:layout_width="0dp"
@@ -64,7 +71,7 @@
         app:layout_constraintBottom_toTopOf="@id/composerBar"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" android:layout_marginStart="0dp"
-        app:layout_constraintTop_toBottomOf="@id/replyEditBanner" />
+        app:layout_constraintTop_toBottomOf="@id/chatSearchBar" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/scrollDownFab"
@@ -85,6 +92,9 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" android:layout_marginStart="0dp" />
+
+    <TextView android:id="@+id/chatError" android:layout_width="0dp" android:layout_height="wrap_content" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:textColor="?attr/colorError" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/composerBar" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
+    <LinearLayout android:id="@+id/pendingAttachments" android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/chatError" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
 
     <com.nexachat.core.ui.components.LoadingStateView android:id="@+id/loadingState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" android:layout_marginStart="0dp" app:layout_constraintTop_toTopOf="parent"/>
     <com.nexachat.core.ui.components.ErrorStateView android:id="@+id/errorState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" android:layout_marginStart="0dp" app:layout_constraintTop_toTopOf="parent"/>
