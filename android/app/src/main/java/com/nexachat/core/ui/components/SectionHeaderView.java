@@ -10,7 +10,7 @@ import com.nexachat.R;
 import java.util.Locale;
 
 /**
- * Uppercase section label for grouped lists (View counterpart to Compose {@code SectionHeader}).
+ * Uppercase section label for grouped Android View lists.
  */
 public class SectionHeaderView extends FrameLayout {
 

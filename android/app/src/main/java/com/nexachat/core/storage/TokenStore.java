@@ -22,8 +22,7 @@ import javax.inject.Singleton;
  * encrypted values remain readable.
  *
  * <p>RxDataStore performs reads and writes asynchronously on its configured IO
- * scheduler. The API never blocks the caller; Kotlin callers may bridge with
- * RxJava3 streams at their call sites.
+ * scheduler. The API exposes RxJava 3 streams and never blocks the caller.
  */
 @Singleton
 public final class TokenStore {

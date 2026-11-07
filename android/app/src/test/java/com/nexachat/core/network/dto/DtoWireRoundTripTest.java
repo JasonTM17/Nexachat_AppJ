@@ -19,8 +19,8 @@ import java.util.Map;
 import org.junit.Test;
 
 /**
- * Wire shapes from docs/api-contract.md. Reflective beans must keep the
- * defaults Kotlin data classes used to supply when a field is absent.
+ * Wire shapes from docs/api-contract.md. Reflective Java beans must preserve
+ * the expected values when a field is absent.
  */
 public final class DtoWireRoundTripTest {
     private final Moshi moshi = new Moshi.Builder().build();

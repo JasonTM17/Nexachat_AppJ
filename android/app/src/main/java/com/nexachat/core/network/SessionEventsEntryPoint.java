@@ -4,7 +4,7 @@ import dagger.hilt.EntryPoint;
 import dagger.hilt.InstallIn;
 import dagger.hilt.components.SingletonComponent;
 
-/** Lets Compose navigation reach the singleton without a view model. */
+/** Lets Android navigation reach the singleton without a ViewModel dependency. */
 @EntryPoint
 @InstallIn(SingletonComponent.class)
 public interface SessionEventsEntryPoint {

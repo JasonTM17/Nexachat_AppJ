@@ -7,7 +7,7 @@ import java.util.Locale;
 
 /**
  * Calendar and clock rules for chat date separators and relative timestamps.
- * Kept in Java for parity with other small rule helpers; Kotlin {@link ChatUiRulesKt} delegates here.
+ * Shared by the chat presentation helpers.
  */
 public final class ChatTimeRules {
 

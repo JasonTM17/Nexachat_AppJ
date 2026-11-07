@@ -1,6 +1,6 @@
 package com.nexachat.core.network.dto;
 
-/** Kotlin {@code CharSequence.isBlank} / {@code trim} whitespace, including NBSP. */
+/** Unicode whitespace checks for JSON text, including NBSP. */
 final class JsonText {
     private JsonText() {
     }

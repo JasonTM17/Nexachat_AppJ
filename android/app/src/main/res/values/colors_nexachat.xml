@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Stitch / Compose tokens mapped for Material3 XML (light) -->
+    <!-- Design tokens mapped for the light Material 3 XML theme. -->
     <color name="brand_indigo">#FF4F46E5</color>
     <color name="brand_indigo_dark">#FF3525CD</color>
     <color name="brand_indigo_light">#FF818CF8</color>

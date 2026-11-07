@@ -12,7 +12,7 @@ import com.google.android.material.button.MaterialButton;
 import com.nexachat.R;
 
 /**
- * Full-surface error placeholder with optional retry (View counterpart to Compose {@code ErrorState}).
+ * Full-surface error placeholder with an optional retry action.
  */
 public class ErrorStateView extends FrameLayout {
 

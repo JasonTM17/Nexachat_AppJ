@@ -62,7 +62,7 @@ public final class ApiResultTest {
         Call<T> call = mock(Call.class);
         when(call.clone()).thenReturn(call);
         when(call.execute()).thenAnswer(invocation -> executor.execute(call));
-        return ApiResultKt.safeApiCall(call).blockingGet();
+        return ApiResult.safeApiCall(call).blockingGet();
     }
 
     @FunctionalInterface

@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * {@code PATCH /users/me/settings} body — a partial update, so only the flag.
- * Bound by Moshi's reflective Java adapter (codegen accepts Kotlin classes only).
+ * Bound by Moshi's reflective Java adapter.
  */
 public final class UpdateUserSettingsRequest {
     private final boolean showPresence;

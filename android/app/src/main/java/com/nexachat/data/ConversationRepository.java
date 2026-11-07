@@ -9,7 +9,6 @@ import com.nexachat.core.common.Result;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.network.ApiResult;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.AddGroupMembersRequest;
@@ -76,7 +75,7 @@ import retrofit2.Response;
  * requests perform the same authoritative pull.
  *
  * <p>Retrofit calls and avatar reads run on {@link Schedulers#io()}. Room
- * operations use Room's RxJava executor and are composed without blocking.
+ * operations use Room's RxJava executor and are chained without blocking.
  */
 @Singleton
 public final class ConversationRepository implements AutoCloseable {
@@ -155,8 +154,7 @@ public final class ConversationRepository implements AutoCloseable {
 
     /**
      * Single conversation for the chat title bar. An empty {@link Optional}
-     * means the row is absent; RxJava streams cannot carry the prior Kotlin
-     * null emission.
+     * means the row is absent; RxJava streams cannot emit {@code null} values.
      */
     @NonNull
     public Flowable<Optional<ConversationSummary>> conversationFlow(@NonNull String conversationId) {
@@ -744,7 +742,7 @@ public final class ConversationRepository implements AutoCloseable {
      * erased empty-body cast becomes an unexpected-body error.
      */
     private <T> Single<ApiResult<T>> safeApiCall(@NonNull Call<T> call) {
-        return Single.defer(() -> ApiResultKt.safeApiCall(call))
+        return Single.defer(() -> ApiResult.safeApiCall(call))
                 .onErrorResumeNext(error -> {
                     if (error instanceof ClassCastException) {
                         return Single.just(new ApiResult.HttpError<T>(

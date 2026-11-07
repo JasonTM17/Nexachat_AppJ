@@ -16,7 +16,7 @@ import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.ui.MessageUiRules;
 
 /**
- * Circular avatar with initials fallback and Glide image loading (View counterpart to Compose {@code Avatar}).
+ * Circular Android View avatar with an initials fallback and Glide image loading.
  */
 public class AvatarView extends FrameLayout {
 

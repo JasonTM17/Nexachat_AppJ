@@ -18,8 +18,8 @@ import java.util.function.UnaryOperator;
 import javax.inject.Inject;
 
 /**
- * Viewer state is derived from nav args and the download: images skip the hop
- * (streamed by Coil), while other media resolves to a cache file.
+ * Viewer state is derived from navigation arguments and the download: images
+ * stream through Glide, while other media resolves to a cache file.
  */
 @HiltViewModel
 public final class MediaViewerViewModel extends ViewModel {

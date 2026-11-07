@@ -9,7 +9,7 @@ import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.inbox.CallPreviewDirection;
 
 /**
- * Resolves inbox row preview text to match the Compose inbox row.
+ * Resolves preview text for Android inbox rows.
  */
 public final class ConversationPreviewHelper {
 

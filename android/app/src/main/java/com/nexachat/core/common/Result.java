@@ -72,8 +72,7 @@ public sealed interface Result<T> permits Result.Success, Result.Failure {
 
     /**
      * Failure whose type comes from the caller. The constructor's type argument
-     * is not in the value, so Kotlin cannot infer it the way a covariant
-     * {@code Result<Nothing>} failure used to.
+     * is not stored in the value, so the caller supplies the result type.
      */
     static <T> Result<T> failure(ApiError error) {
         return new Failure<>(error);

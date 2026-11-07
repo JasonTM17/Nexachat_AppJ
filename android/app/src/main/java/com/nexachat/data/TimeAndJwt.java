@@ -7,7 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Map;
 
-/** ISO instant parsing and JWT payload helpers shared from Kotlin repositories. */
+/** ISO instant parsing and JWT payload helpers shared by Android repositories. */
 public final class TimeAndJwt {
 
     private TimeAndJwt() {}
