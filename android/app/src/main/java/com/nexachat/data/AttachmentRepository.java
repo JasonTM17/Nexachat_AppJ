@@ -7,29 +7,39 @@ import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.network.ApiResult;
+import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.AttachmentApi;
+import com.nexachat.core.network.ProgressRequestBody;
 import com.nexachat.core.network.dto.AttachmentDto;
 import dagger.hilt.android.qualifiers.ApplicationContext;
+import io.reactivex.rxjava3.core.BackpressureStrategy;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.FlowableEmitter;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.coroutines.Continuation;
-import kotlinx.coroutines.flow.Flow;
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.RequestBody;
 
 /**
  * Attachment transport boundary: multipart upload with live progress and
  * authenticated downloads into {@code cacheDir/attachments}.
  *
- * <p>The public coroutine API is declared by {@link AttachmentRepositoryApi};
- * {@link AttachmentRepositoryFlow} keeps suspend and Flow work structured in
- * Kotlin while this class owns the Android and Java transport operations.
+ * <p>Resolver access, file reads, and network operations run on RxJava's IO
+ * scheduler. Each returned stream is cold and its subscriber owns disposal.
  */
 @Singleton
-public final class AttachmentRepository implements AttachmentRepositoryApi {
+public final class AttachmentRepository {
 
     public static final long MAX_UPLOAD_BYTES = 25L * 1024L * 1024L;
     public static final String ERROR_TOO_LARGE = "ATTACHMENT_TOO_LARGE";
@@ -40,6 +50,8 @@ public final class AttachmentRepository implements AttachmentRepositoryApi {
 
     private static final String DEFAULT_MIME = "application/octet-stream";
     private static final int READ_BUFFER = 64 * 1024;
+    private static final String DEFAULT_FILENAME = "attachment";
+    private static final int MAX_NAME_LENGTH = 80;
 
     private final AttachmentApi attachmentApi;
     private final Context context;
@@ -48,35 +60,114 @@ public final class AttachmentRepository implements AttachmentRepositoryApi {
     public AttachmentRepository(
             @NonNull AttachmentApi attachmentApi,
             @ApplicationContext @NonNull Context context) {
-        this.attachmentApi = attachmentApi;
-        this.context = context;
+        this.attachmentApi = Objects.requireNonNull(attachmentApi, "attachmentApi");
+        this.context = Objects.requireNonNull(context, "context");
     }
 
-    @Override
-    public Object describe(
-            @NonNull Uri uri,
-            @NonNull Continuation<? super LocalAttachment> completion) {
-        return AttachmentRepositoryFlow.describe(this, uri, completion);
-    }
-
-    @Override
     @NonNull
-    public Flow<AttachmentUploadEvent> upload(
+    public Single<LocalAttachment> describe(@NonNull Uri uri) {
+        return Single.fromCallable(() -> describeOnIo(uri))
+                .subscribeOn(Schedulers.io());
+    }
+
+    @NonNull
+    public Flowable<AttachmentUploadEvent> upload(
             @NonNull Uri uri,
             @Nullable String mimeHint) {
-        return AttachmentRepositoryFlow.upload(this, uri, mimeHint);
+        return Flowable.create(rawEmitter -> {
+            FlowableEmitter<AttachmentUploadEvent> emitter = rawEmitter.serialize();
+            emitter.onNext(new AttachmentUploadEvent.Progress(0f));
+
+            final LocalAttachment metadata;
+            final byte[] bytes;
+            try {
+                metadata = describeOnIo(uri);
+                bytes = readBounded(uri, metadata.getSizeBytes());
+            } catch (OversizeException exception) {
+                emitFailure(emitter, new ApiError.Unknown(ERROR_TOO_LARGE));
+                return;
+            } catch (IOException exception) {
+                emitFailure(emitter, new ApiError.Network(exception.getMessage()));
+                return;
+            } catch (SecurityException exception) {
+                // A picker grant may expire between selection and upload.
+                emitFailure(emitter, new ApiError.Unknown(ERROR_UNREADABLE));
+                return;
+            }
+
+            String mime = resolveMime(metadata.getMimeType(), mimeHint);
+            MediaType mediaType = MediaType.parse(mime);
+            RequestBody byteBody = RequestBody.create(bytes, mediaType);
+            ProgressRequestBody requestBody = new ProgressRequestBody(
+                    byteBody,
+                    (written, total) -> {
+                        if (total > 0L) {
+                            float fraction = Math.max(0f, Math.min(1f,
+                                    (float) written / (float) total));
+                            emitter.onNext(new AttachmentUploadEvent.Progress(fraction));
+                        }
+                    });
+            MultipartBody.Part part = MultipartBody.Part.createFormData(
+                    PART_FILE,
+                    metadata.getDisplayName() == null
+                            ? DEFAULT_FILENAME
+                            : metadata.getDisplayName(),
+                    requestBody);
+
+            DisposableCall.subscribe(
+                    ApiResultKt.safeApiCall(attachmentApi.upload(part))
+                            .subscribeOn(Schedulers.io()),
+                    emitter);
+        }, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.io());
     }
 
-    @Override
-    public Object downloadToCache(
+    @NonNull
+    public Single<Result<File>> downloadToCache(
             @NonNull String attachmentId,
-            @Nullable String displayName,
-            @NonNull Continuation<? super Result<File>> completion) {
-        return AttachmentRepositoryFlow.downloadToCache(
-                this, attachmentId, displayName, completion);
+            @Nullable String displayName) {
+        return Single.defer(() -> ApiResultKt.safeApiCall(attachmentApi.content(attachmentId))
+                    .map(result -> {
+                        if (result instanceof ApiResult.Success<?> success) {
+                            return saveBodyToCache((okhttp3.ResponseBody) success.getBody(),
+                                    attachmentId, displayName);
+                        }
+                        return attachmentFailure(result);
+                    }))
+                .subscribeOn(Schedulers.io());
     }
 
-    /** Java-side resolver work; called by the bridge on {@code Dispatchers.IO}. */
+    private void emitFailure(
+            FlowableEmitter<AttachmentUploadEvent> emitter,
+            ApiError error) {
+        emitter.onNext(new AttachmentUploadEvent.Failed(error));
+        emitter.onComplete();
+    }
+
+    @NonNull
+    private Result<File> saveBodyToCache(
+            @NonNull okhttp3.ResponseBody body,
+            @NonNull String attachmentId,
+            @Nullable String displayName) {
+        File directory = new File(cacheDir(), CACHE_DIR_NAME);
+        directory.mkdirs();
+        File file = new File(directory, attachmentId + "-" + sanitize(displayName));
+        try (InputStream input = body.byteStream();
+                java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
+            byte[] chunk = new byte[READ_BUFFER];
+            int read;
+            while ((read = input.read(chunk)) >= 0) {
+                output.write(chunk, 0, read);
+            }
+            return new Result.Success<>(file);
+        } catch (IOException exception) {
+            // Never leave a truncated file that media viewers could open.
+            //noinspection ResultOfMethodCallIgnored
+            file.delete();
+            return Result.failure(new ApiError.Network(exception.getMessage()));
+        }
+    }
+
+    /** Java-side resolver work; called from an Rx IO subscription. */
     @NonNull
     LocalAttachment describeOnIo(@NonNull Uri uri) {
         String name = null;
@@ -138,7 +229,7 @@ public final class AttachmentRepository implements AttachmentRepositoryApi {
 
         InputStream input = context.getContentResolver().openInputStream(uri);
         if (input == null) {
-            throw new IOException("cannot open " + uri);
+            throw new IOException("cannot open selected attachment");
         }
 
         try (InputStream stream = input) {
@@ -190,13 +281,70 @@ public final class AttachmentRepository implements AttachmentRepositoryApi {
     }
 
     @NonNull
-    AttachmentApi attachmentApi() {
-        return attachmentApi;
+    private File cacheDir() {
+        return context.getCacheDir();
+    }
+
+    private String sanitize(@Nullable String name) {
+        if (name == null) {
+            return DEFAULT_FILENAME;
+        }
+        StringBuilder sanitized = new StringBuilder();
+        for (int index = 0; index < name.length() && sanitized.length() < MAX_NAME_LENGTH; index++) {
+            char character = name.charAt(index);
+            boolean safe = (character >= 'A' && character <= 'Z')
+                    || (character >= 'a' && character <= 'z')
+                    || (character >= '0' && character <= '9')
+                    || character == '.' || character == '_' || character == '-';
+            sanitized.append(safe ? character : '_');
+        }
+        String result = sanitized.toString();
+        return result.isBlank() ? DEFAULT_FILENAME : result;
     }
 
     @NonNull
-    File cacheDir() {
-        return context.getCacheDir();
+    private static Result<File> attachmentFailure(@NonNull ApiResult<?> result) {
+        if (result instanceof ApiResult.HttpError<?> httpError) {
+            return Result.failure(ApiError.from(
+                    httpError.getStatus(), httpError.getErrorCode()));
+        }
+        ApiResult.NetworkError<?> networkError = (ApiResult.NetworkError<?>) result;
+        return Result.failure(new ApiError.Network(networkError.getCause().getMessage()));
+    }
+
+    private static final class DisposableCall {
+        private DisposableCall() {}
+
+        private static void subscribe(
+                @NonNull Single<ApiResult<AttachmentDto>> call,
+                @NonNull FlowableEmitter<AttachmentUploadEvent> emitter) {
+            emitter.setDisposable(call.subscribe(
+                    result -> {
+                        if (result instanceof ApiResult.Success<?> success) {
+                            emitter.onNext(new AttachmentUploadEvent.Progress(1f));
+                            emitter.onNext(new AttachmentUploadEvent.Uploaded(
+                                    (AttachmentDto) success.getBody()));
+                        } else {
+                            emitter.onNext(new AttachmentUploadEvent.Failed(
+                                    apiFailure(result)));
+                        }
+                        emitter.onComplete();
+                    },
+                    error -> {
+                        emitter.onNext(new AttachmentUploadEvent.Failed(
+                                new ApiError.Network(error.getMessage())));
+                        emitter.onComplete();
+                    }));
+        }
+
+        @NonNull
+        private static ApiError apiFailure(@NonNull ApiResult<?> result) {
+            if (result instanceof ApiResult.HttpError<?> httpError) {
+                return ApiError.from(httpError.getStatus(), httpError.getErrorCode());
+            }
+            ApiResult.NetworkError<?> networkError = (ApiResult.NetworkError<?>) result;
+            return new ApiError.Network(networkError.getCause().getMessage());
+        }
     }
 
     static final class OversizeException extends IOException {

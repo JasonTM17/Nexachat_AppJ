@@ -5,6 +5,10 @@ import androidx.annotation.Nullable;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -15,10 +19,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.UnaryOperator;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
 /**
  * Peer presence as the feature layer sees it: online from the live
@@ -26,14 +26,18 @@ import kotlinx.coroutines.flow.StateFlowKt;
  * server-side on the last disconnect. Both stay false/null when the peer hides
  * their presence — a hidden peer is indistinguishable from a never-seen one,
  * by design (the server sends neither events nor a seed).
+ *
+ * <p>Presence pushes arrive from realtime's event stream. The processor emits
+ * immutable snapshots; no network or database work runs in this repository.
  */
 @Singleton
-public final class PresenceRepository {
+public final class PresenceRepository implements AutoCloseable {
 
-    private final MutableStateFlow<Map<String, PeerPresence>> mutablePresences =
-            StateFlowKt.MutableStateFlow(Collections.emptyMap());
-    private final StateFlow<Map<String, PeerPresence>> presences =
-            PresenceRepositoryFlow.stateView(mutablePresences);
+    private final BehaviorProcessor<Map<String, PeerPresence>> mutablePresences =
+            BehaviorProcessor.createDefault(Collections.emptyMap());
+    private final Flowable<Map<String, PeerPresence>> presences =
+            mutablePresences.hide().distinctUntilChanged();
+    private final CompositeDisposable subscriptions = new CompositeDisposable();
 
     /**
      * Peers whose state came from a live push. An inbox snapshot is taken
@@ -49,15 +53,17 @@ public final class PresenceRepository {
     @Inject
     public PresenceRepository(
             @NonNull RealtimeSession session,
-            @NonNull SessionEvents sessionEvents,
-            @NonNull CoroutineScope scope) {
-        PresenceRepositoryFlow.collect(scope, session.getEvents(), this::onSessionEvent);
-        PresenceRepositoryFlow.collect(scope, sessionEvents.getEvents(), this::onSessionSignal);
+            @NonNull SessionEvents sessionEvents) {
+        Disposable realtime = session.getEvents().subscribe(this::onSessionEvent, ignored -> { });
+        Disposable sessionSignals = sessionEvents.getEvents()
+                .subscribe(this::onSessionSignal, ignored -> { });
+        subscriptions.add(realtime);
+        subscriptions.add(sessionSignals);
     }
 
     /** User id → presence for every peer this session has heard about. */
     @NonNull
-    public StateFlow<Map<String, PeerPresence>> getPresences() {
+    public Flowable<Map<String, PeerPresence>> getPresences() {
         return presences;
     }
 
@@ -72,12 +78,10 @@ public final class PresenceRepository {
         }
         updatePresences(current -> {
             Map<String, PeerPresence> next = new LinkedHashMap<>(current);
-            boolean changed = false;
             for (Map.Entry<String, PeerPresence> entry : seeds.entrySet()) {
                 String userId = entry.getKey();
                 PeerPresence presence = entry.getValue();
-                if (userId == null || PresenceRepositoryFlow.isBlank(userId)
-                        || livePeers.contains(userId)) {
+                if (userId == null || userId.isBlank() || livePeers.contains(userId)) {
                     continue;
                 }
                 PeerPresence prior = next.get(userId);
@@ -86,18 +90,17 @@ public final class PresenceRepository {
                         : presence;
                 if (!Objects.equals(merged, prior)) {
                     next.put(userId, merged);
-                    changed = true;
                 }
             }
-            return changed ? immutableCopy(next) : current;
+            return immutableCopy(next);
         });
     }
 
     /** Logout / account switch: nothing may carry over. */
-    public void clear() {
+    public synchronized void clear() {
         livePeers.clear();
         latestEventTimes.clear();
-        mutablePresences.setValue(Collections.emptyMap());
+        mutablePresences.onNext(Collections.emptyMap());
     }
 
     /** Drops one peer (hidden presence, or no longer a DIRECT contact). */
@@ -119,7 +122,7 @@ public final class PresenceRepository {
             return;
         }
         String userId = presence.getUserId();
-        if (userId == null || PresenceRepositoryFlow.isBlank(userId)) {
+        if (userId == null || userId.isBlank()) {
             return;
         }
         Instant eventTime = parseEventTime(presence.getServerTs());
@@ -127,9 +130,7 @@ public final class PresenceRepository {
             return;
         }
         PeerPresence next = new PeerPresence(
-                presence.getOnline(),
-                PresenceRepositoryFlow.isoToEpochMsOrNullFromMessageRepository(
-                        presence.getLastSeenAt()));
+                presence.getOnline(), TimeAndJwt.isoToEpochMsOrNull(presence.getLastSeenAt()));
         livePeers.add(userId);
         updatePresences(current -> {
             Map<String, PeerPresence> nextMap = new LinkedHashMap<>(current);
@@ -166,18 +167,23 @@ public final class PresenceRepository {
         return PresenceTime.parseEventTime(serverTs);
     }
 
-    private void updatePresences(UnaryOperator<Map<String, PeerPresence>> update) {
-        while (true) {
-            Map<String, PeerPresence> current = mutablePresences.getValue();
-            Map<String, PeerPresence> next = update.apply(current);
-            if (mutablePresences.compareAndSet(current, next)) {
-                return;
-            }
+    private synchronized void updatePresences(
+            UnaryOperator<Map<String, PeerPresence>> update) {
+        Map<String, PeerPresence> current = mutablePresences.getValue();
+        Map<String, PeerPresence> next = update.apply(current);
+        if (!Objects.equals(current, next)) {
+            mutablePresences.onNext(next);
         }
     }
 
     private static Map<String, PeerPresence> immutableCopy(
             Map<String, PeerPresence> presences) {
         return Collections.unmodifiableMap(new LinkedHashMap<>(presences));
+    }
+
+    /** Releases the app-lifetime realtime subscriptions; also used by scoped tests. */
+    @Override
+    public void close() {
+        subscriptions.clear();
     }
 }
