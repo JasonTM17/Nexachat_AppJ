@@ -30,8 +30,11 @@ import com.nexachat.feature.inbox.adapter.ConversationPreviewHelper;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /** Inbox conversation list backed by {@link InboxViewModel}. */
 @AndroidEntryPoint
@@ -239,12 +242,31 @@ public final class InboxFragment extends Fragment {
                 NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
         binding.activeNowStrip.addView(yourStatusView);
 
-        // 2. Next items (up to 8 peers)
-        int count = 0;
+        // 2. Next items (up to 8 peers), prioritizing direct conversations and deduplicating titles
+        List<ConversationSummary> candidates = new ArrayList<>(rows.size());
         for (ConversationSummary row : rows) {
+            if (!row.isGroup()) {
+                candidates.add(row);
+            }
+        }
+        for (ConversationSummary row : rows) {
+            if (row.isGroup()) {
+                candidates.add(row);
+            }
+        }
+
+        Set<String> seenTitles = new HashSet<>();
+        int count = 0;
+        for (ConversationSummary row : candidates) {
             if (count >= 8) {
                 break;
             }
+            String displayTitle = ConversationPreviewHelper.displayTitle(requireContext(), row);
+            String normalizedTitle = displayTitle.trim().toLowerCase(Locale.ROOT);
+            if (!seenTitles.add(normalizedTitle)) {
+                continue;
+            }
+
             View peerView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
             AvatarView peerAvatar = peerView.findViewById(R.id.activePeerAvatar);
             TextView peerName = peerView.findViewById(R.id.activePeerName);
@@ -253,14 +275,16 @@ public final class InboxFragment extends Fragment {
                 peerBadge.setVisibility(View.GONE);
             }
 
-            String displayTitle = ConversationPreviewHelper.displayTitle(requireContext(), row);
             peerAvatar.setName(displayTitle);
             peerAvatar.setAvatarUrl(row.getDisplayAvatar());
-            peerAvatar.setShowStoryRing(true);
-            Boolean isOnline = row.getPeerPresence() != null
-                    ? Boolean.valueOf(row.getPeerPresence().getOnline())
-                    : Boolean.TRUE;
+            Boolean isOnline = null;
+            if (row.getPeerPresence() != null) {
+                isOnline = row.getPeerPresence().getOnline();
+            } else if (!row.isGroup()) {
+                isOnline = Boolean.TRUE;
+            }
             peerAvatar.setOnlineStatus(isOnline);
+            peerAvatar.setShowStoryRing(!row.isGroup() || Boolean.TRUE.equals(isOnline));
 
             String shortName = displayTitle.contains(" ")
                     ? displayTitle.substring(0, displayTitle.indexOf(" "))
