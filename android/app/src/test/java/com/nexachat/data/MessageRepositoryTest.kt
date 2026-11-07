@@ -1477,7 +1477,7 @@ class MessageRepositoryTest {
     fun `loadUntilLoaded returns immediately for an already stored message`() = runTest {
         messageDao.upsert(storedMessage("m-9", seq = 9))
 
-        assertEquals(MessageJump.Found, repository.loadUntilLoaded(CONVERSATION_ID, "m-9"))
+        assertEquals(MessageJump.Found.INSTANCE, repository.loadUntilLoaded(CONVERSATION_ID, "m-9"))
         verify(exactly = 0) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 
@@ -1492,7 +1492,7 @@ class MessageRepositoryTest {
 
         val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-2")
 
-        assertEquals(MessageJump.Found, jump)
+        assertEquals(MessageJump.Found.INSTANCE, jump)
         assertTrue(messageDao.rows.containsKey("m-2"))
         verify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
         // Each page asked for history strictly before the then-oldest row.
@@ -1509,7 +1509,7 @@ class MessageRepositoryTest {
 
         val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-gone", 3)
 
-        assertEquals(MessageJump.NotFound, jump)
+        assertEquals(MessageJump.NotFound.INSTANCE, jump)
         verify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 
@@ -1519,7 +1519,7 @@ class MessageRepositoryTest {
         every { messageApi.getMessages(any(), any(), any(), any()) } returns
             Response.success(page(hasMore = false)).asCall()
 
-        assertEquals(MessageJump.NotFound, repository.loadUntilLoaded(CONVERSATION_ID, "m-old"))
+        assertEquals(MessageJump.NotFound.INSTANCE, repository.loadUntilLoaded(CONVERSATION_ID, "m-old"))
         verify(exactly = 1) { messageApi.getMessages(any(), any(), any(), any()) }
     }
 

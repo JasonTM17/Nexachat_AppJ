@@ -53,16 +53,6 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Reaction chip under a bubble — aggregated from `message_reactions`
- * ([reactedByMe] resolves `reactedByMe ?: userIds.contains(myId)` at ingest).
- */
-data class ReactionChip(
-    val emoji: String,
-    val count: Int,
-    val reactedByMe: Boolean,
-)
-
-/**
  * Message as the feature layer sees it — merges the Room row (SENT) and the
  * outbox row (SENDING/FAILED) into one shape, [mine] already resolved.
  */
@@ -96,27 +86,6 @@ data class ChatMessage(
     val isDeleted: Boolean get() = deletedAtEpochMs != null
 }
 
-/** One search page (F4) — newest-first, already hydrated for rendering. */
-data class MessageSearchResult(
-    val items: List<ChatMessage>,
-    val hasMore: Boolean,
-    val nextBeforeSeq: Long?,
-)
-
-/** Peer-is-typing signal forwarded to the open chat screen (5s TTL applied there). */
-data class TypingEvent(
-    val conversationId: String,
-    val userId: String?,
-    val displayName: String?,
-)
-
-/** Read-watermark event for the open conversation (read receipts, P2). */
-data class ReadEvent(
-    val conversationId: String,
-    val userId: String?,
-    val upToSeq: Long?,
-)
-
 private data class DeleteRollback(
     val before: MessageEntity,
     val optimistic: MessageEntity,
@@ -124,18 +93,6 @@ private data class DeleteRollback(
     val pin: PinnedMessageEntity?,
     val wasLast: Boolean,
 )
-
-/** Outcome of paging history back to a message the user asked to see. */
-sealed interface MessageJump {
-    /** The message is stored, so the list can scroll to it. */
-    data object Found : MessageJump
-
-    /** Not reachable within the page budget — the message is gone or too old. */
-    data object NotFound : MessageJump
-
-    /** A page fetch failed; the caller surfaces [error] and may retry. */
-    data class Failed(val error: ApiError) : MessageJump
-}
 
 /**
  * The message pipeline (plan §12.2):
@@ -339,26 +296,26 @@ internal class MessageRepositoryCore(
         messageId: String,
         maxPages: Int = MAX_JUMP_PAGES,
     ): MessageJump {
-        if (messageDao.exists(messageId)) return MessageJump.Found
+        if (messageDao.exists(messageId)) return MessageJump.Found.INSTANCE
         if (messageDao.minSeq(conversationId) <= 0L) {
             // Nothing loaded yet (cold screen, failed first page): pull the
             // newest page before paging backwards from a non-existent cursor.
             val first = refreshHistory(conversationId)
             if (first is Result.Failure) return MessageJump.Failed(first.error)
-            if (messageDao.exists(messageId)) return MessageJump.Found
+            if (messageDao.exists(messageId)) return MessageJump.Found.INSTANCE
         }
         repeat(maxPages) {
             val oldest = messageDao.minSeq(conversationId)
-            if (oldest <= 0L) return MessageJump.NotFound
+            if (oldest <= 0L) return MessageJump.NotFound.INSTANCE
             when (val page = refreshHistory(conversationId, beforeSeq = oldest)) {
                 is Result.Success -> {
-                    if (messageDao.exists(messageId)) return MessageJump.Found
-                    if (!page.value.hasMore) return MessageJump.NotFound
+                    if (messageDao.exists(messageId)) return MessageJump.Found.INSTANCE
+                    if (!page.value.hasMore) return MessageJump.NotFound.INSTANCE
                 }
                 is Result.Failure -> return MessageJump.Failed(page.error)
             }
         }
-        return MessageJump.NotFound
+        return MessageJump.NotFound.INSTANCE
     }
 
     /**
@@ -600,7 +557,7 @@ internal class MessageRepositoryCore(
     ): Result<MessageSearchResult> {
         val trimmed = query.trim()
         if (trimmed.length < MIN_SEARCH_CHARS) {
-            return Result.Success(MessageSearchResult(emptyList(), hasMore = false, nextBeforeSeq = null))
+            return Result.Success(MessageSearchResult(emptyList(), false, null))
         }
         return when (
             val result = call {
@@ -624,11 +581,7 @@ internal class MessageRepositoryCore(
                     entity.toChatMessage(myId, chips)
                 }
                 Result.Success(
-                    MessageSearchResult(
-                        items = items,
-                        hasMore = result.value.hasMore,
-                        nextBeforeSeq = result.value.nextBeforeSeq,
-                    ),
+                    MessageSearchResult(items, result.value.hasMore, result.value.nextBeforeSeq),
                 )
             }
             is Result.Failure -> Result.cast(result)
@@ -1244,7 +1197,7 @@ internal class MessageRepositoryCore(
     }
 
     private fun MessageReactionEntity.toChip(): ReactionChip =
-        ReactionChip(emoji = emoji, count = count, reactedByMe = reactedByMe)
+        ReactionChip(emoji, count, reactedByMe)
 
     // ---- pins body parsing ----
 

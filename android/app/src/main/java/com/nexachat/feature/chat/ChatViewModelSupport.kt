@@ -176,8 +176,8 @@ internal class ChatViewModelSupport(
     fun jumpToMessage(messageId: String) {
         scope.launch {
             when (val jump = messageRepository.loadUntilLoaded(conversationId, messageId, 20)) {
-                MessageJump.Found -> jumpTargetsFlow.emit(messageId)
-                MessageJump.NotFound -> error.value = ApiError.Unknown(ChatViewModel.ERROR_MESSAGE_GONE)
+                is MessageJump.Found -> jumpTargetsFlow.emit(messageId)
+                is MessageJump.NotFound -> error.value = ApiError.Unknown(ChatViewModel.ERROR_MESSAGE_GONE)
                 is MessageJump.Failed -> error.value = jump.error
             }
         }

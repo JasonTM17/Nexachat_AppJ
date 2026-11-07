@@ -530,7 +530,7 @@ class ChatViewModelTest {
     @Test
     fun `jumpToMessage emits the scroll target once the message is loaded`() = runTest {
         coEvery { messageRepository.loadUntilLoaded(CONVERSATION_ID, "m-old", any()) } returns
-            MessageJump.Found
+            MessageJump.Found.INSTANCE
 
         viewModel.jumpTargets.test {
             viewModel.jumpToMessage("m-old")
@@ -542,7 +542,7 @@ class ChatViewModelTest {
     @Test
     fun `jumpToMessage reports a target that is gone`() = runTest {
         coEvery { messageRepository.loadUntilLoaded(any(), any(), any()) } returns
-            MessageJump.NotFound
+            MessageJump.NotFound.INSTANCE
         observeUi()
         runCurrent()
 
@@ -733,7 +733,7 @@ class ChatViewModelTest {
     @Test
     fun `search debounces keystrokes and queries the final term after 300 ms`() = runTest {
         coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
-            Result.Success(MessageSearchResult(emptyList(), hasMore = false, nextBeforeSeq = null))
+            Result.Success(MessageSearchResult(emptyList(), false, null))
 
         viewModel.search("h")
         runCurrent()
@@ -754,7 +754,7 @@ class ChatViewModelTest {
     @Test
     fun `search below two characters clears results without a call`() = runTest {
         coEvery { messageRepository.searchMessages(any(), any(), any(), any()) } returns
-            Result.Success(MessageSearchResult(emptyList(), hasMore = false, nextBeforeSeq = null))
+            Result.Success(MessageSearchResult(emptyList(), false, null))
         viewModel.search("hello")
         advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
         runCurrent()
@@ -778,7 +778,7 @@ class ChatViewModelTest {
         val second = listOf(message(id = "m-7", seq = 7, mine = true))
         coEvery {
             messageRepository.searchMessages(CONVERSATION_ID, "hi", null, MessageApi.DEFAULT_SEARCH_LIMIT)
-        } returns Result.Success(MessageSearchResult(first, hasMore = true, nextBeforeSeq = 8))
+        } returns Result.Success(MessageSearchResult(first, true, 8L))
         coEvery {
             messageRepository.searchMessages(
                 CONVERSATION_ID,
@@ -786,7 +786,7 @@ class ChatViewModelTest {
                 8L,
                 MessageApi.DEFAULT_SEARCH_LIMIT,
             )
-        } returns Result.Success(MessageSearchResult(second, hasMore = false, nextBeforeSeq = null))
+        } returns Result.Success(MessageSearchResult(second, false, null))
 
         viewModel.search("hi")
         advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1)
@@ -811,8 +811,8 @@ class ChatViewModelTest {
             Result.Success(
                 MessageSearchResult(
                     listOf(message(id = "m-1", seq = 1, mine = true)),
-                    hasMore = false,
-                    nextBeforeSeq = null,
+                    false,
+                    null,
                 ),
             )
         viewModel.search("hi")
