@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/replyEditRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
@@ -8,7 +9,31 @@
     android:orientation="horizontal"
     android:padding="@dimen/space_sm"
     android:visibility="gone">
-    <ImageView android:id="@+id/replyIcon" android:layout_width="24dp" android:layout_height="24dp" android:contentDescription="@string/action_reply" android:src="@drawable/ic_reply"/>
-    <TextView android:id="@+id/replyPreview" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="@dimen/space_sm" android:layout_weight="1" android:ellipsize="end" android:maxLines="2"/>
-    <ImageButton android:id="@+id/cancelReplyEdit" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="@string/cd_cancel_reply" android:src="@drawable/ic_close"/>
+
+    <ImageView
+        android:id="@+id/replyIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:contentDescription="@string/action_reply"
+        android:src="@drawable/ic_reply"
+        app:tint="?attr/colorPrimary" />
+
+    <TextView
+        android:id="@+id/replyPreview"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_sm"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="?attr/colorOnSurface" />
+
+    <ImageButton
+        android:id="@+id/cancelReplyEdit"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/cd_cancel_reply"
+        android:src="@drawable/ic_close"
+        app:tint="?attr/colorOnSurfaceVariant" />
 </LinearLayout>

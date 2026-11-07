@@ -7,7 +7,7 @@
     app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="24dp"
     app:cardElevation="0dp"
-    app:strokeColor="?attr/colorSurfaceVariant"
+    app:strokeColor="?attr/colorOutlineVariant"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -23,12 +23,17 @@
             android:paddingBottom="8dp"
             android:text="@string/forward_title"
             android:textAppearance="?attr/textAppearanceTitleLarge"
-            android:textColor="?attr/colorOnSurface" />
+            android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/forward_search_placeholder"
+            app:boxCornerRadiusBottomEnd="20dp"
+            app:boxCornerRadiusBottomStart="20dp"
+            app:boxCornerRadiusTopEnd="20dp"
+            app:boxCornerRadiusTopStart="20dp"
             app:hintTextColor="?attr/colorOnSurfaceVariant"
             app:startIconDrawable="@drawable/ic_search"
             app:startIconTint="?attr/colorOnSurfaceVariant">
@@ -55,6 +60,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/forward_send" />
+            android:text="@string/forward_send"
+            android:textStyle="bold"
+            app:cornerRadius="16dp" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
