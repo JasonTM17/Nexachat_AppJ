@@ -119,6 +119,28 @@ The script loads `.env` into the process environment, runs the real adapter path
 token counts, the schema/citation validation verdict, and the number of items per
 section. It is skipped unless `RUN_LIVE_LLM=1`.
 
-## Local-first routing (complexity gate)
+## Hybrid Local-First Tiered Routing (Local Server Model + Cloud DeepSeek)
 
-Even with consent and an operator key, routine windows are summarized by the built-in local engine with no external call. The cloud LLM (DeepSeek or any OpenAI-compatible endpoint, including a local Ollama/vLLM server via `NEXACHAT_SUMMARY_LLM_BASE_URL`) is used only when a window is complex or the user explicitly refreshes in AI mode. A window is complex when it has at least `NEXACHAT_SUMMARY_COMPLEXITY_MIN_MESSAGES` messages (default 12), `..._MIN_CHARS` characters (1500) or `..._MIN_PARTICIPANTS` senders (4). If the LLM fails, the service falls back to the local engine.
+NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize privacy, latency, and cloud API token costs:
+
+1. **Tier 0: Built-in Native MMR Engine (`LOCAL`)**
+   - Pure Java extractive summarizer running directly in the backend process.
+   - Zero external calls, zero API token spend, instant response.
+   - Always used when the user has not consented (`aiSummaryConsent = false`) or as the ultimate offline fallback.
+
+2. **Tier 1: Local Server Model Tier (`LOCAL_LLM` / Ollama / vLLM)**
+   - Configured via `NEXACHAT_SUMMARY_LOCAL_LLM_*` (e.g. `http://host.docker.internal:11434/v1`, model `qwen2.5:3b` or `llama3.2:3b`).
+   - Handles routine AI generative summaries on the server machine without burning cloud tokens or transmitting data outside your deployment infrastructure.
+
+3. **Tier 2: Cloud DeepSeek Model Tier (`LLM` / `deepseek-flash`)**
+   - Configured via `NEXACHAT_SUMMARY_LLM_*` (endpoint `https://api.deepseek.com`, model `deepseek-flash`).
+   - Automatically escalated to when the summary task is complex ("quá khó") or when the user explicitly triggers "Regenerate / Refresh" in AI mode.
+   - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
+     - Window message count $\ge 12$ messages (default `min-messages: 12`).
+     - Window total length $\ge 1500$ characters (default `min-chars: 1500`).
+     - Participant count $\ge 4$ active senders (default `min-participants: 4`).
+     - Explicit user refresh (`request.refresh() == true`).
+
+4. **Multi-Stage Graceful Fallback**
+   - If DeepSeek Cloud times out, encounters a network issue, or fails schema validation, the request automatically falls back to the Local Server Model (if configured).
+   - If the Local Server Model is unreachable or fails, the request automatically falls back to the Native MMR Engine (`LOCAL`), guaranteeing the user always receives a valid, verified summary without an error banner.

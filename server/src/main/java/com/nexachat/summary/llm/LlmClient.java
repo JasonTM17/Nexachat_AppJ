@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
@@ -28,6 +29,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class LlmClient {
 
     private static final int MAX_RESPONSE_BYTES = 256 * 1024;
+
+    public record TargetConfig(URI endpoint, String apiKey, String model, int timeoutMs, int maxOutputTokens) {
+    }
 
     record LlmCompletion(String content, Integer promptTokens, Integer completionTokens) {
     }
@@ -49,11 +53,36 @@ public final class LlmClient {
                 daemonThreads(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.executor.allowCoreThreadTimeOut(true);
+        int maxTimeout = Math.max(1, Math.max(properties.getTimeoutMs(), properties.getLocalTimeoutMs()));
         this.httpClient = HttpClient.newBuilder()
                 .executor(executor)
-                .connectTimeout(Duration.ofMillis(Math.max(1, properties.getTimeoutMs())))
+                .connectTimeout(Duration.ofMillis(maxTimeout))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
+    }
+
+    public TargetConfig cloudTarget() {
+        if (!properties.isUsable()) {
+            return null;
+        }
+        return new TargetConfig(
+                properties.endpoint(),
+                properties.getApiKey(),
+                properties.getModel(),
+                properties.getTimeoutMs(),
+                properties.getMaxOutputTokens());
+    }
+
+    public TargetConfig localTarget() {
+        if (!properties.isLocalUsable()) {
+            return null;
+        }
+        return new TargetConfig(
+                properties.localEndpoint(),
+                properties.getLocalApiKey(),
+                properties.getLocalModel(),
+                properties.getLocalTimeoutMs(),
+                properties.getMaxOutputTokens());
     }
 
     String complete(Prompt prompt) {
@@ -61,26 +90,41 @@ public final class LlmClient {
     }
 
     LlmCompletion completeWithUsage(Prompt prompt) {
-        if (!properties.isUsable()) {
+        TargetConfig target = cloudTarget();
+        if (target == null) {
+            target = localTarget();
+        }
+        if (target == null) {
+            throw unavailable();
+        }
+        return completeWithTarget(prompt, target);
+    }
+
+    public LlmCompletion completeWithTarget(Prompt prompt, TargetConfig target) {
+        if (target == null || target.endpoint() == null || target.model() == null) {
             throw unavailable();
         }
         byte[] requestBody;
         try {
-            requestBody = requestBody(prompt);
+            requestBody = requestBody(prompt, target.model(), target.maxOutputTokens());
         } catch (JsonProcessingException | RuntimeException exception) {
             throw badOutput();
         }
 
-        long budgetNanos = TimeUnit.MILLISECONDS.toNanos(properties.getTimeoutMs());
+        long budgetNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(100, target.timeoutMs()));
         long deadline = System.nanoTime() + budgetNanos;
         for (int attempt = 0; attempt < 2; attempt++) {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
                 throw timeout();
             }
-            HttpRequest request = HttpRequest.newBuilder(properties.endpoint())
+            String key = target.apiKey() == null ? "" : target.apiKey().trim();
+            if (key.isEmpty()) {
+                key = "local-key";
+            }
+            HttpRequest request = HttpRequest.newBuilder(target.endpoint())
                     .timeout(Duration.ofNanos(remaining))
-                    .header("Authorization", "Bearer " + properties.getApiKey().trim())
+                    .header("Authorization", "Bearer " + key)
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofByteArray(requestBody))
@@ -101,8 +145,6 @@ public final class LlmClient {
                 }
                 byte[] responseBody = readResponse(response.body());
                 return parseCompletion(responseBody);
-            } catch (HttpConnectTimeoutException exception) {
-                throw timeout();
             } catch (java.net.http.HttpTimeoutException exception) {
                 throw timeout();
             } catch (InterruptedException exception) {
@@ -122,10 +164,10 @@ public final class LlmClient {
         executor.shutdownNow();
     }
 
-    private byte[] requestBody(Prompt prompt) throws JsonProcessingException {
+    private byte[] requestBody(Prompt prompt, String modelName, int maxTokens) throws JsonProcessingException {
         ObjectNode body = objectMapper.createObjectNode();
-        body.put("model", properties.getModel().trim());
-        body.put("max_tokens", properties.getMaxOutputTokens());
+        body.put("model", modelName.trim());
+        body.put("max_tokens", maxTokens);
         body.put("temperature", 0);
         ObjectNode format = body.putObject("response_format");
         format.put("type", "json_object");

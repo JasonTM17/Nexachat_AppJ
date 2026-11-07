@@ -18,11 +18,21 @@ public class SummaryProviderSelector {
     private final String configuredProvider;
     private final boolean llmEnabled;
     private final boolean operatorKeyConfigured;
+    private final boolean localLlmEnabled;
     private final SummaryComplexityAssessor complexityAssessor;
 
     public SummaryProviderSelector(
             List<SummaryProvider> providers, String configuredProvider, boolean llmEnabled, String operatorApiKey) {
-        this(providers, configuredProvider, llmEnabled, operatorApiKey, new SummaryComplexityAssessor(12, 1500, 4));
+        this(providers, configuredProvider, llmEnabled, operatorApiKey, false, new SummaryComplexityAssessor(12, 1500, 4));
+    }
+
+    public SummaryProviderSelector(
+            List<SummaryProvider> providers,
+            String configuredProvider,
+            boolean llmEnabled,
+            String operatorApiKey,
+            SummaryComplexityAssessor complexityAssessor) {
+        this(providers, configuredProvider, llmEnabled, operatorApiKey, false, complexityAssessor);
     }
 
     @Autowired
@@ -31,6 +41,7 @@ public class SummaryProviderSelector {
             @Value("${nexachat.summary.provider:auto}") String configuredProvider,
             @Value("${nexachat.summary.llm.enabled:false}") boolean llmEnabled,
             @Value("${nexachat.summary.llm.api-key:}") String operatorApiKey,
+            @Value("${nexachat.summary.llm.local-enabled:false}") boolean localLlmEnabled,
             SummaryComplexityAssessor complexityAssessor) {
         this.complexityAssessor = complexityAssessor;
         this.localProvider = findProvider(providers, "LOCAL");
@@ -44,16 +55,20 @@ public class SummaryProviderSelector {
         }
         this.llmEnabled = llmEnabled;
         this.operatorKeyConfigured = operatorApiKey != null && !operatorApiKey.isBlank();
+        this.localLlmEnabled = localLlmEnabled;
     }
 
     /**
-     * Local-first routing: the local engine serves routine windows; the LLM tier
-     * (e.g. DeepSeek) is used only for complex windows or an explicit refresh.
+     * Local-first routing: the local engine/model serves routine windows;
+     * DeepSeek Cloud is escalated to only when a window is complex or an explicit refresh is requested.
      */
     public PreparedSummaryProvider prepare(boolean consented, SummaryWindow window, boolean refresh) {
         PreparedSummaryProvider base = prepare(consented);
-        if (base.provider().id().equals("LLM") && !complexityAssessor.isComplex(window, refresh)) {
-            return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
+        if (base.provider().id().equals("LLM")) {
+            boolean isComplex = complexityAssessor.isComplex(window, refresh);
+            if (!localLlmEnabled && !isComplex) {
+                return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", null);
+            }
         }
         return base;
     }
@@ -65,7 +80,8 @@ public class SummaryProviderSelector {
         if (!consented) {
             return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", SummaryFallbackReason.NO_CONSENT);
         }
-        if (!llmEnabled || !operatorKeyConfigured || llmProvider == null) {
+        boolean hasAnyLlm = (llmEnabled && operatorKeyConfigured) || localLlmEnabled;
+        if (!hasAnyLlm || llmProvider == null) {
             return new PreparedSummaryProvider(requireLocalProvider(), "LOCAL", SummaryFallbackReason.LLM_DISABLED);
         }
         return new PreparedSummaryProvider(llmProvider, "LLM", null);

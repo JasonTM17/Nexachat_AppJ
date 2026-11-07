@@ -8,6 +8,8 @@ import com.nexachat.summary.SummaryProvider;
 import com.nexachat.summary.SummaryProviderException;
 import com.nexachat.summary.SummaryWindow;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryComplexityAssessor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ public final class LlmSummaryProvider implements SummaryProvider {
     private final LlmOutputValidator outputValidator;
     private final CircuitBreaker circuitBreaker;
     private final SummaryConsentRepository consentRepository;
+    private final SummaryComplexityAssessor complexityAssessor;
 
     public LlmSummaryProvider(
             LlmProperties properties,
@@ -31,17 +34,31 @@ public final class LlmSummaryProvider implements SummaryProvider {
             LlmOutputValidator outputValidator,
             CircuitBreaker circuitBreaker,
             SummaryConsentRepository consentRepository) {
+        this(properties, client, promptBuilder, outputValidator, circuitBreaker, consentRepository,
+                new SummaryComplexityAssessor(12, 1500, 4));
+    }
+
+    @Autowired
+    public LlmSummaryProvider(
+            LlmProperties properties,
+            LlmClient client,
+            PromptBuilder promptBuilder,
+            LlmOutputValidator outputValidator,
+            CircuitBreaker circuitBreaker,
+            SummaryConsentRepository consentRepository,
+            SummaryComplexityAssessor complexityAssessor) {
         this.properties = properties;
         this.client = client;
         this.promptBuilder = promptBuilder;
         this.outputValidator = outputValidator;
         this.circuitBreaker = circuitBreaker;
         this.consentRepository = consentRepository;
+        this.complexityAssessor = complexityAssessor;
     }
 
     @Override
     public ProviderResult summarize(SummaryWindow window, SummaryLanguage language) {
-        if (!properties.isUsable()) {
+        if (!properties.isUsable() && !properties.isLocalUsable()) {
             throw new SummaryProviderException(SummaryFallbackReason.LLM_DISABLED);
         }
         if (!isConsentedCaller()) {
@@ -50,10 +67,58 @@ public final class LlmSummaryProvider implements SummaryProvider {
         if (!circuitBreaker.allowRequest()) {
             throw new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
         }
+
+        boolean isComplex = complexityAssessor.isComplex(window, false);
+        LlmClient.TargetConfig primary;
+        LlmClient.TargetConfig secondary;
+
+        if (isComplex) {
+            // Complex window ("quá khó"): prioritize Cloud DeepSeek, fall back to Local Server Model
+            if (properties.isUsable()) {
+                primary = client.cloudTarget();
+                secondary = properties.isLocalUsable() ? client.localTarget() : null;
+            } else {
+                primary = client.localTarget();
+                secondary = null;
+            }
+        } else {
+            // Routine window: prioritize Local Server Model, escalate to Cloud DeepSeek
+            if (properties.isLocalUsable()) {
+                primary = client.localTarget();
+                secondary = properties.isUsable() ? client.cloudTarget() : null;
+            } else {
+                primary = client.cloudTarget();
+                secondary = null;
+            }
+        }
+
+        if (primary == null) {
+            throw new SummaryProviderException(SummaryFallbackReason.LLM_DISABLED);
+        }
+
         try {
             Prompt prompt = promptBuilder.build(window, language, properties.getMaxInputChars());
-            String output = client.complete(prompt);
-            ProviderResult result = outputValidator.validate(output, prompt, properties.getModel().trim());
+            LlmClient.LlmCompletion completion;
+            LlmClient.TargetConfig usedTarget = primary;
+            try {
+                completion = client.completeWithTarget(prompt, primary);
+            } catch (SummaryProviderException ex) {
+                if (secondary != null) {
+                    usedTarget = secondary;
+                    completion = client.completeWithTarget(prompt, secondary);
+                } else {
+                    throw ex;
+                }
+            } catch (RuntimeException ex) {
+                if (secondary != null) {
+                    usedTarget = secondary;
+                    completion = client.completeWithTarget(prompt, secondary);
+                } else {
+                    throw ex;
+                }
+            }
+
+            ProviderResult result = outputValidator.validate(completion.content(), prompt, usedTarget.model().trim());
             circuitBreaker.recordSuccess();
             return result;
         } catch (SummaryProviderException exception) {

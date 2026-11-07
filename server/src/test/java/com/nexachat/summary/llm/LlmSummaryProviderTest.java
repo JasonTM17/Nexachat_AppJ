@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.summary.ProviderResult;
+import com.nexachat.summary.SummaryComplexityAssessor;
 import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.SummaryContent;
 import com.nexachat.summary.SummaryFallbackReason;
@@ -254,6 +255,59 @@ class LlmSummaryProviderTest {
         assertThat(result.content().keyPoints()).isEmpty();
         assertThat(result.content().keyPoints()).allSatisfy(item ->
                 assertThat(item.messageIds()).allMatch(windowIds::contains));
+    }
+
+    @Test
+    void routineWindowUsesLocalServerModelWhileComplexEscalatesToCloud() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> receivedModel = new java.util.concurrent.atomic.AtomicReference<>();
+        startServer(exchange -> {
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            com.fasterxml.jackson.databind.JsonNode root = new ObjectMapper().readTree(body);
+            receivedModel.set(root.path("model").asText());
+            respond(exchange, 200, response("{\"overview\":\"Overview\",\"keyPoints\":[],\"decisions\":[],\"actionItems\":[],\"questions\":[],\"topics\":[]}"));
+        });
+
+        UUID caller = UUID.randomUUID();
+        SummaryConsentRepository consentRepository = mock(SummaryConsentRepository.class);
+        when(consentRepository.isConsented(caller)).thenReturn(true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(new JwtPrincipal(caller), null, List.of()));
+
+        LlmProperties properties = new LlmProperties();
+        properties.setEnabled(true);
+        properties.setApiKey("cloud-key");
+        properties.setModel("deepseek-flash");
+        properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        properties.setLocalEnabled(true);
+        properties.setLocalModel("qwen2.5:3b");
+        properties.setLocalApiKey("local-ollama");
+        properties.setLocalBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+
+        client = new LlmClient(properties, new ObjectMapper());
+        SummaryComplexityAssessor assessor = new SummaryComplexityAssessor(10, 1000, 3);
+        LlmSummaryProvider provider = new LlmSummaryProvider(
+                properties, client, new PromptBuilder(new ObjectMapper(), new Redactor()),
+                new LlmOutputValidator(), new CircuitBreaker(Clock.systemUTC()), consentRepository, assessor);
+
+        // 1. Routine window (3 short messages, 1 sender) -> routes to Local Server Model (qwen2.5:3b)
+        List<SummaryMessage> routineMsgs = List.of(
+                new SummaryMessage(UUID.randomUUID(), 1, caller, "User", "Hello", Instant.EPOCH, null),
+                new SummaryMessage(UUID.randomUUID(), 2, caller, "User", "World", Instant.EPOCH, null)
+        );
+        SummaryWindow routineWindow = new SummaryWindow(UUID.randomUUID(), 1, 2, routineMsgs);
+        ProviderResult routineResult = provider.summarize(routineWindow, SummaryLanguage.EN);
+        assertThat(receivedModel.get()).isEqualTo("qwen2.5:3b");
+        assertThat(routineResult.model()).isEqualTo("qwen2.5:3b");
+
+        // 2. Complex window (12 messages) -> escalates to Cloud Model (deepseek-flash)
+        List<SummaryMessage> complexMsgs = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            complexMsgs.add(new SummaryMessage(UUID.randomUUID(), i + 1, caller, "User", "Message " + i, Instant.EPOCH, null));
+        }
+        SummaryWindow complexWindow = new SummaryWindow(UUID.randomUUID(), 1, 12, complexMsgs);
+        ProviderResult complexResult = provider.summarize(complexWindow, SummaryLanguage.EN);
+        assertThat(receivedModel.get()).isEqualTo("deepseek-flash");
+        assertThat(complexResult.model()).isEqualTo("deepseek-flash");
     }
 
     private LlmSummaryProvider provider(

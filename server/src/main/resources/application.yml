@@ -43,6 +43,10 @@ nexachat:
     disconnect-coalesce-ms: 5000
   summary:
     provider: ${NEXACHAT_SUMMARY_PROVIDER:auto}
+    complexity:
+      min-messages: ${NEXACHAT_SUMMARY_COMPLEXITY_MIN_MESSAGES:12}
+      min-chars: ${NEXACHAT_SUMMARY_COMPLEXITY_MIN_CHARS:1500}
+      min-participants: ${NEXACHAT_SUMMARY_COMPLEXITY_MIN_PARTICIPANTS:4}
     llm:
       enabled: ${NEXACHAT_SUMMARY_LLM_ENABLED:false}
       base-url: ${NEXACHAT_SUMMARY_LLM_BASE_URL:https://api.deepseek.com}
@@ -51,3 +55,9 @@ nexachat:
       timeout-ms: ${NEXACHAT_SUMMARY_LLM_TIMEOUT_MS:30000}
       max-input-chars: ${NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS:24000}
       max-output-tokens: ${NEXACHAT_SUMMARY_LLM_MAX_OUTPUT_TOKENS:4000}
+      # Dedicated Local Server Model Tier (Ollama / vLLM / local server model)
+      local-enabled: ${NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED:false}
+      local-base-url: ${NEXACHAT_SUMMARY_LOCAL_LLM_BASE_URL:http://host.docker.internal:11434/v1}
+      local-model: ${NEXACHAT_SUMMARY_LOCAL_LLM_MODEL:qwen2.5:3b}
+      local-api-key: ${NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY:local-ollama}
+      local-timeout-ms: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:60000}

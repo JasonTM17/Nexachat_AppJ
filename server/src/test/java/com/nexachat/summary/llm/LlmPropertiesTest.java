@@ -46,6 +46,20 @@ class LlmPropertiesTest {
         assertThat(properties.isUsable()).isTrue();
     }
 
+    @Test
+    void configuresLocalServerModelForOllamaOrVllm() {
+        LlmProperties properties = new LlmProperties();
+        properties.setLocalEnabled(true);
+        properties.setLocalBaseUrl("http://host.docker.internal:11434/v1");
+        properties.setLocalModel("qwen2.5:3b");
+        properties.setLocalApiKey("local-ollama");
+
+        assertThat(properties.isLocalUsable()).isTrue();
+        assertThat(properties.hasAnyLlm()).isTrue();
+        assertThat(properties.localEndpoint()).hasToString("http://host.docker.internal:11434/v1/chat/completions");
+        assertThat(properties.toString()).doesNotContain("local-ollama");
+    }
+
     private static LlmProperties configured(String baseUrl) {
         LlmProperties properties = new LlmProperties();
         properties.setEnabled(true);

@@ -84,6 +84,17 @@ class SummaryProviderSelectorTest {
         assertThat(result.fallbackReason()).isEqualTo(SummaryFallbackReason.LLM_BAD_OUTPUT);
     }
 
+    @Test
+    void localLlmEnabledAllowsRoutineWindowsToUseLlmProvider() {
+        StubProvider local = new StubProvider("LOCAL");
+        StubProvider llm = new StubProvider("LLM");
+        SummaryProviderSelector selector = new SummaryProviderSelector(
+                List.of(local, llm), "auto", false, "", true, new SummaryComplexityAssessor(12, 1500, 4));
+
+        PreparedSummaryProvider prepared = selector.prepare(true, window(), false);
+        assertThat(prepared.provider().id()).isEqualTo("LLM");
+    }
+
     private static SummaryProviderSelector selector(
             StubProvider local, StubProvider llm, boolean enabled, String apiKey) {
         return new SummaryProviderSelector(List.of(local, llm), "auto", enabled, apiKey);
