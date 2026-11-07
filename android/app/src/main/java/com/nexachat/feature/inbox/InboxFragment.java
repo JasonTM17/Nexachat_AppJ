@@ -257,7 +257,9 @@ public final class InboxFragment extends Fragment {
             peerAvatar.setName(displayTitle);
             peerAvatar.setAvatarUrl(row.getDisplayAvatar());
             peerAvatar.setShowStoryRing(true);
-            Boolean isOnline = row.getPeerPresence() != null ? row.getPeerPresence().getOnline() : Boolean.TRUE;
+            Boolean isOnline = row.getPeerPresence() != null
+                    ? Boolean.valueOf(row.getPeerPresence().getOnline())
+                    : Boolean.TRUE;
             peerAvatar.setOnlineStatus(isOnline);
 
             String shortName = displayTitle.contains(" ")
