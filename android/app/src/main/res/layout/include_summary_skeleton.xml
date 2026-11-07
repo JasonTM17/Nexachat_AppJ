@@ -1,6 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.progressindicator.LinearProgressIndicator xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/summarySkeletonBar"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:indeterminate="true" />
+    android:contentDescription="@string/summary_loading_content_desc"
+    android:importantForAccessibility="yes"
+    android:orientation="vertical"
+    android:padding="@dimen/space_md">
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:background="?attr/colorSurfaceContainerHigh" />
+
+    <View
+        android:layout_width="120dp"
+        android:layout_height="18dp"
+        android:layout_marginTop="20dp"
+        android:background="?attr/colorSurfaceContainerHigh" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:layout_marginTop="10dp"
+        android:background="?attr/colorSurfaceContainerHigh" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:layout_marginTop="8dp"
+        android:background="?attr/colorSurfaceContainerHigh" />
+
+    <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/summarySkeletonBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:indeterminate="true" />
+</LinearLayout>
