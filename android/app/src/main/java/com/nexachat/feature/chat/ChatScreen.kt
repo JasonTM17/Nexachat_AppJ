@@ -1554,15 +1554,6 @@ private fun MessageInputBar(
 }
 
 /**
- * Visual container role for message bubble background color selection.
- */
-internal enum class BubbleContainerColorRole {
-    ERROR,
-    MINE,
-    PEER,
-}
-
-/**
  * Pure UI presentation rule: resolves the bubble container color role.
  * FAILED messages always highlight as ERROR regardless of sender;
  * otherwise outgoing (mine) messages use MINE tint and incoming use PEER tint.

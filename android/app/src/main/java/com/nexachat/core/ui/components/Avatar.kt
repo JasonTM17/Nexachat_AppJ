@@ -28,11 +28,6 @@ import com.nexachat.feature.media.rememberAuthedImageLoader
 
 import com.nexachat.core.ui.MessageUiRules
 
-data class AvatarColorPair(
-    val container: Color,
-    val onContainer: Color,
-)
-
 // 8 harmonized tonal hues: Indigo, Blue, Cyan, Teal, Emerald, Amber, Rose, Purple
 // Contrast ratios tested & guaranteed >= 4.5:1 (WCAG AA/AAA)
 val AvatarPaletteLight = listOf(
