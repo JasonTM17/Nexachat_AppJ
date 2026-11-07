@@ -5,9 +5,11 @@ Read-only audit. Sources: `android/app/src/main/res/values/strings.xml`,
 `android/app/src/main/res/values/strings_call.xml`,
 `android/app/src/main/res/values-vi/strings_call.xml`,
 `android/app/src/main/res/values/strings_summary.xml`,
-`android/app/src/main/res/values-vi/strings_summary.xml`, and the Kotlin/Java
-sources under `android/app/src/main/java/com/nexachat` (`feature/**`, `call/**`,
-`summary/**`, `core/ui/**`). No source or resource file was modified.
+`android/app/src/main/res/values-vi/strings_summary.xml`, the Java sources
+under `android/app/src/main/java/com/nexachat` (`feature/**`, `call/**`,
+`summary/**`, `core/ui/**`), and the XML layouts under
+`android/app/src/main/res/layout/` and `layout-land/`. No source or resource
+file was modified.
 Counts re-verified against the tree on 2026-11-06.
 
 ## Counting command
@@ -89,29 +91,32 @@ Consistency notes (not errors):
 - No machine-translation artifacts with leftover English words were found;
   the issues above are grammar/word-choice, not garbled output.
 
-## 3. Hardcoded user-visible strings in Kotlin/Java
+## 3. Hardcoded user-visible strings in Java
 
-Scan covered `feature/**`, `call/**`, `core/ui/**` for `Text("…")`,
-`text = "…"`, `placeholder = "…"`, `label = "…"`, `contentDescription = "…"`,
-`setContentDescription(…)`, `Toast.makeText(…)`, dialogs, and snackbars.
-Imports, URLs, route names, tags, keys, SQL, and logging were excluded.
+Scan covered `feature/**`, `call/**`, `summary/**`, and `core/ui/**` for
+`setText("…")`, `Toast.makeText(…)`, dialog messages, `setContentDescription(…)`,
+and XML `android:text` values that are not `@string/`. Imports, URLs, route
+names, tags, keys, SQL, and logging were excluded. Screens are Java fragments
+with ViewBinding (`layout/` and `layout-land/`, including
+`layout-land/fragment_chat.xml`).
 
 | Screen / area | Location | Literal | Classification |
 | --- | --- | --- | --- |
-| Attachments | `feature/media/AttachmentViews.kt:247` | `"!"` | Failed-upload placeholder; symbol, not localizable prose |
-| Attachments | `feature/media/AttachmentViews.kt:239` | `"${(item.progress * 100).toInt()}%"` | Dynamic progress; numeric only |
-| Media | `feature/media/MediaModels.kt:62` | `"$bytes B"` | Size template; unit only |
-| Media | `feature/media/MediaModels.kt:64` | `"%.1f KB"` | Size template; `String.format(Locale.getDefault(), …)` |
-| Media | `feature/media/MediaModels.kt:65` | `"%.1f MB"` | Size template; `String.format(Locale.getDefault(), …)` |
+| Attachments | `feature/chat/ChatFragment.java` pending row | `"×"` | Remove control; symbol, with `getString(R.string.action_cancel)` as the content description |
+| Attachments | `feature/chat/ChatFragment.java` pending row | `Math.round(progress * 100) + "%"` | Dynamic progress; numeric only. A failed upload uses `getString(R.string.error_generic)` |
+| Media | `feature/media/PendingAttachment.java:85` | `bytes + " B"` | Size template; unit only |
+| Media | `feature/media/PendingAttachment.java:88` | `"%.1f KB"` | Size template; `String.format(Locale.getDefault(), …)` |
+| Media | `feature/media/PendingAttachment.java:90` | `"%.1f MB"` | Size template; `String.format(Locale.getDefault(), …)` |
 
 The `formatBytes()` locale behavior is correct: KB/MB use
-`String.format(Locale.getDefault(), …)` (`MediaModels.kt:60-65`), so `vi_VN`
-renders a comma decimal separator. Unit tokens (B/KB/MB) are SI-neutral.
+`String.format(Locale.getDefault(), …)` (`PendingAttachment.java:80-91`), so
+`vi_VN` renders a comma decimal separator. Unit tokens (B/KB/MB) are SI-neutral.
 
 The call UI (`call/ui/*.java`) resolves every user-visible string through
-`R.string.call_*`, and the summary UI through `R.string.summary_*`; no hardcoded
-prose was found in either. Every other user-visible value in the scanned
-packages resolves through `stringResource(R.string.*)` or `getString(R.string.*)`.
+`R.string.call_*`, and the summary UI (`feature/summary/*.java`) through
+`R.string.summary_*`; no hardcoded prose was found in either. Every other
+user-visible value in the scanned packages resolves through
+`getString(R.string.*)` or an `@string/` reference in XML.
 
 ## 4. Verdict
 
