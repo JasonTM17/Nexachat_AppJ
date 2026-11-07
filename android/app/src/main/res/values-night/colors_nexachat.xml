@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background_light">#FF0F172A</color>
+    <color name="surface_light">#FF0F172A</color>
+    <color name="surface_container_lowest_light">#FF0B1120</color>
+    <color name="surface_container_low_light">#FF1E293B</color>
+    <color name="surface_container_light">#FF1E293B</color>
+    <color name="surface_container_high_light">#FF334155</color>
+    <color name="surface_variant_light">#FF334155</color>
+    <color name="text_primary_light">#FFF8FAFC</color>
+    <color name="text_secondary_light">#FF94A3B8</color>
+
+    <color name="brand_indigo">#FF818CF8</color>
+    <color name="brand_indigo_container">#FF3730A3</color>
+    <color name="brand_on_indigo_container">#FFE0E7FF</color>
+
+    <color name="slate_secondary">#FFB8C2D9</color>
+    <color name="slate_secondary_container">#FF334155</color>
+    <color name="slate_on_secondary_container">#FFF8FAFC</color>
+    <color name="slate_border">#FF505F76</color>
+    <color name="slate_divider">#FF334155</color>
+
+    <color name="error_red">#FFFFB4AB</color>
+    <color name="error_container_light">#FF93000A</color>
+    <color name="on_error_container_light">#FFFFDAD6</color>
+
+    <color name="colorPrimary">@color/brand_indigo</color>
+    <color name="colorOnPrimary">@color/text_primary_light</color>
+    <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
+    <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
+    <color name="colorSecondary">@color/slate_secondary</color>
+    <color name="colorOnSecondary">#FFFFFFFF</color>
+    <color name="colorSecondaryContainer">@color/surface_container_high_light</color>
+    <color name="colorOnSecondaryContainer">@color/text_primary_light</color>
+    <color name="colorBackground">@color/background_light</color>
+    <color name="colorOnBackground">@color/text_primary_light</color>
+    <color name="colorSurface">@color/surface_light</color>
+    <color name="colorOnSurface">@color/text_primary_light</color>
+    <color name="colorSurfaceVariant">@color/surface_variant_light</color>
+    <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
+    <color name="colorOutline">@color/slate_secondary</color>
+    <color name="colorOutlineVariant">@color/surface_container_high_light</color>
+    <color name="colorError">@color/error_red</color>
+    <color name="colorOnError">#FF690005</color>
+    <color name="colorErrorContainer">@color/error_container_light</color>
+    <color name="colorOnErrorContainer">@color/on_error_container_light</color>
+
+    <color name="bubble_mine">@color/brand_indigo_container</color>
+    <color name="bubble_other">@color/surface_container_high_light</color>
+</resources>

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/chatRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/chatToolbar"
+        android:layout_width="0dp"
+        android:layout_height="?attr/actionBarSize"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navigationContentDescription="@string/cd_back"
+        app:navigationIcon="@drawable/ic_arrow_back" />
+
+    <HorizontalScrollView
+        android:id="@+id/chatToolbarActions"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/chatToolbar">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless"/>
+            <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless"/>
+            <ImageButton android:id="@+id/infoButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_group_info" android:src="@drawable/ic_info" android:background="?attr/selectableItemBackgroundBorderless"/>
+            <ImageButton android:id="@+id/summaryButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome" android:background="?attr/selectableItemBackgroundBorderless"/>
+            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/action_more_options" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackgroundBorderless"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <include
+        android:id="@+id/pinnedBanner"
+        layout="@layout/include_chat_pinned_banner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/chatToolbarActions" />
+
+    <include
+        android:id="@+id/replyEditBanner"
+        layout="@layout/include_chat_reply_edit_banner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/pinnedBanner" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/messageList"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingBottom="@dimen/space_sm"
+        app:layout_constraintBottom_toTopOf="@id/composerBar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/replyEditBanner" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/scrollDownFab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/space_md"
+        android:contentDescription="@string/cd_scroll_to_bottom"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/composerBar"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:srcCompat="@drawable/ic_keyboard_arrow_down" />
+
+    <include
+        android:id="@+id/composerBar"
+        layout="@layout/include_chat_composer_bar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.nexachat.core.ui.components.LoadingStateView android:id="@+id/loadingState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent"/>
+    <com.nexachat.core.ui.components.ErrorStateView android:id="@+id/errorState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent"/>
+</androidx.constraintlayout.widget.ConstraintLayout>

@@ -137,6 +137,10 @@
     <string name="action_forward">Chuyển tiếp</string>
     <string name="action_edit">Chỉnh sửa</string>
     <string name="action_delete">Xoá</string>
+    <string name="action_more_options">Tuỳ chọn khác</string>
+    <string name="attachment_picker_title">Thêm tệp đính kèm</string>
+    <string name="attachment_pick_image">Ảnh</string>
+    <string name="attachment_pick_file">Tệp</string>
     <string name="forwarded_snackbar">Đã chuyển tiếp</string>
     <string name="action_view">Xem</string>
 

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/min_touch_target"
+    android:orientation="horizontal"
+    android:padding="@dimen/space_md">
+    <com.nexachat.core.ui.components.AvatarView
+        android:id="@+id/avatar"
+        android:layout_width="40dp"
+        android:layout_height="40dp" />
+    <TextView
+        android:id="@+id/memberName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_md"
+        android:layout_weight="1"
+        android:textAppearance="?attr/textAppearanceBodyLarge" />
+    <ImageButton
+        android:id="@+id/removeMember"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/action_delete"
+        android:src="@drawable/ic_delete" />
+</LinearLayout>

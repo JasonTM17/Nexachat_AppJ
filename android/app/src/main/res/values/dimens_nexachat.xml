@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_sm">8dp</dimen>
+    <dimen name="space_md">16dp</dimen>
+    <dimen name="space_lg">24dp</dimen>
+    <dimen name="space_xl">32dp</dimen>
+    <dimen name="max_content_width">640dp</dimen>
+    <dimen name="min_touch_target">48dp</dimen>
+    <dimen name="corner_xs">4dp</dimen>
+    <dimen name="corner_sm">8dp</dimen>
+    <dimen name="corner_md">12dp</dimen>
+    <dimen name="corner_lg">16dp</dimen>
+    <dimen name="corner_xl">24dp</dimen>
+    <dimen name="elevation_level1">1dp</dimen>
+    <dimen name="elevation_level2">3dp</dimen>
+    <dimen name="elevation_level3">6dp</dimen>
+    <dimen name="elevation_level4">12dp</dimen>
+    <dimen name="auth_form_max_width">440dp</dimen>
+    <dimen name="bubble_max_width">280dp</dimen>
+    <dimen name="attachment_chip_max_width">240dp</dimen>
+</resources>

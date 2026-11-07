@@ -139,6 +139,10 @@
     <string name="action_forward">Forward</string>
     <string name="action_edit">Edit</string>
     <string name="action_delete">Delete</string>
+    <string name="action_more_options">More options</string>
+    <string name="attachment_picker_title">Add attachment</string>
+    <string name="attachment_pick_image">Photo</string>
+    <string name="attachment_pick_file">File</string>
     <string name="forwarded_snackbar">Forwarded</string>
     <string name="action_view">View</string>
 

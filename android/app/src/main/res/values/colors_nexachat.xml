@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Stitch / Compose tokens mapped for Material3 XML (light) -->
+    <color name="brand_indigo">#FF4F46E5</color>
+    <color name="brand_indigo_dark">#FF3525CD</color>
+    <color name="brand_indigo_light">#FF818CF8</color>
+    <color name="brand_indigo_container">#FFE0E7FF</color>
+    <color name="brand_on_indigo_container">#FF1E1B4B</color>
+
+    <color name="slate_secondary">#FF505F76</color>
+    <color name="slate_secondary_container">#FFD0E1FB</color>
+    <color name="slate_on_secondary_container">#FF1D283A</color>
+    <color name="slate_muted">#FF64748B</color>
+    <color name="slate_border">#FFCBD5E1</color>
+    <color name="slate_divider">#FFE2E8F0</color>
+
+    <color name="tertiary_sky">#FF0EA5E9</color>
+    <color name="tertiary_sky_container">#FFBAE6FD</color>
+    <color name="tertiary_on_sky_container">#FF0369A1</color>
+
+    <color name="background_light">#FFF8FAFC</color>
+    <color name="surface_light">#FFF8FAFC</color>
+    <color name="surface_container_lowest_light">#FFFFFFFF</color>
+    <color name="surface_container_low_light">#FFF1F5F9</color>
+    <color name="surface_container_light">#FFECEEF0</color>
+    <color name="surface_container_high_light">#FFE6E8EA</color>
+    <color name="surface_variant_light">#FFE0E3E5</color>
+
+    <color name="text_primary_light">#FF0F172A</color>
+    <color name="text_secondary_light">#FF64748B</color>
+
+    <color name="error_red">#FFBA1A1A</color>
+    <color name="error_container_light">#FFFFDAD6</color>
+    <color name="on_error_container_light">#FF93000A</color>
+    <color name="success_emerald">#FF10B981</color>
+
+    <!-- M3 role mapping (light) -->
+    <color name="colorPrimary">@color/brand_indigo</color>
+    <color name="colorOnPrimary">#FFFFFFFF</color>
+    <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
+    <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
+    <color name="colorSecondary">@color/slate_secondary</color>
+    <color name="colorOnSecondary">#FFFFFFFF</color>
+    <color name="colorSecondaryContainer">@color/slate_secondary_container</color>
+    <color name="colorOnSecondaryContainer">@color/slate_on_secondary_container</color>
+    <color name="colorTertiary">@color/tertiary_sky</color>
+    <color name="colorOnTertiary">#FFFFFFFF</color>
+    <color name="colorTertiaryContainer">@color/tertiary_sky_container</color>
+    <color name="colorOnTertiaryContainer">@color/tertiary_on_sky_container</color>
+    <color name="colorError">@color/error_red</color>
+    <color name="colorOnError">#FFFFFFFF</color>
+    <color name="colorErrorContainer">@color/error_container_light</color>
+    <color name="colorOnErrorContainer">@color/on_error_container_light</color>
+    <color name="colorBackground">@color/background_light</color>
+    <color name="colorOnBackground">@color/text_primary_light</color>
+    <color name="colorSurface">@color/surface_light</color>
+    <color name="colorOnSurface">@color/text_primary_light</color>
+    <color name="colorSurfaceVariant">@color/surface_variant_light</color>
+    <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
+    <color name="colorOutline">@color/slate_border</color>
+    <color name="colorOutlineVariant">@color/slate_divider</color>
+
+    <color name="bubble_mine">@color/brand_indigo_container</color>
+    <color name="bubble_other">@color/surface_container_high_light</color>
+</resources>
