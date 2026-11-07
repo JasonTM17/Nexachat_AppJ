@@ -5,8 +5,8 @@
     android:gravity="center_vertical"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
-    android:paddingHorizontal="@dimen/space_md"
-    android:paddingVertical="@dimen/space_sm">
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="8dp">
 
     <com.nexachat.core.ui.components.AvatarView
         android:id="@+id/avatar"
