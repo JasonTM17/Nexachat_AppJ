@@ -20,6 +20,7 @@
 
     <!-- Auth field validation -->
     <string name="error_phone_required">Enter your phone number</string>
+    <string name="error_phone_invalid">Enter a valid international phone number</string>
     <string name="error_password_short">Password must be at least 8 characters</string>
     <string name="error_display_name_required">Enter your display name</string>
     <string name="error_password_mismatch">Passwords don\'t match</string>
@@ -51,6 +52,7 @@
     <string name="action_save">Save</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_logout">Sign out</string>
+    <string name="action_logout_confirm">Sign out of this account on this device?</string>
     <string name="action_logout_all">Sign out all devices</string>
     <string name="profile_logout_all_confirm">Every session, including this one, will be signed out.</string>
     <string name="action_retry">Retry</string>

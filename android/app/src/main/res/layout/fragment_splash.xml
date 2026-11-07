@@ -16,7 +16,7 @@
             android:layout_width="72dp"
             android:layout_height="72dp"
             android:contentDescription="@string/app_name"
-            android:src="@drawable/ic_forum_outline"
+            android:src="@drawable/ic_nexachat_logo"
             app:tint="?attr/colorOnPrimary"
             xmlns:app="http://schemas.android.com/apk/res-auto" />
 
