@@ -134,8 +134,11 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         if (ids == null || seqs == null || ids.length != seqs.length) {
             return;
         }
+        messageSeqMap.clear();
+        localMessageIds.clear();
         for (int i = 0; i < ids.length; i++) {
             messageSeqMap.put(ids[i], seqs[i]);
+            localMessageIds.add(ids[i]);
         }
     }
 

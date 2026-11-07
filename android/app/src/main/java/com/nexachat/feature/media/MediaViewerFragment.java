@@ -46,6 +46,9 @@ public final class MediaViewerFragment extends Fragment {
     private String loadedImageAttachmentId;
 
     @Nullable
+    private File loadedImageFile;
+
+    @Nullable
     private FragmentMediaViewerBinding binding;
 
     @Nullable
@@ -95,7 +98,7 @@ public final class MediaViewerFragment extends Fragment {
             return false;
         }
         MediaViewerViewModel.UiState state = viewModel.getUiState().getValue();
-        File file = state.getFile();
+        File file = state.getFile() != null ? state.getFile() : loadedImageFile;
         if (file == null) {
             return false;
         }
@@ -163,30 +166,48 @@ public final class MediaViewerFragment extends Fragment {
                                     current.mediaLoadingHost.setVisibility(View.GONE);
                                     if (result instanceof com.nexachat.core.common.Result.Success<?> success
                                             && success.getValue() instanceof File file) {
+                                        loadedImageFile = file;
+                                        updateToolbarActions(state);
                                         current.mediaImage.setVisibility(View.VISIBLE);
                                         Glide.with(this)
                                                 .load(file)
                                                 .fitCenter()
                                                 .into(current.mediaImage);
                                     } else {
-                                        current.mediaImage.setVisibility(View.VISIBLE);
-                                        Glide.with(this)
-                                                .load(AttachmentDto.contentPath(id))
-                                                .fitCenter()
-                                                .into(current.mediaImage);
+                                        loadedImageAttachmentId = null;
+                                        loadedImageFile = null;
+                                        showImageError(current, state);
                                     }
                                 },
                                 error -> {
                                     FragmentMediaViewerBinding current = binding;
                                     if (current != null && isAdded()) {
                                         current.mediaLoadingHost.setVisibility(View.GONE);
-                                        current.mediaImage.setVisibility(View.VISIBLE);
-                                        Glide.with(this)
-                                                .load(AttachmentDto.contentPath(id))
-                                                .fitCenter()
-                                                .into(current.mediaImage);
+                                        loadedImageAttachmentId = null;
+                                        loadedImageFile = null;
+                                        showImageError(current, state);
                                     }
                                 }));
+    }
+
+    private void showImageError(
+            @NonNull FragmentMediaViewerBinding ui,
+            @NonNull MediaViewerViewModel.UiState state) {
+        ui.mediaErrorHost.setVisibility(View.VISIBLE);
+        if (errorView == null) {
+            errorView = new ErrorStateView(requireContext());
+            ui.mediaErrorHost.addView(errorView, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        errorView.setMessage(getString(R.string.error_network));
+        errorView.setOnRetry(() -> {
+            FragmentMediaViewerBinding current = binding;
+            if (current != null && isAdded()) {
+                current.mediaErrorHost.setVisibility(View.GONE);
+                loadImageAttachment(current, state);
+            }
+        });
     }
 
     private void updateToolbarActions(@NonNull MediaViewerViewModel.UiState state) {
@@ -195,7 +216,7 @@ public final class MediaViewerFragment extends Fragment {
             return;
         }
         Menu menu = ui.viewerToolbar.getMenu();
-        boolean hasFile = state.getFile() != null;
+        boolean hasFile = state.getFile() != null || loadedImageFile != null;
         MenuItem open = menu.findItem(MENU_OPEN);
         if (open != null) {
             open.setVisible(hasFile);
@@ -273,6 +294,7 @@ public final class MediaViewerFragment extends Fragment {
     public void onDestroyView() {
         disposables.clear();
         loadedImageAttachmentId = null;
+        loadedImageFile = null;
         releasePlayer();
         loadingView = null;
         errorView = null;

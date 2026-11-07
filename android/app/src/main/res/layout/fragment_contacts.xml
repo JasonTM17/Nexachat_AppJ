@@ -16,14 +16,16 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationContentDescription="@string/cd_back" />
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/searchButton"
-            style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="@dimen/min_touch_target"
-            android:layout_height="@dimen/min_touch_target"
-            android:contentDescription="@string/search_title"
-            app:icon="@drawable/ic_search" />
+            app:navigationContentDescription="@string/cd_back">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/searchButton"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:layout_gravity="end|center_vertical"
+                android:contentDescription="@string/search_title"
+                app:icon="@drawable/ic_search" />
+        </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.recyclerview.widget.RecyclerView

@@ -143,12 +143,13 @@ public final class MessageBubbleBinder {
             ChatMessage message,
             boolean pulsing
     ) {
-        int colorRes;
+        int colorInt;
         if (pulsing) {
-            colorRes = resolveThemeColor(context, com.google.android.material.R.attr.colorTertiaryContainer);
+            colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorTertiaryContainer);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
-            colorRes = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
+            colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
         } else {
+            int colorRes;
             switch (ChatBubbleRules.resolveBubbleContainerRole(message.getStatus(), message.getMine())) {
                 case ERROR:
                     colorRes = R.color.colorErrorContainer;
@@ -161,13 +162,19 @@ public final class MessageBubbleBinder {
                     colorRes = R.color.bubble_other;
                     break;
             }
+            colorInt = ContextCompat.getColor(context, colorRes);
         }
-        bubble.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(context, colorRes)));
+        bubble.setBackgroundTintList(ColorStateList.valueOf(colorInt));
     }
 
     private static int resolveThemeColor(android.content.Context context, int attr) {
         android.util.TypedValue value = new android.util.TypedValue();
-        context.getTheme().resolveAttribute(attr, value, true);
+        if (!context.getTheme().resolveAttribute(attr, value, true)) {
+            return ContextCompat.getColor(context, R.color.bubble_other);
+        }
+        if (value.resourceId != 0) {
+            return ContextCompat.getColor(context, value.resourceId);
+        }
         return value.data;
     }
 
@@ -395,7 +402,9 @@ public final class MessageBubbleBinder {
         if (reactionsInclude == null) {
             return;
         }
-        ChipGroup group = reactionsInclude.findViewById(R.id.reactionChipGroup);
+        ChipGroup group = reactionsInclude instanceof ChipGroup
+                ? (ChipGroup) reactionsInclude
+                : reactionsInclude.findViewById(R.id.reactionChipGroup);
         if (group == null) {
             return;
         }

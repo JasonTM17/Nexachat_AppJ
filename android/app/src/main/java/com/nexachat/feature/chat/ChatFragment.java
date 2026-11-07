@@ -118,6 +118,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         configureToolbar();
         configureComposer();
         observeViewModel();
+        if (getChildFragmentManager().findFragmentByTag("summary_sheet")
+                instanceof com.nexachat.feature.summary.SummaryBottomSheetFragment existingSheet) {
+            attachSummaryListener(existingSheet);
+        }
         inboxViewModel.refresh();
     }
 
@@ -384,6 +388,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showSummary() {
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag("summary_sheet") != null) {
+            return;
+        }
         com.nexachat.feature.summary.SummaryBottomSheetFragment sheet =
                 com.nexachat.feature.summary.SummaryBottomSheetFragment.newInstance(conversationId);
         java.util.Map<String, Long> seqMap = new java.util.HashMap<>();
@@ -393,11 +401,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
         }
         sheet.putCitationArgs(seqMap);
-        sheet.setListener(new com.nexachat.feature.summary.SummaryBottomSheetFragment.Listener() {
-            @Override public void onJumpToMessage(@NonNull String messageId) { viewModel.jumpToMessage(messageId); }
-            @Override public void onShareIntoChat(@NonNull String shareText) { viewModel.onInputChange(shareText); }
-        });
+        attachSummaryListener(sheet);
         sheet.show(getChildFragmentManager(), "summary_sheet");
+    }
+
+    private void attachSummaryListener(
+            @NonNull com.nexachat.feature.summary.SummaryBottomSheetFragment sheet) {
+        sheet.setListener(new com.nexachat.feature.summary.SummaryBottomSheetFragment.Listener() {
+            @Override public void onJumpToMessage(@NonNull String messageId) {
+                if (viewModel != null) viewModel.jumpToMessage(messageId);
+            }
+            @Override public void onShareIntoChat(@NonNull String shareText) {
+                if (viewModel != null) viewModel.onInputChange(shareText);
+            }
+        });
     }
 
     private void renderSummaryState(SummaryUiState next) { }

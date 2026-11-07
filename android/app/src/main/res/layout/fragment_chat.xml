@@ -10,7 +10,7 @@
         android:id="@+id/chatToolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationContentDescription="@string/cd_back"
@@ -18,15 +18,16 @@
 
     <HorizontalScrollView
         android:id="@+id/chatToolbarActions"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_width="wrap_content"
+        android:layout_height="0dp"
         android:scrollbars="none"
+        app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/chatToolbar">
+        app:layout_constraintTop_toTopOf="@id/chatToolbar">
         <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
             <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless"/>
             <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless"/>
@@ -43,7 +44,7 @@
         android:layout_height="wrap_content"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/chatToolbarActions" />
+        app:layout_constraintTop_toBottomOf="@id/chatToolbar" />
 
     <include
         android:id="@+id/replyEditBanner"
