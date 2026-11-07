@@ -32,8 +32,7 @@ import kotlinx.coroutines.withContext
  * [authApi] is a [Provider] because OkHttpClient → refresher → AuthApi →
  * Retrofit → OkHttpClient is a cycle; the provider resolves lazily on first use.
  */
-@Singleton
-class TokenRefresher @Inject constructor(
+internal class TokenRefresherCore(
     private val tokenStore: TokenStore,
     private val sessionEvents: SessionEvents,
     private val authApi: Provider<AuthApi>,
