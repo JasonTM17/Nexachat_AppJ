@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/summarySheetRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/space_md">
+    <TextView android:id="@+id/summaryTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:drawableStart="@drawable/ic_auto_awesome" android:gravity="center_vertical" android:text="@string/summary_title" android:textAppearance="?attr/textAppearanceTitleLarge"/>
+    <include android:id="@+id/summarySkeleton" layout="@layout/include_summary_skeleton" android:visibility="gone"/>
+    <TextView android:id="@+id/summaryBody" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_sm" android:textAppearance="?attr/textAppearanceBodyMedium"/>
+    <include android:id="@+id/summaryError" layout="@layout/include_summary_error" android:visibility="gone"/>
+</LinearLayout>

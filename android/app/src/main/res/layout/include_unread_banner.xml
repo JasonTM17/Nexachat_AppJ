@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/unreadBanner"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="@dimen/space_sm"
+    android:visibility="gone">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal" android:padding="@dimen/space_sm">
+        <ImageView android:layout_width="24dp" android:layout_height="24dp" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome"/>
+        <TextView android:id="@+id/unreadBannerText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="@dimen/space_sm" android:layout_weight="1" android:text="@string/unread_banner_format"/>
+        <ImageButton android:id="@+id/dismissUnreadBanner" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="@string/unread_banner_dismiss" android:src="@drawable/ic_close"/>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

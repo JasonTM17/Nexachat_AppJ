@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/composerRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/colorSurface"
+    android:elevation="@dimen/elevation_level3"
+    android:gravity="center_vertical"
+    android:minHeight="@dimen/min_touch_target"
+    android:orientation="horizontal"
+    android:padding="@dimen/space_sm">
+
+    <ImageButton
+        android:id="@+id/attachButton"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/cd_attach"
+        android:src="@drawable/ic_attach_file" />
+
+    <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/messageInput"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_sm"
+        android:layout_weight="1"
+        android:background="@drawable/bg_composer_pill"
+        android:hint="@string/chat_input_hint"
+        android:minHeight="@dimen/min_touch_target"
+        android:paddingHorizontal="@dimen/space_md" />
+
+    <ImageButton
+        android:id="@+id/sendButton"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/cd_send"
+        android:src="@drawable/ic_send" />
+</LinearLayout>

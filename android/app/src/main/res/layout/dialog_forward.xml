@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/forwardDialogRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="@dimen/space_md">
+    <TextView android:id="@+id/forwardTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/forward_title" android:textAppearance="?attr/textAppearanceTitleLarge"/>
+    <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/forward_search_placeholder" app:startIconDrawable="@drawable/ic_search">
+        <com.google.android.material.textfield.TextInputEditText android:id="@+id/forwardSearch" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    </com.google.android.material.textfield.TextInputLayout>
+    <androidx.recyclerview.widget.RecyclerView android:id="@+id/forwardList" android:layout_width="match_parent" android:layout_height="200dp"/>
+    <com.google.android.material.button.MaterialButton android:id="@+id/forwardSend" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/min_touch_target" android:text="@string/forward_send"/>
+</LinearLayout>

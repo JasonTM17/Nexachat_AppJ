@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material3 XML theme for the fragment host (launcher still uses splash Theme.NexaChat until B4). -->
+    <style name="Theme.NexaChat.Views" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorOnPrimary">@color/colorOnPrimary</item>
+        <item name="colorPrimaryContainer">@color/colorPrimaryContainer</item>
+        <item name="colorOnPrimaryContainer">@color/colorOnPrimaryContainer</item>
+        <item name="colorSecondary">@color/colorSecondary</item>
+        <item name="colorOnSecondary">@color/colorOnSecondary</item>
+        <item name="colorSecondaryContainer">@color/colorSecondaryContainer</item>
+        <item name="colorOnSecondaryContainer">@color/colorOnSecondaryContainer</item>
+        <item name="colorTertiary">@color/colorTertiary</item>
+        <item name="colorOnTertiary">@color/colorOnTertiary</item>
+        <item name="colorTertiaryContainer">@color/colorTertiaryContainer</item>
+        <item name="colorOnTertiaryContainer">@color/colorOnTertiaryContainer</item>
+        <item name="colorError">@color/colorError</item>
+        <item name="colorOnError">@color/colorOnError</item>
+        <item name="colorErrorContainer">@color/colorErrorContainer</item>
+        <item name="colorOnErrorContainer">@color/colorOnErrorContainer</item>
+        <item name="android:colorBackground">@color/colorBackground</item>
+        <item name="colorOnBackground">@color/colorOnBackground</item>
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="colorOnSurface">@color/colorOnSurface</item>
+        <item name="colorSurfaceVariant">@color/colorSurfaceVariant</item>
+        <item name="colorOnSurfaceVariant">@color/colorOnSurfaceVariant</item>
+        <item name="colorOutline">@color/colorOutline</item>
+        <item name="colorOutlineVariant">@color/colorOutlineVariant</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="materialButtonStyle">@style/Widget.NexaChat.Button</item>
+        <item name="textAppearanceHeadlineLarge">@style/TextAppearance.NexaChat.HeadlineLarge</item>
+        <item name="textAppearanceHeadlineMedium">@style/TextAppearance.NexaChat.HeadlineMedium</item>
+        <item name="textAppearanceHeadlineSmall">@style/TextAppearance.NexaChat.HeadlineSmall</item>
+        <item name="textAppearanceTitleLarge">@style/TextAppearance.NexaChat.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/TextAppearance.NexaChat.TitleMedium</item>
+        <item name="textAppearanceTitleSmall">@style/TextAppearance.NexaChat.TitleSmall</item>
+        <item name="textAppearanceBodyLarge">@style/TextAppearance.NexaChat.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/TextAppearance.NexaChat.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TextAppearance.NexaChat.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TextAppearance.NexaChat.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TextAppearance.NexaChat.LabelMedium</item>
+        <item name="textAppearanceLabelSmall">@style/TextAppearance.NexaChat.LabelSmall</item>
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.NexaChat.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.NexaChat.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.NexaChat.Large</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button" parent="Widget.Material3.Button">
+        <item name="android:minHeight">@dimen/min_touch_target</item>
+    </style>
+
+    <style name="TextAppearance.NexaChat.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge" />
+    <style name="TextAppearance.NexaChat.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium" />
+    <style name="TextAppearance.NexaChat.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall" />
+    <style name="TextAppearance.NexaChat.TitleLarge" parent="TextAppearance.Material3.TitleLarge" />
+    <style name="TextAppearance.NexaChat.TitleMedium" parent="TextAppearance.Material3.TitleMedium" />
+    <style name="TextAppearance.NexaChat.TitleSmall" parent="TextAppearance.Material3.TitleSmall" />
+    <style name="TextAppearance.NexaChat.BodyLarge" parent="TextAppearance.Material3.BodyLarge" />
+    <style name="TextAppearance.NexaChat.BodyMedium" parent="TextAppearance.Material3.BodyMedium" />
+    <style name="TextAppearance.NexaChat.BodySmall" parent="TextAppearance.Material3.BodySmall" />
+    <style name="TextAppearance.NexaChat.LabelLarge" parent="TextAppearance.Material3.LabelLarge" />
+    <style name="TextAppearance.NexaChat.LabelMedium" parent="TextAppearance.Material3.LabelMedium" />
+    <style name="TextAppearance.NexaChat.LabelSmall" parent="TextAppearance.Material3.LabelSmall" />
+
+    <style name="ShapeAppearance.NexaChat.Small" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerSize">@dimen/corner_sm</item>
+    </style>
+    <style name="ShapeAppearance.NexaChat.Medium" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerSize">@dimen/corner_md</item>
+    </style>
+    <style name="ShapeAppearance.NexaChat.Large" parent="ShapeAppearance.Material3.LargeComponent">
+        <item name="cornerSize">@dimen/corner_lg</item>
+    </style>
+
+    <style name="ShapeAppearance.NexaChat.Pill" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_xl</item>
+    </style>
+</resources>

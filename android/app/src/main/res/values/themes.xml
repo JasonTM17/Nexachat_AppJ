@@ -10,4 +10,7 @@
     <style name="Theme.NexaChat" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/ic_launcher_background</item>
     </style>
+
+    <!-- Alias documented for B4 cutover; B1 host activity uses Theme.NexaChat.Views explicitly. -->
+    <style name="Theme.NexaChat.Material" parent="Theme.NexaChat.Views" />
 </resources>
