@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.rx3.asFlow
+import kotlinx.coroutines.rx3.await
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -485,7 +487,7 @@ class ChatViewModel @Inject constructor(
         for (uri in uris) {
             val localId = UUID.randomUUID().toString()
             val job = viewModelScope.launch {
-                val local = runCatching { attachmentRepository.describe(uri) }.getOrNull()
+                val local = runCatching { attachmentRepository.describe(uri).await() }.getOrNull()
                     ?: return@launch
                 updatePending {
                     it + PendingAttachment(
@@ -498,7 +500,7 @@ class ChatViewModel @Inject constructor(
                         state = PendingAttachment.PendingState.UPLOADING,
                     )
                 }
-                attachmentRepository.upload(uri, local.mimeType).collect { event ->
+                attachmentRepository.upload(uri, local.mimeType).toObservable().asFlow().collect { event ->
                     when (event) {
                         is AttachmentUploadEvent.Progress -> updatePending { rows ->
                             rows.map { row ->
@@ -537,6 +539,7 @@ class ChatViewModel @Inject constructor(
                                 }
                             }
                         }
+                        else -> Unit
                     }
                 }
                 uploadJobs.remove(localId)
@@ -561,7 +564,9 @@ class ChatViewModel @Inject constructor(
     /** FILE bubble tap: bytes → cache file for ACTION_VIEW. Null on failure. */
     suspend fun attachmentFile(attachment: AttachmentDto): File? {
         val id = attachment.id ?: return null
-        return attachmentRepository.downloadToCache(id, attachment.originalName).getOrNull()
+        return attachmentRepository.downloadToCache(id, attachment.originalName)
+            .await()
+            .getOrNull()
     }
 
     /** Loads the previous history page (cursor = oldest loaded seq). */

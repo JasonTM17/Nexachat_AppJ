@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.rx3.await
 
 /** Suspend-only repository calls for the Java [AuthViewModel]. */
 internal fun newAuthEventChannel(): Channel<AuthViewModel.Event> =
@@ -29,7 +30,7 @@ internal suspend fun authSubmitLogin(
     uiState: MutableStateFlow<AuthViewModel.UiState>,
     events: Channel<AuthViewModel.Event>,
 ) {
-    authSubmit(uiState, events) { authRepository.login(phone, password) }
+    authSubmit(uiState, events) { authRepository.login(phone, password).await() }
 }
 
 internal suspend fun authSubmitRegister(
@@ -40,7 +41,9 @@ internal suspend fun authSubmitRegister(
     uiState: MutableStateFlow<AuthViewModel.UiState>,
     events: Channel<AuthViewModel.Event>,
 ) {
-    authSubmit(uiState, events) { authRepository.register(phone, password, displayName) }
+    authSubmit(uiState, events) {
+        authRepository.register(phone, password, displayName).await()
+    }
 }
 
 private suspend fun authSubmit(

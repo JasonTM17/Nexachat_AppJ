@@ -54,6 +54,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.await
 
 /**
  * `media/{attachmentId}?name=&mime=` — fullscreen attachment viewer.
@@ -232,9 +233,9 @@ class MediaViewerViewModel @Inject constructor(
         viewModelScope.launch {
             when (
                 val result = attachmentRepository.downloadToCache(
-                    attachmentId = current.attachmentId,
-                    displayName = current.displayName,
-                )
+                    current.attachmentId,
+                    current.displayName,
+                ).await()
             ) {
                 is Result.Success ->
                     _uiState.value = _uiState.value.copy(loading = false, file = result.value)

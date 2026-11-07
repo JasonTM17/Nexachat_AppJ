@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.rx3.asFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -182,13 +183,19 @@ class ConversationRepository @Inject constructor(
     // ---- read model ----
 
     fun inboxFlow(): Flow<List<ConversationSummary>> =
-        combine(conversationDao.inboxFlow(), presenceRepository.presences) { rows, presence ->
+        combine(
+            conversationDao.inboxFlow(),
+            presenceRepository.presences.toObservable().asFlow(),
+        ) { rows, presence ->
             rows.map { it.toSummary(presence) }
         }
 
     /** Single conversation for the chat title bar. */
     fun conversationFlow(conversationId: String): Flow<ConversationSummary?> =
-        combine(conversationDao.observeById(conversationId), presenceRepository.presences) { row, presence ->
+        combine(
+            conversationDao.observeById(conversationId),
+            presenceRepository.presences.toObservable().asFlow(),
+        ) { row, presence ->
             row?.toSummary(presence)
         }
 

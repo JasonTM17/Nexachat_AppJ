@@ -7,6 +7,7 @@ import com.nexachat.data.ContactsRepository
 import com.nexachat.data.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.rx3.await
 
 /** Suspend-only repository helpers for the Java ProfileViewModel. */
 internal suspend fun profileLoad(
@@ -47,7 +48,7 @@ internal suspend fun profileChangePassword(
     newPassword: String,
 ) {
     uiState.update { it.withPasswordSaving(true).withPasswordError(null) }
-    when (val result = repository.changePassword(oldPassword, newPassword)) {
+    when (val result = repository.changePassword(oldPassword, newPassword).await()) {
         is Result.Success -> uiState.update {
             it.withPasswordSaving(false)
                 .withShowPasswordDialog(false)
@@ -80,16 +81,16 @@ internal suspend fun profileSetShowPresence(
     uiState: MutableStateFlow<ProfileViewModel.UiState>,
     value: Boolean,
 ) {
-    when (val result = repository.setShowPresence(value)) {
+    when (val result = repository.setShowPresence(value).await()) {
         is Result.Success -> uiState.update { it.withSaveError(null) }
         is Result.Failure -> uiState.update { it.withSaveError(result.error) }
     }
 }
 
 internal suspend fun profileLogout(repository: AuthRepository) {
-    repository.logout()
+    repository.logout().await()
 }
 
 internal suspend fun profileLogoutAll(repository: AuthRepository) {
-    repository.logoutAll()
+    repository.logoutAll().await()
 }
