@@ -838,18 +838,22 @@ class ChatViewModelTest {
         runCurrent()
 
         conversationFlow.value = ConversationSummary(
-            id = CONVERSATION_ID,
-            type = "DIRECT",
-            title = null,
-            lastMessageContent = null,
-            lastMessageSenderName = null,
-            lastMessageAtEpochMs = null,
-            lastMessageSeq = 0L,
-            unreadCount = 0,
-            otherUserName = "Peer",
-            otherUserAvatar = null,
-            avatarUrl = null,
-            peerPresence = PeerPresence(true, 1_700_000_000_000L),
+            CONVERSATION_ID,
+            "DIRECT",
+            null,
+            null,
+            null,
+            null,
+            0L,
+            0,
+            "Peer",
+            null,
+            null,
+            0L,
+            null,
+            null,
+            false,
+            PeerPresence(true, 1_700_000_000_000L),
         )
         runCurrent()
 
@@ -862,18 +866,22 @@ class ChatViewModelTest {
         runCurrent()
 
         conversationFlow.value = ConversationSummary(
-            id = CONVERSATION_ID,
-            type = "DIRECT",
-            title = null,
-            lastMessageContent = null,
-            lastMessageSenderName = null,
-            lastMessageAtEpochMs = null,
-            lastMessageSeq = 0L,
-            unreadCount = 0,
-            otherUserName = "Peer",
-            otherUserAvatar = null,
-            avatarUrl = null,
-            otherUserId = "u-peer",
+            CONVERSATION_ID,
+            "DIRECT",
+            null,
+            null,
+            null,
+            null,
+            0L,
+            0,
+            "Peer",
+            null,
+            null,
+            0L,
+            null,
+            "u-peer",
+            false,
+            null,
         )
         runCurrent()
 
@@ -887,19 +895,22 @@ class ChatViewModelTest {
         runCurrent()
 
         fun summary(type: String, role: String?) = ConversationSummary(
-            id = CONVERSATION_ID,
-            type = type,
-            title = if (type == "GROUP") "Group" else null,
-            lastMessageContent = null,
-            lastMessageSenderName = null,
-            lastMessageAtEpochMs = null,
-            lastMessageSeq = 0L,
-            unreadCount = 0,
-            otherUserName = if (type == "GROUP") null else "Peer",
-            otherUserAvatar = null,
-            avatarUrl = null,
-            peerReadSeq = 0L,
-            myRole = role,
+            CONVERSATION_ID,
+            type,
+            if (type == "GROUP") "Group" else null,
+            null,
+            null,
+            null,
+            0L,
+            0,
+            if (type == "GROUP") null else "Peer",
+            null,
+            null,
+            0L,
+            role,
+            null,
+            false,
+            null,
         )
 
         // A non-admin member must not be offered a doomed pin (server 403s it).

@@ -46,50 +46,6 @@ import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
-/**
- * Inbox row as the feature layer sees it — [displayName] is already resolved
- * (group `title` beats peer name; a bare `[OTHER]` never reaches the UI).
- */
-data class ConversationSummary(
-    val id: String,
-    val type: String,
-    /** Group title, or null for DIRECT rows. */
-    val title: String?,
-    val lastMessageContent: String?,
-    val lastMessageSenderName: String?,
-    val lastMessageAtEpochMs: Long?,
-    val lastMessageSeq: Long,
-    val unreadCount: Int,
-    val otherUserName: String?,
-    val otherUserAvatar: String?,
-    /** GROUP avatar set by an admin; null for DIRECT rows and unstyled groups. */
-    val avatarUrl: String?,
-    /** Highest other-member read watermark (MESSAGE_READ) — DIRECT "seen" receipts. */
-    val peerReadSeq: Long = 0,
-    /** My member role from the inbox payload — GROUP affordance gating (pin etc.). */
-    val myRole: String? = null,
-    /** Peer user id for DIRECT rows — presence lookup key. */
-    val otherUserId: String? = null,
-    /** Last message is soft-deleted — the inbox renders a neutral snippet. */
-    val lastMessageDeleted: Boolean = false,
-    /** Live/seed presence of the DIRECT peer; null for groups or hidden peers. */
-    val peerPresence: PeerPresence? = null,
-) {
-    val displayName: String get() = title ?: otherUserName ?: ""
-
-    /** Row avatar: the group image wins; DIRECT rows fall back to the peer's. */
-    val displayAvatar: String? get() = avatarUrl ?: otherUserAvatar
-
-    /** GROUP rows render sender names above incoming bubbles and the detail affordance. */
-    val isGroup: Boolean get() = type == TYPE_GROUP
-}
-
-/**
- * Group member as the feature layer sees it. [role] stays nullable — early
- * server builds may omit it from `members[]`, in which case [isAdmin] is
- * false and the UI hides ADMIN-only affordances (best-effort gate; the
- * server remains the real authorization boundary).
- */
 /** Conversation `type` wire value for groups (DIRECT lives in the companion below). */
 private const val TYPE_GROUP = "GROUP"
 
@@ -460,22 +416,22 @@ internal class ConversationRepositoryCore(
     private fun ConversationEntity.toSummary(
         presence: Map<String, PeerPresence>,
     ): ConversationSummary = ConversationSummary(
-        id = id,
-        type = type,
-        title = title,
-        lastMessageContent = lastMessageContent,
-        lastMessageSenderName = lastMessageSenderName,
-        lastMessageAtEpochMs = lastMessageAt,
-        lastMessageSeq = lastMessageSeq,
-        unreadCount = unreadCount,
-        otherUserName = otherUserName,
-        otherUserAvatar = otherUserAvatar,
-        avatarUrl = avatarUrl,
-        peerReadSeq = peerReadSeq,
-        myRole = myRole,
-        otherUserId = otherUserId,
-        lastMessageDeleted = lastMessageDeleted,
-        peerPresence = if (type == TYPE_DIRECT) otherUserId?.let(presence::get) else null,
+        id,
+        type,
+        title,
+        lastMessageContent,
+        lastMessageSenderName,
+        lastMessageAt,
+        lastMessageSeq,
+        unreadCount,
+        otherUserName,
+        otherUserAvatar,
+        avatarUrl,
+        peerReadSeq,
+        myRole,
+        otherUserId,
+        lastMessageDeleted,
+        if (type == TYPE_DIRECT) otherUserId?.let(presence::get) else null,
     )
 
     // ---- internals ----

@@ -140,17 +140,17 @@ class GroupDetailViewModelTest {
             Result.Success(GroupDetail(null, listOf(me, lan))),
         )
         conversationFlow.value = ConversationSummary(
-            id = CONVERSATION_ID,
-            type = "GROUP",
-            title = "Room title",
-            lastMessageContent = null,
-            lastMessageSenderName = null,
-            lastMessageAtEpochMs = null,
-            lastMessageSeq = 0L,
-            unreadCount = 0,
-            otherUserName = null,
-            otherUserAvatar = null,
-            avatarUrl = null,
+            CONVERSATION_ID,
+            "GROUP",
+            "Room title",
+            null,
+            null,
+            null,
+            0L,
+            0,
+            null,
+            null,
+            null,
         )
 
         assertEquals("Room title", viewModel.uiState.value.title)

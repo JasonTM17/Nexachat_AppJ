@@ -35,17 +35,17 @@ class InboxViewModelTest {
         unread: Int,
         name: String = "Peer $id",
     ) = ConversationSummary(
-        id = id,
-        type = "DIRECT",
-        title = null,
-        lastMessageContent = "last $id",
-        lastMessageSenderName = name,
-        lastMessageAtEpochMs = 1_700_000_000_000L,
-        lastMessageSeq = 42,
-        unreadCount = unread,
-        otherUserName = name,
-        otherUserAvatar = null,
-        avatarUrl = null,
+        id,
+        "DIRECT",
+        null,
+        "last $id",
+        name,
+        1_700_000_000_000L,
+        42,
+        unread,
+        name,
+        null,
+        null,
     )
 
     @Before
@@ -86,7 +86,7 @@ class InboxViewModelTest {
 
     @Test
     fun `display name prefers group title then peer name`() = runTest {
-        val group = conversation("g-1", unread = 0, name = "Team").copy(title = "Team Chat")
+        val group = conversation("g-1", unread = 0, name = "Team").withTitle("Team Chat")
         inboxFlow.value = listOf(group, conversation("c-1", unread = 0))
 
         viewModel.uiState.test {
