@@ -3,7 +3,7 @@ package com.nexachat.feature.inbox
 import com.nexachat.core.common.Result
 import com.nexachat.core.storage.TokenStore
 import com.nexachat.data.ConversationRepository
-import com.nexachat.data.userIdFromJwt
+import com.nexachat.data.TimeAndJwt
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
@@ -19,7 +19,7 @@ internal suspend fun inboxLoadCurrentUserId(
     uiState: MutableStateFlow<InboxUiState>,
 ) {
     val accessToken = tokenStore.readTokens()?.accessToken
-    val currentUserId = accessToken?.let { token -> userIdFromJwt(token, moshi) }
+    val currentUserId = accessToken?.let { token -> TimeAndJwt.userIdFromJwt(token, moshi) }
     uiState.update { it.withCurrentUserId(currentUserId) }
 }
 

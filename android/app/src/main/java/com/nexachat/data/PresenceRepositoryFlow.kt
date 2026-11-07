@@ -1,6 +1,5 @@
 package com.nexachat.data
 
-import com.nexachat.data.isoToEpochMsOrNull as messageRepositoryIsoToEpochMsOrNull
 import java.util.function.Consumer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -31,5 +30,5 @@ internal object PresenceRepositoryFlow {
 
     @JvmStatic
     fun isoToEpochMsOrNullFromMessageRepository(iso: String?): Long? =
-        messageRepositoryIsoToEpochMsOrNull(iso)
+        TimeAndJwt.isoToEpochMsOrNull(iso)
 }

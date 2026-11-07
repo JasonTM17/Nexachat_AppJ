@@ -219,7 +219,7 @@ class ConversationRepository @Inject constructor(
                 val presenceSeeds = result.value.items.mapNotNull { dto ->
                     val presence = dto.peerPresence ?: return@mapNotNull null
                     val peerId = dto.resolvedOtherId(myId) ?: return@mapNotNull null
-                    peerId to PeerPresence(presence.online == true, isoToEpochMsOrNull(presence.lastSeenAt),
+                    peerId to PeerPresence(presence.online == true, TimeAndJwt.isoToEpochMsOrNull(presence.lastSeenAt),
                     )
                 }.toMap()
                 presenceRepository.seed(presenceSeeds)
@@ -430,7 +430,7 @@ class ConversationRepository @Inject constructor(
 
     private suspend fun currentUserId(): String? {
         val access = tokenStore.readTokens()?.accessToken ?: return null
-        return userIdFromJwt(access, moshi)
+        return TimeAndJwt.userIdFromJwt(access, moshi)
     }
 
     private fun ConversationInboxDto.toEntity(myId: String?): ConversationEntity =
@@ -441,7 +441,7 @@ class ConversationRepository @Inject constructor(
             lastMessageSeq = resolvedLastSeq() ?: 0L,
             lastMessageContent = resolvedLastContent(),
             lastMessageSenderName = resolvedLastSender(),
-            lastMessageAt = resolvedLastAt()?.let { isoToEpochMs(it) },
+            lastMessageAt = resolvedLastAt()?.let { TimeAndJwt.isoToEpochMs(it) },
             unreadCount = unreadCount ?: 0,
             otherUserName = resolvedOtherName(myId),
             otherUserAvatar = resolvedOtherAvatar(myId),
