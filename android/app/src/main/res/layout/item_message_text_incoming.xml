@@ -12,7 +12,7 @@
         android:backgroundTint="@color/bubble_other"
         android:maxWidth="@dimen/bubble_max_width"
         android:orientation="vertical"
-        android:paddingHorizontal="14dp"
+        android:paddingHorizontal="16dp"
         android:paddingVertical="10dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0"

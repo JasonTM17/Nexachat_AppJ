@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/bubbleMetaRow"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
@@ -39,7 +40,8 @@
         android:layout_height="14dp"
         android:layout_marginStart="@dimen/space_xs"
         android:contentDescription="@string/cd_delivered"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:tint="?attr/colorOnSurfaceVariant" />
 
     <TextView
         android:id="@+id/deliveryStatusText"
