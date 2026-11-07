@@ -8,7 +8,6 @@ import com.nexachat.core.common.Result;
 import com.nexachat.core.common.WhitespaceTrim;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AuthApi;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.TokenRefreshOutcome;
 import com.nexachat.core.network.TokenRefresher;
@@ -93,7 +92,7 @@ public final class AuthRepository {
     @NonNull
     public Single<Result<Unit>> logout() {
         Completable revoke = tokenStore.readTokens()
-                .flatMapCompletable(tokens -> ApiResultKt.safeApiCall(
+                .flatMapCompletable(tokens -> ApiResult.safeApiCall(
                                 authApi.logout(logoutRequest(tokens.getRefreshToken())))
                         .ignoreElement())
                 .onErrorComplete();
@@ -111,7 +110,7 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Unit>> logoutAll() {
-        return Single.defer(() -> ApiResultKt.safeApiCall(authApi.logoutAll())
+        return Single.defer(() -> ApiResult.safeApiCall(authApi.logoutAll())
                         .ignoreElement()
                         .onErrorComplete()
                         .andThen(tokenStore.clear())
@@ -151,14 +150,14 @@ public final class AuthRepository {
 
     @NonNull
     private Single<Result<AuthResponse>> authCall(@NonNull Call<AuthResponse> call) {
-        return ApiResultKt.safeApiCall(call)
+        return ApiResult.safeApiCall(call)
                 .map(AuthRepository::authResult)
                 .subscribeOn(Schedulers.io());
     }
 
     @NonNull
     private Single<Result<Unit>> authCallUnit(@NonNull Call<Void> call) {
-        return ApiResultKt.safeApiCall(call)
+        return ApiResult.safeApiCall(call)
                 .map(result -> {
                     if (result instanceof ApiResult.Success<?>) {
                         // Do not read the erased empty body from a successful 204 response.

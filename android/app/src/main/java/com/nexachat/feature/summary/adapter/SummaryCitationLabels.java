@@ -3,7 +3,7 @@ package com.nexachat.feature.summary.adapter;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-/** Label formatting for summary citation chips (Compose parity). */
+/** Label formatting for summary citation chips in Android Views. */
 public final class SummaryCitationLabels {
 
     private SummaryCitationLabels() {

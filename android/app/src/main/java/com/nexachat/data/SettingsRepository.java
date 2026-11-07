@@ -6,7 +6,6 @@ import androidx.annotation.NonNull;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.ApiResult;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.UserApi;
 import com.nexachat.core.network.dto.UpdateUserSettingsRequest;
@@ -100,7 +99,7 @@ public final class SettingsRepository implements AutoCloseable {
 
     @NonNull
     public Single<Result<Unit>> refreshShowPresence() {
-        return Single.defer(() -> ApiResultKt.safeApiCall(userApi.getSettings())
+        return Single.defer(() -> ApiResult.safeApiCall(userApi.getSettings())
                 .map(result -> {
                     if (result instanceof ApiResult.Success<?> success) {
                         UserSettingsDto settings = (UserSettingsDto) success.getBody();
@@ -122,7 +121,7 @@ public final class SettingsRepository implements AutoCloseable {
             }
 
             mutableShowPresence.onNext(value);
-            return ApiResultKt.safeApiCall(
+            return ApiResult.safeApiCall(
                             userApi.updateSettings(new UpdateUserSettingsRequest(value)))
                     .map(result -> {
                         if (result instanceof ApiResult.Success<?> success) {

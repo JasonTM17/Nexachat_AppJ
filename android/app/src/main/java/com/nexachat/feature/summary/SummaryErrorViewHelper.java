@@ -8,7 +8,7 @@ import androidx.annotation.Nullable;
 import com.nexachat.R;
 import com.nexachat.summary.SummaryError;
 
-/** Binds typed summary errors to the shared error include (Compose parity). */
+/** Binds typed summary errors to the shared Android View include. */
 public final class SummaryErrorViewHelper {
 
     private SummaryErrorViewHelper() {

@@ -15,7 +15,6 @@ import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.PinnedMessageEntity;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.ApiResult;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.AttachmentDto;
@@ -1211,7 +1210,7 @@ public final class MessageRepository {
      * unexpected-empty-body failure instead of escaping the stream.
      */
     private <T> Single<Result<T>> call(Call<T> call) {
-        return ApiResultKt.safeApiCall(call).<Result<T>>map(result -> {
+        return ApiResult.safeApiCall(call).<Result<T>>map(result -> {
             if (result instanceof ApiResult.Success<?> success) {
                 @SuppressWarnings("unchecked") T body = (T) success.getBody();
                 return new Result.Success<>(body);

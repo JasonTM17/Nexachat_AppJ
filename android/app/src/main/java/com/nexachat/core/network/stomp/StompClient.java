@@ -96,12 +96,12 @@ public final class StompClient {
             }
         }
 
-        /** Kotlin-compatible singleton values while retaining the nested state types. */
+        /** Convenient singleton values for the common connection states. */
         Connecting Connecting = StompClient.State.Connecting.INSTANCE;
         Open Open = StompClient.State.Open.INSTANCE;
     }
 
-    /** Java-friendly state emitter used by the Kotlin callbackFlow bridge. */
+    /** Callback surface for emitting connection state changes. */
     public interface StateSink {
         boolean trySend(@NonNull State state);
 

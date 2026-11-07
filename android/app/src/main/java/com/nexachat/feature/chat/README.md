@@ -1,8 +1,7 @@
 # feature.chat — `package com.nexachat.feature.chat`
 
-Planned contents (plan §12.1):
-
-- `ChatScreen` — message list + composer, shared for direct and group conversations
-- `ChatViewModel` — `ChatUiState(loading, messages, sending, input, replyTo, error)`;
-  state = `combine(roomMessages, outbox, typingFlow, wsStatus).stateIn(WhileSubscribed)`;
-  one-shot events via `Channel.receiveAsFlow` (plan §12.2)
+The chat feature is implemented in Java 17 with Android Fragments, XML layouts,
+and ViewBinding. `ChatFragment` wires the message list and input bar;
+`ChatViewModel` coordinates screen state with the repositories. RecyclerView
+adapters render message rows, and Glide loads remote media. Repository and
+realtime operations use RxJava 3 streams.

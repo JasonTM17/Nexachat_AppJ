@@ -23,7 +23,7 @@ public sealed interface ChatEvent
     @Nullable
     String conversationId();
 
-    /** Kotlin and Java bean-style accessor for code holding the base event type. */
+    /** Bean-style accessor for code holding the base event type. */
     @Nullable
     default String getConversationId() {
         return conversationId();

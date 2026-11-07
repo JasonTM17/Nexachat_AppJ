@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * Pure Java helper for constructing a stable identity key for summary action items.
- * Used to key Compose rows and state holders (remember / rememberSaveable).
+ * Used as a stable item identity by summary list adapters.
  */
 public final class SummaryActionKeyHelper {
 

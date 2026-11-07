@@ -8,9 +8,8 @@ import io.reactivex.rxjava3.core.Single;
 /**
  * Session-restore decision used by {@link SplashViewModel}.
  *
- * <p>Rx form of the former suspend function: the caller supplies the stored-session
- * validity probe and the refresh call as {@link Single}s, so this class stays free of
- * Kotlin coroutine types. Threading is the caller's responsibility; the upstream
+ * <p>The caller supplies the stored-session validity probe and refresh call as
+ * {@link Single}s. Threading is the caller's responsibility; the upstream
  * repository calls already run on {@code Schedulers.io()}.
  */
 public final class SplashSession {

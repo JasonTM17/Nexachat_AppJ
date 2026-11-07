@@ -9,7 +9,7 @@ import java.util.Objects;
  * resource and never parses {@code message}.
  *
  * <p>The three codeless variants are singletons. {@link #equals} for those is
- * type-based so they keep matching the old Kotlin objects.
+ * type-based so each codeless variant retains singleton-style equality.
  */
 public sealed interface ApiError
         permits ApiError.InvalidCredentials,

@@ -10,7 +10,6 @@ import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.ApiResult;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.ProgressRequestBody;
 import com.nexachat.core.network.dto.AttachmentDto;
@@ -120,7 +119,7 @@ public final class AttachmentRepository {
                     requestBody);
 
             DisposableCall.subscribe(
-                    ApiResultKt.safeApiCall(attachmentApi.upload(part))
+                    ApiResult.safeApiCall(attachmentApi.upload(part))
                             .subscribeOn(Schedulers.io()),
                     emitter);
         }, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.io());
@@ -130,7 +129,7 @@ public final class AttachmentRepository {
     public Single<Result<File>> downloadToCache(
             @NonNull String attachmentId,
             @Nullable String displayName) {
-        return Single.defer(() -> ApiResultKt.safeApiCall(attachmentApi.content(attachmentId))
+        return Single.defer(() -> ApiResult.safeApiCall(attachmentApi.content(attachmentId))
                     .map(result -> {
                         if (result instanceof ApiResult.Success<?> success) {
                             return saveBodyToCache((okhttp3.ResponseBody) success.getBody(),

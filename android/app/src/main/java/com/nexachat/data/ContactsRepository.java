@@ -8,7 +8,6 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.PhoneNormalizer;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.ApiResult;
-import com.nexachat.core.network.ApiResultKt;
 import com.nexachat.core.network.UserApi;
 import com.nexachat.core.network.dto.AddContactRequest;
 import com.nexachat.core.network.dto.ContactDto;
@@ -278,7 +277,7 @@ public final class ContactsRepository {
     private <T> Single<Result<T>> call(
             @NonNull Call<T> retrofitCall,
             @NonNull BiFunction<Integer, String, ApiError> mapError) {
-        return ApiResultKt.safeApiCall(retrofitCall)
+        return ApiResult.safeApiCall(retrofitCall)
                 .onErrorResumeNext(error -> {
                     if (error instanceof ClassCastException) {
                         return Single.just(new ApiResult.HttpError<T>(200, ERROR_UNEXPECTED_EMPTY_BODY));
@@ -308,7 +307,7 @@ public final class ContactsRepository {
 
     /** Empty successful response body is expected for DELETE contact. */
     private Single<Result<Void>> callVoid(@NonNull Call<?> retrofitCall) {
-        return ApiResultKt.safeApiCall(retrofitCall)
+        return ApiResult.safeApiCall(retrofitCall)
                 .subscribeOn(Schedulers.io())
                 .map(result -> {
                     if (result instanceof ApiResult.Success<?>) return successVoid();

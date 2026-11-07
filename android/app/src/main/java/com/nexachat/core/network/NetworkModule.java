@@ -23,7 +23,7 @@ public final class NetworkModule {
     @Provides
     @Singleton
     public static Moshi provideMoshi() {
-        // No KotlinJsonAdapterFactory — REST and STOMP DTOs are reflective Java beans.
+        // REST and STOMP DTOs use Moshi's reflective Java bean adapters.
         return new Moshi.Builder().build();
     }
 

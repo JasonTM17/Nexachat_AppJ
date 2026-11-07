@@ -1,24 +1,57 @@
 package com.nexachat.core.network;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.core.network.dto.ErrorResponse;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.util.Objects;
+import retrofit2.Call;
+import retrofit2.Response;
 
 /**
  * Network-layer result carrying HTTP specifics (status + parsed server {@code code}).
  * Repositories translate it into domain {@code Result}/{@code ApiError}.
  *
- * <p>Error variants keep a type parameter (like {@code Result.Failure}) so a
- * {@code safeApiCallCatching} helper can return {@code ApiResult<T>} without
- * Kotlin {@code Nothing} covariance.
+ * <p>Error variants keep a type parameter so success and failure branches
+ * retain the same {@code ApiResult<T>} type.
  */
 public sealed interface ApiResult<T>
         permits ApiResult.Success, ApiResult.HttpError, ApiResult.NetworkError {
 
-    /** Returns an RxJava result; Retrofit execution happens on the IO scheduler. */
-    static <T> Single<ApiResult<T>> safeApiCall(retrofit2.Call<T> call) {
-        return ApiResultKt.safeApiCall(call);
+    /**
+     * Executes the Retrofit call on RxJava's IO scheduler, cloning it first if it
+     * has already executed. Disposing the subscription cancels the request. A
+     * successful empty response is represented by {@code Success(null)}; callers
+     * that require a body must check it.
+     */
+    @NonNull
+    public static <T> Single<ApiResult<T>> safeApiCall(@NonNull Call<T> call) {
+        return Single.<ApiResult<T>>create(emitter -> {
+            Call<T> cloned = call.isExecuted() ? call.clone() : null;
+            Call<T> active = cloned != null ? cloned : call;
+            emitter.setCancellable(active::cancel);
+            try {
+                emitter.onSuccess(fromResponse(active.execute()));
+            } catch (IOException failure) {
+                if (!emitter.isDisposed()) {
+                    emitter.onSuccess(new NetworkError<>(failure));
+                }
+            } catch (RuntimeException failure) {
+                if (!emitter.isDisposed()) {
+                    emitter.onError(failure);
+                }
+            }
+        }).subscribeOn(Schedulers.io());
+    }
+
+    private static <T> ApiResult<T> fromResponse(Response<T> response) throws IOException {
+        if (response.isSuccessful()) {
+            return new Success<>(response.body());
+        }
+        String raw = response.errorBody() == null ? null : response.errorBody().string();
+        return new HttpError<>(response.code(), ErrorResponse.errorCodeOf(raw));
     }
 
     final class Success<T> implements ApiResult<T> {

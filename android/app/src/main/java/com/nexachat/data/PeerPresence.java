@@ -22,7 +22,7 @@ public final class PeerPresence {
         return online;
     }
 
-    /** Kotlin property accessor for {@code online}. */
+    /** Bean-style accessor for the current online state. */
     public boolean isOnline() {
         return online;
     }

@@ -11,7 +11,7 @@ import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.nexachat.R;
 
 /**
- * Centered loading spinner with optional label (View counterpart to Compose {@code LoadingState}).
+ * Centered loading spinner with an optional label for Android XML layouts.
  */
 public class LoadingStateView extends FrameLayout {
 

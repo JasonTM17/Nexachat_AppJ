@@ -14,7 +14,7 @@ import com.google.android.material.button.MaterialButton;
 import com.nexachat.R;
 
 /**
- * Full-surface empty placeholder (View counterpart to the Compose {@code EmptyState}).
+ * Full-surface empty-state placeholder for Android XML layouts.
  */
 public class EmptyStateView extends FrameLayout {
 

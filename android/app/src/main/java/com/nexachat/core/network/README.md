@@ -1,11 +1,11 @@
-# core.network
+# core.network — `package com.nexachat.core.network`
 
-Network outcomes and authentication use Java 17 with RxJava 3. Retrofit calls
-are normalized by `ApiResultKt.safeApiCall(Call)` into `Single<ApiResult<T>>`;
-disposal cancels the cloned Retrofit call. Token rotation is single-flight and
-exposes both RxJava methods and synchronous bridges for OkHttp's
-`Authenticator` thread. Connectivity, foreground state, STOMP frames, and
-realtime session events are exposed as `Flowable` streams.
+The Android network layer is Java 17 and uses Retrofit, OkHttp, Moshi, and
+RxJava 3. `ApiResult.safeApiCall(Call)` executes Retrofit calls on the RxJava
+IO scheduler and returns `Single<ApiResult<T>>`; disposing the subscription
+cancels the request. HTTP failures preserve the status and any parsed server
+error code, while I/O failures become network results.
 
-Kotlin callers that still use coroutine APIs should bridge at the call site
-with `kotlinx-coroutines-rx3`; the Java network APIs do not expose coroutines.
+DTOs are Java beans bound by Moshi's reflective adapters. Authentication uses
+an OkHttp interceptor and authenticator, and connectivity, STOMP frames, and
+realtime session updates are exposed as RxJava `Flowable` streams.

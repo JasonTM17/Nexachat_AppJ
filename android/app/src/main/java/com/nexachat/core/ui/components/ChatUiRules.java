@@ -9,9 +9,7 @@ import java.util.Locale;
  * Pure UI presentation rules for chat message grouping, bubble corner radii,
  * date separators, and relative timestamps.
  *
- * <p>Formerly a Kotlin file with default arguments; the overloads below keep the
- * Kotlin call sites (which cannot use named arguments against Java statics)
- * source-compatible.
+ * <p>Overloads provide convenient defaults for Java callers.
  */
 public final class ChatUiRules {
 

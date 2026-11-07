@@ -11,7 +11,7 @@ import androidx.annotation.Nullable;
 import com.nexachat.R;
 
 /**
- * Single settings list row with leading icon and chevron (View counterpart to Compose {@code SettingsRow}).
+ * Single settings list row with a leading icon and chevron for Android XML layouts.
  */
 public class SettingsRowView extends LinearLayout {
 
