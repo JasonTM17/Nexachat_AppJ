@@ -1,64 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingBottom="@dimen/space_lg">
+    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardCornerRadius="24dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorSurfaceVariant"
+    app:strokeWidth="1dp">
 
     <LinearLayout
-        android:id="@+id/pickVisualRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/min_touch_target"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_lg"
-        android:paddingVertical="@dimen/space_sm">
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
 
-        <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:importantForAccessibility="no"
-            android:padding="9dp"
-            android:src="@drawable/ic_image"
-            app:tint="?attr/colorPrimary" />
-
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickVisualRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
-            android:text="@string/media_pick_visual"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/min_touch_target"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp">
 
-    <LinearLayout
-        android:id="@+id/pickDocumentRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/min_touch_target"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_lg"
-        android:paddingVertical="@dimen/space_sm">
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:importantForAccessibility="no"
+                android:padding="9dp"
+                android:src="@drawable/ic_image"
+                app:tint="?attr/colorOnSurfaceVariant" />
 
-        <ImageView
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:importantForAccessibility="no"
-            android:padding="9dp"
-            android:src="@drawable/ic_description"
-            app:tint="?attr/colorPrimary" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/media_pick_visual"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickDocumentRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
-            android:text="@string/media_pick_document"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/min_touch_target"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:importantForAccessibility="no"
+                android:padding="9dp"
+                android:src="@drawable/ic_description"
+                app:tint="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/media_pick_document"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

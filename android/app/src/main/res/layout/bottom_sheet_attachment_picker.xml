@@ -1,13 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/attachmentSheetRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="@dimen/space_md">
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/attachment_picker_title" android:textAppearance="?attr/textAppearanceTitleMedium"/>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
-        <com.google.android.material.button.MaterialButton android:id="@+id/pickImage" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:drawableTop="@drawable/ic_image" android:minHeight="@dimen/min_touch_target" android:text="@string/attachment_pick_image"/>
-        <com.google.android.material.button.MaterialButton android:id="@+id/pickFile" style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:drawableTop="@drawable/ic_description" android:minHeight="@dimen/min_touch_target" android:text="@string/attachment_pick_file"/>
+    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardCornerRadius="24dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorSurfaceVariant"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="12dp"
+            android:text="@string/attachment_picker_title"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorOnSurface" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pickImage"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/attachment_pick_image"
+                android:textColor="?attr/colorOnSurface"
+                app:icon="@drawable/ic_image"
+                app:iconGravity="textTop"
+                app:iconPadding="8dp"
+                app:iconTint="?attr/colorOnSurfaceVariant" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pickFile"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/attachment_pick_file"
+                android:textColor="?attr/colorOnSurface"
+                app:icon="@drawable/ic_description"
+                app:iconGravity="textTop"
+                app:iconPadding="8dp"
+                app:iconTint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
     </LinearLayout>
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

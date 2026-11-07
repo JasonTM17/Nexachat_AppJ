@@ -2,19 +2,21 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground"
+    android:fitsSystemWindows="true"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:gravity="center"
         android:orientation="vertical"
-        android:padding="28dp">
+        android:padding="24dp">
 
         <TextView
             android:id="@+id/incoming_initials"
-            android:layout_width="112dp"
-            android:layout_height="112dp"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
             android:background="@drawable/bg_call_avatar"
             android:gravity="center"
             android:importantForAccessibility="no"
@@ -25,7 +27,7 @@
             android:id="@+id/incoming_peer_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="28dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="2"
@@ -37,24 +39,24 @@
             android:id="@+id/incoming_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
             android:text="@string/call_state_incoming"
             android:textColor="?android:attr/textColorSecondary"
-            android:textSize="18sp" />
+            android:textSize="16sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="40dp"
+            android:layout_marginTop="48dp"
             android:gravity="center"
             android:orientation="horizontal">
             <Button
                 android:id="@+id/incoming_decline"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:backgroundTint="@color/call_decline_background"
                 android:contentDescription="@string/call_decline"
@@ -65,7 +67,7 @@
                 android:id="@+id/incoming_accept"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:backgroundTint="@color/call_accept_background"
                 android:contentDescription="@string/call_accept"
