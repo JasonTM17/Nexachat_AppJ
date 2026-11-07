@@ -21,17 +21,17 @@
 
     <fragment
         android:id="@+id/inboxFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$InboxHostFragment"
+        android:name="com.nexachat.feature.inbox.InboxFragment"
         android:label="@string/inbox_title" />
 
     <fragment
         android:id="@+id/contactsFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$ContactsHostFragment"
+        android:name="com.nexachat.feature.contacts.ContactsFragment"
         android:label="@string/contacts_title" />
 
     <fragment
         android:id="@+id/searchFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$SearchHostFragment"
+        android:name="com.nexachat.feature.contacts.UserSearchFragment"
         android:label="@string/search_title" />
 
     <fragment
@@ -55,12 +55,12 @@
 
     <fragment
         android:id="@+id/groupCreateFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$GroupCreateHostFragment"
+        android:name="com.nexachat.feature.group.CreateGroupFragment"
         android:label="@string/group_create_title" />
 
     <fragment
         android:id="@+id/groupDetailFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$GroupDetailHostFragment"
+        android:name="com.nexachat.feature.group.GroupDetailFragment"
         android:label="@string/group_detail_title">
         <argument
             android:name="conversationId"
@@ -69,7 +69,7 @@
 
     <fragment
         android:id="@+id/mediaViewerFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$MediaViewerHostFragment"
+        android:name="com.nexachat.feature.media.MediaViewerFragment"
         android:label="@string/media_attachment">
         <argument
             android:name="attachmentId"
