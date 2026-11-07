@@ -57,41 +57,41 @@ public final class MediaPickerSheetFragment extends BottomSheetDialogFragment {
         if (sheet == null) {
             return;
         }
-        sheet.pickVisualRow.setOnClickListener(v -> {
-            dismiss();
-            visualPicker.launch(new PickVisualMediaRequest.Builder()
-                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
-                    .build());
-        });
-        sheet.pickDocumentRow.setOnClickListener(v -> {
-            dismiss();
-            documentPicker.launch(new String[]{"*/*"});
-        });
+        sheet.pickVisualRow.setOnClickListener(v ->
+                visualPicker.launch(new PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
+                        .build()));
+        sheet.pickDocumentRow.setOnClickListener(v ->
+                documentPicker.launch(new String[]{"*/*"}));
     }
 
     private void deliverVisual(@Nullable Uri uri) {
-        if (uri == null) {
-            return;
+        if (uri != null && isAdded()) {
+            deliver(uri);
         }
-        deliver(uri);
+        if (isAdded()) {
+            dismissAllowingStateLoss();
+        }
     }
 
     private void deliverDocument(@Nullable Uri uri) {
-        if (uri == null) {
-            return;
+        if (uri != null && isAdded()) {
+            try {
+                requireContext().getContentResolver().takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) {
+                // PickVisualMedia URIs are not persistable; OpenDocument may already grant access.
+            }
+            deliver(uri);
         }
-        try {
-            requireContext().getContentResolver().takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        } catch (SecurityException ignored) {
-            // PickVisualMedia URIs are not persistable; OpenDocument may already grant access.
+        if (isAdded()) {
+            dismissAllowingStateLoss();
         }
-        deliver(uri);
     }
 
     private void deliver(@NonNull Uri uri) {
-        if (listener == null) {
+        if (listener == null || !isAdded()) {
             return;
         }
         String mime = requireContext().getContentResolver().getType(uri);

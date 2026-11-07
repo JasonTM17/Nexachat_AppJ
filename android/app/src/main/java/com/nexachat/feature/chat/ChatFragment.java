@@ -75,8 +75,22 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private int pinIndex;
     private boolean settingDraft;
     private boolean searchOpen;
-    private ActivityResultLauncher<PickVisualMediaRequest> visualPicker;
-    private ActivityResultLauncher<String[]> documentPicker;
+    private final ActivityResultLauncher<PickVisualMediaRequest> visualPicker =
+            registerForActivityResult(
+                    new ActivityResultContracts.PickMultipleVisualMedia(10),
+                    uris -> {
+                        if (uris != null && !uris.isEmpty() && viewModel != null) {
+                            viewModel.sendAttachments(uris);
+                        }
+                    });
+    private final ActivityResultLauncher<String[]> documentPicker =
+            registerForActivityResult(
+                    new ActivityResultContracts.OpenMultipleDocuments(),
+                    uris -> {
+                        if (uris != null && !uris.isEmpty() && viewModel != null) {
+                            viewModel.sendAttachments(uris);
+                        }
+                    });
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -100,12 +114,6 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         viewModel = new ViewModelProvider(this).get(ChatViewModel.class);
         inboxViewModel = new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
         summaryViewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
-        visualPicker = registerForActivityResult(new ActivityResultContracts.PickMultipleVisualMedia(10), uris -> {
-            if (uris != null && !uris.isEmpty()) viewModel.sendAttachments(uris);
-        });
-        documentPicker = registerForActivityResult(new ActivityResultContracts.OpenMultipleDocuments(), uris -> {
-            if (uris != null && !uris.isEmpty()) viewModel.sendAttachments(uris);
-        });
         configureList();
         configureToolbar();
         configureComposer();
@@ -123,6 +131,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         list.setAdapter(adapter);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (binding == null || adapter == null) return;
                 LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
                 if (manager != null && searchOpen && manager.findLastVisibleItemPosition() >= adapter.getItemCount() - 3 && searchState.getHasMore()) viewModel.loadMoreSearch();
                 else if (manager != null && manager.findFirstVisibleItemPosition() <= 1 && state.getHasMore()) viewModel.loadOlder();
@@ -338,7 +347,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void jumpToLoadedMessage(String messageId) {
-        if (binding == null) return;
+        jumpToLoadedMessage(messageId, 0);
+    }
+
+    private void jumpToLoadedMessage(String messageId, int attempt) {
+        if (binding == null || adapter == null || attempt > 5) return;
         List<MessageListItem> items = new ArrayList<>();
         for (int i = 0; i < adapter.getItemCount(); i++) items.add(adapter.getCurrentList().get(i));
         for (int i = 0; i < items.size(); i++) {
@@ -347,18 +360,22 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 pulsingMessageId = messageId;
                 submitMessages(state.getMessages());
                 binding.messageList.post(() -> {
+                    if (binding == null || adapter == null) return;
                     for (int index = 0; index < adapter.getItemCount(); index++) {
                         ChatMessage candidate = adapter.getCurrentList().get(index).getMessage();
                         if (candidate != null && candidate.getId().equals(messageId)) { binding.messageList.smoothScrollToPosition(index); break; }
                     }
                 });
-                binding.messageList.postDelayed(() -> { pulsingMessageId = null; submitMessages(state.getMessages()); }, 1200L);
+                binding.messageList.postDelayed(() -> {
+                    pulsingMessageId = null;
+                    if (binding != null && adapter != null) submitMessages(state.getMessages());
+                }, 1200L);
                 return;
             }
         }
         pulsingMessageId = messageId;
         submitMessages(state.getMessages());
-        binding.messageList.post(() -> jumpToLoadedMessage(messageId));
+        binding.messageList.post(() -> jumpToLoadedMessage(messageId, attempt + 1));
     }
 
     private void showMoreOptions() {
@@ -367,33 +384,23 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showSummary() {
-        summaryViewModel.request(SummaryScope.UNREAD, null);
-        BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
-        LinearLayout content = new LinearLayout(requireContext()); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(24, 20, 24, 24);
-        TextView title = new TextView(requireContext()); title.setText(R.string.summary_title); title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge); content.addView(title);
-        ProgressBar progress = new ProgressBar(requireContext()); content.addView(progress);
-        TextView body = new TextView(requireContext()); body.setPadding(0, 16, 0, 0); content.addView(body);
-        dialog.setContentView(content);
-        dialog.setOnDismissListener(ignored -> summaryViewModel.dismiss());
-        dialog.show();
-        summaryViewModel.state().observe(getViewLifecycleOwner(), next -> {
-            if (dialog.isShowing()) renderSummaryContent(next, progress, body);
+        com.nexachat.feature.summary.SummaryBottomSheetFragment sheet =
+                com.nexachat.feature.summary.SummaryBottomSheetFragment.newInstance(conversationId);
+        java.util.Map<String, Long> seqMap = new java.util.HashMap<>();
+        for (ChatMessage m : state.getMessages()) {
+            if (m.getId() != null && m.getSeq() != null) {
+                seqMap.put(m.getId(), m.getSeq());
+            }
+        }
+        sheet.putCitationArgs(seqMap);
+        sheet.setListener(new com.nexachat.feature.summary.SummaryBottomSheetFragment.Listener() {
+            @Override public void onJumpToMessage(@NonNull String messageId) { viewModel.jumpToMessage(messageId); }
+            @Override public void onShareIntoChat(@NonNull String shareText) { viewModel.onInputChange(shareText); }
         });
+        sheet.show(getChildFragmentManager(), "summary_sheet");
     }
 
     private void renderSummaryState(SummaryUiState next) { }
-
-    private void renderSummaryContent(SummaryUiState value, ProgressBar progress, TextView body) {
-        progress.setVisibility(value.getStatus() == SummaryUiState.Status.LOADING ? View.VISIBLE : View.GONE);
-        SummaryResponse summary = value.getSummary();
-        if (value.getStatus() == SummaryUiState.Status.ERROR) body.setText(R.string.error_generic);
-        else if (summary != null) {
-            StringBuilder text = new StringBuilder(summary.getOverview());
-            for (com.nexachat.summary.SummaryItem item : summary.getKeyPoints()) text.append("\n\n• ").append(item.getText());
-            for (com.nexachat.summary.SummaryActionItem item : summary.getActionItems()) text.append("\n\n• ").append(item.getText());
-            body.setText(text);
-        }
-    }
 
     private void openConversation(String id) {
         Bundle args = new Bundle(); args.putString(ARG_CONVERSATION_ID, id);
@@ -419,10 +426,33 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     @Override public void onRetryTap(@NonNull String messageId) { viewModel.retryFailed(messageId); }
     @Override public void onReplyQuoteTap(@NonNull String replyToId) { viewModel.jumpToMessage(replyToId); }
     @Override public void onOpenMedia(@NonNull String messageId, @NonNull AttachmentDto attachment) {
+        if (attachment.getId() == null) return;
         Bundle args = new Bundle(); args.putString("attachmentId", attachment.getId()); args.putString("name", attachment.getOriginalName()); args.putString("mime", attachment.getMimeType());
-        try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (IllegalStateException ignored) { }
+        try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (RuntimeException ignored) { }
     }
-    @Override public void onOpenFile(@NonNull String messageId, @NonNull AttachmentDto attachment) { Toast.makeText(requireContext(), R.string.error_attachment_open, Toast.LENGTH_SHORT).show(); }
+    @Override public void onOpenFile(@NonNull String messageId, @NonNull AttachmentDto attachment) {
+        subscriptions.add(
+                viewModel.attachmentFile(attachment)
+                        .subscribe(
+                                file -> {
+                                    if (!isAdded()) return;
+                                    String mime = attachment.getMimeType() == null
+                                            ? "application/octet-stream"
+                                            : attachment.getMimeType();
+                                    com.nexachat.feature.media.AttachmentViewBinder.openExternally(
+                                            requireContext(), file, mime);
+                                },
+                                error -> {
+                                    if (isAdded()) {
+                                        Toast.makeText(requireContext(), R.string.error_attachment_open, Toast.LENGTH_SHORT).show();
+                                    }
+                                },
+                                () -> {
+                                    if (isAdded()) {
+                                        Toast.makeText(requireContext(), R.string.error_attachment_open, Toast.LENGTH_SHORT).show();
+                                    }
+                                }));
+    }
     @Override public void onReactionTap(@NonNull String messageId, @NonNull String emoji) { ChatMessage message = resolveOriginal(messageId); if (message != null) viewModel.toggleReaction(message, emoji); }
 
     private void showEdit(ChatMessage message) {
@@ -440,6 +470,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     @Override public void onDestroyView() {
         subscriptions.clear();
+        if (binding != null) {
+            binding.messageList.setAdapter(null);
+        }
+        adapter = null;
         binding = null;
         super.onDestroyView();
     }

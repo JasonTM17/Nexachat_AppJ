@@ -27,6 +27,7 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 public class NexaHostActivity extends AppCompatActivity {
 
     private final CompositeDisposable disposables = new CompositeDisposable();
+    private boolean pendingLogoutNavigation;
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -53,6 +54,15 @@ public class NexaHostActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (pendingLogoutNavigation) {
+            pendingLogoutNavigation = false;
+            navigateToLoginIfPossible();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         disposables.clear();
         super.onDestroy();
@@ -74,6 +84,18 @@ public class NexaHostActivity extends AppCompatActivity {
         if (!(event instanceof SessionEvents.Event.LoggedOut)) {
             return;
         }
+        if (getSupportFragmentManager().isStateSaved()) {
+            pendingLogoutNavigation = true;
+            return;
+        }
+        navigateToLoginIfPossible();
+    }
+
+    private void navigateToLoginIfPossible() {
+        if (getSupportFragmentManager().isStateSaved()) {
+            pendingLogoutNavigation = true;
+            return;
+        }
         NavHostFragment host =
                 (NavHostFragment)
                         getSupportFragmentManager().findFragmentById(R.id.nav_host);
@@ -81,6 +103,10 @@ public class NexaHostActivity extends AppCompatActivity {
             return;
         }
         NavController nav = host.getNavController();
-        nav.navigate(R.id.action_global_login);
+        try {
+            nav.navigate(R.id.action_global_login);
+        } catch (IllegalStateException ignored) {
+            pendingLogoutNavigation = true;
+        }
     }
 }

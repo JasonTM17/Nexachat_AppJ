@@ -104,9 +104,12 @@ public final class InboxFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
-        super.onDestroyView();
+        if (binding != null) {
+            binding.conversationList.setAdapter(null);
+        }
         adapter = null;
         boundUserId = null;
+        super.onDestroyView();
         binding = null;
     }
 }

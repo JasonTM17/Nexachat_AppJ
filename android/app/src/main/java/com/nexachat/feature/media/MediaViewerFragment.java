@@ -19,9 +19,14 @@ import com.nexachat.R;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.ui.components.ErrorStateView;
 import com.nexachat.core.ui.components.LoadingStateView;
+import com.nexachat.data.AttachmentRepository;
 import com.nexachat.databinding.FragmentMediaViewerBinding;
 import dagger.hilt.android.AndroidEntryPoint;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.File;
+import javax.inject.Inject;
 
 /**
  * Full-screen attachment preview. Images stream from the content endpoint; video and audio
@@ -31,6 +36,14 @@ import java.io.File;
 public final class MediaViewerFragment extends Fragment {
 
     private static final int MENU_OPEN = 1;
+
+    @Inject
+    AttachmentRepository attachmentRepository;
+
+    private final CompositeDisposable disposables = new CompositeDisposable();
+
+    @Nullable
+    private String loadedImageAttachmentId;
 
     @Nullable
     private FragmentMediaViewerBinding binding;
@@ -107,11 +120,7 @@ public final class MediaViewerFragment extends Fragment {
 
         hideContent(ui);
         if (state.isImage()) {
-            ui.mediaImage.setVisibility(View.VISIBLE);
-            Glide.with(this)
-                    .load(AttachmentDto.contentPath(state.getAttachmentId()))
-                    .fitCenter()
-                    .into(ui.mediaImage);
+            loadImageAttachment(ui, state);
             return;
         }
         if (state.getLoading()) {
@@ -124,6 +133,60 @@ public final class MediaViewerFragment extends Fragment {
             return;
         }
         showError(ui, viewModel);
+    }
+
+    private void loadImageAttachment(
+            @NonNull FragmentMediaViewerBinding ui,
+            @NonNull MediaViewerViewModel.UiState state) {
+        String id = state.getAttachmentId();
+        if (id.isEmpty()) {
+            ui.mediaImage.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (id.equals(loadedImageAttachmentId) && ui.mediaImage.getDrawable() != null) {
+            ui.mediaImage.setVisibility(View.VISIBLE);
+            return;
+        }
+        loadedImageAttachmentId = id;
+        showLoading(ui);
+        disposables.clear();
+        disposables.add(
+                attachmentRepository.downloadToCache(id, state.getDisplayName())
+                        .subscribeOn(Schedulers.io())
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(
+                                result -> {
+                                    FragmentMediaViewerBinding current = binding;
+                                    if (current == null || !isAdded()) {
+                                        return;
+                                    }
+                                    current.mediaLoadingHost.setVisibility(View.GONE);
+                                    if (result instanceof com.nexachat.core.common.Result.Success<?> success
+                                            && success.getValue() instanceof File file) {
+                                        current.mediaImage.setVisibility(View.VISIBLE);
+                                        Glide.with(this)
+                                                .load(file)
+                                                .fitCenter()
+                                                .into(current.mediaImage);
+                                    } else {
+                                        current.mediaImage.setVisibility(View.VISIBLE);
+                                        Glide.with(this)
+                                                .load(AttachmentDto.contentPath(id))
+                                                .fitCenter()
+                                                .into(current.mediaImage);
+                                    }
+                                },
+                                error -> {
+                                    FragmentMediaViewerBinding current = binding;
+                                    if (current != null && isAdded()) {
+                                        current.mediaLoadingHost.setVisibility(View.GONE);
+                                        current.mediaImage.setVisibility(View.VISIBLE);
+                                        Glide.with(this)
+                                                .load(AttachmentDto.contentPath(id))
+                                                .fitCenter()
+                                                .into(current.mediaImage);
+                                    }
+                                }));
     }
 
     private void updateToolbarActions(@NonNull MediaViewerViewModel.UiState state) {
@@ -208,6 +271,8 @@ public final class MediaViewerFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        disposables.clear();
+        loadedImageAttachmentId = null;
         releasePlayer();
         loadingView = null;
         errorView = null;

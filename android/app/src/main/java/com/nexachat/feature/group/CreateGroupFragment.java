@@ -132,6 +132,10 @@ public final class CreateGroupFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        if (binding != null) {
+            binding.memberPickerList.setAdapter(null);
+        }
+        memberAdapter = null;
         super.onDestroyView();
         binding = null;
     }

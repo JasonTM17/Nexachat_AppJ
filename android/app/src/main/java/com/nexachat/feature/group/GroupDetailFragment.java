@@ -52,6 +52,8 @@ public final class GroupDetailFragment extends Fragment {
     @Nullable private AlertDialog removeDialog;
     @Nullable private AlertDialog leaveDialog;
     @Nullable private AlertDialog addMemberDialog;
+    @Nullable private AddMemberAdapter addMemberPickerAdapter;
+    @Nullable private MaterialButton addMemberConfirmButton;
     @Nullable private EditText renameInput;
     private boolean renderingRename;
     @Nullable private ApiError lastSnackbarError;
@@ -192,6 +194,8 @@ public final class GroupDetailFragment extends Fragment {
         } else if (addMemberDialog != null) {
             addMemberDialog.dismiss();
             addMemberDialog = null;
+            addMemberPickerAdapter = null;
+            addMemberConfirmButton = null;
         }
 
         binding.loadingState.setVisibility(state.isLoading() || state.isBusy() ? View.VISIBLE : View.GONE);
@@ -258,6 +262,12 @@ public final class GroupDetailFragment extends Fragment {
 
     private void showAddMemberDialog(@NonNull GroupDetailUiState state) {
         if (addMemberDialog != null && addMemberDialog.isShowing()) {
+            if (addMemberPickerAdapter != null) {
+                addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
+            }
+            if (addMemberConfirmButton != null) {
+                addMemberConfirmButton.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
+            }
             return;
         }
         LinearLayout root = new LinearLayout(requireContext());
@@ -275,16 +285,16 @@ public final class GroupDetailFragment extends Fragment {
         list.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 maxHeight));
-        AddMemberAdapter pickerAdapter = new AddMemberAdapter(viewModel::toggleAddCandidate);
-        pickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
-        list.setAdapter(pickerAdapter);
+        addMemberPickerAdapter = new AddMemberAdapter(viewModel::toggleAddCandidate);
+        addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
+        list.setAdapter(addMemberPickerAdapter);
         root.addView(list);
 
-        MaterialButton confirm = new MaterialButton(requireContext());
-        confirm.setText(R.string.action_add_member);
-        confirm.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
-        confirm.setOnClickListener(v -> viewModel.addSelectedMembers());
-        root.addView(confirm, new LinearLayout.LayoutParams(
+        addMemberConfirmButton = new MaterialButton(requireContext());
+        addMemberConfirmButton.setText(R.string.action_add_member);
+        addMemberConfirmButton.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
+        addMemberConfirmButton.setOnClickListener(v -> viewModel.addSelectedMembers());
+        root.addView(addMemberConfirmButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -293,6 +303,8 @@ public final class GroupDetailFragment extends Fragment {
                 .setOnDismissListener(d -> {
                     viewModel.dismissAddMember();
                     addMemberDialog = null;
+                    addMemberPickerAdapter = null;
+                    addMemberConfirmButton = null;
                 })
                 .show();
     }
@@ -310,7 +322,13 @@ public final class GroupDetailFragment extends Fragment {
         }
         if (addMemberDialog != null) {
             addMemberDialog.dismiss();
+            addMemberPickerAdapter = null;
+            addMemberConfirmButton = null;
         }
+        if (binding != null) {
+            binding.memberList.setAdapter(null);
+        }
+        memberAdapter = null;
         super.onDestroyView();
         binding = null;
     }

@@ -48,6 +48,10 @@ public final class ContactsFragment extends Fragment {
     @Nullable private MaterialButton addActionButton;
     @Nullable private androidx.appcompat.app.AlertDialog detailDialog;
     @Nullable private LinearLayout detailRoot;
+    @Nullable private EditText detailAliasInput;
+    @Nullable private String detailBoundUserId;
+    private boolean detailBoundIsContact;
+    private boolean renderingDetailAlias;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Nullable
@@ -267,6 +271,8 @@ public final class ContactsFragment extends Fragment {
                         viewModel.closeDetail();
                         detailDialog = null;
                         detailRoot = null;
+                        detailAliasInput = null;
+                        detailBoundUserId = null;
                     })
                     .show();
         } else if (detailRoot != null) {
@@ -275,12 +281,28 @@ public final class ContactsFragment extends Fragment {
     }
 
     private void bindDetailView(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
-        root.removeAllViews();
         UserDto user = state.getDetailUser();
         if (user == null) {
             return;
         }
         Contact contact = state.getDetailContact();
+        boolean isContact = contact != null;
+        if (detailAliasInput != null
+                && user.getId().equals(detailBoundUserId)
+                && isContact == detailBoundIsContact
+                && state.getDetailError() == null
+                && !state.isDetailBusy()) {
+            renderingDetailAlias = true;
+            if (!detailAliasInput.getText().toString().equals(state.getAliasInput())) {
+                detailAliasInput.setText(state.getAliasInput());
+            }
+            renderingDetailAlias = false;
+            return;
+        }
+        detailBoundUserId = user.getId();
+        detailBoundIsContact = isContact;
+        detailAliasInput = null;
+        root.removeAllViews();
         TextView name = new TextView(requireContext());
         name.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
         name.setText(contact != null ? contact.getPrimaryLabel() : user.getDisplayName());
@@ -301,14 +323,19 @@ public final class ContactsFragment extends Fragment {
             EditText alias = new EditText(requireContext());
             alias.setSingleLine(true);
             alias.setHint(R.string.contact_alias_label);
+            renderingDetailAlias = true;
             alias.setText(state.getAliasInput());
+            renderingDetailAlias = false;
             alias.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    viewModel.onAliasChange(s.toString());
+                    if (!renderingDetailAlias && !s.toString().equals(state.getAliasInput())) {
+                        viewModel.onAliasChange(s.toString());
+                    }
                 }
                 @Override public void afterTextChanged(Editable s) {}
             });
+            detailAliasInput = alias;
             root.addView(alias, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -360,7 +387,14 @@ public final class ContactsFragment extends Fragment {
         if (detailDialog != null) {
             detailDialog.dismiss();
             detailDialog = null;
+            detailRoot = null;
+            detailAliasInput = null;
+            detailBoundUserId = null;
         }
+        if (binding != null) {
+            binding.contactList.setAdapter(null);
+        }
+        adapter = null;
         super.onDestroyView();
         binding = null;
     }

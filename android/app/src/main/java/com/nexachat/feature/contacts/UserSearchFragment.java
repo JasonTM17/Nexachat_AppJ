@@ -36,7 +36,11 @@ public final class UserSearchFragment extends Fragment {
     private ContactsViewModel viewModel;
     private UserSearchAdapter adapter;
     private boolean rendering;
+    private boolean renderingDetailAlias;
     @Nullable private androidx.appcompat.app.AlertDialog detailDialog;
+    @Nullable private EditText detailAliasInput;
+    @Nullable private String detailBoundUserId;
+    private boolean detailBoundIsContact;
 
     @Nullable
     @Override
@@ -141,6 +145,8 @@ public final class UserSearchFragment extends Fragment {
                     .setOnDismissListener(d -> {
                         viewModel.closeDetail();
                         detailDialog = null;
+                        detailAliasInput = null;
+                        detailBoundUserId = null;
                     })
                     .show();
         } else {
@@ -164,12 +170,28 @@ public final class UserSearchFragment extends Fragment {
     }
 
     private void bindDetailContent(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
-        root.removeAllViews();
         UserDto user = state.getDetailUser();
         if (user == null) {
             return;
         }
         var contact = state.getDetailContact();
+        boolean isContact = contact != null;
+        if (detailAliasInput != null
+                && user.getId().equals(detailBoundUserId)
+                && isContact == detailBoundIsContact
+                && state.getDetailError() == null
+                && !state.isDetailBusy()) {
+            renderingDetailAlias = true;
+            if (!detailAliasInput.getText().toString().equals(state.getAliasInput())) {
+                detailAliasInput.setText(state.getAliasInput());
+            }
+            renderingDetailAlias = false;
+            return;
+        }
+        detailBoundUserId = user.getId();
+        detailBoundIsContact = isContact;
+        detailAliasInput = null;
+        root.removeAllViews();
         TextView name = new TextView(requireContext());
         name.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
         name.setText(contact != null ? contact.getPrimaryLabel() : user.getDisplayName());
@@ -190,14 +212,19 @@ public final class UserSearchFragment extends Fragment {
             EditText alias = new EditText(requireContext());
             alias.setSingleLine(true);
             alias.setHint(R.string.contact_alias_label);
+            renderingDetailAlias = true;
             alias.setText(state.getAliasInput());
+            renderingDetailAlias = false;
             alias.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    viewModel.onAliasChange(s.toString());
+                    if (!renderingDetailAlias && !s.toString().equals(state.getAliasInput())) {
+                        viewModel.onAliasChange(s.toString());
+                    }
                 }
                 @Override public void afterTextChanged(Editable s) {}
             });
+            detailAliasInput = alias;
             root.addView(alias);
 
             MaterialButton saveAlias = new MaterialButton(requireContext());
@@ -235,7 +262,13 @@ public final class UserSearchFragment extends Fragment {
         if (detailDialog != null) {
             detailDialog.dismiss();
             detailDialog = null;
+            detailAliasInput = null;
+            detailBoundUserId = null;
         }
+        if (binding != null) {
+            binding.resultsList.setAdapter(null);
+        }
+        adapter = null;
         super.onDestroyView();
         binding = null;
     }
