@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
@@ -16,48 +17,68 @@
         android:paddingEnd="24dp"
         android:paddingBottom="24dp">
 
-        <TextView
-            android:id="@+id/call_peer_initials"
-            android:layout_width="120dp"
-            android:layout_height="120dp"
-            android:background="@drawable/bg_call_avatar"
-            android:gravity="center"
-            android:textColor="@color/call_avatar_foreground"
-            android:textSize="34sp"
-            android:importantForAccessibility="no" />
-
-        <TextView
-            android:id="@+id/call_peer_name"
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:ellipsize="end"
-            android:gravity="center"
-            android:maxLines="2"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="26sp"
-            android:textStyle="bold" />
+            app:cardCornerRadius="28dp"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp"
+            app:cardElevation="0dp">
 
-        <TextView
-            android:id="@+id/call_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:accessibilityLiveRegion="polite"
-            android:gravity="center"
-            android:textColor="?android:attr/textColorSecondary"
-            android:textSize="16sp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="28dp">
 
-        <TextView
-            android:id="@+id/call_timer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:accessibilityLiveRegion="polite"
-            android:gravity="center"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="32sp"
-            android:visibility="gone" />
+                <TextView
+                    android:id="@+id/call_peer_initials"
+                    android:layout_width="120dp"
+                    android:layout_height="120dp"
+                    android:background="@drawable/bg_call_avatar"
+                    android:gravity="center"
+                    android:textColor="@color/call_avatar_foreground"
+                    android:textSize="34sp"
+                    android:textStyle="bold"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/call_peer_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:ellipsize="end"
+                    android:gravity="center"
+                    android:maxLines="2"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/call_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:gravity="center"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/call_timer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:gravity="center"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="32sp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <LinearLayout
             android:layout_width="match_parent"
