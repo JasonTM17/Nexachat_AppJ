@@ -916,17 +916,17 @@ internal class MessageRepositoryCore(
                 before - existing
             } else {
                 before.map {
-                    if (it.emoji == emoji) it.copy(count = remaining, reactedByMe = false) else it
+                    if (it.emoji == emoji) it.withCount(remaining, false) else it
                 }
             }
         } else {
-            val updated = existing?.copy(count = existing.count + 1, reactedByMe = true)
+            val updated = existing?.withCount(existing.count + 1, true)
                 ?: MessageReactionEntity(
-                    messageId = messageId,
-                    conversationId = conversationId,
-                    emoji = emoji,
-                    count = 1,
-                    reactedByMe = true,
+                    messageId,
+                    conversationId,
+                    emoji,
+                    1,
+                    true,
                 )
             before.filterNot { it.emoji == emoji } + updated
         }
@@ -1149,11 +1149,11 @@ internal class MessageRepositoryCore(
     ): MessageReactionEntity? {
         val usableEmoji = emoji?.takeIf { it.isNotBlank() } ?: return null
         return MessageReactionEntity(
-            messageId = messageId,
-            conversationId = conversationId,
-            emoji = usableEmoji,
-            count = (count ?: userIds.size).coerceAtLeast(0),
-            reactedByMe = reactedByMe ?: byMe ?: (myId != null && userIds.contains(myId)),
+            messageId,
+            conversationId,
+            usableEmoji,
+            (count ?: userIds.size).coerceAtLeast(0),
+            reactedByMe ?: byMe ?: (myId != null && userIds.contains(myId)),
         )
     }
 

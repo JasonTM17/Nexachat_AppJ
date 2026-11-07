@@ -1014,13 +1014,7 @@ class MessageRepositoryTest {
     fun `failed toggleReaction restores the prior summary and signals an error`() = runTest {
         reactionDao.upsertAll(
             listOf(
-                MessageReactionEntity(
-                    messageId = "m-1",
-                    conversationId = CONVERSATION_ID,
-                    emoji = "👍",
-                    count = 3,
-                    reactedByMe = false,
-                ),
+                MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 3, false),
             ),
         )
         every { messageApi.toggleReaction(any(), any()) } returns

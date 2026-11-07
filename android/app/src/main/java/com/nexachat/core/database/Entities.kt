@@ -115,24 +115,3 @@ data class OutboxEntity(
      */
     val attachmentsJson: String = "",
 )
-
-/**
- * Aggregated reaction summary per (message, emoji) — the shape BOTH wire
- * variants reduce to: REST embeds `{emoji, count, reactedByMe}` on the
- * message, `REACTION_UPDATED` pushes `{emoji, count, userIds}` (resolved to
- * `reactedByMe` at ingest). Stored pre-aggregated rather than per-user rows
- * because the REST summary cannot be decomposed back into user rows.
- * `conversationId` is denormalized so the chat flow queries without a join.
- */
-@Entity(
-    tableName = "message_reactions",
-    primaryKeys = ["messageId", "emoji"],
-    indices = [Index(value = ["conversationId"])],
-)
-data class MessageReactionEntity(
-    val messageId: String,
-    val conversationId: String,
-    val emoji: String,
-    val count: Int,
-    val reactedByMe: Boolean,
-)
