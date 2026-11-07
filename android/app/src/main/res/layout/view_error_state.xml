@@ -8,7 +8,7 @@
         android:layout_gravity="center_horizontal"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_warning"
-        android:tint="?attr/colorError" />
+        app:tint="?attr/colorError" />
     <TextView
         android:id="@+id/errorMessage"
         android:layout_width="match_parent"

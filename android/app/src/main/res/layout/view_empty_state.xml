@@ -7,7 +7,7 @@
         android:layout_height="56dp"
         android:layout_gravity="center_horizontal"
         android:importantForAccessibility="no"
-        android:tint="?attr/colorPrimary" />
+        app:tint="?attr/colorPrimary" />
     <TextView
         android:id="@+id/emptyMessage"
         android:layout_width="match_parent"

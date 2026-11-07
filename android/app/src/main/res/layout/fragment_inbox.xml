@@ -32,7 +32,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/settings_theme_title"
                     android:src="@drawable/ic_theme_mode"
-                    android:tint="?attr/colorOnSurface" />
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/contactsButton"
                     android:layout_width="@dimen/min_touch_target"
@@ -40,7 +40,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/contacts_title"
                     android:src="@drawable/ic_people"
-                    android:tint="?attr/colorOnSurface" />
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/searchButton"
                     android:layout_width="@dimen/min_touch_target"
@@ -48,7 +48,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/search_title"
                     android:src="@drawable/ic_search"
-                    android:tint="?attr/colorOnSurface" />
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/profileButton"
                     android:layout_width="@dimen/min_touch_target"
@@ -56,7 +56,7 @@
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/profile_title"
                     android:src="@drawable/ic_account_circle"
-                    android:tint="?attr/colorOnSurface" />
+                    app:tint="?attr/colorOnSurface" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
 
@@ -86,7 +86,7 @@
                     android:layout_height="24dp"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_search"
-                    android:tint="?attr/colorOnSurfaceVariant" />
+                    app:tint="?attr/colorOnSurfaceVariant" />
 
                 <TextView
                     android:layout_width="wrap_content"

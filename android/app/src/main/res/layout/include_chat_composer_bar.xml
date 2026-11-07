@@ -19,7 +19,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_attach"
         android:src="@drawable/ic_attach_file"
-        android:tint="?attr/colorOnSurfaceVariant" />
+        app:tint="?attr/colorOnSurfaceVariant" />
 
     <com.google.android.material.textfield.TextInputEditText
         android:id="@+id/messageInput"
@@ -41,5 +41,5 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_send"
         android:src="@drawable/ic_send"
-        android:tint="?attr/colorPrimary" />
+        app:tint="?attr/colorPrimary" />
 </LinearLayout>
