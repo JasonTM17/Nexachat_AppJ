@@ -9,6 +9,9 @@ import com.nexachat.data.AttachmentRepository;
 /** Maps an {@link ApiError} to its user-facing string resource id for chat/inbox. */
 public final class ChatErrorIds {
 
+    /** Server error code for the conversation pin cap. */
+    public static final String ERROR_PIN_LIMIT = "PIN_LIMIT";
+
     private ChatErrorIds() {}
 
     @StringRes
@@ -30,7 +33,7 @@ public final class ChatErrorIds {
             if (AttachmentRepository.ERROR_TOO_LARGE.equals(code)) {
                 return R.string.error_attachment_too_large;
             }
-            if (ChatErrorTextKt.ERROR_PIN_LIMIT.equals(code)) {
+            if (ERROR_PIN_LIMIT.equals(code)) {
                 return R.string.error_pin_limit;
             }
             if (ChatViewModel.ERROR_MESSAGE_GONE.equals(code)) {

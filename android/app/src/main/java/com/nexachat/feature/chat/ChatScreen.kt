@@ -86,6 +86,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -123,6 +124,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.asFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Observer
 import com.nexachat.R
 import com.nexachat.call.CallLauncher
 import com.nexachat.core.network.dto.AttachmentDto
@@ -162,6 +164,9 @@ import com.nexachat.feature.summary.SummaryBottomSheet
 import com.nexachat.feature.summary.UnreadBanner
 import com.nexachat.summary.SummaryScope
 import com.nexachat.summary.SummaryViewModel
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers
+import io.reactivex.rxjava3.disposables.CompositeDisposable
+import io.reactivex.rxjava3.schedulers.Schedulers
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -195,8 +200,40 @@ fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel(),
     summaryViewModel: SummaryViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val searchState by viewModel.searchState.collectAsStateWithLifecycle()
+    val stateValue = remember(viewModel) {
+        mutableStateOf(viewModel.uiState.value ?: ChatViewModel.UiState())
+    }
+    val searchStateValue = remember(viewModel) {
+        mutableStateOf(viewModel.searchState.value ?: ChatSearchState())
+    }
+    val jumpEventValue = remember(viewModel) {
+        mutableStateOf<ChatSingleLiveEvent.Event<String>?>(null)
+    }
+    val actionEventValue = remember(viewModel) {
+        mutableStateOf<ChatSingleLiveEvent.Event<ChatActionEvent>?>(null)
+    }
+    DisposableEffect(viewModel) {
+        val stateObserver = Observer<ChatViewModel.UiState> { stateValue.value = it }
+        val searchObserver = Observer<ChatSearchState> { searchStateValue.value = it }
+        val jumpObserver = Observer<ChatSingleLiveEvent.Event<String>> { jumpEventValue.value = it }
+        val actionObserver = Observer<ChatSingleLiveEvent.Event<ChatActionEvent>> {
+            actionEventValue.value = it
+        }
+        viewModel.uiState.observeForever(stateObserver)
+        viewModel.searchState.observeForever(searchObserver)
+        viewModel.jumpTargets.observeForever(jumpObserver)
+        viewModel.actionEvents.observeForever(actionObserver)
+        onDispose {
+            viewModel.uiState.removeObserver(stateObserver)
+            viewModel.searchState.removeObserver(searchObserver)
+            viewModel.jumpTargets.removeObserver(jumpObserver)
+            viewModel.actionEvents.removeObserver(actionObserver)
+        }
+    }
+    val state by stateValue
+    val searchState by searchStateValue
+    val jumpEvent by jumpEventValue
+    val actionEvent by actionEventValue
     val listState = rememberLazyListState()
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val imageLoader = rememberAuthedImageLoader()
@@ -205,6 +242,11 @@ fun ChatScreen(
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val fileDownloads = remember(viewModel) { CompositeDisposable() }
+
+    DisposableEffect(fileDownloads) {
+        onDispose { fileDownloads.clear() }
+    }
 
     var showMediaPicker by rememberSaveable { mutableStateOf(false) }
     var pinIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -241,7 +283,16 @@ fun ChatScreen(
             ChatScreenEntryPoint::class.java,
         ).conversationRepository()
     }
-    val inboxConversations by convRepo.inboxFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    var inboxConversations by remember {
+        mutableStateOf<List<ConversationSummary>>(emptyList())
+    }
+    DisposableEffect(convRepo) {
+        val subscription = convRepo.inboxFlow()
+            .subscribeOn(Schedulers.io())
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe({ inboxConversations = it }, { })
+        onDispose { subscription.dispose() }
+    }
     val thisConversation = remember(inboxConversations, conversationId) {
         inboxConversations.firstOrNull { it.id == conversationId }
     }
@@ -303,44 +354,42 @@ fun ChatScreen(
     }
 
     // Jump handling
-    LaunchedEffect(viewModel) {
-        viewModel.jumpTargets.collect { targetId ->
-            jumpingTargetId = null
-            pulsingMessageId = targetId
-            var index = findMessageReversedIndex(state.messages, targetId)
-            if (index < 0) {
-                snapshotFlow { state.messages }
-                    .filter { msgs -> msgs.any { it.id == targetId } }
-                    .first()
-                index = findMessageReversedIndex(state.messages, targetId)
-            }
-            if (index >= 0) {
-                listState.animateScrollToItem(index)
-            }
+    LaunchedEffect(jumpEvent?.sequence) {
+        val targetId = jumpEvent?.consume() ?: return@LaunchedEffect
+        jumpingTargetId = null
+        pulsingMessageId = targetId
+        var index = findMessageReversedIndex(state.messages, targetId)
+        if (index < 0) {
+            snapshotFlow { state.messages }
+                .filter { msgs -> msgs.any { it.id == targetId } }
+                .first()
+            index = findMessageReversedIndex(state.messages, targetId)
+        }
+        if (index >= 0) {
+            listState.animateScrollToItem(index)
         }
     }
 
     // Action events feedback (Forward)
-    LaunchedEffect(viewModel) {
-        viewModel.actionEvents.collect { event ->
-            when (event) {
-                is ChatActionEvent.MessageEdited -> {
-                    if (editingMessageId == event.messageId) {
-                        editingMessageId = null
-                        editInput = ""
-                    }
-                }
-                is ChatActionEvent.MessageForwarded -> {
-                    val result = snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.forwarded_snackbar),
-                        actionLabel = context.getString(R.string.action_view),
-                        duration = SnackbarDuration.Long,
-                    )
-                    if (result == SnackbarResult.ActionPerformed) {
-                        onOpenConversation(event.targetConversationId)
-                    }
+    LaunchedEffect(actionEvent?.sequence) {
+        when (val event = actionEvent?.consume()) {
+            is ChatActionEvent.MessageEdited -> {
+                if (editingMessageId == event.messageId) {
+                    editingMessageId = null
+                    editInput = ""
                 }
             }
+            is ChatActionEvent.MessageForwarded -> {
+                val result = snackbarHostState.showSnackbar(
+                    message = context.getString(R.string.forwarded_snackbar),
+                    actionLabel = context.getString(R.string.action_view),
+                    duration = SnackbarDuration.Long,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    onOpenConversation(event.targetConversationId)
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -366,26 +415,27 @@ fun ChatScreen(
     ) { uris -> viewModel.sendAttachments(uris) }
 
     fun openFile(attachment: AttachmentDto) {
-        scope.launch {
-            val file = viewModel.attachmentFile(attachment)
-            if (file == null) {
+        val download = viewModel.attachmentFile(attachment)
+            .subscribe({ file ->
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file,
+                )
+                val intent = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, attachment.mimeType ?: "*/*")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                try {
+                    context.startActivity(intent)
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(context, R.string.error_attachment_open, Toast.LENGTH_SHORT).show()
+                }
+            }, {
                 Toast.makeText(context, R.string.error_attachment_open, Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file,
-            )
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, attachment.mimeType ?: "*/*")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            try {
-                context.startActivity(intent)
-            } catch (_: ActivityNotFoundException) {
+            }, {
                 Toast.makeText(context, R.string.error_attachment_open, Toast.LENGTH_SHORT).show()
-            }
-        }
+            })
+        fileDownloads.add(download)
     }
 
     if (showMediaPicker) {

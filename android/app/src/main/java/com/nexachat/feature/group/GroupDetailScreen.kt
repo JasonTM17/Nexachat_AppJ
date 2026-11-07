@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -55,11 +56,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Observer
 import com.nexachat.R
 import com.nexachat.data.GroupMember
 import com.nexachat.feature.contacts.InitialAvatar
-import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Group detail (phase-08 FR-D2/D4): member list with ADMIN badges, add/remove
@@ -75,7 +75,27 @@ fun GroupDetailScreen(
     onExitToInbox: () -> Unit,
     viewModel: GroupDetailViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val stateValue = remember(viewModel) {
+        androidx.compose.runtime.mutableStateOf(
+            viewModel.uiState.value ?: GroupDetailUiState())
+    }
+    val groupEventValue = remember(viewModel) {
+        androidx.compose.runtime.mutableStateOf<GroupSingleLiveEvent.Event<GroupDetailEvent>?>(null)
+    }
+    DisposableEffect(viewModel) {
+        val stateObserver = Observer<GroupDetailUiState> { stateValue.value = it }
+        val eventObserver = Observer<GroupSingleLiveEvent.Event<GroupDetailEvent>> {
+            groupEventValue.value = it
+        }
+        viewModel.uiState.observeForever(stateObserver)
+        viewModel.events.observeForever(eventObserver)
+        onDispose {
+            viewModel.uiState.removeObserver(stateObserver)
+            viewModel.events.removeObserver(eventObserver)
+        }
+    }
+    val state by stateValue
+    val groupEvent by groupEventValue
     val snackbarHostState = remember { SnackbarHostState() }
     val errorMessage = state.error?.let { groupErrorMessage(it) }
 
@@ -86,11 +106,10 @@ fun GroupDetailScreen(
         if (uri != null) viewModel.setGroupAvatar(uri)
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.events.collectLatest { event ->
-            when (event) {
-                is GroupDetailEvent.ExitToInbox -> onExitToInbox()
-            }
+    LaunchedEffect(groupEvent?.sequence) {
+        when (val event = groupEvent?.consume()) {
+            is GroupDetailEvent.ExitToInbox -> onExitToInbox()
+            else -> Unit
         }
     }
     LaunchedEffect(errorMessage) {

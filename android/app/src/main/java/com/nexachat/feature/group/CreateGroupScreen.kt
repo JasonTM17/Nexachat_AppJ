@@ -29,6 +29,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -37,14 +38,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Observer
 import com.nexachat.R
 import com.nexachat.core.ui.CreateGroupListRules
 import com.nexachat.core.ui.components.EmptyState
 import com.nexachat.core.ui.components.ErrorState
 import com.nexachat.core.ui.components.LoadingState
 import com.nexachat.feature.contacts.InitialAvatar
-import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Create-group screen (phase-08 FR-D1): name field + contact multi-select
@@ -59,7 +59,27 @@ fun CreateGroupScreen(
     onCreated: (String) -> Unit,
     viewModel: CreateGroupViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val stateValue = remember(viewModel) {
+        androidx.compose.runtime.mutableStateOf(
+            viewModel.uiState.value ?: CreateGroupUiState())
+    }
+    val createEventValue = remember(viewModel) {
+        androidx.compose.runtime.mutableStateOf<GroupSingleLiveEvent.Event<CreateGroupEvent>?>(null)
+    }
+    DisposableEffect(viewModel) {
+        val stateObserver = Observer<CreateGroupUiState> { stateValue.value = it }
+        val eventObserver = Observer<GroupSingleLiveEvent.Event<CreateGroupEvent>> {
+            createEventValue.value = it
+        }
+        viewModel.uiState.observeForever(stateObserver)
+        viewModel.events.observeForever(eventObserver)
+        onDispose {
+            viewModel.uiState.removeObserver(stateObserver)
+            viewModel.events.removeObserver(eventObserver)
+        }
+    }
+    val state by stateValue
+    val createEvent by createEventValue
     val snackbarHostState = remember { SnackbarHostState() }
     val errorMessage = state.error?.let { groupErrorMessage(it) }
     val showLoadError = CreateGroupListRules.showLoadError(
@@ -68,11 +88,10 @@ fun CreateGroupScreen(
         state.error != null,
     )
 
-    LaunchedEffect(Unit) {
-        viewModel.events.collectLatest { event ->
-            when (event) {
-                is CreateGroupEvent.Created -> onCreated(event.conversationId)
-            }
+    LaunchedEffect(createEvent?.sequence) {
+        when (val event = createEvent?.consume()) {
+            is CreateGroupEvent.Created -> onCreated(event.conversationId)
+            else -> Unit
         }
     }
     LaunchedEffect(errorMessage, showLoadError) {
