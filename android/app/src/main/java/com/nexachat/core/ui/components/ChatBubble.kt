@@ -131,9 +131,10 @@ fun ChatBubble(
                 .widthIn(max = 280.dp)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            if (showSender && !message.senderDisplayName.isNullOrBlank()) {
+            val senderName = message.senderDisplayName
+            if (showSender && !senderName.isNullOrBlank()) {
                 Text(
-                    text = message.senderDisplayName,
+                    text = senderName,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (mine) {
                         MaterialTheme.colorScheme.onPrimaryContainer

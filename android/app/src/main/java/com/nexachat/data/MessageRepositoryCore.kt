@@ -52,40 +52,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
-/**
- * Message as the feature layer sees it — merges the Room row (SENT) and the
- * outbox row (SENDING/FAILED) into one shape, [mine] already resolved.
- */
-data class ChatMessage(
-    /** Server message id, or the clientMessageId while still pending. */
-    val id: String,
-    val conversationId: String,
-    val seq: Long?,
-    val senderId: String,
-    val senderDisplayName: String?,
-    val type: String,
-    val content: String?,
-    val replyToId: String?,
-    /** Embedded `replyTo` preview columns — survive the original being unloaded. */
-    val replyToSenderName: String?,
-    val replyToSnippet: String?,
-    val createdAtEpochMs: Long,
-    val clientMessageId: String?,
-    val status: DeliveryStatus,
-    val mine: Boolean,
-    /** Parsed `attachmentsJson` — empty for TEXT-only bubbles. */
-    val attachments: List<AttachmentDto> = emptyList(),
-    /** Aggregated emoji chips rendered under the bubble. */
-    val reactions: List<ReactionChip> = emptyList(),
-    /** Server `editedAt` ingest; null while the content is original. */
-    val editedAtEpochMs: Long? = null,
-    /** Soft-delete marker; a deleted row renders the neutral placeholder. */
-    val deletedAtEpochMs: Long? = null,
-) {
-    /** Tombstone: content/attachments/reactions are already stripped. */
-    val isDeleted: Boolean get() = deletedAtEpochMs != null
-}
-
 private data class DeleteRollback(
     val before: MessageEntity,
     val optimistic: MessageEntity,
@@ -214,20 +180,20 @@ internal class MessageRepositoryCore(
         pins.map { pin ->
             byId[pin.messageId]?.toChatMessage(myId)
                 ?: ChatMessage(
-                    id = pin.messageId,
-                    conversationId = pin.conversationId,
-                    seq = null,
-                    senderId = "",
-                    senderDisplayName = null,
-                    type = MessageDto.TYPE_TEXT,
-                    content = null,
-                    replyToId = null,
-                    replyToSenderName = null,
-                    replyToSnippet = null,
-                    createdAtEpochMs = pin.pinnedAt,
-                    clientMessageId = null,
-                    status = DeliveryStatus.SENT,
-                    mine = false,
+                    pin.messageId,
+                    pin.conversationId,
+                    null,
+                    "",
+                    null,
+                    MessageDto.TYPE_TEXT,
+                    null,
+                    null,
+                    null,
+                    null,
+                    pin.pinnedAt,
+                    null,
+                    DeliveryStatus.SENT,
+                    false,
                 )
         }
     }
@@ -1098,42 +1064,45 @@ internal class MessageRepositoryCore(
         myId: String?,
         reactions: List<ReactionChip> = emptyList(),
     ): ChatMessage = ChatMessage(
-        id = id,
-        conversationId = conversationId,
-        seq = seq,
-        senderId = senderId,
-        senderDisplayName = senderDisplayName,
-        type = type,
-        content = content,
-        replyToId = replyToId,
-        replyToSenderName = replyToSenderName,
-        replyToSnippet = replyToSnippet,
-        createdAtEpochMs = createdAt,
-        clientMessageId = clientMessageId,
-        status = DeliveryStatus.SENT,
-        mine = senderId == myId,
-        attachments = attachments(),
-        reactions = reactions,
-        editedAtEpochMs = editedAtEpochMs,
-        deletedAtEpochMs = deletedAtEpochMs,
+        id,
+        conversationId,
+        seq,
+        senderId,
+        senderDisplayName,
+        type,
+        content,
+        replyToId,
+        replyToSenderName,
+        replyToSnippet,
+        createdAt,
+        clientMessageId,
+        DeliveryStatus.SENT,
+        senderId == myId,
+        attachments(),
+        reactions,
+        editedAtEpochMs,
+        deletedAtEpochMs,
     )
 
     private fun OutboxEntity.toChatMessage(): ChatMessage = ChatMessage(
-        id = clientMessageId,
-        conversationId = conversationId,
-        seq = null,
-        senderId = "",
-        senderDisplayName = null,
-        type = type,
-        content = content,
-        replyToId = replyToId,
-        replyToSenderName = null,
-        replyToSnippet = null,
-        createdAtEpochMs = createdAt,
-        clientMessageId = clientMessageId,
-        status = if (state == OutboxState.FAILED) DeliveryStatus.FAILED else DeliveryStatus.SENDING,
-        mine = true,
-        attachments = attachments(),
+        clientMessageId,
+        conversationId,
+        null,
+        "",
+        null,
+        type,
+        content,
+        replyToId,
+        null,
+        null,
+        createdAt,
+        clientMessageId,
+        if (state == OutboxState.FAILED) DeliveryStatus.FAILED else DeliveryStatus.SENDING,
+        true,
+        attachments(),
+        emptyList(),
+        null,
+        null,
     )
 
     private fun MessageDto.toEntity(conversationIdFallback: String?): MessageEntity? {

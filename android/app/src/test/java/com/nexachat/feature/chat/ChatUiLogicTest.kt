@@ -155,19 +155,19 @@ class ChatUiLogicTest {
     }
 
     private fun testMessage(id: String) = ChatMessage(
-        id = id,
-        conversationId = "conv-1",
-        seq = 1L,
-        senderId = "user-1",
-        senderDisplayName = "User",
-        type = "TEXT",
-        content = "test content $id",
-        replyToId = null,
-        replyToSenderName = null,
-        replyToSnippet = null,
-        createdAtEpochMs = 1_000L,
-        clientMessageId = null,
-        status = DeliveryStatus.SENT,
-        mine = true,
+        id,
+        "conv-1",
+        1L,
+        "user-1",
+        "User",
+        "TEXT",
+        "test content $id",
+        null,
+        null,
+        null,
+        1_000L,
+        null,
+        DeliveryStatus.SENT,
+        true,
     )
 }

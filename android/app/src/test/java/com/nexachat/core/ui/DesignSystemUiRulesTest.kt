@@ -248,20 +248,20 @@ class DesignSystemUiRulesTest {
     // --- Helpers ---
 
     private fun createMessage(id: String, senderId: String, epochMs: Long) = ChatMessage(
-        id = id,
-        conversationId = "conv-1",
-        seq = 1L,
-        senderId = senderId,
-        senderDisplayName = "User $senderId",
-        type = "TEXT",
-        content = "Message $id",
-        replyToId = null,
-        replyToSenderName = null,
-        replyToSnippet = null,
-        createdAtEpochMs = epochMs,
-        clientMessageId = null,
-        status = DeliveryStatus.SENT,
-        mine = senderId == "me",
+        id,
+        "conv-1",
+        1L,
+        senderId,
+        "User $senderId",
+        "TEXT",
+        "Message $id",
+        null,
+        null,
+        null,
+        epochMs,
+        null,
+        DeliveryStatus.SENT,
+        senderId == "me",
     )
 
     private fun computeContrastRatio(c1: androidx.compose.ui.graphics.Color, c2: androidx.compose.ui.graphics.Color): Double {

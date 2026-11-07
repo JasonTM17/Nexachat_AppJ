@@ -78,20 +78,20 @@ class ChatViewModelTest {
         status: DeliveryStatus = DeliveryStatus.SENT,
         clientMessageId: String? = null,
     ) = ChatMessage(
-        id = id,
-        conversationId = CONVERSATION_ID,
-        seq = seq,
-        senderId = if (mine) "me-1" else "u-other",
-        senderDisplayName = if (mine) "Me" else "Lan",
-        type = "TEXT",
-        content = "hello $id",
-        replyToId = null,
-        replyToSenderName = null,
-        replyToSnippet = null,
-        createdAtEpochMs = 1_700_000_000_000L,
-        clientMessageId = clientMessageId,
-        status = status,
-        mine = mine,
+        id,
+        CONVERSATION_ID,
+        seq,
+        if (mine) "me-1" else "u-other",
+        if (mine) "Me" else "Lan",
+        "TEXT",
+        "hello $id",
+        null,
+        null,
+        null,
+        1_700_000_000_000L,
+        clientMessageId,
+        status,
+        mine,
     )
 
     @Before
@@ -575,12 +575,12 @@ class ChatViewModelTest {
         )
         assertFalse(
             viewModel.canEdit(
-                message(id = "m-4", seq = 4, mine = true).copy(deletedAtEpochMs = 1L),
+                message(id = "m-4", seq = 4, mine = true).withDeletedAt(1L),
             ),
         )
         assertFalse(
             viewModel.canEdit(
-                message(id = "m-5", seq = 5, mine = true).copy(type = "IMAGE"),
+                message(id = "m-5", seq = 5, mine = true).withType("IMAGE"),
             ),
         )
     }
@@ -590,14 +590,14 @@ class ChatViewModelTest {
         assertTrue(viewModel.canDelete(message(id = "m-1", seq = 1, mine = true)))
         assertTrue(
             viewModel.canDelete(
-                message(id = "m-2", seq = 2, mine = true).copy(type = "IMAGE"),
+                message(id = "m-2", seq = 2, mine = true).withType("IMAGE"),
             ),
         )
         assertFalse(viewModel.canDelete(message(id = "m-3", seq = 3, mine = false)))
         assertFalse(
             viewModel.canDelete(
                 message(id = "m-4", seq = 4, mine = true)
-                    .copy(deletedAtEpochMs = 1L),
+                    .withDeletedAt(1L),
             ),
         )
     }
@@ -707,7 +707,7 @@ class ChatViewModelTest {
         observeUi()
         runCurrent()
         messagesFlow.value = listOf(
-            message(id = "m-del", seq = 1, mine = true).copy(deletedAtEpochMs = 1L),
+            message(id = "m-del", seq = 1, mine = true).withDeletedAt(1L),
             message(
                 id = "cm-1",
                 seq = null,
