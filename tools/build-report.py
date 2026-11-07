@@ -40,8 +40,8 @@ SRC = ROOT / "docs" / "report.md"
 OUT = ROOT / "docs" / "report.docx"
 
 MONO = "Consolas"
-TAGLINE = ("Kotlin + Jetpack Compose · Java + Spring Boot · PostgreSQL · "
-           "WebSocket/STOMP")
+TAGLINE = ("Java 17 · Android XML Views / Material 3 · Spring Boot · "
+           "PostgreSQL · WebSocket/STOMP")
 # Cover tables keep the look of the previous hand-built cover page.
 COVER_WIDTHS = {2: [6, 9], 4: [1, 4.5, 3, 6.5]}
 
