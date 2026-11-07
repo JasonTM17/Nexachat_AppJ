@@ -45,10 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
+import com.nexachat.core.ui.components.ChatUiRules
 import com.nexachat.core.ui.components.EmptyState
 import com.nexachat.core.ui.components.ErrorState
 import com.nexachat.core.ui.components.LoadingState
-import com.nexachat.core.ui.components.resolveRelativeTimeLabel
 import com.nexachat.core.ui.theme.NexaShapes
 import com.nexachat.data.ConversationSummary
 import com.nexachat.feature.chat.chatErrorMessage
@@ -137,11 +137,11 @@ fun InboxScreen(
                                     conversation = conversation,
                                     currentUserId = state.currentUserId,
                                     formatTime = { epochMs ->
-                                        resolveRelativeTimeLabel(
-                                            epochMs = epochMs,
-                                            nowEpochMs = System.currentTimeMillis(),
-                                            justNowLabel = justNowLabel,
-                                            yesterdayLabel = yesterdayLabel,
+                                        ChatUiRules.resolveRelativeTimeLabel(
+                                            epochMs,
+                                            System.currentTimeMillis(),
+                                            justNowLabel,
+                                            yesterdayLabel,
                                         )
                                     },
                                     onClick = { onOpenConversation(conversation.id) },

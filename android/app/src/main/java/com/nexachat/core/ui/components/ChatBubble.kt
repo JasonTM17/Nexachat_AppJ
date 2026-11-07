@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -103,7 +104,13 @@ fun ChatBubble(
     val isEdited = MessageUiRules.isEdited(message.editedAtEpochMs, message.deletedAtEpochMs)
     val containerRole = resolveBubbleContainerRole(message.status, mine)
     val isRetry = isRetryAffordanceVisible(message.status)
-    val bubbleShape = resolveBubbleShape(groupPosition, mine)
+    val bubbleRadii = ChatUiRules.resolveBubbleShape(groupPosition, mine)
+    val bubbleShape = RoundedCornerShape(
+        topStart = bubbleRadii.topStartDp.dp,
+        topEnd = bubbleRadii.topEndDp.dp,
+        bottomStart = bubbleRadii.bottomStartDp.dp,
+        bottomEnd = bubbleRadii.bottomEndDp.dp,
+    )
 
     val surfaceColor = when {
         isPulsing -> MaterialTheme.colorScheme.tertiaryContainer

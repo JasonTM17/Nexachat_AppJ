@@ -135,13 +135,11 @@ import com.nexachat.core.ui.PresenceTickerHelper
 import com.nexachat.core.ui.SearchHighlightHelper
 import com.nexachat.core.ui.SearchUiRules
 import com.nexachat.core.ui.components.ChatBubble
+import com.nexachat.core.ui.components.ChatUiRules
 import com.nexachat.core.ui.components.DateSeparator
 import com.nexachat.core.ui.components.DateSeparatorLabels
 import com.nexachat.core.ui.components.EmptyState
 import com.nexachat.core.ui.components.MessageGroupPosition
-import com.nexachat.core.ui.components.resolveDateSeparatorLabel
-import com.nexachat.core.ui.components.resolveGroupPosition
-import com.nexachat.core.ui.components.shouldShowDateSeparator
 import com.nexachat.core.ui.theme.NexaShapes
 import com.nexachat.data.ChatMessage
 import com.nexachat.data.ConversationSummary
@@ -889,19 +887,19 @@ fun ChatScreen(
                                     state.messages.indexOfFirst { it.id == message.id }
                                 }
                                 val groupPosition = remember(state.messages, origIdx) {
-                                    resolveGroupPosition(state.messages, origIdx)
+                                    ChatUiRules.resolveGroupPosition(state.messages, origIdx)
                                 }
                                 val prevMsg = remember(state.messages, origIdx) {
                                     state.messages.getOrNull(origIdx - 1)
                                 }
                                 val showDateSeparator = remember(prevMsg?.createdAtEpochMs, message.createdAtEpochMs) {
-                                    shouldShowDateSeparator(prevMsg?.createdAtEpochMs, message.createdAtEpochMs)
+                                    ChatUiRules.shouldShowDateSeparator(prevMsg?.createdAtEpochMs, message.createdAtEpochMs)
                                 }
                                 val dateLabel = if (showDateSeparator) {
-                                    resolveDateSeparatorLabel(
-                                        messageEpochMs = message.createdAtEpochMs,
-                                        nowEpochMs = System.currentTimeMillis(),
-                                        labels = dateLabels,
+                                    ChatUiRules.resolveDateSeparatorLabel(
+                                        message.createdAtEpochMs,
+                                        System.currentTimeMillis(),
+                                        dateLabels,
                                     )
                                 } else null
 
