@@ -1,15 +1,106 @@
 package com.nexachat.feature.media;
 
-import android.app.Dialog; import android.os.Bundle; import android.view.View; import android.widget.LinearLayout; import android.widget.TextView; import androidx.activity.result.ActivityResultLauncher; import androidx.activity.result.contract.ActivityResultContracts; import androidx.annotation.NonNull; import androidx.annotation.Nullable; import com.google.android.material.bottomsheet.BottomSheetDialog; import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
+import android.net.Uri;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.PickVisualMediaRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
+import com.nexachat.databinding.SheetAttachmentPickerBinding;
 
-/** Document and visual attachment picker using the system document providers. */
+/**
+ * Attach bottom sheet: Photo Picker for visual media and SAF for documents/audio.
+ * The hosting screen owns upload; this sheet only returns the picked {@link Uri}.
+ */
 public final class MediaPickerSheetFragment extends BottomSheetDialogFragment {
-    public interface Listener { void onAttachmentPicked(@NonNull android.net.Uri uri, @Nullable String mimeType); }
+
+    public interface Listener {
+        void onAttachmentPicked(@NonNull Uri uri, @Nullable String mimeType);
+    }
+
+    @Nullable
     private Listener listener;
-    private final ActivityResultLauncher<String[]> visualPicker=registerForActivityResult(new ActivityResultContracts.OpenDocument(),uri->deliver(uri));
-    private final ActivityResultLauncher<String> filePicker=registerForActivityResult(new ActivityResultContracts.GetContent(),uri->deliver(uri));
-    public void setListener(@NonNull Listener value){listener=value;}
-    @NonNull @Override public Dialog onCreateDialog(@Nullable Bundle state){BottomSheetDialog dialog=new BottomSheetDialog(requireContext());LinearLayout root=new LinearLayout(requireContext());root.setOrientation(LinearLayout.VERTICAL);root.setPadding(24,20,24,20);root.addView(option("Photo or video",v->{dismiss();visualPicker.launch(new String[]{"image/*","video/*"});}));root.addView(option("File or audio",v->{dismiss();filePicker.launch("*/*");}));dialog.setContentView(root);return dialog;}
-    private View option(String text,View.OnClickListener click){TextView row=new TextView(requireContext());row.setText(text);row.setTextSize(16);row.setGravity(android.view.Gravity.CENTER_VERTICAL);row.setMinHeight((int)(56*getResources().getDisplayMetrics().density));row.setOnClickListener(click);return row;}
-    private void deliver(@Nullable android.net.Uri uri){if(uri!=null&&listener!=null)listener.onAttachmentPicked(uri,requireContext().getContentResolver().getType(uri));}
+
+    @Nullable
+    private SheetAttachmentPickerBinding binding;
+
+    private final ActivityResultLauncher<PickVisualMediaRequest> visualPicker = registerForActivityResult(
+            new ActivityResultContracts.PickVisualMedia(),
+            this::deliverVisual);
+
+    private final ActivityResultLauncher<String[]> documentPicker = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(),
+            this::deliverDocument);
+
+    public void setListener(@NonNull Listener value) {
+        listener = value;
+    }
+
+    @Nullable
+    @Override
+    public View onCreateView(
+            @NonNull LayoutInflater inflater,
+            @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState) {
+        binding = SheetAttachmentPickerBinding.inflate(inflater, container, false);
+        return binding.getRoot();
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        SheetAttachmentPickerBinding sheet = binding;
+        if (sheet == null) {
+            return;
+        }
+        sheet.pickVisualRow.setOnClickListener(v -> {
+            dismiss();
+            visualPicker.launch(new PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
+                    .build());
+        });
+        sheet.pickDocumentRow.setOnClickListener(v -> {
+            dismiss();
+            documentPicker.launch(new String[]{"*/*"});
+        });
+    }
+
+    private void deliverVisual(@Nullable Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        deliver(uri);
+    }
+
+    private void deliverDocument(@Nullable Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        try {
+            requireContext().getContentResolver().takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // PickVisualMedia URIs are not persistable; OpenDocument may already grant access.
+        }
+        deliver(uri);
+    }
+
+    private void deliver(@NonNull Uri uri) {
+        if (listener == null) {
+            return;
+        }
+        String mime = requireContext().getContentResolver().getType(uri);
+        listener.onAttachmentPicked(uri, mime);
+    }
+
+    @Override
+    public void onDestroyView() {
+        binding = null;
+        super.onDestroyView();
+    }
 }
