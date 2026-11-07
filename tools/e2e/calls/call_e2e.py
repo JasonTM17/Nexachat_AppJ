@@ -153,7 +153,7 @@ class StompConnection:
     def _send_heartbeats(self) -> None:
         while not self._heartbeat_stop.wait(HEARTBEAT_INTERVAL_SECONDS):
             try:
-                # Match Android's independent heartbeat coroutine during idle waits.
+                # Match Android's independent heartbeat sender thread during idle waits.
                 self.ws.send("\n")
             except (websocket.WebSocketException, OSError):
                 return

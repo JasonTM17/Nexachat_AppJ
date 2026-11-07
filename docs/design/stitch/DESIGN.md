@@ -210,8 +210,8 @@ The system relies on intentional geometric contrast:
 - **Unread Counter**: Saturated `#4F46E5` pill badge, 20px height, min-width 20px, 6px horizontal padding, crisp white `label-sm` centered text.
 - **Filter Chips**: 32px height, 1px `#CBD5E1` border, `#FFFFFF` background, `label-md` slate typography. Selected state transitions to `#4F46E5` background with white text and no border.
 
-### Input Fields & Message Composer
-- **Bottom Composer Dock**: Sticky footer with `#FFFFFF` background, Level 2 elevation top-shadow, integrated attachments menu, voice button, and expandable multi-line text input field.
+### Input Fields & Chat Input Bar
+- **Bottom input dock**: Sticky footer with `#FFFFFF` background, Level 2 elevation top-shadow, integrated attachments menu, voice button, and expandable multi-line text input field.
 - **Text Entry**: Background `#F1F5F9`, `rounded-lg`, borderless until focused (transitions to 1.5px `#4F46E5` outline), 40px min-height, vertical padding 8px, horizontal padding 14px.
 
 ### Checkboxes & Radio Controls
