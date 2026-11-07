@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.asFlow
 
 /**
  * In-conversation search state (F4). [results] are newest-first and already
@@ -194,7 +195,7 @@ class ChatViewModel @Inject constructor(
             otherUserId = conversation?.otherUserId?.takeIf { it.isNotBlank() },
             error = err,
         )
-    }.combine(session.isOpen) { state, open -> state.copy(connected = open) }
+    }.combine(session.isOpen.toObservable().asFlow()) { state, open -> state.copy(connected = open) }
         .combine(hasMore) { state, more -> state.copy(hasMore = more) }
         .combine(loading) { state, isLoading -> state.copy(loading = isLoading) }
         .combine(pendingAttachments) { state, pending ->

@@ -28,7 +28,7 @@ import retrofit2.http.Query;
 /**
  * '/api/v1/users', '/api/v1/contacts' and '/api/v1/conversations/direct'
  * endpoints. Returns {@link Call}; repositories pass each call to
- * {@code safeApiCall(Call)} (see {@code ApiResult.kt}). All routes require the Bearer token
+ * {@code safeApiCall(Call)} (see {@code ApiResultKt.java}). All routes require the Bearer token
  * added by AuthInterceptor.
  */
 public interface UserApi {

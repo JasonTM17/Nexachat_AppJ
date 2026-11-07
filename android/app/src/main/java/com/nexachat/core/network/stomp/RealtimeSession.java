@@ -16,6 +16,16 @@ import com.nexachat.core.network.stomp.dto.SendErrorDto;
 import com.nexachat.core.network.stomp.dto.TypingSignalDto;
 import com.nexachat.core.network.stomp.dto.WsEnvelope;
 import com.nexachat.core.storage.TokenStore;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.disposables.SerialDisposable;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
+import io.reactivex.rxjava3.processors.FlowableProcessor;
+import io.reactivex.rxjava3.processors.PublishProcessor;
+import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.core.Scheduler;
 import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
@@ -25,20 +35,11 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CancellationException;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlin.Unit;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.Job;
-import kotlinx.coroutines.channels.BufferOverflow;
-import kotlinx.coroutines.flow.MutableSharedFlow;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.SharedFlow;
-import kotlinx.coroutines.flow.SharedFlowKt;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
 /**
  * Owns the STOMP session lifecycle and maps inbound frames to typed events.
@@ -47,9 +48,6 @@ import kotlinx.coroutines.flow.StateFlowKt;
  * It shadows {@link TokenStore}'s valid-session flow, reconnects with
  * {@link ReconnectPolicy}, and re-arms after a user action, a validated
  * network regain, app foregrounding, or a bounded foreground retry timer.
- * Kotlin Flow collection and suspend calls are isolated in
- * {@link RealtimeSessionFlow}; the session contract and event handling are
- * Java.
  */
 @Singleton
 public final class RealtimeSession {
@@ -85,7 +83,7 @@ public final class RealtimeSession {
     private final ReconnectPolicy reconnectPolicy;
     private final NetworkMonitor networkMonitor;
     private final AppForegroundState foreground;
-    private final CoroutineScope scope;
+    private final Scheduler reconnectScheduler;
 
     private final JsonAdapter<WsEnvelope> envelopeAdapter;
     private final JsonAdapter<MessageDto> messageAdapter;
@@ -99,59 +97,23 @@ public final class RealtimeSession {
     private final JsonAdapter<PresenceEventDto> presenceAdapter;
     private final JsonAdapter<Map<String, Object>> mapAdapter;
 
-    private final MutableStateFlow<StompClient.State> mutableState =
-            StateFlowKt.MutableStateFlow(
-                    new StompClient.State.Closed(NORMAL_CODE, "never connected"));
-    private final MutableStateFlow<Boolean> mutableIsOpen = StateFlowKt.MutableStateFlow(false);
-    private final StateFlow<StompClient.State> stateView =
-            RealtimeSessionFlow.stateView(mutableState);
-    private final StateFlow<Boolean> isOpenView = RealtimeSessionFlow.stateView(mutableIsOpen);
-    private final MutableSharedFlow<ChatEvent> mutableEvents =
-            SharedFlowKt.MutableSharedFlow(
-                    0, EVENTS_BUFFER, BufferOverflow.DROP_OLDEST);
-    private final MutableSharedFlow<Unit> mutableResyncRequests =
-            SharedFlowKt.MutableSharedFlow(
-                    0, RESYNC_BUFFER, BufferOverflow.DROP_OLDEST);
-    private final SharedFlow<ChatEvent> eventsView =
-            RealtimeSessionFlow.sharedView(mutableEvents);
-    private final SharedFlow<Unit> resyncRequestsView =
-            RealtimeSessionFlow.sharedView(mutableResyncRequests);
-    private final MutableSharedFlow<Unit> rearmRequests =
-            SharedFlowKt.MutableSharedFlow(
-                    0, 1, BufferOverflow.DROP_OLDEST);
+    private final FlowableProcessor<StompClient.State> state = BehaviorProcessor.<StompClient.State>createDefault(
+            new StompClient.State.Closed(NORMAL_CODE, "never connected")).toSerialized();
+    private final BehaviorProcessor<Boolean> openState = BehaviorProcessor.createDefault(false);
+    private final FlowableProcessor<Boolean> isOpen = openState.toSerialized();
+    private final FlowableProcessor<ChatEvent> events = PublishProcessor.<ChatEvent>create().toSerialized();
+    private final FlowableProcessor<Object> resyncRequests = PublishProcessor.create().toSerialized();
+    private final FlowableProcessor<Object> rearmRequests = PublishProcessor.create().toSerialized();
+    private final CompositeDisposable subscriptions = new CompositeDisposable();
+    private final SerialDisposable connection = new SerialDisposable();
+    private final SerialDisposable parkedWake = new SerialDisposable();
+    private volatile boolean hasSession;
+    private boolean attemptActive;
+    private int failures;
+    private int parkedRounds;
 
     /** Destinations that must be (re-)subscribed on every Open. */
     private final Set<String> wantedSubscriptions = ConcurrentHashMap.newKeySet();
-    private final Object connectionJobLock = new Object();
-
-    @Nullable
-    private volatile Job connectionJob;
-
-    private final RealtimeSessionFlow.ConnectionCallbacks connectionCallbacks =
-            new RealtimeSessionFlow.ConnectionCallbacks() {
-                @Override
-                public void onConnectionState(@NonNull StompClient.State state) {
-                    mutableState.setValue(state);
-                    if (state instanceof StompClient.State.Open) {
-                        mutableIsOpen.setValue(true);
-                        resubscribeWanted();
-                        mutableResyncRequests.tryEmit(Unit.INSTANCE);
-                    } else {
-                        mutableIsOpen.setValue(false);
-                    }
-                }
-
-                @Override
-                public void onConnectionEnded() {
-                    mutableIsOpen.setValue(false);
-                }
-
-                @Override
-                public void onOffline() {
-                    mutableState.setValue(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
-                    mutableIsOpen.setValue(false);
-                }
-            };
 
     @Inject
     public RealtimeSession(
@@ -161,15 +123,28 @@ public final class RealtimeSession {
             @NonNull Moshi moshi,
             @NonNull ReconnectPolicy reconnectPolicy,
             @NonNull NetworkMonitor networkMonitor,
+            @NonNull AppForegroundState foreground) {
+        this(stompClient, tokenStore, tokenRefresher, moshi, reconnectPolicy,
+                networkMonitor, foreground, Schedulers.single());
+    }
+
+    /** Deterministic scheduler seam for reconnect policy tests. */
+    RealtimeSession(
+            @NonNull StompClient stompClient,
+            @NonNull TokenStore tokenStore,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull Moshi moshi,
+            @NonNull ReconnectPolicy reconnectPolicy,
+            @NonNull NetworkMonitor networkMonitor,
             @NonNull AppForegroundState foreground,
-            @NonNull CoroutineScope scope) {
+            @NonNull Scheduler reconnectScheduler) {
         this.stompClient = stompClient;
         this.tokenStore = tokenStore;
         this.tokenRefresher = tokenRefresher;
         this.reconnectPolicy = reconnectPolicy;
         this.networkMonitor = networkMonitor;
         this.foreground = foreground;
-        this.scope = scope;
+        this.reconnectScheduler = reconnectScheduler;
 
         envelopeAdapter = moshi.adapter(WsEnvelope.class);
         messageAdapter = moshi.adapter(MessageDto.class);
@@ -190,83 +165,143 @@ public final class RealtimeSession {
         // Presence must be subscribed before the first peer event can land.
         wantedSubscriptions.add(USER_PRESENCE_DESTINATION);
 
-        RealtimeSessionFlow.observeTokens(scope, tokenStore, this::onTokenPresence);
-        RealtimeSessionFlow.observeNetworkRegain(
-                scope, tokenStore, networkMonitor, this::isSocketOpen, this::ensureConnected);
-        RealtimeSessionFlow.collectFrames(scope, stompClient.getFrames(), this::dispatch);
+        subscriptions.add(tokenStore.getHasValidRefresh().subscribe(this::onTokenPresence));
+        subscriptions.add(networkMonitor.getIsOnline()
+                .filter(Boolean::booleanValue)
+                .subscribe(ignored -> { if (hasSession && !isCurrentlyOpen()) ensureConnected(); }));
+        subscriptions.add(foreground.getIsForeground()
+                .filter(Boolean::booleanValue)
+                .subscribe(ignored -> { if (hasSession && !isCurrentlyOpen()) ensureConnected(); }));
+        subscriptions.add(stompClient.getFrames().subscribe(this::dispatch));
     }
 
     @NonNull
-    public StateFlow<StompClient.State> getState() {
-        return stateView;
+    public Flowable<StompClient.State> getState() {
+        return state.onBackpressureLatest();
     }
 
     @NonNull
-    public StateFlow<Boolean> getIsOpen() {
-        return isOpenView;
+    public Flowable<Boolean> getIsOpen() {
+        return isOpen.onBackpressureLatest();
     }
 
     @NonNull
-    public SharedFlow<ChatEvent> getEvents() {
-        return eventsView;
+    public Flowable<ChatEvent> getEvents() {
+        return events.onBackpressureBuffer(EVENTS_BUFFER, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
     }
 
     @NonNull
-    public SharedFlow<Unit> getResyncRequests() {
-        return resyncRequestsView;
+    public Flowable<Object> getResyncRequests() {
+        return resyncRequests.onBackpressureBuffer(RESYNC_BUFFER, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
     }
+
+    public boolean isCurrentlyOpen() { return Boolean.TRUE.equals(openState.getValue()); }
 
     private void onTokenPresence(boolean hasToken) {
+        hasSession = hasToken;
         if (hasToken) {
             launchConnectionLoop();
             return;
         }
-
-        // Logout: stop the loop and hang up so nothing lingers. The same lock
-        // as launch prevents a regain re-arm from slipping between cancel/null.
-        synchronized (connectionJobLock) {
-            if (connectionJob != null) {
-                connectionJob.cancel((CancellationException) null);
-                connectionJob = null;
-            }
-        }
+        synchronized (this) { attemptActive = false; }
+        connection.set(Disposable.empty());
+        parkedWake.set(Disposable.empty());
         stompClient.close();
-        mutableIsOpen.setValue(false);
+        isOpen.onNext(false);
+        state.onNext(new StompClient.State.Closed(NORMAL_CODE, "logged out"));
     }
 
-    /** Atomically starts at most one connection loop. */
+    /** Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer. */
     private void launchConnectionLoop() {
-        synchronized (connectionJobLock) {
-            if (connectionJob != null && connectionJob.isActive()) {
-                return;
-            }
-            connectionJob = RealtimeSessionFlow.launchConnectionLoop(
-                    scope,
-                    tokenStore,
-                    tokenRefresher,
-                    stompClient,
-                    reconnectPolicy,
-                    networkMonitor,
-                    foreground,
-                    rearmRequests,
-                    connectionCallbacks);
+        synchronized (this) {
+            if (!hasSession || isCurrentlyOpen() || attemptActive) return;
+            attemptActive = true;
         }
+        connectOnce();
     }
 
     /** Starts the loop if needed and wakes it after retry-budget exhaustion. */
     public void ensureConnected() {
+        rearmRequests.onNext(new Object());
         launchConnectionLoop();
-        rearmRequests.tryEmit(Unit.INSTANCE);
     }
 
     /** Re-arms a socket that died while the app was backgrounded. */
     public void onAppForeground() {
-        RealtimeSessionFlow.rearmOnForeground(
-                scope, tokenStore, this::isSocketOpen, this::ensureConnected);
+        if (hasSession && !isCurrentlyOpen()) ensureConnected();
     }
 
-    private boolean isSocketOpen() {
-        return mutableIsOpen.getValue();
+    public void dispose() {
+        hasSession = false;
+        synchronized (this) { attemptActive = false; }
+        subscriptions.dispose();
+        connection.dispose();
+        parkedWake.dispose();
+        stompClient.close();
+        isOpen.onNext(false);
+    }
+
+    private void connectOnce() {
+        SerialDisposable attemptHolder = new SerialDisposable();
+        connection.set(attemptHolder);
+        Flowable<StompClient.State> prepared = tokenStore.readTokens()
+                .subscribeOn(Schedulers.io())
+                .flatMapPublisher(tokens -> {
+                    Single<Boolean> valid = tokens.isAccessExpired()
+                            ? tokenRefresher.refreshIfNeeded(tokens.getAccessToken()).map(Optional::isPresent)
+                            : Single.just(true);
+                    return valid.flatMapPublisher(canConnect -> canConnect
+                            ? stompClient.connect()
+                            : Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
+                })
+                .switchIfEmpty(Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
+        Disposable attempt = prepared.subscribe(
+                connectionState -> {
+                    state.onNext(connectionState);
+                    if (connectionState instanceof StompClient.State.Open) {
+                        failures = 0;
+                        parkedRounds = 0;
+                        isOpen.onNext(true);
+                        resubscribeWanted();
+                        resyncRequests.onNext(new Object());
+                    } else {
+                        isOpen.onNext(false);
+                        if (connectionState instanceof StompClient.State.Failed
+                                && ((StompClient.State.Failed) connectionState).isAuth()) {
+                            tokenRefresher.refresh().subscribe(ignored -> { }, ignored -> { });
+                        }
+                    }
+                }, ignored -> finishAttempt(), this::finishAttempt);
+        attemptHolder.set(attempt);
+    }
+
+    private void finishAttempt() {
+        synchronized (this) { attemptActive = false; }
+        isOpen.onNext(false);
+        if (!hasSession) return;
+        failures++;
+        if (reconnectPolicy.shouldRetry(failures)) {
+            Disposable timer = reconnectScheduler.scheduleDirect(
+                    this::launchConnectionLoop, reconnectPolicy.delayMillis(failures), TimeUnit.MILLISECONDS);
+            connection.set(timer);
+            return;
+        }
+        failures = 0;
+        parkedRounds++;
+        state.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
+        long delay = Math.min(PARKED_RETRY_BASE_MS << Math.min(parkedRounds - 1, 4), PARKED_RETRY_MAX_MS);
+        Flowable<Object> wakeSignals = Flowable.merge(
+                networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
+                rearmRequests);
+        Flowable<Object> foregroundTimer = foreground.getIsForeground()
+                .distinctUntilChanged()
+                .switchMap(isForeground -> isForeground
+                        ? Flowable.timer(delay, TimeUnit.MILLISECONDS, reconnectScheduler).map(value -> new Object())
+                        : Flowable.never());
+        Disposable wake = Flowable.merge(wakeSignals, foregroundTimer)
+                .take(1)
+                .subscribe(ignored -> launchConnectionLoop(), ignored -> { });
+        parkedWake.set(wake);
     }
 
     private void resubscribeWanted() {
@@ -279,7 +314,7 @@ public final class RealtimeSession {
     public void watchConversation(@NonNull String conversationId) {
         String destination = topicDestination(conversationId);
         wantedSubscriptions.add(destination);
-        if (mutableIsOpen.getValue()) {
+        if (isCurrentlyOpen()) {
             stompClient.subscribe(destination);
         }
     }
@@ -318,7 +353,7 @@ public final class RealtimeSession {
                 stompClient.subscriptionIdFor(USER_ERRORS_DESTINATION),
                 frame.getHeaders().get("subscription"))) {
             SendErrorDto error = parse(sendErrorAdapter, frame.getBody());
-            mutableEvents.tryEmit(
+            events.onNext(
                     new ChatEvent.SendRejected(
                             error == null ? null : error.getCode(),
                             error == null ? null : error.getClientMessageId()));
@@ -329,7 +364,7 @@ public final class RealtimeSession {
         if (envelope == null) {
             return;
         }
-        mutableEvents.tryEmit(toChatEvent(envelope));
+        events.onNext(toChatEvent(envelope));
     }
 
     @NonNull

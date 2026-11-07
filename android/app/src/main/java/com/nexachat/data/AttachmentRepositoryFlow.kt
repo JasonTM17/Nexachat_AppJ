@@ -5,7 +5,6 @@ import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.ProgressRequestBody
-import com.nexachat.core.network.safeApiCall
 import com.nexachat.core.network.dto.AttachmentDto
 import java.io.File
 import java.io.IOException
@@ -14,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.rx3.await
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -108,7 +108,7 @@ object AttachmentRepositoryFlow {
             requestBody,
         )
 
-        when (val result = safeApiCall(repository.attachmentApi().upload(part))) {
+        when (val result = com.nexachat.core.network.ApiResultKt.safeApiCall(repository.attachmentApi().upload(part)).await()) {
             is ApiResult.Success -> {
                 // The body counter may not have emitted exactly 1f before the
                 // server answers, so clamp progress before the terminal event.
@@ -130,7 +130,7 @@ object AttachmentRepositoryFlow {
         attachmentId: String,
         displayName: String?,
     ): Result<File> = withContext(Dispatchers.IO) {
-        when (val result = safeApiCall(repository.attachmentApi().content(attachmentId))) {
+        when (val result = com.nexachat.core.network.ApiResultKt.safeApiCall(repository.attachmentApi().content(attachmentId)).await()) {
             is ApiResult.Success -> {
                 val directory = File(repository.cacheDir(), AttachmentRepository.CACHE_DIR_NAME)
                     .apply { mkdirs() }

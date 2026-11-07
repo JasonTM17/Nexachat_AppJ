@@ -13,7 +13,6 @@ import com.nexachat.core.network.dto.DirectConversationRequest
 import com.nexachat.core.network.dto.UpdateContactRequest
 import com.nexachat.core.network.dto.UpdateProfileRequest
 import com.nexachat.core.network.dto.UserDto
-import com.nexachat.core.network.safeApiCall
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import javax.inject.Inject
@@ -24,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.rx3.await
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -244,7 +244,7 @@ class ContactsRepository @Inject constructor(
         retrofitCall: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(retrofitCall)
+            com.nexachat.core.network.ApiResultKt.safeApiCall(retrofitCall).await()
         } catch (_: ClassCastException) {
             ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }

@@ -1,6 +1,7 @@
 package com.nexachat.core.network;
 
 import androidx.annotation.Nullable;
+import io.reactivex.rxjava3.core.Single;
 import java.io.IOException;
 import java.util.Objects;
 
@@ -14,6 +15,11 @@ import java.util.Objects;
  */
 public sealed interface ApiResult<T>
         permits ApiResult.Success, ApiResult.HttpError, ApiResult.NetworkError {
+
+    /** Returns an RxJava result; Retrofit execution happens on the IO scheduler. */
+    static <T> Single<ApiResult<T>> safeApiCall(retrofit2.Call<T> call) {
+        return ApiResultKt.safeApiCall(call);
+    }
 
     final class Success<T> implements ApiResult<T> {
         private final T body;

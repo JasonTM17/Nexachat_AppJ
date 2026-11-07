@@ -8,19 +8,9 @@ import com.nexachat.core.network.stomp.StompFrame;
 import com.squareup.moshi.Moshi;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.CancellationException;
-import java.util.function.Consumer;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.CoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.Dispatchers;
-import kotlinx.coroutines.Job;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.FlowCollector;
 
 /** Java adapter for the existing authenticated raw-STOMP connection. */
 public final class StompCallSignalingClient implements CallSignalingClient {
@@ -35,9 +25,9 @@ public final class StompCallSignalingClient implements CallSignalingClient {
     private final AtomicBoolean wasOpen = new AtomicBoolean(false);
 
     private Listener listener;
-    private Job stateJob;
-    private Job frameJob;
-    private Job realtimeEventJob;
+    private Disposable stateJob;
+    private Disposable frameJob;
+    private Disposable realtimeEventJob;
     private boolean started;
 
     public StompCallSignalingClient(
@@ -73,24 +63,18 @@ public final class StompCallSignalingClient implements CallSignalingClient {
             listener = newListener;
             started = true;
             subscriptions.start(false);
-            frameJob = collect(stompClient.getFrames(), this::onFrame, CoroutineStart.UNDISPATCHED);
-            realtimeEventJob = collect(
-                    realtimeSession.getEvents(),
-                    this::onRealtimeEvent,
-                    CoroutineStart.UNDISPATCHED);
-            stateJob = collect(
-                    realtimeSession.getState(),
-                    this::onConnectionState,
-                    CoroutineStart.UNDISPATCHED);
+            frameJob = stompClient.getFrames().observeOn(Schedulers.io()).subscribe(this::onFrame);
+            realtimeEventJob = realtimeSession.getEvents().observeOn(Schedulers.io()).subscribe(this::onRealtimeEvent);
+            stateJob = realtimeSession.getState().observeOn(Schedulers.io()).subscribe(this::onConnectionState);
         }
         realtimeSession.ensureConnected();
     }
 
     @Override
     public void stop() {
-        Job oldStateJob;
-        Job oldFrameJob;
-        Job oldRealtimeEventJob;
+        Disposable oldStateJob;
+        Disposable oldFrameJob;
+        Disposable oldRealtimeEventJob;
         synchronized (lock) {
             if (!started) return;
             started = false;
@@ -104,9 +88,9 @@ public final class StompCallSignalingClient implements CallSignalingClient {
             wasOpen.set(false);
             subscriptions.stop();
         }
-        if (oldStateJob != null) oldStateJob.cancel((CancellationException) null);
-        if (oldFrameJob != null) oldFrameJob.cancel((CancellationException) null);
-        if (oldRealtimeEventJob != null) oldRealtimeEventJob.cancel((CancellationException) null);
+        if (oldStateJob != null) oldStateJob.dispose();
+        if (oldFrameJob != null) oldFrameJob.dispose();
+        if (oldRealtimeEventJob != null) oldRealtimeEventJob.dispose();
     }
 
     @Override
@@ -172,32 +156,4 @@ public final class StompCallSignalingClient implements CallSignalingClient {
         if (current != null) current.onEvent(event);
     }
 
-    private static final class FlowCollectorBridge<T> implements FlowCollector<T> {
-        private final Consumer<T> consumer;
-
-        FlowCollectorBridge(Consumer<T> consumer) {
-            this.consumer = consumer;
-        }
-
-        @Override
-        public Object emit(T value, Continuation<? super Unit> continuation) {
-            consumer.accept(value);
-            return Unit.INSTANCE;
-        }
-    }
-
-    private <T> Job collect(Flow<T> flow, Consumer<T> consumer, CoroutineStart start) {
-        return BuildersKt.launch(
-                scope,
-                (CoroutineContext) Dispatchers.getIO(),
-                start,
-                new Function2<CoroutineScope, Continuation<? super Unit>, Object>() {
-                    @Override
-                    public Object invoke(
-                            CoroutineScope coroutineScope,
-                            Continuation<? super Unit> continuation) {
-                        return flow.collect(new FlowCollectorBridge<>(consumer), continuation);
-                    }
-                });
-    }
 }

@@ -27,6 +27,7 @@ import com.nexachat.feature.profile.ProfileScreen
 import com.nexachat.feature.splash.SplashScreen
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.rx3.asFlow
 
 /**
  * Central route table. Feature packages must not hardcode route strings —
@@ -70,7 +71,7 @@ fun AppNavHost() {
         ).sessionEvents()
     }
     LaunchedEffect(sessionEvents) {
-        sessionEvents.events.collectLatest { event ->
+        sessionEvents.events.toObservable().asFlow().collectLatest { event ->
             when (event) {
                 is SessionEvents.Event.LoggedOut -> navController.navigate(Routes.LOGIN) {
                     popUpTo(0) { inclusive = true }

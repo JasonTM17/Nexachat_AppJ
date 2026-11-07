@@ -1,6 +1,5 @@
 package com.nexachat.core.network;
 
-import com.nexachat.core.common.BlockingCalls;
 import java.io.IOException;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -41,20 +40,21 @@ public final class TokenAuthenticator implements Authenticator {
 
         String failedAccessToken = bearerToken(failedRequest);
 
-        final TokenRefreshOutcome outcome;
         try {
-            outcome = BlockingCalls.refreshIfNeeded(tokenRefresher, failedAccessToken);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IOException("token refresh interrupted", interrupted);
+            String accessToken = tokenRefresher.refreshIfNeededBlocking(failedAccessToken);
+            if (accessToken == null) {
+                return null;
+            }
+            return retryWith(failedRequest, accessToken);
+        } catch (RuntimeException failure) {
+            Throwable cause = failure.getCause();
+            if (cause instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                throw new IOException("token refresh interrupted", cause);
+            }
+            throw failure;
         }
 
-        if (outcome instanceof TokenRefreshOutcome.FreshToken) {
-            String accessToken =
-                    ((TokenRefreshOutcome.FreshToken) outcome).getAccessToken();
-            return retryWith(failedRequest, accessToken);
-        }
-        return null;
     }
 
     private Request retryWith(Request request, String accessToken) {

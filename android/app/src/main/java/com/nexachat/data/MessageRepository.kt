@@ -24,7 +24,6 @@ import com.nexachat.core.network.dto.ReactionRequest
 import com.nexachat.core.network.dto.ReactionSummaryDto
 import com.nexachat.core.network.dto.ReadRequest
 import com.nexachat.core.network.dto.SendMessageRequest
-import com.nexachat.core.network.safeApiCall
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
@@ -48,6 +47,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.asFlow
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -730,7 +731,7 @@ class MessageRepository @Inject constructor(
         if (session.sendMessage(entry.conversationId, request)) {
             return // ack arrives as MESSAGE_CREATED → onMessageCreated
         }
-        if (!session.isOpen.value) {
+        if (!session.isCurrentlyOpen()) {
             // WS down → REST fallback (plan §12.2). Permanent HTTP errors
             // (NOT_MEMBER, validation) become FAILED; rate limits and transport
             // failures stay SENDING for their scheduled/reconnect flush.
@@ -772,7 +773,7 @@ class MessageRepository @Inject constructor(
     // ---- WS event intake ----
 
     private suspend fun routeSessionEvents() {
-        session.events.collect { event ->
+        session.events.toObservable().asFlow().collect { event ->
             when (event) {
                 is ChatEvent.MessageCreated -> onMessageCreated(event)
                 is ChatEvent.MessageUpdated -> onMessageUpdated(event)
@@ -902,7 +903,7 @@ class MessageRepository @Inject constructor(
     }
 
     private suspend fun resyncOnReconnect() {
-        session.resyncRequests.collect {
+        session.resyncRequests.toObservable().asFlow().collect {
             flushOutbox()
             activeConversation.value?.let { conversationId ->
                 resyncForward(conversationId)
@@ -1110,7 +1111,7 @@ class MessageRepository @Inject constructor(
 
     /** Session-dead ⇒ local copies of server data go with it. */
     private suspend fun wipeOnLogout() {
-        sessionEvents.events.collect { event ->
+        sessionEvents.events.toObservable().asFlow().collect { event ->
             if (event is SessionEvents.Event.LoggedOut) {
                 messageDao.deleteAll()
                 conversationDao.clear()
@@ -1323,7 +1324,7 @@ class MessageRepository @Inject constructor(
         call: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(call)
+            com.nexachat.core.network.ApiResultKt.safeApiCall(call).await()
         } catch (_: ClassCastException) {
             ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }

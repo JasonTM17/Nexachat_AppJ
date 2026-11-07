@@ -3,10 +3,11 @@ package com.nexachat.data
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
 import com.nexachat.core.network.ApiResult
-import com.nexachat.core.network.safeApiCall
+import com.nexachat.core.network.ApiResultKt
 import com.nexachat.core.network.dto.AuthResponse
 import com.nexachat.core.storage.TokenStore
 import retrofit2.Call
+import kotlinx.coroutines.rx3.await
 
 /**
  * Kotlin coroutine boundary for [AuthRepository]: Retrofit calls, token
@@ -50,23 +51,23 @@ internal object AuthRepositoryFlow {
 
     @JvmStatic
     suspend fun refresh(repository: AuthRepository): Result<Boolean> =
-        repository.refreshMapping(repository.tokenRefresher().refresh())
+        repository.refreshMapping(repository.tokenRefresher().refresh().await())
 
     @JvmStatic
     suspend fun logout(repository: AuthRepository): Result<Unit> {
         val refreshToken = repository.tokenStore().readTokens()?.refreshToken
         if (refreshToken != null) {
-            safeApiCall(repository.authApi().logout(repository.logoutRequest(refreshToken)))
+            ApiResultKt.safeApiCall(repository.authApi().logout(repository.logoutRequest(refreshToken))).await()
         }
-        repository.tokenStore().clear()
+        repository.tokenRefresher().clear().await()
         repository.sessionEvents().emitLoggedOut()
         return Result.Success(Unit)
     }
 
     @JvmStatic
     suspend fun logoutAll(repository: AuthRepository): Result<Unit> {
-        safeApiCall(repository.authApi().logoutAll())
-        repository.tokenStore().clear()
+        ApiResultKt.safeApiCall(repository.authApi().logoutAll()).await()
+        repository.tokenRefresher().clear().await()
         repository.sessionEvents().emitLoggedOut()
         return Result.Success(Unit)
     }
@@ -123,7 +124,7 @@ internal object AuthRepositoryFlow {
     @JvmStatic
     suspend fun <T> safeApiCallCatching(call: Call<T>): ApiResult<T> =
         try {
-            safeApiCall(call)
+            ApiResultKt.safeApiCall(call).await()
         } catch (_: ClassCastException) {
             ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }
