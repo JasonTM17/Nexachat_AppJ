@@ -119,26 +119,25 @@ rm -f "$OUT"
 
 zip_tree() {  # $@ = output zip; contents of $ROOT_DIR land at archive root
     local out="$1"
-    if command -v zip >/dev/null 2>&1; then
-        (cd "$ROOT_DIR" && zip -qr "$out" .)
-    elif [[ -n "$TAR_BIN" ]] && "$TAR_BIN" --version 2>/dev/null | grep -q bsdtar; then
-        # bsdtar writes real zips via -a; dotglob catches .git/.
-        (cd "$ROOT_DIR" && shopt -s dotglob nullglob \
-            && "$TAR_BIN" -a -c -f "$(to_win "$out")" -- *)
-    elif command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
+    if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
         local PY; PY="$(command -v python3 || command -v python)"
-        "$PY" - "$ROOT_DIR" "$(to_win "$out")" <<'PYEOF'
+        "$PY" - "$(to_win "$ROOT_DIR")" "$(to_win "$out")" <<'PYEOF'
 import os, sys, zipfile
 root, out = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for base, dirs, files in os.walk(root):
         for d in dirs:
             p = os.path.join(base, d)
-            z.write(p, os.path.relpath(p, root) + "/")
+            z.write(p, os.path.relpath(p, root).replace("\\", "/") + "/")
         for f in files:
             p = os.path.join(base, f)
-            z.write(p, os.path.relpath(p, root))
+            z.write(p, os.path.relpath(p, root).replace("\\", "/"))
 PYEOF
+    elif command -v zip >/dev/null 2>&1; then
+        (cd "$ROOT_DIR" && zip -qr "$out" .)
+    elif [[ -n "$TAR_BIN" ]] && "$TAR_BIN" --version 2>/dev/null | grep -q bsdtar; then
+        (cd "$ROOT_DIR" && shopt -s dotglob nullglob \
+            && "$TAR_BIN" -a -c -f "$(to_win "$out")" -- *)
     else
         fail "no zip backend. Run instead:
   powershell -NoProfile -Command \"Compress-Archive -Force -Path '$(to_win "$ROOT_DIR")\\*' -DestinationPath '$(to_win "$OUT")'\""
@@ -151,9 +150,11 @@ zip_tree "$(pwd)/$OUT"
 
 # ---- 5. Verify the archive ---------------------------------------------------
 list_zip() {
-    if command -v unzip >/dev/null 2>&1; then unzip -Z1 "$1"
+    if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
+        local PY; PY="$(command -v python3 || command -v python)"
+        "$PY" -c "import zipfile,sys; [print(n) for n in zipfile.ZipFile(sys.argv[1]).namelist()]" "$(to_win "$1")" | tr -d '\r'
+    elif command -v unzip >/dev/null 2>&1; then unzip -Z1 "$1"
     elif [[ -n "$TAR_BIN" ]]; then "$TAR_BIN" -tf "$1"
-    else python3 -c "import zipfile,sys; [print(n) for n in zipfile.ZipFile(sys.argv[1]).namelist()]" "$1"
     fi
 }
 
@@ -161,10 +162,9 @@ say "verifying archive contents…"
 LIST="$(list_zip "$OUT")"
 TOTAL=$(echo "$LIST" | grep -c .)
 
-echo "$LIST" | grep -qE '(^|/)\.git/'      || fail ".git/ missing from zip"
-echo "$LIST" | grep -qE '^apk/.*\.apk$'   || fail "signed APK missing from zip"
-echo "$LIST" | grep -qE '^README\.md$'    || fail "README.md missing from zip"
-echo "$LIST" | grep -qE '^docs/'          || fail "docs/ missing from zip"
+for Check in '(^|/)\.git/' '^apk/.*\.apk$' '^README\.md$' '^docs/'; do
+    grep -qE "$Check" <<<"$LIST" || fail "$Check missing from zip"
+done
 
 VIOL="$(echo "$LIST" | grep -nEi '(^|/)(build|node_modules|\.gradle)(/|$)|\.jks$|\.keystore$|keystore\.properties|signing\.properties|(^|/)local\.properties$|(^|/)\.env$|(^|/)\.env\.[^e]|\.env\.ex[^a]|(^|/)release(/|$)|(^|/)demo/backups(/|$)' || true)"
 [[ -z "$VIOL" ]] || fail "forbidden entries inside zip:\n$VIOL"
@@ -179,7 +179,7 @@ echo "  size    : $(du -h "$OUT" | cut -f1)  ($(wc -c < "$OUT" | tr -d ' ') byte
 echo "  entries : $TOTAL"
 echo
 echo "  top-level entries:"
-echo "$LIST" | cut -d/ -f1 | sort -u | sed 's/^/    /' | head -20
+echo "$LIST" | cut -d/ -f1 | sort -u | sed 's/^/    /' | head -20 || true
 echo
 echo "  submission checklist (docs/packaging-checklist.md):"
 echo "    [x] .git/ history included        [x] release-signed APK in apk/"

@@ -94,9 +94,12 @@ say "build-tools : $BT"
 say "java        : $JAVA_BIN"
 say "keystore    : $STORE_FILE (alias $KEY_ALIAS)"
 
-# ---- 1. Assemble unsigned release APK ---------------------------------------
+# ---- 1. Assemble release APK ------------------------------------------------
 say "assembleRelease (Gradle)…"
 (cd android && ./gradlew assembleRelease --console=plain)
+if [[ ! -f "$GRADLE_APK" && -f "android/app/build/outputs/apk/release/app-release.apk" ]]; then
+    GRADLE_APK="android/app/build/outputs/apk/release/app-release.apk"
+fi
 [[ -f "$GRADLE_APK" ]] || fail "Gradle finished but $GRADLE_APK is missing."
 mkdir -p "$OUT_DIR"
 cp -f "$GRADLE_APK" "$UNSIGNED_OUT"
