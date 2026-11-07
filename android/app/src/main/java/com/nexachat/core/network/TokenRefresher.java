@@ -1,0 +1,179 @@
+package com.nexachat.core.network;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import com.nexachat.core.network.dto.AuthResponse;
+import com.nexachat.core.network.dto.RefreshRequest;
+import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
+import javax.inject.Inject;
+import javax.inject.Provider;
+import javax.inject.Singleton;
+import retrofit2.Response;
+
+/** Serializes token rotation shared by startup restoration and OkHttp 401 recovery. */
+@Singleton
+public final class TokenRefresher {
+
+    private final TokenStore tokenStore;
+    private final SessionEvents sessionEvents;
+    private final Provider<AuthApi> authApi;
+    private final Object lock = new Object();
+    private final AtomicLong generation = new AtomicLong();
+    @Nullable private Single<TokenRefreshOutcome> inFlight;
+
+    @Inject
+    public TokenRefresher(
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull Provider<AuthApi> authApi) {
+        this.tokenStore = tokenStore;
+        this.sessionEvents = sessionEvents;
+        this.authApi = authApi;
+    }
+
+    /** Forced rotation used when restoring a session at startup. */
+    @NonNull
+    public Single<TokenRefreshOutcome> refresh() {
+        return singleFlight(() -> {
+            long startedGeneration = generation.get();
+            return tokenStore.readTokens()
+                    .map(Tokens::getRefreshToken)
+                    .flatMapSingle(token -> performRefresh(token, startedGeneration))
+                    .toSingle(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+        });
+    }
+
+    /** Returns a usable rotated/current token, or empty when rotation did not succeed. */
+    @NonNull
+    public Single<Optional<String>> refreshIfNeeded(@Nullable String failedAccessToken) {
+        return singleFlight(() -> {
+            long startedGeneration = generation.get();
+            return tokenStore.readTokens().flatMapSingle(tokens -> {
+                    if (generation.get() != startedGeneration) {
+                        return Single.just((TokenRefreshOutcome) TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+                    }
+                    if (failedAccessToken != null
+                            && !failedAccessToken.equals(tokens.getAccessToken())) {
+                        return Single.just((TokenRefreshOutcome)
+                                new TokenRefreshOutcome.FreshToken(tokens.getAccessToken()));
+                    }
+                    return performRefresh(tokens.getRefreshToken(), startedGeneration);
+                })
+                .toSingle(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+        })
+                .map(TokenRefresher::freshToken);
+    }
+
+    /** Synchronous bridge for OkHttp's Authenticator thread; never call on main. */
+    @NonNull
+    public TokenRefreshOutcome refreshBlocking() {
+        return refresh().blockingGet();
+    }
+
+    /** Synchronous bridge for OkHttp's Authenticator thread; null means no retry. */
+    @Nullable
+    public String refreshIfNeededBlocking(@Nullable String failedAccessToken) {
+        return refreshIfNeeded(failedAccessToken).blockingGet().orElse(null);
+    }
+
+    /** Invalidates pending refresh writes before the session is cleared. */
+    public void onLogout() {
+        synchronized (lock) {
+            generation.incrementAndGet();
+            inFlight = null;
+        }
+    }
+
+    /** Clears tokens and invalidates any refresh that began in an earlier session. */
+    @NonNull
+    public Completable clear() {
+        return Completable.fromAction(() -> {
+            synchronized (lock) {
+                generation.incrementAndGet();
+                inFlight = null;
+                tokenStore.clear().blockingAwait();
+            }
+        }).subscribeOn(Schedulers.io());
+    }
+
+    private Single<TokenRefreshOutcome> singleFlight(
+            java.util.function.Supplier<Single<TokenRefreshOutcome>> operation) {
+        synchronized (lock) {
+            if (inFlight != null) {
+                return inFlight;
+            }
+            AtomicReference<Single<TokenRefreshOutcome>> holder = new AtomicReference<>();
+            Single<TokenRefreshOutcome> shared = Single.defer(operation::get)
+                    .subscribeOn(Schedulers.io())
+                    .doFinally(() -> {
+                        synchronized (lock) {
+                            if (inFlight == holder.get()) {
+                                inFlight = null;
+                            }
+                        }
+                    })
+                    .cache();
+            holder.set(shared);
+            inFlight = shared;
+            return shared;
+        }
+    }
+
+    private Single<TokenRefreshOutcome> performRefresh(String refreshToken, long startedGeneration) {
+        return Single.fromCallable(() -> authApi.get().refresh(new RefreshRequest(refreshToken)).execute())
+                .subscribeOn(Schedulers.io())
+                .flatMap(response -> handleResponse(response, startedGeneration))
+                .onErrorResumeNext(error -> error instanceof IOException
+                        ? Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE)
+                        : Single.error(error));
+    }
+
+    private Single<TokenRefreshOutcome> handleResponse(
+            Response<AuthResponse> response,
+            long startedGeneration) {
+        if (generation.get() != startedGeneration) {
+            return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+        }
+        AuthResponse body = response.body();
+        if (response.isSuccessful() && body != null) {
+            long expiresAt = System.currentTimeMillis() + body.getAccessTokenExpiresIn() * 1_000L;
+            return saveIfCurrent(startedGeneration, body, expiresAt)
+                    .andThen(Single.fromCallable(() -> generation.get() == startedGeneration
+                            ? new TokenRefreshOutcome.FreshToken(body.getAccessToken())
+                            : TokenRefreshOutcome.NoRefreshToken.INSTANCE));
+        }
+        if (TokenRefreshRules.isDefinitiveRejection(response.code())) {
+            return clear().andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
+                    .andThen(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
+        }
+        return Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE);
+    }
+
+    private Completable saveIfCurrent(long startedGeneration, AuthResponse body, long expiresAt) {
+        return Completable.defer(() -> {
+            synchronized (lock) {
+                if (generation.get() != startedGeneration) {
+                    return Completable.complete();
+                }
+                tokenStore.saveTokens(body.getAccessToken(), expiresAt, body.getRefreshToken())
+                        .blockingAwait();
+                return Completable.complete();
+            }
+        });
+    }
+
+    private static Optional<String> freshToken(TokenRefreshOutcome outcome) {
+        return outcome instanceof TokenRefreshOutcome.FreshToken
+                ? Optional.of(((TokenRefreshOutcome.FreshToken) outcome).getAccessToken())
+                : Optional.empty();
+    }
+}

@@ -6,6 +6,7 @@ import com.nexachat.core.network.TokenRefreshOutcome
 import com.nexachat.core.network.TokenRefresher
 import com.nexachat.core.storage.TokenStore
 import com.nexachat.core.storage.Tokens
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,8 +65,41 @@ object BlockingCalls {
 
     @JvmStatic
     @Throws(InterruptedException::class)
+    fun saveTokens(store: TokenStore, access: String, accessExpiresAtEpochMs: Long, refresh: String) {
+        BlockingCoroutine.await { store.saveTokens(access, accessExpiresAtEpochMs, refresh) }
+    }
+
+    @JvmStatic
+    @Throws(InterruptedException::class)
+    fun clearTokens(store: TokenStore) {
+        BlockingCoroutine.await { store.clear() }
+    }
+
+    /** Current session flag. Callers on OkHttp or reconnect threads may block here. */
+    @JvmStatic
+    @Throws(InterruptedException::class)
+    fun hasValidRefresh(store: TokenStore): Boolean =
+        BlockingCoroutine.await { store.hasValidRefresh.first() }
+
+    /**
+     * Synchronous 401 refresh for [com.nexachat.core.network.TokenAuthenticator].
+     * The Rx worker runs on [io.reactivex.rxjava3.schedulers.Schedulers.io], so this
+     * wait must not run on the Android main thread.
+     */
+    @JvmStatic
+    @Throws(InterruptedException::class)
     fun refreshIfNeeded(refresher: TokenRefresher, failedAccessToken: String?): TokenRefreshOutcome =
-        BlockingCoroutine.await { refresher.refreshIfNeeded(failedAccessToken) }
+        try {
+            val token = refresher.refreshIfNeeded(failedAccessToken).blockingGet()
+            if (token.isPresent) TokenRefreshOutcome.FreshToken(token.get())
+            else TokenRefreshOutcome.NoRefreshToken.INSTANCE
+        } catch (ex: RuntimeException) {
+            val cause = ex.cause
+            if (cause is InterruptedException) {
+                throw cause
+            }
+            throw ex
+        }
 
     @JvmStatic
     @Throws(InterruptedException::class)

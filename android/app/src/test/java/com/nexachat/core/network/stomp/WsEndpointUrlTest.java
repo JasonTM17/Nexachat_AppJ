@@ -1,16 +1,14 @@
 package com.nexachat.core.network.stomp;
 
 import com.nexachat.core.storage.TokenStore;
-import io.mockk.MockKAnnotations;
-import io.mockk.impl.annotations.RelaxedMockK;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.mock;
 
 /**
  * Guards the WS endpoint derivation: the request URL must stay a legal OkHttp
@@ -19,24 +17,18 @@ import static org.junit.Assert.assertNotNull;
  */
 public final class WsEndpointUrlTest {
 
-    @RelaxedMockK
-    private TokenStore tokenStore;
-
-    @Before
-    public void setUp() {
-        MockKAnnotations.INSTANCE.init(new Object[] { this }, false, false, false);
-    }
+    private final TokenStore tokenStore = mock(TokenStore.class);
 
     @Test
     public void appendsWsPathAndKeepsHttpScheme() {
-        HttpUrl url = StompClientKt.wsEndpointUrl("http://10.0.2.2:8080");
+        HttpUrl url = WsEndpoint.fromBaseUrl("http://10.0.2.2:8080");
         assertEquals("http", url.scheme());
         assertEquals("http://10.0.2.2:8080/ws", url.toString());
     }
 
     @Test
     public void keepsHttpsSchemeWhichImpliesWssDuringUpgrade() {
-        HttpUrl url = StompClientKt.wsEndpointUrl("https://chat.example.com");
+        HttpUrl url = WsEndpoint.fromBaseUrl("https://chat.example.com");
         assertEquals("https", url.scheme());
         assertEquals("https://chat.example.com/ws", url.toString());
     }
@@ -45,14 +37,14 @@ public final class WsEndpointUrlTest {
     public void resultIsAcceptedByRequestBuilderWithoutThrowing() {
         // This is the exact call path that crashed with "unexpected scheme: ws".
         Request request = new Request.Builder()
-                .url(StompClientKt.wsEndpointUrl("http://192.168.1.10:8080"))
+                .url(WsEndpoint.fromBaseUrl("http://192.168.1.10:8080"))
                 .build();
         assertEquals("/ws", request.url().encodedPath());
     }
 
     @Test
     public void preservesNestedBasePaths() {
-        HttpUrl url = StompClientKt.wsEndpointUrl("http://example.com/api/v1");
+        HttpUrl url = WsEndpoint.fromBaseUrl("http://example.com/api/v1");
         assertEquals("http://example.com/api/v1/ws", url.toString());
     }
 

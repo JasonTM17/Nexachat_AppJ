@@ -16,7 +16,6 @@ import com.nexachat.core.network.dto.ConversationMemberDto
 import com.nexachat.core.network.dto.ConversationsPageDto
 import com.nexachat.core.network.dto.CreateGroupRequest
 import com.nexachat.core.network.dto.UpdateConversationRequest
-import com.nexachat.core.network.safeApiCall
 import com.nexachat.core.network.stomp.ChatEvent
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.storage.TokenStore
@@ -38,6 +37,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.asFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -178,7 +179,7 @@ class ConversationRepository @Inject constructor(
             refreshRequests.debounce(PUSH_REFRESH_DEBOUNCE_MS).collect { refreshInbox() }
         }
         scope.launch {
-            session.resyncRequests.collect { refreshInbox() }
+            session.resyncRequests.toObservable().asFlow().collect { refreshInbox() }
         }
     }
 
@@ -417,7 +418,7 @@ class ConversationRepository @Inject constructor(
     // ---- push triggers ----
 
     private suspend fun watchPushTriggers() {
-        session.events.collect { event ->
+        session.events.toObservable().asFlow().collect { event ->
             when (event) {
                 is ChatEvent.ConversationUpdated -> {
                     event.conversationId?.let { groupUpdateIds.tryEmit(it) }
@@ -621,7 +622,7 @@ class ConversationRepository @Inject constructor(
         call: retrofit2.Call<T>,
     ): ApiResult<T> =
         try {
-            safeApiCall(call)
+            com.nexachat.core.network.ApiResultKt.safeApiCall(call).await()
         } catch (_: ClassCastException) {
             ApiResult.HttpError(200, "UNEXPECTED_EMPTY_BODY")
         }

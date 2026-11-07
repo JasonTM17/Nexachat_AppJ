@@ -1,11 +1,11 @@
-# core.network — `package com.nexachat.core.network`
+# core.network
 
-Planned contents (plan §12.1):
+Network outcomes and authentication use Java 17 with RxJava 3. Retrofit calls
+are normalized by `ApiResultKt.safeApiCall(Call)` into `Single<ApiResult<T>>`;
+disposal cancels the cloned Retrofit call. Token rotation is single-flight and
+exposes both RxJava methods and synchronous bridges for OkHttp's
+`Authenticator` thread. Connectivity, foreground state, STOMP frames, and
+realtime session events are exposed as `Flowable` streams.
 
-- `RetrofitModule` — Hilt module providing Retrofit/OkHttp/Moshi
-- `AuthInterceptor` — attaches `Authorization: Bearer <access>` headers
-- `TokenAuthenticator` — OkHttp `Authenticator` handling 401 → mutex-guarded
-  single-flight token refresh → retry (plan §12.2)
-- `StompClient` — STOMP-over-WebSocket client on OkHttp WS + frame codec (~200 lines)
-- `dto/` — network DTOs (Moshi `@JsonClass`)
-- `mappers/` — DTO ↔ domain/entity mappers
+Kotlin callers that still use coroutine APIs should bridge at the call site
+with `kotlinx-coroutines-rx3`; the Java network APIs do not expose coroutines.

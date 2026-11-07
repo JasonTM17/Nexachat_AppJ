@@ -4,6 +4,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
+import io.reactivex.rxjava3.core.BackpressureStrategy;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.disposables.SerialDisposable;
+import io.reactivex.rxjava3.processors.PublishProcessor;
+import io.reactivex.rxjava3.processors.FlowableProcessor;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.LinkedHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -15,10 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import kotlinx.coroutines.flow.MutableSharedFlow;
-import kotlinx.coroutines.flow.SharedFlow;
-import kotlinx.coroutines.flow.SharedFlowKt;
-import kotlinx.coroutines.channels.BufferOverflow;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -105,7 +109,6 @@ public final class StompClient {
     }
 
     private static final String HEARTBEAT_FRAME = "\n";
-    private static final int INCOMING_BUFFER = 256;
     private static final int HTTP_UNAUTHORIZED = 401;
     private static final int HTTP_FORBIDDEN = 403;
 
@@ -127,8 +130,7 @@ public final class StompClient {
     private final OkHttpClient okHttpClient;
     private final TokenStore tokenStore;
     private final HttpUrl wsUrl;
-    private final MutableSharedFlow<StompFrame> incomingFrames =
-            SharedFlowKt.MutableSharedFlow(0, INCOMING_BUFFER, BufferOverflow.DROP_OLDEST);
+    private final FlowableProcessor<StompFrame> incomingFrames = PublishProcessor.<StompFrame>create().toSerialized();
     private final ConcurrentHashMap<String, String> subscriptionIds = new ConcurrentHashMap<>();
     private final AtomicInteger subscriptionCounter = new AtomicInteger();
 
@@ -146,14 +148,59 @@ public final class StompClient {
 
     /** Every decoded server frame. Producers never suspend. */
     @NonNull
-    public SharedFlow<StompFrame> getFrames() {
-        return incomingFrames;
+    public Flowable<StompFrame> getFrames() {
+        return incomingFrames.onBackpressureBuffer(256, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
     }
 
     /** Opens a socket and reports states until it closes, fails, or collection is cancelled. */
     @NonNull
-    public kotlinx.coroutines.flow.Flow<State> connect() {
-        return StompClientFlow.connect(tokenStore, this::startConnection);
+    public Flowable<State> connect() {
+        return Flowable.create(emitter -> {
+            SerialDisposable lifecycle = new SerialDisposable();
+            emitter.setCancellable(lifecycle::dispose);
+            emitter.onNext(State.Connecting.INSTANCE);
+            SerialDisposable readHolder = new SerialDisposable();
+            lifecycle.set(readHolder);
+            Disposable read = tokenStore.readTokens()
+                    .subscribeOn(Schedulers.io())
+                    .doOnComplete(() -> {
+                        if (!emitter.isCancelled()) {
+                            emitter.onNext(new State.Failed(REASON_NO_TOKEN));
+                            emitter.onComplete();
+                        }
+                    })
+                    .subscribe(tokens -> {
+                        String token = tokens.getAccessToken();
+                        if (token.isBlank()) {
+                            emitter.onNext(new State.Failed(REASON_NO_TOKEN));
+                            emitter.onComplete();
+                            return;
+                        }
+                        StateSink sink = new StateSink() {
+                            @Override public boolean trySend(@NonNull State state) {
+                                if (emitter.isCancelled()) return false;
+                                emitter.onNext(state);
+                                return true;
+                            }
+                            @Override public void close() {
+                                if (!emitter.isCancelled()) emitter.onComplete();
+                            }
+                        };
+                        try {
+                            AutoCloseable cleanup = startConnection(token, sink);
+                            lifecycle.set(Disposable.fromAction(() -> {
+                                try { cleanup.close(); } catch (Exception ignored) { }
+                            }));
+                        } catch (RuntimeException failure) {
+                            emitter.onNext(new State.Failed(failure.getMessage()));
+                            emitter.onComplete();
+                        }
+                    }, failure -> {
+                        emitter.onNext(new State.Failed(failure.getMessage()));
+                        emitter.onComplete();
+                    });
+            readHolder.set(read);
+        }, BackpressureStrategy.LATEST);
     }
 
     /** Queues a STOMP SEND. False means there is no open socket to accept it. */
@@ -166,7 +213,7 @@ public final class StompClient {
 
     /** Sends SUBSCRIBE and returns MESSAGE bodies for the assigned subscription id. */
     @NonNull
-    public kotlinx.coroutines.flow.Flow<String> subscribe(@NonNull String destination) {
+    public Flowable<String> subscribe(@NonNull String destination) {
         String id = subscriptionIds.computeIfAbsent(
                 destination,
                 ignored -> "sub-" + subscriptionCounter.incrementAndGet());
@@ -175,7 +222,10 @@ public final class StompClient {
         headers.put("destination", destination);
         headers.put("ack", "auto");
         sendFrame(new StompFrame(StompCommand.SUBSCRIBE, headers));
-        return StompClientFlow.messages(incomingFrames, id);
+        return getFrames()
+                .filter(frame -> StompCommand.MESSAGE.equals(frame.getCommand())
+                        && id.equals(frame.getHeaders().get("subscription")))
+                .map(StompFrame::getBody);
     }
 
     /** The current id for a destination, or null when it is not subscribed. */
@@ -242,7 +292,7 @@ public final class StompClient {
                         open = true;
                         sink.trySend(State.Open.INSTANCE);
                     } else if (StompCommand.ERROR.equals(command)) {
-                        incomingFrames.tryEmit(frame);
+                        incomingFrames.onNext(frame);
                         if (!open) {
                             String reason = isBlank(frame.getBody())
                                     ? REASON_ERROR_FRAME
@@ -250,7 +300,7 @@ public final class StompClient {
                             sink.trySend(new State.Failed(reason));
                         }
                     } else {
-                        incomingFrames.tryEmit(frame);
+                        incomingFrames.onNext(frame);
                     }
                 }
             }

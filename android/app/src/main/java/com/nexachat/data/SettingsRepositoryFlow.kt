@@ -6,11 +6,12 @@ import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.SessionEvents
 import com.nexachat.core.network.UserApi
 import com.nexachat.core.network.dto.UpdateUserSettingsRequest
-import com.nexachat.core.network.safeApiCall
+import com.nexachat.core.network.ApiResultKt
 import com.nexachat.core.storage.TokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.await
 import kotlinx.coroutines.rx3.asFlow
 import retrofit2.Call
 
@@ -26,7 +27,7 @@ internal object SettingsRepositoryFlow {
         repository: SettingsRepositoryApi,
     ) {
         scope.launch {
-            tokenStore.hasValidRefresh().toObservable().asFlow().collect { hasSession ->
+            tokenStore.hasValidRefresh.collect { hasSession ->
                 if (hasSession) {
                     repository.refreshShowPresence()
                 } else {
@@ -35,7 +36,7 @@ internal object SettingsRepositoryFlow {
             }
         }
         scope.launch {
-            sessionEvents.events.collect { event ->
+            sessionEvents.events.toObservable().asFlow().collect { event ->
                 if (event is SessionEvents.Event.LoggedOut) showPresence.value = true
             }
         }
@@ -43,7 +44,7 @@ internal object SettingsRepositoryFlow {
 
     @JvmStatic
     suspend fun <T> call(retrofitCall: Call<T>): Result<T> =
-        when (val result = safeApiCall(retrofitCall)) {
+        when (val result = ApiResultKt.safeApiCall(retrofitCall).await()) {
             is ApiResult.Success -> Result.Success(result.body)
             is ApiResult.HttpError ->
                 Result.failure(ApiError.from(result.status, result.errorCode))

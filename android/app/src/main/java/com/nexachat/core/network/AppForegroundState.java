@@ -1,6 +1,6 @@
 package com.nexachat.core.network;
 
-import kotlinx.coroutines.flow.Flow;
+import io.reactivex.rxjava3.core.Flowable;
 
 /**
  * Process-level foreground flag — one value for the whole app, independent of
@@ -15,5 +15,5 @@ public interface AppForegroundState {
     /**
      * {@code true} between process onStart and onStop; hot, conflated, distinct.
      */
-    Flow<Boolean> getIsForeground();
+    Flowable<Boolean> getIsForeground();
 }

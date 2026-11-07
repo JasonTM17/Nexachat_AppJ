@@ -1,326 +1,121 @@
 package com.nexachat.core.network;
 
-import androidx.datastore.core.DataStore;
-import androidx.datastore.preferences.core.Preferences;
-import androidx.datastore.preferences.core.PreferencesFactory;
-import com.nexachat.core.network.dto.AuthResponse;
-import com.nexachat.core.network.dto.ChangePasswordRequest;
-import com.nexachat.core.network.dto.LoginRequest;
-import com.nexachat.core.network.dto.LogoutRequest;
-import com.nexachat.core.network.dto.RefreshRequest;
-import com.nexachat.core.network.dto.RegisterRequest;
-import com.nexachat.core.storage.TokenCipher;
-import com.nexachat.core.storage.TokenStore;
-import com.nexachat.core.storage.Tokens;
-import java.io.IOException;
-import java.security.GeneralSecurityException;
-import java.util.concurrent.CancellationException;
-import javax.inject.Provider;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.CoroutineContext;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
-import okhttp3.MediaType;
-import okhttp3.Request;
-import okhttp3.ResponseBody;
-import okio.Timeout;
-import org.junit.Test;
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-/**
- * Session outcome of {@link TokenRefresher}: only a definitive auth rejection
- * wipes tokens. Throttle, timeout, server errors and IO keep the session.
- */
+import com.nexachat.core.network.dto.AuthResponse;
+import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.observers.TestObserver;
+import java.io.IOException;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.inject.Provider;
+import okhttp3.MediaType;
+import okhttp3.ResponseBody;
+import org.junit.Test;
+import retrofit2.Call;
+import retrofit2.Response;
+
+/** Only definitive refresh rejection clears the session; transient failures preserve it. */
 public final class TokenRefresherTest {
 
+    @Test public void rateLimitPreservesTokens() { assertPreserved(429); }
+    @Test public void requestTimeoutPreservesTokens() { assertPreserved(408); }
+    @Test public void serverErrorPreservesTokens() { assertPreserved(503); }
+
     @Test
-    public void rateLimitPreservesTokensAndDoesNotLogOut() throws InterruptedException {
-        assertSessionPreserved(429);
+    public void ioExceptionPreservesTokensAndDoesNotLogOut() {
+        Harness harness = new Harness();
+        Call<AuthResponse> call = mock(Call.class);
+        when(harness.api.refresh(any())).thenReturn(call);
+        when(call.execute()).thenThrow(new IOException("offline"));
+        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
+        assertEquals("rt-live", harness.current().getRefreshToken());
+        harness.events.getEvents().test().assertNoValues();
+    }
+
+    @Test public void reusedRefreshTokenClearsSession() { assertRejected(401); }
+
+    @Test
+    public void validationAndForbiddenClearSession() {
+        assertRejected(400);
+        assertRejected(403);
     }
 
     @Test
-    public void requestTimeoutPreservesTokensAndDoesNotLogOut() throws InterruptedException {
-        assertSessionPreserved(408);
-    }
-
-    @Test
-    public void serverErrorPreservesTokensAndDoesNotLogOut() throws InterruptedException {
-        assertSessionPreserved(503);
-    }
-
-    @Test
-    public void ioExceptionPreservesTokensAndDoesNotLogOut() throws InterruptedException {
-        Harness harness = Harness.seeded();
-        harness.api.failure = new IOException("offline");
-
-        TokenRefreshOutcome outcome = harness.refresh();
-
-        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, outcome);
-        assertEquals("rt-live", harness.readTokens().getRefreshToken());
-        assertTrue(harness.events.getEvents().getReplayCache().isEmpty());
-    }
-
-    @Test
-    public void reusedRefreshTokenClearsTheSession() throws InterruptedException {
-        assertDefinitiveRejection(401);
-    }
-
-    @Test
-    public void validationAndForbiddenClearTheSession() throws InterruptedException {
-        assertDefinitiveRejection(400);
-        assertDefinitiveRejection(403);
-    }
-
-    @Test
-    public void cancellationPropagatesAndKeepsTokens() throws InterruptedException {
-        Harness harness = Harness.seeded();
+    public void cancellationPropagatesAndKeepsTokens() {
+        Harness harness = new Harness();
         CancellationException cancelled = new CancellationException("cancelled");
-        harness.api.failure = cancelled;
-
+        Call<AuthResponse> call = mock(Call.class);
+        when(harness.api.refresh(any())).thenReturn(call);
+        when(call.execute()).thenThrow(cancelled);
         try {
-            harness.refresh();
+            harness.refresher.refreshBlocking();
             fail("cancellation must leave TokenRefresher");
         } catch (CancellationException actual) {
             assertSame(cancelled, actual);
         }
-        assertEquals("rt-live", harness.readTokens().getRefreshToken());
-        assertTrue(harness.events.getEvents().getReplayCache().isEmpty());
+        assertEquals("rt-live", harness.current().getRefreshToken());
+        harness.events.getEvents().test().assertNoValues();
     }
 
-    private static void assertSessionPreserved(int status) throws InterruptedException {
-        Harness harness = Harness.seeded();
-        harness.api.status = status;
-
-        TokenRefreshOutcome outcome = harness.refresh();
-
-        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, outcome);
-        assertEquals("access-live", harness.readTokens().getAccessToken());
-        assertEquals("rt-live", harness.readTokens().getRefreshToken());
-        assertTrue(harness.events.getEvents().getReplayCache().isEmpty());
+    private static void assertPreserved(int status) {
+        Harness harness = new Harness();
+        Call<AuthResponse> call = responseCall(status);
+        when(harness.api.refresh(any())).thenReturn(call);
+        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
+        assertEquals("access-live", harness.current().getAccessToken());
+        assertEquals("rt-live", harness.current().getRefreshToken());
+        harness.events.getEvents().test().assertNoValues();
     }
 
-    private static void assertDefinitiveRejection(int status) throws InterruptedException {
-        Harness harness = Harness.seeded();
-        harness.api.status = status;
+    private static void assertRejected(int status) {
+        Harness harness = new Harness();
+        when(harness.api.refresh(any())).thenReturn(responseCall(status));
+        assertSame(TokenRefreshOutcome.Rejected.INSTANCE, harness.refresher.refreshBlocking());
+        assertNull(harness.current());
+        harness.events.getEvents().test().assertValue(SessionEvents.Event.LoggedOut.INSTANCE);
+    }
 
-        TokenRefreshOutcome outcome = harness.refresh();
-
-        assertSame(TokenRefreshOutcome.Rejected.INSTANCE, outcome);
-        assertNull(harness.readTokens());
-        assertEquals(
-                SessionEvents.Event.LoggedOut.INSTANCE,
-                harness.events.getEvents().getReplayCache().get(0)
-        );
+    private static Call<AuthResponse> responseCall(int status) {
+        Call<AuthResponse> call = mock(Call.class);
+        ResponseBody error = ResponseBody.create(MediaType.parse("application/json"),
+                "{\"error\":{\"code\":\"REFRESH_REJECTED\"}}");
+        when(call.execute()).thenReturn(Response.error(status, error));
+        return call;
     }
 
     private static final class Harness {
-        final MemoryPreferences preferences = new MemoryPreferences();
-        final TokenStore store = new TokenStore(preferences, new PassThroughCipher());
+        final TokenStore store = newStore(new Tokens("access-live", 9_000L, "rt-live"));
         final SessionEvents events = new SessionEvents();
-        final ScriptedAuthApi api = new ScriptedAuthApi();
-        final TokenRefresher refresher = new TokenRefresher(store, events, api);
-
-        static Harness seeded() throws InterruptedException {
-            Harness harness = new Harness();
-            Function2<CoroutineScope, Continuation<? super Unit>, Object> save =
-                    (scope, continuation) ->
-                            harness.store.saveTokens("access-live", 9_000L, "rt-live", continuation);
-            BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, save);
-            return harness;
-        }
-
-        TokenRefreshOutcome refresh() throws InterruptedException {
-            Function2<CoroutineScope, Continuation<? super TokenRefreshOutcome>, Object> call =
-                    (scope, continuation) -> refresher.refresh(continuation);
-            return (TokenRefreshOutcome) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, call);
-        }
-
-        Tokens readTokens() throws InterruptedException {
-            Function2<CoroutineScope, Continuation<? super Tokens>, Object> read =
-                    (scope, continuation) -> store.readTokens(continuation);
-            return (Tokens) BuildersKt.runBlocking(EmptyCoroutineContext.INSTANCE, read);
-        }
+        final AuthApi api = mock(AuthApi.class);
+        final TokenRefresher refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
+        Tokens current() { return store.readTokens().blockingGet(null); }
     }
 
-    private static final class PassThroughCipher implements TokenCipher {
-        @Override
-        public byte[] encrypt(byte[] plaintext) throws GeneralSecurityException, IOException {
-            return plaintext.clone();
-        }
-
-        @Override
-        public byte[] decrypt(byte[] packed) throws GeneralSecurityException, IOException {
-            return packed.clone();
-        }
-    }
-
-    /** Enough of DataStore for {@link TokenStore}'s edit/read path. */
-    private static final class MemoryPreferences implements DataStore<Preferences> {
-        private final MutableStateFlow<Preferences> state =
-                StateFlowKt.MutableStateFlow(PreferencesFactory.createEmpty());
-
-        @Override
-        public Flow<Preferences> getData() {
-            return state;
-        }
-
-        @Override
-        public Object updateData(
-                Function2<? super Preferences, ? super Continuation<? super Preferences>, ?> transform,
-                Continuation<? super Preferences> completion
-        ) {
-            Object updated = transform.invoke(state.getValue(), new Continuation<Preferences>() {
-                @Override
-                public CoroutineContext getContext() {
-                    return EmptyCoroutineContext.INSTANCE;
-                }
-
-                @Override
-                public void resumeWith(Object result) {
-                    throw new IllegalStateException("token store transform suspended");
-                }
-            });
-            if (!(updated instanceof Preferences)) {
-                throw new IllegalStateException("token store transform did not return preferences");
-            }
-            Preferences next = (Preferences) updated;
-            state.setValue(next);
-            return next;
-        }
-    }
-
-    private static final class ScriptedAuthApi implements AuthApi, Provider<AuthApi> {
-        int status = 500;
-        Throwable failure;
-
-        @Override
-        public AuthApi get() {
-            return this;
-        }
-
-        @Override
-        public Call<AuthResponse> refresh(RefreshRequest body) {
-            if (failure != null) {
-                return new ScriptedCall<>(null, failure);
-            }
-            ResponseBody error = ResponseBody.create(
-                    MediaType.parse("application/json"),
-                    "{\"error\":{\"code\":\"REFRESH_REJECTED\"}}"
-            );
-            return new ScriptedCall<>(Response.error(status, error), null);
-        }
-
-        @Override
-        public Call<AuthResponse> register(RegisterRequest body) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Call<AuthResponse> login(LoginRequest body) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Call<Void> logout(LogoutRequest body) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Call<Void> logoutAll() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Call<Void> changePassword(ChangePasswordRequest body) {
-            throw new UnsupportedOperationException();
-        }
-
-        @SuppressWarnings("unchecked")
-        private static <T, E extends Throwable> T sneakyThrow(Throwable throwable) throws E {
-            throw (E) throwable;
-        }
-    }
-
-    private static final class ScriptedCall<T> implements Call<T> {
-        private static final Request REQUEST = new Request.Builder()
-                .url("https://nexachat.test/api/v1/auth/refresh")
-                .build();
-
-        private final Response<T> response;
-        private final Throwable failure;
-        private boolean executed;
-        private boolean canceled;
-
-        ScriptedCall(Response<T> response, Throwable failure) {
-            this.response = response;
-            this.failure = failure;
-        }
-
-        @Override
-        public Response<T> execute() throws IOException {
-            if (executed) {
-                throw new IllegalStateException("already executed");
-            }
-            executed = true;
-            if (canceled) {
-                throw new IOException("canceled");
-            }
-            if (failure instanceof RuntimeException) {
-                throw (RuntimeException) failure;
-            }
-            if (failure != null) {
-                return ScriptedAuthApi.sneakyThrow(failure);
-            }
-            return response;
-        }
-
-        @Override
-        public void enqueue(Callback<T> callback) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean isExecuted() {
-            return executed;
-        }
-
-        @Override
-        public void cancel() {
-            canceled = true;
-        }
-
-        @Override
-        public boolean isCanceled() {
-            return canceled;
-        }
-
-        @Override
-        public Call<T> clone() {
-            return new ScriptedCall<>(response, failure);
-        }
-
-        @Override
-        public Request request() {
-            return REQUEST;
-        }
-
-        @Override
-        public Timeout timeout() {
-            return Timeout.NONE;
-        }
+    private static TokenStore newStore(Tokens initial) {
+        TokenStore store = mock(TokenStore.class);
+        AtomicReference<Tokens> state = new AtomicReference<>(initial);
+        when(store.readTokens()).thenAnswer(ignored -> Maybe.defer(() ->
+                state.get() == null ? Maybe.empty() : Maybe.just(state.get())));
+        when(store.saveTokens(anyString(), anyLong(), anyString())).thenAnswer(invocation ->
+                Completable.fromAction(() -> state.set(new Tokens(
+                        invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)))));
+        when(store.clear()).thenAnswer(ignored -> Completable.fromAction(() -> state.set(null)));
+        when(store.getHasValidRefresh()).thenReturn(Flowable.defer(() -> Flowable.just(state.get() != null)));
+        return store;
     }
 }
