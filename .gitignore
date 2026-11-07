@@ -16,6 +16,8 @@ node_modules/
 .gradle/
 .cxx/
 .kotlin/
+__pycache__/
+*.py[cod]
 # gradle-wrapper.jar must be committed despite the *.jar rule above —
 # it is required for reproducible wrapper bootstrap on fresh checkouts.
 !**/gradle-wrapper.jar
