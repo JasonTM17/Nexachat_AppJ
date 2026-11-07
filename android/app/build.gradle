@@ -1,0 +1,188 @@
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.hilt)
+}
+
+// Backend base URL for BuildConfig.API_BASE_URL — local.properties
+// (`API_BASE_URL=...`) beats the default; -PapiBaseUrl beats both.
+def localProps = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { input -> localProps.load(input) }
+}
+
+def releaseSigningPropertiesFile = rootProject.file('../release/keystore/signing.properties')
+def releaseSigningProperties = new Properties()
+if (releaseSigningPropertiesFile.isFile()) {
+    releaseSigningPropertiesFile.withInputStream { input -> releaseSigningProperties.load(input) }
+}
+def releaseSigningKeys = [
+    'storeFile',
+    'keyAlias',
+    'keystore.storePassword',
+    'keyPassword'
+]
+if (releaseSigningPropertiesFile.isFile()) {
+    def missingSigningKeys = releaseSigningKeys.findAll {
+        !releaseSigningProperties.getProperty(it)?.trim()
+    }
+    if (!missingSigningKeys.isEmpty()) {
+        throw new IllegalArgumentException(
+            "release/keystore/signing.properties is missing required entries: ${missingSigningKeys.join(', ')}"
+        )
+    }
+    if (!rootProject.file("../${releaseSigningProperties.getProperty('storeFile')}").isFile()) {
+        throw new IllegalArgumentException('The keystore configured in release/keystore/signing.properties does not exist')
+    }
+}
+
+def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
+    .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
+
+android {
+    namespace 'com.nexachat'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.nexachat'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += ['room.schemaLocation': "$projectDir/schemas".toString()]
+            }
+        }
+
+        ndk {
+            abiFilters += ['arm64-v8a', 'x86_64']
+        }
+
+        // Backend base URL — override in local.properties (LAN demo) or via
+        // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
+        buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
+    }
+
+    signingConfigs {
+        if (releaseSigningPropertiesFile.isFile()) {
+            release {
+                storeFile rootProject.file("../${releaseSigningProperties.getProperty('storeFile')}")
+                storePassword releaseSigningProperties.getProperty('keystore.storePassword')
+                keyAlias releaseSigningProperties.getProperty('keyAlias')
+                keyPassword releaseSigningProperties.getProperty('keyPassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            signingConfig releaseSigningPropertiesFile.isFile() ?
+                signingConfigs.getByName('release') : signingConfigs.getByName('debug')
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        buildConfig true
+        viewBinding true
+    }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+
+    sourceSets {
+        getByName('androidTest').assets.srcDir("$projectDir/schemas")
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releasePackagingRequested = graph.allTasks.any { task ->
+        task.path == ':app:assembleRelease' ||
+            task.path == ':app:packageRelease' ||
+            task.path == ':app:bundleRelease'
+    }
+    if (releasePackagingRequested && !releaseSigningPropertiesFile.isFile()) {
+        logger.warn(
+            'WARNING: release/keystore/signing.properties is missing; this release artifact is ' +
+                'signed with the debug key and is for local verification only.'
+        )
+    }
+}
+
+dependencies {
+    // Activity / Navigation / Lifecycle / Views
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.navigation.fragment)
+    implementation(libs.androidx.navigation.ui)
+    implementation(libs.androidx.swiperefreshlayout)
+    implementation(libs.bundles.lifecycle)
+
+    // Hilt DI (Java annotationProcessor)
+    implementation(libs.hilt.android)
+    annotationProcessor(libs.hilt.android.compiler)
+
+    // Room — local source of truth (offline-first, plan §12.2)
+    implementation(libs.bundles.room)
+    annotationProcessor(libs.androidx.room.compiler)
+
+    // Network — Retrofit/REST + OkHttp (also used for the STOMP-over-WS client)
+    implementation(libs.bundles.network)
+
+    // Local storage — TokenStore / prefs (plan §12.1 core/storage)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.datastore.rxjava3)
+
+    // Reactive streams (RxJava3)
+    implementation(libs.rxjava)
+    implementation(libs.rxandroid)
+
+    // Image loading (avatars, media messages)
+    implementation(libs.glide)
+    annotationProcessor(libs.glide.compiler)
+
+    // Media playback — voice/video messages
+    implementation(libs.bundles.media3)
+
+    // In-app audio calls
+    implementation(libs.stream.webrtc)
+
+    // E.164 phone normalization
+    implementation(libs.libphonenumber)
+
+    // Unit tests
+    testImplementation(libs.bundles.unit.test)
+
+    // Instrumented tests
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.hilt.android.testing)
+    androidTestAnnotationProcessor(libs.hilt.android.compiler)
+}
+
+tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+    options.compilerArgs.add('-parameters')
+}
