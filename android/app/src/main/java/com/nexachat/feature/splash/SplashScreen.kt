@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.asFlow
 import com.nexachat.R
 import com.nexachat.feature.auth.SplashNavEvent
 import com.nexachat.feature.auth.SplashViewModel
@@ -39,7 +40,7 @@ fun SplashScreen(
     viewModel: SplashViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(Unit) {
-        viewModel.navEvents.collectLatest { event ->
+        viewModel.navEvents.asFlow().collectLatest { event ->
             when (event) {
                 is SplashNavEvent.ToLogin -> onNavigateToLogin()
                 is SplashNavEvent.ToInbox -> onNavigateToInbox()

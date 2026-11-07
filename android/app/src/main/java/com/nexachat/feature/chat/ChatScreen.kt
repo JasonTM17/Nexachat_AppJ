@@ -121,6 +121,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
 import com.nexachat.call.CallLauncher
@@ -146,6 +147,7 @@ import com.nexachat.data.ConversationSummary
 import com.nexachat.data.DeliveryStatus
 import com.nexachat.feature.contacts.InitialAvatar
 import com.nexachat.feature.inbox.InboxViewModel
+import com.nexachat.feature.inbox.InboxUiState
 import com.nexachat.feature.media.MediaPickerSheet
 import com.nexachat.feature.media.MessageAttachmentContent
 import com.nexachat.feature.media.PendingAttachmentStrip
@@ -1117,7 +1119,9 @@ private fun ForwardConversationSheet(
     onSelectConversation: (String) -> Unit,
     inboxViewModel: InboxViewModel = hiltViewModel(),
 ) {
-    val inboxState by inboxViewModel.uiState.collectAsStateWithLifecycle()
+    val inboxState by inboxViewModel.uiState.asFlow().collectAsStateWithLifecycle(
+        inboxViewModel.uiState.value ?: InboxUiState(),
+    )
     var query by rememberSaveable { mutableStateOf("") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)

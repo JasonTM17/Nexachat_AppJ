@@ -492,13 +492,13 @@ class ChatViewModel @Inject constructor(
                     ?: return@launch
                 updatePending {
                     it + PendingAttachment(
-                        localId = localId,
-                        uri = uri,
-                        displayName = local.displayName,
-                        mimeType = local.mimeType,
-                        type = local.type,
-                        progress = 0f,
-                        state = PendingAttachment.PendingState.UPLOADING,
+                        localId,
+                        uri,
+                        local.displayName,
+                        local.mimeType,
+                        local.type,
+                        0f,
+                        PendingAttachment.PendingState.UPLOADING,
                     )
                 }
                 attachmentRepository.upload(uri, local.mimeType).toObservable().asFlow().collect { event ->
@@ -506,7 +506,7 @@ class ChatViewModel @Inject constructor(
                         is AttachmentUploadEvent.Progress -> updatePending { rows ->
                             rows.map { row ->
                                 if (row.localId == localId) {
-                                    row.copy(progress = event.fraction)
+                                    row.withProgress(event.fraction)
                                 } else {
                                     row
                                 }
@@ -532,9 +532,7 @@ class ChatViewModel @Inject constructor(
                         is AttachmentUploadEvent.Failed -> updatePending { rows ->
                             rows.map { row ->
                                 if (row.localId == localId) {
-                                    row.copy(
-                                        state = PendingAttachment.PendingState.FAILED,
-                                    )
+                                    row.withState(PendingAttachment.PendingState.FAILED)
                                 } else {
                                     row
                                 }

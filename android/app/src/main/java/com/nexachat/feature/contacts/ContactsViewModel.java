@@ -1,31 +1,26 @@
 package com.nexachat.feature.contacts;
 
 import androidx.lifecycle.SavedStateHandle;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.Contact;
 import com.nexachat.data.ContactsRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.channels.Channel;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
 /**
  * Backs ContactsScreen and UserSearchScreen. Each nav destination owns a
@@ -39,12 +34,11 @@ public final class ContactsViewModel extends ViewModel {
 
     private final SavedStateHandle savedStateHandle;
     private final ContactsRepository contactsRepository;
-    private final MutableStateFlow<UiState> mutableUiState;
-    private final StateFlow<UiState> uiState;
-    private final Channel<Event> eventsChannel =
-            ContactsViewModelSupportKt.newContactsEventChannel();
-    private final Flow<Event> events =
-            ContactsViewModelSupportKt.contactsEventsFlow(eventsChannel);
+    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final MutableLiveData<UiState> mutableUiState;
+    private final OneShotLiveData<Event> events = new OneShotLiveData<>();
+    private UiState currentState;
+    private List<Contact> currentContacts = Collections.emptyList();
 
     @Inject
     public ContactsViewModel(
@@ -55,35 +49,52 @@ public final class ContactsViewModel extends ViewModel {
         this.contactsRepository =
                 Objects.requireNonNull(contactsRepository, "contactsRepository");
         String restoredQuery = savedStateHandle.get(KEY_SEARCH_QUERY);
-        mutableUiState = StateFlowKt.MutableStateFlow(
-                new UiState().withQuery(restoredQuery == null ? "" : restoredQuery));
-        uiState = ContactsViewModelSupportKt.contactsUiState(
-                mutableUiState,
-                contactsRepository.getContactsFlow(),
-                ViewModelKt.getViewModelScope(this));
+        UiState initialState = new UiState().withQuery(restoredQuery == null ? "" : restoredQuery);
+        mutableUiState = new MutableLiveData<>(initialState);
+        currentState = initialState;
+        disposables.add(contactsRepository.getContactsFlow()
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        contacts -> {
+                            List<Contact> snapshot = List.copyOf(contacts);
+                            synchronized (this) {
+                                currentContacts = snapshot;
+                            }
+                            updateState(state -> state.withContacts(snapshot));
+                        },
+                        error -> updateState(state -> state.withError(
+                                new ApiError.Network(error.getMessage())))));
         loadContacts();
     }
 
-    public StateFlow<UiState> getUiState() {
-        return uiState;
+    public LiveData<UiState> getUiState() {
+        return mutableUiState;
     }
 
-    public Flow<Event> getEvents() {
+    public LiveData<Event> getEvents() {
         return events;
     }
 
     /** Loads the shared contact list once for this ViewModel instance. */
     public void loadContacts() {
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsLoadContacts(
-                        contactsRepository, mutableUiState, continuation));
+        updateState(state -> state.withLoading(true).withError(null));
+        disposables.add(contactsRepository.contacts()
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?>
+                                ? state.withLoading(false).withContactsLoaded(true)
+                                : state.withLoading(false)
+                                        .withError(((Result.Failure<?>) result).getError())
+                                        .withContactsLoaded(true)),
+                        error -> updateState(state -> state.withLoading(false)
+                                .withError(new ApiError.Network(error.getMessage()))
+                                .withContactsLoaded(true))));
     }
 
     public void onQueryChange(String value) {
         Objects.requireNonNull(value, "value");
         savedStateHandle.set(KEY_SEARCH_QUERY, value);
-        UiState state = mutableUiState.getValue();
-        mutableUiState.setValue(state
+        updateState(state -> state
                 .withQuery(value)
                 .withError(null)
                 .withSearched(state.isSearched() && hasNonWhitespace(value)));
@@ -103,22 +114,31 @@ public final class ContactsViewModel extends ViewModel {
      * name-prefix search because the endpoint is rate-limited.
      */
     public void search() {
-        String query = trimWhitespace(mutableUiState.getValue().getQuery());
-        if (query.isEmpty() || mutableUiState.getValue().isLoading()) {
+        UiState state = currentState();
+        String query = trimWhitespace(state.getQuery());
+        if (query.isEmpty() || state.isLoading()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsSearch(
-                        contactsRepository,
-                        mutableUiState,
-                        query,
-                        isPhoneQuery(query),
-                        continuation));
+        updateState(current -> current.withLoading(true).withError(null).withSearched(true));
+        Single<Result<List<UserDto>>> request = isPhoneQuery(query)
+                ? contactsRepository.searchByPhone(query)
+                : contactsRepository.searchByName(query);
+        disposables.add(request.subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> result instanceof Result.Success<?> success
+                                ? current.withLoading(false)
+                                        .withSearchResults((List<UserDto>) success.getValue())
+                                : current.withLoading(false)
+                                        .withError(((Result.Failure<?>) result).getError())
+                                        .withSearchResults(Collections.emptyList())),
+                        error -> updateState(current -> current.withLoading(false)
+                                .withError(new ApiError.Network(error.getMessage()))
+                                .withSearchResults(Collections.emptyList()))));
     }
 
     public void onAddPhoneChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withAddPhone(value)
                 .withAddError(null)
                 .withAddResult(null)
@@ -127,32 +147,48 @@ public final class ContactsViewModel extends ViewModel {
 
     /** Finds a user for confirmation before adding by phone. */
     public void findUserForAdd() {
-        String phone = trimWhitespace(mutableUiState.getValue().getAddPhone());
-        if (phone.isEmpty() || mutableUiState.getValue().isAddSearching()) {
+        UiState state = currentState();
+        String phone = trimWhitespace(state.getAddPhone());
+        if (phone.isEmpty() || state.isAddSearching()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsFindUserForAdd(
-                        contactsRepository, mutableUiState, phone, continuation));
+        updateState(current -> current.withAddSearching(true).withAddError(null).withAddResult(null));
+        disposables.add(contactsRepository.searchByPhone(phone)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> {
+                            if (result instanceof Result.Success<?> success) {
+                                List<UserDto> matches = (List<UserDto>) success.getValue();
+                                UserDto match = matches.isEmpty() ? null : matches.get(0);
+                                return current.withAddSearching(false)
+                                        .withAddResult(match)
+                                        .withAddError(match == null
+                                                ? new ApiError.Unknown("USER_NOT_FOUND")
+                                                : null);
+                            }
+                            return current.withAddSearching(false)
+                                    .withAddError(((Result.Failure<?>) result).getError());
+                        }),
+                        error -> updateState(current -> current.withAddSearching(false)
+                                .withAddError(new ApiError.Network(error.getMessage())))));
     }
 
     /** Adds the confirmed user, or retries from the entered phone. */
     public void confirmAdd() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         String phone = state.getAddResult() == null
                 ? trimWhitespace(state.getAddPhone())
                 : state.getAddResult().getPhone();
         if (phone.isEmpty() || state.isAdding()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsConfirmAdd(
-                        contactsRepository, mutableUiState, phone, continuation));
+        updateState(current -> current.withAdding(true).withAddError(null));
+        submitAddContact(phone, false);
     }
 
     /** Resets the add-by-phone flow when its sheet is dismissed. */
     public void resetAddFlow() {
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withAddPhone("")
                 .withAddSearching(false)
                 .withAddResult(null)
@@ -164,21 +200,19 @@ public final class ContactsViewModel extends ViewModel {
     public void openUserDetail(UserDto user) {
         Objects.requireNonNull(user, "user");
         Contact known = null;
-        List<Contact> cached = contactsRepository.getContactsFlow().getValue();
-        if (cached != null) {
-            for (Contact contact : cached) {
-                if (contact.getUserId().equals(user.getId())) {
-                    known = contact;
-                    break;
-                }
+        for (Contact contact : currentContacts()) {
+            if (contact.getUserId().equals(user.getId())) {
+                known = contact;
+                break;
             }
         }
-        mutableUiState.setValue(mutableUiState.getValue()
+        Contact selected = known;
+        updateState(state -> state
                 .withDetailUser(user)
-                .withDetailContact(known)
-                .withAliasInput(known == null || known.getAliasName() == null
+                .withDetailContact(selected)
+                .withAliasInput(selected == null || selected.getAliasName() == null
                         ? ""
-                        : known.getAliasName())
+                        : selected.getAliasName())
                 .withDetailError(null));
     }
 
@@ -189,7 +223,7 @@ public final class ContactsViewModel extends ViewModel {
                 contact.getPhone(),
                 contact.getDisplayName(),
                 null);
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withDetailUser(user)
                 .withDetailContact(contact)
                 .withAliasInput(contact.getAliasName() == null ? "" : contact.getAliasName())
@@ -197,7 +231,7 @@ public final class ContactsViewModel extends ViewModel {
     }
 
     public void closeDetail() {
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withDetailUser(null)
                 .withDetailContact(null)
                 .withAliasInput("")
@@ -207,14 +241,14 @@ public final class ContactsViewModel extends ViewModel {
 
     public void onAliasChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withAliasInput(value)
                 .withDetailError(null));
     }
 
     /** Persists the selected contact's alias; blank input clears it. */
     public void saveAlias() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         Contact contact = state.getDetailContact();
         if (contact == null || state.isDetailBusy()) {
             return;
@@ -224,57 +258,126 @@ public final class ContactsViewModel extends ViewModel {
             alias = null;
         }
         String requestedAlias = alias;
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsSaveAlias(
-                        contactsRepository,
-                        mutableUiState,
-                        contact,
-                        requestedAlias,
-                        continuation));
+        updateState(current -> current.withDetailBusy(true).withDetailError(null));
+        disposables.add(contactsRepository.setAlias(contact.getUserId(), requestedAlias)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> result instanceof Result.Success<?> success
+                                ? current.withDetailBusy(false)
+                                        .withDetailContact((Contact) success.getValue())
+                                : current.withDetailBusy(false).withDetailError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(current -> current.withDetailBusy(false)
+                                .withDetailError(new ApiError.Network(error.getMessage())))));
     }
 
     public void removeSelectedContact() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         Contact contact = state.getDetailContact();
         if (contact == null || state.isDetailBusy()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsRemoveSelectedContact(
-                        contactsRepository, mutableUiState, contact, continuation));
+        updateState(current -> current.withDetailBusy(true).withDetailError(null));
+        disposables.add(contactsRepository.removeContact(contact.getUserId())
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> result instanceof Result.Success<?>
+                                ? current.withDetailBusy(false)
+                                        .withDetailUser(null).withDetailContact(null)
+                                : current.withDetailBusy(false).withDetailError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(current -> current.withDetailBusy(false)
+                                .withDetailError(new ApiError.Network(error.getMessage())))));
     }
 
     /** Adds the selected search result as a contact. */
     public void addDetailContact() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         UserDto user = state.getDetailUser();
         if (user == null || state.isDetailBusy()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsAddDetailContact(
-                        contactsRepository, mutableUiState, user, continuation));
+        updateState(current -> current.withDetailBusy(true).withDetailError(null));
+        submitAddContact(user.getPhone(), true);
     }
 
     /** Opens the selected user's direct conversation and emits navigation. */
     public void messageSelected() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         UserDto user = state.getDetailUser();
         if (user == null || state.isDetailBusy()) {
             return;
         }
-        launch((scope, continuation) ->
-                ContactsViewModelSupportKt.contactsMessageSelected(
-                        contactsRepository, mutableUiState, eventsChannel, user, continuation));
+        updateState(current -> current.withDetailBusy(true).withDetailError(null));
+        disposables.add(contactsRepository.openDirectConversation(user.getId(), user.getPhone())
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Success<?> success) {
+                                String conversationId = (String) success.getValue();
+                                updateState(current -> current.withDetailBusy(false));
+                                events.postValue(new Event.OpenConversation(conversationId));
+                            } else {
+                                updateState(current -> current.withDetailBusy(false)
+                                        .withDetailError(
+                                                ((Result.Failure<?>) result).getError()));
+                            }
+                        },
+                        error -> updateState(current -> current.withDetailBusy(false)
+                                .withDetailError(new ApiError.Network(error.getMessage())))));
     }
 
-    private void launch(
-            Function2<CoroutineScope, Continuation<? super Unit>, Object> block) {
-        BuildersKt.launch(
-                ViewModelKt.getViewModelScope(this),
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                block);
+    private void submitAddContact(String phone, boolean detail) {
+        disposables.add(contactsRepository.getMe()
+                .subscribeOn(Schedulers.io())
+                .flatMap(meResult -> {
+                    if (meResult instanceof Result.Success<?> success) {
+                        UserDto me = (UserDto) success.getValue();
+                        if (SelfContactGuard.isOwnPhone(phone, me.getPhone())) {
+                            return Single.just(Result.<Contact>failure(
+                                    new ApiError.Unknown(SelfContactGuard.ERROR_CODE)));
+                        }
+                    }
+                    return contactsRepository.addContact(phone);
+                })
+                .subscribe(
+                        result -> updateState(current -> {
+                            if (detail) {
+                                return result instanceof Result.Success<?> success
+                                        ? current.withDetailBusy(false)
+                                                .withDetailContact((Contact) success.getValue())
+                                        : current.withDetailBusy(false).withDetailError(
+                                                ((Result.Failure<?>) result).getError());
+                            }
+                            return result instanceof Result.Success<?>
+                                    ? current.withAdding(false).withAddDone(true)
+                                    : current.withAdding(false).withAddError(
+                                            ((Result.Failure<?>) result).getError());
+                        }),
+                        error -> updateState(current -> detail
+                                ? current.withDetailBusy(false).withDetailError(
+                                        new ApiError.Network(error.getMessage()))
+                                : current.withAdding(false).withAddError(
+                                        new ApiError.Network(error.getMessage())))));
+    }
+
+    private synchronized UiState currentState() {
+        return currentState;
+    }
+
+    private synchronized List<Contact> currentContacts() {
+        return currentContacts;
+    }
+
+    private synchronized void updateState(UnaryOperator<UiState> reducer) {
+        currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
+        mutableUiState.postValue(currentState);
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 
     private static boolean hasNonWhitespace(String value) {
@@ -599,5 +702,61 @@ public final class ContactsViewModel extends ViewModel {
                 return "OpenConversation(conversationId=" + conversationId + ")";
             }
         }
+    }
+}
+
+/** LiveData event stream that does not redeliver a consumed value after rotation. */
+final class OneShotLiveData<T> extends MutableLiveData<T> {
+
+    private final AtomicBoolean pending = new AtomicBoolean(false);
+    private final java.util.Map<androidx.lifecycle.Observer<? super T>,
+            androidx.lifecycle.Observer<T>> foreverObservers = new java.util.IdentityHashMap<>();
+
+    @Override
+    public void observe(
+            @androidx.annotation.NonNull androidx.lifecycle.LifecycleOwner owner,
+            @androidx.annotation.NonNull androidx.lifecycle.Observer<? super T> observer) {
+        super.observe(owner, gated(observer));
+    }
+
+    @Override
+    public void observeForever(
+            @androidx.annotation.NonNull androidx.lifecycle.Observer<? super T> observer) {
+        androidx.lifecycle.Observer<T> wrapper = gated(observer);
+        synchronized (foreverObservers) {
+            foreverObservers.put(observer, wrapper);
+        }
+        super.observeForever(wrapper);
+    }
+
+    @Override
+    public void removeObserver(
+            @androidx.annotation.NonNull androidx.lifecycle.Observer<? super T> observer) {
+        androidx.lifecycle.Observer<T> wrapper;
+        synchronized (foreverObservers) {
+            wrapper = foreverObservers.remove(observer);
+        }
+        super.removeObserver(wrapper == null ? observer : wrapper);
+    }
+
+    @Override
+    public void postValue(@Nullable T value) {
+        pending.set(true);
+        super.postValue(value);
+    }
+
+    @Override
+    public void setValue(@Nullable T value) {
+        pending.set(true);
+        super.setValue(value);
+    }
+
+    private androidx.lifecycle.Observer<T> gated(
+            androidx.lifecycle.Observer<? super T> observer) {
+        return value -> {
+            if (pending.compareAndSet(true, false)) {
+                observer.onChanged(value);
+            }
+        };
     }
 }

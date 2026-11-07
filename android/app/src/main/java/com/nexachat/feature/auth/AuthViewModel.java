@@ -2,32 +2,27 @@ package com.nexachat.feature.auth;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
+import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.data.AuthRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.UnaryOperator;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.channels.Channel;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 /**
  * Shared ViewModel for the Login and Register destinations (each nav entry
  * gets its own instance via {@code hiltViewModel()} — no state leaks between them).
  *
  * <p>Field inputs live in {@link UiState} so they survive config changes;
- * one-shot navigation uses a buffered channel.
+ * one-shot navigation is consumed by a single observer cycle.
  */
 @HiltViewModel
 public final class AuthViewModel extends ViewModel {
@@ -35,91 +30,110 @@ public final class AuthViewModel extends ViewModel {
     public static final int MIN_PASSWORD_LENGTH = 8;
 
     private final AuthRepository authRepository;
-    private final MutableStateFlow<UiState> mutableUiState =
-            StateFlowKt.MutableStateFlow(new UiState());
-    private final StateFlow<UiState> uiState =
-            AuthViewModelSupportKt.authReadOnlyUiState(mutableUiState);
-    private final Channel<Event> eventsChannel = AuthViewModelSupportKt.newAuthEventChannel();
-    private final Flow<Event> events = AuthViewModelSupportKt.authEventsFlow(eventsChannel);
+    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
+    private final OneShotLiveData<Event> events = new OneShotLiveData<>();
+    private UiState currentState = mutableUiState.getValue();
 
     @Inject
     public AuthViewModel(AuthRepository authRepository) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
     }
 
-    public StateFlow<UiState> getUiState() {
-        return uiState;
+    public LiveData<UiState> getUiState() {
+        return mutableUiState;
     }
 
-    public Flow<Event> getEvents() {
+    public LiveData<Event> getEvents() {
         return events;
     }
 
     public void onPhoneChange(@NonNull String value) {
-        mutableUiState.setValue(mutableUiState.getValue().withPhone(value));
+        updateState(state -> state.withPhone(value));
     }
 
     public void onPasswordChange(@NonNull String value) {
-        mutableUiState.setValue(mutableUiState.getValue().withPassword(value));
+        updateState(state -> state.withPassword(value));
     }
 
     public void onDisplayNameChange(@NonNull String value) {
-        mutableUiState.setValue(mutableUiState.getValue().withDisplayName(value));
+        updateState(state -> state.withDisplayName(value));
     }
 
     public void login() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         boolean phoneInvalid = isBlank(state.getPhone());
         boolean passwordInvalid = state.getPassword().length() < MIN_PASSWORD_LENGTH;
         if (phoneInvalid || passwordInvalid) {
-            mutableUiState.setValue(state.withLoginValidation(phoneInvalid, passwordInvalid));
+            updateState(current -> current.withLoginValidation(phoneInvalid, passwordInvalid));
             return;
         }
         submitLogin(state.getPhone(), state.getPassword());
     }
 
     public void register() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         boolean phoneInvalid = isBlank(state.getPhone());
         boolean passwordInvalid = state.getPassword().length() < MIN_PASSWORD_LENGTH;
         boolean nameInvalid = isBlank(state.getDisplayName());
         if (phoneInvalid || passwordInvalid || nameInvalid) {
-            mutableUiState.setValue(
-                    state.withRegisterValidation(phoneInvalid, passwordInvalid, nameInvalid));
+            updateState(current -> current.withRegisterValidation(
+                    phoneInvalid, passwordInvalid, nameInvalid));
             return;
         }
         submitRegister(state.getPhone(), state.getPassword(), state.getDisplayName());
     }
 
     private void submitLogin(@NonNull String phone, @NonNull String password) {
-        if (mutableUiState.getValue().getLoading()) {
+        if (currentState().getLoading()) {
             return; // double-tap / IME re-submit guard
         }
-        launch(
-                (scope, continuation) ->
-                        AuthViewModelSupportKt.authSubmitLogin(
-                                authRepository, phone, password, mutableUiState, eventsChannel,
-                                continuation));
+        updateState(state -> state.withLoading(true, null));
+        disposables.add(authRepository.login(phone, password)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        this::finishSubmit,
+                        error -> updateState(state -> state.withLoading(
+                                false, new ApiError.Network(error.getMessage())))));
     }
 
     private void submitRegister(
             @NonNull String phone, @NonNull String password, @NonNull String displayName) {
-        if (mutableUiState.getValue().getLoading()) {
+        if (currentState().getLoading()) {
             return; // double-tap / IME re-submit guard
         }
-        launch(
-                (scope, continuation) ->
-                        AuthViewModelSupportKt.authSubmitRegister(
-                                authRepository, phone, password, displayName,
-                                mutableUiState, eventsChannel, continuation));
+        updateState(state -> state.withLoading(true, null));
+        disposables.add(authRepository.register(phone, password, displayName)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        this::finishSubmit,
+                        error -> updateState(state -> state.withLoading(
+                                false, new ApiError.Network(error.getMessage())))));
     }
 
-    private void launch(Function2<CoroutineScope, Continuation<? super Unit>, Object> block) {
-        BuildersKt.launch(
-                ViewModelKt.getViewModelScope(this),
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                block);
+    private void finishSubmit(Result<AuthResponse> result) {
+        if (result instanceof Result.Success<?>) {
+            updateState(state -> state.withLoading(false, null));
+            events.postValue(Event.LoggedIn);
+        } else {
+            ApiError error = ((Result.Failure<?>) result).getError();
+            updateState(state -> state.withLoading(false, error));
+        }
+    }
+
+    private synchronized UiState currentState() {
+        return currentState;
+    }
+
+    private synchronized void updateState(UnaryOperator<UiState> reducer) {
+        currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
+        mutableUiState.postValue(currentState);
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 
     private static boolean isBlank(@NonNull String value) {
@@ -280,5 +294,59 @@ public final class AuthViewModel extends ViewModel {
                     + ", displayNameError=" + displayNameError
                     + ")";
         }
+    }
+}
+
+/** LiveData event stream that delivers each value to one active observer cycle. */
+final class OneShotLiveData<T> extends MutableLiveData<T> {
+
+    private final AtomicBoolean pending = new AtomicBoolean(false);
+    private final java.util.Map<androidx.lifecycle.Observer<? super T>,
+            androidx.lifecycle.Observer<T>> foreverObservers = new java.util.IdentityHashMap<>();
+
+    @Override
+    public void observe(
+            @NonNull androidx.lifecycle.LifecycleOwner owner,
+            @NonNull androidx.lifecycle.Observer<? super T> observer) {
+        super.observe(owner, gated(observer));
+    }
+
+    @Override
+    public void observeForever(@NonNull androidx.lifecycle.Observer<? super T> observer) {
+        androidx.lifecycle.Observer<T> wrapper = gated(observer);
+        synchronized (foreverObservers) {
+            foreverObservers.put(observer, wrapper);
+        }
+        super.observeForever(wrapper);
+    }
+
+    @Override
+    public void removeObserver(@NonNull androidx.lifecycle.Observer<? super T> observer) {
+        androidx.lifecycle.Observer<T> wrapper;
+        synchronized (foreverObservers) {
+            wrapper = foreverObservers.remove(observer);
+        }
+        super.removeObserver(wrapper == null ? observer : wrapper);
+    }
+
+    @Override
+    public void postValue(@Nullable T value) {
+        pending.set(true);
+        super.postValue(value);
+    }
+
+    @Override
+    public void setValue(@Nullable T value) {
+        pending.set(true);
+        super.setValue(value);
+    }
+
+    private androidx.lifecycle.Observer<T> gated(
+            androidx.lifecycle.Observer<? super T> observer) {
+        return value -> {
+            if (pending.compareAndSet(true, false)) {
+                observer.onChanged(value);
+            }
+        };
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
 import com.nexachat.core.ui.components.ChatUiRules
@@ -69,7 +70,9 @@ fun InboxScreen(
     onOpenConversation: (String) -> Unit = {},
     viewModel: InboxViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.asFlow().collectAsStateWithLifecycle(
+        viewModel.uiState.value ?: InboxUiState(),
+    )
     val justNowLabel = stringResource(R.string.time_just_now)
     val yesterdayLabel = stringResource(R.string.time_yesterday)
 

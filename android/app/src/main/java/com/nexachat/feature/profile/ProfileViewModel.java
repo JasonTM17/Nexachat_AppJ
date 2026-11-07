@@ -2,27 +2,22 @@ package com.nexachat.feature.profile;
 
 import android.net.Uri;
 import androidx.annotation.Nullable;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.ContactsRepository;
 import com.nexachat.data.SettingsRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 import java.util.function.Consumer;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
 /**
  * Profile screen state and actions. Logout is broadcast by AuthRepository and
@@ -34,10 +29,10 @@ public final class ProfileViewModel extends ViewModel {
     private final ContactsRepository contactsRepository;
     private final AuthRepository authRepository;
     private final SettingsRepository settingsRepository;
-    private final MutableStateFlow<UiState> mutableUiState =
-            StateFlowKt.MutableStateFlow(new UiState());
-    private final StateFlow<UiState> uiState = mutableUiState;
-    private final StateFlow<Boolean> showPresence;
+    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
+    private final MutableLiveData<Boolean> showPresence = new MutableLiveData<>(true);
+    private UiState currentState = mutableUiState.getValue();
 
     @Inject
     public ProfileViewModel(
@@ -47,30 +42,39 @@ public final class ProfileViewModel extends ViewModel {
         this.contactsRepository = Objects.requireNonNull(contactsRepository, "contactsRepository");
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.settingsRepository = Objects.requireNonNull(settingsRepository, "settingsRepository");
-        showPresence = settingsRepository.getShowPresence();
+        disposables.add(settingsRepository.getShowPresence()
+                .subscribeOn(Schedulers.io())
+                .subscribe(showPresence::postValue, error -> { }));
         load();
     }
 
-    public StateFlow<UiState> getUiState() {
-        return uiState;
+    public LiveData<UiState> getUiState() {
+        return mutableUiState;
     }
 
     /** Presence privacy toggle (F3), backed by the settings repository. */
-    public StateFlow<Boolean> getShowPresence() {
+    public LiveData<Boolean> getShowPresence() {
         return showPresence;
     }
 
     public void load() {
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileLoad(
-                        contactsRepository, mutableUiState, continuation));
+        updateState(state -> state.withLoading(true).withError(null));
+        disposables.add(contactsRepository.getMe()
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?> success
+                                ? state.withLoading(false).withUser((UserDto) success.getValue())
+                                : state.withLoading(false).withError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(state -> state.withLoading(false).withError(
+                                new ApiError.Network(error.getMessage())))));
     }
 
     public void startEditName() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         UserDto user = state.getUser();
         String displayName = user == null ? "" : user.getDisplayName();
-        mutableUiState.setValue(state
+        updateState(current -> current
                 .withEditingName(true)
                 .withNameInput(displayName == null ? "" : displayName)
                 .withSaveError(null));
@@ -78,31 +82,39 @@ public final class ProfileViewModel extends ViewModel {
 
     public void onNameInputChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withNameInput(value)
                 .withSaveError(null));
     }
 
     public void cancelEditName() {
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withEditingName(false)
                 .withNameInput("")
                 .withSaveError(null));
     }
 
     public void saveDisplayName() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         String name = trimWhitespace(state.getNameInput());
         if (name.isEmpty() || state.isSaving()) {
             return;
         }
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileSaveDisplayName(
-                        contactsRepository, mutableUiState, name, continuation));
+        updateState(current -> current.withSaving(true).withSaveError(null));
+        disposables.add(contactsRepository.updateDisplayName(name)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> result instanceof Result.Success<?> success
+                                ? current.withSaving(false).withEditingName(false)
+                                        .withUser((UserDto) success.getValue())
+                                : current.withSaving(false).withSaveError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(current -> current.withSaving(false).withSaveError(
+                                new ApiError.Network(error.getMessage())))));
     }
 
     public void openPasswordDialog() {
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withShowPasswordDialog(true)
                 .withOldPassword("")
                 .withNewPassword("")
@@ -115,14 +127,14 @@ public final class ProfileViewModel extends ViewModel {
     }
 
     public void dismissPasswordDialog() {
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withShowPasswordDialog(false)
                 .withPasswordError(null));
     }
 
     public void onOldPasswordChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withOldPassword(value)
                 .withOldPasswordError(false)
                 .withPasswordError(null));
@@ -130,7 +142,7 @@ public final class ProfileViewModel extends ViewModel {
 
     public void onNewPasswordChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withNewPassword(value)
                 .withNewPasswordError(false)
                 .withPasswordError(null));
@@ -138,18 +150,18 @@ public final class ProfileViewModel extends ViewModel {
 
     public void onConfirmPasswordChange(String value) {
         Objects.requireNonNull(value, "value");
-        mutableUiState.setValue(mutableUiState.getValue()
+        updateState(state -> state
                 .withConfirmPassword(value)
                 .withConfirmMismatch(false)
                 .withPasswordError(null));
     }
 
     public void consumePasswordChanged() {
-        mutableUiState.setValue(mutableUiState.getValue().withPasswordChanged(false));
+        updateState(state -> state.withPasswordChanged(false));
     }
 
     public void submitPasswordChange() {
-        UiState state = mutableUiState.getValue();
+        UiState state = currentState();
         if (state.isPasswordSaving()) {
             return;
         }
@@ -159,61 +171,87 @@ public final class ProfileViewModel extends ViewModel {
         boolean newBad = newPassword.length() < 8;
         boolean mismatch = !newPassword.equals(state.getConfirmPassword());
         if (oldBad || newBad || mismatch) {
-            mutableUiState.setValue(state
+            updateState(current -> current
                     .withOldPasswordError(oldBad)
                     .withNewPasswordError(newBad)
                     .withConfirmMismatch(mismatch));
             return;
         }
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileChangePassword(
-                        authRepository,
-                        mutableUiState,
-                        oldPassword,
-                        newPassword,
-                        continuation));
+        updateState(current -> current.withPasswordSaving(true).withPasswordError(null));
+        disposables.add(authRepository.changePassword(oldPassword, newPassword)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(current -> result instanceof Result.Success<?>
+                                ? current.withPasswordSaving(false).withShowPasswordDialog(false)
+                                        .withPasswordChanged(true)
+                                : current.withPasswordSaving(false).withPasswordError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(current -> current.withPasswordSaving(false)
+                                .withPasswordError(new ApiError.Network(error.getMessage())))));
     }
 
     /** Uploads the selected avatar and stores the server-refreshed user record. */
     public void uploadAvatar(Uri uri) {
         Objects.requireNonNull(uri, "uri");
-        if (mutableUiState.getValue().isAvatarUploading()) {
+        if (currentState().isAvatarUploading()) {
             return;
         }
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileUploadAvatar(
-                        contactsRepository, mutableUiState, uri, continuation));
+        updateState(state -> state.withAvatarUploading(true).withAvatarError(null));
+        disposables.add(contactsRepository.uploadAvatar(uri)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?> success
+                                ? state.withAvatarUploading(false)
+                                        .withUser((UserDto) success.getValue())
+                                : state.withAvatarUploading(false).withAvatarError(
+                                        ((Result.Failure<?>) result).getError())),
+                        error -> updateState(state -> state.withAvatarUploading(false)
+                                .withAvatarError(new ApiError.Network(error.getMessage())))));
     }
 
     public void consumeAvatarError() {
-        mutableUiState.setValue(mutableUiState.getValue().withAvatarError(null));
+        updateState(state -> state.withAvatarError(null));
     }
 
     /** The repository applies the presence change optimistically and reverts on failure. */
     public void setShowPresence(boolean value) {
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileSetShowPresence(
-                        settingsRepository, mutableUiState, value, continuation));
+        disposables.add(settingsRepository.setShowPresence(value)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?>
+                                ? state.withSaveError(null)
+                                : state.withSaveError(((Result.Failure<?>) result).getError())),
+                        error -> updateState(state -> state.withSaveError(
+                                new ApiError.Network(error.getMessage())))));
     }
 
     /** Clears the local session and broadcasts LoggedOut. */
     public void logout() {
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileLogout(authRepository, continuation));
+        disposables.add(authRepository.logout()
+                .subscribeOn(Schedulers.io())
+                .subscribe(ignored -> { }, error -> { }));
     }
 
     /** Revokes every refresh token, then clears the local session. */
     public void logoutAll() {
-        launch((scope, continuation) ->
-                ProfileViewModelSupportKt.profileLogoutAll(authRepository, continuation));
+        disposables.add(authRepository.logoutAll()
+                .subscribeOn(Schedulers.io())
+                .subscribe(ignored -> { }, error -> { }));
     }
 
-    private void launch(Function2<CoroutineScope, Continuation<? super Unit>, Object> block) {
-        BuildersKt.launch(
-                ViewModelKt.getViewModelScope(this),
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                block);
+    private synchronized UiState currentState() {
+        return currentState;
+    }
+
+    private synchronized void updateState(UnaryOperator<UiState> reducer) {
+        currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
+        mutableUiState.postValue(currentState);
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 
     private static String trimWhitespace(String value) {

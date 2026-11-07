@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.asFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nexachat.R
 import com.nexachat.core.ui.AuthConfirmRules
@@ -46,14 +47,16 @@ fun RegisterScreen(
     onRegistered: () -> Unit,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.asFlow().collectAsStateWithLifecycle(
+        viewModel.uiState.value ?: AuthViewModel.UiState(),
+    )
     val scrollState = rememberScrollState()
     var confirmPassword by rememberSaveable { mutableStateOf("") }
     var confirmChecked by rememberSaveable { mutableStateOf(false) }
     val confirmMismatch = AuthConfirmRules.showMismatch(confirmChecked, state.password, confirmPassword)
 
     LaunchedEffect(Unit) {
-        viewModel.events.collectLatest { event ->
+        viewModel.events.asFlow().collectLatest { event ->
             when (event) {
                 AuthViewModel.Event.LoggedIn -> onRegistered()
             }
