@@ -183,6 +183,27 @@ dependencies {
     // E.164 phone normalization
     implementation(libs.libphonenumber)
 
+    // Java-first stack: RxJava3 data layer, Views/XML UI (Compose and coroutines are removed at the end)
+    implementation(libs.rxjava)
+    implementation(libs.rxandroid)
+    implementation(libs.androidx.room.rxjava3)
+    implementation(libs.androidx.datastore.rxjava3)
+    implementation(libs.kotlinx.coroutines.rx3)
+    implementation(libs.androidx.appcompat)
+    implementation(libs.material)
+    implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.fragment)
+    implementation(libs.androidx.navigation.fragment)
+    implementation(libs.androidx.navigation.ui)
+    implementation(libs.androidx.lifecycle.livedata)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.swiperefreshlayout)
+    implementation(libs.glide)
+    annotationProcessor(libs.glide.compiler)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.androidx.arch.core.testing)
+
     // Debug-only
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
