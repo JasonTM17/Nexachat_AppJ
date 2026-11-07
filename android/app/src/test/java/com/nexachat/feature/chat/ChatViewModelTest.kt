@@ -111,13 +111,7 @@ class ChatViewModelTest {
         coEvery { messageRepository.pinMessage(any(), any()) } returns Unit
         coEvery { messageRepository.unpinMessage(any(), any()) } returns Unit
         coEvery { attachmentRepository.describe(any()) } answers {
-            LocalAttachment(
-                uri = firstArg(),
-                displayName = "pic.png",
-                mimeType = "image/png",
-                sizeBytes = 12L,
-                type = "IMAGE",
-            )
+            LocalAttachment(firstArg(), "pic.png", "image/png", 12L, "IMAGE")
         }
         every { attachmentRepository.upload(any(), any()) } returns
             kotlinx.coroutines.flow.flowOf(
@@ -349,11 +343,11 @@ class ChatViewModelTest {
     fun `server sniffed video MIME wins when picker cannot identify the URI`() = runTest {
         val video = AttachmentDto("att-video", "clip.mp4", "video/mp4", 4L)
         coEvery { attachmentRepository.describe(uri) } returns LocalAttachment(
-            uri = uri,
-            displayName = "clip.mp4",
-            mimeType = null,
-            sizeBytes = 4L,
-            type = "FILE",
+            uri,
+            "clip.mp4",
+            null,
+            4L,
+            "FILE",
         )
         every { attachmentRepository.upload(uri, null) } returns
             kotlinx.coroutines.flow.flowOf(AttachmentUploadEvent.Uploaded(video))

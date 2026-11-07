@@ -6,7 +6,6 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.ProgressRequestBody
 import com.nexachat.core.network.safeApiCall
-import com.nexachat.core.network.dto.AttachmentDto
 import java.io.File
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
@@ -32,27 +31,6 @@ interface AttachmentRepositoryApi {
         attachmentId: String,
         displayName: String? = null,
     ): Result<File>
-}
-
-/**
- * Local metadata sniffed from a picked [Uri] before upload — what the preview
- * strip and send pipeline need without re-reading the resolver twice.
- */
-data class LocalAttachment(
-    val uri: Uri,
-    val displayName: String?,
-    val mimeType: String?,
-    /** Best-effort size; -1 when the provider does not report one. */
-    val sizeBytes: Long,
-    /** Wire `type` derived from the MIME prefix (IMAGE/VIDEO/AUDIO/FILE). */
-    val type: String,
-)
-
-/** One upload stream: zero or more progress events, then one terminal result. */
-sealed interface AttachmentUploadEvent {
-    data class Progress(val fraction: Float) : AttachmentUploadEvent
-    data class Uploaded(val attachment: AttachmentDto) : AttachmentUploadEvent
-    data class Failed(val error: ApiError) : AttachmentUploadEvent
 }
 
 /** Kotlin coroutine boundary for [AttachmentRepository]. */
