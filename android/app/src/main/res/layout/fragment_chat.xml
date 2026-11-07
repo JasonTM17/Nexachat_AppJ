@@ -20,6 +20,7 @@
         android:id="@+id/chatToolbarActions"
         android:layout_width="wrap_content"
         android:layout_height="0dp"
+        android:background="?attr/colorSurface"
         android:scrollbars="none"
         app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
         app:layout_constraintEnd_toEndOf="parent"
