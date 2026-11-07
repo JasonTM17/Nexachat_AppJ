@@ -34,21 +34,35 @@
                         android:src="@mipmap/ic_launcher_round" />
 
                     <TextView
-                        android:id="@+id/authTitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
+                        android:background="@drawable/bg_date_separator"
+                        android:letterSpacing="0.08"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="4dp"
+                        android:text="✦ NEXACHAT WORKSPACE"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/authTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/app_name"
                         android:textAppearance="?attr/textAppearanceHeadlineLarge"
-                        android:textColor="?attr/colorPrimary" />
+                        android:textColor="?attr/colorOnSurface"
+                        android:textStyle="bold" />
 
                     <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xl"
                         app:cardBackgroundColor="?attr/colorSurface"
-                        app:cardCornerRadius="20dp"
-                        app:cardElevation="2dp"
+                        app:cardCornerRadius="24dp"
+                        app:cardElevation="0dp"
                         app:contentPadding="24dp"
                         app:strokeColor="?attr/colorOutlineVariant"
                         app:strokeWidth="1dp">
@@ -111,8 +125,9 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_md"
-                                android:minHeight="52dp"
-                                app:cornerRadius="14dp" />
+                                android:minHeight="54dp"
+                                android:textStyle="bold"
+                                app:cornerRadius="16dp" />
                         </LinearLayout>
                     </com.google.android.material.card.MaterialCardView>
 

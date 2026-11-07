@@ -6,7 +6,7 @@
     app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="24dp"
     app:cardElevation="0dp"
-    app:strokeColor="?attr/colorSurfaceVariant"
+    app:strokeColor="?attr/colorOutlineVariant"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -30,10 +30,12 @@
             <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
+                android:background="@drawable/bg_date_separator"
+                android:backgroundTint="?attr/colorSurfaceVariant"
                 android:importantForAccessibility="no"
                 android:padding="9dp"
                 android:src="@drawable/ic_image"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                app:tint="?attr/colorPrimary" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -58,10 +60,12 @@
             <ImageView
                 android:layout_width="40dp"
                 android:layout_height="40dp"
+                android:background="@drawable/bg_date_separator"
+                android:backgroundTint="?attr/colorSurfaceVariant"
                 android:importantForAccessibility="no"
                 android:padding="9dp"
                 android:src="@drawable/ic_description"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                app:tint="?attr/colorPrimary" />
 
             <TextView
                 android:layout_width="match_parent"

@@ -10,11 +10,22 @@
         android:id="@+id/chatToolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        app:titleMarginStart="48dp"
         app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back" />
+
+    <com.nexachat.core.ui.components.AvatarView
+        android:id="@+id/chatHeaderAvatar"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="52dp"
+        app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
+        app:layout_constraintStart_toStartOf="@id/chatToolbar"
+        app:layout_constraintTop_toTopOf="@id/chatToolbar" />
 
     <HorizontalScrollView
         android:id="@+id/chatToolbarActions"
@@ -30,11 +41,11 @@
             android:layout_height="match_parent"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/infoButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_group_info" android:src="@drawable/ic_info" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/summaryButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome" android:background="?attr/selectableItemBackgroundBorderless"/>
-            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/action_more_options" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackgroundBorderless"/>
+            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/infoButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_group_info" android:src="@drawable/ic_info" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/summaryButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorPrimary"/>
+            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/action_more_options" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
         </LinearLayout>
     </HorizontalScrollView>
 

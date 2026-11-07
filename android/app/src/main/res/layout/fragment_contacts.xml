@@ -9,12 +9,14 @@
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationContentDescription="@string/cd_back">
             <com.google.android.material.button.MaterialButton
@@ -41,7 +43,10 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="@dimen/space_lg"
         android:contentDescription="@string/action_add_contact"
-        app:srcCompat="@drawable/ic_add" />
+        app:backgroundTint="?attr/colorPrimary"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Medium"
+        app:srcCompat="@drawable/ic_add"
+        app:tint="?attr/colorOnPrimary" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"

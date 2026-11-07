@@ -345,6 +345,15 @@ public final class MessageBubbleBinder {
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
+        boolean isMine = message.getMine();
+        int metaColor = resolveThemeColor(
+                root.getContext(),
+                isMine
+                        ? com.google.android.material.R.attr.colorOnPrimaryContainer
+                        : com.google.android.material.R.attr.colorOnSurfaceVariant
+        );
+        float labelAlpha = isMine ? 0.78f : 1.0f;
+
         if (edited != null) {
             boolean showEdited = MessageUiRules.isEdited(
                     message.getEditedAtEpochMs(),
@@ -353,24 +362,34 @@ public final class MessageBubbleBinder {
             edited.setVisibility(showEdited ? View.VISIBLE : View.GONE);
             if (showEdited) {
                 edited.setText(R.string.message_edited);
+                edited.setTextColor(metaColor);
+                edited.setAlpha(labelAlpha);
             }
         }
         if (time != null) {
             time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
+            time.setTextColor(metaColor);
+            time.setAlpha(labelAlpha);
         }
         if (sending != null) {
             sending.setVisibility(
-                    message.getMine() && message.getStatus() == DeliveryStatus.SENDING
+                    isMine && message.getStatus() == DeliveryStatus.SENDING
                             ? View.VISIBLE
                             : View.GONE
             );
+            if (isMine) {
+                sending.setIndeterminateTintList(ColorStateList.valueOf(metaColor));
+            }
         }
         if (deliveredIcon != null) {
             deliveredIcon.setVisibility(View.GONE);
+            deliveredIcon.setImageTintList(ColorStateList.valueOf(metaColor));
+            deliveredIcon.setAlpha(1.0f);
         }
         if (deliveryText != null) {
             deliveryText.setVisibility(View.GONE);
-            if (!message.getMine()) {
+            deliveryText.setAlpha(1.0f);
+            if (!isMine) {
                 return;
             }
             if (message.getStatus() == DeliveryStatus.FAILED) {
@@ -382,13 +401,12 @@ public final class MessageBubbleBinder {
             } else if (message.getStatus() == DeliveryStatus.SENT && seen) {
                 deliveryText.setVisibility(View.VISIBLE);
                 deliveryText.setText(R.string.msg_seen);
-                deliveryText.setTextColor(
-                        ContextCompat.getColor(root.getContext(), R.color.bubble_mine)
-                );
+                deliveryText.setTextColor(metaColor);
             } else if (message.getStatus() == DeliveryStatus.SENT) {
                 if (deliveredIcon != null) {
                     deliveredIcon.setVisibility(View.VISIBLE);
                     deliveredIcon.setImageResource(R.drawable.ic_check);
+                    deliveredIcon.setImageTintList(ColorStateList.valueOf(metaColor));
                     deliveredIcon.setContentDescription(
                             root.getContext().getString(R.string.cd_delivered)
                     );

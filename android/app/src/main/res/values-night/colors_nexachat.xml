@@ -1,35 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background_light">#FF0B1120</color>
-    <color name="surface_light">#FF151F32</color>
-    <color name="surface_container_lowest_light">#FF0B1120</color>
-    <color name="surface_container_low_light">#FF151F32</color>
-    <color name="surface_container_light">#FF1E293B</color>
-    <color name="surface_container_high_light">#FF283548</color>
-    <color name="surface_variant_light">#FF283548</color>
+    <color name="background_light">#FF0B0E17</color>
+    <color name="surface_light">#FF151B2B</color>
+    <color name="surface_container_lowest_light">#FF0B0E17</color>
+    <color name="surface_container_low_light">#FF121826</color>
+    <color name="surface_container_light">#FF182034</color>
+    <color name="surface_container_high_light">#FF232D46</color>
+    <color name="surface_variant_light">#FF1B2338</color>
     <color name="text_primary_light">#FFF8FAFC</color>
-    <color name="text_secondary_light">#FFB6C2D6</color>
+    <color name="text_secondary_light">#FF94A3B8</color>
 
-    <color name="brand_indigo">#FF818CF8</color>
-    <color name="brand_indigo_container">#FF3730A3</color>
-    <color name="brand_on_indigo_container">#FFE0E7FF</color>
+    <color name="brand_indigo">#FF7C3AED</color>
+    <color name="brand_indigo_container">#FF5B21B6</color>
+    <color name="brand_on_indigo_container">#FFFFFFFF</color>
 
-    <color name="tertiary_sky">#FF7DD3FC</color>
+    <color name="tertiary_sky">#FF38BDF8</color>
     <color name="tertiary_sky_container">#FF0C4A6E</color>
-    <color name="tertiary_on_sky_container">#FFBAE6FD</color>
+    <color name="tertiary_on_sky_container">#FFE0F2FE</color>
 
-    <color name="slate_secondary">#FFB8C2D9</color>
-    <color name="slate_secondary_container">#FF334155</color>
+    <color name="slate_secondary">#FF94A3B8</color>
+    <color name="slate_secondary_container">#FF1E293B</color>
     <color name="slate_on_secondary_container">#FFF8FAFC</color>
-    <color name="slate_border">#FF505F76</color>
-    <color name="slate_divider">#FF334155</color>
+    <color name="slate_border">#FF26314A</color>
+    <color name="slate_divider">#FF1E263B</color>
 
-    <color name="error_red">#FFFFB4AB</color>
-    <color name="error_container_light">#FF93000A</color>
-    <color name="on_error_container_light">#FFFFDAD6</color>
+    <color name="error_red">#FFF87171</color>
+    <color name="error_container_light">#FF7F1D1D</color>
+    <color name="on_error_container_light">#FFFEE2E2</color>
+    <color name="success_emerald">#FF10B981</color>
 
+    <!-- Stitch design tokens -->
+    <color name="stitch_online_dot">#FF10B981</color>
+    <color name="stitch_offline_dot">#FF64748B</color>
+    <color name="stitch_fab_fill">#FF6366F1</color>
+    <color name="stitch_ai_badge_bg">#FF2A1B4E</color>
+    <color name="stitch_ai_badge_stroke">#FF6D28D9</color>
+    <color name="stitch_ai_badge_text">#FFC4B5FD</color>
+
+    <!-- M3 role mapping (night) -->
     <color name="colorPrimary">@color/brand_indigo</color>
-    <color name="colorOnPrimary">#FF0B1120</color>
+    <color name="colorOnPrimary">#FFFFFFFF</color>
     <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
     <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
     <color name="colorSecondary">@color/slate_secondary</color>
@@ -46,13 +56,13 @@
     <color name="colorOnSurface">@color/text_primary_light</color>
     <color name="colorSurfaceVariant">@color/surface_variant_light</color>
     <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
-    <color name="colorOutline">@color/slate_secondary</color>
-    <color name="colorOutlineVariant">@color/surface_container_high_light</color>
+    <color name="colorOutline">@color/slate_border</color>
+    <color name="colorOutlineVariant">@color/slate_divider</color>
     <color name="colorError">@color/error_red</color>
     <color name="colorOnError">#FF690005</color>
     <color name="colorErrorContainer">@color/error_container_light</color>
     <color name="colorOnErrorContainer">@color/on_error_container_light</color>
 
-    <color name="bubble_mine">#FF3730A3</color>
-    <color name="bubble_other">#FF1E293B</color>
+    <color name="bubble_mine">#FF5B21B6</color>
+    <color name="bubble_other">#FF182034</color>
 </resources>

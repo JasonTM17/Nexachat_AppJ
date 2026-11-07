@@ -6,7 +6,7 @@
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
     android:paddingHorizontal="16dp"
-    android:paddingVertical="8dp">
+    android:paddingVertical="10dp">
 
     <com.nexachat.core.ui.components.AvatarView
         android:id="@+id/avatar"
@@ -24,7 +24,9 @@
             android:id="@+id/name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textAppearance="?attr/textAppearanceBodyLarge" />
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/subtitle"

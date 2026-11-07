@@ -15,6 +15,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:navigationContentDescription="@string/cd_back" />
     </com.google.android.material.appbar.AppBarLayout>
@@ -22,8 +23,8 @@
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
-        xmlns:app="http://schemas.android.com/apk/res-auto">
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
         <LinearLayout
             android:id="@+id/detailColumn"
             android:layout_width="match_parent"
@@ -31,34 +32,76 @@
             android:gravity="center_horizontal"
             android:orientation="vertical"
             android:padding="@dimen/space_md">
-            <com.nexachat.core.ui.components.AvatarView
-                android:id="@+id/groupAvatar"
-                android:layout_width="88dp"
-                android:layout_height="88dp" />
-            <TextView
-                android:id="@+id/groupTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:textAppearance="?attr/textAppearanceHeadlineSmall" />
-            <com.nexachat.core.ui.components.SectionHeaderView
-                android:id="@+id/membersHeader"
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_lg" />
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/memberList"
+                app:cardCornerRadius="20dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <com.nexachat.core.ui.components.AvatarView
+                        android:id="@+id/groupAvatar"
+                        android:layout_width="88dp"
+                        android:layout_height="88dp" />
+
+                    <TextView
+                        android:id="@+id/groupTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:nestedScrollingEnabled="false" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/addMemberButton"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:text="@string/action_add_member"
-                android:visibility="gone" />
+                android:layout_marginTop="@dimen/space_md"
+                app:cardCornerRadius="20dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <com.nexachat.core.ui.components.SectionHeaderView
+                        android:id="@+id/membersHeader"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/memberList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/addMemberButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:text="@string/action_add_member"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/leaveGroupButton"
                 style="@style/Widget.Material3.Button.TextButton"
