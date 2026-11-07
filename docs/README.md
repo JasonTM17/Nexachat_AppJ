@@ -65,7 +65,7 @@ Every document in the repository, grouped by purpose. Start with
 
 | Doc | Contents |
 |---|---|
-| [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states, Stitch→Compose mapping |
+| [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states, Stitch→XML layout mapping |
 | [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Stitch design-system specification |
 | [docs/design/stitch/screens/](design/stitch/screens/) | Stitch HTML references and exported screenshots |
 

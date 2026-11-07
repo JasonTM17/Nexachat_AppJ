@@ -40,41 +40,43 @@ newest `apksigner` under `$ANDROID_HOME/build-tools/` (falls back to
 
 `tools/sign-release.sh` is the recommended path (no credentials in Gradle
 files). If you prefer `assembleRelease` to emit a signed APK directly, add
-this block to `android/app/build.gradle.kts` — **manual step, not committed
-by the packaging tooling**:
+this block to `android/app/build.gradle` — **manual step, not committed by the
+packaging tooling**:
 
-```kotlin
+```groovy
 // top of file, next to the localProps block
-val signingProps = Properties().apply {
-    rootProject.file("../release/keystore/signing.properties")   // repo-root/release/
-        .takeIf { it.exists() }?.inputStream()?.use { load(it) }
+def signingProps = new Properties()
+def signingPropsFile = rootProject.file("../release/keystore/signing.properties")
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { signingProps.load(it) }
 }
 
 android {
     signingConfigs {
-        create("release") {
-            storeFile = signingProps.getProperty("storeFile")
-                ?.let { rootProject.file("../$it") }
-            keyAlias = signingProps.getProperty("keyAlias")
-            storePassword = signingProps.getProperty("keystore.storePassword")
-            keyPassword = signingProps.getProperty("keyPassword")
+        release {
+            if (signingProps.getProperty("storeFile")) {
+                storeFile rootProject.file("../" + signingProps.getProperty("storeFile"))
+                keyAlias signingProps.getProperty("keyAlias")
+                storePassword signingProps.getProperty("keystore.storePassword")
+                keyPassword signingProps.getProperty("keyPassword")
+            }
         }
     }
     buildTypes {
         release {
             // only sign when the local keystore exists — CI/grader machines
             // without release/keystore/ still build an unsigned APK
-            if (signingProps.getProperty("storeFile") != null) {
-                signingConfig = signingConfigs.getByName("release")
+            if (signingProps.getProperty("storeFile")) {
+                signingConfig signingConfigs.release
             }
-            // …existing isMinifyEnabled/proguard lines unchanged…
+            // …existing minifyEnabled/proguard lines unchanged…
         }
     }
 }
 ```
 
 > `signing.properties` lives under gitignored `release/`, so the committed
-> `build.gradle.kts` never contains credentials.
+> `build.gradle` never contains credentials.
 
 ## 3. Build the submission zip
 
@@ -109,7 +111,7 @@ zero forbidden entries (`build/`, `*.jks`, `keystore.properties`,
 - [ ] `git tag -a v1.0.0 -m "NexaChat submission"` — required by checklist C1.
 - [ ] Rename the zip to `GroupXX_MSSV1_MSSV2_….zip` (course convention).
 - [ ] `docs/report.docx` must exist (checklist C1) — the packager warns if absent.
-- [x] `versionName` in `android/app/build.gradle.kts` is `1.0.0`, matching the
+- [x] `versionName` in `android/app/build.gradle` is `1.0.0`, matching the
       `v1.0.0` artifact tag.
 - [ ] Fresh-grader check on a clean machine/VM: unzip → `git status` clean →
       `git log` shows history → `docker compose up -d db` → `mvn -B verify` →

@@ -185,7 +185,7 @@ examples whose effects were intentionally not triggered during the audit.
 | `cd server && mvn -q -Dtest=ProductionConfigurationTest test` | PASS — 6 tests, 0 failures/errors/skips |
 | `(cd server && mvn -B verify)` | NOT_RUN — full suite not run by this worker |
 | `(cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)` | NOT_RUN — another Gradle daemon was BUSY |
-| Android release build `android/gradlew.bat :app:assembleRelease --no-parallel --max-workers=1` | Historical FAIL from an earlier ops pass: KSP Hilt rejected `CallActivity` before it extended `ComponentActivity`. Current source is `@AndroidEntryPoint` on `CallActivity extends ComponentActivity` (`CallActivity.java:42-43`). This row is not a current release-build result. |
+| Android release build `android/gradlew.bat :app:assembleRelease --no-parallel --max-workers=1` | Historical FAIL from an earlier ops pass: Hilt `annotationProcessor` rejected `CallActivity` before it extended `ComponentActivity`. Current source is `@AndroidEntryPoint` on `CallActivity extends ComponentActivity` (`CallActivity.java:42-43`). This row is not a current release-build result. |
 | `python -B tools/check-markdown-links.py docs/operations.md` | PASS — no broken relative links |
 | `python -B tools/check-markdown-links.py` | PASS — 56 relative links checked across 43 files |
 | `bash -n demo/*.sh tools/*.sh` | PASS |
