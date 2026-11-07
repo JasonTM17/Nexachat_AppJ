@@ -138,8 +138,12 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/theme_system"
+                        android:textColor="@color/stitch_chip_text_color"
                         app:checkedIconVisible="false"
-                        app:chipCornerRadius="18dp" />
+                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
+                        app:chipCornerRadius="18dp"
+                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
+                        app:chipStrokeWidth="1dp" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/themeChipLight"
@@ -147,8 +151,12 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/theme_light"
+                        android:textColor="@color/stitch_chip_text_color"
                         app:checkedIconVisible="false"
-                        app:chipCornerRadius="18dp" />
+                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
+                        app:chipCornerRadius="18dp"
+                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
+                        app:chipStrokeWidth="1dp" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/themeChipDark"
@@ -156,8 +164,12 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/theme_dark"
+                        android:textColor="@color/stitch_chip_text_color"
                         app:checkedIconVisible="false"
-                        app:chipCornerRadius="18dp" />
+                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
+                        app:chipCornerRadius="18dp"
+                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
+                        app:chipStrokeWidth="1dp" />
                 </com.google.android.material.chip.ChipGroup>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
