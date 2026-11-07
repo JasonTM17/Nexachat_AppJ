@@ -60,7 +60,7 @@ VALUES
    NULL, '11111111-1111-4111-8111-111111111111',
    '00000000-0000-4000-8000-000000000006', 6, now() - interval '1 hour'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'GROUP',
-   NULL, 'Nhom Do An', '11111111-1111-4111-8111-111111111111',
+   NULL, 'NexaChat Team', '11111111-1111-4111-8111-111111111111',
    '00000000-0000-4000-8000-000000000010', 10, now() - interval '40 minutes')
 ON CONFLICT DO NOTHING;
 
@@ -102,10 +102,10 @@ VALUES
   ('00000000-0000-4000-8000-000000000006', 6, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '22222222-2222-4222-8222-222222222222', 'f0000000-0000-4000-8000-000000000006',
    'TEXT', 'Được, bao mình.', NULL, now() - interval '5 minutes'),
-  -- GROUP 'Nhom Do An': An -> Chi -> Dung -> Binh
+  -- GROUP 'NexaChat Team': An -> Chi -> Dung -> Binh
   ('00000000-0000-4000-8000-000000000007', 7, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '11111111-1111-4111-8111-111111111111', 'f0000000-0000-4000-8000-000000000007',
-   'TEXT', 'Chào mọi người, đồ án deadline cuối tuần này nhé.', NULL, now() - interval '38 minutes'),
+   'TEXT', 'Chào mọi người, bản phát hành cuối tuần này đã sẵn sàng nhé.', NULL, now() - interval '38 minutes'),
   ('00000000-0000-4000-8000-000000000008', 8, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '33333333-3333-4333-8333-333333333333', 'f0000000-0000-4000-8000-000000000008',
    'TEXT', 'Em làm xong phần API rồi, đang viết slide.', NULL, now() - interval '30 minutes'),

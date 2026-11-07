@@ -16,7 +16,7 @@ demo/CI smoke tools, not part of the app build.
 
 Accounts: `smoke_api.py` uses the seed users **An** (`+84900000001`) and **Chi**
 (`+84900000003`) plus **Binh** (`+84900000002`) as the non-member; all use
-`password123` (`docs/screenshots-manifest.md`). `stomp_e2e.py` additionally
+`password123` (`demo/seed.sql`). `stomp_e2e.py` additionally
 registers a dedicated pair (`+84900000101`, `+84900000102`) because presence is
 per-user: the demo accounts may hold a live session from another client, and a
 second session suppresses that user's presence events by design.

@@ -20,7 +20,7 @@ import uuid
 
 DEFAULT_BASE_URL = "http://localhost:8080"
 
-# Seed accounts from demo/seed.sql (password in docs/screenshots-manifest.md).
+# Seed accounts from demo/seed.sql.
 # A and B share a DIRECT conversation created by these scripts; C is a seed
 # user with no membership in it, used for negative authorization checks.
 PASSWORD = "password123"

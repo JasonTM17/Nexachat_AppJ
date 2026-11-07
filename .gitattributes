@@ -37,9 +37,6 @@ gradlew eol=lf
 *.ttf binary
 *.otf binary
 
-# Explicit binary marker for the generated report (also covered by *.docx).
-docs/report.docx binary
-
 # Markdown is always text.
 *.md text
 

@@ -92,13 +92,13 @@ after the tag.
 - `fc4cce1` — Android hardening: realtime session and token-store fixes,
   upload/download safety, inbox reconcile.
 - `223d520` — Material 3 redesign from Stitch (also listed under Added).
-- `cb9a58f` — CI `:app:lintDebug` step; report generator synced with final facts.
-- `9b5e9cb` — README/security/protocol/RTM/viva docs synced with shipped
+- `cb9a58f` — CI `:app:lintDebug` step and documentation updates.
+- `9b5e9cb` — README, security, and protocol documentation synced with shipped
   behaviour.
 
 ## [1.0.0] - 2026-11-04
 
-First tagged release (`v1.0.0`, commit `64d47c0`). Full project as defended.
+First tagged release (`v1.0.0`, commit `64d47c0`).
 
 ### Added
 
@@ -121,11 +121,9 @@ First tagged release (`v1.0.0`, commit `64d47c0`). Full project as defended.
   pinned messages (≤3, group-admin gated).
 - Material 3 UI with ≥48dp touch targets, offline states and accessibility
   pass.
-- Operations: multi-stage `server/Dockerfile`, `docker-compose.yml`, LAN demo
-  scripts, signed-APK pipeline and submission packager.
+- Operations: multi-stage `server/Dockerfile`, `docker-compose.yml`, LAN bootstrap
+  scripts, and signed-APK release pipeline.
 - Documentation: architecture diagrams, REST/STOMP contracts, security
-  narrative and checklist, RTM, i18n/rotation audits, demo runbook,
-  interactions playbook, viva question bank, course report and packaging
-  checklist.
+  architecture, operations guide, and Stitch design documentation.
 - CI: server tests (Maven verify), Android unit tests and lint, and a
   committed-secret scan on every PR and push to `main`/`develop`.

@@ -13,7 +13,7 @@ environment setup, running and testing the project, and contribution standards.
 | Android SDK | compileSdk/targetSdk 35, minSdk 26 | `ANDROID_HOME` / `ANDROID_SDK_ROOT` set; `android/local.properties` carries `sdk.dir` (gitignored). |
 | Gradle | 8.14.3 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.7.3, Java 21 LTS, Hilt 2.52 (`annotationProcessor`), Room 2.6.1 (`room-rxjava3`), RxJava 3.1.9 (see `android/gradle/libs.versions.toml`). |
 | Docker Desktop | recent | Verified: Docker Compose v5.6.0. PostgreSQL 16 runs on host port 5433. |
-| Python | 3.x + `python-docx` | Only for regenerating `docs/report.docx`. Verified: Python 3.14.2, python-docx 1.2.0. |
+| Python | 3.x | Used by `tools/check-markdown-links.py` and E2E test utilities. |
 | `adb` | Android SDK platform-tools | For installing the app on a device/emulator. |
 
 ## Clone and run
@@ -41,7 +41,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 `demo/lan-up.sh` (Git Bash) or `demo/lan-up.ps1` (PowerShell) performs steps
 1–2, detects the LAN IP, and prints the URLs and demo accounts. See
-[docs/demo-runbook.md](docs/demo-runbook.md) for the full demo procedure.
+[docs/operations.md](docs/operations.md) for deployment and runtime configuration details.
 
 To point a physical device at the backend, add one line to
 `android/local.properties` and rebuild (debug builds allow cleartext):
@@ -86,9 +86,9 @@ android/app/src/main/java/com/nexachat/
   summary/                    Java summary ViewModel + repository layer
 server/src/main/resources/db/migration/   Flyway V1–V6
 android/gradle/libs.versions.toml         dependency version catalog
-docs/                                     contracts, security, runbooks, audits
-demo/                                    seed.sql + LAN scripts
-tools/                                    report generator + release packaging
+docs/                                     architecture, contracts, security, operations
+demo/                                     seed.sql + LAN bootstrap scripts
+tools/                                    release signing, link checks, E2E and summary evaluation scripts
 ```
 
 ## Branching and commits
@@ -116,19 +116,6 @@ tools/                                    report generator + release packaging
 - Repository stores LF for text (`.gitattributes`); do not commit CRLF text files.
 - No formatter plugin (spotless/Checkstyle) is configured; match
   the surrounding code style instead of reformatting whole files.
-
-## Regenerating `docs/report.docx`
-
-`docs/report.md` is the canonical source; the `.docx` is generated from it:
-
-```bash
-python tools/build-report.py    # requires python-docx >= 1.1
-```
-
-`docs/report.md` is canonical; `tools/build-report.py` parses it directly, so
-edit only the markdown and regenerate. The script verifies the generated
-document (heading/table counts, no leftover markdown artefacts) before
-replacing the previous `.docx`.
 
 ## Never commit
 

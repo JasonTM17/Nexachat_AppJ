@@ -67,6 +67,7 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
     private final Map<String, Long> messageSeqMap = new HashMap<>();
     private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
+    private boolean userOverrodeMode;
 
     @NonNull
     public static SummaryBottomSheetFragment newInstance(@NonNull String conversationId) {
@@ -115,6 +116,9 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         setupModeChips();
         setupActions();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), consent -> {
+            if (!userOverrodeMode && Boolean.TRUE.equals(consent)) {
+                preferAiMode = true;
+            }
             if (preferAiMode && Boolean.TRUE.equals(consent)) {
                 updateConsentCard(false);
             }
@@ -182,9 +186,8 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         binding.summaryModeLocal.setOnClickListener(v -> selectMode(false));
         binding.summaryModeAi.setOnClickListener(v -> selectMode(true));
         binding.summaryConsentConfirm.setOnClickListener(v -> {
-            consentRepository.setConsent(true);
             updateConsentCard(false);
-            viewModel.refresh();
+            consentRepository.setConsent(true, () -> viewModel.refresh());
         });
         binding.summaryConsentDismiss.setOnClickListener(v -> {
             preferAiMode = false;
@@ -194,6 +197,7 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
     }
 
     private void selectMode(boolean aiMode) {
+        userOverrodeMode = true;
         preferAiMode = aiMode;
         updateModeSelection();
         if (aiMode) {
@@ -203,6 +207,14 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
                 return;
             }
             viewModel.refresh();
+        } else {
+            updateConsentCard(false);
+            Boolean consent = consentRepository.aiSummaryConsent().getValue();
+            if (Boolean.TRUE.equals(consent)) {
+                consentRepository.setConsent(false, () -> viewModel.refresh());
+            } else {
+                viewModel.refresh();
+            }
         }
     }
 
@@ -320,7 +332,12 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             binding.summaryBadgeLocal.setVisibility(View.GONE);
             return;
         }
-        if (SummaryUiRules.isLlmGenerated(generatedBy)) {
+        boolean llmGenerated = SummaryUiRules.isLlmGenerated(generatedBy);
+        if (!userOverrodeMode) {
+            preferAiMode = llmGenerated;
+            updateModeSelection();
+        }
+        if (llmGenerated) {
             binding.summaryBadgeAi.setVisibility(View.VISIBLE);
             binding.summaryBadgeLocal.setVisibility(View.GONE);
             binding.summaryBadgeAi.setBackgroundColor(

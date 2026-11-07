@@ -11,7 +11,7 @@ Examples (serial defaults to $ANDROID_SERIAL or emulator-5558):
     python tools/e2e/device/adb_ui.py tap-text "Dang nhap"
     python tools/e2e/device/adb_ui.py tap-desc "Tim kiem"
     python tools/e2e/device/adb_ui.py type "+84900000201"
-    python tools/e2e/device/adb_ui.py shot ../../docs/design/screens/out.png
+    python tools/e2e/device/adb_ui.py shot ../../docs/media/screens/out.png
     python tools/e2e/device/adb_ui.py wait-text "Tin nhan" --timeout 20
 """
 

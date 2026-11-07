@@ -15,7 +15,7 @@ message sending available offline.
 
 ## Demo & Stitch UI Showcase (Dark & Light Mode)
 
-Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK against the local Spring Boot 3 + PostgreSQL 16 backend. Full media index: [`docs/media/README.md`](docs/media/README.md) · full manifest: [`docs/screenshots-manifest.md`](docs/screenshots-manifest.md).
+Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK against the local Spring Boot 3 + PostgreSQL 16 backend. Full media index: [`docs/media/README.md`](docs/media/README.md).
 
 ### Dark Mode — Midnight Obsidian (`#0B0E17`) & Electric Violet (`#7C3AED`)
 
@@ -69,13 +69,13 @@ cd android && ./gradlew assembleDebug && adb install app/build/outputs/apk/debug
 ```
 
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
-Setup, tests and the LAN demo: [CONTRIBUTING.md](CONTRIBUTING.md) ·
-[docs/demo-runbook.md](docs/demo-runbook.md).
+Setup, testing and deployment guides: [CONTRIBUTING.md](CONTRIBUTING.md) ·
+[docs/operations.md](docs/operations.md).
 
 ## Features
 
-Capability and test-evidence traceability is maintained in
-[docs/rtm.md](docs/rtm.md).
+Architecture, protocol contracts, and security boundaries are documented in
+[docs/README.md](docs/README.md).
 
 | Domain / Capability | Shipped | Where |
 |---|---|---|
@@ -152,8 +152,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 Design system: tokens, component states and the Stitch→XML layout mapping are in
 [docs/design/design-notes.md](docs/design/design-notes.md); live emulator
 Stitch Dark & Light Mode showcase frames are indexed in
-[docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens/))
-and [docs/design/screens/](docs/design/screens/).
+[docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens/)).
 
 ## Prerequisites
 
@@ -234,10 +233,10 @@ Seeded by `demo/seed.sql` — **demo only, never use these credentials elsewhere
 | `+84900000003` | Chi | `password123` |
 | `+84900000004` | Dung | `password123` |
 
-The seed creates a DIRECT chat (An↔Binh), the GROUP "Nhom Do An", contacts and
-unread badges; it is re-runnable (`ON CONFLICT DO NOTHING`). The demo runs
-entirely on LAN — no internet needed; the ~8-minute script and preflight
-checklist are in [docs/demo-runbook.md](docs/demo-runbook.md). Note the debug
+The seed creates a DIRECT chat (An↔Binh), a sample group conversation, contacts and
+unread badges; it is re-runnable (`ON CONFLICT DO NOTHING`). The local stack runs
+entirely on LAN — no internet needed; runtime setup and backup notes are in
+[docs/operations.md](docs/operations.md). Note the debug
 build alone permits LAN cleartext — the release config blocks it
 (`app/src/debug/res/xml/network_security_config.xml`).
 
@@ -280,13 +279,12 @@ nexachat/
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,ws,common,config}/
 │  ├─ src/main/resources/db/migration/V1–V6   # Flyway migrations
 │  └─ Dockerfile + pom.xml
-├─ docs/      contracts, security, runbooks, audits, architecture Q&A (index: docs/README.md)
-│  ├─ design/       design tokens + Stitch references + live screenshots
+├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
+│  ├─ design/       design tokens + Stitch design-system references
 │  ├─ media/        Stitch Dark & Light Mode showcase frames (docs/media/README.md)
-│  ├─ screenshots/  feature evidence
 │  └─ evidence/     local interaction captures (gitignored)
-├─ demo/      seed.sql + LAN scripts (lan-up.sh / lan-up.ps1, backup.sh)
-├─ tools/     build-report.py · sign-release.sh · package-submission.sh · check-markdown-links.py
+├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
+├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
 ├─ README.md · CONTRIBUTING.md · CHANGELOG.md
 └─ docker-compose.yml
@@ -300,10 +298,9 @@ points: [docs/architecture.md](docs/architecture.md) ·
 [docs/websocket-protocol.md](docs/websocket-protocol.md) ·
 [docs/calls.md](docs/calls.md) ·
 [docs/ai-summary.md](docs/ai-summary.md) ·
-[docs/security.md](docs/security.md) · [docs/rtm.md](docs/rtm.md) ·
+[docs/security.md](docs/security.md) ·
+[docs/operations.md](docs/operations.md) ·
 [docs/media/README.md](docs/media/README.md) ·
-[docs/demo-runbook.md](docs/demo-runbook.md) ·
-[docs/viva-questions.md](docs/viva-questions.md) ·
 [docs/known-limitations.md](docs/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).
 

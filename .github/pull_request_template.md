@@ -18,4 +18,4 @@
 ## Checklist
 
 - [ ] Verified changes against `docs/api-contract.md` / `docs/websocket-protocol.md` (if transport contracts changed).
-- [ ] Updated `docs/rtm.md` (if this PR closes or modifies a feature requirement row).
+- [ ] Updated `docs/architecture.md` or relevant feature documentation (if system boundaries or behavior changed).

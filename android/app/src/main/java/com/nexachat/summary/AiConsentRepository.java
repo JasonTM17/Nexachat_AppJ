@@ -1,5 +1,6 @@
 package com.nexachat.summary;
 
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import java.io.IOException;
@@ -83,8 +84,15 @@ public final class AiConsentRepository {
     }
 
     public void setConsent(boolean value) {
+        setConsent(value, null);
+    }
+
+    public void setConsent(boolean value, @Nullable Runnable onConfirmed) {
         Boolean current = consent.getValue();
         if (current != null && current == value && activeCall == null) {
+            if (onConfirmed != null) {
+                mainExecutor.execute(onConfirmed);
+            }
             return;
         }
 
@@ -112,6 +120,9 @@ public final class AiConsentRepository {
                     confirmedConsent = response.body().getAiSummaryConsent();
                     publish(token, confirmedConsent, null);
                     activeCall = null;
+                    if (onConfirmed != null) {
+                        mainExecutor.execute(onConfirmed);
+                    }
                     return;
                 }
                 publish(token, confirmedConsent, mapResponseError(response));

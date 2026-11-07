@@ -38,15 +38,15 @@ KEEP_TITLE = "Nhóm Nghiên Cứu"
 # The seed script writes the group title without diacritics; accept both so a
 # re-run after tidying stays idempotent.
 KEEP_TITLE_ALIASES = {KEEP_TITLE, "Nhom Nghien Cuu"}
-EXTRA_TITLES = ["Nhóm Đồ Án", "Nhóm Tiếng Anh"]
+EXTRA_TITLES = ["Nhóm Kỹ Thuật", "Nhóm Sản Phẩm"]
 EXTRA_MESSAGES = [
-    "Mai họp nhóm Đồ Án lúc 14h ở thư viện nhé mọi người.",
-    "Tuần này lớp mình luyện speaking chủ đề công nghệ.",
+    "Mai họp nhóm Kỹ Thuật lúc 14h ở phòng họp 2A nhé mọi người.",
+    "Tuần này nhóm mình hoàn thiện tính năng tóm tắt AI.",
 ]
 # Early revisions of this helper posted ASCII-only tails; they are removed so
 # the demo groups keep natural Vietnamese copy.
 LEGACY_TAILS = {
-    "Mai hop nhom Do An luc 14h o thu vien nhe moi nguoi.",
+    "Mai hop nhom Ky Thuat luc 14h o phong hop 2A nhe moi nguoi.",
     "Tuan nay lop minh luyen speaking chu de cong nghe.",
 }
 

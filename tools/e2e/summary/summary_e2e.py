@@ -180,7 +180,7 @@ def vietnamese_corpus_messages() -> list[str]:
         "Việc cần làm: ghi nhận generatedBy sau consent không in nội dung.",
         "Quyết định: không trả 503; luôn degrade về LOCAL.",
         "Nhắc lại quyết định demo: dark theme và i18n EN/VI parity.",
-        "Câu hỏi cuối: còn blocker nào trước viva không?",
+        "Câu hỏi cuối: còn blocker nào trước khi release không?",
         "Action: cập nhật README e2e một dòng cho summary_e2e.py.",
         "Kết luận: sẵn sàng verify citation và LOCAL engine.",
         "Cảm ơn mọi người, mai sync lại lúc 9h.",

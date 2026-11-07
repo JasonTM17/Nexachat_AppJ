@@ -64,7 +64,7 @@ public class MessageUiRulesTest {
     public void extractInitialsHandlesUserAndGroupNames() {
         // Group names fallback
         assertEquals("NG", MessageUiRules.extractInitials("NexaChat Group"));
-        assertEquals("NA", MessageUiRules.extractInitials("Nhom Do An"));
+        assertEquals("NT", MessageUiRules.extractInitials("NexaChat Team"));
         assertEquals("CS", MessageUiRules.extractInitials("Computer Science"));
 
         // User names

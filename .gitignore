@@ -31,10 +31,6 @@ google-services.json
 secrets.properties
 **/local.properties
 
-# ---- Local report values (contain user-supplied submission data) ----
-values*.json
-!values.example.json
-
 # ---- IDE ----
 .idea/
 *.iml
@@ -54,12 +50,12 @@ logs/
 server/uploads/
 demo/backups/
 
-# ---- Release artifacts (local packaging — never committed/shipped) ----
-# Signing keystore, signing.properties, built APKs and submission zips all
-# live here. See tools/README-release.md.
+# ---- Release artifacts (local signing & builds — never committed) ----
+# Signing keystore, signing.properties, and built APKs live here.
+# See tools/README-release.md.
 release/
 
-# ---- Kit/workspace internals (never in submission) ----
+# ---- Agent / workspace internals ----
 .agentkit/
 .agents/
 .claude/
@@ -75,5 +71,5 @@ captures/
 .tmp_*
 desktop.ini
 
-# ---- Local-only capture evidence (not part of the submission) ----
+# ---- Local-only capture evidence ----
 docs/evidence/

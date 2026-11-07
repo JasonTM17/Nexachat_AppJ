@@ -176,5 +176,5 @@ negotiated by the Android client; signaling does not carry audio bytes.
   ring timeout. The run asserts the timeout is not early and that the caller
   received server heartbeats while ringing.
 - Android call screens are captured on an API 35 emulator in
-  `docs/design/screens/s6-*` (outgoing/incoming, connected, mute, speaker,
-  landscape, font scale, permission paths and localized call-log lines).
+  `docs/media/screens/09-outgoing-call-dark-en.png` and
+  `docs/media/screens/11-call-failure-dark-en.png` (indexed in `docs/media/README.md`).

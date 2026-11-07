@@ -12,7 +12,7 @@ assignees: ""
 
 ## Proposed solution
 
-<!-- What should happen? Link the rubric row or doc if relevant. -->
+<!-- What should happen? Link the relevant design doc or API contract if applicable. -->
 
 ## Alternatives considered
 

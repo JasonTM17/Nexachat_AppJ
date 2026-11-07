@@ -9,15 +9,15 @@ public class ForwardFilterTest {
 
     @Test
     public void emptyQueryMatchesAnyConversation() {
-        assertTrue(ForwardFilter.matchesQuery("Nhom Do An", ""));
-        assertTrue(ForwardFilter.matchesQuery("Nhom Do An", "   "));
-        assertTrue(ForwardFilter.matchesQuery("Nhom Do An", null));
+        assertTrue(ForwardFilter.matchesQuery("NexaChat Team", ""));
+        assertTrue(ForwardFilter.matchesQuery("NexaChat Team", "   "));
+        assertTrue(ForwardFilter.matchesQuery("NexaChat Team", null));
     }
 
     @Test
     public void queryMatchesCaseAndDiacriticInsensitively() {
-        assertTrue(ForwardFilter.matchesQuery("Nhóm Đồ Án", "nhom"));
-        assertTrue(ForwardFilter.matchesQuery("Nhóm Đồ Án", "do an"));
+        assertTrue(ForwardFilter.matchesQuery("Nhóm Kỹ Thuật", "nhom"));
+        assertTrue(ForwardFilter.matchesQuery("Nhóm Kỹ Thuật", "ky thuat"));
         assertTrue(ForwardFilter.matchesQuery("Lan Anh", "lan"));
         assertTrue(ForwardFilter.matchesQuery("Minh Khoa", "khoa"));
         assertFalse(ForwardFilter.matchesQuery("Minh Khoa", "dung"));

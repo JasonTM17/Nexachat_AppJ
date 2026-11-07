@@ -1,7 +1,8 @@
-# NexaChat Security Story
+# NexaChat Security Architecture
 
-Scope: the Spring Boot backend (`server/`) — REST, STOMP WebSocket, attachments,
-rate limiting, error handling. Claims cite source files for viva defence.
+Scope: the Spring Boot backend (`server/`) and Android client (`android/`) — REST,
+STOMP WebSocket, attachments, rate limiting, and error handling. Every claim cites
+the implementing source file.
 
 ## 1. Credential security
 
