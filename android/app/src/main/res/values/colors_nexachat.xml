@@ -18,13 +18,13 @@
     <color name="tertiary_sky_container">#FFBAE6FD</color>
     <color name="tertiary_on_sky_container">#FF0369A1</color>
 
-    <color name="background_light">#FFF8FAFC</color>
-    <color name="surface_light">#FFF8FAFC</color>
+    <color name="background_light">#FFF4F6FB</color>
+    <color name="surface_light">#FFFFFFFF</color>
     <color name="surface_container_lowest_light">#FFFFFFFF</color>
-    <color name="surface_container_low_light">#FFF1F5F9</color>
-    <color name="surface_container_light">#FFECEEF0</color>
-    <color name="surface_container_high_light">#FFE6E8EA</color>
-    <color name="surface_variant_light">#FFE0E3E5</color>
+    <color name="surface_container_low_light">#FFFFFFFF</color>
+    <color name="surface_container_light">#FFF1F5F9</color>
+    <color name="surface_container_high_light">#FFE8EEF5</color>
+    <color name="surface_variant_light">#FFE8EEF5</color>
 
     <color name="text_primary_light">#FF0F172A</color>
     <color name="text_secondary_light">#FF64748B</color>
@@ -60,6 +60,6 @@
     <color name="colorOutline">@color/slate_border</color>
     <color name="colorOutlineVariant">@color/slate_divider</color>
 
-    <color name="bubble_mine">@color/brand_indigo</color>
-    <color name="bubble_other">@color/surface_container_low_light</color>
+    <color name="bubble_mine">#FFE0E7FF</color>
+    <color name="bubble_other">#FFFFFFFF</color>
 </resources>

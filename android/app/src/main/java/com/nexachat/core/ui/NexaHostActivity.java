@@ -2,10 +2,14 @@ package com.nexachat.core.ui;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -39,6 +43,16 @@ public class NexaHostActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_nexa_host);
 
+        View navHost = findViewById(R.id.nav_host);
+        if (navHost != null) {
+            ViewCompat.setOnApplyWindowInsetsListener(navHost, (view, windowInsets) -> {
+                Insets insets = windowInsets.getInsets(
+                        WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.ime());
+                view.setPadding(insets.left, insets.top, insets.right, insets.bottom);
+                return WindowInsetsCompat.CONSUMED;
+            });
+        }
+
         AppSettingsViewModel settings =
                 new ViewModelProvider(this).get(AppSettingsViewModel.class);
         settings.getThemeMode().observe(this, this::applyThemeMode);
@@ -57,7 +71,6 @@ public class NexaHostActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (pendingLogoutNavigation) {
-            pendingLogoutNavigation = false;
             navigateToLoginIfPossible();
         }
     }
@@ -100,11 +113,13 @@ public class NexaHostActivity extends AppCompatActivity {
                 (NavHostFragment)
                         getSupportFragmentManager().findFragmentById(R.id.nav_host);
         if (host == null) {
+            pendingLogoutNavigation = true;
             return;
         }
         NavController nav = host.getNavController();
         try {
             nav.navigate(R.id.action_global_login);
+            pendingLogoutNavigation = false;
         } catch (IllegalStateException ignored) {
             pendingLogoutNavigation = true;
         }

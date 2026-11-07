@@ -20,44 +20,125 @@
 
             <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:layout_gravity="end"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
-
+                android:orientation="horizontal"
+                android:paddingEnd="@dimen/space_xs">
+                <ImageButton
+                    android:id="@+id/themeButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/settings_theme_title"
+                    android:src="@drawable/ic_theme_mode"
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/contactsButton"
                     android:layout_width="@dimen/min_touch_target"
                     android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/contacts_title"
-                    android:src="@drawable/ic_people" />
-
+                    android:src="@drawable/ic_people"
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/searchButton"
                     android:layout_width="@dimen/min_touch_target"
                     android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/search_title"
-                    android:src="@drawable/ic_search" />
-
+                    android:src="@drawable/ic_search"
+                    app:tint="?attr/colorOnSurface" />
                 <ImageButton
                     android:id="@+id/profileButton"
                     android:layout_width="@dimen/min_touch_target"
                     android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/profile_title"
-                    android:src="@drawable/ic_account_circle" />
+                    android:src="@drawable/ic_account_circle"
+                    app:tint="?attr/colorOnSurface" />
             </LinearLayout>
         </com.google.android.material.appbar.MaterialToolbar>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/inboxSearchPill"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginBottom="@dimen/space_xs"
+            android:clickable="true"
+            android:focusable="true"
+            app:cardBackgroundColor="?attr/colorSurfaceVariant"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/min_touch_target"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_md">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_search"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:text="@string/search_title"
+                    android:textAppearance="?attr/textAppearanceBodyLarge"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/inboxFilterChips"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_xs"
+            app:singleLine="true"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/filterAllChip"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="All" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/filterUnreadChip"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Unread" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/filterGroupsChip"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Groups" />
+        </com.google.android.material.chip.ChipGroup>
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
-
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        xmlns:app="http://schemas.android.com/apk/res-auto">
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/conversationList"
             android:layout_width="match_parent"
@@ -65,16 +146,15 @@
             android:clipToPadding="false"
             android:padding="@dimen/space_sm" />
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/createGroupFab"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/space_md"
+        android:layout_margin="@dimen/space_lg"
         android:contentDescription="@string/group_create_title"
-        app:fabSize="normal"
-        app:srcCompat="@drawable/ic_add" />
+        app:srcCompat="@drawable/ic_add"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"

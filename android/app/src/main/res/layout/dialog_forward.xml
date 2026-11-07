@@ -1,15 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/forwardDialogRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="@dimen/space_md">
-    <TextView android:id="@+id/forwardTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/forward_title" android:textAppearance="?attr/textAppearanceTitleLarge"/>
-    <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/forward_search_placeholder" app:startIconDrawable="@drawable/ic_search">
-        <com.google.android.material.textfield.TextInputEditText android:id="@+id/forwardSearch" android:layout_width="match_parent" android:layout_height="wrap_content"/>
-    </com.google.android.material.textfield.TextInputLayout>
-    <androidx.recyclerview.widget.RecyclerView android:id="@+id/forwardList" android:layout_width="match_parent" android:layout_height="200dp"/>
-    <com.google.android.material.button.MaterialButton android:id="@+id/forwardSend" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="@dimen/min_touch_target" android:text="@string/forward_send"/>
-</LinearLayout>
+    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardCornerRadius="24dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorSurfaceVariant"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/forwardTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:text="@string/forward_title"
+            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:textColor="?attr/colorOnSurface" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/forward_search_placeholder"
+            app:hintTextColor="?attr/colorOnSurfaceVariant"
+            app:startIconDrawable="@drawable/ic_search"
+            app:startIconTint="?attr/colorOnSurfaceVariant">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/forwardSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/colorOnSurface"
+                android:textColorHint="?attr/colorOnSurfaceVariant" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/forwardList"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:clipToPadding="false"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/forwardSend"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/forward_send" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

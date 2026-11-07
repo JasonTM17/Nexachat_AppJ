@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<merge xmlns:android="http://schemas.android.com/apk/res/android">
-    <com.google.android.material.progressindicator.CircularProgressIndicator android:id="@+id/loadingSpinner" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center" android:indeterminate="true"/>
-    <TextView android:id="@+id/loadingLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:textAppearance="?attr/textAppearanceBodyMedium" android:visibility="gone"/>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/loadingSpinner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:indeterminate="true"
+        app:indicatorColor="?attr/colorPrimary" />
+    <TextView
+        android:id="@+id/loadingLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
 </merge>

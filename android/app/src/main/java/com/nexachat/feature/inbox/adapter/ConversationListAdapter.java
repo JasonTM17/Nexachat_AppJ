@@ -14,7 +14,6 @@ import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
-import com.nexachat.data.PeerPresence;
 
 /**
  * Inbox conversation rows with unread badge and relative timestamps.
@@ -85,7 +84,6 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView time;
         private final TextView preview;
         private final TextView unreadBadge;
-        private final View presenceDot;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -94,7 +92,6 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             time = itemView.findViewById(R.id.time);
             preview = itemView.findViewById(R.id.preview);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
-            presenceDot = itemView.findViewById(R.id.presenceDot);
         }
 
         void bind(
@@ -137,13 +134,6 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 unreadBadge.setText(String.valueOf(conversation.getUnreadCount()));
             } else {
                 unreadBadge.setVisibility(View.GONE);
-            }
-
-            PeerPresence peerPresence = conversation.getPeerPresence();
-            if (peerPresence != null && peerPresence.isOnline()) {
-                presenceDot.setVisibility(View.VISIBLE);
-            } else {
-                presenceDot.setVisibility(View.GONE);
             }
 
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));

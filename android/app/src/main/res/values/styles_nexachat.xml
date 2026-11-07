@@ -23,6 +23,9 @@
         <item name="colorSurface">@color/colorSurface</item>
         <item name="colorOnSurface">@color/colorOnSurface</item>
         <item name="colorSurfaceVariant">@color/colorSurfaceVariant</item>
+        <item name="colorSurfaceContainerLow">@color/surface_container_low_light</item>
+        <item name="colorSurfaceContainer">@color/surface_container_light</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_container_high_light</item>
         <item name="colorOnSurfaceVariant">@color/colorOnSurfaceVariant</item>
         <item name="colorOutline">@color/colorOutline</item>
         <item name="colorOutlineVariant">@color/colorOutlineVariant</item>

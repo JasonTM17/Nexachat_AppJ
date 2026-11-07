@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background_light">#FF0F172A</color>
-    <color name="surface_light">#FF0F172A</color>
+    <color name="background_light">#FF0B1120</color>
+    <color name="surface_light">#FF151F32</color>
     <color name="surface_container_lowest_light">#FF0B1120</color>
-    <color name="surface_container_low_light">#FF1E293B</color>
+    <color name="surface_container_low_light">#FF151F32</color>
     <color name="surface_container_light">#FF1E293B</color>
-    <color name="surface_container_high_light">#FF334155</color>
-    <color name="surface_variant_light">#FF334155</color>
+    <color name="surface_container_high_light">#FF283548</color>
+    <color name="surface_variant_light">#FF283548</color>
     <color name="text_primary_light">#FFF8FAFC</color>
-    <color name="text_secondary_light">#FF94A3B8</color>
+    <color name="text_secondary_light">#FFB6C2D6</color>
 
     <color name="brand_indigo">#FF818CF8</color>
     <color name="brand_indigo_container">#FF3730A3</color>
     <color name="brand_on_indigo_container">#FFE0E7FF</color>
+
+    <color name="tertiary_sky">#FF7DD3FC</color>
+    <color name="tertiary_sky_container">#FF0C4A6E</color>
+    <color name="tertiary_on_sky_container">#FFBAE6FD</color>
 
     <color name="slate_secondary">#FFB8C2D9</color>
     <color name="slate_secondary_container">#FF334155</color>
@@ -25,13 +29,17 @@
     <color name="on_error_container_light">#FFFFDAD6</color>
 
     <color name="colorPrimary">@color/brand_indigo</color>
-    <color name="colorOnPrimary">@color/text_primary_light</color>
+    <color name="colorOnPrimary">#FF0B1120</color>
     <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
     <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
     <color name="colorSecondary">@color/slate_secondary</color>
     <color name="colorOnSecondary">#FFFFFFFF</color>
     <color name="colorSecondaryContainer">@color/surface_container_high_light</color>
     <color name="colorOnSecondaryContainer">@color/text_primary_light</color>
+    <color name="colorTertiary">@color/tertiary_sky</color>
+    <color name="colorOnTertiary">#FF082F49</color>
+    <color name="colorTertiaryContainer">@color/tertiary_sky_container</color>
+    <color name="colorOnTertiaryContainer">@color/tertiary_on_sky_container</color>
     <color name="colorBackground">@color/background_light</color>
     <color name="colorOnBackground">@color/text_primary_light</color>
     <color name="colorSurface">@color/surface_light</color>
@@ -45,6 +53,6 @@
     <color name="colorErrorContainer">@color/error_container_light</color>
     <color name="colorOnErrorContainer">@color/on_error_container_light</color>
 
-    <color name="bubble_mine">#FF4F46E5</color>
-    <color name="bubble_other">@color/surface_container_high_light</color>
+    <color name="bubble_mine">#FF3730A3</color>
+    <color name="bubble_other">#FF1E293B</color>
 </resources>

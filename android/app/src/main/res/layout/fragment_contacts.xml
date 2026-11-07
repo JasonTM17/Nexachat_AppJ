@@ -9,18 +9,14 @@
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
-        app:elevation="0dp">
+        android:layout_height="wrap_content">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorSurface"
-            app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back">
-
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:navigationContentDescription="@string/cd_back">
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/searchButton"
                 style="@style/Widget.Material3.Button.IconButton"
@@ -28,8 +24,7 @@
                 android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="end|center_vertical"
                 android:contentDescription="@string/search_title"
-                app:icon="@drawable/ic_search"
-                app:iconTint="?attr/colorOnSurface" />
+                app:icon="@drawable/ic_search" />
         </com.google.android.material.appbar.MaterialToolbar>
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -37,8 +32,6 @@
         android:id="@+id/contactList"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:paddingVertical="@dimen/space_sm"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -48,9 +41,7 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="@dimen/space_lg"
         android:contentDescription="@string/action_add_contact"
-        app:backgroundTint="?attr/colorPrimary"
-        app:srcCompat="@drawable/ic_add"
-        app:tint="?attr/colorOnPrimary" />
+        app:srcCompat="@drawable/ic_add" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"

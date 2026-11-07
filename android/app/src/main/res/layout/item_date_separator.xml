@@ -8,10 +8,12 @@
         android:id="@+id/dateSeparatorLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
+        android:layout_gravity="center"
         android:background="@drawable/bg_date_separator"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_xs"
+        android:backgroundTint="?attr/colorSurfaceVariant"
+        android:gravity="center"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
         android:textAppearance="?attr/textAppearanceLabelSmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 </FrameLayout>
