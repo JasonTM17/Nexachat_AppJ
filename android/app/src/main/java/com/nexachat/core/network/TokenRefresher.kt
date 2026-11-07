@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 
 /**
  * THE single flight path for refresh-token rotation (plan §12.2).
@@ -46,7 +48,7 @@ class TokenRefresher @Inject constructor(
      * path so a concurrent 401 can't present the token we're about to revoke.
      */
     suspend fun refresh(): TokenRefreshOutcome = mutex.withLock {
-        val refreshToken = tokenStore.readTokens()?.refreshToken
+        val refreshToken = tokenStore.readTokens().awaitSingleOrNull()?.refreshToken
             ?: return TokenRefreshOutcome.NoRefreshToken.INSTANCE
         performRefresh(refreshToken)
     }
@@ -57,7 +59,7 @@ class TokenRefresher @Inject constructor(
      * reuse it without a second network call.
      */
     suspend fun refreshIfNeeded(failedAccessToken: String?): TokenRefreshOutcome = mutex.withLock {
-        val tokens = tokenStore.readTokens() ?: return TokenRefreshOutcome.NoRefreshToken.INSTANCE
+        val tokens = tokenStore.readTokens().awaitSingleOrNull() ?: return TokenRefreshOutcome.NoRefreshToken.INSTANCE
         if (failedAccessToken != null && tokens.accessToken != failedAccessToken) {
             return TokenRefreshOutcome.FreshToken(tokens.accessToken)
         }
@@ -83,17 +85,17 @@ class TokenRefresher @Inject constructor(
             when {
                 response.isSuccessful && body != null -> {
                     tokenStore.saveTokens(
-                        access = body.accessToken,
-                        accessExpiresAtEpochMs = System.currentTimeMillis() +
+                        body.accessToken,
+                        System.currentTimeMillis() +
                             body.accessTokenExpiresIn * 1_000L,
-                        refresh = body.refreshToken,
-                    )
+                        body.refreshToken,
+                    ).await()
                     TokenRefreshOutcome.FreshToken(body.accessToken)
                 }
                 TokenRefreshRules.isDefinitiveRejection(response.code()) -> {
                     // 400 validation, 401 TOKEN_INVALID/EXPIRED/REUSED, 403 forbidden.
                     // 408 and 429 are not session death: the refresh token is still valid.
-                    tokenStore.clear()
+                    tokenStore.clear().await()
                     sessionEvents.emitLoggedOut()
                     TokenRefreshOutcome.Rejected.INSTANCE
                 }

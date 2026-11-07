@@ -23,12 +23,12 @@ public final class DatabaseModule {
     public static AppDatabase provideAppDatabase(@ApplicationContext Context context) {
         return Room.databaseBuilder(context, AppDatabase.class, "nexachat.db")
                 .addMigrations(
-                        AppDatabase.Companion.getMIGRATION_1_2(),
-                        AppDatabase.Companion.getMIGRATION_2_3(),
-                        AppDatabase.Companion.getMIGRATION_3_4(),
-                        AppDatabase.Companion.getMIGRATION_4_5(),
-                        AppDatabase.Companion.getMIGRATION_5_6(),
-                        AppDatabase.Companion.getMIGRATION_6_7())
+                        AppDatabase.MIGRATION_1_2,
+                        AppDatabase.MIGRATION_2_3,
+                        AppDatabase.MIGRATION_3_4,
+                        AppDatabase.MIGRATION_4_5,
+                        AppDatabase.MIGRATION_5_6,
+                        AppDatabase.MIGRATION_6_7)
                 .build();
     }
 

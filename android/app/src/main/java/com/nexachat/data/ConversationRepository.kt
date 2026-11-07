@@ -41,6 +41,9 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.rx3.asFlow
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
@@ -182,14 +185,14 @@ class ConversationRepository @Inject constructor(
     // ---- read model ----
 
     fun inboxFlow(): Flow<List<ConversationSummary>> =
-        combine(conversationDao.inboxFlow(), presenceRepository.presences) { rows, presence ->
+        combine(conversationDao.inboxFlow().toObservable().asFlow(), presenceRepository.presences) { rows, presence ->
             rows.map { it.toSummary(presence) }
         }
 
     /** Single conversation for the chat title bar. */
     fun conversationFlow(conversationId: String): Flow<ConversationSummary?> =
-        combine(conversationDao.observeById(conversationId), presenceRepository.presences) { row, presence ->
-            row?.toSummary(presence)
+        combine(conversationDao.observeById(conversationId).toObservable().asFlow(), presenceRepository.presences) { rows, presence ->
+            rows.firstOrNull()?.toSummary(presence)
         }
 
     /** Signals server updates for a group whose detail screen is currently open. */
@@ -239,8 +242,8 @@ class ConversationRepository @Inject constructor(
                 if (result.value.complete) {
                     val fetchedIds = rows.mapTo(HashSet()) { it.id }
                     val keep = fetchedIds + locallyCreatedIds
-                    if (keep.isEmpty()) conversationDao.clear()
-                    else conversationDao.deleteAllExcept(keep.toList())
+                    if (keep.isEmpty()) conversationDao.clear().await()
+                    else conversationDao.deleteAllExcept(keep.toList()).await()
                     locallyCreatedIds.removeAll(fetchedIds)
                 }
                 Result.Success(Unit)
@@ -335,9 +338,9 @@ class ConversationRepository @Inject constructor(
             }
         ) {
             is Result.Success -> {
-                conversationDao.byId(conversationId)
-                    ?.copy(title = title.trim())
-                    ?.let { conversationDao.upsert(it) }
+                conversationDao.byId(conversationId).awaitSingleOrNull()
+                    ?.withTitle(title.trim())
+                    ?.let { conversationDao.upsert(it).await() }
                 Result.Success(Unit)
             }
             is Result.Failure -> Result.cast(result)
@@ -367,9 +370,9 @@ class ConversationRepository @Inject constructor(
             )
             when (val result = call { groupApi.uploadAvatar(conversationId, part) }) {
                 is Result.Success -> {
-                    conversationDao.byId(conversationId)
-                        ?.copy(avatarUrl = result.value.avatarUrl)
-                        ?.let { conversationDao.upsert(it) }
+                    conversationDao.byId(conversationId).awaitSingleOrNull()
+                        ?.withAvatarUrl(result.value.avatarUrl)
+                        ?.let { conversationDao.upsert(it).await() }
                     Result.Success(Unit)
                 }
                 is Result.Failure -> Result.cast(result)
@@ -405,7 +408,7 @@ class ConversationRepository @Inject constructor(
     suspend fun leaveGroup(conversationId: String): Result<Unit> =
         when (val result = call { groupApi.leaveGroup(conversationId) }) {
             is Result.Success -> {
-                conversationDao.clear()
+                conversationDao.clear().await()
                 refreshInbox()
             }
             is Result.Failure -> Result.cast(result)
@@ -429,26 +432,27 @@ class ConversationRepository @Inject constructor(
     // ---- mappers ----
 
     private suspend fun currentUserId(): String? {
-        val access = tokenStore.readTokens()?.accessToken ?: return null
+        val access = tokenStore.readTokens().awaitSingleOrNull()?.accessToken ?: return null
         return userIdFromJwt(access, moshi)
     }
 
     private fun ConversationInboxDto.toEntity(myId: String?): ConversationEntity =
         ConversationEntity(
-            id = id,
-            type = type ?: TYPE_DIRECT,
-            title = title,
-            lastMessageSeq = resolvedLastSeq() ?: 0L,
-            lastMessageContent = resolvedLastContent(),
-            lastMessageSenderName = resolvedLastSender(),
-            lastMessageAt = resolvedLastAt()?.let { isoToEpochMs(it) },
-            unreadCount = unreadCount ?: 0,
-            otherUserName = resolvedOtherName(myId),
-            otherUserAvatar = resolvedOtherAvatar(myId),
-            avatarUrl = avatarUrl,
-            myRole = members.firstOrNull { it.userId == myId }?.role,
-            otherUserId = resolvedOtherId(myId),
-            lastMessageDeleted = lastMessage?.deletedAt != null,
+            id,
+            type ?: TYPE_DIRECT,
+            title,
+            resolvedLastSeq() ?: 0L,
+            resolvedLastContent(),
+            resolvedLastSender(),
+            resolvedLastAt()?.let { isoToEpochMs(it) },
+            unreadCount ?: 0,
+            resolvedOtherName(myId),
+            resolvedOtherAvatar(myId),
+            avatarUrl,
+            0L,
+            members.firstOrNull { it.userId == myId }?.role,
+            resolvedOtherId(myId),
+            lastMessage?.deletedAt != null,
         )
 
     /**
@@ -457,20 +461,24 @@ class ConversationRepository @Inject constructor(
      * fallback until the first authoritative inbox refresh lands. The creator
      * is the group's first ADMIN by contract.
      */
-    private fun ConversationDto.toEntity(fallbackTitle: String): ConversationEntity = ConversationEntity(
-        id = id,
-        type = type ?: TYPE_GROUP,
-        title = title ?: fallbackTitle,
-        lastMessageSeq = 0L,
-        lastMessageContent = null,
-        lastMessageSenderName = null,
-        lastMessageAt = null,
-        unreadCount = 0,
-        otherUserName = null,
-        otherUserAvatar = null,
-        avatarUrl = avatarUrl,
-        myRole = GroupMember.ROLE_ADMIN,
-    )
+    private fun ConversationDto.toEntity(fallbackTitle: String): ConversationEntity =
+        ConversationEntity(
+            id,
+            type ?: TYPE_GROUP,
+            title ?: fallbackTitle,
+            0L,
+            null,
+            null,
+            null,
+            0,
+            null,
+            null,
+            avatarUrl,
+            0L,
+            GroupMember.ROLE_ADMIN,
+            null,
+            false,
+        )
 
     private fun ConversationMemberDto.toGroupMember(): GroupMember? =
         userId?.let { id ->
@@ -513,20 +521,20 @@ class ConversationRepository @Inject constructor(
      */
     private suspend fun upsertPreservingClientColumns(rows: List<ConversationEntity>) {
         if (rows.isEmpty()) return
-        val prior = conversationDao.byIds(rows.map { it.id })
+        val prior = conversationDao.byIds(rows.map { it.id }).await()
             .associateBy { it.id }
         conversationDao.upsertAll(
             rows.map { row ->
-                row.copy(
-                    peerReadSeq = prior[row.id]?.peerReadSeq ?: 0L,
-                    // Payloads without members[] must not strip a known role —
-                    // a stale ADMIN is safer than hiding a real admin's pin.
-                    myRole = row.myRole ?: prior[row.id]?.myRole,
-                    // Same for the peer id: losing it would blind presence.
-                    otherUserId = row.otherUserId ?: prior[row.id]?.otherUserId,
+                // Payloads without members[] must not strip a known role —
+                // a stale ADMIN is safer than hiding a real admin's pin.
+                // Same for the peer id: losing it would blind presence.
+                row.withClientColumns(
+                    prior[row.id]?.peerReadSeq ?: 0L,
+                    row.myRole ?: prior[row.id]?.myRole,
+                    row.otherUserId ?: prior[row.id]?.otherUserId,
                 )
             },
-        )
+        ).await()
     }
 
     /**

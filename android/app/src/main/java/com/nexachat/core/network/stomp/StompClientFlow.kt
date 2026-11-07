@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 
 /** Coroutine boundary kept in Kotlin so suspend token reads and flow cleanup remain structured. */
 object StompClientFlow {
@@ -23,7 +25,7 @@ object StompClientFlow {
         }
         sink.trySend(StompClient.State.Connecting)
 
-        val token = tokenStore.readTokens()?.accessToken
+        val token = tokenStore.readTokens().awaitSingleOrNull()?.accessToken
         if (token.isNullOrBlank()) {
             sink.trySend(StompClient.State.Failed(StompClient.REASON_NO_TOKEN))
             close()

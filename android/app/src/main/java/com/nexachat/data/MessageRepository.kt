@@ -49,6 +49,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.rx3.asFlow
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Delivery state the chat UI renders per bubble. */
@@ -233,9 +236,9 @@ class MessageRepository @Inject constructor(
      * bottom, matching mainstream messenger behaviour).
      */
     fun messagesFlow(conversationId: String): Flow<List<ChatMessage>> = combine(
-        messageDao.messagesForConversation(conversationId),
-        outboxDao.pendingOrdered(),
-        reactionDao.reactionsForConversation(conversationId),
+        messageDao.messagesForConversation(conversationId).toObservable().asFlow(),
+        outboxDao.pendingOrdered().toObservable().asFlow(),
+        reactionDao.reactionsForConversation(conversationId).toObservable().asFlow(),
     ) { messages, pending, reactions ->
         val myId = currentUserId()
         val chips = reactions.groupBy({ it.messageId }) { it.toChip() }
@@ -252,8 +255,8 @@ class MessageRepository @Inject constructor(
      * appear (id-only stub) so the banner count matches the server.
      */
     fun pinsFlow(conversationId: String): Flow<List<ChatMessage>> = combine(
-        pinDao.pinnedFor(conversationId),
-        messageDao.messagesForConversation(conversationId),
+        pinDao.pinnedFor(conversationId).toObservable().asFlow(),
+        messageDao.messagesForConversation(conversationId).toObservable().asFlow(),
     ) { pins, messages ->
         val myId = currentUserId()
         val byId = messages.associateBy { it.id }
@@ -293,7 +296,7 @@ class MessageRepository @Inject constructor(
         // resyncRequests, so pushes missed while this topic was unwatched (or
         // rows lost to a logout wipe) would otherwise stay invisible forever.
         resyncForward(conversationId)
-        sendRead(conversationId, messageDao.maxSeq(conversationId))
+        sendRead(conversationId, messageDao.maxSeq(conversationId).await())
         flushOutbox()
         refreshPins(conversationId)
     }
@@ -340,20 +343,20 @@ class MessageRepository @Inject constructor(
         messageId: String,
         maxPages: Int = MAX_JUMP_PAGES,
     ): MessageJump {
-        if (messageDao.exists(messageId)) return MessageJump.Found
-        if (messageDao.minSeq(conversationId) <= 0L) {
+        if (messageDao.exists(messageId).await()) return MessageJump.Found
+        if (messageDao.minSeq(conversationId).await() <= 0L) {
             // Nothing loaded yet (cold screen, failed first page): pull the
             // newest page before paging backwards from a non-existent cursor.
             val first = refreshHistory(conversationId)
             if (first is Result.Failure) return MessageJump.Failed(first.error)
-            if (messageDao.exists(messageId)) return MessageJump.Found
+            if (messageDao.exists(messageId).await()) return MessageJump.Found
         }
         repeat(maxPages) {
-            val oldest = messageDao.minSeq(conversationId)
+            val oldest = messageDao.minSeq(conversationId).await()
             if (oldest <= 0L) return MessageJump.NotFound
             when (val page = refreshHistory(conversationId, beforeSeq = oldest)) {
                 is Result.Success -> {
-                    if (messageDao.exists(messageId)) return MessageJump.Found
+                    if (messageDao.exists(messageId).await()) return MessageJump.Found
                     if (!page.value.hasMore) return MessageJump.NotFound
                 }
                 is Result.Failure -> return MessageJump.Failed(page.error)
@@ -372,49 +375,42 @@ class MessageRepository @Inject constructor(
         val deletedEntities = mutableListOf<MessageEntity>()
         for (dto in items) {
             val entity = dto.toEntity(conversationId) ?: continue
-            val existing = messageDao.byId(entity.id)
+            val existing = messageDao.byId(entity.id).awaitSingleOrNull()
             when {
-                existing == null -> messageDao.upsert(entity)
+                existing == null -> messageDao.upsert(entity).await()
                 // Delete always wins over a stale live page (never resurrect).
                 existing.deletedAtEpochMs == null &&
                     entity.deletedAtEpochMs != null ->
-                    messageDao.update(
-                        existing.copy(
-                            content = "",
-                            attachmentsJson = null,
-                            deletedAtEpochMs = entity.deletedAtEpochMs,
-                        ),
-                    )
+                    messageDao.update(existing.asDeleted(entity.deletedAtEpochMs)).await()
                 // A reconnect page carries edits made while offline; IGNORE
                 // alone would leave the row stale forever.
                 existing.deletedAtEpochMs == null &&
                     (existing.content != entity.content ||
                         existing.editedAtEpochMs != entity.editedAtEpochMs) ->
                     messageDao.update(
-                        existing.copy(
-                            content = entity.content,
-                            editedAtEpochMs = entity.editedAtEpochMs
-                                ?: existing.editedAtEpochMs,
+                        existing.withContentAndEditedAt(
+                            entity.content,
+                            entity.editedAtEpochMs ?: existing.editedAtEpochMs,
                         ),
-                    )
+                    ).await()
             }
             if (entity.deletedAtEpochMs != null) {
                 deletedEntities += entity
-                if (conversationDao.byId(entity.conversationId)?.lastMessageSeq == entity.seq) {
-                    conversationDao.markLastMessageDeleted(entity.conversationId)
+                if (conversationDao.byId(entity.conversationId).awaitSingleOrNull()?.lastMessageSeq == entity.seq) {
+                    conversationDao.markLastMessageDeleted(entity.conversationId).await()
                 }
             }
         }
         for (entity in deletedEntities) {
-            reactionDao.deleteForMessage(entity.id)
-            pinDao.delete(entity.conversationId, entity.id)
-            messageDao.clearReplySnippets(entity.id)
+            reactionDao.deleteForMessage(entity.id).await()
+            pinDao.delete(entity.conversationId, entity.id).await()
+            messageDao.clearReplySnippets(entity.id).await()
         }
         val myId = currentUserId()
         val reactionRows = mutableListOf<MessageReactionEntity>()
         val reactionOwnerIds = mutableListOf<String>()
         for (dto in items) {
-            val existing = messageDao.byId(dto.id)
+            val existing = messageDao.byId(dto.id).awaitSingleOrNull()
             if (!dto.deletedAt.isNullOrBlank() || existing?.deletedAtEpochMs != null) continue
             val summaries = dto.reactions ?: continue
             // Same resolution as MessageEntity.toEntity — the row's
@@ -425,7 +421,7 @@ class MessageRepository @Inject constructor(
                 it.toEntity(dto.id, resolvedConversationId, myId)
             }
         }
-        reactionDao.replaceForMessages(reactionOwnerIds, reactionRows)
+        reactionDao.replaceForMessages(reactionOwnerIds, reactionRows).await()
     }
 
     // ---- edit / delete ----
@@ -444,7 +440,7 @@ class MessageRepository @Inject constructor(
     ): Result<Unit> {
         val trimmed = newContent.trim()
         if (trimmed.isEmpty()) return Result.failure(ApiError.Unknown(ERROR_VALIDATION_FAILED))
-        val before = messageDao.byId(messageId)
+        val before = messageDao.byId(messageId).awaitSingleOrNull()
             ?: return Result.failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
         // Mirror the server boundary locally: only the author may edit, and
         // only TEXT. The server remains authoritative for stale rows.
@@ -458,11 +454,8 @@ class MessageRepository @Inject constructor(
             return Result.failure(ApiError.Unknown(ERROR_MESSAGE_DELETED))
         }
         if (before.content == trimmed) return Result.Success(Unit)
-        val optimistic = before.copy(
-            content = trimmed,
-            editedAtEpochMs = System.currentTimeMillis(),
-        )
-        messageDao.update(optimistic)
+        val optimistic = before.withContentAndEditedAt(trimmed, System.currentTimeMillis())
+        messageDao.update(optimistic).await()
         return try {
             when (
                 val result = call {
@@ -473,28 +466,27 @@ class MessageRepository @Inject constructor(
                     // Apply the response only if no newer event changed the row
                     // while PATCH was in flight. A delete or later edit event
                     // already owns the Room row and its inbox projection.
-                    if (messageDao.byId(messageId) == optimistic) {
+                    if (messageDao.byId(messageId).awaitSingleOrNull() == optimistic) {
                         result.value.toEntity(conversationId)?.takeIf {
                             it.deletedAtEpochMs == null
                         }?.let { server ->
-                            val authoritative = server.copy(
-                                editedAtEpochMs = server.editedAtEpochMs
-                                    ?: optimistic.editedAtEpochMs,
+                            val authoritative = server.withEditedAtEpochMs(
+                                server.editedAtEpochMs ?: optimistic.editedAtEpochMs,
                             )
-                            messageDao.update(authoritative)
+                            messageDao.update(authoritative).await()
                             refreshLastMessagePreview(authoritative)
                         }
                     }
                     Result.Success(Unit)
                 }
                 is Result.Failure -> {
-                    if (messageDao.byId(messageId) == optimistic) messageDao.update(before)
+                    if (messageDao.byId(messageId).awaitSingleOrNull() == optimistic) messageDao.update(before).await()
                     Result.cast(result)
                 }
             }
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable) {
-                if (messageDao.byId(messageId) == optimistic) messageDao.update(before)
+                if (messageDao.byId(messageId).awaitSingleOrNull() == optimistic) messageDao.update(before).await()
             }
             throw cancelled
         }
@@ -512,32 +504,28 @@ class MessageRepository @Inject constructor(
         confirmedDeleteIds.remove(messageId)
         var rollback: DeleteRollback? = null
         try {
-            val before = messageDao.byId(messageId)
+            val before = messageDao.byId(messageId).awaitSingleOrNull()
                 ?: return Result.failure(ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND))
             if (!isMine(before.senderId)) {
                 return Result.failure(ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR))
             }
             // Idempotent by contract: an already-tombstoned row is a local success.
             if (before.deletedAtEpochMs != null) return Result.Success(Unit)
-            val reactionsBefore = reactionDao.forMessage(messageId)
-            val pinBefore = pinDao.find(conversationId, messageId)
+            val reactionsBefore = reactionDao.forMessage(messageId).await()
+            val pinBefore = pinDao.find(conversationId, messageId).awaitSingleOrNull()
             val wasLast = isLastMessage(before)
-            val optimistic = before.copy(
-                content = "",
-                attachmentsJson = null,
-                deletedAtEpochMs = System.currentTimeMillis(),
-            )
+            val optimistic = before.asDeleted(System.currentTimeMillis())
             rollback = DeleteRollback(before, optimistic, reactionsBefore, pinBefore, wasLast)
-            messageDao.update(optimistic)
-            reactionDao.deleteForMessage(messageId)
-            pinDao.delete(conversationId, messageId)
-            if (wasLast) conversationDao.markLastMessageDeleted(conversationId)
+            messageDao.update(optimistic).await()
+            reactionDao.deleteForMessage(messageId).await()
+            pinDao.delete(conversationId, messageId).await()
+            if (wasLast) conversationDao.markLastMessageDeleted(conversationId).await()
             return when (
                 val result = call { messageApi.deleteMessage(conversationId, messageId) }
                     .toUnitResult()
             ) {
                 is Result.Success -> {
-                    messageDao.clearReplySnippets(messageId)
+                    messageDao.clearReplySnippets(messageId).await()
                     Result.Success(Unit)
                 }
                 is Result.Failure -> {
@@ -565,22 +553,22 @@ class MessageRepository @Inject constructor(
         conversationId: String,
         state: DeleteRollback,
     ) {
-        if (messageDao.byId(state.before.id) != state.optimistic) return
-        messageDao.update(state.before)
-        if (reactionDao.forMessage(state.before.id).isEmpty()) {
-            reactionDao.upsertAll(state.reactions)
+        if (messageDao.byId(state.before.id).awaitSingleOrNull() != state.optimistic) return
+        messageDao.update(state.before).await()
+        if (reactionDao.forMessage(state.before.id).await().isEmpty()) {
+            reactionDao.upsertAll(state.reactions).await()
         }
-        if (state.pin != null && pinDao.find(conversationId, state.before.id) == null) {
-            pinDao.upsert(state.pin)
+        if (state.pin != null && pinDao.find(conversationId, state.before.id).awaitSingleOrNull() == null) {
+            pinDao.upsert(state.pin).await()
         }
         if (state.wasLast) {
-            val conversation = conversationDao.byId(conversationId)
+            val conversation = conversationDao.byId(conversationId).awaitSingleOrNull()
             if (conversation?.lastMessageSeq == state.before.seq && conversation.lastMessageDeleted) {
                 conversationDao.updateLastMessageContent(
                     conversationId,
                     state.before.seq,
                     state.before.content ?: state.before.type,
-                )
+                ).await()
             }
         }
     }
@@ -637,7 +625,7 @@ class MessageRepository @Inject constructor(
 
     /** True when [row] is the inbox preview (used for edit/delete refreshes). */
     private suspend fun isLastMessage(row: MessageEntity): Boolean =
-        conversationDao.byId(row.conversationId)?.lastMessageSeq == row.seq
+        conversationDao.byId(row.conversationId).awaitSingleOrNull()?.lastMessageSeq == row.seq
 
     /** Rewrites the inbox snippet after an edit, guarded on the same seq. */
     private suspend fun refreshLastMessagePreview(row: MessageEntity) {
@@ -646,7 +634,7 @@ class MessageRepository @Inject constructor(
             row.conversationId,
             row.seq,
             row.content ?: row.type,
-        )
+        ).await()
     }
 
     // ---- send pipeline ----
@@ -668,25 +656,26 @@ class MessageRepository @Inject constructor(
         attachments: List<AttachmentDto> = emptyList(),
     ) {
         val entry = OutboxEntity(
-            clientMessageId = UUID.randomUUID().toString(),
-            conversationId = conversationId,
-            type = type,
-            content = content,
-            replyToId = replyToId,
-            state = OutboxState.SENDING,
-            createdAt = nextOutboxCreatedAt(),
-            attachmentsJson = attachments
+            UUID.randomUUID().toString(),
+            conversationId,
+            type,
+            content,
+            replyToId,
+            OutboxState.SENDING,
+            nextOutboxCreatedAt(),
+            attachments
                 .takeIf { it.isNotEmpty() }
                 ?.let { runCatching { attachmentsAdapter.toJson(it) }.getOrNull() }
                 .orEmpty(),
         )
-        outboxDao.insert(entry)
+        outboxDao.insert(entry).await()
         dispatchOutbox(entry)
     }
 
     /** Stable FIFO key despite same-millisecond sends or a wall-clock setback. */
     private suspend fun nextOutboxCreatedAt(): Long {
-        val persistedMax = outboxDao.pendingOrdered().first().maxOfOrNull { it.createdAt } ?: 0L
+        val persistedMax = outboxDao.pendingOrdered().toObservable().asFlow().first()
+            .maxOfOrNull { it.createdAt } ?: 0L
         val now = System.currentTimeMillis()
         return lastOutboxCreatedAt.updateAndGet { previous ->
             maxOf(now, persistedMax + 1L, previous + 1L)
@@ -695,13 +684,8 @@ class MessageRepository @Inject constructor(
 
     /** Tap-to-retry on a FAILED bubble: requeue and dispatch again. */
     suspend fun retry(clientMessageId: String) {
-        val entry = outboxDao.byId(clientMessageId) ?: return
-        outboxDao.insert(
-            entry.copy(
-                state = OutboxState.SENDING,
-                createdAt = nextOutboxCreatedAt(),
-            ),
-        )
+        val entry = outboxDao.byId(clientMessageId).awaitSingleOrNull() ?: return
+        outboxDao.insert(entry.forRetry(nextOutboxCreatedAt())).await()
         // Manual retry joins the back of the sending queue. Flushing from the
         // DAO preserves FIFO, so a newer failed bubble cannot overtake older
         // SENDING rows that are still waiting for connectivity.
@@ -710,7 +694,7 @@ class MessageRepository @Inject constructor(
 
     /** Flushes every SENDING row in queue order — called on (re)connect. */
     suspend fun flushOutbox() {
-        for (entry in outboxDao.pendingList()) {
+        for (entry in outboxDao.pendingList().await()) {
             dispatchOutbox(entry)
         }
     }
@@ -739,7 +723,7 @@ class MessageRepository @Inject constructor(
                 is Result.Failure -> when (result.error) {
                     is ApiError.RateLimited -> scheduleRateLimitRetry()
                     is ApiError.Network -> Unit
-                    else -> outboxDao.updateState(entry.clientMessageId, OutboxState.FAILED)
+                    else -> outboxDao.updateState(entry.clientMessageId, OutboxState.FAILED).await()
                 }
             }
         }
@@ -750,8 +734,8 @@ class MessageRepository @Inject constructor(
     /** Server-acked delivery shared by the REST fallback and WS dedup path. */
     private suspend fun acknowledge(conversationId: String, message: MessageDto) {
         val entity = message.toEntity(conversationId) ?: return
-        entity.clientMessageId?.let { outboxDao.delete(it) }
-        messageDao.upsert(entity)
+        entity.clientMessageId?.let { outboxDao.delete(it).await() }
+        messageDao.upsert(entity).await()
         updateInboxProjection(entity)
     }
 
@@ -764,7 +748,7 @@ class MessageRepository @Inject constructor(
         if (upToSeq <= last) return
         lastMarkedRead[conversationId] = upToSeq
         when (call { messageApi.markRead(conversationId, ReadRequest(upToSeq)) }.toUnitResult()) {
-            is Result.Success -> conversationDao.clearUnread(conversationId)
+            is Result.Success -> conversationDao.clearUnread(conversationId).await()
             is Result.Failure -> Unit // best-effort — next open/message retries
         }
     }
@@ -790,14 +774,14 @@ class MessageRepository @Inject constructor(
                     if (upToSeq != null && event.userId != null &&
                         event.userId != currentUserId()
                     ) {
-                        conversationDao.bumpPeerReadSeq(convId, upToSeq)
+                        conversationDao.bumpPeerReadSeq(convId, upToSeq).await()
                     }
                 }
                 is ChatEvent.SendRejected -> event.clientMessageId?.let { clientId ->
                     if (event.code == ERROR_RATE_LIMITED) {
                         scheduleRateLimitRetry()
                     } else {
-                        outboxDao.updateState(clientId, OutboxState.FAILED)
+                        outboxDao.updateState(clientId, OutboxState.FAILED).await()
                     }
                 }
                 is ChatEvent.ReactionUpdated -> onReactionUpdated(event)
@@ -815,10 +799,10 @@ class MessageRepository @Inject constructor(
         // pending row when the broadcast is actually ours — a foreign sender
         // reusing the clientMessageId must not clear our outbox entry.
         entity.clientMessageId?.let { cid ->
-            if (isMine(entity.senderId)) outboxDao.delete(cid)
+            if (isMine(entity.senderId)) outboxDao.delete(cid).await()
         }
         // Receiver dedup: INSERT IGNORE by message id (plan §11.3.3).
-        messageDao.upsert(entity)
+        messageDao.upsert(entity).await()
         updateInboxProjection(entity)
     }
 
@@ -826,14 +810,14 @@ class MessageRepository @Inject constructor(
         val mine = isMine(entity.senderId)
         val openHere = activeConversation.value == entity.conversationId
         conversationDao.updateLastMessage(
-            conversationId = entity.conversationId,
-            seq = entity.seq,
-            content = entity.content ?: entity.type,
-            senderName = entity.senderDisplayName,
-            at = entity.createdAt,
-        )
+            entity.conversationId,
+            entity.seq,
+            entity.content ?: entity.type,
+            entity.senderDisplayName,
+            entity.createdAt,
+        ).await()
         if (!mine && !openHere) {
-            conversationDao.incrementUnread(entity.conversationId, 1)
+            conversationDao.incrementUnread(entity.conversationId, 1).await()
         }
         if (!mine && openHere) {
             // Already looking at it — keep the watermark trailing live.
@@ -850,19 +834,19 @@ class MessageRepository @Inject constructor(
         val dto = event.message
         val conversationId = dto.conversationId ?: event.conversationId ?: return
         val server = dto.toEntity(conversationId) ?: return
-        val row = messageDao.byId(server.id)
+        val row = messageDao.byId(server.id).awaitSingleOrNull()
         if (row == null) {
             // The edit can outrun history hydration — storing the payload is
             // safe because INSERT IGNORE keeps any later duplicate a no-op.
-            messageDao.upsert(server)
+            messageDao.upsert(server).await()
             return
         }
         if (row.deletedAtEpochMs != null) return
-        val updated = row.copy(
-            content = server.content,
-            editedAtEpochMs = server.editedAtEpochMs ?: System.currentTimeMillis(),
+        val updated = row.withContentAndEditedAt(
+            server.content,
+            server.editedAtEpochMs ?: System.currentTimeMillis(),
         )
-        if (updated != row) messageDao.update(updated)
+        if (updated != row) messageDao.update(updated).await()
         refreshLastMessagePreview(updated)
     }
 
@@ -875,19 +859,17 @@ class MessageRepository @Inject constructor(
         val messageId = event.messageId ?: return
         val conversationId = event.conversationId ?: return
         if (pendingDeleteIds.contains(messageId)) confirmedDeleteIds.add(messageId)
-        val row = messageDao.byId(messageId)
+        val row = messageDao.byId(messageId).awaitSingleOrNull()
         val deletedAt = isoToEpochMsOrNull(event.deletedAt) ?: System.currentTimeMillis()
         if (row != null && row.conversationId == conversationId) {
             if (row.deletedAtEpochMs == null) {
-                messageDao.update(
-                    row.copy(content = "", attachmentsJson = null, deletedAtEpochMs = deletedAt),
-                )
+                messageDao.update(row.asDeleted(deletedAt)).await()
             }
-            if (isLastMessage(row)) conversationDao.markLastMessageDeleted(conversationId)
+            if (isLastMessage(row)) conversationDao.markLastMessageDeleted(conversationId).await()
         }
-        reactionDao.deleteForMessage(messageId)
-        pinDao.delete(conversationId, messageId)
-        messageDao.clearReplySnippets(messageId)
+        reactionDao.deleteForMessage(messageId).await()
+        pinDao.delete(conversationId, messageId).await()
+        messageDao.clearReplySnippets(messageId).await()
     }
 
     private fun scheduleRateLimitRetry() {
@@ -906,7 +888,7 @@ class MessageRepository @Inject constructor(
             flushOutbox()
             activeConversation.value?.let { conversationId ->
                 resyncForward(conversationId)
-                sendRead(conversationId, messageDao.maxSeq(conversationId))
+                sendRead(conversationId, messageDao.maxSeq(conversationId).await())
                 refreshPins(conversationId)
             }
         }
@@ -924,7 +906,7 @@ class MessageRepository @Inject constructor(
         reactionDao.replaceForMessage(
             messageId,
             event.reactions.mapNotNull { it.toEntity(messageId, conversationId, myId) },
-        )
+        ).await()
     }
 
     /** `PIN_UPDATED` → upsert on `pinned=true`, delete on `pinned=false`. */
@@ -934,12 +916,12 @@ class MessageRepository @Inject constructor(
         when (event.pinned) {
             true -> pinDao.upsert(
                 PinnedMessageEntity(
-                    conversationId = conversationId,
-                    messageId = messageId,
-                    pinnedAt = System.currentTimeMillis(),
+                    conversationId,
+                    messageId,
+                    System.currentTimeMillis(),
                 ),
-            )
-            false -> pinDao.delete(conversationId, messageId)
+            ).await()
+            false -> pinDao.delete(conversationId, messageId).await()
             null -> Unit
         }
     }
@@ -953,9 +935,9 @@ class MessageRepository @Inject constructor(
      * prior snapshot and surfaces on [interactionEvents].
      */
     suspend fun toggleReaction(messageId: String, conversationId: String, emoji: String) {
-        val before = reactionDao.forMessage(messageId)
+        val before = reactionDao.forMessage(messageId).await()
         val optimistic = toggledCopy(before, messageId, conversationId, emoji)
-        reactionDao.replaceForMessage(messageId, optimistic)
+        reactionDao.replaceForMessage(messageId, optimistic).await()
         when (
             val result = call { messageApi.toggleReaction(messageId, ReactionRequest(emoji)) }
         ) {
@@ -971,15 +953,15 @@ class MessageRepository @Inject constructor(
                         reactionDao.replaceForMessage(
                             messageId,
                             summaries.mapNotNull { it.toEntity(messageId, conversationId, myId) },
-                        )
+                        ).await()
                     }
             }
             is Result.Failure -> {
                 // Restore only if nothing fresher landed during the flight —
                 // a REACTION_UPDATED from another member wins over the
                 // stale snapshot.
-                if (reactionDao.forMessage(messageId) == optimistic) {
-                    reactionDao.replaceForMessage(messageId, before)
+                if (reactionDao.forMessage(messageId).await() == optimistic) {
+                    reactionDao.replaceForMessage(messageId, before).await()
                 }
                 _interactionEvents.tryEmit(result.error)
             }
@@ -1000,18 +982,12 @@ class MessageRepository @Inject constructor(
                 before - existing
             } else {
                 before.map {
-                    if (it.emoji == emoji) it.copy(count = remaining, reactedByMe = false) else it
+                    if (it.emoji == emoji) it.withReactionState(remaining, false) else it
                 }
             }
         } else {
-            val updated = existing?.copy(count = existing.count + 1, reactedByMe = true)
-                ?: MessageReactionEntity(
-                    messageId = messageId,
-                    conversationId = conversationId,
-                    emoji = emoji,
-                    count = 1,
-                    reactedByMe = true,
-                )
+            val updated = existing?.withReactionState(existing.count + 1, true)
+                ?: MessageReactionEntity(messageId, conversationId, emoji, 1, true)
             before.filterNot { it.emoji == emoji } + updated
         }
     }
@@ -1032,9 +1008,9 @@ class MessageRepository @Inject constructor(
                 // the server embeds full message rows (PinnedMessageView),
                 // so persist them before the banner resolves.
                 if (embedded.isNotEmpty()) {
-                    messageDao.upsertAll(embedded.mapNotNull { it.toEntity(conversationId) })
+                    messageDao.upsertAll(embedded.mapNotNull { it.toEntity(conversationId) }).await()
                 }
-                pinDao.replaceForConversation(conversationId, pins)
+                pinDao.replaceForConversation(conversationId, pins).await()
                 Result.Success(Unit)
             }
             is Result.Failure -> Result.cast(result)
@@ -1042,20 +1018,16 @@ class MessageRepository @Inject constructor(
 
     /** Optimistic pin — revert + signal on failure (403 non-admin, PIN_LIMIT). */
     suspend fun pinMessage(conversationId: String, messageId: String) {
-        val entry = PinnedMessageEntity(
-            conversationId = conversationId,
-            messageId = messageId,
-            pinnedAt = System.currentTimeMillis(),
-        )
-        pinDao.upsert(entry)
+        val entry = PinnedMessageEntity(conversationId, messageId, System.currentTimeMillis())
+        pinDao.upsert(entry).await()
         when (val result = call { messageApi.pinMessage(conversationId, PinRequest(messageId)) }) {
             is Result.Success -> Unit
             is Result.Failure -> {
                 // Remove our optimistic row only if it is still ours — a
                 // PIN_UPDATED or refresh landing in flight wins over the
                 // stale delete.
-                if (pinDao.find(conversationId, messageId) == entry) {
-                    pinDao.delete(conversationId, messageId)
+                if (pinDao.find(conversationId, messageId).awaitSingleOrNull() == entry) {
+                    pinDao.delete(conversationId, messageId).await()
                 }
                 _interactionEvents.tryEmit(result.error)
             }
@@ -1064,15 +1036,15 @@ class MessageRepository @Inject constructor(
 
     /** Optimistic unpin — restore the removed row + signal on failure. */
     suspend fun unpinMessage(conversationId: String, messageId: String) {
-        val before = pinDao.find(conversationId, messageId)
-        pinDao.delete(conversationId, messageId)
+        val before = pinDao.find(conversationId, messageId).awaitSingleOrNull()
+        pinDao.delete(conversationId, messageId).await()
         when (val result = call { messageApi.unpinMessage(conversationId, messageId) }) {
             is Result.Success -> Unit
             is Result.Failure -> {
                 // Restore only while the row is still absent — fresher
                 // server state wins over the stale snapshot.
-                if (pinDao.find(conversationId, messageId) == null) {
-                    before?.let { pinDao.upsert(it) }
+                if (pinDao.find(conversationId, messageId).awaitSingleOrNull() == null) {
+                    before?.let { pinDao.upsert(it).await() }
                 }
                 _interactionEvents.tryEmit(result.error)
             }
@@ -1085,7 +1057,7 @@ class MessageRepository @Inject constructor(
      * permanent hole in Room. Cold conversations fall back to the newest page.
      */
     suspend fun resyncForward(conversationId: String) {
-        var afterSeq = messageDao.maxSeq(conversationId)
+        var afterSeq = messageDao.maxSeq(conversationId).await()
         if (afterSeq <= 0L) {
             refreshHistory(conversationId)
             return
@@ -1112,11 +1084,11 @@ class MessageRepository @Inject constructor(
     private suspend fun wipeOnLogout() {
         sessionEvents.events.collect { event ->
             if (event is SessionEvents.Event.LoggedOut) {
-                messageDao.deleteAll()
-                conversationDao.clear()
-                outboxDao.clear()
-                reactionDao.clear()
-                pinDao.clear()
+                messageDao.deleteAll().await()
+                conversationDao.clear().await()
+                outboxDao.clear().await()
+                reactionDao.clear().await()
+                pinDao.clear().await()
                 lastMarkedRead.clear()
                 activeConversation.value = null
                 tokenToUser = null
@@ -1128,7 +1100,7 @@ class MessageRepository @Inject constructor(
 
     /** Our user id, decoded from the access JWT `sub` claim (memoized per token). */
     suspend fun currentUserId(): String? {
-        val token = tokenStore.readTokens()?.accessToken ?: return null
+        val token = tokenStore.readTokens().awaitSingleOrNull()?.accessToken ?: return null
         tokenToUser?.let { if (it.first == token) return it.second }
         val userId = userIdFromJwt(token, moshi)
         if (userId != null) tokenToUser = token to userId
@@ -1188,27 +1160,27 @@ class MessageRepository @Inject constructor(
         // ingest so Room and every read path see the same neutral shape.
         val deleted = !deletedAt.isNullOrBlank()
         return MessageEntity(
-            id = id,
-            conversationId = conversation,
-            seq = seq ?: 0L,
-            senderId = resolvedSenderId.orEmpty(),
-            senderDisplayName = resolvedSenderName,
-            type = resolvedType,
-            content = if (deleted) "" else content,
-            clientMessageId = clientMessageId,
-            replyToId = resolvedReplyToId,
-            replyToSenderName = replyTo?.resolvedSenderName,
-            replyToSnippet = replyTo?.resolvedSnippet,
-            createdAt = isoToEpochMs(createdAt),
-            attachmentsJson = if (deleted) {
+            id,
+            conversation,
+            seq ?: 0L,
+            resolvedSenderId.orEmpty(),
+            resolvedSenderName,
+            resolvedType,
+            if (deleted) "" else content,
+            clientMessageId,
+            resolvedReplyToId,
+            replyTo?.resolvedSenderName,
+            replyTo?.resolvedSnippet,
+            isoToEpochMs(createdAt),
+            if (deleted) {
                 null
             } else {
                 attachments
                     .takeIf { it.isNotEmpty() }
                     ?.let { runCatching { attachmentsAdapter.toJson(it) }.getOrNull() }
             },
-            editedAtEpochMs = isoToEpochMsOrNull(editedAt),
-            deletedAtEpochMs = isoToEpochMsOrNull(deletedAt),
+            isoToEpochMsOrNull(editedAt),
+            isoToEpochMsOrNull(deletedAt),
         )
     }
 
@@ -1234,11 +1206,11 @@ class MessageRepository @Inject constructor(
     ): MessageReactionEntity? {
         val usableEmoji = emoji?.takeIf { it.isNotBlank() } ?: return null
         return MessageReactionEntity(
-            messageId = messageId,
-            conversationId = conversationId,
-            emoji = usableEmoji,
-            count = (count ?: userIds.size).coerceAtLeast(0),
-            reactedByMe = reactedByMe ?: byMe ?: (myId != null && userIds.contains(myId)),
+            messageId,
+            conversationId,
+            usableEmoji,
+            (count ?: userIds.size).coerceAtLeast(0),
+            reactedByMe ?: byMe ?: (myId != null && userIds.contains(myId)),
         )
     }
 
@@ -1273,9 +1245,9 @@ class MessageRepository @Inject constructor(
         entries.forEachIndexed { index, entry ->
             pinMessageIdOf(entry)?.let { id ->
                 pins += PinnedMessageEntity(
-                    conversationId = conversationId,
-                    messageId = id,
-                    pinnedAt = now - index,
+                    conversationId,
+                    id,
+                    now - index,
                 )
             }
             (entry as? Map<*, *>)?.get("message")?.let { raw ->

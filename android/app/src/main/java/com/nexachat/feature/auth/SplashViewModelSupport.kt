@@ -24,7 +24,7 @@ internal suspend fun splashEmitRestoreDestination(
     // Temporary bridge: keep the coroutine -> Rx adaptation at the call site.
     coroutineScope {
         val destination = SplashSession.restoreDestination(
-            rxSingle { tokenStore.hasValidRefresh.first() },
+            tokenStore.hasValidRefresh().firstOrError(),
             rxSingle { authRepository.refresh() },
         ).await()
         events.send(destination)

@@ -8,6 +8,8 @@ import com.squareup.moshi.Moshi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 
 /**
  * Suspend-only helpers for [InboxViewModel] (Java). Keeps token read, Flow
@@ -18,7 +20,7 @@ internal suspend fun inboxLoadCurrentUserId(
     moshi: Moshi,
     uiState: MutableStateFlow<InboxUiState>,
 ) {
-    val accessToken = tokenStore.readTokens()?.accessToken
+    val accessToken = tokenStore.readTokens().awaitSingleOrNull()?.accessToken
     val currentUserId = accessToken?.let { token -> userIdFromJwt(token, moshi) }
     uiState.update { it.withCurrentUserId(currentUserId) }
 }
