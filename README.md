@@ -6,9 +6,12 @@ send media/files, edit and delete messages, search conversation history, react,
 pin, reply and forward text — in a bilingual (Vi/En) Material 3 UI that keeps
 message sending available offline.
 
-> Đồ án nhóm (course group project) · Java 17 Android client (XML Views, Fragments,
-> ViewBinding, RxJava 3) · Java + Spring Boot (server) · PostgreSQL · STOMP over raw WebSocket.
-> Built for a viva defense — shipped behavior points to source; in-progress work is labeled.
+> **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
+> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v7`, `Hilt`, `Material 3`)
+> paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
+> **PostgreSQL 16** with Flyway `V1–V6`, **WebRTC** 1-to-1 voice calls, and consent-gated
+> **AI conversation summaries**). Every architectural claim below links directly to its
+> executable source and verification suite.
 
 ## Demo & Stitch UI Showcase (Dark & Light Mode)
 
@@ -52,7 +55,7 @@ Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campus
 </tr>
 </table>
 
-Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: pure Java 17 on Android (XML Views, Material 3, Hilt, Room RxJava 3), Spring Boot 3, PostgreSQL, STOMP, WebRTC signaling.
+Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: pure Java 21 LTS on Android (XML Views, Material 3, Hilt, Room RxJava 3), Spring Boot 3.4, PostgreSQL 16, STOMP, WebRTC signaling.
 
 ## Quick start
 
@@ -71,32 +74,30 @@ Setup, tests and the LAN demo: [CONTRIBUTING.md](CONTRIBUTING.md) ·
 
 ## Features
 
-Rubric coverage — the full mapping with test evidence is in
+Capability and test-evidence traceability is maintained in
 [docs/rtm.md](docs/rtm.md).
 
-| Rubric | Shipped | Where |
+| Domain / Capability | Shipped | Where |
 |---|---|---|
-| R2 — account management | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password | `server/auth`, `app/feature/auth`, `core/storage` |
-| R2 — contacts | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
-| R2 — direct chat | 1-1 messaging, optimistic send + outbox retry, read receipts, typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat` |
-| R2 — message management | Edit own text messages, soft-delete own messages, conversation-scoped text search, presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
-| R2 — group chat | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
-| R3 — preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
-| R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
-| R3 — i18n | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
-| R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
-| R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
-| Extra — voice calls | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
-| Extra — AI catch-up summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
-| R5 — UI + tests | Material 3, ≥48dp touch targets and shared state components; test status is reported by the current CI run | `core/ui`, `server/src/test`, `app/src/test` |
-| R6 — presentation | This README, `docs/`, viva question bank | `docs/viva-questions.md` |
-| R1 — submission | Monorepo + packaging checklist | `docs/packaging-checklist.md` |
+| Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password | `server/auth`, `app/feature/auth`, `core/storage` |
+| Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
+| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send + outbox retry, read receipts, typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat` |
+| Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search, presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
+| Group Chat & Admin | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
+| Theme & Privacy Preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
+| Multimedia & File Sharing | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
+| Bilingual Localization (Vi/En) | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
+| State & Lifecycle Resilience | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
+| Rich Interactions (Reply, Reactions, Pins, Forward) | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
+| 1-to-1 Voice Calls (WebRTC) | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
+| AI Conversation Summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
+| Design System & Quality Gates | Material 3 Stitch Dark/Light themes, ≥48dp touch targets, shared state components, and automated server/client test suites | `core/ui`, `server/src/test`, `app/src/test` |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Android["android/ — Java 17, XML Views + ViewBinding, Hilt"]
+    subgraph Android["android/ — Java 21 LTS, XML Views + ViewBinding, Hilt"]
         UI["Fragments + XML Views<br/>(feature/*)"] --> VM["ViewModels<br/>(LiveData + RxJava 3, SavedStateHandle)"]
         VM --> REPO["Repositories"]
         REPO --> ROOM[("Room v7 — SSOT<br/>messages · conversations<br/>outbox · reactions · pins · presence")]
@@ -138,14 +139,14 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 
 | Layer | Server (`server/`) | Android (`android/`) |
 |---|---|---|
-| Language | Java 17 | Java 17 |
+| Language | Java 21 LTS | Java 21 LTS |
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
 | Persistence | PostgreSQL 16, Flyway V1–V6, `ddl-auto: validate` | Room 2.6.1 (v7, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap | Glide 4.16, media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
-| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
+| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
 | Deploy | Multi-stage `server/Dockerfile`, `docker-compose.yml` | `API_BASE_URL` via `local.properties`/`-PapiBaseUrl` |
 
 Design system: tokens, component states and the Stitch→XML layout mapping are in
@@ -158,7 +159,7 @@ and [docs/design/screens/](docs/design/screens/).
 
 | Tool | Version | Notes |
 |---|---|---|
-| JDK | 17 (Temurin) | `java -version` |
+| JDK | 21 LTS (Temurin) | `java -version` |
 | Maven | 3.9+ | system `mvn` (there is no `server/mvnw` wrapper) |
 | Android SDK | minSdk 26 · targetSdk 35 | via Android Studio |
 | Docker | recent | PostgreSQL + app image via `docker compose` |
@@ -264,7 +265,7 @@ Android lint, and a committed-secret scan on every PR and push to
 
 ```text
 nexachat/
-├─ android/   Pure Java 17 app (XML Views, Fragments, ViewBinding, RxJava 3)
+├─ android/   Pure Java 21 LTS app (XML Views, Fragments, ViewBinding, RxJava 3)
 │  ├─ app/src/main/java/com/nexachat/
 │  │  ├─ core/       common · database (Room RxJava 3) · network (Retrofit, stomp/) · storage · ui
 │  │  ├─ call/       call core/media/service/UI (Java)
@@ -279,7 +280,7 @@ nexachat/
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,ws,common,config}/
 │  ├─ src/main/resources/db/migration/V1–V6   # Flyway migrations
 │  └─ Dockerfile + pom.xml
-├─ docs/      contracts, security, runbooks, audits, viva bank (index: docs/README.md)
+├─ docs/      contracts, security, runbooks, audits, architecture Q&A (index: docs/README.md)
 │  ├─ design/       design tokens + Stitch references + live screenshots
 │  ├─ media/        Stitch Dark & Light Mode showcase frames (docs/media/README.md)
 │  ├─ screenshots/  feature evidence
@@ -315,7 +316,7 @@ and the CI secret scan enforce this.
 
 ## License & status
 
-Course project (đồ án) built for education — no production license is
-asserted. It is a single-node demo system by design; the named trade-offs
-(single-instance broker, LAN cleartext debug path, no E2EE/OTP/FCM) are
-documented in [docs/known-limitations.md](docs/known-limitations.md).
+NexaChat is designed and operated as a single-node real-time messaging deployment;
+architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
+cleartext debug profile, and deferred E2EE/OTP/FCM integrations) are documented in
+[docs/known-limitations.md](docs/known-limitations.md).

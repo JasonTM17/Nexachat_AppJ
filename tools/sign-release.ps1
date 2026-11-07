@@ -3,7 +3,7 @@ if ($args.Count -gt 0 -and $args[0] -in @('-h', '--help')) {
   Write-Output @'
 Usage: tools/sign-release.ps1 [version-tag]
 
-PowerShell entrypoint for sign-release.sh. Requires Git Bash, JDK 17+, the
+PowerShell entrypoint for sign-release.sh. Requires Git Bash, JDK 21+, the
 Android SDK, and local release/keystore/signing.properties.
 '@
   exit 0

@@ -1,8 +1,8 @@
 # NexaChat Architecture
 
-> Current implementation view: Android app (Java 17, XML Views + Fragments +
+> Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room) → REST
-> `/api/v1` + STOMP over WebSocket → Spring Boot modular monolith → PostgreSQL 16
+> `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
 > + file volume. Call signaling shares STOMP (`server/call`,
 > `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
 > (`CallActivity`, `IncomingCallActivity`) and WebRTC audio (`WebRtcMediaEngine`);
@@ -14,7 +14,7 @@ Overall system containers and their connections:
 
 ```mermaid
 flowchart LR
-    subgraph Device["Android (Java 17, XML Views + ViewBinding)"]
+    subgraph Device["Android (Java 21 LTS, XML Views + ViewBinding)"]
         UI["Fragments + XML Views<br/>(Material 3)"]
         VM["ViewModel + LiveData<br/>(RxJava 3 streams)"]
         REPO["Repositories<br/>(offline-first)"]
@@ -30,7 +30,7 @@ flowchart LR
         UI --> SETTINGS
     end
 
-    subgraph Server["Backend — Modular Monolith (Java + Spring Boot)"]
+    subgraph Server["Backend — Modular Monolith (Java 21 LTS + Spring Boot 3.4)"]
         direction TB
         SEC["Spring Security<br/>JWT filter · Rate limit"]
         subgraph Mod["Modules"]

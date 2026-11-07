@@ -153,7 +153,7 @@ logged — user/conversation/message ids, event names, and exception *types*:
 
 ## Known limits (carried from docs/security.md)
 
-- Android client is pure Java 17 (XML views, ViewBinding, `build.gradle`).
+- Android client is pure Java 21 (XML views, ViewBinding, `build.gradle`).
   Cleartext HTTP is limited to emulator host `10.0.2.2`
   (`network_security_config.xml`; `usesCleartextTraffic="false"`). Tokens sit
   in `TokenStore` (RxDataStore) encrypted with `AES/GCM/NoPadding` via

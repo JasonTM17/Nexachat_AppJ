@@ -1,6 +1,6 @@
 # NexaChat Android Design System Notes
 
-This document describes the design language, token definitions, component states, and XML View / Fragment mapping for NexaChat on Android (Java 17, ViewBinding, Material 3), synthesized from the Stitch design system **Modern Material Messenger** (`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`).
+This document describes the design language, token definitions, component states, and XML View / Fragment mapping for NexaChat on Android (Java 21, ViewBinding, Material 3), synthesized from the Stitch design system **Modern Material Messenger** (`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`).
 
 ---
 

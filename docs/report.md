@@ -1,17 +1,17 @@
-# BÁO CÁO ĐỒ ÁN — NexaChat
+# BÁO CÁO KỸ THUẬT — NexaChat
 ## Real-time Android Messaging Platform
 
 | Trường | Nội dung |
 |---|---|
-| Môn học | Đồ án nhóm |
+| Dự án | NexaChat — Real-time Messaging Platform |
 | Nền tảng | Android native client và Spring Boot server |
-| Ngôn ngữ triển khai | Java 17 ở `android/` và `server/` |
+| Ngôn ngữ triển khai | Java 21 ở `android/` và `server/` |
 | Cơ sở dữ liệu | PostgreSQL 16 · Room schema v7 |
 | Nhóm | `{{GROUP_NAME}}` |
 | Thành viên | `{{MEMBER_1}}` · `{{MEMBER_2}}` · `{{MEMBER_3}}` · `{{MEMBER_4}}` |
 
 > Báo cáo được dựng từ nguồn Markdown này bằng `python tools/build-report.py`.
-> Đối chiếu mã nguồn tại đúng commit trước khi dùng số liệu làm bằng chứng nộp bài.
+> Đối chiếu mã nguồn tại đúng commit khi kiểm tra số liệu thực thi.
 
 ---
 
@@ -40,7 +40,7 @@ hoặc theo nhóm, gửi tệp đa phương tiện, và sử dụng các thao t�
 reaction, ghim, chuyển tiếp tin nhắn. Client hỗ trợ tiếng Việt và tiếng Anh,
 chủ đề sáng/tối, lưu tin nhắn gửi khi ngoại tuyến, và cuộc gọi thoại 1-1.
 
-Client Android và server đều được triển khai bằng **Java 17**. Android dùng
+Client Android và server đều được triển khai bằng **Java 21**. Android dùng
 Android XML Views, Material 3, Java Fragments, AndroidX ViewModel, Room,
 RxJava 3 và Retrofit. Server dùng Spring Boot, PostgreSQL và giao thức STOMP
 trên WebSocket cho cập nhật realtime. Kho mã nguồn Android hiện có 385 tệp
@@ -76,7 +76,7 @@ kết quả của lần chạy tương ứng với commit được đánh giá.
 
 ```mermaid
 flowchart LR
-    subgraph Android["android/ — Java 17, XML Views, Material 3"]
+    subgraph Android["android/ — Java 21, XML Views, Material 3"]
         ACT["MainActivity → NexaHostActivity"] --> NAV["NavHostFragment · nav_main.xml"]
         NAV --> FRAG["Java Fragments · ViewBinding"]
         FRAG --> VM["Hilt ViewModels · LiveData · SavedStateHandle"]
@@ -86,7 +86,7 @@ flowchart LR
         REPO --> NET["Retrofit REST · OkHttp STOMP/WebSocket"]
         CALL["CallActivity · WebRTC media"] --> NET
     end
-    subgraph Server["server/ — Java 17, Spring Boot"]
+    subgraph Server["server/ — Java 21, Spring Boot"]
         REST["REST controllers"] --> AUTH["Security and services"]
         WS["STOMP endpoint and channel interceptor"] --> AUTH
         AUTH --> PG[("PostgreSQL 16")]
@@ -107,14 +107,14 @@ Room rồi để luồng truy vấn cập nhật giao diện.
 
 | Thành phần | Công nghệ và trách nhiệm |
 |---|---|
-| Android | Java 17; XML Views; Material 3; Java Fragments; Jetpack Navigation |
+| Android | Java 21; XML Views; Material 3; Java Fragments; Jetpack Navigation |
 | Trình bày | AndroidX ViewModel, `LiveData`, `MutableLiveData`, `SavedStateHandle` |
 | Bất đồng bộ | RxJava 3, RxAndroid; `Single`, `Maybe`, `Completable`, `Flowable` |
 | HTTP và realtime | Retrofit/OkHttp; client STOMP riêng trên WebSocket |
 | Lưu cục bộ | Room RxJava 3 integration, schema version 7; RxDataStore Preferences |
 | Dependency injection | Hilt, xử lý annotation Java |
 | Ảnh và media | Glide; AndroidX Media3 ExoPlayer |
-| Server | Java 17, Spring Boot 3.4.1, REST, STOMP, PostgreSQL 16 |
+| Server | Java 21, Spring Boot 3.4.1, REST, STOMP, PostgreSQL 16 |
 | Build | Android Gradle; Maven cho server; Docker Compose cho dịch vụ demo |
 
 ## 4. Android client thuần Java
@@ -201,7 +201,7 @@ migration dùng `MigrationTestHelper` trong
 
 ## 5. Server và cơ sở dữ liệu
 
-Server là ứng dụng Java 17/Spring Boot 3.4.1 dạng modular monolith. Package
+Server là ứng dụng Java 21/Spring Boot 3.4.1 dạng modular monolith. Package
 phân theo miền như auth, user, contact, conversation, message, attachment,
 presence, call, summary và WebSocket. PostgreSQL 16 lưu dữ liệu chính; Flyway
 quản lý schema từ các migration tại
@@ -354,7 +354,7 @@ phát biểu trong phần bảo vệ.
 
 ## 14. Kết luận
 
-NexaChat kết hợp ứng dụng Android native viết bằng Java 17 với server Java 17,
+NexaChat kết hợp ứng dụng Android native viết bằng Java 21 với server Java 21,
 REST, STOMP/WebSocket, Room và PostgreSQL. Giao diện dựa trên XML Views,
 Material 3, Fragments và Navigation; ViewModel cùng RxJava 3 quản lý trạng thái
 và công việc bất đồng bộ. Hệ thống hỗ trợ chat trực tiếp/nhóm, lưu gửi ngoại

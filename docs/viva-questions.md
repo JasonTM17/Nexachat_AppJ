@@ -1,8 +1,8 @@
-# NexaChat Viva Question Bank
+# NexaChat Architecture & Engineering Q&A
 
-> Bộ câu hỏi bảo vệ bằng tiếng Việt và tiếng Anh. Câu trả lời nêu lý do thiết
-> kế và đường dẫn mã nguồn để người trình bày có thể kiểm tra tại revision
-> đang bảo vệ. Xem thêm [`docs/rtm.md`](rtm.md) để đối chiếu rubric.
+> Tài liệu hỏi đáp kỹ thuật song ngữ (Việt / Anh) giải thích lý do thiết kế và
+> dẫn chiếu trực tiếp tới mã nguồn thực thi. Xem thêm [`docs/rtm.md`](rtm.md) để
+> tra cứu ma trận ánh xạ tính năng — kiểm thử.
 
 ## 1. Kiến trúc Android
 
@@ -10,16 +10,17 @@
 
 *Which language is used for the Android client?*
 
-**Trả lời.** Client Android và server đều dùng 100% Java 17. Toàn bộ mã nguồn ứng
-dụng và kiểm thử nằm dưới `android/app/src/main/java/` và
-`android/app/src/test/java/`; có thể kiểm tra cấu hình tương thích Java 17 trong
-`android/app/build.gradle` và danh mục thư viện tại
-`android/gradle/libs.versions.toml`. Toàn bộ Gradle build scripts
-(`settings.gradle`, `build.gradle`, `app/build.gradle`) dùng Groovy DSL chuẩn.
+**Trả lời.** Client Android và server đều dùng **100% Java 21 LTS**. Toàn bộ mã
+nguồn ứng dụng và kiểm thử nằm dưới `android/app/src/main/java/` và
+`android/app/src/test/java/`; cấu hình `JavaVersion.VERSION_21` được khai báo
+trong `android/app/build.gradle`, `java.version=21` trong `server/pom.xml`, và
+danh mục thư viện tại `android/gradle/libs.versions.toml` (Gradle `8.14.3`).
+Toàn bộ Gradle build scripts (`settings.gradle`, `build.gradle`,
+`app/build.gradle`) dùng Groovy DSL chuẩn.
 
-**Câu hỏi gài.** *“Vậy UI cũng là Java?”* — Đúng. Activity, Fragment, ViewModel,
-adapter và logic ứng dụng đều là lớp Java; layout được khai báo bằng Android
-XML.
+**Chi tiết bổ sung.** Activity, Fragment, ViewModel, adapter và toàn bộ logic
+ứng dụng đều là lớp Java 21; giao diện được khai báo bằng Android XML Views kết
+hợp ViewBinding.
 
 ### Q1.2 — Activity chính và Navigation hoạt động thế nào?
 
@@ -256,7 +257,7 @@ ghi số lượng chuỗi và phạm vi bản địa hóa tại revision tương
 `res/layout-land/fragment_chat.xml`. ViewModel và `SavedStateHandle` giữ dữ liệu
 màn hình cần thiết khi cấu hình đổi; view được tạo lại với layout phù hợp.
 
-## 4. Kiểm thử và bảo vệ
+## 4. Kiểm thử và xác minh kỹ thuật
 
 ### Q4.1 — Kiểm thử Android bao gồm những công cụ nào?
 
@@ -305,22 +306,22 @@ cả hai phía.
 được sinh và đối chiếu số heading, bảng, cùng các dấu Markdown còn sót. Khi
 nội dung thay đổi, cần chạy lại script và kiểm tra output cùng trạng thái Git.
 
-### Q4.6 — Vì sao report nhấn mạnh đường dẫn mã nguồn?
+### Q4.6 — Vì sao tài liệu kỹ thuật nhấn mạnh đường dẫn mã nguồn?
 
-*Why does the report cite source paths?*
+*Why does the documentation cite source paths?*
 
-**Trả lời.** Đường dẫn giúp hội đồng chuyển từ claim sang implementation có
-thể kiểm tra. Đường dẫn phải khớp tên và vị trí class trong commit đang bảo vệ;
-placeholder, log cũ hoặc một test chưa chạy không được trình bày như bằng
-chứng của kết quả hiện tại.
+**Trả lời.** Đường dẫn giúp người đọc đi thẳng từ đặc tả kiến trúc tới lớp thực
+thi và bộ kiểm thử tương ứng. Đường dẫn phải khớp tên và vị trí class trong
+commit hiện hành; log cũ hoặc một test chưa chạy không được trình bày như bằng
+chứng của trạng thái hiện tại.
 
-## 5. Nhắc nhanh trước phần bảo vệ
+## 5. Điểm kiểm tra kiến trúc cốt lõi
 
-- Nêu ranh giới giữa local state trong Room và dữ liệu đã commit trên server.
+- Nêu rõ ranh giới giữa local state trong Room và dữ liệu đã commit trên server.
 - Phân biệt REST request/response với STOMP event realtime.
-- Giải thích vì sao retry cần định danh idempotency.
-- Chỉ ra `MainActivity`, `NexaHostActivity`, `nav_main.xml` và một Fragment
-  cụ thể khi được hỏi về luồng UI.
-- Khi trả lời về test, phân biệt unit test, migration test, integration test
-  và kiểm thử trên thiết bị.
-- Nêu rõ giới hạn đã biết; không biến hướng phát triển thành tính năng đã giao.
+- Giải thích vì sao retry cần định danh idempotency (`clientMessageId`).
+- Chỉ ra `MainActivity`, `NexaHostActivity`, `nav_main.xml` và các Fragment
+  khi rà soát luồng điều hướng UI.
+- Phân biệt rõ phạm vi của unit test, migration test, integration test
+  và kiểm thử trực tiếp trên thiết bị/emulator.
+- Nêu rõ các giới hạn kiến trúc đã định nghĩa trong `docs/known-limitations.md`.

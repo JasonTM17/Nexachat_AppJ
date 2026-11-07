@@ -1,5 +1,5 @@
 # Build and run a layered Spring Boot image.
-FROM maven:3.10.0-eclipse-temurin-17-noble AS build
+FROM maven:3.10.0-eclipse-temurin-21-noble AS build
 WORKDIR /build
 
 # Resolve dependencies before copying source so ordinary code edits reuse this layer.
@@ -14,7 +14,7 @@ RUN set -eu; \
     cp "$1" application.jar; \
     java -Djarmode=tools -jar application.jar extract --layers --destination extracted
 
-FROM eclipse-temurin:17.0.16_8-jre-noble AS runtime
+FROM eclipse-temurin:21-jre-noble AS runtime
 
 # curl is used only by the container health check.
 RUN apt-get update \

@@ -12,7 +12,7 @@
 #   release/nexachat-<tag>-unsigned.apk   verbatim assembleRelease output
 #   release/nexachat-<tag>.apk            zipalign'ed, then v1+v2 signed
 #
-# Requires: Git Bash (or any POSIX shell), JDK 17+, Android SDK build-tools.
+# Requires: Git Bash (or any POSIX shell), JDK 21+, Android SDK build-tools.
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -21,7 +21,7 @@ Usage: tools/sign-release.sh [version-tag]
 
 Assemble, align, sign, and verify a release APK using local signing.properties.
 The output in release/ is regenerated for the supplied tag (default: v1.0.0).
-Requires ANDROID_HOME or ANDROID_SDK_ROOT, JDK 17+, and the local keystore.
+Requires ANDROID_HOME or ANDROID_SDK_ROOT, JDK 21+, and the local keystore.
 PowerShell twin: tools/sign-release.ps1.
 USAGE
     exit 0
@@ -80,7 +80,7 @@ else
     JAVA_BIN="java"
 fi
 command -v "$JAVA_BIN" >/dev/null 2>&1 || JAVA_BIN="${JAVA_BIN}.exe"
-command -v "$JAVA_BIN" >/dev/null 2>&1 || fail "java not found (set JAVA_HOME to JDK 17+)."
+command -v "$JAVA_BIN" >/dev/null 2>&1 || fail "java not found (set JAVA_HOME to JDK 21+)."
 
 [[ -f "$PROPS" ]] || fail "$PROPS missing — see tools/README-release.md §1."
 STORE_FILE="$(prop "$PROPS" storeFile)"

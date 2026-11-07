@@ -7,7 +7,7 @@ Every document in the repository, grouped by purpose. Start with
 
 | Doc | Contents |
 |---|---|
-| [README.md](../README.md) | Product overview, feature/rubric map, quick start, repo layout |
+| [README.md](../README.md) | Product overview, capability map, quick start, repo layout |
 | [docs/architecture.md](architecture.md) | Container, module and send-message diagrams; monolith rationale |
 
 ## API & realtime contracts
@@ -33,7 +33,7 @@ Every document in the repository, grouped by purpose. Start with
 | [docs/rtm.md](rtm.md) | Requirement → module → test → demo traceability matrix |
 | [docs/i18n-audit.md](i18n-audit.md) | EN/VI string parity and hardcoded-literal sweep |
 | [docs/rotation-audit.md](rotation-audit.md) | Per-screen state-survival audit |
-| [docs/interactions-demo.md](interactions-demo.md) | Reply/reaction/pin demo script and viva playbook |
+| [docs/interactions-demo.md](interactions-demo.md) | Reply/reaction/pin walkthrough script and feature playbook |
 | [docs/media/README.md](media/README.md) | Stitch Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode live showcase and core feature frame index |
 | [docs/media/screens/](media/screens/) | Captured Stitch Dark & Light Mode showcase (`stitch-01..10`) and core workflow PNGs (`01..17`) |
 | [docs/screenshots-manifest.md](screenshots-manifest.md) | Screenshot capture plan and routes/preconditions |
@@ -47,20 +47,20 @@ Every document in the repository, grouped by purpose. Start with
 |---|---|
 | [docs/demo-runbook.md](demo-runbook.md) | LAN demo preflight, ~8-minute script, fallbacks |
 | [docs/operations.md](operations.md) | Operator setup, runtime configuration, backup and recovery notes |
-| [docs/packaging-checklist.md](packaging-checklist.md) | Submission acceptance checklist and fresh-clone steps |
-| [tools/README-release.md](../tools/README-release.md) | Keystore, signed APK and submission zip procedure |
+| [docs/packaging-checklist.md](packaging-checklist.md) | Release acceptance checklist and fresh-clone verification steps |
+| [tools/README-release.md](../tools/README-release.md) | Keystore, signed APK and release archive procedure |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and chats |
 | [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | LAN demo bootstrap (Git Bash / PowerShell) |
 | [demo/backup.sh](../demo/backup.sh) | PostgreSQL demo backup |
 
-## Product & defence
+## Product & architecture Q&A
 
 | Doc | Contents |
 |---|---|
-| [docs/report.md](report.md) | Full course report (canonical source) |
-| [docs/report.docx](report.docx) | Generated report (regenerate with `tools/build-report.py`) |
-| [docs/viva-questions.md](viva-questions.md) | Defence question bank with code citations |
-| [docs/known-limitations.md](known-limitations.md) | Honest deferred work — read before the viva |
+| [docs/report.md](report.md) | System design and engineering report (canonical source) |
+| [docs/report.docx](report.docx) | Generated DOCX engineering report (regenerate with `tools/build-report.py`) |
+| [docs/viva-questions.md](viva-questions.md) | Architecture & engineering Q&A reference with code citations |
+| [docs/known-limitations.md](known-limitations.md) | Architectural scope and documented trade-offs |
 | [docs/ai-summary.md](ai-summary.md) | Conversation summary contract, engines and consent model |
 
 ## Design

@@ -9,7 +9,7 @@
 | Need | Check |
 |---|---|
 | Docker Desktop running | `docker version` shows Server section |
-| JDK 17 + Maven (only for non-Docker server runs) | `mvn -v` |
+| JDK 21 + Maven (only for non-Docker server runs) | `mvn -v` |
 | Android SDK / Android Studio + `adb` on PATH | `adb version` |
 | Demo APK built (release-demo or debug) | `android/` → Gradle `installDebug` / `assembleRelease` |
 | Laptop + phones on the **same Wi-Fi** (or hotspot, §3) | — |

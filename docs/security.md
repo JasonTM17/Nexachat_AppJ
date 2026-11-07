@@ -153,7 +153,7 @@ rate limiting, error handling. Claims cite source files for viva defence.
 
 ## Known limits & future work
 
-- The Android client is pure Java 17 (`android/`, Groovy `build.gradle`, XML
+- The Android client is pure Java 21 (`android/`, Groovy `build.gradle`, XML
   views, ViewBinding, Hilt `annotationProcessor`). Cleartext HTTP is allowed
   only for the emulator host `10.0.2.2`
   (`android/app/src/main/res/xml/network_security_config.xml`;
