@@ -1092,7 +1092,7 @@ class MessageRepositoryTest {
 
     @Test
     fun `refreshPins replaces the conversation pin set from the REST list`() = runTest {
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "stale", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "stale", 1L))
         every { messageApi.getPins(CONVERSATION_ID) } returns
             Response.success("[\"m-1\",\"m-2\"]".toResponseBody()).asCall()
 
@@ -1240,7 +1240,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
 
         eventsFlow.emit(
             ChatEvent.MessageDeleted(
@@ -1281,7 +1281,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
         every { messageApi.getMessages(any(), any(), any(), any()) } returns
             Response.success(
@@ -1316,7 +1316,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
         every { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } returns
             Response.success<Void>(204, null).asCall()
 
@@ -1338,7 +1338,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
         every { messageApi.deleteMessage(any(), any()) } returns
             Response.error<Void>(403, "".toResponseBody()).asCall()
 
@@ -1358,7 +1358,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
         every { messageApi.deleteMessage(CONVERSATION_ID, "m-1") } answers {
             Response.error<Void>(500, "".toResponseBody()).asCall {
@@ -1388,7 +1388,7 @@ class MessageRepositoryTest {
         reactionDao.upsertAll(
             listOf(MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true)),
         )
-        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", pinnedAt = 1L))
+        pinDao.upsert(PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L))
         conversationDao.upsert(conversation(lastMessageSeq = 1, content = "bye"))
         every { messageApi.deleteMessage(any(), any()) } returns
             failedCall(CancellationException("test cancellation"))

@@ -136,18 +136,3 @@ data class MessageReactionEntity(
     val count: Int,
     val reactedByMe: Boolean,
 )
-
-/**
- * One pinned message per conversation (phase-10). `pinnedAt` is the
- * client-side write clock — it only orders the pin list (latest pin first
- * in the banner), never message history.
- */
-@Entity(
-    tableName = "pinned_messages",
-    primaryKeys = ["conversationId", "messageId"],
-)
-data class PinnedMessageEntity(
-    val conversationId: String,
-    val messageId: String,
-    val pinnedAt: Long,
-)

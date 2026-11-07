@@ -853,11 +853,7 @@ internal class MessageRepositoryCore(
         val conversationId = event.conversationId ?: return
         when (event.pinned) {
             true -> pinDao.upsert(
-                PinnedMessageEntity(
-                    conversationId = conversationId,
-                    messageId = messageId,
-                    pinnedAt = System.currentTimeMillis(),
-                ),
+                PinnedMessageEntity(conversationId, messageId, System.currentTimeMillis()),
             )
             false -> pinDao.delete(conversationId, messageId)
             null -> Unit
@@ -962,11 +958,7 @@ internal class MessageRepositoryCore(
 
     /** Optimistic pin — revert + signal on failure (403 non-admin, PIN_LIMIT). */
     suspend fun pinMessage(conversationId: String, messageId: String) {
-        val entry = PinnedMessageEntity(
-            conversationId = conversationId,
-            messageId = messageId,
-            pinnedAt = System.currentTimeMillis(),
-        )
+        val entry = PinnedMessageEntity(conversationId, messageId, System.currentTimeMillis())
         pinDao.upsert(entry)
         when (val result = call { messageApi.pinMessage(conversationId, PinRequest(messageId)) }) {
             is Result.Success -> Unit
@@ -1195,11 +1187,7 @@ internal class MessageRepositoryCore(
         val embedded = ArrayList<MessageDto>(entries.size)
         entries.forEachIndexed { index, entry ->
             pinMessageIdOf(entry)?.let { id ->
-                pins += PinnedMessageEntity(
-                    conversationId = conversationId,
-                    messageId = id,
-                    pinnedAt = now - index,
-                )
+                pins += PinnedMessageEntity(conversationId, id, now - index)
             }
             (entry as? Map<*, *>)?.get("message")?.let { raw ->
                 runCatching { messageAdapter.fromJsonValue(raw) }.getOrNull()
