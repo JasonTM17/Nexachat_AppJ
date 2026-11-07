@@ -108,6 +108,10 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             title.setText(displayTitle);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
+            Boolean isOnline = conversation.getPeerPresence() != null
+                    ? conversation.getPeerPresence().getOnline()
+                    : (!conversation.isGroup() ? Boolean.TRUE : null);
+            avatar.setOnlineStatus(isOnline);
 
             boolean unread = conversation.getUnreadCount() > 0;
             title.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);

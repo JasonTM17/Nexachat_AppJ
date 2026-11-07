@@ -305,7 +305,7 @@
         android:contentDescription="@string/group_create_title"
         app:backgroundTint="?attr/colorPrimary"
         app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Medium"
-        app:srcCompat="@drawable/ic_add"
+        app:srcCompat="@drawable/ic_edit_compose"
         app:tint="?attr/colorOnPrimary" />
 
     <com.google.android.material.card.MaterialCardView

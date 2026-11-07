@@ -61,6 +61,7 @@ public final class InboxFragment extends Fragment {
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
 
         binding.inboxUserAvatar.setName("Nexa");
+        binding.inboxUserAvatar.setOnlineStatus(true);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
         binding.conversationList.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -255,6 +256,9 @@ public final class InboxFragment extends Fragment {
             String displayTitle = ConversationPreviewHelper.displayTitle(requireContext(), row);
             peerAvatar.setName(displayTitle);
             peerAvatar.setAvatarUrl(row.getDisplayAvatar());
+            peerAvatar.setShowStoryRing(true);
+            Boolean isOnline = row.getPeerPresence() != null ? row.getPeerPresence().getOnline() : Boolean.TRUE;
+            peerAvatar.setOnlineStatus(isOnline);
 
             String shortName = displayTitle.contains(" ")
                     ? displayTitle.substring(0, displayTitle.indexOf(" "))
