@@ -79,8 +79,8 @@ public final class MessageBubbleBinder {
         }
 
         bindReplyQuote(root, message);
-        bindPrimaryContent(root, message);
-        bindMetaRow(root, message, item.isSeenReceipt());
+        bindPrimaryContent(root, message, item.isPulsing());
+        bindMetaRow(root, message, item.isSeenReceipt(), item.isPulsing());
         bindReactions(root, message);
     }
 
@@ -173,6 +173,14 @@ public final class MessageBubbleBinder {
      * {@code ContextCompat.getColor} rejects that int ({@code 0xff2b2930} crashed
      * the tombstone row). A leftover resource reference is loaded by its id.
      */
+    /** Indigo bubbles are the only ones that need white text. Error and pulse fills are light. */
+    private static boolean usesIndigoBubble(ChatMessage message, boolean tombstone, boolean pulsing) {
+        return message.getMine()
+                && !tombstone
+                && !pulsing
+                && message.getStatus() != DeliveryStatus.FAILED;
+    }
+
     private static int resolveThemeColor(android.content.Context context, int attr) {
         TypedValue value = new TypedValue();
         boolean resolved = context.getTheme().resolveAttribute(attr, value, true);
@@ -228,7 +236,7 @@ public final class MessageBubbleBinder {
         });
     }
 
-    private void bindPrimaryContent(View root, ChatMessage message) {
+    private void bindPrimaryContent(View root, ChatMessage message, boolean pulsing) {
         TextView body = root.findViewById(R.id.messageBody);
         ImageView image = root.findViewById(R.id.messageImage);
         ImageButton play = root.findViewById(R.id.playButton);
@@ -239,7 +247,7 @@ public final class MessageBubbleBinder {
 
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
         MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
-        int bodyColor = message.getMine() && !tombstone
+        int bodyColor = usesIndigoBubble(message, tombstone, pulsing)
                 ? android.graphics.Color.WHITE
                 : resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
         if (body != null) {
@@ -352,7 +360,7 @@ public final class MessageBubbleBinder {
         }
     }
 
-    private void bindMetaRow(View root, ChatMessage message, boolean seen) {
+    private void bindMetaRow(View root, ChatMessage message, boolean seen, boolean pulsing) {
         View metaInclude = root.findViewById(R.id.bubbleMeta);
         if (metaInclude == null) {
             return;
@@ -363,8 +371,10 @@ public final class MessageBubbleBinder {
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
-        int metaColor = message.getMine()
-                && !MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
+        int metaColor = usesIndigoBubble(
+                message,
+                MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs()),
+                pulsing)
                 ? 0xB3FFFFFF
                 : resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         if (edited != null) {
