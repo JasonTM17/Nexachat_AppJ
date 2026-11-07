@@ -10,12 +10,12 @@
 # keep the classes, members, and generic signatures.
 -keep class com.nexachat.core.network.dto.** { *; }
 -keep class com.nexachat.core.network.stomp.dto.** { *; }
--keep class com.nexachat.summary.AiSummaryConsent* { *; }
--keep class com.nexachat.summary.SummaryRequest { *; }
--keep class com.nexachat.summary.SummaryResponse { *; }
--keep class com.nexachat.summary.SummaryItem { *; }
--keep class com.nexachat.summary.SummaryActionItem { *; }
--keep class com.nexachat.summary.SummaryParticipant { *; }
+-keep class com.nexachat.summary.** { *; }
+-keepclassmembers enum com.nexachat.** {
+    <fields>;
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
 
 # Room's runtime schema/DAO discovery depends on the entity and database types.
 -keep class com.nexachat.core.database.** { *; }
