@@ -79,15 +79,15 @@ class ConversationRepositoryTest {
         // backgroundScope — init collectors are infinite; the scope cancels
         // them when the test body finishes instead of hanging runTest.
         repository = ConversationRepository(
-            messageApi = messageApi,
-            groupApi = groupApi,
-            conversationDao = conversationDao,
-            presenceRepository = presenceRepository,
-            session = session,
-            tokenStore = tokenStore,
-            moshi = moshi,
-            scope = backgroundScope,
-            context = context,
+            messageApi,
+            groupApi,
+            conversationDao,
+            presenceRepository,
+            session,
+            tokenStore,
+            moshi,
+            backgroundScope,
+            context,
         )
     }
 

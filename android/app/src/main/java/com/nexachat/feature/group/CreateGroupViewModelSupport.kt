@@ -36,10 +36,7 @@ internal suspend fun createGroupCreate(
     if (!state.canCreate) return
     uiState.update { it.withCreating(true, null) }
     when (
-        val result = conversationRepository.createGroup(
-            title = state.title,
-            memberIds = state.selectedIds.toList(),
-        )
+        val result = conversationRepository.createGroup(state.title, state.selectedIds.toList())
     ) {
         is Result.Success -> {
             uiState.update { it.withCreating(false, null) }

@@ -128,9 +128,8 @@ private const val TYPE_GROUP = "GROUP"
  * never heard of" without per-event traffic. [resyncRequests] does the same
  * after every reconnect (REST is the source of truth — §11.3.5).
  */
-@Singleton
 @OptIn(FlowPreview::class)
-class ConversationRepository @Inject constructor(
+internal class ConversationRepositoryCore(
     private val messageApi: MessageApi,
     private val groupApi: GroupApi,
     private val conversationDao: ConversationDao,
