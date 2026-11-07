@@ -4,43 +4,67 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true">
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_horizontal"
             android:orientation="vertical"
             android:padding="@dimen/space_lg">
+
             <LinearLayout
                 android:id="@+id/registerColumn"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:maxWidth="@dimen/auth_form_max_width"
+                android:gravity="center_horizontal"
                 android:orientation="vertical">
+
                 <ImageView
+                    android:id="@+id/authLogo"
                     android:layout_width="72dp"
                     android:layout_height="72dp"
                     android:layout_gravity="center_horizontal"
                     android:contentDescription="@string/app_name"
                     android:src="@mipmap/ic_launcher_round" />
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_horizontal"
                     android:layout_marginTop="@dimen/space_md"
+                    android:background="@drawable/bg_date_separator"
+                    android:letterSpacing="0.08"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="4dp"
+                    android:text="✦ NEXACHAT WORKSPACE"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/authTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="@dimen/space_xs"
                     android:text="@string/action_create_account"
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:textStyle="bold" />
+
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
                     app:cardBackgroundColor="?attr/colorSurface"
-                    app:cardCornerRadius="20dp"
-                    app:cardElevation="2dp"
+                    app:cardCornerRadius="24dp"
+                    app:cardElevation="0dp"
                     app:contentPadding="24dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:strokeWidth="1dp">
@@ -59,12 +83,14 @@
                             app:boxCornerRadiusBottomStart="12dp"
                             app:boxCornerRadiusTopEnd="12dp"
                             app:boxCornerRadiusTopStart="12dp">
+
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/nameInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:inputType="textPersonName" />
                         </com.google.android.material.textfield.TextInputLayout>
+
                         <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/phoneLayout"
                             android:layout_width="match_parent"
@@ -75,12 +101,14 @@
                             app:boxCornerRadiusBottomStart="12dp"
                             app:boxCornerRadiusTopEnd="12dp"
                             app:boxCornerRadiusTopStart="12dp">
+
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/phoneInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:inputType="phone" />
                         </com.google.android.material.textfield.TextInputLayout>
+
                         <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/passwordLayout"
                             android:layout_width="match_parent"
@@ -94,12 +122,14 @@
                             app:endIconContentDescription="@string/cd_password_visibility"
                             app:endIconDrawable="@drawable/ic_visibility"
                             app:endIconMode="password_toggle">
+
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/passwordInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:inputType="textPassword" />
                         </com.google.android.material.textfield.TextInputLayout>
+
                         <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/confirmPasswordLayout"
                             android:layout_width="match_parent"
@@ -113,12 +143,14 @@
                             app:endIconContentDescription="@string/cd_password_visibility"
                             app:endIconDrawable="@drawable/ic_visibility"
                             app:endIconMode="password_toggle">
+
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/confirmPasswordInput"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:inputType="textPassword" />
                         </com.google.android.material.textfield.TextInputLayout>
+
                         <TextView
                             android:id="@+id/errorBanner"
                             android:layout_width="match_parent"
@@ -128,16 +160,19 @@
                             android:padding="@dimen/space_sm"
                             android:textColor="?attr/colorOnErrorContainer"
                             android:visibility="gone" />
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/registerButton"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_md"
-                            android:minHeight="52dp"
+                            android:minHeight="54dp"
                             android:text="@string/action_create_account"
-                            app:cornerRadius="14dp" />
+                            android:textStyle="bold"
+                            app:cornerRadius="16dp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/secondaryAction"
                     style="@style/Widget.Material3.Button.TextButton"

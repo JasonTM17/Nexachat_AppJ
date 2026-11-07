@@ -4,6 +4,7 @@
     android:id="@+id/summarySheetScroll"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="?attr/colorSurface"
     android:fillViewport="true">
 
     <LinearLayout
@@ -94,7 +95,8 @@
                 android:layout_height="@dimen/min_touch_target"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/cd_summary_close"
-                android:src="@drawable/ic_close" />
+                android:src="@drawable/ic_close"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
         <com.google.android.material.chip.ChipGroup
@@ -105,8 +107,8 @@
             android:paddingTop="@dimen/space_sm"
             android:paddingBottom="@dimen/space_xs"
             app:chipSpacingHorizontal="@dimen/space_xs"
-            app:singleSelection="true"
-            app:selectionRequired="true">
+            app:selectionRequired="true"
+            app:singleSelection="true">
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/summaryModeLocal"
@@ -114,14 +116,18 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:checked="true"
-                android:text="@string/summary_badge_local" />
+                android:text="@string/summary_badge_local"
+                app:checkedIconVisible="false"
+                app:chipCornerRadius="18dp" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/summaryModeAi"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/summary_badge_ai" />
+                android:text="@string/summary_badge_ai"
+                app:checkedIconVisible="false"
+                app:chipCornerRadius="18dp" />
         </com.google.android.material.chip.ChipGroup>
 
         <LinearLayout
@@ -184,8 +190,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 app:chipSpacingHorizontal="@dimen/space_xs"
-                app:singleSelection="true"
-                app:selectionRequired="true" />
+                app:selectionRequired="true"
+                app:singleSelection="true" />
         </HorizontalScrollView>
 
         <View
