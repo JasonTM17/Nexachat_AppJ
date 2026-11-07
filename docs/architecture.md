@@ -1,10 +1,11 @@
 # NexaChat Architecture
 
-> Current implementation view: Android app (Compose + MVVM/UDF, offline-first
-> Room) → REST `/api/v1` + STOMP over WebSocket → Spring Boot modular monolith
-> → PostgreSQL 16 + file volume. Call signaling shares STOMP; the Java Android
-> call core defines a media boundary, while this document does not claim a
-> shipped call screen or concrete media engine.
+> Current implementation view: Android app (Java 17, XML Views + Fragments +
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room) → REST
+> `/api/v1` + STOMP over WebSocket → Spring Boot modular monolith → PostgreSQL 16
+> + file volume. Call signaling shares STOMP; the Java Android call core defines
+> a media boundary, while this document does not claim a shipped call screen or
+> concrete media engine.
 
 ## 1. Container diagram (§7.1 — sơ đồ tổng)
 
@@ -12,15 +13,15 @@ Overall system containers and their connections:
 
 ```mermaid
 flowchart LR
-    subgraph Device["Android (Kotlin + Java core, Compose)"]
-        UI["Compose Screens<br/>(Material 3)"]
-        VM["ViewModel + StateFlow<br/>(UDF)"]
+    subgraph Device["Android (Java 17, XML Views + ViewBinding)"]
+        UI["Fragments + XML Views<br/>(Material 3)"]
+        VM["ViewModel + LiveData<br/>(RxJava 3 streams)"]
         REPO["Repositories<br/>(offline-first)"]
         subgraph DS["Data Sources"]
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
-            ROOM[("Room DB<br/>cache + outbox")]
-            STORE["DataStore + TokenStore<br/>(Android Keystore AES)"]
+            ROOM[("Room DB (RxJava 3)<br/>cache + outbox")]
+            STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
         UI --> VM --> REPO
@@ -94,7 +95,7 @@ receipts:
 
 ```mermaid
 sequenceDiagram
-    participant A as Máy A (Compose)
+    participant A as Máy A (Fragment UI)
     participant S as Spring Backend
     participant DB as PostgreSQL
     participant B as Máy B

@@ -6,8 +6,8 @@ send media/files, edit and delete messages, search conversation history, react,
 pin, reply and forward text — in a bilingual (Vi/En) Material 3 UI that keeps
 message sending available offline.
 
-> Đồ án nhóm (course group project) · Kotlin + Java core modules + Jetpack Compose (client) ·
-> Java + Spring Boot (server) · PostgreSQL · STOMP over raw WebSocket.
+> Đồ án nhóm (course group project) · Java 17 Android client (XML Views, Fragments,
+> ViewBinding, RxJava 3) · Java + Spring Boot (server) · PostgreSQL · STOMP over raw WebSocket.
 > Built for a viva defense — shipped behavior points to source; in-progress work is labeled.
 
 ## Demo
@@ -24,7 +24,7 @@ Captured on the `nexachat-audit` emulator against the local server. Accounts in 
 </tr>
 </table>
 
-Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: Kotlin and Java on Android (Jetpack Compose, Hilt, Room), Spring Boot 3, PostgreSQL, STOMP, WebRTC signaling.
+Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: pure Java 17 on Android (XML Views, Material 3, Hilt, Room RxJava 3), Spring Boot 3, PostgreSQL, STOMP, WebRTC signaling.
 
 ## Quick start
 
@@ -55,9 +55,9 @@ Rubric coverage — the full mapping with test evidence is in
 | R2 — group chat | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | R3 — preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
 | R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
-| R3 — i18n | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/LocaleManager` |
+| R3 — i18n | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
 | R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
-| R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractions`, `core/ui/ForwardFilter` |
+| R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/interactions`, `core/ui/ForwardFilter` |
 | Extra — voice calls | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
 | Extra — AI catch-up summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary` |
 | R5 — UI + tests | Material 3, ≥48dp touch targets and shared state components; test status is reported by the current CI run | `core/ui`, `server/src/test`, `app/src/test` |
@@ -68,8 +68,8 @@ Rubric coverage — the full mapping with test evidence is in
 
 ```mermaid
 flowchart LR
-    subgraph Android["android/ — Kotlin + Java core, Jetpack Compose, Hilt"]
-        UI["Compose UI<br/>(feature/*)"] --> VM["ViewModels<br/>(UDF, SavedStateHandle)"]
+    subgraph Android["android/ — Java 17, XML Views + ViewBinding, Hilt"]
+        UI["Fragments + XML Views<br/>(feature/*)"] --> VM["ViewModels<br/>(LiveData + RxJava 3, SavedStateHandle)"]
         VM --> REPO["Repositories"]
         REPO --> ROOM[("Room v7 — SSOT<br/>messages · conversations<br/>outbox · reactions · pins · presence")]
         REPO --> TS["TokenStore<br/>AES/GCM @ AndroidKeyStore"]
@@ -110,17 +110,17 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 
 | Layer | Server (`server/`) | Android (`android/`) |
 |---|---|---|
-| Language | Java 17 | Kotlin 2.0.21 + Java core helpers |
-| Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Jetpack Compose (BOM 2024.12.01) + Material 3, Navigation |
+| Language | Java 17 | Java 17 |
+| Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V6, `ddl-auto: validate` | Room 2.6.1 (v7, explicit migrations), DataStore and SharedPreferences |
-| Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap | Coil 2.7, media3 1.5.1 |
-| Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 DI, Retrofit 2.11 + Moshi, coroutines 1.9 |
-| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle + version catalog, JUnit4/MockK/Turbine |
+| Persistence | PostgreSQL 16, Flyway V1–V6, `ddl-auto: validate` | Room 2.6.1 (v7, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap | Glide 4.16, media3 1.5.1 |
+| Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
+| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
 | Deploy | Multi-stage `server/Dockerfile`, `docker-compose.yml` | `API_BASE_URL` via `local.properties`/`-PapiBaseUrl` |
 
-Design system: tokens, component states and the Stitch→Compose mapping are in
+Design system: tokens, component states and the Stitch→XML layout mapping are in
 [docs/design/design-notes.md](docs/design/design-notes.md); live emulator
 screenshots are in [docs/design/screens/](docs/design/screens/).
 
@@ -179,7 +179,7 @@ psql -h localhost -p 5433 -U nexachat -d nexachat < demo/seed.sql
    ```
 
    (`API_BASE_URL` can also be passed as `./gradlew -PapiBaseUrl=…`; the value
-   lands in `BuildConfig.API_BASE_URL`, `app/build.gradle.kts:13-35`.)
+   lands in `BuildConfig.API_BASE_URL`, `app/build.gradle` (`defaultConfig`).)
 
 3. Build and install:
 
@@ -234,14 +234,15 @@ Android lint, and a committed-secret scan on every PR and push to
 
 ```text
 nexachat/
-├─ android/   Kotlin + Java core modules + Jetpack Compose app
+├─ android/   Pure Java 17 app (XML Views, Fragments, ViewBinding, RxJava 3)
 │  ├─ app/src/main/java/com/nexachat/
-│  │  ├─ core/       common · database (Room) · network (Retrofit, stomp/) · storage · ui
-│  │  ├─ call/       Java call core/media/service/UI
-│  │  ├─ data/       repositories (Room write-through, outbox, resync)
-│  │  ├─ di/         Hilt modules (call, summary)
-│  │  ├─ feature/    auth · chat · contacts · group · inbox · interactions · media · profile · splash
-│  │  └─ summary/    Java summary data layer
+│  │  ├─ core/       common · database (Room RxJava 3) · network (Retrofit, stomp/) · storage · ui
+│  │  ├─ call/       call core/media/service/UI (Java)
+│  │  ├─ data/       repositories (Room write-through, outbox, resync; RxJava 3)
+│  │  ├─ di/         Hilt modules (`annotationProcessor`)
+│  │  ├─ feature/    auth · chat · contacts · group · inbox · interactions · media · profile · splash · summary
+│  │  └─ summary/    summary ViewModel + repository wiring
+│  ├─ app/src/main/res/layout/   ViewBinding XML layouts
 │  ├─ app/schemas/   Room-exported schema JSON (migration-test assets)
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
