@@ -13,6 +13,18 @@
         android:orientation="vertical"
         android:paddingBottom="@dimen/space_lg">
 
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="36dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:importantForAccessibility="no"
+            app:cardBackgroundColor="?attr/colorOutlineVariant"
+            app:cardCornerRadius="2dp"
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -90,7 +102,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingHorizontal="@dimen/space_md"
-            android:paddingTop="@dimen/space_xs"
+            android:paddingTop="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_xs"
+            app:chipSpacingHorizontal="@dimen/space_xs"
             app:singleSelection="true"
             app:selectionRequired="true">
 
@@ -160,14 +174,16 @@
         <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
             android:paddingHorizontal="@dimen/space_md"
-            android:paddingVertical="@dimen/space_xs"
+            android:paddingVertical="@dimen/space_sm"
             android:scrollbars="none">
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/summaryScopeChips"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="@dimen/space_xs"
                 app:singleSelection="true"
                 app:selectionRequired="true" />
         </HorizontalScrollView>
@@ -175,7 +191,8 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginVertical="@dimen/space_xs"
+            android:layout_marginTop="@dimen/space_xs"
+            android:layout_marginBottom="@dimen/space_sm"
             android:background="?attr/colorSurfaceContainerHigh" />
 
         <include
@@ -194,13 +211,14 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="@dimen/space_md"
+            android:paddingVertical="@dimen/space_sm"
             android:visibility="gone" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="@dimen/space_md"
-            android:layout_marginBottom="@dimen/space_xs"
+            android:layout_marginBottom="@dimen/space_sm"
             android:background="?attr/colorSurfaceContainerHigh" />
 
         <LinearLayout

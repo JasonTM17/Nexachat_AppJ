@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
@@ -26,12 +27,11 @@
 
                     <ImageView
                         android:id="@+id/authLogo"
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
-                        android:background="@drawable/bg_auth_logo"
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:layout_gravity="center_horizontal"
                         android:contentDescription="@string/app_name"
-                        android:padding="14dp"
-                        android:src="@drawable/ic_nexachat_logo" />
+                        android:src="@mipmap/ic_launcher_round" />
 
                     <TextView
                         android:id="@+id/authTitle"
@@ -42,54 +42,79 @@
                         android:textAppearance="?attr/textAppearanceHeadlineLarge"
                         android:textColor="?attr/colorPrimary" />
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/phoneLayout"
+                    <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xl"
-                        android:hint="@string/auth_phone_label">
+                        app:cardBackgroundColor="?attr/colorSurface"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:contentPadding="24dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:strokeWidth="1dp">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/phoneInput"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="phone" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/passwordLayout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:hint="@string/auth_password_label"
-                        app:endIconDrawable="@drawable/ic_visibility"
-                        app:endIconContentDescription="@string/cd_password_visibility"
-                        app:endIconMode="password_toggle"
-                        xmlns:app="http://schemas.android.com/apk/res-auto">
+                            <com.google.android.material.textfield.TextInputLayout
+                                android:id="@+id/phoneLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:hint="@string/auth_phone_label"
+                                app:boxCornerRadiusBottomEnd="12dp"
+                                app:boxCornerRadiusBottomStart="12dp"
+                                app:boxCornerRadiusTopEnd="12dp"
+                                app:boxCornerRadiusTopStart="12dp">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/passwordInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="textPassword" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/phoneInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="phone" />
+                            </com.google.android.material.textfield.TextInputLayout>
 
-                    <TextView
-                        android:id="@+id/errorBanner"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:background="?attr/colorErrorContainer"
-                        android:padding="@dimen/space_sm"
-                        android:textColor="?attr/colorOnErrorContainer"
-                        android:visibility="gone" />
+                            <com.google.android.material.textfield.TextInputLayout
+                                android:id="@+id/passwordLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:hint="@string/auth_password_label"
+                                app:boxCornerRadiusBottomEnd="12dp"
+                                app:boxCornerRadiusBottomStart="12dp"
+                                app:boxCornerRadiusTopEnd="12dp"
+                                app:boxCornerRadiusTopStart="12dp"
+                                app:endIconContentDescription="@string/cd_password_visibility"
+                                app:endIconDrawable="@drawable/ic_visibility"
+                                app:endIconMode="password_toggle">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/primaryAction"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:minHeight="@dimen/min_touch_target" />
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/passwordInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="textPassword" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <TextView
+                                android:id="@+id/errorBanner"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:background="?attr/colorErrorContainer"
+                                android:padding="@dimen/space_sm"
+                                android:textColor="?attr/colorOnErrorContainer"
+                                android:visibility="gone" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/primaryAction"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_md"
+                                android:minHeight="52dp"
+                                app:cornerRadius="14dp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/secondaryAction"
