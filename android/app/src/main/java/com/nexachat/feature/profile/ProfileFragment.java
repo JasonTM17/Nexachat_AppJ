@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -64,6 +65,19 @@ public final class ProfileFragment extends Fragment {
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
         binding.themeRow.setTitle(getString(R.string.settings_theme_title));
         binding.themeRow.setOnClickListener(v -> showThemeDialog());
+        View.OnClickListener onThemeChipClick = v -> {
+            int id = v.getId();
+            if (id == R.id.themeChipSystem) {
+                settingsViewModel.setThemeMode(ThemeMode.SYSTEM);
+            } else if (id == R.id.themeChipLight) {
+                settingsViewModel.setThemeMode(ThemeMode.LIGHT);
+            } else if (id == R.id.themeChipDark) {
+                settingsViewModel.setThemeMode(ThemeMode.DARK);
+            }
+        };
+        binding.themeChipSystem.setOnClickListener(onThemeChipClick);
+        binding.themeChipLight.setOnClickListener(onThemeChipClick);
+        binding.themeChipDark.setOnClickListener(onThemeChipClick);
         binding.showPresence.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowPresence(checked); });
         consentRepository.refresh();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), enabled -> {
@@ -79,12 +93,18 @@ public final class ProfileFragment extends Fragment {
         binding.aiConsentRow.setOnClickListener(v -> binding.aiSummaryConsent.toggle());
         binding.aiSummaryConsent.setOnCheckedChangeListener(this::onAiConsentToggled);
         binding.logoutRow.setTitle(getString(R.string.action_logout));
-        binding.logoutRow.setOnClickListener(v -> new AlertDialog.Builder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d,w) -> viewModel.logout()).show());
+        binding.logoutRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d, w) -> viewModel.logout()).show());
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
-        binding.logoutAllRow.setOnClickListener(v -> new AlertDialog.Builder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d,w) -> viewModel.logoutAll()).show());
+        binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
-        settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(mode, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark))));
+        settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> {
+            ThemeMode active = mode != null ? mode : ThemeMode.SYSTEM;
+            binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(active, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)));
+            binding.themeChipSystem.setChecked(active == ThemeMode.SYSTEM);
+            binding.themeChipLight.setChecked(active == ThemeMode.LIGHT);
+            binding.themeChipDark.setChecked(active == ThemeMode.DARK);
+        });
     }
 
     private void render(ProfileViewModel.UiState state) {
@@ -98,21 +118,22 @@ public final class ProfileFragment extends Fragment {
         ApiError error = state.getError() != null ? state.getError() : state.getSaveError() != null ? state.getSaveError() : state.getPasswordError() != null ? state.getPasswordError() : state.getAvatarError();
         binding.profileError.setVisibility(error == null ? View.GONE : View.VISIBLE);
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
-        if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new AlertDialog.Builder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
+        if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
     }
 
     private void showThemeDialog() {
         ThemeMode[] modes = ThemeMode.values(); String[] labels = { getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark) };
         ThemeMode current = settingsViewModel.getThemeMode().getValue();
-        new AlertDialog.Builder(requireContext()).setTitle(R.string.settings_theme_title).setSingleChoiceItems(labels, current.ordinal(), (dialog, which) -> { settingsViewModel.setThemeMode(modes[which]); dialog.dismiss(); }).setNegativeButton(R.string.action_cancel, null).show();
+        int selected = current != null ? current.ordinal() : ThemeMode.SYSTEM.ordinal();
+        new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.settings_theme_title).setSingleChoiceItems(labels, selected, (dialog, which) -> { settingsViewModel.setThemeMode(modes[which]); dialog.dismiss(); }).setNegativeButton(R.string.action_cancel, null).show();
     }
 
     private void showPasswordDialog() {
         LinearLayout form = new LinearLayout(requireContext()); form.setOrientation(LinearLayout.VERTICAL); int pad = (int)(20 * getResources().getDisplayMetrics().density); form.setPadding(pad, 0, pad, 0);
         EditText old = passwordInput(R.string.auth_current_password_label); EditText next = passwordInput(R.string.auth_new_password_label); EditText confirm = passwordInput(R.string.auth_confirm_password_label);
         form.addView(old); form.addView(next); form.addView(confirm);
-        AlertDialog dialog = new AlertDialog.Builder(requireContext()).setTitle(R.string.profile_change_password).setView(form).setNegativeButton(R.string.action_cancel, (d,w) -> viewModel.dismissPasswordDialog()).setPositiveButton(R.string.action_save, null).setOnCancelListener(d -> viewModel.dismissPasswordDialog()).create();
+        AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.profile_change_password).setView(form).setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPasswordDialog()).setPositiveButton(R.string.action_save, null).setOnCancelListener(d -> viewModel.dismissPasswordDialog()).create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String oldValue = old.getText().toString();
             String newValue = next.getText().toString();
@@ -146,7 +167,7 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void showAiConsentDialog() {
-        new AlertDialog.Builder(requireContext())
+        new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.dialog_ai_consent_title)
                 .setMessage(R.string.dialog_ai_consent_message)
                 .setNegativeButton(R.string.dialog_ai_consent_dismiss, null)
