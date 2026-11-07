@@ -11,7 +11,7 @@ testing the project, and the contribution rules.
 | JDK | 17 (target) | `server/pom.xml` → `java.version=17`; Gradle `compileOptions` Java 17; CI uses Temurin 17. Use JDK 17 for the supported build configuration. |
 | Maven | 3.9+ | Verified: Apache Maven 3.9.12. There is **no** `server/mvnw` wrapper — use the system `mvn`. |
 | Android SDK | compileSdk/targetSdk 35, minSdk 26 | `ANDROID_HOME` / `ANDROID_SDK_ROOT` set; `android/local.properties` carries `sdk.dir` (gitignored). |
-| Gradle | 8.10 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.7.3, Java 17, Hilt 2.52 (`annotationProcessor`), Room 2.6.1 (`room-rxjava3`), RxJava 3.1.8. |
+| Gradle | 8.10 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.7.3, Java 17, Hilt 2.52 (`annotationProcessor`), Room 2.6.1 (`room-rxjava3`), RxJava 3.1.9 (see `android/gradle/libs.versions.toml`). |
 | Docker Desktop | recent | Verified: Docker Compose v5.6.0. PostgreSQL 16 runs on host port 5433. |
 | Python | 3.x + `python-docx` | Only for regenerating `docs/report.docx`. Verified: Python 3.14.2, python-docx 1.2.0. |
 | `adb` | Android SDK platform-tools | For installing the app on a device/emulator. |
@@ -81,9 +81,9 @@ android/app/src/main/java/com/nexachat/
   call/                        Java call core/media/service/UI
   core/{common,database,network,storage,ui}/
   data/                       repositories (Room write-through, outbox, resync)
-  di/                         Hilt modules (call, summary)
-  feature/{auth,chat,contacts,group,inbox,interactions,media,profile,splash}/
-  summary/                    Java summary data layer
+  di/                         Hilt modules (`annotationProcessor`)
+  feature/{auth,chat,contacts,group,inbox,interactions,media,profile,splash,summary}/
+  summary/                    Java summary ViewModel + repository layer
 server/src/main/resources/db/migration/   Flyway V1–V6
 android/gradle/libs.versions.toml         dependency version catalog
 docs/                                     contracts, security, runbooks, audits

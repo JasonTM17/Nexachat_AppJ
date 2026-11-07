@@ -10,10 +10,12 @@
 
 *Which language is used for the Android client?*
 
-**Trả lời.** Client Android và server đều dùng Java 17. Cây Android hiện có
-385 tệp Java trong source tree, bao gồm mã ứng dụng và kiểm thử. Có thể kiểm tra
-cấu hình tương thích Java trong `android/app/build.gradle` và các lớp dưới
-`android/app/src/main/java/`. Toàn bộ Gradle build scripts (`settings.gradle`, `build.gradle`, `app/build.gradle`) cũng dùng Groovy DSL chuẩn.
+**Trả lời.** Client Android và server đều dùng 100% Java 17. Toàn bộ mã nguồn ứng
+dụng và kiểm thử nằm dưới `android/app/src/main/java/` và
+`android/app/src/test/java/`; có thể kiểm tra cấu hình tương thích Java 17 trong
+`android/app/build.gradle` và danh mục thư viện tại
+`android/gradle/libs.versions.toml`. Toàn bộ Gradle build scripts
+(`settings.gradle`, `build.gradle`, `app/build.gradle`) dùng Groovy DSL chuẩn.
 
 **Câu hỏi gài.** *“Vậy UI cũng là Java?”* — Đúng. Activity, Fragment, ViewModel,
 adapter và logic ứng dụng đều là lớp Java; layout được khai báo bằng Android
@@ -261,13 +263,14 @@ màn hình cần thiết khi cấu hình đổi; view được tạo lại với
 *Which tools are used for Android unit testing?*
 
 **Trả lời.** Unit tests dùng JUnit 4, Mockito, RxJava `TestObserver`/
-`TestSubscriber`, `TestScheduler` và `InstantTaskExecutorRule`. Cây test hiện
-có 542 case dưới `android/app/src/test/java`. Có thể chạy bằng
-`cd android && ./gradlew testDebugUnitTest`.
+`TestSubscriber`, `TestScheduler` và `InstantTaskExecutorRule`. Toàn bộ bộ kiểm
+thử nằm dưới `android/app/src/test/java/` và được thực thi bằng
+`cd android && ./gradlew testDebugUnitTest` (xem báo cáo sinh ra tại
+`android/app/build/reports/tests/testDebugUnitTest/`).
 
-### Q4.2 — 542 test có chứng minh ứng dụng chạy tốt trên mọi máy không?
+### Q4.2 — Toàn bộ unit test pass có chứng minh ứng dụng chạy tốt trên mọi máy không?
 
-*Do 542 unit tests prove the app works on every device?*
+*Do passing unit tests prove the app works on every device?*
 
 **Trả lời.** Không. Unit tests xác nhận logic ở phạm vi chúng kiểm tra. Chúng
 không thay thế kiểm thử thiết bị, quyền hệ điều hành, mạng yếu, giao diện thực,

@@ -19,15 +19,15 @@ counts for the exact revision under review.
 | R2 — chat nhóm | FR-D1..D5 | `server/conversation`; `app/feature/group` | `GroupFlowIT`, `GroupServiceTest`, `GroupDetailViewModelTest` | Script bước 5 |
 | R2 — tìm kiếm/thêm SĐT | FR-B1..B4 | `server/user`, `server/contact`; `app/feature/contacts` | `ContactServiceTest`, `ContactConversationIT`, `ContactsViewModelTest` | Script bước 2 |
 | R2 — quản lý tài khoản | FR-A1..A6 | `server/auth`; `app/feature/auth`, `core/storage/TokenStore` | `AuthFlowIT`, `AuthServiceTest`, `TokenServiceTest`, `JwtServiceTest`, `AuthViewModelTest`, `TokenStoreTest` | Script bước 1 |
-| R3 — đa ngôn ngữ | FR-F1..F2 | `app/core/common/LocaleManager`, `res/values*` | `AppLocaleManagerTest`, `StringParityTest` | Script bước 8 |
+| R3 — đa ngôn ngữ | FR-F1..F2 | `app/core/common/AppLocaleManager.java`, `res/values*` | `AppLocaleManagerTest`, `StringParityTest` | Script bước 8 |
 | R3 — multimedia/file | FR-E1..E4 | `server/attachment`, `StorageService`; `app/feature/media` | `AttachmentFlowIT`, `AttachmentServiceTest`, `LocalStorageServiceTest`, `MagicBytesTest`, `AttachmentRepositoryTest` | Script bước 6 |
 | R3 — xoay màn hình | FR-G1 | `ChatViewModel`, `SavedStateHandle`, Room | `ChatViewModelTest`, `docs/rotation-audit.md` | Script bước 8 |
 | R4 — sáng tạo | FR-H1..H3 | `server/message` (reactions/pins/reply); `app/feature/chat/ChatInteractionsViews.java` | `InteractionFlowIT`, `ReactionServiceTest`, `PinServiceTest`, `MessageRepositoryTest` | Script bước 7 |
 | R4 — chuyển tiếp text | F5 forward | `app/feature/chat`, `app/core/ui` | `ForwardFilterTest`, `ChatViewModelTest` | Demo chuyển tiếp text; attachment không được chuyển tiếp |
 | R3 — theme | F6 local theme | `app/core/ui`, `app/data` | `ThemeMapperTest`, `SettingsRepositoryTest` | Demo SYSTEM/LIGHT/DARK trên thiết bị |
 | Extra — voice calls | Call signaling + Android call UI | `server/call`; `app/call` | `CallFlowIT`, `CallServiceTest`, `CallRegistryTest`, `CallStateMachineTest`, `CallTimeoutSchedulerTest`, `CallControllerTest`, `CallManagerTest`, `CallFrameCodecTest`, `CallUiModelMapperTest`, `CallLogFormatterTest` | Live E2E `tools/e2e/calls/call_e2e.py`; screenshots `s6-*` |
-| Extra — AI summary | Summary engines + consent + Android UI | `server/summary`; `app/summary` | `SummaryApiIT`, `SummaryServiceTest`, `SummaryProviderSelectorTest`, `CitationGuardTest`, `RedactorTest`, `PromptBuilderTest`, `LlmSummaryProviderTest`, `SummaryViewModelTest`, `SummaryRepositoryTest`, `AiConsentRepositoryTest` | Screenshots `s4-*`/`s5-*` (`docs/screenshots-manifest.md`) |
-| R5 — UI + test | NFR-4, NFR-6 | `feature/*/components`, CI workflow | `RoomMigrationTest`, `ProductionConfigurationTest`; use the current CI run for test outcome and counts | Screenshots bộ đủ + report test |
+| Extra — AI summary | Summary engines + consent + Android UI | `server/summary`; `app/summary`, `app/feature/summary` | `SummaryApiIT`, `SummaryServiceTest`, `SummaryProviderSelectorTest`, `CitationGuardTest`, `RedactorTest`, `PromptBuilderTest`, `LlmSummaryProviderTest`, `SummaryViewModelTest`, `SummaryRepositoryTest`, `AiConsentRepositoryTest` | Screenshots `stitch-06-ai-summary-sheet.png` (`docs/media/README.md`) & `s4-*`/`s5-*` (`docs/screenshots-manifest.md`) |
+| R5 — UI + test | NFR-4, NFR-6 | `core/ui`, `feature/*`, CI workflow | `RoomMigrationTest`, `ProductionConfigurationTest`; use the current CI run for test outcome and counts | Stitch Dark/Light Mode showcase (`docs/media/README.md`) + report test |
 | R6 — trình bày | — | `docs/` báo cáo, sơ đồ §7/§9, Q&A bank §19 | Diễn tập | Slide + video fallback |
 | R1 — bài nộp | — | repo, `docs/packaging-checklist` | Checklist C1 | Zip artifact |
 

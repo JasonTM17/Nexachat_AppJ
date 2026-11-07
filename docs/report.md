@@ -29,7 +29,7 @@
 10. Kiểm thử và bằng chứng
 11. Cài đặt và trình diễn
 12. Hạn chế và hướng phát triển
-13. Phân công và sử dụng công cụ hỗ trợ
+13. Phân công thành viên
 14. Kết luận
 
 ## 1. Giới thiệu và phạm vi
@@ -43,7 +43,7 @@ chủ đề sáng/tối, lưu tin nhắn gửi khi ngoại tuyến, và cuộc g
 Client Android và server đều được triển khai bằng **Java 17**. Android dùng
 Android XML Views, Material 3, Java Fragments, AndroidX ViewModel, Room,
 RxJava 3 và Retrofit. Server dùng Spring Boot, PostgreSQL và giao thức STOMP
-trên WebSocket cho cập nhật realtime. Kho mã nguồn Android hiện có 386 tệp
+trên WebSocket cho cập nhật realtime. Kho mã nguồn Android hiện có 385 tệp
 Java trong cây mã ứng dụng và kiểm thử.
 
 **Phạm vi chính:** xác thực và hồ sơ; tìm kiếm người dùng, danh bạ; chat trực
@@ -339,7 +339,7 @@ Các giới hạn đã biết và quyết định thiết kế được theo dõ
 [`docs/known-limitations.md`](known-limitations.md) và
 [`docs/architecture.md`](architecture.md).
 
-## 13. Phân công và sử dụng công cụ hỗ trợ
+## 13. Phân công thành viên
 
 | Thành viên | MSSV | Vai trò |
 |---|---|---|
@@ -349,9 +349,8 @@ Các giới hạn đã biết và quyết định thiết kế được theo dõ
 | `{{MEMBER_4}}` | `{{MSSV_4}}` | `{{ROLE_4}}` |
 
 Nhóm cần thay placeholder bằng thông tin đã được các thành viên xác nhận trước
-khi nộp. Công cụ hỗ trợ được dùng để tra cứu, rà soát và cải thiện tài liệu;
-nhóm chịu trách nhiệm kiểm tra nội dung, mã nguồn, kiểm thử và mọi phát biểu
-trong phần bảo vệ.
+khi nộp và chịu trách nhiệm kiểm tra nội dung, mã nguồn, kiểm thử cùng mọi
+phát biểu trong phần bảo vệ.
 
 ## 14. Kết luận
 

@@ -85,9 +85,9 @@ Rubric coverage — the full mapping with test evidence is in
 | R3 — multimedia/files | Image/video/audio/file upload (magic-byte whitelist, 25MB), owner-or-member download authZ, viewer + ACTION_VIEW | `server/attachment`, `app/feature/media` |
 | R3 — i18n | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
 | R3 — rotation/state | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
-| R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/interactions`, `core/ui/ForwardFilter` |
+| R4 — creative | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
 | Extra — voice calls | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
-| Extra — AI catch-up summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary` |
+| Extra — AI catch-up summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
 | R5 — UI + tests | Material 3, ≥48dp touch targets and shared state components; test status is reported by the current CI run | `core/ui`, `server/src/test`, `app/src/test` |
 | R6 — presentation | This README, `docs/`, viva question bank | `docs/viva-questions.md` |
 | R1 — submission | Monorepo + packaging checklist | `docs/packaging-checklist.md` |
@@ -150,7 +150,9 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 
 Design system: tokens, component states and the Stitch→XML layout mapping are in
 [docs/design/design-notes.md](docs/design/design-notes.md); live emulator
-screenshots are in [docs/design/screens/](docs/design/screens/).
+Stitch Dark & Light Mode showcase frames are indexed in
+[docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens/))
+and [docs/design/screens/](docs/design/screens/).
 
 ## Prerequisites
 
@@ -279,6 +281,7 @@ nexachat/
 │  └─ Dockerfile + pom.xml
 ├─ docs/      contracts, security, runbooks, audits, viva bank (index: docs/README.md)
 │  ├─ design/       design tokens + Stitch references + live screenshots
+│  ├─ media/        Stitch Dark & Light Mode showcase frames (docs/media/README.md)
 │  ├─ screenshots/  feature evidence
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN scripts (lan-up.sh / lan-up.ps1, backup.sh)
@@ -294,28 +297,14 @@ The canonical, grouped index is [docs/README.md](docs/README.md). Key entry
 points: [docs/architecture.md](docs/architecture.md) ·
 [docs/api-contract.md](docs/api-contract.md) ·
 [docs/websocket-protocol.md](docs/websocket-protocol.md) ·
+[docs/calls.md](docs/calls.md) ·
+[docs/ai-summary.md](docs/ai-summary.md) ·
 [docs/security.md](docs/security.md) · [docs/rtm.md](docs/rtm.md) ·
+[docs/media/README.md](docs/media/README.md) ·
 [docs/demo-runbook.md](docs/demo-runbook.md) ·
 [docs/viva-questions.md](docs/viva-questions.md) ·
 [docs/known-limitations.md](docs/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).
-
-## Team & AI declaration / Tuyên bố sử dụng AI
-
-AI tools were used to assist design brainstorming, boilerplate generation, and
-test-case suggestions. **Every merged line — AI-assisted or not — has been
-reviewed and can be explained by its owner** (the "explain-back" rule: no code
-is merged unless the merging member can explain it under defense questioning).
-
-| Member | Role | AI-assisted areas | Owner confirms explain-back |
-|---|---|---|---|
-| A — _name_ | Backend Lead (auth, realtime) | _fill in_ | ☐ |
-| B — _name_ | Backend + DevOps (domain, infra) | _fill in_ | ☐ |
-| C — _name_ | Android Lead (chat core) | _fill in_ | ☐ |
-| D — _name_ | Android + QA/Docs (UX, quality) | _fill in_ | ☐ |
-
-Each PR also declares AI involvement in the description (see
-`.github/pull_request_template.md`).
 
 ## Contributing
 

@@ -34,6 +34,8 @@ Every document in the repository, grouped by purpose. Start with
 | [docs/i18n-audit.md](i18n-audit.md) | EN/VI string parity and hardcoded-literal sweep |
 | [docs/rotation-audit.md](rotation-audit.md) | Per-screen state-survival audit |
 | [docs/interactions-demo.md](interactions-demo.md) | Reply/reaction/pin demo script and viva playbook |
+| [docs/media/README.md](media/README.md) | Stitch Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode live showcase and core feature frame index |
+| [docs/media/screens/](media/screens/) | Captured Stitch Dark & Light Mode showcase (`stitch-01..10`) and core workflow PNGs (`01..17`) |
 | [docs/screenshots-manifest.md](screenshots-manifest.md) | Screenshot capture plan and routes/preconditions |
 | [docs/screenshots/](screenshots/) | Captured feature screenshots |
 | [docs/design/screens/](design/screens/) | Live emulator screenshots (EN/VI + dark) |
@@ -68,6 +70,7 @@ Every document in the repository, grouped by purpose. Start with
 | [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states, Stitch→XML layout mapping |
 | [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Stitch design-system specification |
 | [docs/design/stitch/screens/](design/stitch/screens/) | Stitch HTML references and exported screenshots |
+| [docs/media/README.md](media/README.md) | Live emulator Stitch Dark & Light Mode UI showcase (`docs/media/screens/stitch-*.png`) |
 
 ## Contributing
 

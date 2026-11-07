@@ -125,7 +125,7 @@ rate limiting, error handling. Claims cite source files for viva defence.
   (application.yml). A denial drops the frame and reports `RATE_LIMITED` to
   the originating session as a `/user/queue/errors` frame carrying the
   correlated `clientMessageId` (typing carries none)
-  (StompAuthChannelInterceptor.java:166-224).
+  (StompAuthChannelInterceptor.java:188-244).
 - Buckets are Bucket4j greedy-refill token buckets in a bounded in-memory LRU
   map (RateLimitService.java): the budget trickles back continuously instead of
   bursting at a window boundary; at most 10,000 keys are retained and an idle
@@ -171,7 +171,7 @@ rate limiting, error handling. Claims cite source files for viva defence.
   access-token denylist, so an already-issued access JWT stays valid until its
   15-minute expiry (`AuthService.java:138-159`).
 - The prod profile fails fast when datasource credentials are missing or
-  unresolved (`ProductionDataSourceConfiguration.java:21-38`); compose supplies
+  unresolved (`ProductionDataSourceConfiguration.java:16-34`); compose supplies
   `SPRING_DATASOURCE_*` so a fresh clone still boots.
 - Kicked/removed members: after a member removal or self-leave commits,
   `GroupService` revokes existing `/topic/conversations.{uuid}` subscriptions.

@@ -45,10 +45,10 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | GET /api/v1/attachments/{id}/content | Bearer | owner, or member of bound conversation; unbound → owner-only (`AttachmentService.java:161-172`) | `AttachmentFlowIT` member 200 / non-member 403 / unknown 404; `AttachmentServiceTest.loadContent_*` |
 | GET /api/v1/files/** | Bearer | key rejects `..`/`\`/blank (`FileController.java:62-83`); attachment keys → same owner/member rule (`AttachmentService.java:150-154`); avatar keys auth-only | `AttachmentFlowIT` files-path non-member 403; `FileControllerTest` (traversal/backslash/prefix/unauth); `LocalStorageServiceTest.read_*` |
 | POST /api/v1/users/me/avatar | Bearer | self; fixed `avatars` subdir (`AvatarController.java:37-56`) | covered by storage-layer tests |
-| STOMP CONNECT /ws | token in STOMP header (never URL) | `JwtService.parseAccessToken` → `StompUserPrincipal` (`StompAuthChannelInterceptor.java:119-134`) | `StompAuthChannelInterceptorTest.connect_*`; `MessageFlowIT` bad CONNECT dropped |
-| STOMP SUBSCRIBE /topic/conversations.{uuid} | session principal | member check (`StompAuthChannelInterceptor.java:138-162`) | `StompAuthChannelInterceptorTest.subscribe_*` |
+| STOMP CONNECT /ws | token in STOMP header (never URL) | `JwtService.parseAccessToken` → `StompUserPrincipal` (`StompAuthChannelInterceptor.java:137-156`) | `StompAuthChannelInterceptorTest.connect_*`; `MessageFlowIT` bad CONNECT dropped |
+| STOMP SUBSCRIBE /topic/conversations.{uuid} | session principal | member check (`StompAuthChannelInterceptor.java:160-184`) | `StompAuthChannelInterceptorTest.subscribe_*` |
 | STOMP SUBSCRIBE /user/queue/* | session principal | own-queue only by resolver | `StompAuthChannelInterceptorTest.subscribe_userQueue_*` |
-| STOMP SEND /app/conversations/{id}/{messages\|typing\|read} | session principal | member check + per-user buckets (messages 30/10 s, typing 60/10 s), deny-by-default (`StompAuthChannelInterceptor.java:166-224`) | `StompAuthChannelInterceptorTest.send_*`; `MessageFlowIT` non-member SEND → 0 rows |
+| STOMP SEND /app/conversations/{id}/{messages\|typing\|read} | session principal | member check + per-user buckets (messages 30/10 s, typing 60/10 s), deny-by-default (`StompAuthChannelInterceptor.java:188-244`) | `StompAuthChannelInterceptorTest.send_*`; `MessageFlowIT` non-member SEND → 0 rows |
 
 ## 2. Password & token handling facts
 
@@ -71,7 +71,7 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
   `nexachat`, matching docker-compose). Prod profile requires env
   `JWT_SECRET` with no fallback, and `ProductionDataSourceConfiguration`
   fails boot when `spring.datasource.username`/`password` are missing or
-  unresolved (`application-prod.yml`, `ProductionDataSourceConfiguration.java:21-38`).
+  unresolved (`application-prod.yml`, `ProductionDataSourceConfiguration.java:16-34`).
 
 ## 3. Secret scan — PASS
 
@@ -80,7 +80,7 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 - `grep -rniE "BEGIN .*PRIVATE KEY|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|sk-[a-zA-Z0-9]{20,}"`
   over `src/` → **no keys/cloud/GitHub/OpenAI tokens**.
 - Config secrets are env-var references (`application.yml:8, 28`,
-  `application-prod.yml:31, 35`); the only literal secret is the test-scoped
+  `application-prod.yml:41, 60`); the only literal secret is the test-scoped
   `application-it.yml` jwt secret, clearly marked `it-only…not-for-prod`.
 
 ## 4. Error envelope — no stack traces — PASS
@@ -88,10 +88,10 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 - One envelope `{"error":{"code","message","details?"}}` everywhere
   (`ErrorResponse`, `GlobalExceptionHandler.java:38-131`,
   `AuthSecurityErrorHandler.java:35-63`).
-- The catch-all handler logs the stack server-side and returns only
-  `INTERNAL_ERROR` (`GlobalExceptionHandler.java:125-131`);
-  `IllegalArgumentException` messages — which may embed attacker input — are
-  logged, never echoed (`GlobalExceptionHandler.java:118-123`).
+- The catch-all handler logs the exception class only (no exception message or
+  stack trace) and returns only `INTERNAL_ERROR`
+  (`GlobalExceptionHandler.java:125-131`); `IllegalArgumentException` also logs
+  only the exception class (`GlobalExceptionHandler.java:118-123`).
 - `MaxUploadSizeExceededException` → 413 `FILE_TOO_LARGE`
   (`GlobalExceptionHandler.java:99-103`); validation errors carry an
   insertion-ordered `details` map (`GlobalExceptionHandler.java:43-61`).
@@ -105,8 +105,8 @@ via `JwtAuthFilter` + `AuthSecurityErrorHandler.java:35-63`.
 | POST /api/v1/auth/refresh | per-IP | 30 / 5 min | `RateLimitInterceptor.java:40` |
 | GET /api/v1/users/search | per-user | 30 / 1 min | `UserSearchRateLimitInterceptor.java:45-47` |
 | POST /api/v1/contacts | per-user | 30 / 1 min | `ContactAddRateLimitInterceptor.java:29-31` |
-| STOMP SEND /app/conversations/{id}/messages | per-user | 30 / 10 s | `StompAuthChannelInterceptor.java:205-210` |
-| STOMP SEND /app/conversations/{id}/typing | per-user | 60 / 10 s | `StompAuthChannelInterceptor.java:211-213` |
+| STOMP SEND /app/conversations/{id}/messages | per-user | 30 / 10 s | `StompAuthChannelInterceptor.java:205-208` |
+| STOMP SEND /app/conversations/{id}/typing | per-user | 60 / 10 s | `StompAuthChannelInterceptor.java:209-212` |
 
 Registration wiring: `WebConfig.java:33-40`. `X-Forwarded-For` deliberately
 untrusted (`RateLimitInterceptor.java:27-29`); post-auth buckets key on the
@@ -120,14 +120,15 @@ Grep of every `log.*` call in `src/main/java/` for
 `password|token|secret|credential|authorization`: only metadata is ever
 logged — user/conversation/message ids, event names, and exception *types*:
 
-- `AuthService.java:85,123,160` — user id + event (`reuse`/`expiry` keyword,
-  never the token value).
-- `StompAuthChannelInterceptor.java:97,104,127,135,155,160` — rejection
-  reasons and ids; line 104 logs the `JwtException` *message* (e.g.
-  "signature invalid"), not the token.
-- `GlobalExceptionHandler.java:120,128` — exception class + stack (server side).
-- `WsMessageController.java:112-116` — STOMP command + destination +
-  exception; the error frame to the client carries only the code.
+- `AuthService.java:85,124,161` — event name and `reuse`/`expiry` keyword (no
+  token value or phone number).
+- `StompAuthChannelInterceptor.java:140,147,151,174,182,202,222,227,242` —
+  rejection reasons and rate-limited action name (no token or exception message).
+- `GlobalExceptionHandler.java:120,128` — exception simple class name only (no
+  message or stack trace).
+- `WsMessageController.java:111-123` — fixed warning for payload validation or
+  exception simple class name for unexpected failures; the error frame to the
+  client carries only the code.
 - No `System.out` / print of request bodies, headers, or credentials anywhere.
 
 ## 7. Negative-test coverage matrix (phase-12 audit)
@@ -157,8 +158,10 @@ logged — user/conversation/message ids, event names, and exception *types*:
   (`network_security_config.xml`; `usesCleartextTraffic="false"`). Tokens sit
   in `TokenStore` (RxDataStore) encrypted with `AES/GCM/NoPadding` via
   AndroidKeyStore (`AesGcmTokenCipher.java`). Production needs TLS and WSS.
-- Kicked members keep an existing topic SUBSCRIBE until reconnect —
-  membership is enforced at CONNECT/SUBSCRIBE/SEND only.
+- Kicked/removed members: after removal or self-leave commits, `GroupService`
+  revokes existing `/topic/conversations.{uuid}` subscriptions, and
+  `StompConversationMembershipOutboundInterceptor` rechecks current membership
+  on every outbound conversation-topic frame.
 - Dev-grade CORS `*` and STOMP `setAllowedOriginPatterns("*")` — narrow per
   environment before public deploy.
 - No E2E encryption; TLS terminates at the production edge.

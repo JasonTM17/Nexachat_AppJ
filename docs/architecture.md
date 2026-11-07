@@ -3,9 +3,10 @@
 > Current implementation view: Android app (Java 17, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot modular monolith → PostgreSQL 16
-> + file volume. Call signaling shares STOMP; the Java Android call core defines
-> a media boundary, while this document does not claim a shipped call screen or
-> concrete media engine.
+> + file volume. Call signaling shares STOMP (`server/call`,
+> `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
+> (`CallActivity`, `IncomingCallActivity`) and WebRTC audio (`WebRtcMediaEngine`);
+> see [docs/calls.md](calls.md).
 
 ## 1. Container diagram (§7.1 — sơ đồ tổng)
 
