@@ -1,6 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<merge xmlns:android="http://schemas.android.com/apk/res/android">
-    <ImageView android:id="@+id/errorIcon" android:layout_width="48dp" android:layout_height="48dp" android:importantForAccessibility="no" android:src="@drawable/ic_warning"/>
-    <TextView android:id="@+id/errorMessage" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorError"/>
-    <com.google.android.material.button.MaterialButton android:id="@+id/errorRetry" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:minHeight="@dimen/min_touch_target" android:text="@string/action_retry" android:visibility="gone"/>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <ImageView
+        android:id="@+id/errorIcon"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center_horizontal"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_warning"
+        android:tint="?attr/colorError" />
+    <TextView
+        android:id="@+id/errorMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceBodyLarge"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/errorRetry"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/action_retry"
+        android:visibility="gone"
+        app:cornerRadius="12dp" />
 </merge>
