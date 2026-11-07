@@ -149,10 +149,16 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         ChipGroup group = binding.summaryScopeChips;
         group.removeAllViews();
         Context context = requireContext();
+        float density = context.getResources().getDisplayMetrics().density;
         for (SummaryScope scope : SummaryScope.values()) {
             Chip chip = new Chip(context);
             chip.setTag(scope);
             chip.setCheckable(true);
+            chip.setCheckedIconVisible(false);
+            chip.setChipBackgroundColorResource(R.color.stitch_chip_bg_tint);
+            chip.setChipStrokeColorResource(R.color.stitch_chip_stroke_color);
+            chip.setChipStrokeWidth(density);
+            chip.setTextColor(ContextCompat.getColorStateList(context, R.color.stitch_chip_text_color));
             chip.setText(scopeLabel(scope));
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof SummaryScope selected)) {

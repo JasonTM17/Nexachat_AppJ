@@ -117,8 +117,12 @@
                 android:layout_height="wrap_content"
                 android:checked="true"
                 android:text="@string/summary_badge_local"
+                android:textColor="@color/stitch_chip_text_color"
                 app:checkedIconVisible="false"
-                app:chipCornerRadius="18dp" />
+                app:chipBackgroundColor="@color/stitch_chip_bg_tint"
+                app:chipCornerRadius="18dp"
+                app:chipStrokeColor="@color/stitch_chip_stroke_color"
+                app:chipStrokeWidth="1dp" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/summaryModeAi"
@@ -126,8 +130,12 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/summary_badge_ai"
+                android:textColor="@color/stitch_chip_text_color"
                 app:checkedIconVisible="false"
-                app:chipCornerRadius="18dp" />
+                app:chipBackgroundColor="@color/stitch_chip_bg_tint"
+                app:chipCornerRadius="18dp"
+                app:chipStrokeColor="@color/stitch_chip_stroke_color"
+                app:chipStrokeWidth="1dp" />
         </com.google.android.material.chip.ChipGroup>
 
         <LinearLayout

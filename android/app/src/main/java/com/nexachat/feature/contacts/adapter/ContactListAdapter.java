@@ -55,18 +55,30 @@ public final class ContactListAdapter extends ListAdapter<Contact, ContactListAd
     static final class Holder extends RecyclerView.ViewHolder {
         private final AvatarView avatar;
         private final TextView name;
+        private final TextView phone;
 
         Holder(@NonNull View itemView) {
             super(itemView);
             avatar = itemView.findViewById(R.id.avatar);
             name = itemView.findViewById(R.id.name);
+            phone = itemView.findViewById(R.id.phone);
         }
 
         void bind(@NonNull Contact contact, @NonNull Listener listener) {
             String label = contact.getPrimaryLabel();
             name.setText(label);
+            if (phone != null) {
+                String phoneText = contact.getPhone();
+                if (phoneText != null && !phoneText.isBlank()) {
+                    phone.setText(phoneText);
+                    phone.setVisibility(View.VISIBLE);
+                } else {
+                    phone.setVisibility(View.GONE);
+                }
+            }
             avatar.setName(label);
             avatar.setAvatarUrl(contact.getAvatarUrl());
+            avatar.setOnlineStatus(Boolean.TRUE);
             itemView.setOnClickListener(v -> listener.onContactClick(contact.getUserId()));
         }
     }
