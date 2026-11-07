@@ -33,6 +33,15 @@
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         xmlns:app="http://schemas.android.com/apk/res-auto" />
 
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/addContactFab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="@dimen/space_lg"
+        android:contentDescription="@string/action_add_contact"
+        app:srcCompat="@drawable/ic_add" />
+
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"
         android:layout_width="match_parent"

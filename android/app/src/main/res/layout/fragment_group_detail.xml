@@ -51,6 +51,22 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:nestedScrollingEnabled="false" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/addMemberButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/action_add_member"
+                android:visibility="gone" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/leaveGroupButton"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/action_leave_group"
+                android:textColor="?attr/colorError" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
