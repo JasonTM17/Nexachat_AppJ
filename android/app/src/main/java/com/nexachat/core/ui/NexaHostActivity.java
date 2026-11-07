@@ -1,6 +1,7 @@
 package com.nexachat.core.ui;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.view.View;
 import androidx.annotation.NonNull;
@@ -9,7 +10,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
@@ -32,6 +35,7 @@ public class NexaHostActivity extends AppCompatActivity {
 
     private final CompositeDisposable disposables = new CompositeDisposable();
     private boolean pendingLogoutNavigation;
+    @Nullable private ThemeMode currentThemeMode;
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -42,6 +46,7 @@ public class NexaHostActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_nexa_host);
+        updateSystemBarAppearance();
 
         View navHost = findViewById(R.id.nav_host);
         if (navHost != null) {
@@ -70,6 +75,7 @@ public class NexaHostActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        updateSystemBarAppearance();
         if (pendingLogoutNavigation) {
             navigateToLoginIfPossible();
         }
@@ -82,6 +88,7 @@ public class NexaHostActivity extends AppCompatActivity {
     }
 
     private void applyThemeMode(@Nullable ThemeMode mode) {
+        currentThemeMode = mode;
         int nightMode;
         if (mode == null || mode == ThemeMode.SYSTEM) {
             nightMode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM;
@@ -91,6 +98,25 @@ public class NexaHostActivity extends AppCompatActivity {
             nightMode = AppCompatDelegate.MODE_NIGHT_YES;
         }
         AppCompatDelegate.setDefaultNightMode(nightMode);
+        updateSystemBarAppearance();
+    }
+
+    private void updateSystemBarAppearance() {
+        boolean isDark;
+        if (currentThemeMode == ThemeMode.DARK) {
+            isDark = true;
+        } else if (currentThemeMode == ThemeMode.LIGHT) {
+            isDark = false;
+        } else {
+            int nightMode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+            isDark = (nightMode == Configuration.UI_MODE_NIGHT_YES);
+        }
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        if (controller != null) {
+            controller.setAppearanceLightStatusBars(!isDark);
+            controller.setAppearanceLightNavigationBars(!isDark);
+        }
     }
 
     private void onSessionEvent(@NonNull SessionEvents.Event event) {

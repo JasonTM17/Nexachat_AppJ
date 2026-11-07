@@ -80,4 +80,13 @@
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">@dimen/corner_xl</item>
     </style>
+
+    <style name="Widget.NexaChat.Chip.Filter" parent="Widget.Material3.Chip.Filter">
+        <item name="checkedIconVisible">false</item>
+        <item name="chipCornerRadius">20dp</item>
+        <item name="chipBackgroundColor">@color/stitch_chip_bg_tint</item>
+        <item name="android:textColor">@color/stitch_chip_text_color</item>
+        <item name="chipStrokeColor">@color/stitch_chip_stroke_color</item>
+        <item name="chipStrokeWidth">1dp</item>
+    </style>
 </resources>
