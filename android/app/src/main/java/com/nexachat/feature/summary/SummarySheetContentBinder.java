@@ -1,0 +1,221 @@
+package com.nexachat.feature.summary;
+
+import android.content.Context;
+import android.graphics.Paint;
+import android.text.TextUtils;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.chip.Chip;
+import com.nexachat.R;
+import com.nexachat.feature.summary.adapter.SummaryCitationAdapter;
+import com.nexachat.feature.summary.adapter.SummaryCitationItem;
+import com.nexachat.feature.summary.adapter.SummaryCitationLabels;
+import com.nexachat.summary.SummaryActionItem;
+import com.nexachat.summary.SummaryItem;
+import com.nexachat.summary.SummaryResponse;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/** Inflates structured summary sections into a vertical container. */
+public final class SummarySheetContentBinder {
+
+    public interface OnCitationClickListener {
+        void onCitationClick(@NonNull String messageId);
+    }
+
+    private final Context context;
+    private final Map<String, Long> messageSeqMap;
+    private final Set<String> localMessageIds;
+    private final OnCitationClickListener citationListener;
+    private final HashMap<String, Boolean> actionChecked = new HashMap<>();
+
+    public SummarySheetContentBinder(
+            @NonNull Context context,
+            @NonNull Map<String, Long> messageSeqMap,
+            @NonNull Set<String> localMessageIds,
+            @NonNull OnCitationClickListener citationListener
+    ) {
+        this.context = context;
+        this.messageSeqMap = messageSeqMap;
+        this.localMessageIds = localMessageIds;
+        this.citationListener = citationListener;
+    }
+
+    public void bind(@NonNull LinearLayout container, @NonNull SummaryResponse summary) {
+        container.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(context);
+
+        if (!summary.getOverview().trim().isEmpty()) {
+            addSectionHeader(container, R.string.summary_section_overview, R.drawable.ic_info);
+            TextView overview = new TextView(context);
+            overview.setText(summary.getOverview());
+            overview.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+            int pad = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
+            overview.setPadding(pad, pad, pad, pad);
+            overview.setBackgroundColor(ContextCompat.getColor(context, R.color.bubble_other));
+            container.addView(overview);
+        }
+
+        appendItems(container, inflater, R.string.summary_section_key_points,
+                R.drawable.ic_format_list_bulleted, summary.getKeyPoints());
+        appendItems(container, inflater, R.string.summary_section_decisions,
+                R.drawable.ic_check_circle, summary.getDecisions());
+        appendActionItems(container, inflater, summary.getActionItems());
+        appendItems(container, inflater, R.string.summary_section_questions,
+                R.drawable.ic_help_outline, summary.getQuestions());
+
+        if (!summary.getTopics().isEmpty()) {
+            addSectionHeader(container, R.string.summary_section_topics, 0);
+            LinearLayout topicRow = new LinearLayout(context);
+            topicRow.setOrientation(LinearLayout.HORIZONTAL);
+            topicRow.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            for (String topic : summary.getTopics()) {
+                Chip chip = new Chip(context);
+                chip.setText("#" + topic);
+                chip.setCheckable(false);
+                chip.setClickable(false);
+                topicRow.addView(chip);
+            }
+            container.addView(topicRow);
+        }
+    }
+
+    private void appendItems(
+            LinearLayout container,
+            LayoutInflater inflater,
+            int titleRes,
+            int iconRes,
+            List<SummaryItem> items
+    ) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        addSectionHeader(container, titleRes, iconRes);
+        for (SummaryItem item : items) {
+            View row = inflater.inflate(R.layout.item_summary_bullet_row, container, false);
+            TextView text = row.findViewById(R.id.summaryBulletText);
+            text.setText(item.getText());
+            RecyclerView citations = row.findViewById(R.id.summaryBulletCitations);
+            bindCitations(citations, item.getMessageIds());
+            container.addView(row);
+        }
+    }
+
+    private void appendActionItems(
+            LinearLayout container,
+            LayoutInflater inflater,
+            List<SummaryActionItem> items
+    ) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        addSectionHeader(container, R.string.summary_section_action_items, R.drawable.ic_checklist);
+        for (SummaryActionItem action : items) {
+            View row = inflater.inflate(R.layout.item_summary_action_row, container, false);
+            String key = SummaryActionKeyHelper.getActionItemKey(action);
+            CheckBox check = row.findViewById(R.id.summaryActionCheck);
+            TextView text = row.findViewById(R.id.summaryActionText);
+            TextView meta = row.findViewById(R.id.summaryActionMeta);
+            text.setText(action.getText());
+            boolean checked = Boolean.TRUE.equals(actionChecked.get(key));
+            check.setChecked(checked);
+            text.setPaintFlags(checked
+                    ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
+                    : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+            View toggleTarget = row;
+            toggleTarget.setOnClickListener(v -> {
+                boolean next = !check.isChecked();
+                check.setChecked(next);
+                actionChecked.put(key, next);
+                text.setPaintFlags(next
+                        ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
+                        : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+            });
+            check.setOnCheckedChangeListener((button, isChecked) -> {
+                if (!button.isPressed()) {
+                    return;
+                }
+                actionChecked.put(key, isChecked);
+                text.setPaintFlags(isChecked
+                        ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
+                        : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+            });
+            String tag = buildActionTag(action);
+            if (!TextUtils.isEmpty(tag)) {
+                meta.setText(tag);
+                meta.setVisibility(View.VISIBLE);
+            }
+            RecyclerView citations = row.findViewById(R.id.summaryActionCitations);
+            bindCitations(citations, action.getMessageIds());
+            container.addView(row);
+        }
+    }
+
+    private static String buildActionTag(SummaryActionItem action) {
+        StringBuilder builder = new StringBuilder();
+        if (!TextUtils.isEmpty(action.getOwnerUserId())) {
+            String owner = action.getOwnerUserId().trim();
+            builder.append('@').append(owner.substring(0, Math.min(6, owner.length())));
+        }
+        if (!TextUtils.isEmpty(action.getDueHint())) {
+            if (builder.length() > 0) {
+                builder.append(" · ");
+            }
+            builder.append(action.getDueHint().trim());
+        }
+        return builder.toString();
+    }
+
+    private void addSectionHeader(LinearLayout container, int titleRes, int iconRes) {
+        TextView header = new TextView(context);
+        header.setText(titleRes);
+        header.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge);
+        header.setPadding(0, context.getResources().getDimensionPixelSize(R.dimen.space_md), 0, 0);
+        if (iconRes != 0) {
+            header.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0);
+            header.setCompoundDrawablePadding(
+                    context.getResources().getDimensionPixelSize(R.dimen.space_xs));
+        }
+        container.addView(header);
+    }
+
+    private void bindCitations(RecyclerView list, List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            list.setVisibility(View.GONE);
+            return;
+        }
+        list.setVisibility(View.VISIBLE);
+        list.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
+        SummaryCitationAdapter adapter = new SummaryCitationAdapter(messageId -> {
+            citationListener.onCitationClick(messageId);
+        });
+        list.setAdapter(adapter);
+        List<SummaryCitationItem> items = new ArrayList<>();
+        for (String messageId : messageIds) {
+            if (messageId == null) {
+                continue;
+            }
+            Long seq = messageSeqMap.get(messageId);
+            boolean jumpable = com.nexachat.core.ui.SummaryUiRules.isCitationJumpable(
+                    messageId, localMessageIds);
+            String label = SummaryCitationLabels.chipLabel(seq, messageId);
+            String chipText = jumpable
+                    ? context.getString(R.string.summary_citation_chip, label)
+                    : context.getString(R.string.summary_citation_unavailable);
+            items.add(new SummaryCitationItem(messageId, chipText, jumpable));
+        }
+        adapter.submitList(items);
+    }
+}

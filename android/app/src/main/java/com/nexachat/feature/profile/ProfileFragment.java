@@ -6,8 +6,10 @@ import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -24,14 +26,20 @@ import com.nexachat.core.ui.ThemeMapper;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
+import javax.inject.Inject;
 
 @AndroidEntryPoint
 public final class ProfileFragment extends Fragment {
+    @Inject
+    AiConsentRepository consentRepository;
+
     private FragmentProfileBinding binding;
     private ProfileViewModel viewModel;
     private AppSettingsViewModel settingsViewModel;
     private ActivityResultLauncher<String> avatarPicker;
+    private boolean syncingAiConsent;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -58,6 +66,19 @@ public final class ProfileFragment extends Fragment {
         binding.themeRow.setTitle(getString(R.string.settings_theme_title));
         binding.themeRow.setOnClickListener(v -> showThemeDialog());
         binding.showPresence.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowPresence(checked); });
+        consentRepository.refresh();
+        consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), enabled -> {
+            syncingAiConsent = true;
+            binding.aiSummaryConsent.setChecked(Boolean.TRUE.equals(enabled));
+            syncingAiConsent = false;
+        });
+        consentRepository.error().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.settings_consent_update_failed, Toast.LENGTH_SHORT).show();
+            }
+        });
+        binding.aiConsentRow.setOnClickListener(v -> binding.aiSummaryConsent.toggle());
+        binding.aiSummaryConsent.setOnCheckedChangeListener(this::onAiConsentToggled);
         binding.logoutRow.setTitle(getString(R.string.action_logout));
         binding.logoutRow.setOnClickListener(v -> new AlertDialog.Builder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d,w) -> viewModel.logout()).show());
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
@@ -111,6 +132,29 @@ public final class ProfileFragment extends Fragment {
         }));
         dialog.show();
     }
+    private void onAiConsentToggled(CompoundButton button, boolean checked) {
+        if (syncingAiConsent || !button.isPressed()) {
+            return;
+        }
+        if (checked) {
+            syncingAiConsent = true;
+            button.setChecked(false);
+            syncingAiConsent = false;
+            showAiConsentDialog();
+        } else {
+            consentRepository.setConsent(false);
+        }
+    }
+
+    private void showAiConsentDialog() {
+        new AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_ai_consent_title)
+                .setMessage(R.string.dialog_ai_consent_message)
+                .setNegativeButton(R.string.dialog_ai_consent_dismiss, null)
+                .setPositiveButton(R.string.dialog_ai_consent_confirm, (d, w) -> consentRepository.setConsent(true))
+                .show();
+    }
+
     private EditText passwordInput(int hint) { EditText input = new EditText(requireContext()); input.setHint(hint); input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); return input; }
     @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
 
