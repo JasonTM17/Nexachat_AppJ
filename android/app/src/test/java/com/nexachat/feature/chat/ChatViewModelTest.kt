@@ -5,7 +5,9 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.nexachat.MainDispatcherRule
 import com.nexachat.core.common.ApiError
+import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.dto.AttachmentDto
+import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.dto.MessagePageDto
 import com.nexachat.core.network.stomp.RealtimeSession
 import com.nexachat.core.common.Result
@@ -153,7 +155,13 @@ class ChatViewModelTest {
 
         assertEquals("", viewModel.uiState.value.input)
         coVerify(exactly = 1) {
-            messageRepository.send(CONVERSATION_ID, "xin chào", null)
+            messageRepository.send(
+                CONVERSATION_ID,
+                "xin chào",
+                null,
+                MessageDto.TYPE_TEXT,
+                emptyList(),
+            )
         }
     }
 
@@ -163,7 +171,7 @@ class ChatViewModelTest {
 
         viewModel.send()
 
-        coVerify(exactly = 0) { messageRepository.send(any(), any(), any()) }
+        coVerify(exactly = 0) { messageRepository.send(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -326,11 +334,11 @@ class ChatViewModelTest {
 
         coVerify(exactly = 1) {
             messageRepository.send(
-                conversationId = CONVERSATION_ID,
-                content = "pic.png",
-                replyToId = null,
-                type = "IMAGE",
-                attachments = listOf(ATTACHMENT),
+                CONVERSATION_ID,
+                "pic.png",
+                null,
+                "IMAGE",
+                listOf(ATTACHMENT),
             )
         }
         // Upload finished — the strip row is gone.
@@ -357,11 +365,11 @@ class ChatViewModelTest {
 
         coVerify(exactly = 1) {
             messageRepository.send(
-                conversationId = CONVERSATION_ID,
-                content = "clip.mp4",
-                replyToId = null,
-                type = "VIDEO",
-                attachments = listOf(video),
+                CONVERSATION_ID,
+                "clip.mp4",
+                null,
+                "VIDEO",
+                listOf(video),
             )
         }
     }
@@ -444,7 +452,13 @@ class ChatViewModelTest {
         runCurrent()
 
         coVerify(exactly = 1) {
-            messageRepository.send(CONVERSATION_ID, "đồng ý", "m-5")
+            messageRepository.send(
+                CONVERSATION_ID,
+                "đồng ý",
+                "m-5",
+                MessageDto.TYPE_TEXT,
+                emptyList(),
+            )
         }
         assertEquals(null, viewModel.uiState.value.replyTarget)
     }
@@ -684,7 +698,13 @@ class ChatViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 1) {
-            messageRepository.send(TARGET_CONVERSATION_ID, "hello m-1", null)
+            messageRepository.send(
+                TARGET_CONVERSATION_ID,
+                "hello m-1",
+                null,
+                MessageDto.TYPE_TEXT,
+                emptyList(),
+            )
         }
     }
 
@@ -707,7 +727,7 @@ class ChatViewModelTest {
         viewModel.forwardMessage("cm-1", TARGET_CONVERSATION_ID)
         runCurrent()
 
-        coVerify(exactly = 0) { messageRepository.send(any(), any(), any()) }
+        coVerify(exactly = 0) { messageRepository.send(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -727,7 +747,7 @@ class ChatViewModelTest {
         runCurrent()
 
         coVerify(exactly = 1) {
-            messageRepository.searchMessages(CONVERSATION_ID, "hi", null)
+            messageRepository.searchMessages(CONVERSATION_ID, "hi", null, MessageApi.DEFAULT_SEARCH_LIMIT)
         }
     }
 
@@ -757,10 +777,15 @@ class ChatViewModelTest {
         )
         val second = listOf(message(id = "m-7", seq = 7, mine = true))
         coEvery {
-            messageRepository.searchMessages(CONVERSATION_ID, "hi", null)
+            messageRepository.searchMessages(CONVERSATION_ID, "hi", null, MessageApi.DEFAULT_SEARCH_LIMIT)
         } returns Result.Success(MessageSearchResult(first, hasMore = true, nextBeforeSeq = 8))
         coEvery {
-            messageRepository.searchMessages(CONVERSATION_ID, "hi", 8L)
+            messageRepository.searchMessages(
+                CONVERSATION_ID,
+                "hi",
+                8L,
+                MessageApi.DEFAULT_SEARCH_LIMIT,
+            )
         } returns Result.Success(MessageSearchResult(second, hasMore = false, nextBeforeSeq = null))
 
         viewModel.search("hi")

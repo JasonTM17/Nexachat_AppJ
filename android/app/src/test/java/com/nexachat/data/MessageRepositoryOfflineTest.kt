@@ -106,17 +106,17 @@ class MessageRepositoryOfflineTest {
             Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")
 
         repository = MessageRepository(
-            messageApi = unreachableApi(),
-            messageDao = messageDao,
-            conversationDao = conversationDao,
-            outboxDao = outboxDao,
-            reactionDao = reactionDao,
-            pinDao = pinDao,
-            session = session,
-            tokenStore = tokenStore,
-            sessionEvents = sessionEvents,
-            moshi = moshi,
-            scope = CoroutineScope(dispatcher),
+            unreachableApi(),
+            messageDao,
+            conversationDao,
+            outboxDao,
+            reactionDao,
+            pinDao,
+            session,
+            tokenStore,
+            sessionEvents,
+            moshi,
+            CoroutineScope(dispatcher),
         )
         dispatcher.scheduler.runCurrent()
     }

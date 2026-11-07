@@ -31,6 +31,7 @@ import com.nexachat.core.storage.TokenStore
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import java.util.UUID
+import kotlin.jvm.JvmOverloads
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -153,8 +154,7 @@ sealed interface MessageJump {
  * rendered directly — so dedup by message id (IGNORE) and clientMessageId is
  * the load-bearing rule of §11.3.3.
  */
-@Singleton
-class MessageRepository @Inject constructor(
+internal class MessageRepositoryCore(
     private val messageApi: MessageApi,
     private val messageDao: MessageDao,
     private val conversationDao: ConversationDao,
@@ -308,6 +308,7 @@ class MessageRepository @Inject constructor(
     // ---- history ----
 
     /** Fetches one history page and writes it through to Room. */
+    @JvmOverloads
     suspend fun refreshHistory(
         conversationId: String,
         beforeSeq: Long? = null,
@@ -335,6 +336,7 @@ class MessageRepository @Inject constructor(
      * [maxPages]; each page goes through the same write-through as normal
      * paging, so the list re-renders the target as soon as it lands.
      */
+    @JvmOverloads
     suspend fun loadUntilLoaded(
         conversationId: String,
         messageId: String,
@@ -592,6 +594,7 @@ class MessageRepository @Inject constructor(
      * through to Room (same path as history) so a selected hit is already
      * loaded when the screen calls [loadUntilLoaded]/jump.
      */
+    @JvmOverloads
     suspend fun searchMessages(
         conversationId: String,
         query: String,
@@ -660,6 +663,7 @@ class MessageRepository @Inject constructor(
      * `attachmentIds` wire field, and the pending bubble renders the same
      * attachment model a SENT row would.
      */
+    @JvmOverloads
     suspend fun send(
         conversationId: String,
         content: String,

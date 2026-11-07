@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import com.nexachat.core.common.ApiError
 import com.nexachat.core.common.Result
+import com.nexachat.core.network.MessageApi
 import com.nexachat.core.network.dto.AttachmentDto
 import com.nexachat.core.network.dto.MessageDto
 import com.nexachat.core.network.stomp.RealtimeSession
@@ -84,7 +85,7 @@ internal class ChatViewModelSupport(
         scope.launch { collectUiState() }
         scope.launch {
             messageRepository.openConversation(conversationId)
-            when (val result = messageRepository.refreshHistory(conversationId)) {
+            when (val result = messageRepository.refreshHistory(conversationId, null)) {
                 is Result.Success -> hasMore.value = result.value.hasMore
                 is Result.Failure -> error.value = result.error
             }
@@ -158,7 +159,13 @@ internal class ChatViewModelSupport(
         savedStateHandle[ChatViewModel.KEY_INPUT] = ""
         replyTarget.value = null
         scope.launch {
-            messageRepository.send(conversationId, text, replyToId = replyToId)
+            messageRepository.send(
+                conversationId,
+                text,
+                replyToId,
+                MessageDto.TYPE_TEXT,
+                emptyList(),
+            )
         }
     }
 
@@ -168,7 +175,7 @@ internal class ChatViewModelSupport(
 
     fun jumpToMessage(messageId: String) {
         scope.launch {
-            when (val jump = messageRepository.loadUntilLoaded(conversationId, messageId)) {
+            when (val jump = messageRepository.loadUntilLoaded(conversationId, messageId, 20)) {
                 MessageJump.Found -> jumpTargetsFlow.emit(messageId)
                 MessageJump.NotFound -> error.value = ApiError.Unknown(ChatViewModel.ERROR_MESSAGE_GONE)
                 is MessageJump.Failed -> error.value = jump.error
@@ -205,9 +212,11 @@ internal class ChatViewModelSupport(
         if (content.isEmpty()) return
         scope.launch {
             messageRepository.send(
-                conversationId = targetConversationId,
-                content = content,
-                type = MessageDto.TYPE_TEXT,
+                targetConversationId,
+                content,
+                null,
+                MessageDto.TYPE_TEXT,
+                emptyList(),
             )
             actionEventsFlow.tryEmit(
                 ChatViewModel.ChatActionEvent.MessageForwarded(targetConversationId),
@@ -248,7 +257,12 @@ internal class ChatViewModelSupport(
 
     private suspend fun performSearch(query: String, beforeSeq: Long?, append: Boolean) {
         mutableSearchState.update { it.copy(loading = true, error = null) }
-        when (val result = messageRepository.searchMessages(conversationId, query, beforeSeq)) {
+        when (val result = messageRepository.searchMessages(
+            conversationId,
+            query,
+            beforeSeq,
+            MessageApi.DEFAULT_SEARCH_LIMIT,
+        )) {
             is Result.Success -> {
                 if (mutableSearchState.value.query.trim() != query) return
                 val page = result.value
@@ -316,15 +330,16 @@ internal class ChatViewModelSupport(
                             updatePending { rows -> rows.filterNot { it.localId == localId } }
                             uploadJobs.remove(localId)
                             messageRepository.send(
-                                conversationId = conversationId,
-                                content = local.displayName
+                                conversationId,
+                                local.displayName
                                     ?: event.attachment.originalName
                                     ?: local.type,
-                                type = AttachmentDto.messageTypeForMime(
+                                null,
+                                AttachmentDto.messageTypeForMime(
                                     event.attachment.mimeType?.takeIf(String::isNotBlank)
                                         ?: local.mimeType,
                                 ),
-                                attachments = listOf(event.attachment),
+                                listOf(event.attachment),
                             )
                         }
                         is AttachmentUploadEvent.Failed -> updatePending { rows ->
@@ -368,7 +383,7 @@ internal class ChatViewModelSupport(
         }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                when (val result = messageRepository.refreshHistory(conversationId, beforeSeq = oldest)) {
+                when (val result = messageRepository.refreshHistory(conversationId, oldest)) {
                     is Result.Success -> hasMore.value = result.value.hasMore
                     is Result.Failure -> error.value = result.error
                 }

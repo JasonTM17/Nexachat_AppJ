@@ -412,17 +412,17 @@ class MessageRepositoryTest {
         every { messageApi.markRead(any(), any()) } returns Response.success<Void>(204, null).asCall()
 
         repository = MessageRepository(
-            messageApi = messageApi,
-            messageDao = messageDao,
-            conversationDao = conversationDao,
-            outboxDao = outboxDao,
-            reactionDao = reactionDao,
-            pinDao = pinDao,
-            session = session,
-            tokenStore = tokenStore,
-            sessionEvents = sessionEvents,
-            moshi = moshi,
-            scope = CoroutineScope(dispatcher),
+            messageApi,
+            messageDao,
+            conversationDao,
+            outboxDao,
+            reactionDao,
+            pinDao,
+            session,
+            tokenStore,
+            sessionEvents,
+            moshi,
+            CoroutineScope(dispatcher),
         )
         // Start the repository's background collectors deterministically.
         dispatcher.scheduler.runCurrent()
@@ -791,8 +791,9 @@ class MessageRepositoryTest {
         repository.send(
             CONVERSATION_ID,
             "pic.png",
-            type = "IMAGE",
-            attachments = listOf(attachment),
+            null,
+            "IMAGE",
+            listOf(attachment),
         )
 
         val row = outboxDao.rows.values.single()
@@ -1506,7 +1507,7 @@ class MessageRepositoryTest {
         every { messageApi.getMessages(any(), any(), any(), any()) } returns
             Response.success(page(hasMore = true, dto(storedMessage("m-x", seq = 1)))).asCall()
 
-        val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-gone", maxPages = 3)
+        val jump = repository.loadUntilLoaded(CONVERSATION_ID, "m-gone", 3)
 
         assertEquals(MessageJump.NotFound, jump)
         verify(exactly = 3) { messageApi.getMessages(any(), any(), any(), any()) }
