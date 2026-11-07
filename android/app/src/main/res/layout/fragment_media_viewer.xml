@@ -45,8 +45,10 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorSurface"
+        android:elevation="4dp"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:navigationIconTint="?attr/colorOnSurface"
+        app:titleTextAppearance="?attr/textAppearanceTitleMedium"
         app:titleTextColor="?attr/colorOnSurface" />
 </FrameLayout>
