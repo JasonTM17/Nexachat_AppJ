@@ -222,7 +222,7 @@ class ContactsViewModelTest {
             cancelAndIgnoreRemainingEvents()
         }
         coVerify(exactly = 1) {
-            repository.openDirectConversation(userId = "u-1", phone = "+84912345678")
+            repository.openDirectConversation("u-1", "+84912345678")
         }
     }
 

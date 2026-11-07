@@ -181,10 +181,7 @@ internal suspend fun contactsMessageSelected(
 ) {
     uiState.update { it.withDetailBusy(true).withDetailError(null) }
     when (
-        val result = repository.openDirectConversation(
-            userId = user.id,
-            phone = user.phone,
-        )
+        val result = repository.openDirectConversation(user.id, user.phone)
     ) {
         is Result.Success -> {
             uiState.update { it.withDetailBusy(false) }
