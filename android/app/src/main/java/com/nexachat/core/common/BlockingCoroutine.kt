@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 
 /**
  * Bridges OkHttp interceptors (Java, synchronous API) to suspend token/DAO
@@ -58,7 +60,7 @@ object BlockingCalls {
     @JvmStatic
     @Throws(InterruptedException::class)
     fun readTokens(store: TokenStore): Tokens? =
-        BlockingCoroutine.await { store.readTokens() }
+        BlockingCoroutine.await { store.readTokens().awaitSingleOrNull() }
 
     @JvmStatic
     @Throws(InterruptedException::class)
@@ -68,5 +70,5 @@ object BlockingCalls {
     @JvmStatic
     @Throws(InterruptedException::class)
     fun conversationById(dao: ConversationDao, conversationId: String): ConversationEntity? =
-        BlockingCoroutine.await { dao.byId(conversationId) }
+        BlockingCoroutine.await { dao.byId(conversationId).awaitSingleOrNull() }
 }

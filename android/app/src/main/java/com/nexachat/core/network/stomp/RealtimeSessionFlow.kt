@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.rx3.asFlow
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 
 /**
  * Kotlin-only coroutine boundary for [RealtimeSession]. The session API,
@@ -54,7 +57,7 @@ internal object RealtimeSessionFlow {
         tokenStore: TokenStore,
         onTokenPresence: Consumer<Boolean>,
     ): Job = scope.launch {
-        tokenStore.hasValidRefresh.collect { hasToken -> onTokenPresence.accept(hasToken) }
+        tokenStore.hasValidRefresh().toObservable().asFlow().collect { hasToken -> onTokenPresence.accept(hasToken) }
     }
 
     @JvmStatic
@@ -66,7 +69,7 @@ internal object RealtimeSessionFlow {
         onRegain: Runnable,
     ): Job = scope.launch {
         networkMonitor.regained.collect {
-            if (!isOpen.getAsBoolean() && tokenStore.hasValidRefresh.first()) {
+            if (!isOpen.getAsBoolean() && tokenStore.hasValidRefresh().toObservable().asFlow().first()) {
                 onRegain.run()
             }
         }
@@ -79,7 +82,7 @@ internal object RealtimeSessionFlow {
         isOpen: BooleanSupplier,
         onForeground: Runnable,
     ): Job = scope.launch {
-        if (!isOpen.getAsBoolean() && tokenStore.hasValidRefresh.first()) {
+        if (!isOpen.getAsBoolean() && tokenStore.hasValidRefresh().toObservable().asFlow().first()) {
             onForeground.run()
         }
     }
@@ -111,7 +114,7 @@ internal object RealtimeSessionFlow {
             // STOMP CONNECT is authenticated after the HTTP upgrade. An expired
             // JWT is rejected without a stable auth ERROR frame, so refresh it
             // from the locally stored expiry before opening a socket.
-            val tokens: Tokens? = tokenStore.readTokens()
+            val tokens: Tokens? = tokenStore.readTokens().awaitSingleOrNull()
             if (tokens != null && tokens.isAccessExpired()) {
                 when (tokenRefresher.refreshIfNeeded(tokens.accessToken)) {
                     // A fresh token, or a transient outage: the attempt below
@@ -173,7 +176,7 @@ internal object RealtimeSessionFlow {
     ) {
         while (currentCoroutineContext().isActive) {
             val retryWhileParked =
-                foreground.isForeground.first() && tokenStore.hasValidRefresh.first()
+                foreground.isForeground.first() && tokenStore.hasValidRefresh().toObservable().asFlow().first()
             if (!retryWhileParked) {
                 merge(networkMonitor.regained, rearmRequests).first()
                 return

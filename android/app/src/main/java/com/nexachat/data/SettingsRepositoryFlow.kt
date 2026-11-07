@@ -11,6 +11,7 @@ import com.nexachat.core.storage.TokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.rx3.asFlow
 import retrofit2.Call
 
 /** Kotlin coroutine/session collectors for [SettingsRepository]. */
@@ -25,7 +26,7 @@ internal object SettingsRepositoryFlow {
         repository: SettingsRepositoryApi,
     ) {
         scope.launch {
-            tokenStore.hasValidRefresh.collect { hasSession ->
+            tokenStore.hasValidRefresh().toObservable().asFlow().collect { hasSession ->
                 if (hasSession) {
                     repository.refreshShowPresence()
                 } else {

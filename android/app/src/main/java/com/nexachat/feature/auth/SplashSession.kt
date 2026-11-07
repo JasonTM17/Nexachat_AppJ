@@ -5,6 +5,7 @@ import com.nexachat.core.common.Result
 import com.nexachat.core.storage.TokenStore
 import com.nexachat.data.AuthRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.rx3.asFlow
 
 /** Suspend session-restore decision used by [SplashViewModel]. */
 internal object SplashSession {
@@ -14,7 +15,7 @@ internal object SplashSession {
         tokenStore: TokenStore,
         authRepository: AuthRepository,
     ): SplashNavEvent {
-        if (!tokenStore.hasValidRefresh.first()) {
+        if (!tokenStore.hasValidRefresh().toObservable().asFlow().first()) {
             return SplashNavEvent.ToLogin.INSTANCE
         }
         return when (val result = authRepository.refresh()) {

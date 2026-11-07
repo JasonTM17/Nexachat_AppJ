@@ -53,6 +53,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments += mapOf("room.schemaLocation" to "$projectDir/schemas")
+            }
+        }
+
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -129,12 +135,6 @@ gradle.taskGraph.whenReady {
     }
 }
 
-ksp {
-    // Checked-in schema JSON per database version — the input Room's
-    // MigrationTestHelper needs to validate a migration chain.
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 // Kotlin 2.0: the compose compiler is a Kotlin compiler plugin
 // (org.jetbrains.kotlin.plugin.compose) — no kotlinCompilerExtensionVersion needed.
 kotlin {
@@ -158,7 +158,7 @@ dependencies {
 
     // Room — local source of truth (offline-first, plan §12.2)
     implementation(libs.bundles.room)
-    ksp(libs.androidx.room.compiler)
+    annotationProcessor(libs.androidx.room.compiler)
 
     // Network — Retrofit/REST + OkHttp (also used for the STOMP-over-WS client)
     implementation(libs.bundles.network)

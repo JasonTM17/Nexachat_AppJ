@@ -6,6 +6,8 @@ import com.nexachat.core.network.ApiResult
 import com.nexachat.core.network.safeApiCall
 import com.nexachat.core.network.dto.AuthResponse
 import com.nexachat.core.storage.TokenStore
+import kotlinx.coroutines.rx3.await
+import kotlinx.coroutines.rx3.awaitSingleOrNull
 import retrofit2.Call
 
 /**
@@ -54,11 +56,11 @@ internal object AuthRepositoryFlow {
 
     @JvmStatic
     suspend fun logout(repository: AuthRepository): Result<Unit> {
-        val refreshToken = repository.tokenStore().readTokens()?.refreshToken
+        val refreshToken = repository.tokenStore().readTokens().awaitSingleOrNull()?.refreshToken
         if (refreshToken != null) {
             safeApiCall(repository.authApi().logout(repository.logoutRequest(refreshToken)))
         }
-        repository.tokenStore().clear()
+        repository.tokenStore().clear().await()
         repository.sessionEvents().emitLoggedOut()
         return Result.Success(Unit)
     }
@@ -66,7 +68,7 @@ internal object AuthRepositoryFlow {
     @JvmStatic
     suspend fun logoutAll(repository: AuthRepository): Result<Unit> {
         safeApiCall(repository.authApi().logoutAll())
-        repository.tokenStore().clear()
+        repository.tokenStore().clear().await()
         repository.sessionEvents().emitLoggedOut()
         return Result.Success(Unit)
     }
@@ -77,7 +79,7 @@ internal object AuthRepositoryFlow {
         oldPassword: String,
         newPassword: String,
     ): Result<Unit> {
-        val keepToken = repository.tokenStore().readTokens()?.refreshToken
+        val keepToken = repository.tokenStore().readTokens().awaitSingleOrNull()?.refreshToken
         return authCallUnit(
             repository.authApi().changePassword(
                 repository.changePasswordRequest(oldPassword, newPassword, keepToken),
@@ -87,11 +89,11 @@ internal object AuthRepositoryFlow {
 
     private suspend fun persist(tokenStore: TokenStore, auth: AuthResponse) {
         tokenStore.saveTokens(
-            access = auth.accessToken,
-            accessExpiresAtEpochMs = System.currentTimeMillis() +
+            auth.accessToken,
+            System.currentTimeMillis() +
                 auth.accessTokenExpiresIn * 1_000L,
-            refresh = auth.refreshToken,
-        )
+            auth.refreshToken,
+        ).await()
     }
 
     @JvmStatic
