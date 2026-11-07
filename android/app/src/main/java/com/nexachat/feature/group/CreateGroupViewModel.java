@@ -1,94 +1,111 @@
 package com.nexachat.feature.group;
 
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
-import androidx.lifecycle.ViewModelKt;
+import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.Result;
+import com.nexachat.data.Contact;
 import com.nexachat.data.ContactsRepository;
 import com.nexachat.data.ConversationRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.List;
 import java.util.Objects;
 import javax.inject.Inject;
-import kotlin.Unit;
-import kotlin.coroutines.Continuation;
-import kotlin.coroutines.EmptyCoroutineContext;
-import kotlin.jvm.functions.Function2;
-import kotlinx.coroutines.BuildersKt;
-import kotlinx.coroutines.CoroutineScope;
-import kotlinx.coroutines.CoroutineStart;
-import kotlinx.coroutines.channels.Channel;
-import kotlinx.coroutines.flow.Flow;
-import kotlinx.coroutines.flow.MutableStateFlow;
-import kotlinx.coroutines.flow.StateFlow;
-import kotlinx.coroutines.flow.StateFlowKt;
 
-/**
- * Backs {@code group/create}. Field inputs and member selection live in
- * {@link CreateGroupUiState}; one-shot navigation goes through {@link #getEvents()}.
- */
+/** Backs {@code group/create}; form state is immutable and navigation is one-shot. */
 @HiltViewModel
 public final class CreateGroupViewModel extends ViewModel {
 
     private final ContactsRepository contactsRepository;
     private final ConversationRepository conversationRepository;
-    private final MutableStateFlow<CreateGroupUiState> mutableUiState =
-            StateFlowKt.MutableStateFlow(new CreateGroupUiState());
-    private final StateFlow<CreateGroupUiState> uiState = mutableUiState;
-    private final Channel<CreateGroupEvent> eventsChannel =
-            CreateGroupViewModelSupportKt.newCreateGroupEventChannel();
-    private final Flow<CreateGroupEvent> events =
-            CreateGroupViewModelSupportKt.createGroupEventsFlow(eventsChannel);
+    private final MutableLiveData<CreateGroupUiState> mutableUiState =
+            new MutableLiveData<>(new CreateGroupUiState());
+    private final GroupSingleLiveEvent<CreateGroupEvent> events = new GroupSingleLiveEvent<>();
+    private final CompositeDisposable disposables = new CompositeDisposable();
 
     @Inject
     public CreateGroupViewModel(
-            ContactsRepository contactsRepository, ConversationRepository conversationRepository) {
+            ContactsRepository contactsRepository,
+            ConversationRepository conversationRepository) {
         this.contactsRepository = Objects.requireNonNull(contactsRepository, "contactsRepository");
-        this.conversationRepository =
-                Objects.requireNonNull(conversationRepository, "conversationRepository");
+        this.conversationRepository = Objects.requireNonNull(
+                conversationRepository, "conversationRepository");
         loadContacts();
     }
 
-    public StateFlow<CreateGroupUiState> getUiState() {
-        return uiState;
+    public LiveData<CreateGroupUiState> getUiState() {
+        return mutableUiState;
     }
 
-    public Flow<CreateGroupEvent> getEvents() {
+    public LiveData<GroupSingleLiveEvent.Event<CreateGroupEvent>> getEvents() {
         return events;
     }
 
     public void loadContacts() {
-        launch(
-                (scope, continuation) ->
-                        CreateGroupViewModelSupportKt.createGroupLoadContacts(
-                                contactsRepository, mutableUiState, continuation));
+        mutableUiState.setValue(currentState().withLoading(true, null));
+        disposables.add(contactsRepository.contacts()
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?> success
+                            && success.getValue() instanceof List<?> contacts) {
+                        @SuppressWarnings("unchecked")
+                        List<Contact> contactList = (List<Contact>) contacts;
+                        mutableUiState.setValue(currentState().withContacts(contactList, true));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        mutableUiState.setValue(currentState().withContactsFailure(failure.getError()));
+                    }
+                }, error -> mutableUiState.setValue(currentState().withContactsFailure(
+                        new ApiError.Network(error.getMessage())))));
     }
 
     public void onTitleChange(String value) {
-        mutableUiState.setValue(mutableUiState.getValue().withTitle(value));
+        mutableUiState.setValue(currentState().withTitle(value));
     }
 
     public void toggleMember(String userId) {
-        mutableUiState.setValue(mutableUiState.getValue().toggleMember(userId));
+        mutableUiState.setValue(currentState().toggleMember(userId));
     }
 
     public void dismissError() {
-        mutableUiState.setValue(mutableUiState.getValue().withError(null));
+        mutableUiState.setValue(currentState().withError(null));
     }
 
     public void create() {
-        launch(
-                (scope, continuation) ->
-                        CreateGroupViewModelSupportKt.createGroupCreate(
-                                conversationRepository,
-                                mutableUiState,
-                                eventsChannel,
-                                continuation));
+        CreateGroupUiState state = currentState();
+        if (!CreateGroupViewModelSupport.canCreate(state)) {
+            return;
+        }
+        mutableUiState.setValue(state.withCreating(true, null));
+        List<String> selectedIds = CreateGroupViewModelSupport.selectedIds(state.getSelectedIds());
+        disposables.add(conversationRepository.createGroup(state.getTitle(), selectedIds)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?> success
+                            && success.getValue() instanceof String conversationId) {
+                        mutableUiState.setValue(currentState().withCreating(false, null));
+                        events.emit(new CreateGroupEvent.Created(conversationId));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        mutableUiState.setValue(currentState()
+                                .withCreating(false, failure.getError()));
+                    }
+                }, error -> mutableUiState.setValue(currentState().withCreating(
+                        false, new ApiError.Network(error.getMessage())))));
     }
 
-    private void launch(
-            Function2<CoroutineScope, Continuation<? super Unit>, Object> block) {
-        BuildersKt.launch(
-                ViewModelKt.getViewModelScope(this),
-                EmptyCoroutineContext.INSTANCE,
-                CoroutineStart.DEFAULT,
-                block);
+    private CreateGroupUiState currentState() {
+        CreateGroupUiState state = mutableUiState.getValue();
+        return state == null ? new CreateGroupUiState() : state;
+    }
+
+    @Override
+    protected void onCleared() {
+        disposables.clear();
+        super.onCleared();
     }
 }

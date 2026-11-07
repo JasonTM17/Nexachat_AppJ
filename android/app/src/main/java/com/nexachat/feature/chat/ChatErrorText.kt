@@ -9,9 +9,6 @@ import com.nexachat.core.common.ApiError
  * set as the auth mapper; kept feature-local like the contacts mapper so the
  * wording can diverge per surface without cross-feature edits.
  */
-/** Server `error.code` for the pins cap — avoids a magic string at the call site. */
-internal const val ERROR_PIN_LIMIT = "PIN_LIMIT"
-
 @Composable
 internal fun chatErrorMessage(error: ApiError): String =
     stringResource(ChatErrorIds.messageId(error))
