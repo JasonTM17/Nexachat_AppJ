@@ -10,17 +10,45 @@ message sending available offline.
 > ViewBinding, RxJava 3) · Java + Spring Boot (server) · PostgreSQL · STOMP over raw WebSocket.
 > Built for a viva defense — shipped behavior points to source; in-progress work is labeled.
 
-## Demo
+## Demo & Stitch UI Showcase (Dark & Light Mode)
 
-Captured on the `nexachat-audit` emulator against the local server. Accounts in the frames are fixtures (`UX Pass N`). The index is [`docs/media/README.md`](docs/media/README.md).
+Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK against the local Spring Boot 3 + PostgreSQL 16 backend. Full media index: [`docs/media/README.md`](docs/media/README.md) · full manifest: [`docs/screenshots-manifest.md`](docs/screenshots-manifest.md).
+
+### Dark Mode — Midnight Obsidian (`#0B0E17`) & Electric Violet (`#7C3AED`)
 
 <table>
 <tr>
-<td><img src="docs/media/screens/03-inbox-dark-en.png" width="180" alt="Inbox with unread badges and a call preview"></td>
-<td><img src="docs/media/screens/04-direct-chat-dark-en.png" width="180" alt="Direct chat with a reply, reaction, pin, and image"></td>
-<td><img src="docs/media/screens/12-summary-dark-en.png" width="180" alt="Local conversation summary"></td>
-<td><img src="docs/media/screens/06-group-detail-dark-en.png" width="180" alt="Group members"></td>
-<td><img src="docs/media/screens/13-inbox-light-vi.png" width="180" alt="Vietnamese inbox"></td>
+<td align="center"><b>Inbox & Active Now</b></td>
+<td align="center"><b>Unread Filter Chip</b></td>
+<td align="center"><b>Chat & Reactions</b></td>
+<td align="center"><b>AI Conversation Summary</b></td>
+<td align="center"><b>Profile (Dark Theme)</b></td>
+</tr>
+<tr>
+<td><img src="docs/media/screens/stitch-01-inbox-dark.png" width="180" alt="Stitch Dark Mode Inbox with Active Now strip, pill search bar, AI badge, and 4 filter chips"></td>
+<td><img src="docs/media/screens/stitch-03-inbox-unread-chip.png" width="180" alt="Inbox filtered by Unread pill chip in Dark Mode"></td>
+<td><img src="docs/media/screens/stitch-04-chat-bubbles-reaction.png" width="180" alt="Chat screen with unified header, 36dp avatar, electric violet outgoing bubble, and thumbs up reaction"></td>
+<td><img src="docs/media/screens/stitch-06-ai-summary-sheet.png" width="180" alt="Conversation summary bottom sheet with Overview, Key points, citations, and Action items"></td>
+<td><img src="docs/media/screens/stitch-07-profile-dark.png" width="180" alt="Profile settings in Dark Mode with 4 Stitch cards and Electric Violet Dark chip"></td>
+</tr>
+</table>
+
+### Light Mode (`#F8FAFC`) & Core Workflows
+
+<table>
+<tr>
+<td align="center"><b>Inbox (Light Mode)</b></td>
+<td align="center"><b>Profile (Light Theme)</b></td>
+<td align="center"><b>Contacts Stitch Cards</b></td>
+<td align="center"><b>Create Group Flow</b></td>
+<td align="center"><b>In-Chat Search</b></td>
+</tr>
+<tr>
+<td><img src="docs/media/screens/stitch-02-inbox-light.png" width="180" alt="Stitch Light Mode Inbox with high-contrast cards, Active Now strip, and bottom navigation"></td>
+<td><img src="docs/media/screens/stitch-08-profile-light.png" width="180" alt="Profile settings in Light Mode with crisp dark back arrow and Electric Violet Light chip"></td>
+<td><img src="docs/media/screens/stitch-09-contacts-cards.png" width="180" alt="Contacts screen with rounded Stitch MaterialCardView rows and green online presence dots"></td>
+<td><img src="docs/media/screens/stitch-10-create-group.png" width="180" alt="New group creation card with member checkboxes and pill action button"></td>
+<td><img src="docs/media/screens/stitch-05-in-chat-search.png" width="180" alt="In-chat message search bar docked below unified chat header"></td>
 </tr>
 </table>
 

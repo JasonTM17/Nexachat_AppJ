@@ -40,6 +40,13 @@ after the tag.
   `ChatUiRules`, `LinkUtils`, `Motion`, `SectionHeader`, `SettingsRow`,
   `theme/Elevation`, `theme/Shape`, `theme/Spacing`), in-chat search UI, a
   message action sheet and profile/settings screens.
+- Stitch Midnight Obsidian & Electric Violet UI overhaul (Dark & Light parity):
+  `#0B0E17` dark canvas, `#151B2B` navy cards, `#7C3AED` electric violet accents,
+  `AvatarView` online status dot and story ring, Inbox `ACTIVE NOW` strip
+  (prioritizing direct peers and deduplicating titles), 4 pill filter chips,
+  4-tab bottom navigation bar, unified chat header with `36dp` peer avatar,
+  Stitch card rows for Contacts, and electric violet chip selectors across
+  Profile and Conversation Summary sheets (`s7-*-stitch-*`, `docs/media/screens/stitch-*.png`).
 - Four new Stitch design references (`in_chat_search`, `message_action_sheet`,
   `profile_settings`, `theme_privacy_settings`).
 - New user-facing strings in paired EN/VI resources, including call-specific

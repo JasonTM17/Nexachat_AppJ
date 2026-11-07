@@ -266,6 +266,29 @@ scrolls; the sign-in button meets the gesture bar until the column is scrolled.
 | `s10-login-dark-en.png` | Sign-in, dark | dark / en |
 | `s10-login-dark-landscape.png` | Sign-in, dark landscape | dark / en |
 
+## 2.11 Inventory — Stitch Midnight Obsidian & Electric Violet UI Overhaul (`s7-*-stitch-*`)
+
+Captured on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK (`com.nexachat`) against the live local backend (`localhost:8080`). Validates the complete Stitch Dark & Light Mode overhaul across Inbox, Chat, AI Summary, Profile, Contacts, Group Creation, Search, and Locale switching:
+
+| File | Screen / evidence | Theme / locale |
+|---|---|---|
+| `s7-01-stitch-inbox-dark.png` | Stitch Dark Mode Inbox (`#0B0E17` obsidian background, `✦ AI` header pill, rounded search bar, `ACTIVE NOW` strip prioritizing direct peers with purple story rings & online dots, 4 filter chips, bottom nav + compose FAB) | dark / en |
+| `s7-02-stitch-inbox-light.png` | Stitch Light Mode Inbox (`#F8FAFC` background, `#FFFFFF` cards, `ACTIVE NOW` strip, `#7C3AED` active filter chip) | light / en |
+| `s7-03-stitch-chip-unread-dark.png` | Inbox filtered by the `Unread (1)` electric violet pill chip | dark / en |
+| `s7-04-stitch-chip-direct-dark.png` | Inbox filtered by the `Direct` electric violet pill chip | dark / en |
+| `s7-05-stitch-chip-groups-dark.png` | Inbox filtered by the `Groups` electric violet pill chip | dark / en |
+| `s7-06-stitch-chat-header-dark.png` | Chat screen with unified `#151B2B` top bar, `36dp` peer avatar next to back arrow, and `#182034` incoming bubble | dark / en |
+| `s7-07-stitch-chat-reaction-dark.png` | Chat screen showing `#5B21B6` electric violet outgoing bubble with `👍 1` reaction pill applied | dark / en |
+| `s7-08-stitch-in-chat-search-dark.png` | In-chat search bar (`Search in conversation...`) docked cleanly below the unified chat header | dark / en |
+| `s7-09-stitch-summary-ready-dark.png` | Conversation summary bottom sheet with `#7C3AED` active `Local` and `Last 50` chips, generated Overview, Key points with citation chips (`↗ #6029`), Action items with checkboxes, and Open questions | dark / en |
+| `s7-10-stitch-chat-landscape-dark.png` | Chat screen surviving landscape rotation (2400×1080) with incoming/outgoing bubbles and reaction intact | dark / en |
+| `s7-11-stitch-profile-light.png` | Profile settings in Light Mode with visible dark back arrow, 4 Stitch cards, and `#7C3AED` active `Light` chip | light / en |
+| `s7-12-stitch-profile-dark.png` | Profile settings in Dark Mode with `#0B0E17` canvas, `#151B2B` cards, and `#7C3AED` active `Dark` chip | dark / en |
+| `s7-13-stitch-contacts-light.png` | Contacts screen with `18dp` Stitch `MaterialCardView` rows, green online presence dots (`#10B981`), and phone subtitles | light / en |
+| `s7-14-stitch-user-search-light.png` | User search screen with purple-focused rounded search box and visible back arrow | light / en |
+| `s7-15-stitch-create-group-light.png` | New group creation screen (`Stitch_Luna_Group`) with Stitch card container, member checkboxes, and pill button | light / en |
+| `s7-16-stitch-language-vi-light.png` | Language settings screen with `Tiếng Việt` applied live | light / vi |
+
 ## 3. Hygiene checklist (applied to every `s2-*` capture)
 
 - No probe/e2e/test strings: the demo data was re-seeded and the two

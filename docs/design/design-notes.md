@@ -147,3 +147,25 @@ Design system asset: `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`
 | `dd3d9a9a537f4870a8550866e9a06ebc` | `summary_loading_skeleton.{html,png}` | `res/layout/include_summary_skeleton.xml` (in `bottom_sheet_summary.xml`) | Shimmer skeleton placeholders for overview, list items, and action chips; reduced-motion safe via system animator / accessibility settings. |
 | `86bfe206298d4deea5065280af5831c6` | `summary_error_states.{html,png}` | `SummaryErrorViewHelper.java`, `ErrorStateView.java`, `SummaryErrorMapper.java` | Typed error rendering: `TOO_FEW` ("Chưa đủ tin nhắn · Cần tối thiểu 5 tin nhắn để tạo tóm tắt"), `RATE_LIMITED` with countdown hint, `NETWORK` ("Không thể kết nối máy chủ" + "Thử lại" action), `NOT_MEMBER`, and `UNKNOWN`. |
 | `f9918e0ec2a44d45b0a57d5a782d67f1` | `summary_settings_consent.{html,png}` | `feature/profile/ProfileFragment.java`, `AiConsentRepository.java` | Settings Privacy row with switch bound to `AiConsentRepository` (optimistic update + rollback on error), required disclosure ("Tin nhắn được ẩn thông tin nhạy cảm rồi gửi tới dịch vụ AI"), and first-use confirmation dialog. |
+
+---
+
+## 9. Phase 7 — Stitch Midnight Obsidian & Electric Violet UI Overhaul (Dark & Light Parity)
+
+To achieve 1:1 visual parity with the Google Stitch **Midnight Obsidian & Electric Violet** reference across both Dark Mode and Light Mode, the Android resource layer and presentation components were upgraded:
+
+- **Color Palette (`values-night/colors_nexachat.xml` & `values/colors_nexachat.xml`)**:
+  - Dark Mode: `#0B0E17` Midnight Obsidian canvas, `#151B2B` elevated navy cards (`1dp` `#232C43` stroke), `#7C3AED` Electric Violet primary accent, `#5B21B6` outgoing bubble, `#182034` incoming bubble, and `#10B981` emerald online indicator dot.
+  - Light Mode: `#F8FAFC` light canvas, `#FFFFFF` elevated cards (`1dp` `#E2E8F0` stroke), `#6D28D9` / `#7C3AED` primary accent, and `#EDE9FE` outgoing bubble.
+- **Avatar Presence & Story Ring (`AvatarView.java`, `colors_avatar.xml`)**:
+  - Vibrant jewel-tone avatar backgrounds with bold `#FFFFFFFF` initials in both themes.
+  - Built-in bottom-right online/offline presence dot (`setOnlineStatus(@Nullable Boolean)`) with `2dp` surface ring and `setShowStoryRing(boolean)` (`2dp` `#7C3AED` ring).
+- **Inbox Overhaul (`fragment_inbox.xml`, `InboxFragment.java`, `ConversationListAdapter.java`)**:
+  - Top bar with `36dp` user avatar + green dot, bold `NexaChat` title, and `✦ AI` pill badge (`@drawable/bg_stitch_ai_badge`).
+  - `26dp` rounded search pill (`Search chats, people, tags...`) with trailing AI sparkle icon.
+  - Horizontal `ACTIVE NOW` strip (`item_active_now_peer.xml`) prioritizing direct (1-on-1) peers first and deduplicating conversation titles.
+  - 4 Stitch filter chips (`All`, `Unread (N)`, `Direct`, `Groups`) + 4-tab bottom navigation bar (`Chats`, `Call`, `Contacts`, `Profile`) + squircle compose FAB (`@drawable/ic_edit_compose`).
+- **Unified Chat Header, Profile, Contacts & Summary Chips**:
+  - Unified `?attr/colorSurface` background across `chatToolbar` and `chatToolbarActions` with a `36dp` `chatHeaderAvatar` next to the back arrow.
+  - Shared `@color/stitch_chip_bg_tint`, `@color/stitch_chip_stroke_color`, and `@color/stitch_chip_text_color` selectors applied to Inbox filter chips, Profile theme chips (`System default`, `Light`, `Dark`), and Summary bottom sheet mode/scope chips (`Local`, `AI`, `Unread`, `Last 50`, `Today`).
+  - Contacts rendered inside `18dp` rounded Stitch `MaterialCardView` cards with online status dots and phone subtitles.
