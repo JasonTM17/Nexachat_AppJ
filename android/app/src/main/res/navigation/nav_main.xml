@@ -6,17 +6,17 @@
 
     <fragment
         android:id="@+id/splashFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$SplashHostFragment"
+        android:name="com.nexachat.feature.splash.SplashFragment"
         android:label="@string/app_name" />
 
     <fragment
         android:id="@+id/loginFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$LoginHostFragment"
+        android:name="com.nexachat.feature.auth.LoginFragment"
         android:label="@string/action_sign_in" />
 
     <fragment
         android:id="@+id/registerFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$RegisterHostFragment"
+        android:name="com.nexachat.feature.auth.RegisterFragment"
         android:label="@string/action_create_account" />
 
     <fragment
@@ -36,12 +36,12 @@
 
     <fragment
         android:id="@+id/profileFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$ProfileHostFragment"
+        android:name="com.nexachat.feature.profile.ProfileFragment"
         android:label="@string/profile_title" />
 
     <fragment
         android:id="@+id/languageSettingsFragment"
-        android:name="com.nexachat.core.ui.host.HostFragments$LanguageSettingsHostFragment"
+        android:name="com.nexachat.feature.profile.LanguageSettingsFragment"
         android:label="@string/settings_language" />
 
     <fragment

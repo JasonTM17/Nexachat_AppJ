@@ -31,7 +31,7 @@
                         android:background="@drawable/bg_auth_logo"
                         android:contentDescription="@string/app_name"
                         android:padding="14dp"
-                        android:src="@drawable/ic_forum_outline" />
+                        android:src="@drawable/ic_nexachat_logo" />
 
                     <TextView
                         android:id="@+id/authTitle"

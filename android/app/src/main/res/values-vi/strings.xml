@@ -20,6 +20,7 @@
 
     <!-- Auth field validation -->
     <string name="error_phone_required">Nhập số điện thoại</string>
+    <string name="error_phone_invalid">Nhập số điện thoại quốc tế hợp lệ</string>
     <string name="error_password_short">Mật khẩu tối thiểu 8 ký tự</string>
     <string name="error_display_name_required">Nhập tên hiển thị</string>
     <string name="error_password_mismatch">Mật khẩu nhập lại không khớp</string>
@@ -51,6 +52,7 @@
     <string name="action_save">Lưu</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_logout">Đăng xuất</string>
+    <string name="action_logout_confirm">Đăng xuất tài khoản này trên thiết bị?</string>
     <string name="action_logout_all">Đăng xuất mọi thiết bị</string>
     <string name="profile_logout_all_confirm">Mọi phiên đăng nhập, kể cả phiên này, sẽ bị đăng xuất.</string>
     <string name="action_retry">Thử lại</string>

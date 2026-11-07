@@ -20,6 +20,20 @@
                 android:layout_height="wrap_content"
                 android:maxWidth="@dimen/auth_form_max_width"
                 android:orientation="vertical">
+                <ImageView
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_gravity="center_horizontal"
+                    android:contentDescription="@string/app_name"
+                    android:src="@drawable/ic_nexachat_logo" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:text="@string/action_create_account"
+                    android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                    android:textColor="?attr/colorPrimary" />
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/nameLayout"
                     android:layout_width="match_parent"
@@ -63,13 +77,25 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
-                    android:hint="@string/auth_confirm_password_label">
+                    android:hint="@string/auth_confirm_password_label"
+                    app:endIconContentDescription="@string/cd_password_visibility"
+                    app:endIconDrawable="@drawable/ic_visibility"
+                    app:endIconMode="password_toggle">
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/confirmPasswordInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
+                <TextView
+                    android:id="@+id/errorBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:background="?attr/colorErrorContainer"
+                    android:padding="@dimen/space_sm"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone" />
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/registerButton"
                     android:layout_width="match_parent"
@@ -77,6 +103,13 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_create_account" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/secondaryAction"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/action_sign_in" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
