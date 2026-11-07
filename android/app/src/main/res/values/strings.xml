@@ -197,4 +197,11 @@
     <string name="theme_dark">Dark</string>
     <string name="privacy_show_presence">Show activity status</string>
 
+    <!-- Voice Recording -->
+    <string name="cd_record_voice">Record voice message</string>
+    <string name="voice_slide_to_cancel">&lt; Slide left to cancel</string>
+    <string name="voice_release_to_cancel">Release to cancel</string>
+    <string name="voice_too_short">Hold to record, release to send</string>
+    <string name="voice_permission_required">Microphone permission is required to record voice messages</string>
+
 </resources>

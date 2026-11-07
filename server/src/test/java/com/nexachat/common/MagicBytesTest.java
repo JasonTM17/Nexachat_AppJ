@@ -61,6 +61,13 @@ class MagicBytesTest {
     }
 
     @Test
+    void detectsM4aInCompatibleBrands() {
+        byte[] m4aCompatible = hex("000000206674797069736F6D000002004D3441206D703432");
+        assertEquals("audio/mp4", MagicBytes.sniff(m4aCompatible));
+        assertTrue(MagicBytes.isAllowed(m4aCompatible));
+    }
+
+    @Test
     void detectsOgg() {
         byte[] ogg = hex("4F67675300020000");
         assertEquals("audio/ogg", MagicBytes.sniff(ogg));

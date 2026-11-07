@@ -195,4 +195,11 @@
     <string name="theme_dark">Tối</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
 
+    <!-- Voice Recording -->
+    <string name="cd_record_voice">Ghi âm tin nhắn thoại</string>
+    <string name="voice_slide_to_cancel">&lt; Trượt sang trái để hủy</string>
+    <string name="voice_release_to_cancel">Thả tay để hủy</string>
+    <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
+    <string name="voice_permission_required">Cần cấp quyền micro để ghi âm tin nhắn thoại</string>
+
 </resources>

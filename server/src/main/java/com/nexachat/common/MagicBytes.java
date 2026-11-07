@@ -200,13 +200,20 @@ public final class MagicBytes {
         String brand = new String(header, 8, 4, StandardCharsets.US_ASCII)
                 .trim()
                 .toLowerCase(Locale.ROOT);
+        if ("m4a".equals(brand)) {
+            return AUDIO_MP4;
+        }
+        if (header.length >= 16) {
+            String ftypHeader = new String(header, StandardCharsets.US_ASCII).toLowerCase(Locale.ROOT);
+            if (ftypHeader.contains("m4a")) {
+                return AUDIO_MP4;
+            }
+        }
         switch (brand) {
             case "mp41":
             case "mp42":
             case "isom":
                 return VIDEO_MP4;
-            case "m4a":
-                return AUDIO_MP4;
             default:
                 return null;
         }

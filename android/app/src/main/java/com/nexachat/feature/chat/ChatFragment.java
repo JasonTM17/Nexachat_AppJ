@@ -1,11 +1,18 @@
 package com.nexachat.feature.chat;
 
+import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
@@ -20,6 +27,8 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
@@ -37,6 +46,8 @@ import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.databinding.FragmentChatBinding;
 import com.nexachat.feature.chat.ui.MessageActionListener;
+import com.nexachat.feature.chat.voice.VoiceRecorder;
+import java.io.File;
 import com.nexachat.feature.chat.adapter.MessageListAdapter;
 import com.nexachat.feature.chat.adapter.MessageListItem;
 import com.nexachat.feature.chat.adapter.MessageListMapper;
@@ -91,6 +102,23 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                             viewModel.sendAttachments(uris);
                         }
                     });
+    private final ActivityResultLauncher<String> recordAudioPermissionLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.RequestPermission(),
+                    isGranted -> {
+                        if (binding == null) return;
+                        if (Boolean.TRUE.equals(isGranted)) {
+                            Snackbar.make(binding.getRoot(), R.string.voice_too_short, Snackbar.LENGTH_SHORT).show();
+                        } else {
+                            Snackbar.make(binding.getRoot(), R.string.voice_permission_required, Snackbar.LENGTH_LONG).show();
+                        }
+                    });
+
+    private VoiceRecorder voiceRecorder;
+    private final Handler recordingHandler = new Handler(Looper.getMainLooper());
+    private Runnable recordingTimerRunnable;
+    private float recordStartX;
+    private boolean recordingCancelled;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -172,6 +200,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         });
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private void configureComposer() {
         binding.composerBar.attachButton.setOnClickListener(v -> ChatInteractionsViews.showAttachmentPicker(
                 requireContext(),
@@ -189,11 +218,142 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (settingDraft) return;
+                boolean hasText = s != null && !s.toString().isBlank();
+                updateComposerButtons(hasText || editingMessage != null);
                 if (editingMessage == null) viewModel.onInputChange(s.toString());
                 else { editInput = s.toString(); binding.composerBar.sendButton.setEnabled(!editInput.isBlank()); }
             }
             @Override public void afterTextChanged(Editable s) {}
         });
+        configureVoiceRecording();
+    }
+
+    private void updateComposerButtons(boolean showSend) {
+        if (binding == null) return;
+        binding.composerBar.sendButton.setVisibility(showSend ? View.VISIBLE : View.GONE);
+        binding.composerBar.sendButton.setEnabled(showSend);
+        binding.composerBar.micButton.setVisibility(showSend ? View.GONE : View.VISIBLE);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void configureVoiceRecording() {
+        voiceRecorder = new VoiceRecorder(requireContext());
+        binding.composerBar.micButton.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+                            != PackageManager.PERMISSION_GRANTED) {
+                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+                        return false;
+                    }
+                    recordStartX = event.getRawX();
+                    recordingCancelled = false;
+                    if (voiceRecorder == null) {
+                        voiceRecorder = new VoiceRecorder(requireContext());
+                    }
+                    if (!voiceRecorder.start()) {
+                        return false;
+                    }
+                    v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    binding.composerBar.attachButton.setVisibility(View.GONE);
+                    binding.composerBar.messageInput.setVisibility(View.GONE);
+                    binding.composerBar.recordingOverlay.setVisibility(View.VISIBLE);
+                    binding.composerBar.recordingDuration.setText("00:00");
+                    binding.composerBar.recordingCancelLabel.setText(R.string.voice_slide_to_cancel);
+                    binding.composerBar.recordingCancelLabel.setTextColor(
+                            ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
+
+                    recordingTimerRunnable = new Runnable() {
+                        @Override
+                        public void run() {
+                            if (voiceRecorder != null && voiceRecorder.isRecording()) {
+                                long durationSec = voiceRecorder.getDurationMs() / 1000;
+                                long minutes = durationSec / 60;
+                                long seconds = durationSec % 60;
+                                if (binding != null) {
+                                    binding.composerBar.recordingDuration.setText(
+                                            String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds));
+                                    binding.composerBar.recordingDot.setAlpha(
+                                            binding.composerBar.recordingDot.getAlpha() == 1f ? 0.3f : 1f);
+                                }
+                                recordingHandler.postDelayed(this, 500);
+                            }
+                        }
+                    };
+                    recordingHandler.postDelayed(recordingTimerRunnable, 500);
+                    return true;
+
+                case MotionEvent.ACTION_MOVE:
+                    if (voiceRecorder == null || !voiceRecorder.isRecording()) {
+                        return false;
+                    }
+                    float deltaX = recordStartX - event.getRawX();
+                    float thresholdPx = 80 * getResources().getDisplayMetrics().density;
+                    if (deltaX > thresholdPx) {
+                        if (!recordingCancelled) {
+                            recordingCancelled = true;
+                            binding.composerBar.recordingCancelLabel.setText(R.string.voice_release_to_cancel);
+                            binding.composerBar.recordingCancelLabel.setTextColor(
+                                    ContextCompat.getColor(requireContext(), R.color.error_red));
+                        }
+                    } else {
+                        if (recordingCancelled) {
+                            recordingCancelled = false;
+                            binding.composerBar.recordingCancelLabel.setText(R.string.voice_slide_to_cancel);
+                            binding.composerBar.recordingCancelLabel.setTextColor(
+                                    ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
+                        }
+                    }
+                    return true;
+
+                case MotionEvent.ACTION_UP:
+                    if (recordingTimerRunnable != null) {
+                        recordingHandler.removeCallbacks(recordingTimerRunnable);
+                    }
+                    restoreComposerAfterRecording();
+                    if (voiceRecorder != null) {
+                        if (recordingCancelled) {
+                            voiceRecorder.cancel();
+                        } else {
+                            long durationMs = voiceRecorder.getDurationMs();
+                            File audioFile = voiceRecorder.stop();
+                            if (durationMs < 1000L || audioFile == null) {
+                                if (audioFile != null && audioFile.exists()) {
+                                    //noinspection ResultOfMethodCallIgnored
+                                    audioFile.delete();
+                                }
+                                Toast.makeText(requireContext(), R.string.voice_too_short, Toast.LENGTH_SHORT).show();
+                            } else {
+                                Uri voiceUri = FileProvider.getUriForFile(
+                                        requireContext(),
+                                        requireContext().getPackageName() + ".fileprovider",
+                                        audioFile);
+                                viewModel.sendAttachments(Collections.singletonList(voiceUri));
+                            }
+                        }
+                    }
+                    return true;
+
+                case MotionEvent.ACTION_CANCEL:
+                    if (recordingTimerRunnable != null) {
+                        recordingHandler.removeCallbacks(recordingTimerRunnable);
+                    }
+                    if (voiceRecorder != null) {
+                        voiceRecorder.cancel();
+                    }
+                    restoreComposerAfterRecording();
+                    return true;
+            }
+            return false;
+        });
+    }
+
+    private void restoreComposerAfterRecording() {
+        if (binding == null) return;
+        binding.composerBar.recordingOverlay.setVisibility(View.GONE);
+        binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
+        binding.composerBar.messageInput.setVisibility(View.VISIBLE);
+        binding.composerBar.recordingDot.setAlpha(1f);
     }
 
     private void observeViewModel() {
@@ -264,7 +424,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (!String.valueOf(binding.composerBar.messageInput.getText()).contentEquals(input)) binding.composerBar.messageInput.setText(input);
         settingDraft = false;
         binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
-        binding.composerBar.sendButton.setEnabled(input != null && !input.isBlank());
+        boolean hasText = input != null && !input.isBlank();
+        updateComposerButtons(hasText || editingMessage != null);
     }
 
     private void renderPinned() {
@@ -498,6 +659,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     @Override public void onDestroyView() {
         subscriptions.clear();
+        if (recordingTimerRunnable != null) {
+            recordingHandler.removeCallbacks(recordingTimerRunnable);
+        }
+        if (voiceRecorder != null) {
+            voiceRecorder.cancel();
+            voiceRecorder = null;
+        }
         if (binding != null) {
             binding.messageList.setAdapter(null);
         }
