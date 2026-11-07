@@ -153,10 +153,15 @@ rate limiting, error handling. Claims cite source files for viva defence.
 
 ## Known limits & future work
 
-- Cleartext HTTP is allowed by the Android client only for the emulator host
-  `10.0.2.2` (android/app/src/main/res/xml/network_security_config.xml;
-  AndroidManifest.xml sets `usesCleartextTraffic="false"`). Production needs TLS
-  termination and WSS.
+- The Android client is pure Java 17 (`android/`, Groovy `build.gradle`, XML
+  views, ViewBinding, Hilt `annotationProcessor`). Cleartext HTTP is allowed
+  only for the emulator host `10.0.2.2`
+  (`android/app/src/main/res/xml/network_security_config.xml`;
+  `AndroidManifest.xml` sets `usesCleartextTraffic="false"`). Session tokens
+  are stored by `TokenStore` on RxDataStore as Base64 of `IV || AES-GCM`
+  ciphertext; the key is `AES/GCM/NoPadding` in AndroidKeyStore
+  (`core/storage/AesGcmTokenCipher.java`). Production needs TLS termination
+  and WSS.
 - `enableSimpleBroker("/topic","/queue")` is in-process fan-out
   (WebSocketConfig.java): correct for one instance; horizontal scaling needs a
   broker relay, and RateLimitService's in-memory buckets need Redis/JDBC.

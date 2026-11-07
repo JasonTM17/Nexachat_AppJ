@@ -142,7 +142,7 @@ Screenshots captured on `emulator-5558` validating the Phase 6 conversation summ
 | `s4-01-unread-banner-dark-vi.png` | Unread catch-up banner ("38 tin chưa đọc · Tóm tắt") and dismiss icon above conversation | dark / vi |
 | `s4-02-overflow-menu-dark-vi.png` | Top-bar overflow menu displaying "Tóm tắt cuộc trò chuyện" action in group chat | dark / vi |
 | `s4-03-sheet-error-dark-vi.png` | Summary bottom sheet in dark theme: drag handle, "Cục bộ" badge, scope chips (Chưa đọc / 50 tin gần nhất / Hôm nay), typed error view with "Thử lại", and bottom dock (Tạo lại / Sao chép / Chia sẻ) | dark / vi |
-| `s4-04-sheet-landscape-dark-vi.png` | Summary bottom sheet surviving device rotation to landscape (rotation-safe `rememberSaveable` state) | dark / vi |
+| `s4-04-sheet-landscape-dark-vi.png` | Summary bottom sheet surviving device rotation to landscape (`SummaryBottomSheetFragment` restored by the FragmentManager; `SummaryViewModel` keeps `summary_scope` in `SavedStateHandle`) | dark / vi |
 | `s4-05-sheet-scope-today-dark-vi.png` | Summary bottom sheet with "Hôm nay" scope chip selected | dark / vi |
 | `s4-06-sheet-light-vi.png` | Summary bottom sheet rendered in light theme with high contrast and Material 3 styling | light / vi |
 | `s4-07-settings-consent-light-en.png` | Profile Settings in English: Privacy section showing "Use external AI for summaries" toggle and required consequence copy | light / en |
@@ -215,7 +215,7 @@ Screenshots captured on headless Android 15 AVD `nexachat-audit` (`emulator-5558
 | `s7-07-chat-rotation-landscape-dark-vi.png` | Direct chat surviving configuration change to landscape (2400×1080): message list, pinned banner, and composer intact | dark / vi |
 | `s7-08-chat-process-death-restored-dark-vi.png` | Direct chat restored after background process death (`am kill`): full message history, pinned item, and delivery states preserved | dark / vi |
 | `s7-09-summary-sheet-rotation-landscape-dark-vi.png` | Summary bottom sheet surviving configuration change to landscape (2400×1080) with summary scope and content intact | dark / vi |
-| `s7-10-summary-sheet-process-death-restored-dark-vi.png` | Summary bottom sheet restored after background process death (`am kill`): `rememberSaveable` sheet state remains open and recovers content | dark / vi |
+| `s7-10-summary-sheet-process-death-restored-dark-vi.png` | Summary bottom sheet restored after background process death (`am kill`): the shown `BottomSheetDialogFragment` stays open and `SavedStateHandle` keys `summary_scope` / `summary_last_id` recover content | dark / vi |
 | `s7-11-inbox-fontscale200-dark-vi.png` | Conversation inbox at accessibility font scale 2.0 (Vietnamese, dark theme): full text legibility without clipping | dark / vi |
 | `s7-12-chat-fontscale200-dark-vi.png` | Direct chat conversation at accessibility font scale 2.0 (Vietnamese, dark theme): message bubbles scale properly with clean wrap | dark / vi |
 | `s7-13-inbox-fontscale200-dark-en.png` | Conversation inbox at accessibility font scale 2.0 (English, dark theme): complete text hierarchy without truncation | dark / en |
