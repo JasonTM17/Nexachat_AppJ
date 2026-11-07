@@ -52,9 +52,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 
-/** Delivery state the chat UI renders per bubble. */
-enum class DeliveryStatus { SENT, SENDING, FAILED }
-
 /**
  * Reaction chip under a bubble — aggregated from `message_reactions`
  * ([reactedByMe] resolves `reactedByMe ?: userIds.contains(myId)` at ingest).

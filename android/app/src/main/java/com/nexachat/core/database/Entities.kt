@@ -116,11 +116,6 @@ data class OutboxEntity(
     val attachmentsJson: String = "",
 )
 
-object OutboxState {
-    const val SENDING = "SENDING"
-    const val FAILED = "FAILED"
-}
-
 /**
  * Aggregated reaction summary per (message, emoji) — the shape BOTH wire
  * variants reduce to: REST embeds `{emoji, count, reactedByMe}` on the
