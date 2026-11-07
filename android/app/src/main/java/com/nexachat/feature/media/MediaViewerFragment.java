@@ -1,13 +1,218 @@
 package com.nexachat.feature.media;
 
-import android.net.Uri; import android.os.Bundle; import android.view.LayoutInflater; import android.view.View; import android.view.ViewGroup; import androidx.annotation.NonNull; import androidx.annotation.Nullable; import androidx.fragment.app.Fragment; import androidx.lifecycle.ViewModelProvider; import androidx.navigation.Navigation; import androidx.media3.common.MediaItem; import androidx.media3.exoplayer.ExoPlayer; import androidx.media3.ui.PlayerView; import com.bumptech.glide.Glide; import com.nexachat.R; import com.nexachat.databinding.FragmentMediaViewerBinding; import dagger.hilt.android.AndroidEntryPoint;
+import android.net.Uri;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.lifecycle.FlowLiveDataConversions;
+import androidx.lifecycle.ViewModelProvider;
+import androidx.media3.common.MediaItem;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.navigation.Navigation;
+import com.bumptech.glide.Glide;
+import com.nexachat.R;
+import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.ui.components.ErrorStateView;
+import com.nexachat.core.ui.components.LoadingStateView;
+import com.nexachat.databinding.FragmentMediaViewerBinding;
+import dagger.hilt.android.AndroidEntryPoint;
+import java.io.File;
 
-/** Full-screen attachment preview; media downloads remain delegated to the attachment endpoint. */
-@AndroidEntryPoint public final class MediaViewerFragment extends Fragment {
-    private FragmentMediaViewerBinding binding; private MediaViewerViewModel viewModel; private ExoPlayer player;
-    @Nullable @Override public View onCreateView(@NonNull LayoutInflater i,@Nullable ViewGroup c,@Nullable Bundle s){binding=FragmentMediaViewerBinding.inflate(i,c,false);return binding.getRoot();}
-    @Override public void onViewCreated(@NonNull View view,@Nullable Bundle state){binding.viewerToolbar.setNavigationOnClickListener(v->Navigation.findNavController(v).navigateUp()); binding.viewerToolbar.getMenu().add(0,1,0,R.string.action_view); binding.viewerToolbar.setOnMenuItemClickListener(item->{if(item.getItemId()==1){share();return true;}return false;}); viewModel=new ViewModelProvider(this).get(MediaViewerViewModel.class); MediaViewerViewModel.UiState media=viewModel.getUiState().getValue(); binding.viewerToolbar.setTitle(media.getDisplayName()==null?getString(R.string.media_attachment):media.getDisplayName()); if(media.isImage()){String id=media.getAttachmentId();Glide.with(this).load(com.nexachat.core.common.AppConfig.absoluteMediaUrl(id)).into(binding.mediaImage);}else if(media.getFile()!=null){showPlayer(media.getFile());}}
-    private void showPlayer(java.io.File file){PlayerView playerView=new PlayerView(requireContext());((ViewGroup)binding.getRoot()).addView(playerView,new ViewGroup.LayoutParams(-1,-1));player=new ExoPlayer.Builder(requireContext()).build();playerView.setPlayer(player);player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)));player.prepare();player.play();}
-    private void share(){MediaViewerViewModel.UiState media=viewModel.getUiState().getValue();if(media.getFile()==null)return;Uri uri=androidx.core.content.FileProvider.getUriForFile(requireContext(),requireContext().getPackageName()+".fileprovider",media.getFile());android.content.Intent send=new android.content.Intent(android.content.Intent.ACTION_SEND).setType(media.getMimeType()==null?"application/octet-stream":media.getMimeType()).putExtra(android.content.Intent.EXTRA_STREAM,uri).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(android.content.Intent.createChooser(send,getString(R.string.action_view)));}
-    @Override public void onDestroyView(){if(player!=null){player.release();player=null;}super.onDestroyView();binding=null;}
+/**
+ * Full-screen attachment preview. Images stream from the content endpoint; video and audio
+ * download to cache first, then play locally via Media3.
+ */
+@AndroidEntryPoint
+public final class MediaViewerFragment extends Fragment {
+
+    private static final int MENU_OPEN = 1;
+
+    @Nullable
+    private FragmentMediaViewerBinding binding;
+
+    @Nullable
+    private MediaViewerViewModel viewModel;
+
+    @Nullable
+    private ExoPlayer player;
+
+    @Nullable
+    private LoadingStateView loadingView;
+
+    @Nullable
+    private ErrorStateView errorView;
+
+    @Nullable
+    private File playingFile;
+
+    @Nullable
+    @Override
+    public View onCreateView(
+            @NonNull LayoutInflater inflater,
+            @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState) {
+        binding = FragmentMediaViewerBinding.inflate(inflater, container, false);
+        return binding.getRoot();
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        FragmentMediaViewerBinding ui = binding;
+        if (ui == null) {
+            return;
+        }
+        ui.viewerToolbar.setNavigationOnClickListener(v ->
+                Navigation.findNavController(v).navigateUp());
+        ui.viewerToolbar.getMenu().add(Menu.NONE, MENU_OPEN, 0, R.string.action_view);
+        ui.viewerToolbar.setOnMenuItemClickListener(this::onToolbarMenuItem);
+
+        viewModel = new ViewModelProvider(this).get(MediaViewerViewModel.class);
+        FlowLiveDataConversions.asLiveData(viewModel.getUiState())
+                .observe(getViewLifecycleOwner(), this::render);
+    }
+
+    private boolean onToolbarMenuItem(@NonNull MenuItem item) {
+        MediaViewerViewModel viewModel = this.viewModel;
+        if (viewModel == null) {
+            return false;
+        }
+        MediaViewerViewModel.UiState state = viewModel.getUiState().getValue();
+        File file = state.getFile();
+        if (file == null) {
+            return false;
+        }
+        String mime = state.getMimeType() == null ? "application/octet-stream" : state.getMimeType();
+        if (item.getItemId() == MENU_OPEN) {
+            AttachmentViewBinder.openExternally(requireContext(), file, mime);
+            return true;
+        }
+        return false;
+    }
+
+    private void render(@NonNull MediaViewerViewModel.UiState state) {
+        FragmentMediaViewerBinding ui = binding;
+        MediaViewerViewModel viewModel = this.viewModel;
+        if (ui == null || viewModel == null) {
+            return;
+        }
+        ui.viewerToolbar.setTitle(state.getDisplayName() == null
+                ? getString(R.string.media_attachment)
+                : state.getDisplayName());
+        updateToolbarActions(state);
+
+        hideContent(ui);
+        if (state.isImage()) {
+            ui.mediaImage.setVisibility(View.VISIBLE);
+            Glide.with(this)
+                    .load(AttachmentDto.contentPath(state.getAttachmentId()))
+                    .fitCenter()
+                    .into(ui.mediaImage);
+            return;
+        }
+        if (state.getLoading()) {
+            showLoading(ui);
+            return;
+        }
+        File file = state.getFile();
+        if (file != null) {
+            showPlayer(ui, file);
+            return;
+        }
+        showError(ui, viewModel);
+    }
+
+    private void updateToolbarActions(@NonNull MediaViewerViewModel.UiState state) {
+        FragmentMediaViewerBinding ui = binding;
+        if (ui == null) {
+            return;
+        }
+        Menu menu = ui.viewerToolbar.getMenu();
+        boolean hasFile = state.getFile() != null;
+        MenuItem open = menu.findItem(MENU_OPEN);
+        if (open != null) {
+            open.setVisible(hasFile);
+        }
+    }
+
+    private void hideContent(@NonNull FragmentMediaViewerBinding ui) {
+        ui.mediaImage.setVisibility(View.GONE);
+        ui.mediaPlayer.setVisibility(View.GONE);
+        ui.mediaLoadingHost.setVisibility(View.GONE);
+        ui.mediaErrorHost.setVisibility(View.GONE);
+        Glide.with(this).clear(ui.mediaImage);
+        releasePlayer();
+    }
+
+    private void showLoading(@NonNull FragmentMediaViewerBinding ui) {
+        ui.mediaLoadingHost.setVisibility(View.VISIBLE);
+        if (loadingView == null) {
+            loadingView = new LoadingStateView(requireContext());
+            ui.mediaLoadingHost.addView(loadingView, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+    }
+
+    private void showError(
+            @NonNull FragmentMediaViewerBinding ui,
+            @NonNull MediaViewerViewModel viewModel) {
+        ui.mediaErrorHost.setVisibility(View.VISIBLE);
+        if (errorView == null) {
+            errorView = new ErrorStateView(requireContext());
+            ui.mediaErrorHost.addView(errorView, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        errorView.setMessage(getString(R.string.error_network));
+        errorView.setOnRetry(viewModel::reload);
+    }
+
+    private void showPlayer(@NonNull FragmentMediaViewerBinding ui, @NonNull File file) {
+        ui.mediaPlayer.setVisibility(View.VISIBLE);
+        if (player != null && file.equals(playingFile)) {
+            return;
+        }
+        releasePlayer();
+        playingFile = file;
+        player = new ExoPlayer.Builder(requireContext()).build();
+        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)));
+        player.setPlayWhenReady(true);
+        player.prepare();
+        ui.mediaPlayer.setPlayer(player);
+    }
+
+    private void releasePlayer() {
+        FragmentMediaViewerBinding ui = binding;
+        if (ui != null) {
+            ui.mediaPlayer.setPlayer(null);
+        }
+        if (player != null) {
+            player.release();
+            player = null;
+        }
+        playingFile = null;
+    }
+
+    @Override
+    public void onStop() {
+        if (player != null) {
+            player.pause();
+        }
+        super.onStop();
+    }
+
+    @Override
+    public void onDestroyView() {
+        releasePlayer();
+        loadingView = null;
+        errorView = null;
+        binding = null;
+        super.onDestroyView();
+    }
 }

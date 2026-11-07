@@ -4,6 +4,42 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black">
+
+    <FrameLayout
+        android:id="@+id/mediaContent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="?attr/actionBarSize">
+
+        <ImageView
+            android:id="@+id/mediaImage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/cd_open_attachment"
+            android:scaleType="fitCenter"
+            android:visibility="gone" />
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/mediaPlayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            app:show_buffering="when_playing"
+            app:use_controller="true" />
+
+        <FrameLayout
+            android:id="@+id/mediaLoadingHost"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/mediaErrorHost"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+    </FrameLayout>
+
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/viewerToolbar"
         android:layout_width="match_parent"
@@ -12,10 +48,4 @@
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:titleTextColor="@android:color/white" />
-    <ImageView
-        android:id="@+id/mediaImage"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:contentDescription="@string/cd_open_attachment"
-        android:scaleType="fitCenter" />
 </FrameLayout>
