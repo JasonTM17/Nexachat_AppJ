@@ -36,14 +36,14 @@ class MediaViewerViewModelTest {
         name: String? = "clip.mp4",
         mime: String? = "video/mp4",
     ): MediaViewerViewModel = MediaViewerViewModel(
-        savedStateHandle = SavedStateHandle(
+        SavedStateHandle(
             buildMap {
                 put("attachmentId", ATTACHMENT_ID)
                 name?.let { put("name", it) }
                 mime?.let { put("mime", it) }
             },
         ),
-        attachmentRepository = attachmentRepository,
+        attachmentRepository,
     )
 
     @Test
