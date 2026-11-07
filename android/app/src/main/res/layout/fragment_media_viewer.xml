@@ -44,8 +44,9 @@
         android:id="@+id/viewerToolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="#80000000"
+        android:background="?attr/colorSurface"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:titleTextColor="@android:color/white" />
+        app:navigationIconTint="?attr/colorOnSurface"
+        app:titleTextColor="?attr/colorOnSurface" />
 </FrameLayout>
