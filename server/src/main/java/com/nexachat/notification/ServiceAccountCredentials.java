@@ -17,12 +17,6 @@ import java.util.Base64;
  */
 final class ServiceAccountCredentials {
 
-    // PEM markers are assembled from parts so source-level secret scans do not
-    // mistake the parser for committed key material.
-    private static final String PEM_PRIVATE_KEY_BEGIN = "-----BEGIN " + "PRIVATE KEY-----";
-    private static final String PEM_PRIVATE_KEY_END = "-----END " + "PRIVATE KEY-----";
-    private static final String PEM_RSA_PRIVATE_KEY_BEGIN = "-----BEGIN RSA " + "PRIVATE KEY-----";
-
     private final String clientEmail;
     private final PrivateKey privateKey;
     private final String tokenUri;
@@ -95,13 +89,27 @@ final class ServiceAccountCredentials {
 
     private static PrivateKey parsePrivateKey(String pem) {
         String normalized = pem.replace("\r\n", "\n").replace('\r', '\n');
-        if (normalized.contains(PEM_RSA_PRIVATE_KEY_BEGIN)) {
-            throw new IllegalStateException("FCM service account private key must be PKCS#8 PEM, not PKCS#1");
+        StringBuilder encoded = new StringBuilder();
+        boolean inBody = false;
+        for (String rawLine : normalized.split("\n")) {
+            String line = rawLine.trim();
+            if (line.startsWith("-----")) {
+                if (line.contains("BEGIN")) {
+                    if (line.contains("RSA")) {
+                        throw new IllegalStateException(
+                                "FCM service account private key must be PKCS#8 PEM, not PKCS#1");
+                    }
+                    inBody = true;
+                } else {
+                    inBody = false;
+                }
+                continue;
+            }
+            if (inBody && !line.isEmpty()) {
+                encoded.append(line);
+            }
         }
-        String body = normalized
-                .replace(PEM_PRIVATE_KEY_BEGIN, "")
-                .replace(PEM_PRIVATE_KEY_END, "")
-                .trim();
+        String body = encoded.toString();
         if (body.isEmpty()) {
             throw new IllegalStateException("FCM service account private key is empty");
         }

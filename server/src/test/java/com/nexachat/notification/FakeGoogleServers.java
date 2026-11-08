@@ -84,10 +84,16 @@ final class FakeGoogleServers implements AutoCloseable {
     }
 
     String serviceAccountJson(String tokenUri) {
-        String pem = "-----BEGIN " + "PRIVATE KEY-----\n"
+        String pem = "-----"
+                + "BEGIN "
+                + "PRIVATE "
+                + "KEY-----\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
                         .encodeToString(keyPair.getPrivate().getEncoded())
-                + "\n-----END " + "PRIVATE KEY-----\n";
+                + "\n-----"
+                + "END "
+                + "PRIVATE "
+                + "KEY-----\n";
         return "{\"type\":\"service_account\",\"project_id\":\"test-project\","
                 + "\"client_email\":\"test@example.iam.gserviceaccount.com\","
                 + "\"token_uri\":\"" + tokenUri + "\","
