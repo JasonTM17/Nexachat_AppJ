@@ -7,7 +7,7 @@ Every engineering document in the repository, grouped by domain. Start with
 
 | Doc | Contents |
 |---|---|
-| [README.md](../README.md) | Product overview, Stitch Dark/Light UI showcase, capability map, quick start, repo layout |
+| [README.md](../README.md) | Product overview, Modern Dark/Light UI showcase, capability map, quick start, repo layout |
 | [docs/architecture.md](architecture.md) | Container, module and send-message sequence diagrams; modular monolith rationale |
 | [docs/known-limitations.md](known-limitations.md) | Architectural scope and documented engineering trade-offs |
 
@@ -35,11 +35,11 @@ Every engineering document in the repository, grouped by domain. Start with
 
 | Doc | Contents |
 |---|---|
-| [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states and Stitch→XML layout mapping |
-| [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Google Stitch design-system specification |
-| [docs/design/stitch/screens/](design/stitch/screens/) | Stitch HTML references and exported design comps |
-| [docs/media/README.md](media/README.md) | Live emulator Stitch Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode UI showcase index |
-| [docs/media/screens/](media/screens/) | Captured Stitch Dark & Light Mode showcase (`stitch-01..10`) and core workflow PNGs (`01..17`) |
+| [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states and XML layout mapping |
+| [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Design system specification and guidelines |
+| [docs/design/stitch/screens/](design/stitch/screens/) | HTML design references and exported design comps |
+| [docs/media/README.md](media/README.md) | Live emulator Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode UI showcase index |
+| [docs/media/screens/](media/screens/) | Captured Dark & Light Mode showcase (`stitch-01..10`) and core workflow PNGs (`01..17`) |
 
 ## Contributing & release history
 

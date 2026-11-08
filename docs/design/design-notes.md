@@ -1,6 +1,6 @@
 # NexaChat Android Design System Notes
 
-This document describes the design language, token definitions, component states, and XML View / Fragment mapping for NexaChat on Android (Java 21, ViewBinding, Material 3), synthesized from the Stitch design system **Modern Material Messenger** (`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`).
+This document describes the design language, token definitions, component states, and XML View / Fragment mapping for NexaChat on Android (Java 21, ViewBinding, Material 3), synthesized from the design system **Modern Material Messenger**.
 
 ---
 
@@ -28,7 +28,7 @@ This document describes the design language, token definitions, component states
 
 ## 2. Design Tokens
 
-Token values live in `res/values/colors_nexachat.xml`, `res/values/themes.xml`, and `res/values/dimens_nexachat.xml`, aligned with Material 3 roles from the Stitch palette.
+Token values live in `res/values/colors_nexachat.xml`, `res/values/themes.xml`, and `res/values/dimens_nexachat.xml`, aligned with Material 3 roles from the design palette.
 
 ### 2.1 Spacing (`dimens_nexachat.xml`)
 Strict 8pt grid baseline:
@@ -109,15 +109,14 @@ Animations stay restrained (roughly 150ms fades/slides) and respect the system a
 | F5 Forward | Bottom-sheet conversation picker; `ForwardFilter` restricts the action to live `TEXT`; success snackbar "Đã chuyển tiếp" | Text-only keeps the action honest — attachments are not copied |
 | F6 Presence & settings | Direct-chat header + inbox online dot; `PresenceFormatter`; Profile Appearance (SYSTEM/LIGHT/DARK) and Privacy (`showPresence`) switch | Presence is one-way and DIRECT-only; theme is local, presence is server-backed |
 
-## 7. Stitch attribution (honest)
+## 7. Design System Attribution
 
-The Stitch design system **Modern Material Messenger**
-(`projects/15384195107762462338`, asset `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`)
-supplied layout references and the Material 3 token direction. Stitch-generated
+The design system **Modern Material Messenger**
+supplied layout references and the Material 3 token direction. Reference
 layouts were **converted by hand** to XML layouts, custom Views, and Fragments; nothing is an automatic
-code export. Stitch screens referenced under `docs/design/stitch/screens/`:
+code export. Reference screens:
 
-| Stitch screen | Converted to | Notes |
+| Design screen | Converted to | Notes |
 |---|---|---|
 | `active_chat` | `feature/chat/ChatFragment.java` | `MessageBubbleBinder` + asymmetric grouping |
 | `message_action_sheet` | `feature/chat/ChatFragment.java`, `ChatInteractionsViews.java` | Material `BottomSheetDialog` |
@@ -138,21 +137,18 @@ Presentation rules and helpers are pure Java throughout: `PresenceFormatter`, `S
 
 ## 8. Conversation Catch-up AI Summary (Phase 6)
 
-Stitch project: `projects/15384195107762462338` (Modern Material Messenger)
-Design system asset: `assets/a8ad41c7c78e4c359cfc3e40cc73dc08`
-
-| Screen ID | Stitch Artifact | Hand-Coded Fragment / Java Helper | Notes & Deliberate Deviations |
+| Screen ID | Reference Artifact | Hand-Coded Fragment / Java Helper | Notes & Deliberate Deviations |
 |---|---|---|---|
-| `279a9f06271348349e14721dd8d021d1` | `summary_ready.{html,png}` | `feature/summary/SummaryBottomSheetFragment.java`, `UnreadBannerView.java`, `ScopeLabel.java`, `SummaryTextFormatter.java` | Unread banner with dismissal memory; Material bottom sheet with scope chips, overview, key points, decisions, action items, questions, and topics. Citation chips close sheet and jump to message with pulse highlight. Stitch mock used inline tags; Java implementation uses accessible interactive chips with >=48dp touch targets and disabled state when `CitationResolver` returns unavailable. |
+| `279a9f06271348349e14721dd8d021d1` | `summary_ready.{html,png}` | `feature/summary/SummaryBottomSheetFragment.java`, `UnreadBannerView.java`, `ScopeLabel.java`, `SummaryTextFormatter.java` | Unread banner with dismissal memory; Material bottom sheet with scope chips, overview, key points, decisions, action items, questions, and topics. Citation chips close sheet and jump to message with pulse highlight. Mock used inline tags; Java implementation uses accessible interactive chips with >=48dp touch targets and disabled state when `CitationResolver` returns unavailable. |
 | `dd3d9a9a537f4870a8550866e9a06ebc` | `summary_loading_skeleton.{html,png}` | `res/layout/include_summary_skeleton.xml` (in `bottom_sheet_summary.xml`) | Shimmer skeleton placeholders for overview, list items, and action chips; reduced-motion safe via system animator / accessibility settings. |
 | `86bfe206298d4deea5065280af5831c6` | `summary_error_states.{html,png}` | `SummaryErrorViewHelper.java`, `ErrorStateView.java`, `SummaryErrorMapper.java` | Typed error rendering: `TOO_FEW` ("Chưa đủ tin nhắn · Cần tối thiểu 5 tin nhắn để tạo tóm tắt"), `RATE_LIMITED` with countdown hint, `NETWORK` ("Không thể kết nối máy chủ" + "Thử lại" action), `NOT_MEMBER`, and `UNKNOWN`. |
 | `f9918e0ec2a44d45b0a57d5a782d67f1` | `summary_settings_consent.{html,png}` | `feature/profile/ProfileFragment.java`, `AiConsentRepository.java` | Settings Privacy row with switch bound to `AiConsentRepository` (optimistic update + rollback on error), required disclosure ("Tin nhắn được ẩn thông tin nhạy cảm rồi gửi tới dịch vụ AI"), and first-use confirmation dialog. |
 
 ---
 
-## 9. Phase 7 — Stitch Midnight Obsidian & Electric Violet UI Overhaul (Dark & Light Parity)
+## 9. Phase 7 — Midnight Obsidian & Electric Violet UI Overhaul (Dark & Light Parity)
 
-To achieve 1:1 visual parity with the Google Stitch **Midnight Obsidian & Electric Violet** reference across both Dark Mode and Light Mode, the Android resource layer and presentation components were upgraded:
+To achieve 1:1 visual parity with the **Midnight Obsidian & Electric Violet** reference across both Dark Mode and Light Mode, the Android resource layer and presentation components were upgraded:
 
 - **Color Palette (`values-night/colors_nexachat.xml` & `values/colors_nexachat.xml`)**:
   - Dark Mode: `#0B0E17` Midnight Obsidian canvas, `#151B2B` elevated navy cards (`1dp` `#232C43` stroke), `#7C3AED` Electric Violet primary accent, `#5B21B6` outgoing bubble, `#182034` incoming bubble, and `#10B981` emerald online indicator dot.
@@ -164,8 +160,8 @@ To achieve 1:1 visual parity with the Google Stitch **Midnight Obsidian & Electr
   - Top bar with `36dp` user avatar + green dot, bold `NexaChat` title, and `✦ AI` pill badge (`@drawable/bg_stitch_ai_badge`).
   - `26dp` rounded search pill (`Search chats, people, tags...`) with trailing AI sparkle icon.
   - Horizontal `ACTIVE NOW` strip (`item_active_now_peer.xml`) prioritizing direct (1-on-1) peers first and deduplicating conversation titles.
-  - 4 Stitch filter chips (`All`, `Unread (N)`, `Direct`, `Groups`) + 4-tab bottom navigation bar (`Chats`, `Call`, `Contacts`, `Profile`) + squircle compose FAB (`@drawable/ic_edit_compose`).
+  - 4 filter chips (`All`, `Unread (N)`, `Direct`, `Groups`) + 4-tab bottom navigation bar (`Chats`, `Call`, `Contacts`, `Profile`) + squircle compose FAB (`@drawable/ic_edit_compose`).
 - **Unified Chat Header, Profile, Contacts & Summary Chips**:
   - Unified `?attr/colorSurface` background across `chatToolbar` and `chatToolbarActions` with a `36dp` `chatHeaderAvatar` next to the back arrow.
   - Shared `@color/stitch_chip_bg_tint`, `@color/stitch_chip_stroke_color`, and `@color/stitch_chip_text_color` selectors applied to Inbox filter chips, Profile theme chips (`System default`, `Light`, `Dark`), and Summary bottom sheet mode/scope chips (`Local`, `AI`, `Unread`, `Last 50`, `Today`).
-  - Contacts rendered inside `18dp` rounded Stitch `MaterialCardView` cards with online status dots and phone subtitles.
+  - Contacts rendered inside `18dp` rounded `MaterialCardView` cards with online status dots and phone subtitles.

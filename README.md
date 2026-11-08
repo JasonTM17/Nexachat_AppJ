@@ -13,7 +13,7 @@ message sending available offline.
 > **AI conversation summaries**). Every architectural claim below links directly to its
 > executable source and verification suite.
 
-## Demo & Stitch UI Showcase (Dark & Light Mode)
+## Demo & UI Showcase (Dark & Light Mode)
 
 Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK against the local Spring Boot 3 + PostgreSQL 16 backend. Full media index: [`docs/media/README.md`](docs/media/README.md).
 
@@ -28,11 +28,11 @@ Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campus
 <td align="center"><b>Profile (Dark Theme)</b></td>
 </tr>
 <tr>
-<td><img src="docs/media/screens/stitch-01-inbox-dark.png" width="180" alt="Stitch Dark Mode Inbox with Active Now strip, pill search bar, AI badge, and 4 filter chips"></td>
+<td><img src="docs/media/screens/stitch-01-inbox-dark.png" width="180" alt="Dark Mode Inbox with Active Now strip, pill search bar, AI badge, and 4 filter chips"></td>
 <td><img src="docs/media/screens/stitch-03-inbox-unread-chip.png" width="180" alt="Inbox filtered by Unread pill chip in Dark Mode"></td>
 <td><img src="docs/media/screens/stitch-04-chat-bubbles-reaction.png" width="180" alt="Chat screen with unified header, 36dp avatar, electric violet outgoing bubble, and thumbs up reaction"></td>
 <td><img src="docs/media/screens/stitch-06-ai-summary-sheet.png" width="180" alt="Conversation summary bottom sheet with Overview, Key points, citations, and Action items"></td>
-<td><img src="docs/media/screens/stitch-07-profile-dark.png" width="180" alt="Profile settings in Dark Mode with 4 Stitch cards and Electric Violet Dark chip"></td>
+<td><img src="docs/media/screens/stitch-07-profile-dark.png" width="180" alt="Profile settings in Dark Mode with setting cards and Electric Violet Dark chip"></td>
 </tr>
 </table>
 
@@ -42,14 +42,14 @@ Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campus
 <tr>
 <td align="center"><b>Inbox (Light Mode)</b></td>
 <td align="center"><b>Profile (Light Theme)</b></td>
-<td align="center"><b>Contacts Stitch Cards</b></td>
+<td align="center"><b>Contacts Directory</b></td>
 <td align="center"><b>Create Group Flow</b></td>
 <td align="center"><b>In-Chat Search</b></td>
 </tr>
 <tr>
-<td><img src="docs/media/screens/stitch-02-inbox-light.png" width="180" alt="Stitch Light Mode Inbox with high-contrast cards, Active Now strip, and bottom navigation"></td>
+<td><img src="docs/media/screens/stitch-02-inbox-light.png" width="180" alt="Light Mode Inbox with high-contrast cards, Active Now strip, and bottom navigation"></td>
 <td><img src="docs/media/screens/stitch-08-profile-light.png" width="180" alt="Profile settings in Light Mode with crisp dark back arrow and Electric Violet Light chip"></td>
-<td><img src="docs/media/screens/stitch-09-contacts-cards.png" width="180" alt="Contacts screen with rounded Stitch MaterialCardView rows and green online presence dots"></td>
+<td><img src="docs/media/screens/stitch-09-contacts-cards.png" width="180" alt="Contacts screen with rounded MaterialCardView rows and green online presence dots"></td>
 <td><img src="docs/media/screens/stitch-10-create-group.png" width="180" alt="New group creation card with member checkboxes and pill action button"></td>
 <td><img src="docs/media/screens/stitch-05-in-chat-search.png" width="180" alt="In-chat message search bar docked below unified chat header"></td>
 </tr>
@@ -91,7 +91,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Rich Interactions (Reply, Reactions, Pins, Forward) | Reply/quote + emoji reactions (toggle) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
 | 1-to-1 Voice Calls (WebRTC) | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens, localized call log | `server/call`, `app/call` |
 | AI Conversation Summary | Extractive local engine + optional DeepSeek LLM behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
-| Design System & Quality Gates | Material 3 Stitch Dark/Light themes, ≥48dp touch targets, shared state components, and automated server/client test suites | `core/ui`, `server/src/test`, `app/src/test` |
+| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, and automated server/client test suites | `core/ui`, `server/src/test`, `app/src/test` |
 
 ## Architecture
 
@@ -149,9 +149,9 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
 | Deploy | Multi-stage `server/Dockerfile`, `docker-compose.yml` | `API_BASE_URL` via `local.properties`/`-PapiBaseUrl` |
 
-Design system: tokens, component states and the Stitch→XML layout mapping are in
+Design system: tokens, component states and the XML layout mapping are in
 [docs/design/design-notes.md](docs/design/design-notes.md); live emulator
-Stitch Dark & Light Mode showcase frames are indexed in
+Dark & Light Mode showcase frames are indexed in
 [docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens/)).
 
 ## Prerequisites
@@ -280,8 +280,8 @@ nexachat/
 │  ├─ src/main/resources/db/migration/V1–V6   # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
-│  ├─ design/       design tokens + Stitch design-system references
-│  ├─ media/        Stitch Dark & Light Mode showcase frames (docs/media/README.md)
+│  ├─ design/       design tokens + design-system references
+│  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
 ├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/

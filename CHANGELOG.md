@@ -40,14 +40,14 @@ after the tag.
   `ChatUiRules`, `LinkUtils`, `Motion`, `SectionHeader`, `SettingsRow`,
   `theme/Elevation`, `theme/Shape`, `theme/Spacing`), in-chat search UI, a
   message action sheet and profile/settings screens.
-- Stitch Midnight Obsidian & Electric Violet UI overhaul (Dark & Light parity):
+- Midnight Obsidian & Electric Violet UI overhaul (Dark & Light parity):
   `#0B0E17` dark canvas, `#151B2B` navy cards, `#7C3AED` electric violet accents,
   `AvatarView` online status dot and story ring, Inbox `ACTIVE NOW` strip
   (prioritizing direct peers and deduplicating titles), 4 pill filter chips,
   4-tab bottom navigation bar, unified chat header with `36dp` peer avatar,
-  Stitch card rows for Contacts, and electric violet chip selectors across
+  Material card rows for Contacts, and electric violet chip selectors across
   Profile and Conversation Summary sheets (`s7-*-stitch-*`, `docs/media/screens/stitch-*.png`).
-- Four new Stitch design references (`in_chat_search`, `message_action_sheet`,
+- Four new UI design references (`in_chat_search`, `message_action_sheet`,
   `profile_settings`, `theme_privacy_settings`).
 - New user-facing strings in paired EN/VI resources, including call-specific
   `strings_call.xml` files (time labels, content descriptions, call controls,
@@ -91,7 +91,7 @@ after the tag.
   datasource fail-fast.
 - `fc4cce1` — Android hardening: realtime session and token-store fixes,
   upload/download safety, inbox reconcile.
-- `223d520` — Material 3 redesign from Stitch (also listed under Added).
+- `223d520` — Material 3 UI design refresh (also listed under Added).
 - `cb9a58f` — CI `:app:lintDebug` step and documentation updates.
 - `9b5e9cb` — README, security, and protocol documentation synced with shipped
   behaviour.
@@ -124,6 +124,6 @@ First tagged release (`v1.0.0`, commit `64d47c0`).
 - Operations: multi-stage `server/Dockerfile`, `docker-compose.yml`, LAN bootstrap
   scripts, and signed-APK release pipeline.
 - Documentation: architecture diagrams, REST/STOMP contracts, security
-  architecture, operations guide, and Stitch design documentation.
+  architecture, operations guide, and UI design documentation.
 - CI: server tests (Maven verify), Android unit tests and lint, and a
   committed-secret scan on every PR and push to `main`/`develop`.
