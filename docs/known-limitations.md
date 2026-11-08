@@ -41,7 +41,7 @@ test, and runtime status.
 
 | Limitation | Current behavior | Impact / next step |
 |---|---|---|
-| Interaction actions while offline | Room v8 adds the `offline_outbox` table, UUIDv5 idempotency keys (`IdempotencyUtils.java`) and a drain path in `OutboxSyncWorker`, but no production code enqueues rows into it yet. Reactions and pins still use optimistic updates with failure rollback (`MessageRepository.java`). | Offline reactions and pins are not retried automatically; wiring the producers is future work. |
+| Interaction actions while offline | Reactions and pins keep the optimistic local change and enqueue a durable `offline_outbox` action in the same Room transaction (`MessageRepository.java`). `OutboxSyncWorker` dispatches it with a stable idempotency key, retries transient failures with exponential backoff, and rolls back with a visible error only on a permanent 4xx. | Retry attempts are bounded; a permanent failure reverts the optimistic state. Real device/WorkManager scheduling and doze behaviour are not covered by JVM tests. |
 | Attachment forwarding | Message forwarding supports live `TEXT` content only (`android/app/src/main/java/com/nexachat/core/ui/ForwardFilter.java`). | Images, audio, video, files, and deleted messages cannot be forwarded through this action. |
 | Client inbox paging | The server accepts optional `limit`/`cursor` paging, but the Android client currently requests the complete inbox (`android/app/src/main/java/com/nexachat/data/ConversationRepository.java`). | Very large inboxes are loaded in one request; client keyset paging remains future work. |
 | Deep history jump | Quote/pin jumps page at most 20 history pages (`MessageRepository.MAX_JUMP_PAGES`). | A target beyond the bound may not be reached by the jump flow. |
