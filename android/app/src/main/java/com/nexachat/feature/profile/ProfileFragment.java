@@ -56,14 +56,19 @@ public final class ProfileFragment extends Fragment {
         binding.profileToolbar.setTitle(R.string.profile_title);
         binding.profileToolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.profileAvatar.setOnClickListener(v -> avatarPicker.launch("image/*"));
+        if (binding.cameraBadge != null) {
+            binding.cameraBadge.setOnClickListener(v -> avatarPicker.launch("image/*"));
+        }
         binding.editName.setOnClickListener(v -> viewModel.startEditName());
         binding.nameInput.addTextChangedListener(new SimpleTextWatcher(s -> viewModel.onNameInputChange(s)));
         binding.saveName.setOnClickListener(v -> viewModel.saveDisplayName());
         binding.cancelName.setOnClickListener(v -> viewModel.cancelEditName());
         binding.changePassword.setOnClickListener(v -> { viewModel.openPasswordDialog(); showPasswordDialog(); });
         binding.languageRow.setTitle(getString(R.string.settings_language));
+        binding.languageRow.setLeadingIcon(R.drawable.ic_language);
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
         binding.themeRow.setTitle(getString(R.string.settings_theme_title));
+        binding.themeRow.setLeadingIcon(R.drawable.ic_theme_mode);
         binding.themeRow.setOnClickListener(v -> showThemeDialog());
         View.OnClickListener onThemeChipClick = v -> {
             int id = v.getId();
@@ -93,8 +98,12 @@ public final class ProfileFragment extends Fragment {
         binding.aiConsentRow.setOnClickListener(v -> binding.aiSummaryConsent.toggle());
         binding.aiSummaryConsent.setOnCheckedChangeListener(this::onAiConsentToggled);
         binding.logoutRow.setTitle(getString(R.string.action_logout));
+        binding.logoutRow.setLeadingIcon(R.drawable.ic_logout);
+        binding.logoutRow.setDestructive(true);
         binding.logoutRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d, w) -> viewModel.logout()).show());
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
+        binding.logoutAllRow.setLeadingIcon(R.drawable.ic_logout);
+        binding.logoutAllRow.setDestructive(true);
         binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));

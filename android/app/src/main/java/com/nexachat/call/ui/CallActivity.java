@@ -69,6 +69,11 @@ public class CallActivity extends ComponentActivity {
     private Button muteButton;
     private Button speakerButton;
     private Button hangUpButton;
+    private View pulseRing;
+    private android.animation.AnimatorSet pulseAnimator;
+    private TextView muteLabel;
+    private TextView speakerLabel;
+    private TextView hangUpLabel;
     private CallSession currentSession;
     private CallManager.CallListener listener;
     private PendingOperation pendingOperation = PendingOperation.NONE;
@@ -193,6 +198,10 @@ public class CallActivity extends ComponentActivity {
             callManager.removeListener(listener);
             listener = null;
         }
+        if (pulseAnimator != null) {
+            pulseAnimator.cancel();
+            pulseAnimator = null;
+        }
         releaseProximityWakeLock();
         super.onStop();
     }
@@ -200,6 +209,10 @@ public class CallActivity extends ComponentActivity {
     @Override protected void onDestroy() {
         mainHandler.removeCallbacks(timerTick);
         mainHandler.removeCallbacks(finishEndedScreen);
+        if (pulseAnimator != null) {
+            pulseAnimator.cancel();
+            pulseAnimator = null;
+        }
         releaseProximityWakeLock();
         super.onDestroy();
     }
@@ -239,6 +252,10 @@ public class CallActivity extends ComponentActivity {
         muteButton = findViewById(R.id.call_mute);
         speakerButton = findViewById(R.id.call_speaker);
         hangUpButton = findViewById(R.id.call_hang_up);
+        pulseRing = findViewById(R.id.call_pulse_ring);
+        muteLabel = findViewById(R.id.call_mute_label);
+        speakerLabel = findViewById(R.id.call_speaker_label);
+        hangUpLabel = findViewById(R.id.call_hang_up_label);
     }
 
     private void bindActions() {
@@ -263,9 +280,16 @@ public class CallActivity extends ComponentActivity {
                     peerName.getText() == null ? null : peerName.getText().toString()));
             status.setText(R.string.call_state_calling);
             status.setContentDescription(status.getText());
+            updatePulseAnimation(true);
             return;
         }
         currentSession = session;
+        boolean isLive = session.getState() == CallState.ACTIVE
+                || session.getState() == CallState.OUTGOING_RINGING
+                || session.getState() == CallState.CONNECTING
+                || session.getState() == CallState.RECONNECTING_NETWORK;
+        updatePulseAnimation(isLive);
+
         String name = session.getPeerDisplayName();
         if (name == null || name.trim().isEmpty()) name = getString(R.string.call_peer_fallback);
         peerName.setText(name);
@@ -290,6 +314,28 @@ public class CallActivity extends ComponentActivity {
         muteButton.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
         speakerButton.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
         hangUpButton.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
+        if (muteLabel != null) {
+            muteLabel.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
+            muteLabel.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
+        }
+        if (speakerLabel != null) {
+            speakerLabel.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
+            speakerLabel.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
+        }
+        if (hangUpLabel != null) {
+            hangUpLabel.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
+            if (model.getHangUpLabelRes() != 0) {
+                hangUpLabel.setText(model.getHangUpLabelRes());
+            }
+        }
+        if (muteButton instanceof com.google.android.material.button.MaterialButton) {
+            ((com.google.android.material.button.MaterialButton) muteButton)
+                    .setIconResource(session.isMuted() ? R.drawable.ic_mic_off : R.drawable.ic_mic);
+        }
+        if (speakerButton instanceof com.google.android.material.button.MaterialButton) {
+            ((com.google.android.material.button.MaterialButton) speakerButton)
+                    .setIconResource(session.isSpeakerOn() ? R.drawable.ic_volume_down : R.drawable.ic_volume_up);
+        }
         if (model.getHangUpLabelRes() != 0) {
             hangUpButton.setText(model.getHangUpLabelRes());
             hangUpButton.setContentDescription(getString(model.getHangUpLabelRes()));
@@ -300,6 +346,51 @@ public class CallActivity extends ComponentActivity {
         speakerButton.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
         speakerButton.setContentDescription(getString(
                 session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker));
+    }
+
+    private void updatePulseAnimation(boolean isLive) {
+        if (pulseRing == null) return;
+        float scale = 1.0f;
+        try {
+            scale = android.provider.Settings.Global.getFloat(
+                    getContentResolver(),
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f);
+        } catch (Exception ignored) { }
+        boolean enabled = android.animation.ValueAnimator.areAnimatorsEnabled();
+        boolean shouldAnimate = CallPulseAnimationPolicy.shouldAnimate(scale, enabled, isLive);
+
+        if (shouldAnimate) {
+            if (pulseAnimator == null || !pulseAnimator.isStarted()) {
+                android.animation.ObjectAnimator scaleX =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "scaleX", 0.95f, 1.18f);
+                android.animation.ObjectAnimator scaleY =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "scaleY", 0.95f, 1.18f);
+                android.animation.ObjectAnimator alpha =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "alpha", 0.45f, 0.10f);
+                scaleX.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                scaleX.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                scaleY.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                scaleY.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                alpha.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                alpha.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+
+                pulseAnimator = new android.animation.AnimatorSet();
+                pulseAnimator.playTogether(scaleX, scaleY, alpha);
+                pulseAnimator.setDuration(1600L);
+                pulseAnimator.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+                pulseAnimator.start();
+                pulseRing.setVisibility(View.VISIBLE);
+            }
+        } else {
+            if (pulseAnimator != null) {
+                pulseAnimator.cancel();
+                pulseAnimator = null;
+            }
+            pulseRing.setScaleX(1.0f);
+            pulseRing.setScaleY(1.0f);
+            pulseRing.setAlpha(0.25f);
+            pulseRing.setVisibility(isLive ? View.VISIBLE : View.GONE);
+        }
     }
 
     private int lastAnnouncedStatus = 0;

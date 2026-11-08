@@ -6,151 +6,135 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-        <ScrollView
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:fillViewport="true">
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
 
             <LinearLayout
+                android:id="@+id/contentColumn"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:maxWidth="@dimen/auth_form_max_width"
                 android:gravity="center_horizontal"
-                android:orientation="vertical"
-                android:padding="@dimen/space_lg">
+                android:orientation="vertical">
 
-                <LinearLayout
-                    android:id="@+id/contentColumn"
+                <!-- Brand mark tile: rounded indigo with white N -->
+                <ImageView
+                    android:id="@+id/authLogo"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_gravity="center_horizontal"
+                    android:background="@drawable/bg_auth_logo"
+                    android:contentDescription="@string/app_name"
+                    android:padding="14dp"
+                    android:scaleType="centerInside"
+                    android:src="@drawable/ic_logo_mark" />
+
+                <!-- App title -->
+                <TextView
+                    android:id="@+id/authTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:layout_marginBottom="32dp"
+                    android:accessibilityHeading="true"
+                    tools:targetApi="p"
+                    android:text="@string/app_name"
+                    android:textAppearance="?attr/textAppearanceHeadlineMedium"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textStyle="bold" />
+
+                <!-- Two input fields -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/phoneLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:maxWidth="@dimen/auth_form_max_width"
-                    android:orientation="vertical"
-                    android:gravity="center_horizontal">
+                    android:hint="@string/auth_phone_label"
+                    app:boxCornerRadiusBottomEnd="12dp"
+                    app:boxCornerRadiusBottomStart="12dp"
+                    app:boxCornerRadiusTopEnd="12dp"
+                    app:boxCornerRadiusTopStart="12dp">
 
-                    <ImageView
-                        android:id="@+id/authLogo"
-                        android:layout_width="72dp"
-                        android:layout_height="72dp"
-                        android:layout_gravity="center_horizontal"
-                        android:contentDescription="@string/app_name"
-                        android:src="@mipmap/ic_launcher_round" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:background="@drawable/bg_date_separator"
-                        android:letterSpacing="0.08"
-                        android:paddingHorizontal="12dp"
-                        android:paddingVertical="4dp"
-                        android:text="@string/auth_workspace_badge"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/authTitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:accessibilityHeading="true"
-                        tools:targetApi="p"
-                        android:text="@string/app_name"
-                        android:textAppearance="?attr/textAppearanceHeadlineLarge"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.card.MaterialCardView
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/phoneInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xl"
-                        app:cardBackgroundColor="?attr/colorSurface"
-                        app:cardCornerRadius="24dp"
-                        app:cardElevation="0dp"
-                        app:contentPadding="24dp"
-                        app:strokeColor="?attr/colorOutlineVariant"
-                        app:strokeWidth="1dp">
+                        android:autofillHints="phone"
+                        android:imeOptions="actionNext"
+                        android:importantForAutofill="yes"
+                        android:inputType="phone"
+                        android:nextFocusDown="@id/passwordInput" />
+                </com.google.android.material.textfield.TextInputLayout>
 
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical">
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/passwordLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:hint="@string/auth_password_label"
+                    app:boxCornerRadiusBottomEnd="12dp"
+                    app:boxCornerRadiusBottomStart="12dp"
+                    app:boxCornerRadiusTopEnd="12dp"
+                    app:boxCornerRadiusTopStart="12dp"
+                    app:endIconContentDescription="@string/cd_password_visibility"
+                    app:endIconDrawable="@drawable/ic_visibility"
+                    app:endIconMode="password_toggle">
 
-                            <com.google.android.material.textfield.TextInputLayout
-                                android:id="@+id/phoneLayout"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:hint="@string/auth_phone_label"
-                                app:boxCornerRadiusBottomEnd="12dp"
-                                app:boxCornerRadiusBottomStart="12dp"
-                                app:boxCornerRadiusTopEnd="12dp"
-                                app:boxCornerRadiusTopStart="12dp">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/phoneInput"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:autofillHints="phone"
-                                    android:imeOptions="actionNext"
-                                    android:importantForAutofill="yes"
-                                    android:inputType="phone"
-                                    android:nextFocusDown="@id/passwordInput" />
-                            </com.google.android.material.textfield.TextInputLayout>
-
-                            <com.google.android.material.textfield.TextInputLayout
-                                android:id="@+id/passwordLayout"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm"
-                                android:hint="@string/auth_password_label"
-                                app:boxCornerRadiusBottomEnd="12dp"
-                                app:boxCornerRadiusBottomStart="12dp"
-                                app:boxCornerRadiusTopEnd="12dp"
-                                app:boxCornerRadiusTopStart="12dp"
-                                app:endIconContentDescription="@string/cd_password_visibility"
-                                app:endIconDrawable="@drawable/ic_visibility"
-                                app:endIconMode="password_toggle">
-
-                                <com.google.android.material.textfield.TextInputEditText
-                                    android:id="@+id/passwordInput"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:autofillHints="password"
-                                    android:imeOptions="actionDone"
-                                    android:importantForAutofill="yes"
-                                    android:inputType="textPassword" />
-                            </com.google.android.material.textfield.TextInputLayout>
-
-                            <TextView
-                                android:id="@+id/errorBanner"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_sm"
-                                android:background="?attr/colorErrorContainer"
-                                android:padding="@dimen/space_sm"
-                                android:textColor="?attr/colorOnErrorContainer"
-                                android:visibility="gone" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/primaryAction"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_md"
-                                android:minHeight="54dp"
-                                android:textStyle="bold"
-                                app:cornerRadius="16dp" />
-                        </LinearLayout>
-                    </com.google.android.material.card.MaterialCardView>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/secondaryAction"
-                        style="@style/Widget.Material3.Button.TextButton"
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/passwordInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:minHeight="@dimen/min_touch_target" />
-                </LinearLayout>
+                        android:autofillHints="password"
+                        android:imeOptions="actionDone"
+                        android:importantForAutofill="yes"
+                        android:inputType="textPassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Error banner -->
+                <TextView
+                    android:id="@+id/errorBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/bg_settings_tile_error"
+                    android:padding="12dp"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone" />
+
+                <!-- One full-width primary button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/primaryAction"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:minHeight="54dp"
+                    android:text="@string/action_sign_in"
+                    android:textStyle="bold"
+                    app:cornerRadius="12dp" />
+
+                <!-- Text link -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/secondaryAction"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/action_create_account"
+                    android:textColor="?attr/colorPrimary" />
             </LinearLayout>
-        </ScrollView>
-
+        </LinearLayout>
+    </ScrollView>
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"
@@ -169,5 +153,4 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
-
 </FrameLayout>

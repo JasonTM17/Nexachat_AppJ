@@ -27,5 +27,5 @@
         android:minHeight="@dimen/min_touch_target"
         android:text="@string/action_retry"
         android:visibility="gone"
-        app:cornerRadius="16dp" />
+        app:cornerRadius="12dp" />
 </merge>

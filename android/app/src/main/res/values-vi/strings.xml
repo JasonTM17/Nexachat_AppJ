@@ -216,9 +216,6 @@
     <string name="voice_message_accessibility">Tin nhắn thoại, %1$s trên %2$s, %3$s</string>
     <string name="voice_zero_duration">0:00</string>
 
-    <!-- Static audit sweep strings -->
-    <string name="auth_workspace_badge">✦ KHÔNG GIAN NEXACHAT</string>
-    <string name="splash_tagline">✦ NHẮN TIN AI BẢO MẬT</string>
     <string name="voice_recording_duration_zero">00:00</string>
 
 </resources>
