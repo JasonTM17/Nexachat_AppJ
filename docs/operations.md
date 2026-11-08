@@ -15,8 +15,10 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `JWT_SECRET` | Yes; at least 32 UTF-8 bytes | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
 | `STORAGE_ROOT` | Yes outside Compose; Compose supplies a default | `/app/data/uploads` | `/app/data/uploads` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
-| `FCM_PROJECT_ID` | No (required only if `FCM_ENABLED=true`) | `mock-project` | `your-firebase-project-id` |
-| `FCM_SERVICE_ACCOUNT_JSON` | No (required only if `FCM_ENABLED=true`) | Empty | `{"type":"service_account",...}` |
+| `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
+| `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
+| `FCM_TOKEN_URI` | No (local testing only) | Empty (Google token endpoint) | `https://oauth2.googleapis.com/token` |
+| `FCM_API_URL` | No (local testing only) | Empty (Google FCM endpoint) | `https://fcm.googleapis.com/v1/projects/<id>/messages:send` |
 
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
@@ -25,19 +27,57 @@ The database stores its initial role/password in the named volume on first
 initialization, so changing `DATABASE_PASSWORD` alone does not rotate an
 already-initialized database role.
 
-### Firebase Cloud Messaging (FCM)
+### Push notifications (FCM)
 
-The server binds the properties `nexachat.fcm.enabled` (`${FCM_ENABLED:false}`),
-`nexachat.fcm.project-id` (`${FCM_PROJECT_ID:mock-project}`), and
-`nexachat.fcm.service-account-json` (`${FCM_SERVICE_ACCOUNT_JSON:}`)
-in `application.yml` and `GoogleHttpFcmGateway.java`.
+The server binds `nexachat.fcm.*` in `application.yml` and `FcmProperties.java`.
+When `FCM_ENABLED=true` it activates `GoogleHttpFcmGateway`, which sends FCM v1
+data messages. When `FCM_ENABLED=false` (the default) it activates
+`MockFcmGateway`, which records pushes without any network access.
 
-Real end-to-end FCM notification delivery to Android devices requires an active
-Google Firebase project, a valid Google service account JSON key on the server,
-and a client `google-services.json` in `android/app/`. None of these external
-credentials or files are bundled in the repository. When `FCM_ENABLED=false` (the
-default), the server activates `MockFcmGateway`, allowing local testing and CI
-verification without contacting external Google endpoints.
+`GoogleHttpFcmGateway` uses Google's OAuth2 service-account flow: it reads the
+service-account JSON, signs an RS256 JWT assertion with the JDK, exchanges it at
+the account's `token_uri` for an access token scoped to
+`https://www.googleapis.com/auth/firebase.messaging`, caches the token in memory
+until five minutes before expiry, and sends `Authorization: Bearer <token>` on
+every request. A `401` refreshes the token once and retries once. A token that
+comes back `UNREGISTERED` or `INVALID_ARGUMENT` is removed through the existing
+device-token cleanup path. The private key, access token, token-endpoint
+response, and device tokens are never written to logs.
+
+`FCM_SERVICE_ACCOUNT_JSON` accepts either the JSON inline or a filesystem path
+to a JSON file. With `FCM_ENABLED=true`, a missing or malformed value, or an
+empty `FCM_PROJECT_ID`, stops startup with a clear message instead of failing
+on the first send.
+
+`FCM_TOKEN_URI` and `FCM_API_URL` are optional overrides for running the server
+against a local fake Google endpoint; leave them empty in production.
+
+Real delivery requires an active Firebase project, a service account with the
+Firebase Cloud Messaging API enabled, and an Android client with a matching
+`android/app/google-services.json` that registers its device token. None of
+these external credentials or files are bundled in the repository, and
+end-to-end delivery is not covered by CI.
+
+To verify a setup with one test push:
+
+1. Put the service-account JSON inline in `FCM_SERVICE_ACCOUNT_JSON` (or set it
+   to a key file path) and set `FCM_PROJECT_ID`.
+2. Start the server. A successful start logs
+   `FCM gateway initialised for project <id>`; a missing or malformed key stops
+   startup.
+3. Register a device token for a user (the access token is a NexaChat JWT from
+   login):
+
+   ```sh
+   curl -X POST http://localhost:8080/api/v1/users/device-token \
+     -H "Authorization: Bearer <access-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"token":"<fcm-registration-token>","platform":"ANDROID","deviceLabel":"Test phone"}'
+   ```
+
+4. From another account, send that user a message. The server dispatches a
+   data-only push (`type=NEW_MESSAGE`) that the client uses to sync; message
+   content never passes through FCM.
 
 ## Start, stop, and health
 
