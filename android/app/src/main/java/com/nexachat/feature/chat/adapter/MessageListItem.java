@@ -28,6 +28,7 @@ public final class MessageListItem {
     private final MessageGroupPosition groupPosition;
     private final boolean showSenderName;
     private final boolean seenReceipt;
+    private final boolean deliveredReceipt;
     private final boolean pulsing;
 
     private MessageListItem(
@@ -38,6 +39,7 @@ public final class MessageListItem {
             @Nullable MessageGroupPosition groupPosition,
             boolean showSenderName,
             boolean seenReceipt,
+            boolean deliveredReceipt,
             boolean pulsing
     ) {
         this.kind = kind;
@@ -47,6 +49,7 @@ public final class MessageListItem {
         this.groupPosition = groupPosition;
         this.showSenderName = showSenderName;
         this.seenReceipt = seenReceipt;
+        this.deliveredReceipt = deliveredReceipt;
         this.pulsing = pulsing;
     }
 
@@ -60,6 +63,7 @@ public final class MessageListItem {
                 null,
                 false,
                 false,
+                false,
                 false
         );
     }
@@ -69,6 +73,7 @@ public final class MessageListItem {
             @NonNull MessageGroupPosition groupPosition,
             boolean showSenderName,
             boolean seenReceipt,
+            boolean deliveredReceipt,
             boolean pulsing
     ) {
         return new MessageListItem(
@@ -79,8 +84,19 @@ public final class MessageListItem {
                 groupPosition,
                 showSenderName,
                 seenReceipt,
+                deliveredReceipt,
                 pulsing
         );
+    }
+
+    public static MessageListItem message(
+            @NonNull ChatMessage message,
+            @NonNull MessageGroupPosition groupPosition,
+            boolean showSenderName,
+            boolean seenReceipt,
+            boolean pulsing
+    ) {
+        return message(message, groupPosition, showSenderName, seenReceipt, false, pulsing);
     }
 
     @NonNull
@@ -116,6 +132,10 @@ public final class MessageListItem {
         return seenReceipt;
     }
 
+    public boolean isDeliveredReceipt() {
+        return deliveredReceipt;
+    }
+
     public boolean isPulsing() {
         return pulsing;
     }
@@ -132,6 +152,7 @@ public final class MessageListItem {
                 && groupPosition == item.groupPosition
                 && showSenderName == item.showSenderName
                 && seenReceipt == item.seenReceipt
+                && deliveredReceipt == item.deliveredReceipt
                 && pulsing == item.pulsing;
     }
 
@@ -145,6 +166,7 @@ public final class MessageListItem {
                 groupPosition,
                 showSenderName,
                 seenReceipt,
+                deliveredReceipt,
                 pulsing
         );
     }

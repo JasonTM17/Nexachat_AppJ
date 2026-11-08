@@ -81,12 +81,25 @@ public class IncomingCallActivity extends ComponentActivity {
         acceptButton.setOnClickListener(view -> requestAccept());
         declineButton.setOnClickListener(view -> decline());
         currentSession = callManager.session().getValue();
+        if (currentSession == null || currentSession.getState() == CallState.IDLE) {
+            String callId = getIntent().getStringExtra(EXTRA_CALL_ID);
+            String conversationId = getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID);
+            String callerId = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID);
+            String callerName = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME);
+            long serverTs = getIntent().getLongExtra("EXTRA_SERVER_TS", 0L);
+            if (callId != null && conversationId != null && callerId != null) {
+                callManager.hydrateIncomingCall(callId, conversationId, callerId, callerName, serverTs);
+                currentSession = callManager.session().getValue();
+            }
+        }
         if (!matchesTargetCall(currentSession)) {
             finish();
             return;
         }
         render(currentSession);
-        if (currentSession == null || currentSession.getState() != CallState.INCOMING_RINGING) {
+        if (currentSession == null
+                || (currentSession.getState() != CallState.INCOMING_RINGING
+                    && currentSession.getState() != CallState.PENDING_INCOMING)) {
             finish();
             return;
         }
@@ -110,7 +123,10 @@ public class IncomingCallActivity extends ComponentActivity {
                 }
                 currentSession = session;
                 render(session);
-                if (session == null || session.getState() != CallState.INCOMING_RINGING) {
+                boolean isRinging = session != null
+                        && (session.getState() == CallState.INCOMING_RINGING
+                            || session.getState() == CallState.PENDING_INCOMING);
+                if (!isRinging) {
                     ringtonePlayer.stop();
                     CallNotifications.clearIncoming(IncomingCallActivity.this);
                     if (session == null) {
@@ -135,7 +151,8 @@ public class IncomingCallActivity extends ComponentActivity {
         currentSession = callManager.session().getValue();
         render(currentSession);
         if (!resolving && matchesTargetCall(currentSession)
-                && currentSession.getState() == CallState.INCOMING_RINGING) {
+                && (currentSession.getState() == CallState.INCOMING_RINGING
+                    || currentSession.getState() == CallState.PENDING_INCOMING)) {
             ringtonePlayer.start();
         }
     }
@@ -146,7 +163,8 @@ public class IncomingCallActivity extends ComponentActivity {
             listener = null;
         }
         if (!resolving && matchesTargetCall(currentSession)
-                && currentSession.getState() == CallState.INCOMING_RINGING) {
+                && (currentSession.getState() == CallState.INCOMING_RINGING
+                    || currentSession.getState() == CallState.PENDING_INCOMING)) {
             ringtonePlayer.stop();
             CallNotifications.showIncoming(this, currentSession);
         }
@@ -205,7 +223,8 @@ public class IncomingCallActivity extends ComponentActivity {
         CallAvatarColorResolver.apply(this, initials, name);
         status.setText(CallUiModelMapper.map(session).getTitleRes());
         status.setContentDescription(status.getText());
-        boolean ringing = session.getState() == CallState.INCOMING_RINGING;
+        boolean ringing = session.getState() == CallState.INCOMING_RINGING
+                || session.getState() == CallState.PENDING_INCOMING;
         acceptButton.setEnabled(ringing);
         declineButton.setEnabled(ringing);
     }
@@ -214,7 +233,8 @@ public class IncomingCallActivity extends ComponentActivity {
         if (!IncomingCallPermissionState.canStartAccept(
                 pendingAccept,
                 currentSession != null
-                        && currentSession.getState() == CallState.INCOMING_RINGING)) return;
+                        && (currentSession.getState() == CallState.INCOMING_RINGING
+                            || currentSession.getState() == CallState.PENDING_INCOMING))) return;
         pendingAccept = true;
         boolean granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED;
@@ -260,7 +280,7 @@ public class IncomingCallActivity extends ComponentActivity {
                     .setMessage(R.string.call_notifications_rationale)
                     .setPositiveButton(R.string.call_permission_continue,
                             (dialog, which) -> ActivityCompat.requestPermissions(
-                                    this, new String[] {Manifest.permission.POST_NOTIFICATIONS},
+                                     this, new String[] {Manifest.permission.POST_NOTIFICATIONS},
                                     REQUEST_NOTIFICATIONS))
                     .setNegativeButton(R.string.call_permission_cancel, (dialog, which) -> {
                         Toast.makeText(this, R.string.call_notifications_permission_needed,
@@ -276,7 +296,8 @@ public class IncomingCallActivity extends ComponentActivity {
     private void continueAccept() {
         pendingAccept = false;
         if (!matchesTargetCall(currentSession)
-                || currentSession.getState() != CallState.INCOMING_RINGING) return;
+                || (currentSession.getState() != CallState.INCOMING_RINGING
+                    && currentSession.getState() != CallState.PENDING_INCOMING)) return;
         resolving = true;
         ringtonePlayer.stop();
         CallNotifications.clearIncoming(this);
@@ -302,7 +323,8 @@ public class IncomingCallActivity extends ComponentActivity {
     private void decline() {
         resolving = true;
         if (matchesTargetCall(currentSession)
-                && currentSession.getState() == CallState.INCOMING_RINGING) {
+                && (currentSession.getState() == CallState.INCOMING_RINGING
+                    || currentSession.getState() == CallState.PENDING_INCOMING)) {
             callManager.reject(currentSession.getCallId());
         }
         ringtonePlayer.stop();

@@ -34,13 +34,13 @@ public abstract class ReactionDao {
     public abstract Completable deleteForMessage(String messageId);
 
     @Query("DELETE FROM message_reactions WHERE messageId = :messageId")
-    protected abstract void deleteForMessageInTransaction(String messageId);
+    public abstract void deleteForMessageInTransaction(String messageId);
 
     @Query("DELETE FROM message_reactions WHERE messageId IN (:messageIds)")
     public abstract Completable deleteForMessages(List<String> messageIds);
 
     @Query("DELETE FROM message_reactions WHERE messageId IN (:messageIds)")
-    protected abstract void deleteForMessagesInTransaction(List<String> messageIds);
+    public abstract void deleteForMessagesInTransaction(List<String> messageIds);
 
     @Query("DELETE FROM message_reactions")
     public abstract Completable clear();

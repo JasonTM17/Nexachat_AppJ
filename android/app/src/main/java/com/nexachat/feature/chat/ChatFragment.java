@@ -491,7 +491,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             int anchor = manager.findFirstVisibleItemPosition();
             if (anchor >= 0 && anchor < oldCount) anchorId = adapter.getCurrentList().get(anchor).getStableId();
         }
-        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), state.getPeerReadSeq(), pulsingMessageId,
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), state.getPeerReadSeq(), state.getPeerDeliveredSeq(), pulsingMessageId,
                 new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)), System.currentTimeMillis());
         String stableAnchor = anchorId;
         adapter.submitList(rows, () -> {

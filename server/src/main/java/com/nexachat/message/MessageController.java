@@ -6,6 +6,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.EditMessageRequest;
+import com.nexachat.message.dto.DeliveryRequest;
 import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.SendMessageRequest;
 import jakarta.validation.Valid;
@@ -103,6 +104,15 @@ public class MessageController {
             @PathVariable UUID conversationId,
             @Valid @RequestBody ReadRequest request) {
         messageService.markRead(requireUserId(principal), conversationId, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/delivered")
+    public ResponseEntity<Void> markDelivered(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody DeliveryRequest request) {
+        messageService.markDelivered(conversationId, requireUserId(principal), request != null ? request.upToSeq() : null);
         return ResponseEntity.noContent().build();
     }
 

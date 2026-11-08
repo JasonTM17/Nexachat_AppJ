@@ -63,6 +63,29 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     long findReadWatermark(@Param("conversationId") UUID conversationId,
                            @Param("userId") UUID userId);
 
+    /**
+     * Monotonic delivery-watermark advance: a watermark never moves backwards,
+     * so an out-of-order or replayed {@code upToSeq} cannot un-deliver messages.
+     *
+     * @return 1 when the row was advanced, 0 when already at/past {@code seq}
+     */
+    @Modifying
+    @Query("""
+            UPDATE ConversationMember m SET m.lastDeliveredSeq = :seq
+            WHERE m.conversation.id = :conversationId
+              AND m.user.id = :userId
+              AND m.lastDeliveredSeq < :seq
+            """)
+    int advanceDeliveredWatermark(@Param("conversationId") UUID conversationId,
+                                  @Param("userId") UUID userId,
+                                  @Param("seq") long seq);
+
+    /** Read back the persisted monotonic delivery watermark for post-commit event. */
+    @Query("SELECT m.lastDeliveredSeq FROM ConversationMember m "
+            + "WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
+    long findDeliveredWatermark(@Param("conversationId") UUID conversationId,
+                                @Param("userId") UUID userId);
+
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);

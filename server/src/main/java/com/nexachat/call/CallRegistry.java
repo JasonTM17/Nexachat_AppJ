@@ -22,6 +22,7 @@ public class CallRegistry {
     private final long ringTimeoutMillis;
     private final Map<UUID, CallSession> calls = new HashMap<>();
     private final Map<UUID, UUID> activeCallByUser = new HashMap<>();
+    private final Map<UUID, CallSignal.Sdp> offers = new HashMap<>();
 
     @Autowired
     public CallRegistry(@Value("${nexachat.calls.ring-timeout-ms:45000}") long ringTimeoutMillis) {
@@ -185,9 +186,26 @@ public class CallRegistry {
         }
     }
 
+    public synchronized void saveOffer(UUID callId, CallSignal.Sdp sdp) {
+        if (sdp != null) {
+            offers.put(callId, sdp);
+        }
+    }
+
+    public synchronized Optional<CallSignal.Sdp> findOffer(UUID callId) {
+        evictExpiredTerminals(clock.instant());
+        return Optional.ofNullable(offers.get(callId));
+    }
+
     private void evictExpiredTerminals(Instant now) {
-        calls.entrySet().removeIf(entry -> entry.getValue().state() == CallState.ENDED
-                && !now.isBefore(entry.getValue().endedAt().plus(TERMINAL_RETENTION)));
+        calls.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().state() == CallState.ENDED
+                    && !now.isBefore(entry.getValue().endedAt().plus(TERMINAL_RETENTION));
+            if (expired) {
+                offers.remove(entry.getKey());
+            }
+            return expired;
+        });
     }
 
     private Transition finish(CallSession current, CallEndReason reason, Instant now, boolean timedOut) {

@@ -62,6 +62,9 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
     @Column(name = "last_read_seq", nullable = false)
     private long lastReadSeq;
 
+    @Column(name = "last_delivered_seq", nullable = false)
+    private long lastDeliveredSeq;
+
     /** {@code true} until the row exists in the DB — drives persist-vs-merge. */
     @Transient
     private boolean isNew = true;
@@ -119,5 +122,9 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
 
     public long getLastReadSeq() {
         return lastReadSeq;
+    }
+
+    public long getLastDeliveredSeq() {
+        return lastDeliveredSeq;
     }
 }

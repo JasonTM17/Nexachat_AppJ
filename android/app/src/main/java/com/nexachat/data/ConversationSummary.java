@@ -26,8 +26,10 @@ public final class ConversationSummary {
     @Nullable private final String avatarUrl;
     /** Highest other-member read watermark, used for direct seen receipts. */
     private final long peerReadSeq;
+    /** Highest other-member delivered watermark, used for 2-tick delivered receipts. */
+    private final long peerDeliveredSeq;
     /** Caller member role from the inbox payload, used for group affordances. */
-    @Nullable private final String myRole;
+    private final String myRole;
     /** Direct peer user id, used as the presence lookup key. */
     @Nullable private final String otherUserId;
     /** Soft-deleted last message, rendered as a neutral inbox snippet. */
@@ -52,6 +54,29 @@ public final class ConversationSummary {
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
             @Nullable PeerPresence peerPresence) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence) {
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -64,6 +89,7 @@ public final class ConversationSummary {
         this.otherUserAvatar = otherUserAvatar;
         this.avatarUrl = avatarUrl;
         this.peerReadSeq = peerReadSeq;
+        this.peerDeliveredSeq = peerDeliveredSeq;
         this.myRole = myRole;
         this.otherUserId = otherUserId;
         this.lastMessageDeleted = lastMessageDeleted;
@@ -82,6 +108,7 @@ public final class ConversationSummary {
     @Nullable public String getOtherUserAvatar() { return otherUserAvatar; }
     @Nullable public String getAvatarUrl() { return avatarUrl; }
     public long getPeerReadSeq() { return peerReadSeq; }
+    public long getPeerDeliveredSeq() { return peerDeliveredSeq; }
     @Nullable public String getMyRole() { return myRole; }
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
@@ -109,6 +136,7 @@ public final class ConversationSummary {
         return lastMessageSeq == that.lastMessageSeq
                 && unreadCount == that.unreadCount
                 && peerReadSeq == that.peerReadSeq
+                && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
                 && id.equals(that.id)
                 && type.equals(that.type)
@@ -128,7 +156,7 @@ public final class ConversationSummary {
     public int hashCode() {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
-                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence);
     }
 }

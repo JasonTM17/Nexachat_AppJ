@@ -37,6 +37,11 @@ nexachat:
       window-seconds: 10
       typing-per-window: 60
       typing-window-seconds: 10
+      acks-per-window: 120
+      ack-window-seconds: 10
+  calls:
+    ring-timeout-ms: ${NEXACHAT_CALLS_RING_TIMEOUT_MS:45000}
+    disconnect-grace-ms: ${NEXACHAT_CALLS_DISCONNECT_GRACE_MS:15000}
   storage:
     root: ${STORAGE_ROOT:./data/uploads}
   presence:
@@ -61,3 +66,7 @@ nexachat:
       local-model: ${NEXACHAT_SUMMARY_LOCAL_LLM_MODEL:qwen2.5:3b}
       local-api-key: ${NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY:local-ollama}
       local-timeout-ms: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:60000}
+  fcm:
+    enabled: ${FCM_ENABLED:false}
+    project-id: ${FCM_PROJECT_ID:mock-project}
+    service-account-json: ${FCM_SERVICE_ACCOUNT_JSON:}

@@ -3,6 +3,8 @@ package com.nexachat.ws;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageService;
+import com.nexachat.message.dto.ChatAckRequest;
+import com.nexachat.message.dto.DeliveryRequest;
 import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.ws.dto.TypingSignal;
@@ -87,6 +89,43 @@ public class WsMessageController {
                      Principal principal) {
         try {
             messageService.markRead(requireUserId(principal), conversationId, request);
+        } catch (ApiException e) {
+            throw new SendRejectedException(e, null);
+        }
+    }
+
+    @MessageMapping("/conversations/{id}/delivered")
+    public void delivered(@DestinationVariable("id") UUID conversationId,
+                          @Payload DeliveryRequest request,
+                          Principal principal) {
+        try {
+            Long upToSeq = request == null ? null : request.upToSeq();
+            messageService.markDelivered(conversationId, requireUserId(principal), upToSeq);
+        } catch (ApiException e) {
+            throw new SendRejectedException(e, null);
+        }
+    }
+
+    @MessageMapping("/chat.delivery.ack")
+    public void chatDeliveryAck(@Payload DeliveryRequest request, Principal principal) {
+        if (request == null || request.conversationId() == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "conversationId is required");
+        }
+        try {
+            messageService.markDelivered(request.conversationId(), requireUserId(principal), request.upToSeq());
+        } catch (ApiException e) {
+            throw new SendRejectedException(e, null);
+        }
+    }
+
+    @MessageMapping("/chat.read.ack")
+    public void chatReadAck(@Payload ChatAckRequest request, Principal principal) {
+        if (request == null || request.conversationId() == null) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "conversationId is required");
+        }
+        try {
+            messageService.markRead(requireUserId(principal), request.conversationId(),
+                    new ReadRequest(request.upToSeq()));
         } catch (ApiException e) {
             throw new SendRejectedException(e, null);
         }

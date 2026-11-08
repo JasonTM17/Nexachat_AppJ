@@ -42,6 +42,10 @@ public interface MessageDao {
     @Query("SELECT COALESCE(MAX(seq), 0) FROM messages WHERE conversationId = :conversationId")
     Single<Long> maxSeq(String conversationId);
 
+    /** All conversation watermark sequences for delta sync. */
+    @Query("SELECT conversationId, COALESCE(MAX(seq), 0) AS maxSeq FROM messages GROUP BY conversationId")
+    Single<List<ConversationWatermark>> getAllMaxSeqs();
+
     /** Lowest stored seq, the page-back cursor. */
     @Query("SELECT COALESCE(MIN(seq), 0) FROM messages WHERE conversationId = :conversationId")
     Single<Long> minSeq(String conversationId);

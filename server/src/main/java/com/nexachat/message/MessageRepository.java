@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -110,6 +111,31 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<MessageRow> findRowsAfter(@Param("conversationId") UUID conversationId,
                                    @Param("afterSeq") long afterSeq,
                                    Pageable pageable);
+
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.conversation.id = :conversationId
+              AND m.seq <= :lastSeq
+              AND m.editedAt > :since
+              AND m.deletedAt IS NULL
+            ORDER BY m.editedAt ASC
+            """)
+    List<MessageRow> findEditedRowsSince(@Param("conversationId") UUID conversationId,
+                                         @Param("lastSeq") long lastSeq,
+                                         @Param("since") Instant since);
+
+    @Query("""
+            SELECT m.id FROM Message m
+            WHERE m.conversation.id = :conversationId
+              AND m.seq <= :lastSeq
+              AND m.deletedAt > :since
+            """)
+    List<UUID> findDeletedMessageIdsSince(@Param("conversationId") UUID conversationId,
+                                         @Param("lastSeq") long lastSeq,
+                                         @Param("since") Instant since);
 
     /** Conversation-scoped literal substring search, ordered through idx_msg_conv_seq. */
     @Query(value = """

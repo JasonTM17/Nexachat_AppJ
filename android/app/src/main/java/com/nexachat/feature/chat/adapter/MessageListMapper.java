@@ -28,6 +28,19 @@ public final class MessageListMapper {
             @NonNull DateSeparatorLabels dateLabels,
             long nowEpochMs
     ) {
+        return buildDisplayItems(chronological, isGroup, peerReadSeq, 0L, pulsingMessageId, dateLabels, nowEpochMs);
+    }
+
+    @NonNull
+    public static List<MessageListItem> buildDisplayItems(
+            @NonNull List<ChatMessage> chronological,
+            boolean isGroup,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String pulsingMessageId,
+            @NonNull DateSeparatorLabels dateLabels,
+            long nowEpochMs
+    ) {
         if (chronological.isEmpty()) {
             return Collections.emptyList();
         }
@@ -58,8 +71,14 @@ public final class MessageListMapper {
                     message.getSeq(),
                     peerReadSeq
             );
+            boolean delivered = ChatBubbleRules.isDeliveredReceiptVisible(
+                    isGroup,
+                    message.getMine(),
+                    message.getSeq(),
+                    peerDeliveredSeq
+            );
             boolean pulsing = pulsingMessageId != null && pulsingMessageId.equals(message.getId());
-            rows.add(MessageListItem.message(message, groupPosition, showSender, seen, pulsing));
+            rows.add(MessageListItem.message(message, groupPosition, showSender, seen, delivered, pulsing));
         }
         return rows;
     }

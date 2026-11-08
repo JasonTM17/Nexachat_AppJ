@@ -276,6 +276,9 @@ public final class CallManagerTest {
         signaling.disconnect();
         scheduler.runCurrent();
 
+        assertEquals(CallState.RECONNECTING_NETWORK, session().getState());
+        scheduler.advanceBy(15_000L);
+
         assertEquals(CallState.ENDED, session().getState());
         assertEquals(CallEndReason.FAILED, session().getEndReason());
         assertEquals(1, media.stopCount);

@@ -65,4 +65,5 @@
 
     <color name="bubble_mine">#FF5B21B6</color>
     <color name="bubble_other">#FF182034</color>
+    <color name="tick_read">#FF38BDF8</color>
 </resources>

@@ -34,6 +34,9 @@ public final class NoopMediaEngine implements CallMediaEngine {
     public void setSpeaker(boolean speakerOn) { }
 
     @Override
+    public void restartIce() { }
+
+    @Override
     public void stop() {
         listener = null;
     }

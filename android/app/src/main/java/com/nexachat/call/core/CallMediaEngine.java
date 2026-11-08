@@ -14,5 +14,6 @@ public interface CallMediaEngine {
     void onRemoteIce(CallSignal.IceCandidate candidate);
     void setMuted(boolean muted);
     void setSpeaker(boolean speakerOn);
+    default void restartIce() {}
     void stop();
 }

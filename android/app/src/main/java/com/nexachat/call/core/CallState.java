@@ -7,5 +7,7 @@ public enum CallState {
     INCOMING_RINGING,
     CONNECTING,
     ACTIVE,
+    RECONNECTING_NETWORK,
+    PENDING_INCOMING,
     ENDED
 }

@@ -19,9 +19,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             ConversationEntity.class,
             OutboxEntity.class,
             MessageReactionEntity.class,
-            PinnedMessageEntity.class
+            PinnedMessageEntity.class,
+            UserEntity.class,
+            CallLogEntity.class,
+            OfflineOutboxEntity.class
         },
-        version = 7,
+        version = 8,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -29,6 +32,9 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract OutboxDao outboxDao();
     public abstract ReactionDao reactionDao();
     public abstract PinDao pinDao();
+    public abstract UserDao userDao();
+    public abstract CallLogDao callLogDao();
+    public abstract OfflineOutboxDao offlineOutboxDao();
 
     /** Additive defaulted attachment column; the default matches OutboxEntity. */
     public static final Migration MIGRATION_1_2 =
@@ -105,6 +111,49 @@ public abstract class AppDatabase extends RoomDatabase {
                     db.execSQL("ALTER TABLE conversations ADD COLUMN otherUserId TEXT");
                     db.execSQL(
                             "ALTER TABLE conversations ADD COLUMN lastMessageDeleted INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /**
+     * Adds users, call_logs, offline_outbox tables and peerDeliveredSeq to conversations.
+     */
+    public static final Migration MIGRATION_7_8 =
+            new Migration(7, 8) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "CREATE TABLE IF NOT EXISTS `users` ("
+                                    + "`id` TEXT NOT NULL, `username` TEXT, `displayName` TEXT, "
+                                    + "`phoneNumber` TEXT, `avatarUrl` TEXT, `bio` TEXT, "
+                                    + "`lastSeenAt` INTEGER, `updatedAt` INTEGER, "
+                                    + "PRIMARY KEY(`id`))");
+                    db.execSQL(
+                            "CREATE INDEX IF NOT EXISTS `index_users_displayName` "
+                                    + "ON `users` (`displayName`)");
+
+                    db.execSQL(
+                            "CREATE TABLE IF NOT EXISTS `call_logs` ("
+                                    + "`callId` TEXT NOT NULL, `conversationId` TEXT, `peerId` TEXT, "
+                                    + "`peerDisplayName` TEXT, `peerAvatarUrl` TEXT, `direction` TEXT, "
+                                    + "`callType` TEXT, `startedAt` INTEGER NOT NULL, `durationSeconds` INTEGER NOT NULL, "
+                                    + "`endReason` TEXT, PRIMARY KEY(`callId`))");
+                    db.execSQL(
+                            "CREATE INDEX IF NOT EXISTS `index_call_logs_startedAt` "
+                                    + "ON `call_logs` (`startedAt`)");
+
+                    db.execSQL(
+                            "CREATE TABLE IF NOT EXISTS `offline_outbox` ("
+                                    + "`id` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, "
+                                    + "`actionType` TEXT NOT NULL, `payloadJson` TEXT NOT NULL, "
+                                    + "`state` TEXT NOT NULL, `retryCount` INTEGER NOT NULL, "
+                                    + "`createdAtEpochMs` INTEGER NOT NULL, `lastAttemptEpochMs` INTEGER NOT NULL, "
+                                    + "PRIMARY KEY(`id`))");
+                    db.execSQL(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS `index_offline_outbox_idempotencyKey` "
+                                    + "ON `offline_outbox` (`idempotencyKey`)");
+
+                    db.execSQL(
+                            "ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq` INTEGER NOT NULL DEFAULT 0");
                 }
             };
 }

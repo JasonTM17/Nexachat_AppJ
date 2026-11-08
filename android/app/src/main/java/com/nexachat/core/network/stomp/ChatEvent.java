@@ -14,6 +14,7 @@ public sealed interface ChatEvent
                 ChatEvent.Presence,
                 ChatEvent.UserTyping,
                 ChatEvent.MessageRead,
+                ChatEvent.MessageDelivered,
                 ChatEvent.ConversationUpdated,
                 ChatEvent.ReactionUpdated,
                 ChatEvent.PinUpdated,
@@ -135,6 +136,22 @@ public sealed interface ChatEvent
     }
 
     record MessageRead(
+            @Nullable String conversationId,
+            @Nullable String userId,
+            @Nullable Long upToSeq) implements ChatEvent {
+
+        @Nullable
+        public String getUserId() {
+            return userId;
+        }
+
+        @Nullable
+        public Long getUpToSeq() {
+            return upToSeq;
+        }
+    }
+
+    record MessageDelivered(
             @Nullable String conversationId,
             @Nullable String userId,
             @Nullable Long upToSeq) implements ChatEvent {

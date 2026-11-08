@@ -22,6 +22,9 @@ public interface ConversationDao {
     @Query("SELECT * FROM conversations ORDER BY COALESCE(lastMessageAt, 0) DESC")
     Flowable<List<ConversationEntity>> inboxFlow();
 
+    @Query("SELECT id AS conversationId, COALESCE(lastMessageSeq, 0) AS maxSeq FROM conversations")
+    Single<List<ConversationWatermark>> getAllWatermarks();
+
     /**
      * Observable single-row query represented as a list so the empty-row case
      * remains observable without emitting null, which RxJava forbids.
@@ -41,6 +44,12 @@ public interface ConversationDao {
             "UPDATE conversations SET peerReadSeq = MAX(peerReadSeq, :seq) "
                     + "WHERE id = :conversationId")
     Completable bumpPeerReadSeq(String conversationId, long seq);
+
+    /** Monotonic peer delivered watermark: a replay cannot rewind a delivered receipt. */
+    @Query(
+            "UPDATE conversations SET peerDeliveredSeq = MAX(peerDeliveredSeq, :seq) "
+                    + "WHERE id = :conversationId")
+    Completable bumpPeerDeliveredSeq(String conversationId, long seq);
 
     @Query("UPDATE conversations SET unreadCount = 0 WHERE id = :conversationId")
     Completable clearUnread(String conversationId);

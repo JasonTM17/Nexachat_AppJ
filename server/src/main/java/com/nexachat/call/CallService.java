@@ -101,6 +101,9 @@ public class CallService {
             return;
         }
         persist(call);
+        if (signal.sdp() != null) {
+            registry.saveOffer(signal.callId(), signal.sdp());
+        }
         eventPublisher.publishEvent(new CallRingingEvent(call.callId()));
         deliver(call.calleeId(), event("CALL_INVITE", call, call.callerId(), signal, null, null));
     }
@@ -203,6 +206,18 @@ public class CallService {
         List<CallRecord> page = hasMore ? records.subList(0, limit) : records;
         String nextCursor = hasMore ? CallHistoryCursor.encode(page.get(page.size() - 1)) : null;
         return new CallHistoryPage(page.stream().map(CallHistoryItem::from).toList(), nextCursor);
+    }
+
+    @Transactional(readOnly = true)
+    public CallOfferResponse getOffer(UUID userId, UUID callId) {
+        CallSession session = registry.find(callId)
+                .orElseThrow(CallException::notFound);
+        if (session.peerOf(userId) == null) {
+            throw CallException.notMember();
+        }
+        CallSignal.Sdp sdp = registry.findOffer(callId)
+                .orElseThrow(CallException::notFound);
+        return new CallOfferResponse(callId, sdp, iceConfig);
     }
 
     private CallHistoryCursor decodeCursor(String cursor) {

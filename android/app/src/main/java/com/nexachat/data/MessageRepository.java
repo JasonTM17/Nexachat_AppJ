@@ -132,6 +132,11 @@ public final class MessageRepository {
     private final FlowableProcessor<ApiError> interactionEvents = PublishProcessor.<ApiError>create().toSerialized();
     @Nullable private volatile Disposable rateLimitRetry;
     @Nullable private volatile TokenUser tokenToUser;
+    @Nullable private volatile SyncEngine syncEngine;
+
+    public void setSyncEngine(@Nullable SyncEngine syncEngine) {
+        this.syncEngine = syncEngine;
+    }
 
     @Inject
     public MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -733,6 +738,7 @@ public final class MessageRepository {
             return previous;
         });
         if (!shouldSend.get()) return Completable.complete();
+        session.sendReadAck(conversationId, upToSeq);
         return call(messageApi.markRead(conversationId, new ReadRequest(upToSeq)))
                 .flatMapCompletable(result -> result instanceof Result.Success<?>
                         ? conversationDao.clearUnread(conversationId) : Completable.complete())
@@ -759,6 +765,15 @@ public final class MessageRepository {
                     .flatMapCompletable(isPeer -> isPeer
                             ? conversationDao.bumpPeerReadSeq(conversationId, seq) : Completable.complete());
         }
+        if (event instanceof ChatEvent.MessageDelivered delivered) {
+            String conversationId = delivered.getConversationId();
+            if (conversationId == null) return Completable.complete();
+            Long seq = delivered.getUpToSeq();
+            if (seq == null || delivered.getUserId() == null) return Completable.complete();
+            return currentUserId().map(myId -> !myId.equals(delivered.getUserId())).defaultIfEmpty(false)
+                    .flatMapCompletable(isPeer -> isPeer
+                            ? conversationDao.bumpPeerDeliveredSeq(conversationId, seq) : Completable.complete());
+        }
         if (event instanceof ChatEvent.SendRejected rejected) {
             String clientId = rejected.getClientMessageId();
             if (clientId == null) return Completable.complete();
@@ -784,7 +799,15 @@ public final class MessageRepository {
             acknowledge = isMine(entity.getSenderId()).flatMapCompletable(mine -> mine
                     ? outboxDao.delete(entity.getClientMessageId()) : Completable.complete());
         }
-        return acknowledge.andThen(messageDao.upsert(entity)).andThen(updateInboxProjection(entity));
+        Completable deliveryAck = isMine(entity.getSenderId()).flatMapCompletable(mine -> {
+            if (!mine && entity.getSeq() > 0) {
+                session.sendDeliveryAck(entity.getConversationId(), entity.getSeq());
+            }
+            return Completable.complete();
+        });
+        return acknowledge.andThen(messageDao.upsert(entity))
+                .andThen(deliveryAck)
+                .andThen(updateInboxProjection(entity));
     }
 
     private Completable updateInboxProjection(MessageEntity entity) {
@@ -861,7 +884,8 @@ public final class MessageRepository {
     }
 
     private Completable resyncOnReconnect() {
-        return flushOutbox().andThen(Maybe.fromCallable(activeConversation::get)
+        Completable sync = syncEngine != null ? syncEngine.sync().onErrorComplete() : Completable.complete();
+        return sync.andThen(flushOutbox()).andThen(Maybe.fromCallable(activeConversation::get)
                 .flatMapCompletable(conversationId -> resyncForward(conversationId)
                         .andThen(messageDao.maxSeq(conversationId)
                                 .flatMapCompletable(seq -> sendRead(conversationId, seq)))

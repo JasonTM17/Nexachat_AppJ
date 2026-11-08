@@ -199,6 +199,55 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     }
 
     @Override
+    public void restartIce() {
+        long callGeneration = generation.get();
+        mediaExecutor.execute(() -> {
+            if (!isActive(callGeneration) || peerConnection == null) return;
+            MediaConstraints constraints = new MediaConstraints();
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("IceRestart", "true"));
+            SdpObserver observer = new SdpObserver() {
+                @Override public void onCreateSuccess(SessionDescription description) {
+                    mediaExecutor.execute(() -> {
+                        if (!isActive(callGeneration) || peerConnection == null) return;
+                        peerConnection.setLocalDescription(new SdpObserver() {
+                            @Override public void onCreateSuccess(SessionDescription ignored) { }
+
+                            @Override public void onSetSuccess() {
+                                if (!isActive(callGeneration)) return;
+                                Listener current = listener;
+                                if (current != null) {
+                                    postToMain(callGeneration, current, () -> current.onLocalSdp(
+                                            new CallSignal.Sdp(
+                                                    description.type.canonicalForm(), description.description)));
+                                }
+                            }
+
+                            @Override public void onCreateFailure(String error) {
+                                postFailure(callGeneration);
+                            }
+
+                            @Override public void onSetFailure(String error) {
+                                postFailure(callGeneration);
+                            }
+                        }, description);
+                    });
+                }
+
+                @Override public void onSetSuccess() { }
+
+                @Override public void onCreateFailure(String error) {
+                    postFailure(callGeneration);
+                }
+
+                @Override public void onSetFailure(String error) {
+                    postFailure(callGeneration);
+                }
+            };
+            peerConnection.createOffer(observer, constraints);
+        });
+    }
+
+    @Override
     public void stop() {
         long callGeneration = generation.incrementAndGet();
         try {
@@ -486,7 +535,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                                     && lastIceState == PeerConnection.IceConnectionState.DISCONNECTED) {
                                 reportFailure(callGeneration);
                             }
-                        }, 5L, TimeUnit.SECONDS);
+                        }, 15L, TimeUnit.SECONDS);
                     } else if (state == PeerConnection.IceConnectionState.FAILED) {
                         reportFailure(callGeneration);
                     }

@@ -15,11 +15,15 @@ import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.PinUpdatedPayload;
 import com.nexachat.message.dto.ReactionRow;
+import com.nexachat.message.dto.ReactionSlice;
+import com.nexachat.message.dto.ReactionUpdatedPayload;
 import com.nexachat.message.dto.ReactionView;
 import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.ReplyRefResponse;
 import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
+import com.nexachat.message.dto.SyncRequest;
+import com.nexachat.message.dto.SyncResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -365,6 +369,127 @@ public class MessageService {
         memberRepository.advanceReadWatermark(conversationId, userId, upToSeq);
         long persistedWatermark = memberRepository.findReadWatermark(conversationId, userId);
         eventPublisher.publishEvent(new MessageReadEvent(conversationId, userId, persistedWatermark));
+    }
+
+    /**
+     * Delivery-watermark advance: advances {@code last_delivered_seq} monotonically
+     * and broadcasts {@code MESSAGE_DELIVERED} to the topic after commit so senders
+     * render 2 gray ticks ("Đã nhận" / DELIVERED).
+     */
+    @Transactional
+    public void markDelivered(UUID conversationId, UUID userId, Long upToSeq) {
+        if (upToSeq == null || upToSeq < 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "upToSeq must be a non-negative seq");
+        }
+        if (!conversationRepository.existsById(conversationId)) {
+            throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
+        }
+        requireMember(conversationId, userId);
+        long latestSeq = messageRepository.findMaxSeqByConversationId(conversationId);
+        if (upToSeq > latestSeq) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "upToSeq cannot exceed the latest message sequence");
+        }
+        memberRepository.advanceDeliveredWatermark(conversationId, userId, upToSeq);
+        long persistedWatermark = memberRepository.findDeliveredWatermark(conversationId, userId);
+        eventPublisher.publishEvent(new MessageDeliveredEvent(conversationId, userId, persistedWatermark));
+    }
+
+    /**
+     * Batch delta sync: queries new messages, edited messages, deleted message IDs,
+     * and reaction updates across multiple conversation watermarks in a single request.
+     */
+    @Transactional(readOnly = true)
+    public SyncResponse syncDelta(UUID userId, SyncRequest request) {
+        if (request == null || request.watermarks() == null || request.watermarks().isEmpty()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermarks list must not be empty");
+        }
+        int limit = request.limitPerConv() != null ? Math.max(1, Math.min(request.limitPerConv(), 100)) : 50;
+        java.time.Instant since = request.since();
+
+        List<SyncRequest.ConversationWatermark> watermarks = request.watermarks();
+        if (watermarks.size() > 100) {
+            log.warn("Clamping watermarks list from {} to 100 items for user {}", watermarks.size(), userId);
+            watermarks = watermarks.subList(0, 100);
+        }
+
+        List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
+        for (SyncRequest.ConversationWatermark wm : watermarks) {
+            UUID conversationId = wm.conversationId();
+            long lastSeq = wm.lastSeq();
+
+            if (!conversationRepository.existsById(conversationId)
+                    || !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+                continue;
+            }
+
+            // 1. New messages after lastSeq
+            List<MessageRow> newRows = messageRepository.findRowsAfter(
+                    conversationId, lastSeq, PageRequest.of(0, limit + 1));
+            boolean hasMore = newRows.size() > limit;
+            List<MessageRow> pageRows = hasMore ? newRows.subList(0, limit) : newRows;
+            List<MessageResponse> newMessages = hydrateResponses(pageRows, userId);
+
+            // 2. Edited messages since timestamp (with seq <= lastSeq)
+            List<MessageResponse> editedMessages = List.of();
+            if (since != null) {
+                List<MessageRow> editedRows = messageRepository.findEditedRowsSince(conversationId, lastSeq, since);
+                if (editedRows.size() > limit) {
+                    editedRows = editedRows.subList(0, limit);
+                }
+                editedMessages = hydrateResponses(editedRows, userId);
+            }
+
+            // 3. Deleted message IDs since timestamp (with seq <= lastSeq)
+            List<UUID> deletedMessageIds = List.of();
+            if (since != null) {
+                List<UUID> allDeleted = messageRepository.findDeletedMessageIdsSince(conversationId, lastSeq, since);
+                deletedMessageIds = allDeleted.size() > limit ? allDeleted.subList(0, limit) : allDeleted;
+            }
+
+            // 4. Reactions updated since timestamp
+            List<ReactionUpdatedPayload> reactionUpdates = reactionUpdates(conversationId, since);
+
+            // 5. Max seq
+            long maxSeq = messageRepository.findMaxSeqByConversationId(conversationId);
+
+            deltas.add(new SyncResponse.ConversationDelta(
+                    conversationId,
+                    newMessages,
+                    editedMessages,
+                    deletedMessageIds,
+                    reactionUpdates,
+                    maxSeq,
+                    hasMore
+            ));
+        }
+
+        return new SyncResponse(deltas, java.time.Instant.now());
+    }
+
+    private List<ReactionUpdatedPayload> reactionUpdates(UUID conversationId, java.time.Instant since) {
+        if (since == null) {
+            return List.of();
+        }
+        List<UUID> messageIds = reactionRepository.findMessageIdsWithReactionsSince(conversationId, since);
+        if (messageIds.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Map<String, List<UUID>>> grouped = new LinkedHashMap<>();
+        for (ReactionRow row : reactionRepository.findRowsByMessageIdIn(messageIds)) {
+            grouped.computeIfAbsent(row.messageId(), k -> new java.util.TreeMap<>())
+                    .computeIfAbsent(row.emoji(), k -> new ArrayList<>())
+                    .add(row.userId());
+        }
+        List<ReactionUpdatedPayload> payloads = new ArrayList<>();
+        for (UUID messageId : messageIds) {
+            Map<String, List<UUID>> byEmoji = grouped.getOrDefault(messageId, Map.of());
+            List<ReactionSlice> slices = byEmoji.entrySet().stream()
+                    .map(e -> new ReactionSlice(e.getKey(), e.getValue().size(), List.copyOf(e.getValue())))
+                    .toList();
+            payloads.add(new ReactionUpdatedPayload(messageId, slices));
+        }
+        return payloads;
     }
 
     // ------------------------------------------------------------- internals

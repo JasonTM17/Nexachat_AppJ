@@ -32,6 +32,12 @@ public class CallRestController {
         return callService.iceConfig();
     }
 
+    @GetMapping("/calls/{callId}/offer")
+    public CallOfferResponse offer(@AuthenticationPrincipal JwtPrincipal principal,
+                                   @PathVariable("callId") UUID callId) {
+        return callService.getOffer(requireUserId(principal), callId);
+    }
+
     @GetMapping("/conversations/{id}/calls")
     public CallHistoryPage history(@AuthenticationPrincipal JwtPrincipal principal,
                                    @PathVariable("id") UUID conversationId,

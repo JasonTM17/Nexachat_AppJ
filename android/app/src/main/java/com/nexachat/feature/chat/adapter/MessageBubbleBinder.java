@@ -79,7 +79,7 @@ public final class MessageBubbleBinder {
 
         bindReplyQuote(root, message);
         bindPrimaryContent(root, message);
-        bindMetaRow(root, message, item.isSeenReceipt());
+        bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt());
         bindReactions(root, message);
     }
 
@@ -334,7 +334,7 @@ public final class MessageBubbleBinder {
         }
     }
 
-    private void bindMetaRow(View root, ChatMessage message, boolean seen) {
+    private void bindMetaRow(View root, ChatMessage message, boolean seen, boolean delivered) {
         View metaInclude = root.findViewById(R.id.bubbleMeta);
         if (metaInclude == null) {
             return;
@@ -398,17 +398,35 @@ public final class MessageBubbleBinder {
                 deliveryText.setTextColor(
                         ContextCompat.getColor(root.getContext(), R.color.colorError)
                 );
-            } else if (message.getStatus() == DeliveryStatus.SENT && seen) {
-                deliveryText.setVisibility(View.VISIBLE);
-                deliveryText.setText(R.string.msg_seen);
-                deliveryText.setTextColor(metaColor);
+            } else if (message.getStatus() == DeliveryStatus.SENDING) {
+                // Handled by sending progress bar
+            } else if (message.getStatus() == DeliveryStatus.READ || seen) {
+                if (deliveredIcon != null) {
+                    deliveredIcon.setVisibility(View.VISIBLE);
+                    deliveredIcon.setImageResource(R.drawable.ic_check_double);
+                    deliveredIcon.setImageTintList(ColorStateList.valueOf(
+                            ContextCompat.getColor(root.getContext(), R.color.tick_read)
+                    ));
+                    deliveredIcon.setContentDescription(
+                            root.getContext().getString(R.string.cd_read)
+                    );
+                }
+            } else if (message.getStatus() == DeliveryStatus.DELIVERED || delivered) {
+                if (deliveredIcon != null) {
+                    deliveredIcon.setVisibility(View.VISIBLE);
+                    deliveredIcon.setImageResource(R.drawable.ic_check_double);
+                    deliveredIcon.setImageTintList(ColorStateList.valueOf(metaColor));
+                    deliveredIcon.setContentDescription(
+                            root.getContext().getString(R.string.msg_delivered)
+                    );
+                }
             } else if (message.getStatus() == DeliveryStatus.SENT) {
                 if (deliveredIcon != null) {
                     deliveredIcon.setVisibility(View.VISIBLE);
                     deliveredIcon.setImageResource(R.drawable.ic_check);
                     deliveredIcon.setImageTintList(ColorStateList.valueOf(metaColor));
                     deliveredIcon.setContentDescription(
-                            root.getContext().getString(R.string.cd_delivered)
+                            root.getContext().getString(R.string.cd_sent)
                     );
                 }
             }

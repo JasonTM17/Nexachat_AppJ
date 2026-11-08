@@ -34,6 +34,15 @@ public class CallDisconnectListener {
     }
 
     @EventListener
+    public void onSessionConnected(org.springframework.web.socket.messaging.SessionConnectedEvent event) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        UUID userId = userId(accessor.getUser());
+        if (userId != null) {
+            scheduler.cancelScheduledDisconnect(userId);
+        }
+    }
+
+    @EventListener
     @Order(Ordered.LOWEST_PRECEDENCE)
     public void onSessionDisconnected(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());

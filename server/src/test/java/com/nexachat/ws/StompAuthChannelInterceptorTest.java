@@ -310,6 +310,38 @@ class StompAuthChannelInterceptorTest {
     }
 
     @Test
+    void send_conversationDelivered_member_allowed() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+        Message<?> message = sendMessage("/app/conversations/" + conversationId + "/delivered", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void send_conversationDelivered_nonMember_rejected() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(false);
+        Message<?> message = sendMessage("/app/conversations/" + conversationId + "/delivered", true);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void send_chatDeliveryAck_allowed() {
+        Message<?> message = sendMessage("/app/chat.delivery.ack", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void send_chatReadAck_allowed() {
+        Message<?> message = sendMessage("/app/chat.read.ack", true);
+
+        assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
     void send_messagesRateLimit_isPerUserAndReportsCorrelatedErrorWithoutDisconnecting() {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(true);

@@ -30,6 +30,8 @@ public final class ConversationEntity {
     @Nullable private final String otherUserId;
     /** True if the last message is soft-deleted and the snippet must be neutral. */
     private final boolean lastMessageDeleted;
+    /** Client-only highest other-member delivered watermark. */
+    private final long peerDeliveredSeq;
 
     public ConversationEntity(
             @NonNull String id,
@@ -46,7 +48,8 @@ public final class ConversationEntity {
             long peerReadSeq,
             @Nullable String myRole,
             @Nullable String otherUserId,
-            boolean lastMessageDeleted) {
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -62,6 +65,29 @@ public final class ConversationEntity {
         this.myRole = myRole;
         this.otherUserId = otherUserId;
         this.lastMessageDeleted = lastMessageDeleted;
+        this.peerDeliveredSeq = peerDeliveredSeq;
+    }
+
+    @androidx.room.Ignore
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, 0L);
     }
 
     @NonNull public String getId() { return id; }
@@ -79,12 +105,14 @@ public final class ConversationEntity {
     @Nullable public String getMyRole() { return myRole; }
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
+    public long getPeerDeliveredSeq() { return peerDeliveredSeq; }
 
     /** Returns this row with a locally renamed title. */
     @NonNull public ConversationEntity withTitle(@Nullable String newTitle) {
         return new ConversationEntity(id, type, newTitle, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
-                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted);
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
+                peerDeliveredSeq);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -92,7 +120,7 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted);
+                lastMessageDeleted, peerDeliveredSeq);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -101,7 +129,15 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
-                lastMessageDeleted);
+                lastMessageDeleted, peerDeliveredSeq);
+    }
+
+    /** Returns this row with updated peerDeliveredSeq. */
+    @NonNull public ConversationEntity withPeerDeliveredSeq(long newPeerDeliveredSeq) {
+        return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                lastMessageDeleted, newPeerDeliveredSeq);
     }
 
     @Override public boolean equals(Object other) {
@@ -110,6 +146,7 @@ public final class ConversationEntity {
         ConversationEntity that = (ConversationEntity) other;
         return lastMessageSeq == that.lastMessageSeq && unreadCount == that.unreadCount
                 && peerReadSeq == that.peerReadSeq && lastMessageDeleted == that.lastMessageDeleted
+                && peerDeliveredSeq == that.peerDeliveredSeq
                 && Objects.equals(id, that.id) && Objects.equals(type, that.type)
                 && Objects.equals(title, that.title)
                 && Objects.equals(lastMessageContent, that.lastMessageContent)
@@ -124,7 +161,8 @@ public final class ConversationEntity {
     @Override public int hashCode() {
         return Objects.hash(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
-                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted);
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                lastMessageDeleted, peerDeliveredSeq);
     }
 
     @NonNull @Override public String toString() {
@@ -135,6 +173,6 @@ public final class ConversationEntity {
                 + ", otherUserName=" + otherUserName + ", otherUserAvatar=" + otherUserAvatar
                 + ", avatarUrl=" + avatarUrl + ", peerReadSeq=" + peerReadSeq + ", myRole="
                 + myRole + ", otherUserId=" + otherUserId + ", lastMessageDeleted="
-                + lastMessageDeleted + ')';
+                + lastMessageDeleted + ", peerDeliveredSeq=" + peerDeliveredSeq + ')';
     }
 }

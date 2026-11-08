@@ -28,7 +28,8 @@ public final class DatabaseModule {
                         AppDatabase.MIGRATION_3_4,
                         AppDatabase.MIGRATION_4_5,
                         AppDatabase.MIGRATION_5_6,
-                        AppDatabase.MIGRATION_6_7)
+                        AppDatabase.MIGRATION_6_7,
+                        AppDatabase.MIGRATION_7_8)
                 .build();
     }
 
@@ -60,5 +61,23 @@ public final class DatabaseModule {
     @Singleton
     public static PinDao providePinDao(AppDatabase database) {
         return database.pinDao();
+    }
+
+    @Provides
+    @Singleton
+    public static UserDao provideUserDao(AppDatabase database) {
+        return database.userDao();
+    }
+
+    @Provides
+    @Singleton
+    public static CallLogDao provideCallLogDao(AppDatabase database) {
+        return database.callLogDao();
+    }
+
+    @Provides
+    @Singleton
+    public static OfflineOutboxDao provideOfflineOutboxDao(AppDatabase database) {
+        return database.offlineOutboxDao();
     }
 }

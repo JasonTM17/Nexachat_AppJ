@@ -105,6 +105,11 @@ public final class StompCallSignalingClient implements CallSignalingClient {
         if (state instanceof StompClient.State.Open) {
             wasOpen.set(true);
             subscriptions.onOpen();
+            Listener current;
+            synchronized (lock) {
+                current = started ? listener : null;
+            }
+            if (current != null) current.onConnected();
             return;
         }
         subscriptions.onClosed();

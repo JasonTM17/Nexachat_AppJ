@@ -8,6 +8,8 @@ import com.nexachat.core.network.dto.ReadRequest;
 import com.nexachat.core.network.dto.ReactionRequest;
 import com.nexachat.core.network.dto.ReactionUpdateDto;
 import com.nexachat.core.network.dto.SendMessageRequest;
+import com.nexachat.core.network.dto.SyncRequest;
+import com.nexachat.core.network.dto.SyncResponse;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.http.Body;
@@ -91,4 +93,7 @@ public interface MessageApi {
             @Path("id") String conversationId,
             @Path("messageId") String messageId
     );
+
+    @POST("api/v1/sync")
+    Call<SyncResponse> syncDeltas(@Body SyncRequest request);
 }

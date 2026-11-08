@@ -172,6 +172,13 @@ dependencies {
     // E.164 phone normalization
     implementation(libs.libphonenumber)
 
+    // WorkManager (Outbox sync worker)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.work.rxjava3)
+
+    // Firebase Cloud Messaging (Push notifications)
+    implementation(libs.firebase.messaging)
+
     // Unit tests
     testImplementation(libs.bundles.unit.test)
 

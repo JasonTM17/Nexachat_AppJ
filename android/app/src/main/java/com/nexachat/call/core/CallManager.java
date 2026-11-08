@@ -57,11 +57,13 @@ public final class CallManager implements AutoCloseable {
             new MutableLiveData<>(CallSession.idle());
     private final Set<CallListener> listeners = new CopyOnWriteArraySet<>();
     private final List<CallSignal> pendingRemoteSignals = new ArrayList<>();
+    private final List<QueuedOutboundSignal> pendingOutboundSignals = new ArrayList<>();
     private final Handler mainHandler;
 
     private volatile CallSession currentSession = CallSession.idle();
     private CallMediaEngine mediaEngine;
     private Cancellable ringTimeout;
+    private Cancellable reconnectGraceTimer;
     private boolean mediaStarted;
     private boolean mediaStartPending;
     private boolean closed;
@@ -134,6 +136,11 @@ public final class CallManager implements AutoCloseable {
                 public void onDisconnected() {
                     scheduler.execute(CallManager.this::handleSignalingDisconnected);
                 }
+
+                @Override
+                public void onConnected() {
+                    scheduler.execute(CallManager.this::handleSignalingConnected);
+                }
             });
         } catch (RuntimeException exception) {
             scheduler.execute(() -> notifyError(new CallError(CallError.Code.NETWORK)));
@@ -172,11 +179,49 @@ public final class CallManager implements AutoCloseable {
         });
     }
 
+    /**
+     * Hydrates an incoming call session from a background push notification
+     * before STOMP signaling has connected. Holds the session in PENDING_INCOMING
+     * with a 15s grace timer waiting for the STOMP INVITE frame.
+     */
+    public void hydrateIncomingCall(
+            String callId,
+            String conversationId,
+            String callerId,
+            String callerName,
+            long serverTs) {
+        scheduler.execute(() -> {
+            if (closed || isCallInProgress(currentSession.getState())) return;
+            if (blank(callId) || blank(conversationId) || blank(callerId)) return;
+            String name = callerName != null && !callerName.isBlank()
+                    ? callerName
+                    : unknownCallerDisplayName(callerId);
+            setSession(new CallSession(
+                    callId,
+                    conversationId,
+                    callerId,
+                    name,
+                    CallSession.Direction.INCOMING,
+                    CallState.PENDING_INCOMING,
+                    null,
+                    serverTs > 0 ? serverTs : clock.getAsLong(),
+                    null,
+                    false,
+                    false));
+            cancelRingTimeout();
+            ringTimeout = scheduler.schedule(
+                    () -> finish(CallEndReason.MISSED, CallSignal.Type.CANCEL, null),
+                    15_000L);
+        });
+    }
+
     /** Accepts the matching incoming call and starts the callee media setup. */
     public void accept(String callId) {
         scheduler.execute(() -> {
-            if (!matches(callId) || currentSession.getState() != CallState.INCOMING_RINGING) return;
+            if (!matches(callId) || (currentSession.getState() != CallState.INCOMING_RINGING
+                    && currentSession.getState() != CallState.PENDING_INCOMING)) return;
             cancelRingTimeout();
+            cancelReconnectGraceTimer();
             if (!send(currentSession.getConversationId(), CallSignal.Type.ACCEPT, callId)) {
                 finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
                 return;
@@ -189,7 +234,8 @@ public final class CallManager implements AutoCloseable {
     /** Declines the matching incoming call. */
     public void reject(String callId) {
         scheduler.execute(() -> {
-            if (!matches(callId) || currentSession.getState() != CallState.INCOMING_RINGING) return;
+            if (!matches(callId) || (currentSession.getState() != CallState.INCOMING_RINGING
+                    && currentSession.getState() != CallState.PENDING_INCOMING)) return;
             finish(CallEndReason.REJECTED, CallSignal.Type.REJECT, null);
         });
     }
@@ -353,10 +399,21 @@ public final class CallManager implements AutoCloseable {
     private void handleInvite(CallEvent event) {
         String callId = event.getCallId();
         if (blank(callId) || blank(event.getConversationId()) || blank(event.getFromUserId())) return;
-        if (callId.equals(currentSession.getCallId())) return;
+        if (callId.equals(currentSession.getCallId())) {
+            if (currentSession.getState() == CallState.PENDING_INCOMING) {
+                cancelRingTimeout();
+                transition(CallState.INCOMING_RINGING, null, null);
+                scheduleRingTimeout(callId);
+                String fallbackName = currentSession.getPeerDisplayName() != null
+                        ? currentSession.getPeerDisplayName()
+                        : unknownCallerDisplayName(event.getFromUserId());
+                resolveIncomingPeerName(callId, event.getConversationId(), event.getFromUserId(), fallbackName);
+            }
+            return;
+        }
 
         CallState state = currentSession.getState();
-        if (state == CallState.OUTGOING_RINGING) {
+        if (state == CallState.OUTGOING_RINGING || state == CallState.PENDING_INCOMING) {
             // A server-delivered INVITE is the server's glare winner.
             send(currentSession.getConversationId(), CallSignal.Type.CANCEL, currentSession.getCallId());
             cancelRingTimeout();
@@ -567,14 +624,28 @@ public final class CallManager implements AutoCloseable {
         }
     }
 
+    private void cancelReconnectGraceTimer() {
+        if (reconnectGraceTimer != null) {
+            reconnectGraceTimer.cancel();
+            reconnectGraceTimer = null;
+        }
+    }
+
     private void sendLocalSignal(
             String callId,
             CallSignal.Type type,
             CallSignal.Sdp sdp,
             CallSignal.IceCandidate candidate) {
-        if (!matches(callId) || (currentSession.getState() != CallState.CONNECTING
-                && currentSession.getState() != CallState.ACTIVE)) return;
+        if (!matches(callId)) return;
+        CallState state = currentSession.getState();
+        if (state != CallState.CONNECTING
+                && state != CallState.ACTIVE
+                && state != CallState.RECONNECTING_NETWORK) return;
         CallSignal signal = new CallSignal(type, callId, sdp, candidate);
+        if (state == CallState.RECONNECTING_NETWORK) {
+            pendingOutboundSignals.add(new QueuedOutboundSignal(currentSession.getConversationId(), signal));
+            return;
+        }
         if (!signaling.send(currentSession.getConversationId(), signal)) {
             finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
         }
@@ -586,8 +657,32 @@ public final class CallManager implements AutoCloseable {
     }
 
     private void handleSignalingDisconnected() {
-        if (isCallInProgress(currentSession.getState())) {
+        if (currentSession.getState() == CallState.ACTIVE) {
+            transition(CallState.RECONNECTING_NETWORK, null, currentSession.getAnsweredAtMs());
+            cancelReconnectGraceTimer();
+            reconnectGraceTimer = scheduler.schedule(() -> {
+                if (currentSession.getState() == CallState.RECONNECTING_NETWORK) {
+                    finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+                }
+            }, 15_000L);
+        } else if (isCallInProgress(currentSession.getState())
+                && currentSession.getState() != CallState.RECONNECTING_NETWORK) {
             finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+        }
+    }
+
+    private void handleSignalingConnected() {
+        if (currentSession.getState() == CallState.RECONNECTING_NETWORK) {
+            cancelReconnectGraceTimer();
+            transition(CallState.ACTIVE, null, currentSession.getAnsweredAtMs());
+            if (mediaEngine != null) {
+                mediaEngine.restartIce();
+            }
+            List<QueuedOutboundSignal> queued = new ArrayList<>(pendingOutboundSignals);
+            pendingOutboundSignals.clear();
+            for (QueuedOutboundSignal item : queued) {
+                signaling.send(item.conversationId, item.signal);
+            }
         }
     }
 
@@ -601,8 +696,10 @@ public final class CallManager implements AutoCloseable {
         boolean sent = signalType == null
                 || send(old.getConversationId(), signalType, old.getCallId());
         cancelRingTimeout();
+        cancelReconnectGraceTimer();
         mediaStartPending = false;
         pendingRemoteSignals.clear();
+        pendingOutboundSignals.clear();
         stopMedia();
         transition(CallState.ENDED, reason, old.getAnsweredAtMs());
         if (error != null) {
@@ -690,15 +787,19 @@ public final class CallManager implements AutoCloseable {
         return callId != null && callId.equals(currentSession.getCallId());
     }
 
-    private static boolean isCallInProgress(CallState state) {
+    static boolean isCallInProgress(CallState state) {
         return state == CallState.OUTGOING_RINGING
                 || state == CallState.INCOMING_RINGING
+                || state == CallState.PENDING_INCOMING
                 || state == CallState.CONNECTING
-                || state == CallState.ACTIVE;
+                || state == CallState.ACTIVE
+                || state == CallState.RECONNECTING_NETWORK;
     }
 
     private static boolean isRinging(CallState state) {
-        return state == CallState.OUTGOING_RINGING || state == CallState.INCOMING_RINGING;
+        return state == CallState.OUTGOING_RINGING
+                || state == CallState.INCOMING_RINGING
+                || state == CallState.PENDING_INCOMING;
     }
 
     private static CallEndReason parseEndReason(String reason) {
@@ -757,6 +858,16 @@ public final class CallManager implements AutoCloseable {
         @Override
         public void close() {
             executor.shutdownNow();
+        }
+    }
+
+    private static final class QueuedOutboundSignal {
+        final String conversationId;
+        final CallSignal signal;
+
+        QueuedOutboundSignal(String conversationId, CallSignal signal) {
+            this.conversationId = conversationId;
+            this.signal = signal;
         }
     }
 }

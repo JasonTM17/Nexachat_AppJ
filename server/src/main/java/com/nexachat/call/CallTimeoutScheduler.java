@@ -28,14 +28,17 @@ public class CallTimeoutScheduler {
     private final CallService callService;
     private final CallRegistry registry;
     private final long ringTimeoutMillis;
+    private final long disconnectGraceMs;
     private final ScheduledExecutorService scheduler;
     private final ConcurrentHashMap<UUID, ScheduledFuture<?>> scheduledCalls = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, ScheduledFuture<?>> scheduledDisconnects = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Integer> persistenceRetries = new ConcurrentHashMap<>();
 
     @Autowired
     public CallTimeoutScheduler(CallService callService, CallRegistry registry,
-                                @Value("${nexachat.calls.ring-timeout-ms:45000}") long ringTimeoutMillis) {
-        this(callService, registry, ringTimeoutMillis,
+                                @Value("${nexachat.calls.ring-timeout-ms:45000}") long ringTimeoutMillis,
+                                @Value("${nexachat.calls.disconnect-grace-ms:15000}") long disconnectGraceMs) {
+        this(callService, registry, ringTimeoutMillis, disconnectGraceMs,
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
                     Thread thread = new Thread(runnable, "nexachat-call-timeouts");
                     thread.setDaemon(true);
@@ -43,12 +46,23 @@ public class CallTimeoutScheduler {
                 }));
     }
 
+    public CallTimeoutScheduler(CallService callService, CallRegistry registry,
+                                long ringTimeoutMillis) {
+        this(callService, registry, ringTimeoutMillis, 15_000L);
+    }
+
     CallTimeoutScheduler(CallService callService, CallRegistry registry, long ringTimeoutMillis,
-                         ScheduledExecutorService scheduler) {
+                         long disconnectGraceMs, ScheduledExecutorService scheduler) {
         this.callService = callService;
         this.registry = registry;
         this.ringTimeoutMillis = ringTimeoutMillis;
+        this.disconnectGraceMs = disconnectGraceMs;
         this.scheduler = scheduler;
+    }
+
+    CallTimeoutScheduler(CallService callService, CallRegistry registry, long ringTimeoutMillis,
+                         ScheduledExecutorService scheduler) {
+        this(callService, registry, ringTimeoutMillis, 15_000L, scheduler);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -115,11 +129,47 @@ public class CallTimeoutScheduler {
         if (future != null) {
             future.cancel(false);
         }
+        registry.find(event.callId()).ifPresent(session -> {
+            cancelScheduledDisconnect(session.callerId());
+            cancelScheduledDisconnect(session.calleeId());
+        });
     }
 
-    /** Defers the check until PresenceSessionRegistry has processed the same disconnect event. */
+    /**
+     * Defers the disconnect check until presence has processed the event.
+     * When the user is currently in an ACTIVE call, applies a configurable disconnect grace window
+     * (default 15s) to protect against transient network roaming disconnects (Wi-Fi <-> LTE/5G).
+     */
     public void checkDisconnectedUser(UUID userId, Runnable cleanup) {
-        scheduler.schedule(cleanup, 50, TimeUnit.MILLISECONDS);
+        long delayMillis = 50L;
+        java.util.Optional<CallSession> active = registry.activeCallForUser(userId);
+        if (active.isPresent() && active.get().state() == CallState.ACTIVE) {
+            delayMillis = disconnectGraceMs;
+            log.info("Scheduling {}ms disconnect grace window for user {} in active call {}",
+                    delayMillis, userId, active.get().callId());
+        }
+        ScheduledFuture<?> previous = scheduledDisconnects.remove(userId);
+        if (previous != null) {
+            previous.cancel(false);
+            log.info("Cancelled prior pending disconnect future for user {}", userId);
+        }
+        ScheduledFuture<?> future = scheduler.schedule(() -> {
+            scheduledDisconnects.remove(userId);
+            cleanup.run();
+        }, delayMillis, TimeUnit.MILLISECONDS);
+        scheduledDisconnects.put(userId, future);
+    }
+
+    public void cancelScheduledDisconnect(UUID userId) {
+        ScheduledFuture<?> future = scheduledDisconnects.remove(userId);
+        if (future != null) {
+            future.cancel(false);
+            log.info("Cancelled pending disconnect grace window for user {}", userId);
+        }
+    }
+
+    public void cancelDisconnectedUser(UUID userId) {
+        cancelScheduledDisconnect(userId);
     }
 
     public void retryDisconnectedUser(Runnable cleanup, int failedAttempt) {
@@ -128,6 +178,14 @@ public class CallTimeoutScheduler {
 
     @PreDestroy
     public void shutdown() {
+        for (ScheduledFuture<?> future : scheduledCalls.values()) {
+            future.cancel(false);
+        }
+        scheduledCalls.clear();
+        for (ScheduledFuture<?> future : scheduledDisconnects.values()) {
+            future.cancel(false);
+        }
+        scheduledDisconnects.clear();
         scheduler.shutdownNow();
     }
 }

@@ -47,6 +47,9 @@ class NexaChatApplicationTests {
     @MockitoBean
     private PinnedMessageRepository pinnedMessageRepository;
 
+    @MockitoBean
+    private com.nexachat.notification.UserDeviceTokenRepository userDeviceTokenRepository;
+
     @Test
     void contextLoads() {
     }

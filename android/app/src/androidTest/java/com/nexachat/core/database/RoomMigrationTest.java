@@ -64,6 +64,9 @@ public final class RoomMigrationTest {
     /** Schema as shipped in version 6 (before edit/delete + presence keys). */
     private static final List<String> V6_SCHEMA = extendV5Schema();
 
+    /** Schema as shipped in version 7 (before users, call_logs, offline_outbox, peerDeliveredSeq). */
+    private static final List<String> V7_SCHEMA = extendV6Schema();
+
     @Rule
     public MigrationTestHelper helper =
             new MigrationTestHelper(
@@ -80,6 +83,11 @@ public final class RoomMigrationTest {
     @Test
     public void v7SchemaCreatesFromExportedJson() throws Exception {
         helper.createDatabase(EXPORTED_DB, 7).close();
+    }
+
+    @Test
+    public void v8SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 8).close();
     }
 
     @Test
@@ -166,6 +174,65 @@ public final class RoomMigrationTest {
         }
     }
 
+    @Test
+    public void migrateV7ToV8AddsUsersCallLogsOfflineOutboxAndPeerDeliveredSeq() throws Exception {
+        createLegacyDatabase(
+                7,
+                V7_SCHEMA,
+                db -> {
+                    db.execSQL(
+                            "INSERT INTO conversations (id, type, title, lastMessageSeq, "
+                                    + "lastMessageContent, lastMessageSenderName, lastMessageAt, "
+                                    + "unreadCount, otherUserName, otherUserAvatar, peerReadSeq, "
+                                    + "avatarUrl, myRole, otherUserId, lastMessageDeleted) "
+                                    + "VALUES ('c-1', 'DIRECT', NULL, 7, 'hi', 'Lan', 100, 3, 'Lan', "
+                                    + "NULL, 4, NULL, NULL, 'u-peer', 0)");
+                    db.execSQL(
+                            "INSERT INTO messages (id, conversationId, seq, senderId, "
+                                    + "senderDisplayName, type, content, clientMessageId, replyToId, "
+                                    + "replyToSenderName, replyToSnippet, createdAt, attachmentsJson, "
+                                    + "editedAtEpochMs, deletedAtEpochMs) "
+                                    + "VALUES ('m-1', 'c-1', 7, 'u-1', 'Lan', 'TEXT', 'hi', NULL, NULL, "
+                                    + "NULL, NULL, 100, NULL, NULL, NULL)");
+                });
+
+        try (SupportSQLiteDatabase db = openMigrated()) {
+            try (Cursor cursor = db.query("SELECT peerDeliveredSeq, peerReadSeq FROM conversations WHERE id = 'c-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals(0L, cursor.getLong(0));
+                assertEquals(4L, cursor.getLong(1));
+            }
+
+            db.execSQL(
+                    "INSERT INTO users (id, username, displayName, phoneNumber, avatarUrl, bio, lastSeenAt, updatedAt) "
+                            + "VALUES ('u-1', 'lan123', 'Lan Nguyen', '+84901234567', 'http://avatar.jpg', 'Hello', 1000, 2000)");
+            try (Cursor cursor = db.query("SELECT displayName, phoneNumber FROM users WHERE id = 'u-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals("Lan Nguyen", cursor.getString(0));
+                assertEquals("+84901234567", cursor.getString(1));
+            }
+
+            db.execSQL(
+                    "INSERT INTO call_logs (callId, conversationId, peerId, peerDisplayName, peerAvatarUrl, direction, callType, startedAt, durationSeconds, endReason) "
+                            + "VALUES ('call-1', 'c-1', 'u-peer', 'Lan', NULL, 'INCOMING', 'AUDIO', 5000, 45, 'COMPLETED')");
+            try (Cursor cursor = db.query("SELECT peerId, durationSeconds, endReason FROM call_logs WHERE callId = 'call-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals("u-peer", cursor.getString(0));
+                assertEquals(45L, cursor.getLong(1));
+                assertEquals("COMPLETED", cursor.getString(2));
+            }
+
+            db.execSQL(
+                    "INSERT INTO offline_outbox (id, idempotencyKey, actionType, payloadJson, state, retryCount, createdAtEpochMs, lastAttemptEpochMs) "
+                            + "VALUES ('outbox-1', 'idemp-1', 'SEND_MESSAGE', '{\"text\":\"test\"}', 'SENDING', 0, 100, 0)");
+            try (Cursor cursor = db.query("SELECT actionType, state FROM offline_outbox WHERE id = 'outbox-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals("SEND_MESSAGE", cursor.getString(0));
+                assertEquals("SENDING", cursor.getString(1));
+            }
+        }
+    }
+
     private void assertV7ShapeAndPreservedRows(SupportSQLiteDatabase db) {
         try (Cursor cursor =
                 db.query(
@@ -215,7 +282,8 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_3_4,
                         AppDatabase.MIGRATION_4_5,
                         AppDatabase.MIGRATION_5_6,
-                        AppDatabase.MIGRATION_6_7)
+                        AppDatabase.MIGRATION_6_7,
+                        AppDatabase.MIGRATION_7_8)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()
@@ -266,6 +334,17 @@ public final class RoomMigrationTest {
     private static List<String> extendV5Schema() {
         List<String> schema = new ArrayList<>(V5_SCHEMA);
         schema.add("ALTER TABLE conversations ADD COLUMN myRole TEXT");
+        return schema;
+    }
+
+    private static List<String> extendV6Schema() {
+        List<String> schema = new ArrayList<>(V6_SCHEMA);
+        schema.addAll(
+                Arrays.asList(
+                        "ALTER TABLE messages ADD COLUMN editedAtEpochMs INTEGER",
+                        "ALTER TABLE messages ADD COLUMN deletedAtEpochMs INTEGER",
+                        "ALTER TABLE conversations ADD COLUMN otherUserId TEXT",
+                        "ALTER TABLE conversations ADD COLUMN lastMessageDeleted INTEGER NOT NULL DEFAULT 0"));
         return schema;
     }
 }

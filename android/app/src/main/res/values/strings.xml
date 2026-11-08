@@ -98,7 +98,10 @@
     <string name="cd_attach">Attach</string>
     <string name="cd_remove_attachment">Remove attachment</string>
     <string name="cd_open_attachment">Open attachment</string>
+    <string name="cd_sent">Sent</string>
     <string name="cd_delivered">Delivered</string>
+    <string name="cd_read">Read</string>
+    <string name="msg_delivered">Delivered</string>
 
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>

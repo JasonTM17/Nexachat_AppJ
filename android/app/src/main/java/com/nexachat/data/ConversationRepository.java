@@ -649,6 +649,7 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getOtherUserAvatar(),
                 row.getAvatarUrl(),
                 row.getPeerReadSeq(),
+                row.getPeerDeliveredSeq(),
                 row.getMyRole(),
                 row.getOtherUserId(),
                 row.getLastMessageDeleted(),

@@ -71,7 +71,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     /** Frozen app contract: {@code /app/conversations/{uuid}/{action}}. */
     private static final Pattern APP_CONVERSATION =
-            Pattern.compile("^/app/conversations/(" + UUID_PATTERN + ")/(messages|typing|read)$");
+            Pattern.compile("^/app/conversations/(" + UUID_PATTERN + ")/(messages|typing|read|delivered)$");
+
+    /** Chat ack contract: {@code /app/chat.delivery.ack} and {@code /app/chat.read.ack}. */
+    private static final Pattern APP_CHAT_ACK =
+            Pattern.compile("^/app/chat\\.(delivery|read)\\.ack$");
 
     /** Call signaling is conversation-scoped and remains member-checked here. */
     private static final Pattern APP_CALL =
@@ -90,7 +94,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private final long messageWindowSeconds;
     private final long typingPerWindow;
     private final long typingWindowSeconds;
+    private final long acksPerWindow;
+    private final long ackWindowSeconds;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public StompAuthChannelInterceptor(JwtService jwtService,
                                        UserRepository userRepository,
                                        ConversationMemberRepository memberRepository,
@@ -105,7 +112,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                                        @Value("${nexachat.rate-limit.stomp.typing-per-window:60}")
                                        long typingPerWindow,
                                        @Value("${nexachat.rate-limit.stomp.typing-window-seconds:10}")
-                                       long typingWindowSeconds) {
+                                       long typingWindowSeconds,
+                                       @Value("${nexachat.rate-limit.stomp.acks-per-window:120}")
+                                       long acksPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.ack-window-seconds:10}")
+                                       long ackWindowSeconds) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
@@ -116,6 +127,23 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         this.messageWindowSeconds = messageWindowSeconds;
         this.typingPerWindow = typingPerWindow;
         this.typingWindowSeconds = typingWindowSeconds;
+        this.acksPerWindow = acksPerWindow;
+        this.ackWindowSeconds = ackWindowSeconds;
+    }
+
+    public StompAuthChannelInterceptor(JwtService jwtService,
+                                       UserRepository userRepository,
+                                       ConversationMemberRepository memberRepository,
+                                       RateLimitService rateLimitService,
+                                       @Lazy
+                                       SimpMessagingTemplate messaging,
+                                       ObjectMapper objectMapper,
+                                       long messagesPerWindow,
+                                       long messageWindowSeconds,
+                                       long typingPerWindow,
+                                       long typingWindowSeconds) {
+        this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
+                messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds, 120L, 10L);
     }
 
     @Override
@@ -210,7 +238,16 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 return consumeSendAllowance(userId, "typing", typingPerWindow,
                         typingWindowSeconds, null);
             }
+            if ("delivered".equals(app.group(2)) || "read".equals(app.group(2))) {
+                return consumeSendAllowance(userId, "acks", acksPerWindow,
+                        ackWindowSeconds, null);
+            }
             return true;
+        }
+        Matcher chatAck = APP_CHAT_ACK.matcher(destination);
+        if (chatAck.matches()) {
+            return consumeSendAllowance(userId, "acks", acksPerWindow,
+                    ackWindowSeconds, null);
         }
         Matcher call = APP_CALL.matcher(destination);
         if (call.matches()) {

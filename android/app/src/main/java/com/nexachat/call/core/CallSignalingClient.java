@@ -5,6 +5,7 @@ public interface CallSignalingClient {
     interface Listener {
         void onEvent(CallEvent event);
         void onDisconnected();
+        default void onConnected() {}
     }
 
     void start(Listener listener);

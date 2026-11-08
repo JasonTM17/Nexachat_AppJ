@@ -17,6 +17,7 @@ import android.net.Uri;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
+import com.nexachat.core.database.ConversationWatermark;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
@@ -508,6 +509,28 @@ public final class ConversationRepositoryTest {
             return Completable.fromAction(() -> {
                 rows.keySet().retainAll(ids);
                 publish();
+            });
+        }
+
+        @Override
+        public Completable bumpPeerDeliveredSeq(String conversationId, long seq) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null && seq > row.getPeerDeliveredSeq()) {
+                    rows.put(conversationId, row.withPeerDeliveredSeq(seq));
+                    publish();
+                }
+            });
+        }
+
+        @Override
+        public Single<List<ConversationWatermark>> getAllWatermarks() {
+            return Single.fromCallable(() -> {
+                List<ConversationWatermark> list = new ArrayList<>();
+                for (ConversationEntity row : rows.values()) {
+                    list.add(new ConversationWatermark(row.getId(), row.getLastMessageSeq()));
+                }
+                return list;
             });
         }
 

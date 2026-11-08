@@ -65,6 +65,7 @@ public final class RealtimeSession {
     public static final String EVENT_USER_OFFLINE = "USER_OFFLINE";
     public static final String EVENT_USER_TYPING = "USER_TYPING";
     public static final String EVENT_MESSAGE_READ = "MESSAGE_READ";
+    public static final String EVENT_MESSAGE_DELIVERED = "MESSAGE_DELIVERED";
     public static final String EVENT_CONVERSATION_UPDATED = "CONVERSATION_UPDATED";
     public static final String EVENT_REACTION_UPDATED = "REACTION_UPDATED";
     public static final String EVENT_PIN_UPDATED = "PIN_UPDATED";
@@ -338,6 +339,22 @@ public final class RealtimeSession {
                 "{}");
     }
 
+    /** Delivery receipt ack to /app/chat.delivery.ack. */
+    public boolean sendDeliveryAck(
+            @NonNull String conversationId,
+            long upToSeq) {
+        String payload = "{\"conversationId\":\"" + conversationId + "\",\"upToSeq\":" + upToSeq + "}";
+        return stompClient.send(APP_PREFIX + "/chat.delivery.ack", payload);
+    }
+
+    /** Read receipt ack to /app/chat.read.ack. */
+    public boolean sendReadAck(
+            @NonNull String conversationId,
+            long upToSeq) {
+        String payload = "{\"conversationId\":\"" + conversationId + "\",\"upToSeq\":" + upToSeq + "}";
+        return stompClient.send(APP_PREFIX + "/chat.read.ack", payload);
+    }
+
     private void dispatch(@NonNull StompFrame frame) {
         if (!StompCommand.MESSAGE.equals(frame.getCommand())) {
             return;
@@ -420,6 +437,13 @@ public final class RealtimeSession {
             case EVENT_MESSAGE_READ: {
                 ReadUpdateDto update = parse(readAdapter, payloadJson(envelope));
                 return new ChatEvent.MessageRead(
+                        conversationId,
+                        update == null ? null : update.getResolvedUserId(),
+                        update == null ? null : update.getResolvedSeq());
+            }
+            case EVENT_MESSAGE_DELIVERED: {
+                ReadUpdateDto update = parse(readAdapter, payloadJson(envelope));
+                return new ChatEvent.MessageDelivered(
                         conversationId,
                         update == null ? null : update.getResolvedUserId(),
                         update == null ? null : update.getResolvedSeq());

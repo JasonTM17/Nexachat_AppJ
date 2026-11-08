@@ -32,7 +32,9 @@ public final class CallNotifications {
     private CallNotifications() { }
 
     public static boolean showIncoming(Context context, CallSession session) {
-        if (context == null || session == null || session.getState() != CallState.INCOMING_RINGING) {
+        if (context == null || session == null
+                || (session.getState() != CallState.INCOMING_RINGING
+                && session.getState() != CallState.PENDING_INCOMING)) {
             return false;
         }
         Context appContext = localizedAppContext(context);
@@ -53,6 +55,14 @@ public final class CallNotifications {
                 serviceIntent(appContext, CallNotificationActionRouter.ACTION_DECLINE, session.getCallId()),
                 pendingIntentFlags());
 
+        boolean canUseFullScreen = true;
+        if (Build.VERSION.SDK_INT >= 34) {
+            NotificationManager nm = (NotificationManager) appContext.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                canUseFullScreen = nm.canUseFullScreenIntent();
+            }
+        }
+
         String peerName = displayName(appContext, session);
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.incoming(
                 peerName, appContext.getString(R.string.call_notification_incoming));
@@ -67,11 +77,15 @@ public final class CallNotifications {
                 .setOngoing(true)
                 .setAutoCancel(false)
                 .setContentIntent(open)
-                .setFullScreenIntent(open, true)
                 .addAction(android.R.drawable.sym_action_call,
                         appContext.getString(R.string.call_notification_accept), accept)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel,
                         appContext.getString(R.string.call_notification_decline), decline);
+        if (canUseFullScreen) {
+            builder.setFullScreenIntent(open, true);
+        } else {
+            builder.setPriority(NotificationCompat.PRIORITY_MAX);
+        }
         return notifySafely(appContext, INCOMING_NOTIFICATION_ID, builder.build());
     }
 

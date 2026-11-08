@@ -37,6 +37,16 @@ public final class ChatBubbleRules {
                 && (messageSeq == null ? Long.MAX_VALUE : messageSeq) <= peerReadSeq;
     }
 
+    public static boolean isDeliveredReceiptVisible(
+            boolean isGroup,
+            boolean mine,
+            Long messageSeq,
+            long peerDeliveredSeq
+    ) {
+        return !isGroup && mine
+                && (messageSeq == null ? Long.MAX_VALUE : messageSeq) <= peerDeliveredSeq;
+    }
+
     public static int findMessageReversedIndex(List<ChatMessage> messages, String targetId) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             if (messages.get(i).getId().equals(targetId)) {
