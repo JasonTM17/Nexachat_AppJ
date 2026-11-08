@@ -42,6 +42,8 @@ public final class StringParityUnitTest {
             "app_name",
             "pinned_count",
             "voice_recording_duration_zero",
+            "voice_duration_progress",
+            "voice_zero_duration",
             "summary_badge_ai",
             "summary_citation_chip"
     )));
