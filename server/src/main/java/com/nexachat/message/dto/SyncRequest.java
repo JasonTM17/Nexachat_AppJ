@@ -24,7 +24,20 @@ public record SyncRequest(
             UUID conversationId,
 
             @NotNull(message = "lastSeq is required")
-            Long lastSeq
+            Long lastSeq,
+
+            /**
+             * Additive reaction-delta cursor: the last {@code reaction_events.id}
+             * the client received for this conversation. Echo the
+             * {@code reactionCursor} of the previous delta response; omit it on
+             * the first sync. It only matters when the previous response set
+             * {@code hasMore} because the reaction page was truncated.
+             */
+            Long reactionCursor
     ) {
+        /** Convenience for callers that do not page reaction deltas. */
+        public ConversationWatermark(UUID conversationId, Long lastSeq) {
+            this(conversationId, lastSeq, null);
+        }
     }
 }

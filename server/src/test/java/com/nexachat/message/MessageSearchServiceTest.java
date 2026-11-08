@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,8 +47,8 @@ class MessageSearchServiceTest {
     @BeforeEach
     void setUp() {
         service = new MessageService(messageRepository, attachmentRepository, reactionRepository,
-                conversationRepository, memberRepository, pinnedMessageRepository,
-                storageService, eventPublisher);
+                mock(ReactionEventRepository.class), conversationRepository, memberRepository,
+                pinnedMessageRepository, storageService, eventPublisher, new SyncProperties());
         lenient().when(conversationRepository.existsById(conversationId)).thenReturn(true);
         lenient().when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(true);

@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,8 +69,8 @@ class MessageServiceTest {
     void setUp() {
         messageService = new MessageService(
                 messageRepository, attachmentRepository, reactionRepository,
-                conversationRepository, memberRepository, pinnedMessageRepository,
-                storageService, eventPublisher);
+                mock(ReactionEventRepository.class), conversationRepository, memberRepository,
+                pinnedMessageRepository, storageService, eventPublisher, new SyncProperties());
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
         lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());

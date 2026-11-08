@@ -8,6 +8,8 @@ import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageReactionRepository;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.PinnedMessageRepository;
+import com.nexachat.message.ReactionEventRepository;
+import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +45,12 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private MessageReactionRepository messageReactionRepository;
+
+    @MockitoBean
+    private ReactionEventRepository reactionEventRepository;
+
+    @MockitoBean
+    private RequestIdempotencyRepository requestIdempotencyRepository;
 
     @MockitoBean
     private PinnedMessageRepository pinnedMessageRepository;

@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,9 +38,11 @@ import java.util.UUID;
 public class PinController {
 
     private final PinService pinService;
+    private final IdempotencyService idempotencyService;
 
-    public PinController(PinService pinService) {
+    public PinController(PinService pinService, IdempotencyService idempotencyService) {
         this.pinService = pinService;
+        this.idempotencyService = idempotencyService;
     }
 
     @GetMapping
@@ -53,8 +56,13 @@ public class PinController {
     public ResponseEntity<Void> pin(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId,
-            @Valid @RequestBody PinRequest request) {
-        pinService.pin(requireUserId(principal), conversationId, request);
+            @Valid @RequestBody PinRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        UUID userId = requireUserId(principal);
+        String endpoint = "POST /api/v1/conversations/" + conversationId + "/pins";
+        idempotencyService.execute(userId, idempotencyKey, endpoint,
+                request == null ? "" : String.valueOf(request.messageId()),
+                () -> pinService.pin(userId, conversationId, request));
         return ResponseEntity.noContent().build();
     }
 
@@ -62,8 +70,12 @@ public class PinController {
     public ResponseEntity<Void> unpin(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId,
-            @PathVariable UUID messageId) {
-        pinService.unpin(requireUserId(principal), conversationId, messageId);
+            @PathVariable UUID messageId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
+        UUID userId = requireUserId(principal);
+        String endpoint = "DELETE /api/v1/conversations/" + conversationId + "/pins/" + messageId;
+        idempotencyService.execute(userId, idempotencyKey, endpoint, messageId.toString(),
+                () -> pinService.unpin(userId, conversationId, messageId));
         return ResponseEntity.noContent().build();
     }
 
