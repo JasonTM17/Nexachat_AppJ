@@ -33,9 +33,11 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
 import okhttp3.ResponseBody;
@@ -299,6 +301,75 @@ public final class SyncEngineTest {
 
         verify(conversationDao, never()).bumpPeerReadSeq(anyString(), anyLong());
         verify(conversationDao, never()).bumpPeerDeliveredSeq(anyString(), anyLong());
+    }
+
+    @Test
+    public void syncKeepsServerTimeCursorScopedToTheAuthenticatedUser() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")),
+                Maybe.just(new Tokens(jwt("user-b"), 1800000000000L, "refresh-b")),
+                Maybe.just(new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")));
+
+        Map<String, String> cursors = new HashMap<>();
+        when(tokenStore.readSyncServerTime(anyString())).thenAnswer(invocation -> {
+            String value = cursors.get(invocation.getArgument(0));
+            return value == null ? Maybe.empty() : Maybe.just(value);
+        });
+        when(tokenStore.saveSyncServerTime(anyString(), anyString())).thenAnswer(invocation -> {
+            cursors.put(invocation.getArgument(0), invocation.getArgument(1));
+            return Completable.complete();
+        });
+
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        try {
+            when(call.execute()).thenReturn(
+                    Response.success(new SyncResponse(List.of(), "cursor-a-1")),
+                    Response.success(new SyncResponse(List.of(), "cursor-b-1")),
+                    Response.success(new SyncResponse(List.of(), "cursor-a-2")));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+
+        syncEngine.sync().blockingAwait();
+        syncEngine.sync().blockingAwait();
+        syncEngine.sync().blockingAwait();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, org.mockito.Mockito.times(3)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        org.junit.Assert.assertNull(requests.get(0).getSince());
+        org.junit.Assert.assertNull("another user's cursor must not leak into this request",
+                requests.get(1).getSince());
+        assertEquals("cursor-a-1", requests.get(2).getSince());
+        assertEquals("cursor-a-2", cursors.get("user-a"));
+        assertEquals("cursor-b-1", cursors.get("user-b"));
+    }
+
+    @Test
+    public void syncDoesNotPersistMissingServerTime() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        try {
+            when(call.execute()).thenReturn(Response.success(new SyncResponse(List.of(), null)));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
     }
 
     private static String jwt(String userId) {
