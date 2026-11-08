@@ -180,17 +180,14 @@ public final class WaveformView extends View {
     public void onInitializeAccessibilityNodeInfo(@NonNull AccessibilityNodeInfo info) {
         super.onInitializeAccessibilityNodeInfo(info);
         info.setClassName(SeekBar.class.getName());
-        if (android.os.Build.VERSION.SDK_INT >= 24) {
-            info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
-                    AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT, 0f, 1f, progress));
-            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS);
-        }
+        info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
+                AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT, 0f, 1f, progress));
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS);
     }
 
     @Override
     public boolean performAccessibilityAction(int action, @Nullable Bundle arguments) {
-        if (android.os.Build.VERSION.SDK_INT >= 24
-                && action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.getId()
+        if (action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.getId()
                 && arguments != null
                 && arguments.containsKey(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE)) {
             float value = clamp(arguments.getFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE));
