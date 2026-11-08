@@ -32,7 +32,7 @@ Token values live in `res/values/colors_nexachat.xml`, `res/values/themes.xml`, 
 
 ### 2.1 Spacing (`dimens_nexachat.xml`)
 Strict 8pt grid baseline:
-- `space_xs`: `4dp` (consecutive message bubble vertical spacing)
+- `space_xs`: `4dp` (message-row spacing; grouped rows use `1dp` at each adjoining edge for `2dp` total, while separate runs use `4dp` at each edge for `8dp` total)
 - `space_sm`: `8dp` (icon paddings, standard list item vertical separation)
 - `space_md`: `16dp` (screen horizontal margins, standard content padding)
 - `space_lg`: `24dp` (section spacing, dialog padding)
@@ -50,7 +50,7 @@ Strict 8pt grid baseline:
 - Chat input pill: `corner_xl` (`24dp`)
 - Search bar pill: `28dp` in layout styles where used
 - Avatars: circular (`GradientDrawable.OVAL` in `AvatarView`)
-- Message bubbles: asymmetric corner radii resolved in `ChatUiRules` / `ChatBubbleRules` and applied via per-position background drawables (`16dp` main corners, `4dp` tucked tail corner per group position)
+- Message bubbles: `18dp` main corners with a `4dp` tail on single/last rows; the tail follows sender direction and layout RTL.
 
 ---
 
@@ -59,7 +59,7 @@ Strict 8pt grid baseline:
 | Component | File Path | Purpose & Key Features |
 |---|---|---|
 | `AvatarView` | `com/nexachat/core/ui/components/AvatarView.java` | Deterministic 8-hue avatar with initials fallback, Glide async loading, online badge support, accessibility content descriptions. |
-| Message rows | `feature/chat/adapter/MessageBubbleBinder.java`, `res/layout/item_message_*.xml` | Asymmetric corner shapes per group position, embedded reply quotes, clickable links (`ACTION_VIEW`, strictly http/https via `LinkUtils`), inline timestamp & receipt status. |
+| Message rows | `feature/chat/adapter/MessageBubbleBinder.java`, `res/layout/item_message_*.xml` | Sender/date/system-aware grouping, 78% maximum row width, RTL-aware bubble tails, embedded reply quotes, media timestamp scrims, reactions, clickable links (`ACTION_VIEW`, strictly http/https via `LinkUtils`), inline receipts. |
 | `SectionHeaderView` | `com/nexachat/core/ui/components/SectionHeaderView.java` | All-caps bold sub-headers for grouped lists (Profile, Settings, Members). |
 | `SettingsRowView` | `com/nexachat/core/ui/components/SettingsRowView.java` | Interactive preference row with leading icon, chevron/value trailing affordance, destructive styling mode, >= 48dp touch target. |
 | `EmptyStateView` | `com/nexachat/core/ui/components/EmptyStateView.java` | Calm centered empty state supporting vector illustrations (`ic_empty_chat.xml`), single concise helper line. |
@@ -90,7 +90,7 @@ Animations stay restrained (roughly 150ms fades/slides) and respect the system a
 | Screen | Before Polish | After Polish |
 |---|---|---|
 | **Inbox** | Two identical person icons on top bar; raw timestamp format; unstyled list rows; missing empty illustration. | Distinct Contacts (`ic_people`) vs Profile (`ic_account_circle`) icons; relative timestamps ("Vừa xong", "18:51", "Hôm qua"); bold unread preview with pill badge; custom vector `ic_empty_chat`. |
-| **Chat** | Monolithic identical rectangles for all bubbles; missing date headers; time overlapping bubble edge; square input field. | Grouped bubbles with position-dependent asymmetric corners (single/first/middle/last); localized date separators; inline receipts; pill input (`corner_xl`) with animated send button. |
+| **Chat** | Monolithic identical rectangles for all bubbles; missing date headers; time overlapping bubble edge; square input field. | 78%-width message rows with sender/date/system-aware grouping, 18dp corners and a 4dp tail, localized date separators, legible inline receipts, image/video time scrims, and a floating rounded composer with a 150ms send/mic cross-fade. |
 | **Group Detail** | Alarming red "Admin" pill and red trash can icons on every row reading as constant danger. | Calm tonal `m3_secondary_container` chip for Admin; subtle `m3_on_surface_variant` trash icon; destructive red reserved for "Leave Group" and confirmation dialogs. |
 | **Profile** | Unstyled flat card list; plain avatar; basic unaligned action buttons. | Grouped card sections ("Account", "Session") with `SectionHeaderView`; 80dp avatar with edit badge; unified `SettingsRowView` items with icons and chevrons. |
 | **Auth** | Flat white screen; text button labeled "Show" for password; keyboard occluding submit buttons. | Subtle vertical brand gradient; standard eye toggle drawables; IME actions Next/Done and soft-input resize. |
@@ -132,6 +132,12 @@ code export. Reference screens:
 | `profile_settings` | `feature/profile/ProfileFragment.java` | Grouped sections |
 
 Presentation rules and helpers are pure Java throughout: `PresenceFormatter`, `SearchHighlightHelper`, `ThemeMapper`, `ForwardFilter`, `MessageUiRules`, `ChatUiRules`, and `ChatBubbleRules`; Fragments and ViewBinders consume them via LiveData + RxJava 3.
+
+## 10. Chat Screen Refresh Wave
+
+The refreshed chat screen reuses the shared light/dark theme roles and Manrope/Inter type styles. Message rows are constrained to 78% of available width with RTL-aware anchors; bubbles use 18dp main corners and a 4dp sender-side tail on the final row of each run. The row mapper starts new visual runs at date separators and call-log rows. Grouped row edges contribute 2dp between messages, while separate runs contribute 8dp. Group sender labels use a stable eight-color palette checked against the incoming bubble in both themes.
+
+Image and video rows keep timestamps inside a compact surface scrim. Reply quotes use a 3dp accent edge, reaction chips overlap slightly, and file rows use a surface tile. The composer is a floating 28dp surface with a six-line input limit; send and microphone actions cross-fade over 150ms and follow the system animation setting. Existing attachment, recording, search, group-info, summary, and overflow actions remain wired through their existing controls.
 
 ---
 

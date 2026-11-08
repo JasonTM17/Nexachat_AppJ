@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
 import java.util.Collections;
@@ -11,6 +12,29 @@ import java.util.List;
 import org.junit.Test;
 
 public final class ChatBubbleRulesTest {
+
+    @Test
+    public void senderNamePaletteIndexIsStableAndBounded() {
+        String senderId = "sender-42";
+        int expected = Math.floorMod(senderId.hashCode(), ChatBubbleRules.SENDER_PALETTE_SIZE);
+
+        assertEquals(expected, ChatBubbleRules.resolveSenderPaletteIndex(senderId));
+        assertEquals(expected, ChatBubbleRules.resolveSenderPaletteIndex(senderId));
+        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex(null) >= 0);
+        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex(null) < ChatBubbleRules.SENDER_PALETTE_SIZE);
+    }
+
+    @Test
+    public void bubbleRowPaddingKeepsRunsTightAndGroupsSeparated() {
+        assertEquals(4, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.SINGLE));
+        assertEquals(4, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.SINGLE));
+        assertEquals(4, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.FIRST));
+        assertEquals(1, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.FIRST));
+        assertEquals(1, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.MIDDLE));
+        assertEquals(1, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.MIDDLE));
+        assertEquals(1, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.LAST));
+        assertEquals(4, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.LAST));
+    }
 
     @Test
     public void seenReceiptVisibleForOneOnOneChatsWhenMineAndRead() {

@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -14,6 +15,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.TextViewCompat;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
@@ -31,7 +33,6 @@ import com.nexachat.core.media.BlurHashPlaceholderCache;
 import com.nexachat.core.media.ImageAttachmentBinding;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.ui.MessageUiRules;
-import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
@@ -53,6 +54,16 @@ public final class MessageBubbleBinder {
             new BlurHashPlaceholderCache<>();
     private static final ImageAttachmentBinding<Drawable> IMAGE_BINDING =
             new ImageAttachmentBinding<>();
+    private static final int[] SENDER_NAME_COLORS = {
+            R.color.colorPrimary,
+            R.color.colorTertiary,
+            R.color.slate_muted,
+            R.color.colorError,
+            R.color.colorOnPrimaryContainer,
+            R.color.colorOnSecondaryContainer,
+            R.color.colorOnTertiaryContainer,
+            R.color.colorOnErrorContainer
+    };
 
     private final DateFormat timeFormat;
     @Nullable
@@ -79,6 +90,7 @@ public final class MessageBubbleBinder {
         if (bubble == null) {
             return;
         }
+        applyRowSpacing(root, item.getGroupPosition());
         applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
         applyBubbleColors(root.getContext(), bubble, message, item.isPulsing());
 
@@ -90,6 +102,19 @@ public final class MessageBubbleBinder {
                     && !TextUtils.isEmpty(message.getSenderDisplayName())) {
                 senderName.setVisibility(View.VISIBLE);
                 senderName.setText(message.getSenderDisplayName());
+                int senderColor;
+                if (item.isPulsing()) {
+                    senderColor = resolveThemeColor(
+                            root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
+                } else if (MessageUiRules.isTombstone(
+                        message.isDeleted(), message.getDeletedAtEpochMs())) {
+                    senderColor = resolveThemeColor(
+                            root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+                } else {
+                    int colorIndex = ChatBubbleRules.resolveSenderPaletteIndex(message.getSenderId());
+                    senderColor = ContextCompat.getColor(root.getContext(), SENDER_NAME_COLORS[colorIndex]);
+                }
+                senderName.setTextColor(senderColor);
             } else {
                 senderName.setVisibility(View.GONE);
             }
@@ -97,7 +122,8 @@ public final class MessageBubbleBinder {
 
         bindReplyQuote(root, message);
         bindPrimaryContent(root, message);
-        bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt());
+        applyMessageTextColors(root, message, item.isPulsing());
+        bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
     }
 
@@ -134,25 +160,42 @@ public final class MessageBubbleBinder {
     }
 
     private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
-        ChatUiRules.BubbleCornerRadii radii = ChatUiRules.resolveBubbleShape(position, mine);
         float density = bubble.getResources().getDisplayMetrics().density;
+        float radius = 18f * density;
+        float tailRadius = 4f * density;
+        float bottomLeft = radius;
+        float bottomRight = radius;
+        boolean isTail = position == MessageGroupPosition.SINGLE || position == MessageGroupPosition.LAST;
+        boolean tailOnRight = mine != (bubble.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
+        if (isTail && tailOnRight) {
+            bottomRight = tailRadius;
+        } else if (isTail) {
+            bottomLeft = tailRadius;
+        }
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
         drawable.setCornerRadii(new float[]{
-                radii.topStartDp * density,
-                radii.topStartDp * density,
-                radii.topEndDp * density,
-                radii.topEndDp * density,
-                radii.bottomEndDp * density,
-                radii.bottomEndDp * density,
-                radii.bottomStartDp * density,
-                radii.bottomStartDp * density,
+                radius,
+                radius,
+                radius,
+                radius,
+                bottomRight,
+                bottomRight,
+                bottomLeft,
+                bottomLeft,
         });
         ColorStateList tint = bubble.getBackgroundTintList();
         if (tint != null) {
             drawable.setColor(tint.getDefaultColor());
         }
         bubble.setBackground(drawable);
+    }
+
+    private void applyRowSpacing(View root, MessageGroupPosition position) {
+        float density = root.getResources().getDisplayMetrics().density;
+        int top = Math.round(ChatBubbleRules.bubbleRowPaddingTopDp(position) * density);
+        int bottom = Math.round(ChatBubbleRules.bubbleRowPaddingBottomDp(position) * density);
+        root.setPadding(root.getPaddingLeft(), top, root.getPaddingRight(), bottom);
     }
 
     private void applyBubbleColors(
@@ -164,6 +207,8 @@ public final class MessageBubbleBinder {
         int colorInt;
         if (pulsing) {
             colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorTertiaryContainer);
+        } else if (MessageViewTypeMapper.isSystemMessage(message)) {
+            colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceVariant);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
             colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
         } else {
@@ -245,6 +290,7 @@ public final class MessageBubbleBinder {
         TextView systemLabel = root.findViewById(R.id.systemLabel);
 
         if (image != null) {
+            image.setClipToOutline(image.getBackground() != null);
             Glide.with(image).clear(image);
             image.setTag(null);
             image.setImageDrawable(null);
@@ -349,6 +395,46 @@ public final class MessageBubbleBinder {
         }
     }
 
+    private void applyMessageTextColors(View root, ChatMessage message, boolean pulsing) {
+        int color;
+        if (MessageViewTypeMapper.isSystemMessage(message)) {
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+        } else if (pulsing) {
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
+        } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+        } else if (message.getStatus() == DeliveryStatus.FAILED) {
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnErrorContainer);
+        } else if (message.getMine()) {
+            color = ContextCompat.getColor(root.getContext(), R.color.chat_bubble_outgoing_text);
+        } else {
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+        }
+
+        TextView body = root.findViewById(R.id.messageBody);
+        TextView fileName = root.findViewById(R.id.fileName);
+        TextView systemLabel = root.findViewById(R.id.systemLabel);
+        if (body != null) {
+            body.setTextColor(color);
+        }
+        if (fileName != null) {
+            boolean fileTile = fileName.getVisibility() == View.VISIBLE;
+            if (fileTile) {
+                fileName.setTextColor(resolveThemeColor(
+                        root.getContext(), com.google.android.material.R.attr.colorOnSurface));
+                TextViewCompat.setCompoundDrawableTintList(fileName, ColorStateList.valueOf(resolveThemeColor(
+                        root.getContext(), com.google.android.material.R.attr.colorPrimary)));
+            } else {
+                fileName.setTextColor(color);
+                TextViewCompat.setCompoundDrawableTintList(fileName, ColorStateList.valueOf(color));
+            }
+        }
+        if (systemLabel != null) {
+            systemLabel.setTextColor(resolveThemeColor(
+                    root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant));
+        }
+    }
+
     private void openAttachment(ChatMessage message, AttachmentDto attachment, boolean media) {
         if (actionListener == null) {
             return;
@@ -441,10 +527,29 @@ public final class MessageBubbleBinder {
         return bitmap == null ? null : new BitmapDrawable(image.getResources(), bitmap);
     }
 
-    private void bindMetaRow(View root, ChatMessage message, boolean seen, boolean delivered) {
+    private void bindMetaRow(
+            View root,
+            ChatMessage message,
+            boolean seen,
+            boolean delivered,
+            boolean pulsing
+    ) {
         View metaInclude = root.findViewById(R.id.bubbleMeta);
         if (metaInclude == null) {
             return;
+        }
+        MessageContentKind contentKind = MessageViewTypeMapper.resolveContentKind(message);
+        boolean mediaMeta = contentKind == MessageContentKind.IMAGE
+                || contentKind == MessageContentKind.VIDEO;
+        float density = root.getResources().getDisplayMetrics().density;
+        if (mediaMeta) {
+            metaInclude.setBackgroundResource(R.drawable.bg_message_image_meta);
+            int horizontalPadding = Math.round(8f * density);
+            int verticalPadding = Math.round(4f * density);
+            metaInclude.setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding);
+        } else {
+            metaInclude.setBackground(null);
+            metaInclude.setPadding(0, 0, 0, 0);
         }
         TextView edited = metaInclude.findViewById(R.id.editedLabel);
         TextView time = metaInclude.findViewById(R.id.timeLabel);
@@ -453,13 +558,20 @@ public final class MessageBubbleBinder {
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
         boolean isMine = message.getMine();
-        int metaColor = resolveThemeColor(
-                root.getContext(),
-                isMine
-                        ? com.google.android.material.R.attr.colorOnPrimaryContainer
-                        : com.google.android.material.R.attr.colorOnSurfaceVariant
-        );
-        float labelAlpha = isMine ? 0.78f : 1.0f;
+        int metaColor;
+        if (mediaMeta) {
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+        } else if (pulsing) {
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
+        } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+        } else if (message.getStatus() == DeliveryStatus.FAILED) {
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnErrorContainer);
+        } else if (isMine) {
+            metaColor = ContextCompat.getColor(root.getContext(), R.color.chat_bubble_outgoing_text);
+        } else {
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+        }
 
         if (edited != null) {
             boolean showEdited = MessageUiRules.isEdited(
@@ -470,13 +582,13 @@ public final class MessageBubbleBinder {
             if (showEdited) {
                 edited.setText(R.string.message_edited);
                 edited.setTextColor(metaColor);
-                edited.setAlpha(labelAlpha);
+                edited.setAlpha(1.0f);
             }
         }
         if (time != null) {
             time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
             time.setTextColor(metaColor);
-            time.setAlpha(labelAlpha);
+            time.setAlpha(1.0f);
         }
         if (sending != null) {
             sending.setVisibility(
@@ -522,7 +634,9 @@ public final class MessageBubbleBinder {
                 deliveredIcon.setVisibility(View.VISIBLE);
                 deliveredIcon.setImageResource(R.drawable.ic_check_double);
                 deliveredIcon.setImageTintList(ColorStateList.valueOf(
-                        ContextCompat.getColor(root.getContext(), R.color.tick_read)
+                        mediaMeta
+                                ? resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorTertiary)
+                                : ContextCompat.getColor(root.getContext(), R.color.chat_bubble_read_tick)
                 ));
                 deliveredIcon.setContentDescription(
                         root.getContext().getString(R.string.cd_read)
@@ -570,11 +684,22 @@ public final class MessageBubbleBinder {
             return;
         }
         reactionsInclude.setVisibility(View.VISIBLE);
+        int overlapPx = Math.round(6f * root.getResources().getDisplayMetrics().density);
+        int index = 0;
         for (ReactionChip chip : reactions) {
             Chip view = new Chip(root.getContext());
             view.setText(chip.getEmoji() + " " + chip.getCount());
             view.setCheckable(false);
             view.setClickable(true);
+            view.setTextSize(12f);
+            view.setChipCornerRadius(16f * root.getResources().getDisplayMetrics().density);
+            view.setChipMinHeight(28f * root.getResources().getDisplayMetrics().density);
+            view.setEnsureMinTouchTargetSize(false);
+            view.setTextColor(resolveThemeColor(
+                    root.getContext(), com.google.android.material.R.attr.colorOnSurface));
+            view.setChipStrokeWidth(root.getResources().getDisplayMetrics().density);
+            view.setChipStrokeColor(ColorStateList.valueOf(resolveThemeColor(
+                    root.getContext(), com.google.android.material.R.attr.colorOutlineVariant)));
             view.setChipBackgroundColorResource(
                     chip.getReactedByMe() ? R.color.brand_indigo_container : R.color.bubble_other
             );
@@ -583,7 +708,12 @@ public final class MessageBubbleBinder {
                     actionListener.onReactionTap(message.getId(), chip.getEmoji());
                 }
             });
-            group.addView(view);
+            ViewGroup.MarginLayoutParams params = new ViewGroup.MarginLayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.setMarginStart(index == 0 ? 0 : -overlapPx);
+            group.addView(view, params);
+            index++;
         }
     }
 

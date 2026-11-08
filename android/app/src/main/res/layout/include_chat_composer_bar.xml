@@ -4,13 +4,12 @@
     android:id="@+id/composerRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorSurface"
-    android:elevation="@dimen/elevation_level3"
+    android:background="@drawable/bg_chat_composer"
     android:gravity="center_vertical"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
-    android:paddingHorizontal="12dp"
-    android:paddingVertical="8dp">
+    android:paddingHorizontal="@dimen/space_xs"
+    android:paddingVertical="@dimen/space_xs">
 
     <ImageButton
         android:id="@+id/attachButton"
@@ -27,14 +26,14 @@
         android:id="@+id/messageInput"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/space_sm"
+        android:layout_marginHorizontal="@dimen/space_xs"
         android:layout_weight="1"
-        android:background="@drawable/bg_composer_pill"
+        android:background="@null"
         android:hint="@string/chat_input_hint"
-        android:maxLines="5"
+        android:maxLines="6"
         android:minHeight="@dimen/min_touch_target"
-        android:paddingHorizontal="18dp"
-        android:paddingVertical="11dp"
+        android:paddingHorizontal="@dimen/space_xs"
+        android:paddingVertical="@dimen/space_sm"
         android:textColor="?attr/colorOnSurface"
         android:textColorHint="?attr/colorOnSurfaceVariant" />
 
@@ -42,7 +41,7 @@
         android:id="@+id/recordingOverlay"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/space_sm"
+        android:layout_marginHorizontal="@dimen/space_xs"
         android:layout_weight="1"
         android:background="@drawable/bg_composer_pill"
         android:gravity="center_vertical"
@@ -80,25 +79,31 @@
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
-    <ImageButton
-        android:id="@+id/sendButton"
+    <FrameLayout
+        android:id="@+id/composerActionSlot"
         android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
-        android:background="@drawable/bg_unread_badge"
-        android:contentDescription="@string/cd_send"
-        android:padding="10dp"
-        android:src="@drawable/ic_send"
-        android:visibility="gone"
-        app:tint="?attr/colorOnPrimary" />
+        android:layout_height="@dimen/min_touch_target">
 
-    <ImageButton
-        android:id="@+id/micButton"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
-        android:background="@drawable/bg_unread_badge"
-        android:contentDescription="@string/cd_record_voice"
-        android:padding="10dp"
-        android:src="@drawable/ic_mic"
-        android:visibility="visible"
-        app:tint="?attr/colorOnPrimary" />
+        <com.nexachat.feature.chat.adapter.ChatActionImageButton
+            android:id="@+id/sendButton"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_unread_badge"
+            android:contentDescription="@string/cd_send"
+            android:padding="10dp"
+            android:src="@drawable/ic_send"
+            android:visibility="gone"
+            app:tint="?attr/colorOnPrimary" />
+
+        <com.nexachat.feature.chat.adapter.ChatActionImageButton
+            android:id="@+id/micButton"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_unread_badge"
+            android:contentDescription="@string/cd_record_voice"
+            android:padding="10dp"
+            android:src="@drawable/ic_mic"
+            android:visibility="visible"
+            app:tint="?attr/colorOnPrimary" />
+    </FrameLayout>
 </LinearLayout>

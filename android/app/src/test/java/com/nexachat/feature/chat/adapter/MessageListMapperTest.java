@@ -1,6 +1,7 @@
 package com.nexachat.feature.chat.adapter;
 
 import com.nexachat.core.ui.components.DateSeparatorLabels;
+import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
@@ -48,10 +49,14 @@ public final class MessageListMapperTest {
                 new DateSeparatorLabels("T", "Y"),
                 100_000L
         );
-        boolean anySender = rows.stream()
+        List<MessageListItem> messages = rows.stream()
                 .filter(i -> i.getKind() == MessageListItem.Kind.MESSAGE)
-                .anyMatch(MessageListItem::shouldShowSenderName);
-        assertTrue(anySender);
+                .toList();
+        assertEquals(2, messages.size());
+        assertEquals(MessageGroupPosition.FIRST, messages.get(0).getGroupPosition());
+        assertEquals(MessageGroupPosition.LAST, messages.get(1).getGroupPosition());
+        assertTrue(messages.get(0).shouldShowSenderName());
+        org.junit.Assert.assertFalse(messages.get(1).shouldShowSenderName());
     }
 
     private static ChatMessage msg(String id, long at, boolean mine) {
