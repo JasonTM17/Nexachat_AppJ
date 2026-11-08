@@ -14,15 +14,40 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `DATABASE_PASSWORD` | Yes | None; set in `.env` | `replace-with-a-local-only-password` |
 | `JWT_SECRET` | Yes; at least 32 UTF-8 bytes | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
 | `STORAGE_ROOT` | Yes outside Compose; Compose supplies a default | `/app/data/uploads` | `/app/data/uploads` |
+| `MANAGEMENT_SERVER_PORT` | No (opt-in loopback isolation; shares API port 8080 by default) | Empty | `8081` |
+| `MANAGEMENT_SERVER_ADDRESS` | No (bind address for management server) | Empty | `127.0.0.1` |
+| `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
+| `MANAGEMENT_DISK_THRESHOLD` | No (disk space warning threshold on storage root) | `1GB` | `1GB` |
+| `NEXACHAT_CORS_ALLOWED_ORIGINS` | No (comma-separated browser origins; empty admits no web caller) | Empty | `https://web.nexachat.com` |
+| `NEXACHAT_ADMIN_PHONES` | No (comma-separated admin E.164 phones allowed to read `/api/v1/rag/stats`) | Empty | `+84900000001` |
+| `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
+| `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
 | `FCM_TOKEN_URI` | No (local testing only) | Empty (Google token endpoint) | `https://oauth2.googleapis.com/token` |
 | `FCM_API_URL` | No (local testing only) | Empty (Google FCM endpoint) | `https://fcm.googleapis.com/v1/projects/<id>/messages:send` |
+| `FCM_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
+| `FCM_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
+| `FCM_MAX_RETRIES` | No | `2` | `2` |
+| `FCM_RETRY_BASE_DELAY_MS` | No | `200` | `200` |
 | `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
-| `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai/` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `NEXACHAT_SUMMARY_LLM_MODEL` | Yes when summary LLM enabled | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` |
-| `NEXACHAT_SUMMARY_LLM_API_KEY` | Yes when summary LLM enabled | None | `your-openai-or-gemini-api-key` |
+| `NEXACHAT_SUMMARY_LLM_API_KEY` | Yes when summary LLM enabled | None | `your-gemini-api-key` |
+| `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` | No | `30000` | `30000` |
+| `NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS` | No | `24000` | `24000` |
+| `NEXACHAT_SUMMARY_LLM_MAX_OUTPUT_TOKENS` | No | `4000` | `4000` |
+| `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | No (optional fallback cloud LLM) | `false` | `false` |
+| `NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL` | Yes when fallback LLM enabled | `https://api.deepseek.com` | `https://api.deepseek.com` |
+| `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | Yes when fallback LLM enabled | `deepseek-flash` | `deepseek-flash` |
+| `NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY` | Yes when fallback LLM enabled | None | `your-deepseek-api-key` |
+| `NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` | No | `30000` | `30000` |
+| `NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED` | No (optional local Ollama/vLLM tier) | `false` | `false` |
+| `NEXACHAT_SUMMARY_LOCAL_LLM_BASE_URL` | No | `http://host.docker.internal:11434/v1` | `http://host.docker.internal:11434/v1` |
+| `NEXACHAT_SUMMARY_LOCAL_LLM_MODEL` | No | `qwen2.5:3b` | `qwen2.5:3b` |
+| `NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY` | No | `local-ollama` | `local-ollama` |
+| `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | No | `60000` | `60000` |
 | `NEXACHAT_RAG_ENABLED` | No (optional conversation RAG) | `true` | `true` |
 | `NEXACHAT_RAG_EMBEDDING_PROVIDER` | No | `lexical` | `lexical` (or `openai-compatible`) |
 
@@ -72,7 +97,7 @@ append `.debug`, so the debug application id is `com.nexachat.debug`; register
 both ids if release builds should receive pushes too.
 
 1. Open the Firebase console (<https://console.firebase.google.com/>) and select
-   the project (`nguyenson-58d0b`).
+   your Firebase project.
 2. Project settings (gear icon) → **Your apps** → **Add app** → **Android**.
 3. Register `com.nexachat.debug` as the Android package name, then repeat for
    `com.nexachat`.
@@ -269,8 +294,7 @@ to a loopback-bound management port before exposure:
 | Metrics (`/actuator/metrics`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics` |
 | Prometheus (`/actuator/prometheus`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics,prometheus` |
 
-By default the actuator shares port `8080`. Set `MANAGEMENT_SERVER_PORT=8081` and
-`MANAGEMENT_SERVER_ADDRESS=127.0.0.1` together to move it to a loopback-only port:
+By default the actuator shares the application API port `8080` (so default container and host health checks against `http://localhost:8080/actuator/health` work without configuring an extra port). Operators can opt in to moving the management server to an isolated loopback port by setting `MANAGEMENT_SERVER_PORT=8081` and `MANAGEMENT_SERVER_ADDRESS=127.0.0.1`:
 
 ```yaml
 management:

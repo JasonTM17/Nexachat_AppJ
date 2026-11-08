@@ -87,7 +87,9 @@ with an external index.
   the cited message ids/hashes. A cache hit is replayed only when every cited
   message still exists, is not deleted and its content hash matches.
 - Vectors are never exposed by any API. `GET /api/v1/rag/stats` returns
-  aggregate counters only.
+  aggregate counters only. This endpoint is operator telemetry restricted
+  to authorized administrator phone numbers (`NEXACHAT_ADMIN_PHONES`);
+  non-admin authenticated callers receive `403 FORBIDDEN`.
 
 ## Cost controls
 
@@ -150,6 +152,7 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |
 | `nexachat.rag.ask.cache-ttl-hours` | `NEXACHAT_RAG_ASK_CACHE_TTL_HOURS` | `24` |
+| `nexachat.security.admin-phones` | `NEXACHAT_ADMIN_PHONES` | — (empty ⇒ stats endpoint denied to all) |
 | `nexachat.summary.llm-fallback.enabled` | `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | `false` |
 | `nexachat.summary.llm-fallback.base-url` | `NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL` | `https://api.deepseek.com` |
 | `nexachat.summary.llm-fallback.model` | `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | `deepseek-flash` |

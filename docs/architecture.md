@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V10) + file volume. Conversation RAG server API is available
+> (Flyway V1–V11) + file volume. Conversation RAG server API is available
 > (`POST /api/v1/conversations/{id}/ask`, [docs/rag.md](rag.md)); Android entry in progress.
 > Call signaling shares STOMP (`server/call`,
 > `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
@@ -53,7 +53,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V10 migrations<br/>seq · watermarks · idempotency · calls · rag · reaction_events")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V11 migrations<br/>seq · watermarks · idempotency · calls · rag · reaction_events · token_cutoff")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -151,14 +151,26 @@ sequenceDiagram
   generation (`attachments.blur_hash`, Flyway V8). Media downloads stream via HTTP Range
   (`Range: bytes=a-b`, 206 Partial Content / 416), cached through an authenticated
   origin-validated Glide loader with a 2 GiB bounded disk cache. Voice playback uses Media3
-  with lazy 48-bar waveform extraction cached per attachment.
+  with lazy 48-bar waveform extraction cached per attachment. Server-side upload sniffing
+  (`MagicBytes.java`) inspects ISO-BMFF track handlers (`trak/mdia/hdlr`), classifying Android
+  `MediaRecorder` voice notes under generic brands (`isom`/`mp42`) as `audio/mp4` (not `video/mp4`),
+  and `/api/v1/files/**` serves with a bounded 64 KiB prefix and tail read window for `moov`-at-end files.
+- **Access-Token Revocation (Flyway V11):** `users.tokens_valid_after` stores an access-token
+  revocation cutoff stamped on logout, logout-all, or password change (`AuthService.java`).
+  `JwtAuthFilter` and `StompAuthChannelInterceptor` check incoming token `iat < cutoff` and
+  reject revoked sessions with `401 TOKEN_INVALID`. Lookups are cached in memory for up to 60 s
+  via `AccessTokenValidityCache` (`nexachat.security.validity-cache-ttl-seconds`).
+- **Observability & Management Port:** Spring Boot Actuator endpoints share the API port (`8080`)
+  by default so health checks work out-of-the-box. Operators can opt in to loopback isolation
+  by setting `MANAGEMENT_SERVER_PORT` (e.g. 8081) and `MANAGEMENT_SERVER_ADDRESS=127.0.0.1`.
 - **Conversation RAG ("Ask this chat"):** server-side RAG module (`server/rag/**`, Flyway V9
   `message_embeddings`, `rag_ask_cache`, `rag_ask_request_limits`) exposes
   `POST /api/v1/conversations/{id}/ask`. It executes hybrid BM25 lexical ranking and vector
   cosine ranking with reciprocal-rank fusion (`k = 60`), MMR diversification, strict citation
   validation against retrieved context, a 3,000-character context budget, and deterministic
-  256-d local lexical embedding fallback. Note: Server API is fully available; Android UI
-  entry is in progress (not yet merged into the app).
+  256-d local lexical embedding fallback. Aggregate telemetry (`GET /api/v1/rag/stats`) is
+  restricted to authorized admin phone numbers (`NEXACHAT_ADMIN_PHONES`).
+  Note: Server API is fully available; Android UI entry is in progress (not yet merged into the app).
 - **AI Conversation Summary:** summary service (`server/summary/**`, Flyway V6) uses an
   extractive local MMR engine or an optional external OpenAI-compatible LLM (tested with
   Gemini `gemini-3.1-flash-lite` via Gemini's OpenAI-compatible base URL) gated by account-level
