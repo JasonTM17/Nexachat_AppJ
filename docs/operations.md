@@ -168,9 +168,11 @@ Emulator verification (needs a Google Play system image):
    `adb -s emulator-5560 install -r app/build/outputs/apk/debug/app-debug.apk`.
 2. Log in. The app registers its token by itself; read it back from the server:
    `docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT platform, device_label, created_at FROM user_device_tokens ORDER BY created_at DESC LIMIT 5;"`.
-3. Force-stop the app, then from another account send that user a message with the
-   FCM-enabled server running. The data-only push wakes the app to sync; on next
-   launch the message must be present without a manual refresh.
+3. Send the app to the background (Home, not force-stop), then from another account
+   send that user a message with the FCM-enabled server running. The data-only push
+   wakes the app to sync; on next launch the message must be present without a
+   manual refresh. Android does not deliver FCM to an app the user force-stopped,
+   so a force-stopped device only recovers through the launch sync.
 
 ## Security
 
