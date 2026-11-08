@@ -68,5 +68,13 @@ nexachat:
       local-timeout-ms: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:60000}
   fcm:
     enabled: ${FCM_ENABLED:false}
-    project-id: ${FCM_PROJECT_ID:mock-project}
+    project-id: ${FCM_PROJECT_ID:}
+    # Inline service-account JSON or a filesystem path to it. Required when enabled.
     service-account-json: ${FCM_SERVICE_ACCOUNT_JSON:}
+    # Optional endpoint overrides (blank in production: the Google URLs are used).
+    token-uri: ${FCM_TOKEN_URI:}
+    api-url: ${FCM_API_URL:}
+    connect-timeout-seconds: ${FCM_CONNECT_TIMEOUT_SECONDS:5}
+    read-timeout-seconds: ${FCM_READ_TIMEOUT_SECONDS:10}
+    max-retries: ${FCM_MAX_RETRIES:2}
+    retry-base-delay-ms: ${FCM_RETRY_BASE_DELAY_MS:200}
