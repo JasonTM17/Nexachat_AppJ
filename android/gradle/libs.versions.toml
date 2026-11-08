@@ -4,6 +4,7 @@
 [versions]
 agp = "8.7.3"
 hilt = "2.52"
+google-services = "4.5.0"
 lifecycle = "2.8.7"
 room = "2.6.1"
 retrofit = "2.11.0"
@@ -110,6 +111,7 @@ androidx-room-testing = { group = "androidx.room", name = "room-testing", versio
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
 
 [bundles]
 lifecycle = [

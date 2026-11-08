@@ -1,5 +1,6 @@
 package com.nexachat.notification;
 
+import static org.junit.Assert.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -13,7 +14,9 @@ import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import org.junit.Before;
@@ -102,6 +105,27 @@ public final class DeviceTokenRegistrationManagerTest {
 
         verify(tokenStore).clearPendingDeviceTokenUnregister(DEVICE_TOKEN, "user-1");
         verify(scheduler, never()).enqueueSync();
+    }
+
+    @Test
+    public void newTokenIsNotWrittenToStandardStreams() {
+        when(tokenStore.readTokens()).thenReturn(Maybe.empty());
+
+        PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        try {
+            System.setOut(new PrintStream(out));
+            System.setErr(new PrintStream(err));
+            manager.onNewToken(DEVICE_TOKEN).test().assertComplete();
+        } finally {
+            System.setOut(originalOut);
+            System.setErr(originalErr);
+        }
+
+        assertFalse(out.toString().contains(DEVICE_TOKEN));
+        assertFalse(err.toString().contains(DEVICE_TOKEN));
     }
 
     private static Tokens tokens() {
