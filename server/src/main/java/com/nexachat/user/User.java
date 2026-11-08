@@ -56,6 +56,13 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /**
+     * Access tokens issued before this instant are rejected. {@code null} means
+     * no cutoff. Stamped by logout, logout-all and password change.
+     */
+    @Column(name = "tokens_valid_after")
+    private Instant tokensValidAfter;
+
     protected User() {
         // JPA only
     }
@@ -101,6 +108,18 @@ public class User {
 
     public Instant getLastSeenAt() {
         return lastSeenAt;
+    }
+
+    public Instant getTokensValidAfter() {
+        return tokensValidAfter;
+    }
+
+    /**
+     * Rejects every access token issued at or before {@code cutoff}. Called by
+     * logout, logout-all and password change.
+     */
+    public void invalidateAccessTokens(Instant cutoff) {
+        this.tokensValidAfter = cutoff;
     }
 
     public boolean isShowPresence() {

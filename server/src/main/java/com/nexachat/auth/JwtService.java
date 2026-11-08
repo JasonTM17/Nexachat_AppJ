@@ -60,11 +60,19 @@ public class JwtService {
     }
 
     /**
-     * @return the authenticated principal
+     * Verified access-token material: the caller id plus the second-precision
+     * issue instant the revocation cutoff is compared against.
+     */
+    public record AccessTokenClaims(UUID userId, Instant issuedAt) {
+    }
+
+    /**
+     * Parses and verifies an access token, keeping the issue instant.
+     *
      * @throws io.jsonwebtoken.ExpiredJwtException when the token is past {@code exp}
      * @throws JwtException for any other signature/format/claim problem
      */
-    public JwtPrincipal parseAccessToken(String token) {
+    public AccessTokenClaims parseAccessTokenClaims(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(key)
                 .build()
@@ -79,10 +87,22 @@ public class JwtService {
             throw new JwtException("Token has no subject");
         }
         try {
-            return new JwtPrincipal(UUID.fromString(subject));
+            Date issuedAt = claims.getIssuedAt();
+            return new AccessTokenClaims(
+                    UUID.fromString(subject),
+                    issuedAt == null ? Instant.EPOCH : issuedAt.toInstant());
         } catch (IllegalArgumentException e) {
             throw new JwtException("Token subject is not a user id", e);
         }
+    }
+
+    /**
+     * @return the authenticated principal
+     * @throws io.jsonwebtoken.ExpiredJwtException when the token is past {@code exp}
+     * @throws JwtException for any other signature/format/claim problem
+     */
+    public JwtPrincipal parseAccessToken(String token) {
+        return new JwtPrincipal(parseAccessTokenClaims(token).userId());
     }
 
     /** Value echoed to clients as {@code accessTokenExpiresIn}. */

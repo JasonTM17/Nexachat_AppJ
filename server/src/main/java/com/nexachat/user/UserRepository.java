@@ -17,6 +17,15 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByPhone(String phone);
 
     /**
+     * Access-token cutoff for the JWT filter's hot path, plus proof that the
+     * account still exists. A projection, not the entity: the filter only
+     * needs these two values and must not load (or lock) the whole user row.
+     */
+    @Query("SELECT new com.nexachat.user.UserAuthValidity(u.id, u.tokensValidAfter)"
+            + " FROM User u WHERE u.id = :id")
+    Optional<UserAuthValidity> findAuthValidityById(@Param("id") UUID id);
+
+    /**
      * Case-insensitive {@code displayName} prefix search for GET /users/search?q=.
      * The caller is always excluded. {@code prefix} must arrive LIKE-escaped
      * ({@code \\}, {@code %}, {@code _}) — see {@link UserService#search} — so a
