@@ -218,9 +218,6 @@
     <string name="voice_message_accessibility">Voice message, %1$s of %2$s, %3$s</string>
     <string name="voice_zero_duration">0:00</string>
 
-    <!-- Static audit sweep strings -->
-    <string name="auth_workspace_badge">✦ NEXACHAT WORKSPACE</string>
-    <string name="splash_tagline">✦ SECURE AI MESSAGING</string>
     <string name="voice_recording_duration_zero">00:00</string>
 
 </resources>
