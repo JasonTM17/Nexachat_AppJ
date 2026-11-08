@@ -458,6 +458,12 @@ def run_sync_scenario(
             log.skip_test("sync_idempotent", "Endpoint absent (POST /api/v1/sync returned 404)")
             return
 
+        # Messages already in the conversation before this scenario (the receipts scenario sends one).
+        # The probe above used lastSeq=0, so its page holds every earlier message while there are fewer than 50.
+        probe_deltas = sync_probe.json().get("deltas") or [{}]
+        prior_count = len(probe_deltas[0].get("newMessages") or [])
+        total_expected = prior_count + n_messages
+
         # B is offline (no STOMP connection).
         # A sends N=120 messages via REST send with rate-limit pacing.
         sent_seqs = []
@@ -516,7 +522,7 @@ def run_sync_scenario(
         p3_delta = page3_res.json()["deltas"][0]
         p3_msgs = p3_delta["newMessages"]
 
-        expected_rem = n_messages - 100  # 20 for 120
+        expected_rem = total_expected - 100  # remaining after two full pages of 50
         if len(p3_msgs) == expected_rem and p3_delta["hasMore"] is False:
             log.pass_test(
                 "sync_page_3",
@@ -532,13 +538,13 @@ def run_sync_scenario(
 
         # Invariant: strict monotonic sequence, no duplicates, received all
         if (
-            len(all_msgs) == n_messages
+            len(all_msgs) == total_expected
             and verify_monotonic_sequence(all_seqs)
             and verify_no_duplicates(all_ids)
         ):
             log.pass_test(
                 "sync_invariants",
-                f"All {n_messages} messages received in strict seq order with zero duplicates",
+                f"All {total_expected} messages received in strict seq order with zero duplicates",
             )
         else:
             log.fail_test("sync_invariants", "Message sequence ordering or deduplication violated")
