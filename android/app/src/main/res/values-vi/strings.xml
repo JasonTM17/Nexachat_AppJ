@@ -35,7 +35,7 @@
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
-    <string name="inbox_search_hint">Tìm kiếm cuộc trò chuyện, bạn bè, thẻ...</string>
+    <string name="inbox_search_hint">Tìm kiếm cuộc trò chuyện, bạn bè, thẻ…</string>
     <string name="inbox_active_now_header">ĐANG HOẠT ĐỘNG</string>
     <string name="inbox_view_all">Xem tất cả</string>
     <string name="inbox_filter_all">Tất cả</string>
@@ -168,7 +168,7 @@
     <string name="message_deleted">Tin nhắn đã bị xoá</string>
 
     <!-- In-Chat Search -->
-    <string name="search_in_chat_placeholder">Tìm trong cuộc trò chuyện...</string>
+    <string name="search_in_chat_placeholder">Tìm trong cuộc trò chuyện…</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
     <string name="search_in_chat_error">Không thể tìm kiếm tin nhắn</string>
     <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
@@ -178,7 +178,7 @@
 
     <!-- Forward Picker -->
     <string name="forward_title">Chuyển tiếp tin nhắn</string>
-    <string name="forward_search_placeholder">Tìm cuộc trò chuyện...</string>
+    <string name="forward_search_placeholder">Tìm cuộc trò chuyện…</string>
     <string name="forward_send">Gửi</string>
     <string name="forward_no_matches">Không có cuộc trò chuyện phù hợp</string>
 
@@ -204,5 +204,10 @@
     <string name="voice_release_to_cancel">Thả tay để hủy</string>
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
     <string name="voice_permission_required">Cần cấp quyền micro để ghi âm tin nhắn thoại</string>
+
+    <!-- Static audit sweep strings -->
+    <string name="auth_workspace_badge">✦ KHÔNG GIAN NEXACHAT</string>
+    <string name="splash_tagline">✦ NHẮN TIN AI BẢO MẬT</string>
+    <string name="voice_recording_duration_zero">00:00</string>
 
 </resources>
