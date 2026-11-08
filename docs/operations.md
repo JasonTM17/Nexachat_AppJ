@@ -85,6 +85,45 @@ To verify a setup with one test push:
    data-only push (`type=NEW_MESSAGE`) that the client uses to sync; message
    content never passes through FCM.
 
+### Android client (FCM)
+
+`android/app/google-services.json` is gitignored and must be supplied locally. The
+Google Services Gradle plugin (`com.google.gms.google-services`, pinned in
+`android/gradle/libs.versions.toml`) is applied only when that file exists, so a
+fresh clone still builds and the no-Firebase code path stays exercised.
+`./gradlew :app:checkFirebaseConfig` prints `Firebase configured: yes|no` per variant
+plus the resolved client package name; it never prints keys or app ids.
+
+The debug variant uses application id `com.nexachat.debug` and release uses
+`com.nexachat`; both clients must exist in the same Firebase project. The plugin
+matches the client by application id and generates `google_app_id` for each variant.
+
+Token registration is a silent sync wake-up, not a visible notification:
+
+1. `NexaFirebaseMessagingService.onNewToken` stores the token and enqueues
+   `DeviceTokenSyncWorker` when a session exists; login and session restoration do the
+   same through `DeviceTokenRegistrationManager.onSessionAvailable`.
+2. The worker reads the stored token, or calls `FirebaseMessaging.getToken()` once when
+   Firebase is configured, and registers it through `POST /api/v1/users/device-token`.
+   Fetch or registration failures return `Result.retry()`; WorkManager backs off
+   exponentially (initial 30 s, at most 4 retries).
+3. The token is stored encrypted in DataStore and never logged.
+
+Message pushes only wake the sync engine, so no notification channel is created for
+them and no message notification is posted. `POST_NOTIFICATIONS` is declared in the
+manifest and requested by the call screens, which do post visible call
+notifications; it is not needed for the silent push path.
+
+Emulator verification (needs a Google Play system image):
+
+1. `cd android && ./gradlew :app:assembleDebug` and
+   `adb -s emulator-5560 install -r app/build/outputs/apk/debug/app-debug.apk`.
+2. Log in. The app registers its token by itself; read it back from the server:
+   `docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT platform, device_label, created_at FROM user_device_tokens ORDER BY created_at DESC LIMIT 5;"`.
+3. Force-stop the app, then from another account send that user a message with the
+   FCM-enabled server running. The data-only push wakes the app to sync; on next
+   launch the message must be present without a manual refresh.
+
 ## Start, stop, and health
 
 ```sh
