@@ -44,6 +44,16 @@ CREATE INDEX idx_request_idempotency_created ON request_idempotency (created_at)
 -- Data-safe: UNIQUE(token) already guarantees (user_id, token) is unique, so
 -- existing rows satisfy the new constraint. The old single-column index is
 -- redundant with the leftmost column of the new unique index.
-ALTER TABLE user_device_tokens DROP CONSTRAINT uq_device_token;
-ALTER TABLE user_device_tokens ADD CONSTRAINT uq_user_device_token UNIQUE (user_id, token);
+-- Guarded so databases created from an earlier V7 draft that already carry the
+-- per-user constraint still migrate.
+ALTER TABLE user_device_tokens DROP CONSTRAINT IF EXISTS uq_device_token;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'user_device_tokens'::regclass AND conname = 'uq_user_device_token'
+    ) THEN
+        ALTER TABLE user_device_tokens ADD CONSTRAINT uq_user_device_token UNIQUE (user_id, token);
+    END IF;
+END $$;
 DROP INDEX IF EXISTS idx_device_tokens_user;

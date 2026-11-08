@@ -34,8 +34,8 @@ services:
       STORAGE_ROOT: ${STORAGE_ROOT:-/app/data/uploads}
       # Cloud LLM Tier (DeepSeek Cloud)
       NEXACHAT_SUMMARY_LLM_ENABLED: ${NEXACHAT_SUMMARY_LLM_ENABLED:-false}
-      NEXACHAT_SUMMARY_LLM_BASE_URL: ${NEXACHAT_SUMMARY_LLM_BASE_URL:-https://api.deepseek.com}
-      NEXACHAT_SUMMARY_LLM_MODEL: ${NEXACHAT_SUMMARY_LLM_MODEL:-deepseek-flash}
+      NEXACHAT_SUMMARY_LLM_BASE_URL: ${NEXACHAT_SUMMARY_LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
+      NEXACHAT_SUMMARY_LLM_MODEL: ${NEXACHAT_SUMMARY_LLM_MODEL:-gemini-3.1-flash-lite}
       NEXACHAT_SUMMARY_LLM_API_KEY: ${NEXACHAT_SUMMARY_LLM_API_KEY:-}
       # Local Server Model Tier (Ollama / vLLM / local server model)
       NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED: ${NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED:-false}
