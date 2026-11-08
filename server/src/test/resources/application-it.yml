@@ -6,6 +6,12 @@
 # (IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD, defaulting to the local docker-compose
 # instance on :5433) — do not hardcode a datasource URL in this file.
 spring:
+  datasource:
+    hikari:
+      # Many cached Spring contexts share one PostgreSQL (max_connections=100);
+      # small pools keep the whole failsafe run under that ceiling.
+      maximum-pool-size: 2
+      minimum-idle: 0
   jpa:
     hibernate:
       ddl-auto: validate
