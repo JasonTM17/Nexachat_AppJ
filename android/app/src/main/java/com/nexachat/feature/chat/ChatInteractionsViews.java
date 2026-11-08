@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
+import com.nexachat.core.ui.ForwardFilter;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.chat.adapter.ForwardTargetAdapter;
@@ -51,7 +52,8 @@ public final class ChatInteractionsViews {
         if (message.getContent() != null && !message.getContent().isBlank() && !message.isDeleted()) {
             labels.add(context.getString(R.string.action_copy)); callbacks.add(() -> copy(context, message.getContent()));
         }
-        if (sent && message.getContent() != null && !message.getContent().isBlank()) {
+        if (sent && message.getContent() != null && !message.getContent().isBlank()
+                && ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             labels.add(context.getString(R.string.action_forward)); callbacks.add(() -> actions.forward(message));
         }
         if (canPin && sent) {

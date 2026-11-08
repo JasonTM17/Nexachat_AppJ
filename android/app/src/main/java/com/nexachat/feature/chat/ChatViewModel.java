@@ -11,6 +11,7 @@ import com.nexachat.core.common.Result;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
+import com.nexachat.core.ui.ForwardFilter;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.data.AttachmentRepository;
 import com.nexachat.data.AttachmentUploadEvent;
@@ -347,7 +348,8 @@ public final class ChatViewModel extends ViewModel {
                 break;
             }
         }
-        if (message == null || message.getStatus() != DeliveryStatus.SENT || message.isDeleted()) {
+        if (message == null || message.getStatus() != DeliveryStatus.SENT
+                || !ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             return;
         }
         String content = message.getContent() == null ? "" : message.getContent().trim();

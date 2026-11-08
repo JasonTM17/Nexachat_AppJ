@@ -30,6 +30,9 @@ public final class InboxViewModel extends ViewModel {
     private final MutableLiveData<InboxUiState> mutableUiState =
             new MutableLiveData<>(new InboxUiState());
     private InboxUiState currentState = mutableUiState.getValue();
+    private boolean refreshInFlight;
+    private boolean nextPageInFlight;
+    private long pageOperationGeneration;
 
     @Inject
     public InboxViewModel(
@@ -53,15 +56,79 @@ public final class InboxViewModel extends ViewModel {
     }
 
     /** Pulls the authoritative inbox from REST (launch + user refresh). */
-    public void refresh() {
-        disposables.add(conversationRepository.refreshInbox()
+    public synchronized void refresh() {
+        if (refreshInFlight) return;
+        refreshInFlight = true;
+        long generation = ++pageOperationGeneration;
+        updateState(InboxUiState::withRefreshStarted);
+        disposables.add(conversationRepository.refreshInboxPage()
                 .subscribeOn(Schedulers.io())
+                .doFinally(() -> {
+                    synchronized (InboxViewModel.this) {
+                        refreshInFlight = false;
+                    }
+                })
                 .subscribe(
-                        result -> updateState(state -> result instanceof Result.Success<?>
-                                ? state.withError(null)
-                                : state.withError(((Result.Failure<?>) result).getError())),
-                        error -> updateState(state -> state.withError(
-                                new ApiError.Network(error.getMessage())))));
+                        result -> {
+                            if (!isPageOperationCurrent(generation)) return;
+                            if (result instanceof Result.Success<?> success) {
+                                updateState(state -> state.withRefreshResult(
+                                        Boolean.TRUE.equals(success.getValue())));
+                            } else {
+                                updateState(state -> state.withRefreshFailure(
+                                        ((Result.Failure<?>) result).getError()));
+                            }
+                        },
+                        error -> {
+                            if (isPageOperationCurrent(generation)) {
+                                updateState(state -> state.withRefreshFailure(
+                                        new ApiError.Network(error.getMessage())));
+                            }
+                        }));
+    }
+
+    /** Loads the next inbox page once the visible list approaches its end. */
+    public synchronized void loadNextPage() {
+        if (refreshInFlight || nextPageInFlight || !currentState.hasMore()
+                || currentState.isLoadingMore()) {
+            return;
+        }
+        nextPageInFlight = true;
+        long generation = pageOperationGeneration;
+        updateState(InboxUiState::withNextPageStarted);
+        disposables.add(conversationRepository.loadNextInboxPage()
+                .subscribeOn(Schedulers.io())
+                .doFinally(() -> {
+                    boolean stale;
+                    synchronized (InboxViewModel.this) {
+                        nextPageInFlight = false;
+                        stale = generation != pageOperationGeneration;
+                    }
+                    if (stale) {
+                        updateState(InboxUiState::withNextPageIdle);
+                    }
+                })
+                .subscribe(
+                        result -> {
+                            if (!isPageOperationCurrent(generation)) return;
+                            if (result instanceof Result.Success<?> success) {
+                                updateState(state -> state.withNextPageResult(
+                                        Boolean.TRUE.equals(success.getValue())));
+                            } else {
+                                updateState(state -> state.withNextPageFailure(
+                                        ((Result.Failure<?>) result).getError()));
+                            }
+                        },
+                        error -> {
+                            if (isPageOperationCurrent(generation)) {
+                                updateState(state -> state.withNextPageFailure(
+                                        new ApiError.Network(error.getMessage())));
+                            }
+                        }));
+    }
+
+    private synchronized boolean isPageOperationCurrent(long generation) {
+        return generation == pageOperationGeneration;
     }
 
     private void start(@Nullable TokenStore tokenStore, @Nullable Moshi moshi) {

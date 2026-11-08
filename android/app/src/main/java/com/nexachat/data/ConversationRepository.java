@@ -49,6 +49,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,8 +72,15 @@ import retrofit2.Response;
  * management (plan §10.2 and §12.2). Room is the render source; inbox reads
  * remain local, while REST refreshes write through. Realtime pushes only
  * trigger refreshes: a debounce folds {@code CONVERSATION_UPDATED} and
- * {@code MESSAGE_CREATED} bursts into one REST request. Reconnect resync
- * requests perform the same authoritative pull.
+ * {@code MESSAGE_CREATED} bursts into one page-one REST request. Inbox pages
+ * contain 30 rows and merge by conversation id. Pruning is allowed only after
+ * a walk started at page one reaches a response without a next cursor; then
+ * absent rows are removed only when their positive {@code lastMessageSeq} is
+ * lower than the oldest sequence observed in the walk. Equal/newer activity,
+ * rows without a sequence, and locally-created conversations are retained
+ * because Room does not store the server cursor's creation-time tie-breaker.
+ * A complete empty response clears old rows except local creations awaiting
+ * server visibility. Reconnect resync requests perform the same page-one pull.
  *
  * <p>Retrofit calls and avatar reads run on {@link Schedulers#io()}. Room
  * operations use Room's RxJava executor and are chained without blocking.
@@ -84,6 +92,7 @@ public final class ConversationRepository implements AutoCloseable {
     private static final String TYPE_GROUP = "GROUP";
     private static final long PUSH_REFRESH_DEBOUNCE_MS = 400L;
     private static final String NEXT_CURSOR_HEADER = "X-Next-Cursor";
+    private static final int INBOX_PAGE_SIZE = 30;
     private static final int MEMBERS_PAGE_LIMIT = 100;
     private static final int MAX_AVATAR_BYTES = 25 * 1024 * 1024;
     private static final int AVATAR_READ_BUFFER_BYTES = 64 * 1024;
@@ -110,6 +119,15 @@ public final class ConversationRepository implements AutoCloseable {
      */
     private final Set<String> locallyCreatedIds = ConcurrentHashMap.newKeySet();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
+    private final Object inboxPagingLock = new Object();
+    private long inboxPageGeneration;
+    @Nullable private String nextInboxCursor;
+    private boolean hasMoreInboxPages;
+    private boolean inboxWalkStartedAtFirstPage;
+    private long oldestInboxSequence = Long.MAX_VALUE;
+    private final Set<String> seenInboxCursors = new HashSet<>();
+    private final Set<String> inboxWalkIds = new LinkedHashSet<>();
+    @Nullable private Single<Result<Boolean>> inFlightNextInboxPage;
 
     @Inject
     public ConversationRepository(
@@ -178,33 +196,65 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
-     * Pulls the inbox and writes rows through. It tolerates both the
-     * {@code {items,nextCursor,hasMore}} envelope and a bare array response.
-     *
-     * <p>Pruning is safe only for a complete inbox. The unpaged request below
-     * is the only caller that expects the authoritative full set; if paging is
-     * added here, page rows must not drive deletion. A paginated envelope is
-     * recognized as incomplete and never prunes.
+     * Pulls the first inbox page, merges it into Room, and resets the paging
+     * cursor. Realtime and reconnect refreshes use the same bounded request.
      */
     @NonNull
     public Single<Result<Void>> refreshInbox() {
+        return refreshInboxPage().map(result -> result instanceof Result.Failure<?>
+                ? Result.<Void>cast(result)
+                : successVoid());
+    }
+
+    /** Refreshes page one and returns whether more inbox rows can be loaded. */
+    @NonNull
+    public Single<Result<Boolean>> refreshInboxPage() {
+        final long generation;
+        synchronized (inboxPagingLock) {
+            generation = ++inboxPageGeneration;
+            nextInboxCursor = null;
+            hasMoreInboxPages = false;
+            inboxWalkStartedAtFirstPage = true;
+            oldestInboxSequence = Long.MAX_VALUE;
+            seenInboxCursors.clear();
+            inboxWalkIds.clear();
+            inFlightNextInboxPage = null;
+        }
         return currentUserIdOptional()
-                .flatMap(myId -> fetchInboxItems(null, null).flatMap(result -> {
-                    if (result instanceof Result.Failure<?>) {
-                        return Single.<Result<Void>>just(Result.cast(result));
-                    }
-                    InboxFetch fetch = successValue(result);
-                    List<ConversationEntity> rows = mapInboxRows(fetch.items, myId.orElse(null));
-                    Map<String, PeerPresence> presenceSeeds = presenceSeeds(fetch.items, myId.orElse(null));
-                    return upsertPreservingClientColumns(rows)
-                            .andThen(Completable.fromAction(() -> {
-                                presenceRepository.seed(presenceSeeds);
-                                clearHiddenDirectPeers(fetch.items, presenceSeeds, myId.orElse(null));
-                            }))
-                            .andThen(pruneIfComplete(fetch, rows))
-                            .andThen(Single.fromCallable(ConversationRepository::successVoid));
-                }))
+                .flatMap(myId -> fetchAndPersistInboxPage(
+                        generation, INBOX_PAGE_SIZE, null, myId.orElse(null), true))
                 .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Loads the next keyset page. Concurrent callers share one network request;
+     * a failed page leaves its cursor intact so a later call retries it.
+     */
+    @NonNull
+    public Single<Result<Boolean>> loadNextInboxPage() {
+        synchronized (inboxPagingLock) {
+            if (inFlightNextInboxPage != null) return inFlightNextInboxPage;
+            if (!hasMoreInboxPages || nextInboxCursor == null) {
+                return Single.just(new Result.Success<>(Boolean.FALSE));
+            }
+            final long generation = inboxPageGeneration;
+            final String cursor = nextInboxCursor;
+            AtomicReference<Single<Result<Boolean>>> sharedRef = new AtomicReference<>();
+            Single<Result<Boolean>> shared = currentUserIdOptional()
+                    .flatMap(myId -> fetchAndPersistInboxPage(
+                            generation, INBOX_PAGE_SIZE, cursor, myId.orElse(null), false))
+                    .doFinally(() -> {
+                        synchronized (inboxPagingLock) {
+                            if (inFlightNextInboxPage == sharedRef.get()) {
+                                inFlightNextInboxPage = null;
+                            }
+                        }
+                    })
+                    .cache();
+            sharedRef.set(shared);
+            inFlightNextInboxPage = shared;
+            return shared;
+        }
     }
 
     /** Our own JWT subject, used to resolve the caller's member row. */
@@ -462,6 +512,91 @@ public final class ConversationRepository implements AutoCloseable {
         });
     }
 
+    private Single<Result<Boolean>> fetchAndPersistInboxPage(
+            long generation,
+            Integer limit,
+            @Nullable String cursor,
+            @Nullable String myId,
+            boolean firstPage) {
+        return fetchInboxItems(limit, cursor).flatMap(result -> {
+            if (result instanceof Result.Failure<?>) {
+                return Single.<Result<Boolean>>just(Result.cast(result));
+            }
+            InboxFetch fetch = successValue(result);
+            synchronized (inboxPagingLock) {
+                if (generation != inboxPageGeneration) {
+                    return Single.just(new Result.Success<>(Boolean.FALSE));
+                }
+                if (!firstPage && (!hasMoreInboxPages
+                        || !Objects.equals(nextInboxCursor, cursor))) {
+                    return Single.just(Result.<Boolean>failure(
+                            new ApiError.Unknown("INBOX_CURSOR_CHANGED")));
+                }
+                if (fetch.nextCursor != null
+                        && (fetch.nextCursor.equals(cursor)
+                                || seenInboxCursors.contains(fetch.nextCursor))) {
+                    return Single.just(Result.<Boolean>failure(
+                            new ApiError.Unknown("INVALID_INBOX_CURSOR")));
+                }
+            }
+
+            List<ConversationEntity> rows = mapInboxRows(fetch.items, myId);
+            List<String> pageIds = new ArrayList<>(rows.size());
+            for (ConversationEntity row : rows) pageIds.add(row.getId());
+            Map<String, PeerPresence> presenceSeeds = presenceSeeds(fetch.items, myId);
+            AtomicReference<PruneSnapshot> pruneSnapshot = new AtomicReference<>();
+            return upsertPreservingClientColumns(rows)
+                    .andThen(Completable.fromAction(() -> {
+                        synchronized (inboxPagingLock) {
+                            if (generation != inboxPageGeneration
+                                    || (!firstPage && !Objects.equals(nextInboxCursor, cursor))) {
+                                return;
+                            }
+                            for (ConversationEntity row : rows) {
+                                inboxWalkIds.add(row.getId());
+                                oldestInboxSequence = Math.min(
+                                        oldestInboxSequence, row.getLastMessageSeq());
+                            }
+                            locallyCreatedIds.removeAll(pageIds);
+                            if (fetch.nextCursor != null) {
+                                seenInboxCursors.add(fetch.nextCursor);
+                            }
+                            nextInboxCursor = fetch.nextCursor;
+                            hasMoreInboxPages = fetch.nextCursor != null;
+                            if (fetch.complete && inboxWalkStartedAtFirstPage) {
+                                pruneSnapshot.set(new PruneSnapshot(
+                                        new LinkedHashSet<>(inboxWalkIds), oldestInboxSequence));
+                                inboxWalkStartedAtFirstPage = false;
+                            }
+                        }
+                    }))
+                    .andThen(Completable.fromAction(() -> {
+                        if (isInboxPageGenerationCurrent(generation)) {
+                            presenceRepository.seed(presenceSeeds);
+                            clearHiddenDirectPeers(fetch.items, presenceSeeds, myId);
+                        }
+                    }))
+                    .andThen(Completable.defer(() -> {
+                        PruneSnapshot completedWalk = pruneSnapshot.get();
+                        return completedWalk == null
+                                ? Completable.complete()
+                                : pruneAfterCompleteWalk(completedWalk);
+                    }))
+                    .andThen(Single.fromCallable(() -> {
+                        synchronized (inboxPagingLock) {
+                            return new Result.Success<>(generation == inboxPageGeneration
+                                    && hasMoreInboxPages);
+                        }
+                    }));
+        });
+    }
+
+    private boolean isInboxPageGenerationCurrent(long generation) {
+        synchronized (inboxPagingLock) {
+            return generation == inboxPageGeneration;
+        }
+    }
+
     private InboxFetch parseInboxBody(String body, @Nullable String headerCursor) {
         if (body.isEmpty()) {
             return new InboxFetch(Collections.emptyList(), headerCursor, headerCursor == null);
@@ -476,8 +611,10 @@ public final class ConversationRepository implements AutoCloseable {
             ConversationsPageDto page = pageAdapter.fromJson(body);
             if (page == null) return null;
             String nextCursor = headerCursor != null ? headerCursor : page.getNextCursor();
+            boolean hasMore = page.getHasMore() || nextCursor != null;
+            if (hasMore && nextCursor == null) return null;
             return new InboxFetch(
-                    page.getItems(), nextCursor, !page.getHasMore() && nextCursor == null);
+                    page.getItems(), nextCursor, !hasMore);
         } catch (IOException | RuntimeException ignored) {
             return null;
         }
@@ -518,16 +655,34 @@ public final class ConversationRepository implements AutoCloseable {
         }
     }
 
-    private Completable pruneIfComplete(InboxFetch fetch, List<ConversationEntity> rows) {
-        if (!fetch.complete) return Completable.complete();
-        Set<String> fetchedIds = new HashSet<>();
-        for (ConversationEntity row : rows) fetchedIds.add(row.getId());
-        Set<String> keep = new LinkedHashSet<>(fetchedIds);
-        keep.addAll(locallyCreatedIds);
-        Completable prune = keep.isEmpty()
-                ? conversationDao.clear()
-                : conversationDao.deleteAllExcept(new ArrayList<>(keep));
-        return prune.andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(fetchedIds)));
+    /**
+     * A page is never a deletion oracle. Only a walk that began at page one
+     * and reached a response with no next cursor may prune. For a non-empty
+     * walk, compare the sequence (the only activity key Room stores) and
+     * delete absent local rows strictly older than the oldest fetched row;
+     * retain equal/newer rows and local creations because they may have moved
+     * while pages were being read. If the server proves the inbox is empty,
+     * clear all rows except creations still waiting to be observed remotely.
+     */
+    private Completable pruneAfterCompleteWalk(PruneSnapshot walk) {
+        return conversationDao.inboxFlow().firstOrError().flatMapCompletable(localRows -> {
+            Set<String> keep = new LinkedHashSet<>(walk.fetchedIds);
+            if (walk.fetchedIds.isEmpty()) {
+                keep.addAll(locallyCreatedIds);
+            } else {
+                for (ConversationEntity row : localRows) {
+                    if (row.getLastMessageSeq() == 0
+                            || row.getLastMessageSeq() >= walk.oldestSequence) {
+                        keep.add(row.getId());
+                    }
+                }
+                keep.addAll(locallyCreatedIds);
+            }
+            Completable prune = keep.isEmpty()
+                    ? conversationDao.clear()
+                    : conversationDao.deleteAllExcept(new ArrayList<>(keep));
+            return prune;
+        }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walk.fetchedIds)));
     }
 
     /**
@@ -544,15 +699,17 @@ public final class ConversationRepository implements AutoCloseable {
             List<ConversationEntity> merged = new ArrayList<>(rows.size());
             for (ConversationEntity row : rows) {
                 ConversationEntity old = prior.get(row.getId());
+                boolean keepNewerLocalActivity = old != null
+                        && old.getLastMessageSeq() > row.getLastMessageSeq();
                 merged.add(new ConversationEntity(
                         row.getId(),
                         row.getType(),
                         row.getTitle(),
-                        row.getLastMessageSeq(),
-                        row.getLastMessageContent(),
-                        row.getLastMessageSenderName(),
-                        row.getLastMessageAt(),
-                        row.getUnreadCount(),
+                        keepNewerLocalActivity ? old.getLastMessageSeq() : row.getLastMessageSeq(),
+                        keepNewerLocalActivity ? old.getLastMessageContent() : row.getLastMessageContent(),
+                        keepNewerLocalActivity ? old.getLastMessageSenderName() : row.getLastMessageSenderName(),
+                        keepNewerLocalActivity ? old.getLastMessageAt() : row.getLastMessageAt(),
+                        keepNewerLocalActivity ? old.getUnreadCount() : row.getUnreadCount(),
                         row.getOtherUserName(),
                         row.getOtherUserAvatar(),
                         row.getAvatarUrl(),
@@ -561,7 +718,9 @@ public final class ConversationRepository implements AutoCloseable {
                         row.getOtherUserId() != null
                                 ? row.getOtherUserId()
                                 : old != null ? old.getOtherUserId() : null,
-                        row.getLastMessageDeleted(),
+                        keepNewerLocalActivity
+                                ? old.getLastMessageDeleted()
+                                : row.getLastMessageDeleted(),
                         old != null ? old.getPeerDeliveredSeq() : 0L));
             }
             return conversationDao.upsertAll(merged);
@@ -792,6 +951,16 @@ public final class ConversationRepository implements AutoCloseable {
             this.items = items;
             this.nextCursor = nextCursor;
             this.complete = complete;
+        }
+    }
+
+    private static final class PruneSnapshot {
+        private final Set<String> fetchedIds;
+        private final long oldestSequence;
+
+        private PruneSnapshot(Set<String> fetchedIds, long oldestSequence) {
+            this.fetchedIds = fetchedIds;
+            this.oldestSequence = oldestSequence;
         }
     }
 

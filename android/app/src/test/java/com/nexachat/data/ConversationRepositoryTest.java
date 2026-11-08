@@ -1,6 +1,7 @@
 package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -22,6 +23,7 @@ import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
+import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
@@ -37,11 +39,13 @@ import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import java.io.InputStream;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -117,11 +121,58 @@ public final class ConversationRepositoryTest {
                         okhttp3.MediaType.parse("application/json"), json))));
     }
 
+    private void stubInboxPage(String requestCursor, String nextCursor, String body) {
+        Call<ResponseBody> call = asCall(inboxResponse(body, nextCursor));
+        if (requestCursor == null) {
+            when(messageApi.getConversations(eq(30), isNull())).thenReturn(call);
+        } else {
+            when(messageApi.getConversations(eq(30), eq(requestCursor))).thenReturn(call);
+        }
+    }
+
+    private Response<ResponseBody> inboxResponse(String body, String nextCursor) {
+        Headers.Builder headers = new Headers.Builder();
+        if (nextCursor != null) headers.add("X-Next-Cursor", nextCursor);
+        return Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), body),
+                headers.build());
+    }
+
+    private String inboxJson(Object... idAndSequences) {
+        StringBuilder json = new StringBuilder("[");
+        for (int i = 0; i + 1 < idAndSequences.length; i += 2) {
+            if (i > 0) json.append(',');
+            String id = String.valueOf(idAndSequences[i]);
+            long seq = ((Number) idAndSequences[i + 1]).longValue();
+            String createdAt = Instant.ofEpochSecond(seq).toString();
+            json.append("{\"id\":\"").append(id)
+                    .append("\",\"type\":\"GROUP\",\"title\":\"").append(id)
+                    .append("\",\"members\":[],\"lastMessage\":{\"seq\":")
+                    .append(seq)
+                    .append(",\"type\":\"TEXT\",\"contentSnippet\":\"message-")
+                    .append(seq)
+                    .append("\",\"senderId\":\"sender\",\"createdAt\":\"")
+                    .append(createdAt)
+                    .append("\"}}");
+        }
+        return json.append(']').toString();
+    }
+
+    private String inboxJsonWithCount(int count) {
+        Object[] idAndSequences = new Object[count * 2];
+        for (int i = 0; i < count; i++) {
+            idAndSequences[i * 2] = "page-" + i;
+            idAndSequences[i * 2 + 1] = count - i + 10L;
+        }
+        return inboxJson(idAndSequences);
+    }
+
     @Test
     public void refreshInboxDropsRowsTheServerNoLongerReturns() throws Exception {
         buildRepository();
-        dao().upsertAll(List.of(conversation("conv-a"), conversation("conv-removed"))).blockingAwait();
-        stubInbox(List.of(inboxDto("conv-a")));
+        dao().upsertAll(List.of(conversation("conv-a", 20), conversation("conv-removed", 2)))
+                .blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
 
         repository.refreshInbox().blockingGet();
 
@@ -184,35 +235,144 @@ public final class ConversationRepositoryTest {
                 asCall(Response.success(new ConversationDto("conv-new", "GROUP"))));
         repository.createGroup("New group", List.of("u-1")).blockingGet();
 
-        stubInbox(List.of(inboxDto("conv-old"), inboxDto("conv-new")));
+        stubInbox(List.of(inboxDto("conv-old", 20), inboxDto("conv-new")));
         repository.refreshInbox().blockingGet();
-        stubInbox(List.of(inboxDto("conv-old")));
+        dao().upsert(conversation("conv-new", 2)).blockingAwait();
+        stubInbox(List.of(inboxDto("conv-old", 20)));
         repository.refreshInbox().blockingGet();
 
         assertEquals(java.util.Set.of("conv-old"), dao().rows.keySet());
     }
 
     @Test
-    public void refreshInboxRequestsTheCompleteInboxAndNeverAPage() throws Exception {
+    public void refreshInboxRequestsTheFirstThirtyItemPage() throws Exception {
         buildRepository();
         stubInbox(List.of(inboxDto("conv-a")));
 
         repository.refreshInbox().blockingGet();
 
-        verify(messageApi, times(1)).getConversations(isNull(), isNull());
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
     }
 
     @Test
-    public void paginatedInboxPayloadIsNeverUsedToPrune() throws Exception {
+    public void partialInboxPageIsNeverUsedToPrune() throws Exception {
         buildRepository();
-        dao().upsertAll(List.of(conversation("conv-a"), conversation("conv-b"))).blockingAwait();
-        when(messageApi.getConversations(any(), any())).thenReturn(asCall(Response.success(
-                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
-                        "{\"items\":[{\"id\":\"conv-a\"}],\"hasMore\":true}"))));
+        dao().upsertAll(List.of(conversation("conv-a", 1), conversation("conv-b", 2)))
+                .blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 50));
 
-        repository.refreshInbox().blockingGet();
+        Result<Boolean> result = repository.refreshInboxPage().blockingGet();
 
+        assertTrue(((Result.Success<Boolean>) result).getValue());
         assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
+    }
+
+    @Test
+    public void completeWalkPrunesOnlyRowsOlderThanItsOldestFetchedSequence() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("local-old", 10), conversation("local-newer", 120),
+                conversation("local-empty", 0)))
+                .blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("server-new", 100));
+
+        Result<Boolean> first = repository.refreshInboxPage().blockingGet();
+        assertTrue(((Result.Success<Boolean>) first).getValue());
+        assertTrue("partial first page must not prune", dao().rows.containsKey("local-old"));
+
+        stubInboxPage("cursor-page-2", null, inboxJson("server-old", 50));
+        Result<Boolean> last = repository.loadNextInboxPage().blockingGet();
+
+        assertFalse(((Result.Success<Boolean>) last).getValue());
+        assertEquals(java.util.Set.of(
+                "local-newer", "local-empty", "server-new", "server-old"), dao().rows.keySet());
+    }
+
+    @Test
+    public void zeroOneAndExactlyPageSizeInboxesAreHandledWithoutExtraRequests() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("stale", 1)).blockingAwait();
+
+        stubInboxPage(null, null, "[]");
+        Result<Boolean> empty = repository.refreshInboxPage().blockingGet();
+        assertFalse(((Result.Success<Boolean>) empty).getValue());
+        assertTrue(dao().rows.isEmpty());
+
+        stubInboxPage(null, null, inboxJson("only", 2));
+        repository.refreshInboxPage().blockingGet();
+        assertEquals(java.util.Set.of("only"), dao().rows.keySet());
+
+        stubInboxPage(null, null, inboxJsonWithCount(30));
+        repository.refreshInboxPage().blockingGet();
+        assertEquals(30, dao().rows.size());
+        verify(messageApi, times(3)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void exhaustedPageStopsFurtherRequests() throws Exception {
+        buildRepository();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 20));
+        repository.refreshInboxPage().blockingGet();
+        stubInboxPage("cursor-page-2", null, inboxJson("conv-b", 10));
+
+        Result<Boolean> last = repository.loadNextInboxPage().blockingGet();
+        Result<Boolean> exhausted = repository.loadNextInboxPage().blockingGet();
+
+        assertFalse(((Result.Success<Boolean>) last).getValue());
+        assertFalse(((Result.Success<Boolean>) exhausted).getValue());
+        verify(messageApi, times(1)).getConversations(eq(30), eq("cursor-page-2"));
+    }
+
+    @Test
+    public void failedPageCanBeRetriedAtTheSameCursor() throws Exception {
+        buildRepository();
+        stubInboxPage(null, "cursor-retry", inboxJson("conv-a", 20));
+        repository.refreshInboxPage().blockingGet();
+        when(messageApi.getConversations(eq(30), eq("cursor-retry")))
+                .thenReturn(asCall(Response.error(503, ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), "{}"))))
+                .thenReturn(asCall(inboxResponse(inboxJson("conv-b", 10), null)));
+
+        Result<Boolean> failed = repository.loadNextInboxPage().blockingGet();
+        Result<Boolean> retried = repository.loadNextInboxPage().blockingGet();
+
+        assertTrue(failed instanceof Result.Failure<?>);
+        assertFalse(((Result.Success<Boolean>) retried).getValue());
+        assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
+        verify(messageApi, times(2)).getConversations(eq(30), eq("cursor-retry"));
+    }
+
+    @Test
+    public void duplicateConversationAcrossPagesIsUpsertedOnceWithoutActivityRegression()
+            throws Exception {
+        buildRepository();
+        stubInboxPage(null, "cursor-duplicate", inboxJson("shared", 80, "top", 100));
+        repository.refreshInboxPage().blockingGet();
+        stubInboxPage("cursor-duplicate", null, inboxJson("shared", 70, "older", 50));
+
+        repository.loadNextInboxPage().blockingGet();
+
+        assertEquals(java.util.Set.of("shared", "top", "older"), dao().rows.keySet());
+        assertEquals(80L, dao().rows.get("shared").getLastMessageSeq());
+    }
+
+    @Test
+    public void refreshBetweenPagesKeepsConversationMovedByNewMessageInStableOrder()
+            throws Exception {
+        buildRepository();
+        stubInboxPage(null, "cursor-before-message", inboxJson("top-a", 100, "top-b", 90));
+        repository.refreshInboxPage().blockingGet();
+
+        // This conversation was below page one, then its new message moved it to the top.
+        stubInboxPage(null, "cursor-after-message", inboxJson("moved", 110, "top-a", 100));
+        repository.refreshInboxPage().blockingGet();
+        stubInboxPage("cursor-after-message", null, inboxJson("top-b", 90, "older", 80));
+        repository.loadNextInboxPage().blockingGet();
+
+        List<ConversationEntity> ordered = dao().inboxFlow().blockingFirst();
+        assertEquals(List.of("moved", "top-a", "top-b", "older"), ordered.stream()
+                .map(ConversationEntity::getId).toList());
+        verify(messageApi, never()).getConversations(eq(30), eq("cursor-before-message"));
     }
 
     @Test
@@ -340,8 +500,12 @@ public final class ConversationRepositoryTest {
     }
 
     private ConversationEntity conversation(String id) {
+        return conversation(id, 0);
+    }
+
+    private ConversationEntity conversation(String id, long seq) {
         return new ConversationEntity(
-                id, "GROUP", id, 0L, null, null, null, 0,
+                id, "GROUP", id, seq, null, null, seq == 0 ? null : seq, 0,
                 null, null, null, 0L, null, null, false);
     }
 
@@ -358,6 +522,16 @@ public final class ConversationRepositoryTest {
 
     private ConversationInboxDto inboxDto(String id) {
         return inboxDto(id, "GROUP", "T", List.of(member(MY_ID, "MEMBER")));
+    }
+
+    private ConversationInboxDto inboxDto(String id, long seq) {
+        String createdAt = Instant.ofEpochSecond(seq).toString();
+        InboxLastMessageDto lastMessage = new InboxLastMessageDto(
+                seq, "TEXT", null, "message-" + seq, "sender", "Sender", "Sender",
+                createdAt, null);
+        return new ConversationInboxDto(
+                id, "GROUP", id, seq, lastMessage, null, null, null, 0, 0L,
+                null, null, null, null, List.of(member(MY_ID, "MEMBER")), null);
     }
 
     private ConversationInboxDto inboxDto(
@@ -535,7 +709,11 @@ public final class ConversationRepositoryTest {
         }
 
         private void publish() {
-            inbox.onNext(Collections.unmodifiableList(new ArrayList<>(rows.values())));
+            List<ConversationEntity> ordered = new ArrayList<>(rows.values());
+            ordered.sort(Comparator.comparing(
+                    ConversationEntity::getLastMessageAt,
+                    Comparator.nullsLast(Comparator.<Long>reverseOrder())));
+            inbox.onNext(Collections.unmodifiableList(ordered));
         }
 
         private ConversationEntity withUnread(ConversationEntity row, int unread) {

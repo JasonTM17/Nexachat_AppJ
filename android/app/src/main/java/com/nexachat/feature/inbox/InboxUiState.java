@@ -14,6 +14,9 @@ public final class InboxUiState {
     @Nullable private final String currentUserId;
     private final boolean loading;
     @Nullable private final ApiError error;
+    private final boolean hasMore;
+    private final boolean loadingMore;
+    @Nullable private final ApiError nextPageError;
 
     public InboxUiState() {
         this(Collections.emptyList(), null, true, null);
@@ -24,10 +27,24 @@ public final class InboxUiState {
             @Nullable String currentUserId,
             boolean loading,
             @Nullable ApiError error) {
+        this(conversations, currentUserId, loading, error, false, false, null);
+    }
+
+    private InboxUiState(
+            List<ConversationSummary> conversations,
+            @Nullable String currentUserId,
+            boolean loading,
+            @Nullable ApiError error,
+            boolean hasMore,
+            boolean loadingMore,
+            @Nullable ApiError nextPageError) {
         this.conversations = List.copyOf(Objects.requireNonNull(conversations, "conversations"));
         this.currentUserId = currentUserId;
         this.loading = loading;
         this.error = error;
+        this.hasMore = hasMore;
+        this.loadingMore = loadingMore;
+        this.nextPageError = nextPageError;
     }
 
     public List<ConversationSummary> getConversations() {
@@ -52,6 +69,19 @@ public final class InboxUiState {
         return error;
     }
 
+    public boolean hasMore() {
+        return hasMore;
+    }
+
+    public boolean isLoadingMore() {
+        return loadingMore;
+    }
+
+    @Nullable
+    public ApiError getNextPageError() {
+        return nextPageError;
+    }
+
     /** Sum of per-row unread — the app-level badge count. */
     public int getTotalUnread() {
         int sum = 0;
@@ -62,15 +92,54 @@ public final class InboxUiState {
     }
 
     public InboxUiState withConversations(List<ConversationSummary> next, boolean nextLoading) {
-        return new InboxUiState(next, currentUserId, nextLoading, error);
+        return new InboxUiState(
+                next, currentUserId, nextLoading, error, hasMore, loadingMore, nextPageError);
     }
 
     public InboxUiState withCurrentUserId(@Nullable String userId) {
-        return new InboxUiState(conversations, userId, loading, error);
+        return new InboxUiState(
+                conversations, userId, loading, error, hasMore, loadingMore, nextPageError);
     }
 
     public InboxUiState withError(@Nullable ApiError nextError) {
-        return new InboxUiState(conversations, currentUserId, loading, nextError);
+        return new InboxUiState(
+                conversations, currentUserId, loading, nextError,
+                hasMore, loadingMore, nextPageError);
+    }
+
+    public InboxUiState withRefreshStarted() {
+        return new InboxUiState(
+                conversations, currentUserId, true, null, hasMore, loadingMore, nextPageError);
+    }
+
+    public InboxUiState withRefreshResult(boolean nextHasMore) {
+        return new InboxUiState(
+                conversations, currentUserId, false, null, nextHasMore, false, null);
+    }
+
+    public InboxUiState withRefreshFailure(@Nullable ApiError nextError) {
+        return new InboxUiState(
+                conversations, currentUserId, false, nextError, false, false, null);
+    }
+
+    public InboxUiState withNextPageStarted() {
+        return new InboxUiState(
+                conversations, currentUserId, loading, error, hasMore, true, null);
+    }
+
+    public InboxUiState withNextPageResult(boolean nextHasMore) {
+        return new InboxUiState(
+                conversations, currentUserId, loading, error, nextHasMore, false, null);
+    }
+
+    public InboxUiState withNextPageFailure(@Nullable ApiError nextError) {
+        return new InboxUiState(
+                conversations, currentUserId, loading, error, hasMore, false, nextError);
+    }
+
+    public InboxUiState withNextPageIdle() {
+        return new InboxUiState(
+                conversations, currentUserId, loading, error, hasMore, false, nextPageError);
     }
 
     @Override
@@ -81,11 +150,15 @@ public final class InboxUiState {
         return loading == that.loading
                 && Objects.equals(conversations, that.conversations)
                 && Objects.equals(currentUserId, that.currentUserId)
-                && Objects.equals(error, that.error);
+                && Objects.equals(error, that.error)
+                && hasMore == that.hasMore
+                && loadingMore == that.loadingMore
+                && Objects.equals(nextPageError, that.nextPageError);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(conversations, currentUserId, loading, error);
+        return Objects.hash(
+                conversations, currentUserId, loading, error, hasMore, loadingMore, nextPageError);
     }
 }

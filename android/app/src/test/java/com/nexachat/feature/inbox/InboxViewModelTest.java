@@ -8,6 +8,7 @@ import com.nexachat.data.ConversationSummary;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Collections;
 import java.util.List;
@@ -19,7 +20,11 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public final class InboxViewModelTest {
@@ -36,8 +41,10 @@ public final class InboxViewModelTest {
         repository = mock(ConversationRepository.class);
         inboxFlow = BehaviorProcessor.createDefault(Collections.emptyList());
         when(repository.inboxFlow()).thenReturn(inboxFlow);
-        when(repository.refreshInbox()).thenReturn(Single.just(
-                new Result.Success<Void>(null)));
+        when(repository.refreshInboxPage()).thenReturn(Single.just(
+                new Result.Success<Boolean>(Boolean.TRUE)));
+        when(repository.loadNextInboxPage()).thenReturn(Single.just(
+                new Result.Success<Boolean>(Boolean.FALSE)));
         viewModel = new InboxViewModel(repository);
     }
 
@@ -85,7 +92,7 @@ public final class InboxViewModelTest {
     @Test
     public void refreshFailureSurfacesErrorButKeepsList() {
         inboxFlow.onNext(List.of(conversation("c-1", 1)));
-        when(repository.refreshInbox()).thenReturn(Single.just(
+        when(repository.refreshInboxPage()).thenReturn(Single.just(
                 Result.failure(new ApiError.Network("down"))));
 
         viewModel.refresh();
@@ -97,16 +104,61 @@ public final class InboxViewModelTest {
 
     @Test
     public void successfulRefreshClearsPreviousError() {
-        when(repository.refreshInbox()).thenReturn(Single.just(
+        when(repository.refreshInboxPage()).thenReturn(Single.just(
                 Result.failure(ApiError.RateLimited.INSTANCE)));
         viewModel.refresh();
         assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getError());
 
-        when(repository.refreshInbox()).thenReturn(Single.just(
-                new Result.Success<Void>(null)));
+        when(repository.refreshInboxPage()).thenReturn(Single.just(
+                new Result.Success<Boolean>(Boolean.TRUE)));
         viewModel.refresh();
 
         assertNull(viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void concurrentNearEndTriggersShareOnePageRequest() {
+        SingleSubject<Result<Boolean>> pending = SingleSubject.create();
+        when(repository.loadNextInboxPage()).thenReturn(pending);
+
+        viewModel.loadNextPage();
+        viewModel.loadNextPage();
+
+        verify(repository, times(1)).loadNextInboxPage();
+        assertTrue(viewModel.getUiState().getValue().isLoadingMore());
+        pending.onSuccess(new Result.Success<Boolean>(Boolean.FALSE));
+        assertFalse(viewModel.getUiState().getValue().isLoadingMore());
+        assertFalse(viewModel.getUiState().getValue().hasMore());
+    }
+
+    @Test
+    public void failedNextPageKeepsCursorAvailableForRetry() {
+        ApiError failure = new ApiError.Network("down");
+        when(repository.loadNextInboxPage()).thenReturn(
+                Single.just(Result.failure(failure)),
+                Single.just(new Result.Success<Boolean>(Boolean.FALSE)));
+
+        viewModel.loadNextPage();
+
+        assertEquals(failure, viewModel.getUiState().getValue().getNextPageError());
+        assertTrue(viewModel.getUiState().getValue().hasMore());
+        viewModel.loadNextPage();
+
+        assertNull(viewModel.getUiState().getValue().getNextPageError());
+        assertFalse(viewModel.getUiState().getValue().hasMore());
+        verify(repository, times(2)).loadNextInboxPage();
+    }
+
+    @Test
+    public void exhaustedInboxDoesNotRequestAnotherPage() {
+        when(repository.refreshInboxPage()).thenReturn(Single.just(
+                new Result.Success<Boolean>(Boolean.FALSE)));
+
+        viewModel.refresh();
+        viewModel.loadNextPage();
+
+        assertFalse(viewModel.getUiState().getValue().hasMore());
+        verify(repository, never()).loadNextInboxPage();
     }
 
     private static ConversationSummary conversation(String id, int unread) {
