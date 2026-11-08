@@ -13,11 +13,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
-# Integration tests use the main server port; the observability health IT
-# overrides this with a dedicated management port.
+# Integration tests keep actuator on the main server port (management port =
+# server.port) so the security ITs can reach /actuator/health there. The
+# observability health IT overrides this with a dedicated management port.
 management:
   server:
-    port: -1
+    port: ${server.port}
   endpoint:
     health:
       validate-group-membership: false

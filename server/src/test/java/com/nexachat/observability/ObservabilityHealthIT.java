@@ -40,7 +40,8 @@ class ObservabilityHealthIT {
                 () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test"));
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
-        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "2");
+        registry.add("spring.datasource.hikari.minimum-idle", () -> "0");
         registry.add("nexachat.storage.root", () -> STORAGE_ROOT.toString());
     }
 
