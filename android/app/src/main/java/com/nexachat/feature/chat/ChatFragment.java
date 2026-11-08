@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
@@ -35,6 +36,7 @@ import androidx.navigation.NavController;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
@@ -204,6 +206,26 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { if (searchOpen) viewModel.search(s.toString()); }
             @Override public void afterTextChanged(Editable s) {}
         });
+    }
+
+    /**
+     * MaterialToolbar creates its title view internally and exposes no line-limit attribute, so the
+     * title is wrapped here. Two lines with an end ellipsis keep long names readable at large font
+     * scales while the navigation icon and the scrollable action row stay reachable.
+     */
+    private void applyChatTitleWrapping() {
+        MaterialToolbar toolbar = binding.chatToolbar;
+        CharSequence title = toolbar.getTitle();
+        if (title == null) return;
+        for (int i = 0; i < toolbar.getChildCount(); i++) {
+            View child = toolbar.getChildAt(i);
+            if (child instanceof TextView && TextUtils.equals(((TextView) child).getText(), title)) {
+                TextView titleView = (TextView) child;
+                titleView.setMaxLines(2);
+                titleView.setEllipsize(TextUtils.TruncateAt.END);
+                return;
+            }
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -402,6 +424,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (binding == null) return;
         String peerTitle = state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName();
         binding.chatToolbar.setTitle(peerTitle);
+        applyChatTitleWrapping();
         if (binding.chatHeaderAvatar != null) {
             binding.chatHeaderAvatar.setName(peerTitle);
             Boolean peerOnline = null;
