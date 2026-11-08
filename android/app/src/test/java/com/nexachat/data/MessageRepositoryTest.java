@@ -557,6 +557,58 @@ public class MessageRepositoryTest {
         verify(messageApi).markRead(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
     }
 
+    @Test public void sendReadClampsToConversationLastMessageSeq() {
+        await(conversationDao.upsert(conversation(4, "hi")));
+        await(repository.sendRead(CONVERSATION_ID, 999L));
+        verify(messageApi).markRead(eqConversation(), org.mockito.ArgumentMatchers.argThat(
+                request -> request.getUpToSeq() == 4L));
+        verify(session).sendReadAck(CONVERSATION_ID, 4L);
+    }
+
+    @Test public void sendReadClampsToStoredMessageMaxWhenConversationRowIsMissing() {
+        for (int seq = 1; seq <= 6; seq++) await(messageDao.upsert(stored("m-" + seq, seq)));
+        await(repository.sendRead(CONVERSATION_ID, 500L));
+        verify(messageApi).markRead(eqConversation(), org.mockito.ArgumentMatchers.argThat(
+                request -> request.getUpToSeq() == 6L));
+    }
+
+    @Test public void sendReadUsesConversationWatermarkAheadOfStoredMessages() {
+        await(conversationDao.upsert(conversation(10, "hi")));
+        await(messageDao.upsert(stored("m-1", 3L)));
+        await(repository.sendRead(CONVERSATION_ID, 999L));
+        verify(messageApi).markRead(eqConversation(), org.mockito.ArgumentMatchers.argThat(
+                request -> request.getUpToSeq() == 10L));
+    }
+
+    @Test public void sendReadSkipsWhenClampedValueDoesNotAdvance() {
+        await(conversationDao.upsert(conversation(5, "hi")));
+        await(repository.sendRead(CONVERSATION_ID, 999L));
+        await(repository.sendRead(CONVERSATION_ID, 999L));
+        verify(messageApi, times(1)).markRead(eqConversation(), org.mockito.ArgumentMatchers.argThat(
+                request -> request.getUpToSeq() == 5L));
+    }
+
+    @Test public void sendReadNeverRegressesBelowAcknowledgedSequence() {
+        await(conversationDao.upsert(conversation(9, "hi")));
+        await(repository.sendRead(CONVERSATION_ID, 9L));
+        await(repository.sendRead(CONVERSATION_ID, 4L));
+        verify(messageApi, times(1)).markRead(eqConversation(), org.mockito.ArgumentMatchers.argThat(
+                request -> request.getUpToSeq() == 9L));
+    }
+
+    @Test public void sendReadSkipsWhenConversationHasNoMessages() {
+        await(conversationDao.upsert(conversation(0, null)));
+        await(repository.sendRead(CONVERSATION_ID, 12L));
+        verify(messageApi, org.mockito.Mockito.never()).markRead(anyString(), any());
+    }
+
+    @Test public void sendReadIgnoresNonPositiveSequence() {
+        await(conversationDao.upsert(conversation(5, "hi")));
+        await(repository.sendRead(CONVERSATION_ID, 0L));
+        await(repository.sendRead(CONVERSATION_ID, -3L));
+        verify(messageApi, org.mockito.Mockito.never()).markRead(anyString(), any());
+    }
+
     @Test public void reactionUpdatedReplacesStoredSummary() {
         events.onNext(new ChatEvent.ReactionUpdated(CONVERSATION_ID, "m-1", List.of(
                 new ReactionSummaryDto("👍", 2, List.of("me-1", "u-2")),

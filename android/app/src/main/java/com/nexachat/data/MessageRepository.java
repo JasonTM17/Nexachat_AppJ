@@ -750,24 +750,45 @@ public final class MessageRepository {
         return ack.andThen(messageDao.upsert(entity)).andThen(updateInboxProjection(entity));
     }
 
-    /** POSTs the read watermark and clears local unread state without regression. */
+    /**
+     * POSTs the read watermark and clears local unread state without regression.
+     * The sequence is clamped into {@code [1, lastMessageSeq]} so a stale caller
+     * can never make the server reject the receipt, and a value that does not
+     * advance the acknowledged watermark sends nothing.
+     */
     public Completable sendRead(String conversationId, long upToSeq) {
-        if (upToSeq <= 0L) return Completable.complete();
-        AtomicReference<Boolean> shouldSend = new AtomicReference<>(false);
-        lastMarkedRead.compute(conversationId, (key, last) -> {
-            long previous = last == null ? 0L : last;
-            if (upToSeq > previous) {
-                shouldSend.set(true);
-                return upToSeq;
-            }
-            return previous;
+        return readCeilingSeq(conversationId).flatMapCompletable(lastSeq -> {
+            long clamped = Math.min(upToSeq, lastSeq);
+            if (clamped <= 0L) return Completable.complete();
+            AtomicReference<Boolean> shouldSend = new AtomicReference<>(false);
+            lastMarkedRead.compute(conversationId, (key, last) -> {
+                long previous = last == null ? 0L : last;
+                if (clamped > previous) {
+                    shouldSend.set(true);
+                    return clamped;
+                }
+                return previous;
+            });
+            if (!shouldSend.get()) return Completable.complete();
+            session.sendReadAck(conversationId, clamped);
+            return call(messageApi.markRead(conversationId, new ReadRequest(clamped)))
+                    .flatMapCompletable(result -> result instanceof Result.Success<?>
+                            ? conversationDao.clearUnread(conversationId) : Completable.complete())
+                    .subscribeOn(Schedulers.io());
         });
-        if (!shouldSend.get()) return Completable.complete();
-        session.sendReadAck(conversationId, upToSeq);
-        return call(messageApi.markRead(conversationId, new ReadRequest(upToSeq)))
-                .flatMapCompletable(result -> result instanceof Result.Success<?>
-                        ? conversationDao.clearUnread(conversationId) : Completable.complete())
-                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Upper bound for a read receipt. The conversation row carries the last
+     * sequence confirmed for the inbox, while the message store can be ahead
+     * after a forward resync; both are bounded by the server's latest sequence,
+     * so the higher of the two is still a valid watermark.
+     */
+    private Single<Long> readCeilingSeq(String conversationId) {
+        return messageDao.maxSeq(conversationId).flatMap(localMax ->
+                conversationDao.byId(conversationId)
+                        .map(conversation -> Math.max(conversation.getLastMessageSeq(), localMax))
+                        .defaultIfEmpty(localMax));
     }
 
     private Completable routeSessionEvent(ChatEvent event) {
