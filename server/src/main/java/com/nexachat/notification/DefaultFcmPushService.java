@@ -111,7 +111,10 @@ public class DefaultFcmPushService implements FcmPushService {
                                     tokenRepository.deleteByToken(tokenValue);
                                 }
                             } catch (Exception ex) {
-                                log.error("Failed to unregister an expired device token: {}", ex.getMessage());
+                                // The exception message can echo SQL that carries the
+                                // registration token, so log the type only.
+                                log.error("Failed to unregister an expired device token: {}",
+                                        ex.getClass().getSimpleName());
                             }
                         }
                     });
