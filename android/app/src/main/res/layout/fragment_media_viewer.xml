@@ -8,8 +8,7 @@
     <FrameLayout
         android:id="@+id/mediaContent"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_marginTop="?attr/actionBarSize">
+        android:layout_height="match_parent">
 
         <ImageView
             android:id="@+id/mediaImage"
@@ -44,11 +43,11 @@
         android:id="@+id/viewerToolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorSurface"
-        android:elevation="4dp"
+        android:background="@drawable/bg_media_scrim"
+        android:elevation="0dp"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:navigationIconTint="?attr/colorOnSurface"
+        app:navigationIconTint="?attr/colorOnPrimary"
         app:titleTextAppearance="?attr/textAppearanceTitleMedium"
-        app:titleTextColor="?attr/colorOnSurface" />
+        app:titleTextColor="?attr/colorOnPrimary" />
 </FrameLayout>
