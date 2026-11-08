@@ -199,7 +199,8 @@ public class GoogleHttpFcmGateway implements FcmGateway {
         if (error.hasFcmErrorDetail() || error.badRequest()) {
             // Either an FCM detail without a usable code, or a request-shaped
             // error: the registration token itself may still be valid.
-            log.warn("FCM send rejected as a bad request (HTTP {}), device token kept", status);
+            log.warn("FCM send rejected without a token-level error code (HTTP {}), device token kept",
+                    status);
             return PushResult.failure("HTTP_" + status, false);
         }
         if (status == 404 || "NOT_FOUND".equals(error.status())) {
