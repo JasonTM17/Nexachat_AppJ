@@ -18,4 +18,9 @@ public class RagConfiguration {
     public CircuitBreaker ragCircuitBreaker(Clock clock) {
         return new CircuitBreaker(clock);
     }
+
+    @Bean
+    public CircuitBreaker ragEmbeddingCircuitBreaker(Clock clock) {
+        return new CircuitBreaker(clock);
+    }
 }
