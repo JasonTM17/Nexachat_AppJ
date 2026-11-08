@@ -1,9 +1,13 @@
 package com.nexachat.rag;
 
+import com.nexachat.summary.llm.CircuitBreaker;
 import com.nexachat.summary.llm.Redactor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -26,6 +30,7 @@ public class RagEmbeddingService {
     private final RagProperties properties;
     private final RagStats stats;
     private final Redactor redactor;
+    private final CircuitBreaker circuitBreaker;
 
     public RagEmbeddingService(
             RagEmbeddingProviders providers,
@@ -34,12 +39,25 @@ public class RagEmbeddingService {
             RagProperties properties,
             RagStats stats,
             Redactor redactor) {
+        this(providers, index, cache, properties, stats, redactor, new CircuitBreaker(Clock.systemUTC()));
+    }
+
+    @Autowired
+    public RagEmbeddingService(
+            RagEmbeddingProviders providers,
+            RagMessageIndex index,
+            VectorCache cache,
+            RagProperties properties,
+            RagStats stats,
+            Redactor redactor,
+            @Qualifier("ragEmbeddingCircuitBreaker") CircuitBreaker circuitBreaker) {
         this.providers = providers;
         this.index = index;
         this.cache = cache;
         this.properties = properties;
         this.stats = stats;
         this.redactor = redactor;
+        this.circuitBreaker = circuitBreaker;
     }
 
     public EmbeddingOutcome embedQuestion(String question, boolean consented) {
@@ -177,15 +195,20 @@ public class RagEmbeddingService {
     }
 
     private float[] embed(EmbeddingProvider provider, String input) {
+        if (provider != providers.local() && !circuitBreaker.allowRequest()) {
+            throw new EmbeddingProviderException("embedding circuit breaker is open");
+        }
         try {
             float[] vector = provider.embed(input);
             if (provider != providers.local()) {
                 stats.recordEmbeddingCall(1);
+                circuitBreaker.recordSuccess();
             }
             return vector;
         } catch (RuntimeException exception) {
             if (provider != providers.local()) {
                 stats.recordEmbeddingFailure();
+                circuitBreaker.recordFailure();
             }
             if (exception instanceof EmbeddingProviderException providerException) {
                 throw providerException;
@@ -195,15 +218,20 @@ public class RagEmbeddingService {
     }
 
     private List<float[]> embedAll(EmbeddingProvider provider, List<String> inputs) {
+        if (provider != providers.local() && !circuitBreaker.allowRequest()) {
+            throw new EmbeddingProviderException("embedding circuit breaker is open");
+        }
         try {
             List<float[]> vectors = provider.embedAll(inputs);
             if (provider != providers.local()) {
                 stats.recordEmbeddingCall(inputs.size());
+                circuitBreaker.recordSuccess();
             }
             return vectors;
         } catch (RuntimeException exception) {
             if (provider != providers.local()) {
                 stats.recordEmbeddingFailure();
+                circuitBreaker.recordFailure();
             }
             if (exception instanceof EmbeddingProviderException providerException) {
                 throw providerException;

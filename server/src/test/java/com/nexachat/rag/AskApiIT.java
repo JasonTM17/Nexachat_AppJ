@@ -133,7 +133,9 @@ class AskApiIT {
                 .andExpect(jsonPath("$.citations").isArray())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String rawBody = result.getResponse().getContentAsString();
+        assertThat(rawBody).doesNotContain("vector");
+        JsonNode body = objectMapper.readTree(rawBody);
         Set<String> cited = citations(body);
         assertThat(cited).contains(fact.id().toString());
         assertThat(cited).doesNotContain(outsider.getId().toString());
