@@ -31,6 +31,16 @@ import java.util.UUID;
  * is re-sniffed from the stored bytes — the same sniff the store path applied
  * — with {@code application/octet-stream} as the final fallback.</p>
  *
+ * <p><b>ISO-BMFF window:</b> a brand-only sniff cannot tell an audio-only
+ * voice note from a video because Android's {@code MediaRecorder} writes a
+ * generic {@code isom}/{@code mp42} brand. The sniffer therefore needs the
+ * {@code moov} box, which may sit at the end of the file. The leading window
+ * is {@value #SNIFF_PREFIX_LENGTH} bytes; when it holds an {@code ftyp} box
+ * whose kind is still undecided, a bounded trailing window of
+ * {@value #SNIFF_SUFFIX_LENGTH} bytes is read through a second handle so the
+ * body stream stays intact. Both windows are capped, so a large file is never
+ * buffered whole.</p>
+ *
  * <p><b>Authorization (phase-09 fix):</b> before serving, the key is checked
  * against {@code message_attachments} via
  * {@link AttachmentService#assertStorageKeyReadable}: a key belonging to a
@@ -52,7 +62,8 @@ public class FileController {
 
     private static final String FILES_PREFIX = "/api/v1/files/";
     private static final String BYTES_UNIT = "bytes";
-    private static final int HEADER_SNIFF_LENGTH = 32;
+    private static final int SNIFF_PREFIX_LENGTH = 64 * 1024;
+    private static final int SNIFF_SUFFIX_LENGTH = 64 * 1024;
 
     private final StorageService storageService;
     private final AttachmentService attachmentService;
@@ -73,19 +84,23 @@ public class FileController {
         attachmentService.assertStorageKeyReadable(storageKey, principal.userId());
 
         StorageService.StreamHandle handle = storageService.open(storageKey);
-        final byte[] header;
+        final byte[] prefix;
+        final byte[] suffix;
         try {
-            header = handle.content().readNBytes(HEADER_SNIFF_LENGTH);
+            prefix = handle.content().readNBytes(SNIFF_PREFIX_LENGTH);
+            suffix = MagicBytes.isIsoBmffUndetermined(prefix)
+                    ? readSuffix(storageService, storageKey, handle.sizeBytes(), prefix.length)
+                    : null;
         } catch (IOException ex) {
             closeQuietly(handle);
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
         }
-        String contentType = MagicBytes.sniff(header);
+        String contentType = MagicBytes.sniff(prefix, suffix);
         if (contentType == null) {
             contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
         }
         InputStream bodyStream = new SequenceInputStream(
-                new ByteArrayInputStream(header), handle.content());
+                new ByteArrayInputStream(prefix), handle.content());
         long size = handle.sizeBytes();
 
         long[] range = null;
@@ -211,6 +226,26 @@ public class FileController {
             handle.close();
         } catch (IOException ignored) {
             // Best-effort release of the handle on an error path.
+        }
+    }
+
+    /**
+     * Reads at most {@value #SNIFF_SUFFIX_LENGTH} trailing bytes of the stored
+     * file through a separate handle, so the serving handle stays positioned
+     * right after the prefix and can still stream the whole body. Returns
+     * {@code null} when the file fits in the prefix already.
+     */
+    private static byte[] readSuffix(StorageService storageService, String storageKey,
+                                     long size, int prefixLength) throws IOException {
+        long remaining = size - prefixLength;
+        if (remaining <= 0) {
+            return null;
+        }
+        int suffixLength = (int) Math.min(remaining, SNIFF_SUFFIX_LENGTH);
+        try (StorageService.StreamHandle suffixHandle = storageService.open(storageKey)) {
+            // The suffix is the last suffixLength bytes of the file.
+            suffixHandle.content().skipNBytes(size - suffixLength);
+            return suffixHandle.content().readNBytes(suffixLength);
         }
     }
 

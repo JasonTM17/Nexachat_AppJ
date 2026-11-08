@@ -315,6 +315,8 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 `AttachmentResponse` = `{id, url, originalName, mimeType, sizeBytes, width?, height?, durationMs?, blurHash?}`. Internal owner/message/storage fields and creation time are not exposed in this DTO. `blurHash` is the optional BlurHash placeholder for image attachments; it is `null` (omitted on the wire) for non-image and legacy rows.
 Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`). `blurHash` is accepted only on image uploads and must be 6–64 characters from the BlurHash base83 alphabet; anything else is `400 VALIDATION_FAILED`.
 
+ISO-BMFF (`ftyp`) files are classified by their tracks, not the brand alone: Android's `MediaRecorder` writes voice notes as `.m4a` under a generic `isom`/`mp42` brand, so a brand-only check would report `video/mp4`. The sniffer walks the boxes and reads each `trak/mdia/hdlr` handler — only `soun` tracks yield `audio/mp4`, any `vide` track yields `video/mp4`. A missing, truncated, or malformed `moov` falls back to the brand (`m4a` → `audio/mp4`, `isom`/`mp41`/`mp42` → `video/mp4`, anything else is rejected). The walk is bounded (box count, no per-box allocation) and never throws on hostile boxes.
+
 ## Interactions — reactions `/api/v1/messages`, pins `/api/v1/conversations/{id}/pins`
 
 | Method & path | Auth | Request | Success | Errors |
@@ -337,6 +339,8 @@ to all five mutating endpoints (see [Idempotency and retries](#idempotency-and-r
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root. Optional `Range: bytes=a-b` / `bytes=a-` / `bytes=-n` | `200` raw bytes (no `Range`) or `206 Partial Content` (honoured `Range`); `Accept-Ranges: bytes`, server-sniffed `Content-Type` (octet-stream fallback), `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`; `416` with `Content-Range: bytes */size` for an unsatisfiable/malformed range | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
+
+The serving sniff reads a bounded 64 KiB leading window and, only when it holds an ISO-BMFF `ftyp` whose kind is still undecided, a bounded 64 KiB trailing window, so a `moov`-at-end voice note is served as `audio/mp4`. Both windows are capped and the body is streamed; a large file is never buffered whole.
 
 Generic uploads go through `POST /api/v1/attachments` above (upload-first,
 bound to a message on send); this endpoint serves every stored object —

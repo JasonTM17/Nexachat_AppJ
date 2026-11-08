@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -355,6 +356,63 @@ class AttachmentFlowIT {
             mockMvc.perform(request)
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_FOUND"));
+        }
+    }
+
+    // ==================================================== ISO-BMFF MIME
+
+    @Test
+    void voiceNoteWithMoovAtEndIsStoredAndServedAsAudioMp4() throws Exception {
+        byte[] voice = resource("voice_aac_isom_moov_end.m4a");
+        // Declared as video/mp4 on purpose: the sniff must win.
+        JsonNode uploaded = upload(alice, "voice.m4a", "video/mp4", voice);
+        assertThat(uploaded.get("mimeType").asText()).isEqualTo("audio/mp4");
+        assertThat(uploaded.get("url").asText()).endsWith(".m4a");
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT mime_type FROM message_attachments WHERE id = ?",
+                String.class, attachmentId)).isEqualTo("audio/mp4");
+
+        mockMvc.perform(get(uploaded.get("url").asText())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "audio/mp4"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+
+        mockMvc.perform(get("/api/v1/attachments/" + attachmentId + "/content")
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "audio/mp4"));
+    }
+
+    @Test
+    void voiceNoteWithMoovAtFrontIsStoredAndServedAsAudioMp4() throws Exception {
+        byte[] voice = resource("voice_aac_isom_faststart.m4a");
+        JsonNode uploaded = upload(alice, "voice-fast.m4a", "video/mp4", voice);
+        assertThat(uploaded.get("mimeType").asText()).isEqualTo("audio/mp4");
+        mockMvc.perform(get(uploaded.get("url").asText())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "audio/mp4"));
+    }
+
+    @Test
+    void h264AacVideoIsStoredAndServedAsVideoMp4() throws Exception {
+        byte[] video = resource("video_h264_aac_isom.mp4");
+        JsonNode uploaded = upload(alice, "clip.mp4", "video/mp4", video);
+        assertThat(uploaded.get("mimeType").asText()).isEqualTo("video/mp4");
+        mockMvc.perform(get(uploaded.get("url").asText())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "video/mp4"));
+    }
+
+    private static byte[] resource(String name) throws IOException {
+        try (InputStream in = AttachmentFlowIT.class.getResourceAsStream("/fixtures/" + name)) {
+            if (in == null) {
+                throw new IllegalStateException("Missing test fixture: " + name);
+            }
+            return in.readAllBytes();
         }
     }
 

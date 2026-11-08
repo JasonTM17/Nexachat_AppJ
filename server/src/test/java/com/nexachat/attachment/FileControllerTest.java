@@ -18,6 +18,7 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -395,6 +396,117 @@ class FileControllerTest {
         // The converter never asks the source for more than its bounded buffer
         // (16 KiB), never for the whole 30 MB file.
         assertThat(maxSingleRead[0]).isLessThanOrEqualTo(16 * 1024);
+    }
+
+    // ------------------------------------- ISO-BMFF prefix + suffix sniffing
+
+    @Test
+    void serve_smallVoiceNoteWithMoovAtEnd_returnsAudioMp4() throws Exception {
+        byte[] content = isoBmff("isom", 1000, "soun");
+        when(storageService.open("attachments/voice.m4a")).thenReturn(handle(content));
+
+        ResponseEntity<?> response = fileController.serve(
+                mappedTo("/api/v1/files/attachments/voice.m4a"), new JwtPrincipal(userId));
+
+        assertThat(response.getStatusCodeValue()).isEqualTo(200);
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("audio/mp4");
+        assertThat(drain(response).getContentAsByteArray()).containsExactly(content);
+    }
+
+    @Test
+    void serve_largeVoiceNoteWithMoovAtEnd_returnsAudioMp4AndIntactBody() throws Exception {
+        byte[] content = isoBmff("isom", 200_000, "soun");
+        StorageService.StreamHandle prefixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        StorageService.StreamHandle suffixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        when(storageService.open("attachments/voice.m4a")).thenReturn(prefixHandle, suffixHandle);
+
+        ResponseEntity<?> response = fileController.serve(
+                mappedTo("/api/v1/files/attachments/voice.m4a"), new JwtPrincipal(userId));
+
+        assertThat(response.getStatusCodeValue()).isEqualTo(200);
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("audio/mp4");
+        // The trailing read must not consume bytes from the serving stream.
+        assertThat(drain(response).getContentAsByteArray()).containsExactly(content);
+    }
+
+    @Test
+    void serve_h264VoiceNoteWithBothTracks_returnsVideoMp4() throws Exception {
+        byte[] content = isoBmff("isom", 200_000, "vide", "soun");
+        StorageService.StreamHandle prefixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        StorageService.StreamHandle suffixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        when(storageService.open("attachments/clip.mp4")).thenReturn(prefixHandle, suffixHandle);
+
+        ResponseEntity<?> response = fileController.serve(
+                mappedTo("/api/v1/files/attachments/clip.mp4"), new JwtPrincipal(userId));
+
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+        assertThat(drain(response).getContentAsByteArray()).containsExactly(content);
+    }
+
+    @Test
+    void serve_rangeOnVoiceNote_stillSlicesFromTheFullBody() throws Exception {
+        byte[] content = isoBmff("isom", 200_000, "soun");
+        StorageService.StreamHandle prefixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        StorageService.StreamHandle suffixHandle =
+                new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+        when(storageService.open("attachments/voice.m4a")).thenReturn(prefixHandle, suffixHandle);
+
+        ResponseEntity<?> response = fileController.serve(
+                mappedTo("/api/v1/files/attachments/voice.m4a", "bytes=10-19"),
+                new JwtPrincipal(userId));
+
+        assertThat(response.getStatusCodeValue()).isEqualTo(206);
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("audio/mp4");
+        assertThat(drain(response).getContentAsByteArray())
+                .containsExactly(java.util.Arrays.copyOfRange(content, 10, 20));
+    }
+
+    /** Builds an ISO-BMFF file with a generic brand, an mdat of {@code mdatBytes}, and tracks. */
+    private static byte[] isoBmff(String brand, int mdatBytes, String... handlers) {
+        byte[] ftypPayload = new byte[8];
+        System.arraycopy(brand.getBytes(StandardCharsets.US_ASCII), 0, ftypPayload, 0, 4);
+        byte[] ftyp = box("ftyp", ftypPayload);
+        byte[] mdat = box("mdat", new byte[mdatBytes]);
+        byte[] moovPayload = new byte[0];
+        for (String handler : handlers) {
+            byte[] hdlrPayload = new byte[16];
+            System.arraycopy(handler.getBytes(StandardCharsets.US_ASCII), 0, hdlrPayload, 8, 4);
+            moovPayload = concat(moovPayload, box("trak", box("mdia", box("hdlr", hdlrPayload))));
+        }
+        return concat(ftyp, mdat, box("moov", moovPayload));
+    }
+
+    private static byte[] box(String type, byte[] payload) {
+        int size = 8 + payload.length;
+        byte[] out = new byte[size];
+        out[0] = (byte) (size >>> 24);
+        out[1] = (byte) (size >>> 16);
+        out[2] = (byte) (size >>> 8);
+        out[3] = (byte) size;
+        for (int i = 0; i < 4; i++) {
+            out[4 + i] = (byte) type.charAt(i);
+        }
+        System.arraycopy(payload, 0, out, 8, payload.length);
+        return out;
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        int length = 0;
+        for (byte[] part : parts) {
+            length += part.length;
+        }
+        byte[] out = new byte[length];
+        int offset = 0;
+        for (byte[] part : parts) {
+            System.arraycopy(part, 0, out, offset, part.length);
+            offset += part.length;
+        }
+        return out;
     }
 
     private static byte[] hex(String hex) {
