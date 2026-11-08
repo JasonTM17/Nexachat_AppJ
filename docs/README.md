@@ -18,7 +18,8 @@ Every engineering document in the repository, grouped by domain. Start with
 | [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`), including auth, conversations, messages, attachments, calls and summary routes |
 | [docs/websocket-protocol.md](websocket-protocol.md) | STOMP over WebSocket (`/ws`) destinations, event envelope, delivery guarantees and rate limits |
 | [docs/calls.md](calls.md) | 1-to-1 WebRTC voice call signaling, call events, ICE configuration, call history and Android UI |
-| [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & DeepSeek LLM engines, citation guard and consent model |
+| [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & OpenAI-compatible (Gemini-tested) LLM engines, citation guard and consent model |
+| [docs/rag.md](rag.md) | Conversation RAG QA contract ("Ask this chat"), hybrid BM25 + vector retrieval, MMR diversification, citation validation, eval benchmark |
 
 ## Security & operations
 
