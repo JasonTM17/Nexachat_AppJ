@@ -38,3 +38,8 @@ Still frames captured from live Android emulators (`emulator-5554` / `nexachat-a
 | `screens/15-chat-light-en.png` | Chat screen in Light Mode (English) |
 | `screens/16-chat-landscape-dark-en.png` | Chat screen in Dark Mode landscape orientation (2400×1080) |
 | `screens/17-offline-chat-dark-en.png` | Offline/disconnected banner in chat with queued outbox message |
+
+## Animated Walkthroughs (GIFs)
+
+Screen recordings of core workflows (login/register, realtime send/receive, offline queue/reconnect, media attachments with blurhash placeholder, voice message, 1-to-1 voice calls, and AI summary) are captured via the recording and palette conversion tooling in [`tools/gif/`](../../tools/gif/README.md).
+
