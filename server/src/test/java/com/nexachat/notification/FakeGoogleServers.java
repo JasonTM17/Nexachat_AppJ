@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class FakeGoogleServers implements AutoCloseable {
 
-    record FcmRequest(String authorization, String body) {
+    record FcmRequest(String authorization, String contentType, String body) {
     }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -33,6 +33,7 @@ final class FakeGoogleServers implements AutoCloseable {
     private final KeyPair keyPair;
 
     private final List<String> tokenRequestBodies = new CopyOnWriteArrayList<>();
+    private final List<String> tokenRequestContentTypes = new CopyOnWriteArrayList<>();
     private final List<String> tokenAssertions = new CopyOnWriteArrayList<>();
     private final List<FcmRequest> fcmRequests = new CopyOnWriteArrayList<>();
     private final AtomicLong tokenCounter = new AtomicLong();
@@ -140,6 +141,10 @@ final class FakeGoogleServers implements AutoCloseable {
         return List.copyOf(tokenRequestBodies);
     }
 
+    List<String> tokenRequestContentTypes() {
+        return List.copyOf(tokenRequestContentTypes);
+    }
+
     List<String> tokenAssertions() {
         return List.copyOf(tokenAssertions);
     }
@@ -157,6 +162,7 @@ final class FakeGoogleServers implements AutoCloseable {
     private void handleToken(HttpExchange exchange) throws IOException {
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
         tokenRequestBodies.add(body);
+        tokenRequestContentTypes.add(exchange.getRequestHeaders().getFirst("Content-Type"));
         tokenAssertions.add(formValue(body, "assertion"));
         if (tokenDelayMillis > 0) {
             try {
@@ -187,8 +193,9 @@ final class FakeGoogleServers implements AutoCloseable {
 
     private void handleFcm(HttpExchange exchange) throws IOException {
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
         String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        fcmRequests.add(new FcmRequest(authorization, body));
+        fcmRequests.add(new FcmRequest(authorization, contentType, body));
 
         int status = fcmStatus;
         if (unauthorizedResponsesLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {

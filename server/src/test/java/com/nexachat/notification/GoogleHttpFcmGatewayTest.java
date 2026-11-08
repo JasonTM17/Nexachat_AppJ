@@ -7,11 +7,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.Signature;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -75,10 +75,19 @@ class GoogleHttpFcmGatewayTest {
 
         assertThat(result.success()).isTrue();
         assertThat(servers.tokenRequestBodies()).hasSize(1);
+        assertThat(servers.tokenRequestContentTypes().get(0))
+                .isEqualTo("application/x-www-form-urlencoded");
         assertThat(servers.fcmRequests()).hasSize(1);
         assertThat(servers.fcmRequests().get(0).authorization())
                 .isEqualTo("Bearer test-access-token-1");
+        assertThat(servers.fcmRequests().get(0).contentType())
+                .startsWith("application/json");
         assertThat(servers.fcmRequests().get(0).body()).contains("\"type\":\"NEW_MESSAGE\"");
+
+        String form = servers.tokenRequestBodies().get(0);
+        assertThat(form).contains("grant_type=" + URLEncoder.encode(
+                "urn:ietf:params:oauth:grant-type:jwt-bearer", StandardCharsets.UTF_8));
+        assertThat(form).contains("assertion=");
     }
 
     @Test
