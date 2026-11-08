@@ -26,6 +26,7 @@ import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -85,7 +87,9 @@ public class MessageService {
     private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
+    @Autowired
     public MessageService(MessageRepository messageRepository,
                           MessageAttachmentRepository attachmentRepository,
                           MessageReactionRepository reactionRepository,
@@ -94,6 +98,19 @@ public class MessageService {
                           PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher) {
+        this(messageRepository, attachmentRepository, reactionRepository, conversationRepository,
+                memberRepository, pinnedMessageRepository, storageService, eventPublisher, Clock.systemUTC());
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   Clock clock) {
         this.messageRepository = messageRepository;
         this.attachmentRepository = attachmentRepository;
         this.reactionRepository = reactionRepository;
@@ -102,6 +119,7 @@ public class MessageService {
         this.pinnedMessageRepository = pinnedMessageRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
     }
 
     /** Result of {@link #send}: the stored message plus whether this call created it. */
@@ -367,6 +385,9 @@ public class MessageService {
                     "upToSeq cannot exceed the latest message sequence");
         }
         memberRepository.advanceReadWatermark(conversationId, userId, upToSeq);
+        // Reading implies delivery: a read receipt without a delivered receipt
+        // would render an inconsistent two-tick state to the sender.
+        memberRepository.advanceDeliveredWatermark(conversationId, userId, upToSeq);
         long persistedWatermark = memberRepository.findReadWatermark(conversationId, userId);
         eventPublisher.publishEvent(new MessageReadEvent(conversationId, userId, persistedWatermark));
     }
@@ -406,6 +427,9 @@ public class MessageService {
         }
         int limit = request.limitPerConv() != null ? Math.max(1, Math.min(request.limitPerConv(), 100)) : 50;
         java.time.Instant since = request.since();
+        // Captured BEFORE the queries: a row committed after its query ran but
+        // before a later timestamp would be skipped by the next delta request.
+        java.time.Instant requestTime = clock.instant();
 
         List<SyncRequest.ConversationWatermark> watermarks = request.watermarks();
         if (watermarks.size() > 100) {
@@ -464,7 +488,7 @@ public class MessageService {
             ));
         }
 
-        return new SyncResponse(deltas, java.time.Instant.now());
+        return new SyncResponse(deltas, requestTime);
     }
 
     private List<ReactionUpdatedPayload> reactionUpdates(UUID conversationId, java.time.Instant since) {

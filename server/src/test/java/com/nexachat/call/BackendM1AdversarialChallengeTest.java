@@ -423,12 +423,9 @@ public class BackendM1AdversarialChallengeTest {
             // Max display name (60 chars of complex Vietnamese Unicode)
             String extremeSenderName = "Nguyễn Thị Thuỳ Dương Nguyễn Thị Thuỳ Dương Nguyễn Thị Thuỳ "; // 60 chars
 
-            // Max snippet (100 chars of complex Vietnamese Unicode)
-            String extremeSnippet = "Cộng hòa Xã hội Chủ nghĩa Việt Nam Độc lập Tự do Hạnh phúc! Đây là chuỗi tin nhắn kiểm thử bộ đệm push";
-
             pushService.sendNewMessageNotification(
                     userId, conversationId, UUID.randomUUID(), 999999L,
-                    extremeSenderName, extremeSnippet
+                    extremeSenderName
             );
 
             List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
@@ -456,28 +453,19 @@ public class BackendM1AdversarialChallengeTest {
         }
 
         @Test
-        @DisplayName("3.2 Snippet truncation and null safety")
-        void testSnippetTruncation() {
+        @DisplayName("3.2 New-message payload is a pure pointer")
+        void testNewMessagePayloadIsPurePointer() {
             com.nexachat.user.User user = mock(com.nexachat.user.User.class);
             UserDeviceToken token = UserDeviceToken.create(user, "test-fcm-token", UserDeviceToken.Platform.ANDROID, "Pixel");
             when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
 
-            // 5,000 character string
-            String hugeText = "A".repeat(5000);
             pushService.sendNewMessageNotification(
-                    userId, conversationId, UUID.randomUUID(), 1L, null, hugeText
+                    userId, conversationId, UUID.randomUUID(), 1L, null
             );
 
             Map<String, String> data = mockGateway.getSentPushes().get(0).data();
-            assertThat(data.get("snippet")).hasSize(100);
+            assertThat(data).containsOnlyKeys("type", "conversationId", "messageId", "seq", "senderName");
             assertThat(data.get("senderName")).isEqualTo("");
-
-            // Null snippet
-            mockGateway.clear();
-            pushService.sendNewMessageNotification(
-                    userId, conversationId, UUID.randomUUID(), 1L, "Alice", null
-            );
-            assertThat(mockGateway.getSentPushes().get(0).data().get("snippet")).isEqualTo("");
         }
 
         @Test
@@ -489,7 +477,7 @@ public class BackendM1AdversarialChallengeTest {
             when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
 
             pushService.sendNewMessageNotification(
-                    userId, conversationId, UUID.randomUUID(), 1L, "Alice", "Hi"
+                    userId, conversationId, UUID.randomUUID(), 1L, "Alice"
             );
 
             verify(tokenRepository).deleteByToken("dead-token");

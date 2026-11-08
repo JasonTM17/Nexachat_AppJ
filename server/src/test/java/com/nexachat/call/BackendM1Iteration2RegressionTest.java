@@ -85,7 +85,7 @@ public class BackendM1Iteration2RegressionTest {
             when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
 
             pushService.sendNewMessageNotification(
-                    userId, conversationId, UUID.randomUUID(), 10L, "Sender", "Snippet"
+                    userId, conversationId, UUID.randomUUID(), 10L, "Sender"
             );
 
             verify(deviceTokenService).unregisterToken("unregistered-fcm-token");

@@ -47,6 +47,9 @@ public final class SyncEngine {
     private final TokenStore tokenStore;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
+    /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
+    @Nullable
+    private volatile String lastServerTime;
 
     @Inject
     public SyncEngine(
@@ -85,10 +88,14 @@ public final class SyncEngine {
             for (ConversationWatermark wm : watermarks) {
                 reqWatermarks.add(new SyncRequest.Watermark(wm.getConversationId(), wm.getMaxSeq()));
             }
-            SyncRequest request = new SyncRequest(reqWatermarks, 50);
+            SyncRequest request = new SyncRequest(reqWatermarks, 50, lastServerTime);
             return ApiResult.safeApiCall(messageApi.syncDeltas(request)).map(apiResult -> {
                 if (apiResult instanceof ApiResult.Success<?> success) {
-                    return (SyncResponse) success.getBody();
+                    SyncResponse response = (SyncResponse) success.getBody();
+                    if (response != null && response.getServerTime() != null) {
+                        lastServerTime = response.getServerTime();
+                    }
+                    return response;
                 }
                 return new SyncResponse();
             });
@@ -215,11 +222,8 @@ public final class SyncEngine {
                     }
                 }
 
-                // 5. Monotonically advance watermark
-                if (delta.getMaxSeq() > 0) {
-                    conversationDao.bumpPeerDeliveredSeq(conversationId, delta.getMaxSeq()).blockingAwait();
-                    conversationDao.bumpPeerReadSeq(conversationId, delta.getMaxSeq()).blockingAwait();
-                }
+                // 5. Peer receipt watermarks advance ONLY from the peer's own read/delivered
+                //    frames; a delta bundle says nothing about what the peer has read.
             }
         });
     }

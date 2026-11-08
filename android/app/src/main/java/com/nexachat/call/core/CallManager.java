@@ -528,8 +528,15 @@ public final class CallManager implements AutoCloseable {
     private void handleRemoteSignal(CallSignal signal) {
         if (signal == null || !matches(signal.getCallId())) return;
         CallState state = currentSession.getState();
-        if (state != CallState.CONNECTING && state != CallState.ACTIVE) return;
+        if (state != CallState.CONNECTING && state != CallState.ACTIVE
+                && state != CallState.RECONNECTING_NETWORK) return;
         if (mediaEngine == null || !mediaStarted) {
+            pendingRemoteSignals.add(signal);
+            return;
+        }
+        // While roaming the peer's re-offer/candidates are buffered, not dropped:
+        // the reconnect path replays them once media is live again.
+        if (state == CallState.RECONNECTING_NETWORK) {
             pendingRemoteSignals.add(signal);
             return;
         }
@@ -678,6 +685,9 @@ public final class CallManager implements AutoCloseable {
             if (mediaEngine != null) {
                 mediaEngine.restartIce();
             }
+            List<CallSignal> queuedRemote = new ArrayList<>(pendingRemoteSignals);
+            pendingRemoteSignals.clear();
+            for (CallSignal pending : queuedRemote) deliverRemoteSignal(pending);
             List<QueuedOutboundSignal> queued = new ArrayList<>(pendingOutboundSignals);
             pendingOutboundSignals.clear();
             for (QueuedOutboundSignal item : queued) {

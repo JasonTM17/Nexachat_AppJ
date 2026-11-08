@@ -157,8 +157,8 @@ public final class SyncEngineTest {
                 org.mockito.ArgumentMatchers.eq("Bob"),
                 anyLong()
         );
-        verify(conversationDao).bumpPeerDeliveredSeq("c1", 15L);
-        verify(conversationDao).bumpPeerReadSeq("c1", 15L);
+        verify(conversationDao, never()).bumpPeerDeliveredSeq(anyString(), anyLong());
+        verify(conversationDao, never()).bumpPeerReadSeq(anyString(), anyLong());
     }
 
     @Test
@@ -202,5 +202,80 @@ public final class SyncEngineTest {
         assertTrue(tombstone.getDeletedAtEpochMs() != null);
         verify(reactionDao).deleteForMessageInTransaction("m-del");
         verify(messageDao).clearReplySnippets("m-del");
+    }
+
+    @Test
+    public void syncEchoesLastServerTimeAsSinceOnSubsequentSync() {
+        List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse firstResponse = new SyncResponse(List.of(), "2026-11-08T10:00:00Z");
+        SyncResponse secondResponse = new SyncResponse(List.of(), "2026-11-08T10:05:00Z");
+
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> firstCall = mock(Call.class);
+        when(firstCall.clone()).thenReturn(firstCall);
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> secondCall = mock(Call.class);
+        when(secondCall.clone()).thenReturn(secondCall);
+        try {
+            when(firstCall.execute()).thenReturn(Response.success(firstResponse));
+            when(secondCall.execute()).thenReturn(Response.success(secondResponse));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(firstCall)
+                .thenReturn(secondCall);
+
+        TestObserver<Void> firstSync = syncEngine.sync().test();
+        firstSync.awaitCount(1);
+        firstSync.assertComplete();
+
+        TestObserver<Void> secondSync = syncEngine.sync().test();
+        secondSync.awaitCount(1);
+        secondSync.assertComplete();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, org.mockito.Mockito.times(2)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        org.junit.Assert.assertNull("first sync has no server time yet", requests.get(0).getSince());
+        org.junit.Assert.assertEquals("2026-11-08T10:00:00Z", requests.get(1).getSince());
+    }
+
+    @Test
+    public void syncDoesNotFabricatePeerReceiptWatermarks() {
+        List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        MessageDto newMsg = new MessageDto(
+                "m-new", 15L, "c1", "user-2", "Bob", null, null, "TEXT", "Hello World",
+                null, null, List.of(), List.of(), "2026-11-08T10:00:00Z", null, null
+        );
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(newMsg), List.of(), List.of(), List.of(), 15L, false
+        );
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> mockCall = mock(Call.class);
+        when(mockCall.clone()).thenReturn(mockCall);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
+        try {
+            when(mockCall.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+        }
+
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        observer.awaitCount(1);
+        observer.assertComplete();
+
+        verify(conversationDao, never()).bumpPeerReadSeq(anyString(), anyLong());
+        verify(conversationDao, never()).bumpPeerDeliveredSeq(anyString(), anyLong());
     }
 }

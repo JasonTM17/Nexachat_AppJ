@@ -36,19 +36,20 @@ public class DefaultFcmPushService implements FcmPushService {
     @Override
     @Transactional
     public void sendNewMessageNotification(UUID recipientId, UUID conversationId, UUID messageId,
-                                          long seq, String senderName, String snippet) {
+                                          long seq, String senderName) {
         List<UserDeviceToken> tokens = tokenRepository.findByUserId(recipientId);
         if (tokens.isEmpty()) {
             return;
         }
 
+        // Pointer only: the payload carries ids the app can use to sync, never
+        // message content, which would sit in the push provider's store.
         Map<String, String> data = new HashMap<>();
         data.put("type", "NEW_MESSAGE");
         data.put("conversationId", conversationId.toString());
         data.put("messageId", messageId.toString());
         data.put("seq", String.valueOf(seq));
         data.put("senderName", senderName != null ? senderName : "");
-        data.put("snippet", truncate(snippet, 100));
 
         dispatchToTokens(tokens, data, "HIGH", 86400L);
     }
@@ -81,7 +82,10 @@ public class DefaultFcmPushService implements FcmPushService {
             fcmGateway.sendDataPush(tokenValue, data, priority, ttlSeconds)
                     .thenAccept(result -> {
                         if (result.unregistered()) {
-                            log.warn("FCM token expired/unregistered, removing from DB: {}", tokenValue);
+                            // The registration token is a credential: identify the
+                            // row by its platform and label, never by the token value.
+                            log.warn("FCM token expired/unregistered, removing device token (platform {}, label {})",
+                                    token.getPlatform(), token.getDeviceLabel());
                             try {
                                 if (deviceTokenService != null) {
                                     deviceTokenService.unregisterToken(tokenValue);
@@ -89,21 +93,10 @@ public class DefaultFcmPushService implements FcmPushService {
                                     tokenRepository.deleteByToken(tokenValue);
                                 }
                             } catch (Exception ex) {
-                                log.error("Failed to unregister expired device token {}: {}", tokenValue, ex.getMessage());
+                                log.error("Failed to unregister an expired device token: {}", ex.getMessage());
                             }
                         }
                     });
         }
-    }
-
-    private static String truncate(String text, int maxLength) {
-        if (text == null) {
-            return "";
-        }
-        String clean = text.strip();
-        if (clean.length() <= maxLength) {
-            return clean;
-        }
-        return clean.substring(0, maxLength);
     }
 }

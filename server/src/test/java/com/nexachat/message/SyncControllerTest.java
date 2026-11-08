@@ -21,7 +21,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -160,5 +163,69 @@ class SyncControllerTest {
         assertThatThrownBy(() -> syncController.syncDelta(null, request))
                 .isInstanceOf(ApiException.class)
                 .extracting("code").isEqualTo(ApiErrorCode.UNAUTHORIZED);
+    }
+
+    @Test
+    void syncDeltaServerTimeIsCapturedBeforeTheQueriesRun() {
+        Instant start = Instant.parse("2026-11-08T10:00:00Z");
+        MutableClock clock = new MutableClock(start);
+        MessageService clockedService = new MessageService(
+                messageRepository,
+                mock(MessageAttachmentRepository.class),
+                reactionRepository,
+                conversationRepository,
+                memberRepository,
+                mock(PinnedMessageRepository.class),
+                mock(com.nexachat.attachment.StorageService.class),
+                mock(ApplicationEventPublisher.class),
+                clock
+        );
+        SyncController clockedController = new SyncController(clockedService);
+
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+                .thenReturn(List.of());
+        when(messageRepository.findMaxSeqByConversationId(conversationId)).thenAnswer(invocation -> {
+            clock.set(start.plusSeconds(5));
+            return 100L;
+        });
+
+        SyncRequest request = new SyncRequest(
+                List.of(new SyncRequest.ConversationWatermark(conversationId, 100L)), 50, null);
+
+        ResponseEntity<SyncResponse> response = clockedController.syncDelta(principal, request);
+
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().serverTime())
+                .as("serverTime must be the instant the request started with, not a later one")
+                .isEqualTo(start);
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant current;
+
+        private MutableClock(Instant start) {
+            this.current = start;
+        }
+
+        private void set(Instant next) {
+            this.current = next;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return current;
+        }
     }
 }

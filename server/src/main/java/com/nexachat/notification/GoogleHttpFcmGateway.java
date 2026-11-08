@@ -74,7 +74,7 @@ public class GoogleHttpFcmGateway implements FcmGateway {
                         if (status >= 200 && status < 300) {
                             return PushResult.success("fcm-" + System.currentTimeMillis());
                         } else if (status == 404 || response.body().contains("UNREGISTERED") || response.body().contains("NOT_FOUND")) {
-                            log.warn("FCM token unregistered/not found: {}", targetToken);
+                            log.warn("FCM token unregistered/not found, removing it");
                             return PushResult.unregistered("UNREGISTERED");
                         } else {
                             log.warn("FCM send failed with HTTP {}: {}", status, response.body());
@@ -82,7 +82,7 @@ public class GoogleHttpFcmGateway implements FcmGateway {
                         }
                     })
                     .exceptionally(ex -> {
-                        log.error("FCM send exception for token {}: {}", targetToken, ex.getMessage());
+                        log.error("FCM send exception: {}", ex.getMessage());
                         return PushResult.failure("EXCEPTION_" + ex.getClass().getSimpleName(), false);
                     });
         } catch (Exception ex) {

@@ -68,8 +68,7 @@ class FcmPushServiceTest {
 
         UUID messageId = UUID.randomUUID();
         pushService.sendNewMessageNotification(
-                userId, conversationId, messageId, 105L,
-                "Nguyễn Văn A", "Xin chào bạn, đây là tin nhắn kiểm thử độ dài con trỏ thông báo FCM!"
+                userId, conversationId, messageId, 105L, "Nguyễn Văn A"
         );
 
         List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
@@ -84,6 +83,71 @@ class FcmPushServiceTest {
 
         byte[] jsonBytes = objectMapper.writeValueAsString(push.data()).getBytes(StandardCharsets.UTF_8);
         assertThat(jsonBytes.length).as("FCM pointer payload must be < 500 bytes").isLessThan(500);
+    }
+
+    @Test
+    void newMessageNotificationNeverCarriesMessageContent() {
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(user, "fcm-token-content", UserDeviceToken.Platform.ANDROID, "Pixel 8");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+
+        String secret = "TOC-MESSAGE-CONTENT-MUST-NOT-LEAVE-THE-SERVER";
+        pushService.sendNewMessageNotification(
+                userId, conversationId, UUID.randomUUID(), 1L, "Alice"
+        );
+
+        MockFcmGateway.SentPush push = mockGateway.getSentPushes().get(0);
+        assertThat(push.data()).doesNotContainKey("snippet");
+        assertThat(push.data().values())
+                .as("push payload must not contain message plaintext")
+                .noneMatch(value -> value != null && value.contains(secret));
+    }
+
+    @Test
+    void expiredTokenCleanupDoesNotLogTheRegistrationToken() {
+        mockGateway.setSimulateUnregistered(true);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "SECRET-REGISTRATION-TOKEN", UserDeviceToken.Platform.ANDROID, "Old Phone");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DefaultFcmPushService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            pushService.sendNewMessageNotification(
+                    userId, conversationId, UUID.randomUUID(), 1L, "Alice");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .as("registration token must never reach the log")
+                .noneMatch(event -> event.getFormattedMessage().contains("SECRET-REGISTRATION-TOKEN"));
+    }
+
+    @Test
+    void mockGatewayDoesNotLogTheRegistrationToken() {
+        MockFcmGateway gateway = new MockFcmGateway();
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MockFcmGateway.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            gateway.sendDataPush("SECRET-MOCK-TOKEN", Map.of("type", "NEW_MESSAGE"), "HIGH", 1L);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .as("registration token must never reach the log")
+                .noneMatch(event -> event.getFormattedMessage().contains("SECRET-MOCK-TOKEN"));
     }
 
     @Test
@@ -121,7 +185,7 @@ class FcmPushServiceTest {
         when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
 
         pushService.sendNewMessageNotification(
-                userId, conversationId, UUID.randomUUID(), 1L, "Alice", "Hi"
+                userId, conversationId, UUID.randomUUID(), 1L, "Alice"
         );
 
         verify(tokenRepository).deleteByToken("stale-fcm-token");
