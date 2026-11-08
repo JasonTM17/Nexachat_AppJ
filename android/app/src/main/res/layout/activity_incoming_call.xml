@@ -3,100 +3,166 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground"
-    android:fitsSystemWindows="true"
-    android:fillViewport="true">
+    android:background="@drawable/bg_call_gradient"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="32dp">
 
-        <com.google.android.material.card.MaterialCardView
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- 120dp Avatar with soft pulse ring -->
+        <FrameLayout
+            android:layout_width="170dp"
+            android:layout_height="170dp"
+            android:layout_gravity="center_horizontal">
+
+            <View
+                android:id="@+id/incoming_pulse_ring"
+                android:layout_width="170dp"
+                android:layout_height="170dp"
+                android:layout_gravity="center"
+                android:alpha="0.35"
+                android:background="@drawable/bg_call_pulse_ring"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/incoming_initials"
+                android:layout_width="120dp"
+                android:layout_height="120dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_call_avatar"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:textColor="@color/call_avatar_foreground"
+                android:textSize="36sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <!-- Peer Name -->
+        <TextView
+            android:id="@+id/incoming_peer_name"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="28dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp"
-            app:cardElevation="0dp">
+            android:layout_marginTop="24dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:textColor="#FFFFFFFF"
+            android:textSize="26sp"
+            android:textStyle="bold" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="28dp">
+        <!-- Status -->
+        <TextView
+            android:id="@+id/incoming_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:gravity="center"
+            android:text="@string/call_state_incoming"
+            android:textColor="#FF94A3B8"
+            android:textSize="16sp" />
 
-                <TextView
-                    android:id="@+id/incoming_initials"
-                    android:layout_width="120dp"
-                    android:layout_height="120dp"
-                    android:background="@drawable/bg_call_avatar"
-                    android:gravity="center"
-                    android:importantForAccessibility="no"
-                    android:textColor="@color/call_avatar_foreground"
-                    android:textSize="34sp"
-                    android:textStyle="bold" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1.5" />
 
-                <TextView
-                    android:id="@+id/incoming_peer_name"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="28dp"
-                    android:ellipsize="end"
-                    android:gravity="center"
-                    android:maxLines="2"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="26sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/incoming_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:accessibilityLiveRegion="polite"
-                    android:gravity="center"
-                    android:text="@string/call_state_incoming"
-                    android:textColor="?android:attr/textColorSecondary"
-                    android:textSize="16sp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
+        <!-- Incoming Controls: Decline (red) / Accept (emerald) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="48dp"
+            android:layout_marginBottom="32dp"
             android:gravity="center"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/incoming_decline"
+            <!-- Decline Column -->
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:backgroundTint="@color/call_decline_background"
-                android:contentDescription="@string/call_decline"
-                android:minHeight="64dp"
-                android:text="@string/call_decline"
-                android:textColor="@android:color/white" />
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <Button
-                android:id="@+id/incoming_accept"
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/incoming_decline"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:backgroundTint="@color/call_decline_background"
+                    android:contentDescription="@string/call_decline"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:textSize="0sp"
+                    app:cornerRadius="36dp"
+                    app:icon="@drawable/ic_call_end"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="32dp"
+                    app:iconTint="#FFFFFFFF" />
+
+                <TextView
+                    android:id="@+id/incoming_decline_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_decline"
+                    android:textColor="#FFEF4444"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- Accept Column -->
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
                 android:layout_weight="1"
-                android:backgroundTint="@color/call_accept_background"
-                android:contentDescription="@string/call_accept"
-                android:minHeight="64dp"
-                android:text="@string/call_accept"
-                android:textColor="@android:color/white" />
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/incoming_accept"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:backgroundTint="@color/call_accept_background"
+                    android:contentDescription="@string/call_accept"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:textSize="0sp"
+                    app:cornerRadius="36dp"
+                    app:icon="@drawable/ic_call"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="32dp"
+                    app:iconTint="#FFFFFFFF" />
+
+                <TextView
+                    android:id="@+id/incoming_accept_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_accept"
+                    android:textColor="#FF10B981"
+                    android:textSize="13sp" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
@@ -52,6 +53,8 @@ public class IncomingCallActivity extends ComponentActivity {
     private TextView status;
     private Button acceptButton;
     private Button declineButton;
+    private View pulseRing;
+    private android.animation.AnimatorSet pulseAnimator;
     private CallSession currentSession;
     private CallManager.CallListener listener;
     private CallRingtonePlayer ringtonePlayer;
@@ -76,6 +79,7 @@ public class IncomingCallActivity extends ComponentActivity {
         status = findViewById(R.id.incoming_status);
         acceptButton = findViewById(R.id.incoming_accept);
         declineButton = findViewById(R.id.incoming_decline);
+        pulseRing = findViewById(R.id.incoming_pulse_ring);
         ringtonePlayer = new CallRingtonePlayer(getApplicationContext());
         callManager.attachMediaEngine(CallMediaEngineProvider.get(getApplicationContext()));
         acceptButton.setOnClickListener(view -> requestAccept());
@@ -162,6 +166,10 @@ public class IncomingCallActivity extends ComponentActivity {
             callManager.removeListener(listener);
             listener = null;
         }
+        if (pulseAnimator != null) {
+            pulseAnimator.cancel();
+            pulseAnimator = null;
+        }
         if (!resolving && matchesTargetCall(currentSession)
                 && (currentSession.getState() == CallState.INCOMING_RINGING
                     || currentSession.getState() == CallState.PENDING_INCOMING)) {
@@ -195,6 +203,10 @@ public class IncomingCallActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         mainHandler.removeCallbacks(finishEndedScreen);
+        if (pulseAnimator != null) {
+            pulseAnimator.cancel();
+            pulseAnimator = null;
+        }
         if (ringtonePlayer != null) ringtonePlayer.stop();
         super.onDestroy();
     }
@@ -225,8 +237,54 @@ public class IncomingCallActivity extends ComponentActivity {
         status.setContentDescription(status.getText());
         boolean ringing = session.getState() == CallState.INCOMING_RINGING
                 || session.getState() == CallState.PENDING_INCOMING;
+        updatePulseAnimation(ringing);
         acceptButton.setEnabled(ringing);
         declineButton.setEnabled(ringing);
+    }
+
+    private void updatePulseAnimation(boolean isLive) {
+        if (pulseRing == null) return;
+        float scale = 1.0f;
+        try {
+            scale = android.provider.Settings.Global.getFloat(
+                    getContentResolver(),
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f);
+        } catch (Exception ignored) { }
+        boolean enabled = android.animation.ValueAnimator.areAnimatorsEnabled();
+        boolean shouldAnimate = CallPulseAnimationPolicy.shouldAnimate(scale, enabled, isLive);
+
+        if (shouldAnimate) {
+            if (pulseAnimator == null || !pulseAnimator.isStarted()) {
+                android.animation.ObjectAnimator scaleX =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "scaleX", 0.95f, 1.18f);
+                android.animation.ObjectAnimator scaleY =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "scaleY", 0.95f, 1.18f);
+                android.animation.ObjectAnimator alpha =
+                        android.animation.ObjectAnimator.ofFloat(pulseRing, "alpha", 0.45f, 0.10f);
+                scaleX.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                scaleX.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                scaleY.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                scaleY.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                alpha.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                alpha.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+
+                pulseAnimator = new android.animation.AnimatorSet();
+                pulseAnimator.playTogether(scaleX, scaleY, alpha);
+                pulseAnimator.setDuration(1600L);
+                pulseAnimator.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+                pulseAnimator.start();
+                pulseRing.setVisibility(android.view.View.VISIBLE);
+            }
+        } else {
+            if (pulseAnimator != null) {
+                pulseAnimator.cancel();
+                pulseAnimator = null;
+            }
+            pulseRing.setScaleX(1.0f);
+            pulseRing.setScaleY(1.0f);
+            pulseRing.setAlpha(0.25f);
+            pulseRing.setVisibility(isLive ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
     }
 
     private void requestAccept() {

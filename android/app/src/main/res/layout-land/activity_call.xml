@@ -3,116 +3,210 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground"
-    android:fillViewport="true">
+    android:background="@drawable/bg_call_gradient"
+    android:fillViewport="true"
+    android:fitsSystemWindows="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:orientation="horizontal"
-        android:padding="20dp">
+        android:paddingHorizontal="32dp"
+        android:paddingVertical="20dp">
 
-        <com.google.android.material.card.MaterialCardView
+        <!-- Left Column: Avatar, Name, Status, Timer -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="12dp"
-            app:cardCornerRadius="28dp"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp"
-            app:cardElevation="0dp">
+            android:gravity="center"
+            android:orientation="vertical">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="16dp">
+            <FrameLayout
+                android:layout_width="140dp"
+                android:layout_height="140dp">
+
+                <View
+                    android:id="@+id/call_pulse_ring"
+                    android:layout_width="140dp"
+                    android:layout_height="140dp"
+                    android:layout_gravity="center"
+                    android:alpha="0.35"
+                    android:background="@drawable/bg_call_pulse_ring"
+                    android:importantForAccessibility="no" />
 
                 <TextView
                     android:id="@+id/call_peer_initials"
-                    android:layout_width="80dp"
-                    android:layout_height="80dp"
+                    android:layout_width="96dp"
+                    android:layout_height="96dp"
+                    android:layout_gravity="center"
                     android:background="@drawable/bg_call_avatar"
                     android:gravity="center"
                     android:importantForAccessibility="no"
                     android:textColor="@color/call_avatar_foreground"
                     android:textSize="28sp"
                     android:textStyle="bold" />
+            </FrameLayout>
 
-                <TextView
-                    android:id="@+id/call_peer_name"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:ellipsize="end"
-                    android:gravity="center"
-                    android:maxLines="2"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
+            <TextView
+                android:id="@+id/call_peer_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/call_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:accessibilityLiveRegion="polite"
-                    android:gravity="center"
-                    android:textColor="?android:attr/textColorSecondary"
-                    android:textSize="16sp" />
+            <TextView
+                android:id="@+id/call_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:textColor="#FF94A3B8"
+                android:textSize="14sp" />
 
-                <TextView
-                    android:id="@+id/call_timer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:accessibilityLiveRegion="polite"
-                    android:gravity="center"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:textSize="26sp"
-                    android:visibility="gone" />
+            <TextView
+                android:id="@+id/call_timer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:textColor="#FFFFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
 
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
+        <!-- Right Column: Circular Controls -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
             android:gravity="center"
-            android:orientation="vertical"
-            android:padding="8dp">
+            android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/call_mute"
-                android:layout_width="match_parent"
+            <!-- Mute Column -->
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:contentDescription="@string/call_mute"
-                android:minHeight="54dp"
-                android:text="@string/call_mute" />
+                android:layout_marginEnd="16dp"
+                android:gravity="center"
+                android:orientation="vertical">
 
-            <Button
-                android:id="@+id/call_speaker"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:contentDescription="@string/call_speaker"
-                android:minHeight="54dp"
-                android:text="@string/call_speaker" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_mute"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/bg_call_control_button"
+                    android:contentDescription="@string/call_mute"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:textSize="0sp"
+                    app:cornerRadius="32dp"
+                    app:icon="@drawable/ic_mic"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="28dp"
+                    app:iconTint="#FFFFFFFF" />
 
-            <Button
-                android:id="@+id/call_hang_up"
-                android:layout_width="match_parent"
+                <TextView
+                    android:id="@+id/call_mute_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_mute"
+                    android:textColor="#FFCBD5E1"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Speaker Column -->
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="@color/call_end_background"
-                android:contentDescription="@string/call_hang_up"
-                android:minHeight="54dp"
-                android:text="@string/call_hang_up"
-                android:textColor="@android:color/white" />
+                android:layout_marginEnd="16dp"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_speaker"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/bg_call_control_button"
+                    android:contentDescription="@string/call_speaker"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:textSize="0sp"
+                    app:cornerRadius="32dp"
+                    app:icon="@drawable/ic_volume_up"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="28dp"
+                    app:iconTint="#FFFFFFFF" />
+
+                <TextView
+                    android:id="@+id/call_speaker_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_speaker"
+                    android:textColor="#FFCBD5E1"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- End Call Column -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_hang_up"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:backgroundTint="@color/call_end_background"
+                    android:contentDescription="@string/call_hang_up"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:textSize="0sp"
+                    app:cornerRadius="36dp"
+                    app:icon="@drawable/ic_call_end"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="32dp"
+                    app:iconTint="#FFFFFFFF" />
+
+                <TextView
+                    android:id="@+id/call_hang_up_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_hang_up"
+                    android:textColor="#FFEF4444"
+                    android:textSize="12sp" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
