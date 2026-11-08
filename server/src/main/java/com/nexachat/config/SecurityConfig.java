@@ -15,6 +15,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -31,19 +32,33 @@ import java.util.List;
  *       failures are rendered by {@link AuthSecurityErrorHandler} as the standard
  *       error envelope (401 UNAUTHORIZED / TOKEN_EXPIRED / TOKEN_INVALID, 403 FORBIDDEN).</li>
  *   <li>bcrypt cost 12 (FR/NFR-3: ≥10, spec requires 12).</li>
+ *   <li>CORS is an explicit per-environment allow-list; credentials are never
+ *       enabled, so no origin can ride a logged-in browser session.</li>
+ *   <li>{@code /api/v1/rag/stats} is operator telemetry and is restricted to
+ *       the configured admin phones.</li>
  * </ul>
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, SecurityProperties.class})
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final AuthSecurityErrorHandler securityErrorHandler;
+    private final SecurityHeadersFilter securityHeadersFilter;
+    private final RagStatsAuthorizationManager ragStatsAuthorizationManager;
+    private final SecurityProperties securityProperties;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, AuthSecurityErrorHandler securityErrorHandler) {
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter,
+                          AuthSecurityErrorHandler securityErrorHandler,
+                          SecurityHeadersFilter securityHeadersFilter,
+                          RagStatsAuthorizationManager ragStatsAuthorizationManager,
+                          SecurityProperties securityProperties) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.securityErrorHandler = securityErrorHandler;
+        this.securityHeadersFilter = securityHeadersFilter;
+        this.ragStatsAuthorizationManager = ragStatsAuthorizationManager;
+        this.securityProperties = securityProperties;
     }
 
     @Bean
@@ -68,23 +83,40 @@ public class SecurityConfig {
                         // by StompAuthChannelInterceptor, never by this filter
                         // chain (plan §11.1/§13 — no token-in-URL).
                         .requestMatchers("/ws", "/ws/**").permitAll()
+                        // Aggregate RAG counters are operator telemetry, not
+                        // user data: only the configured admin phones may read.
+                        .requestMatchers("/api/v1/rag/stats").access(ragStatsAuthorizationManager)
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(securityErrorHandler)
                         .accessDeniedHandler(securityErrorHandler))
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // After HeaderWriterFilter so the auth-only no-store policy can
+                // override the global cache header for credential responses.
+                .addFilterAfter(securityHeadersFilter, HeaderWriterFilter.class);
         return http.build();
     }
 
     /**
-     * Dev-grade CORS: the client is a native Android app (browsers are not the
-     * target), so any origin may call the API without credentials. Restrict
-     * {@code allowedOriginPatterns} per environment before any public deploy.
+     * CORS allow-list from {@code nexachat.security.cors-allowed-origins}
+     * (env {@code NEXACHAT_CORS_ALLOWED_ORIGINS}, comma-separated). The secure
+     * default is an empty list — no cross-origin caller admitted — which is
+     * correct for a native-client deployment that sends no {@code Origin}.
+     *
+     * <p>Credentials are never enabled and the wildcard origin is rejected at
+     * startup: a browser could otherwise replay a logged-in session from any
+     * site.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        List<String> allowedOrigins = securityProperties.corsAllowedOrigins();
+        if (allowedOrigins.contains("*")) {
+            throw new IllegalStateException(
+                    "nexachat.security.cors-allowed-origins must list exact origins; '*' is not allowed");
+        }
+
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));
