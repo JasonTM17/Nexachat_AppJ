@@ -15,8 +15,10 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.DELETE;
 import retrofit2.http.GET;
+import retrofit2.http.Header;
 import retrofit2.http.PATCH;
 import retrofit2.http.POST;
+import retrofit2.http.PUT;
 import retrofit2.http.Path;
 import retrofit2.http.Query;
 
@@ -76,7 +78,22 @@ public interface MessageApi {
     @POST("api/v1/messages/{id}/reactions")
     Call<ReactionUpdateDto> toggleReaction(
             @Path("id") String messageId,
-            @Body ReactionRequest body
+            @Body ReactionRequest body,
+            @Header("Idempotency-Key") String idempotencyKey
+    );
+
+    @PUT("api/v1/messages/{id}/reactions/{emoji}")
+    Call<ReactionUpdateDto> addReaction(
+            @Path("id") String messageId,
+            @Path("emoji") String emoji,
+            @Header("Idempotency-Key") String idempotencyKey
+    );
+
+    @DELETE("api/v1/messages/{id}/reactions/{emoji}")
+    Call<ReactionUpdateDto> removeReaction(
+            @Path("id") String messageId,
+            @Path("emoji") String emoji,
+            @Header("Idempotency-Key") String idempotencyKey
     );
 
     @GET("api/v1/conversations/{id}/pins")
@@ -85,13 +102,15 @@ public interface MessageApi {
     @POST("api/v1/conversations/{id}/pins")
     Call<ResponseBody> pinMessage(
             @Path("id") String conversationId,
-            @Body PinRequest body
+            @Body PinRequest body,
+            @Header("Idempotency-Key") String idempotencyKey
     );
 
     @DELETE("api/v1/conversations/{id}/pins/{messageId}")
     Call<ResponseBody> unpinMessage(
             @Path("id") String conversationId,
-            @Path("messageId") String messageId
+            @Path("messageId") String messageId,
+            @Header("Idempotency-Key") String idempotencyKey
     );
 
     @POST("api/v1/sync")
