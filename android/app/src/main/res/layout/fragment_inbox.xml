@@ -9,141 +9,78 @@
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface"
+        app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="72dp"
             android:background="?attr/colorSurface"
             app:contentInsetStart="16dp"
-            app:contentInsetEnd="4dp"
+            app:contentInsetEnd="8dp"
             app:layout_scrollFlags="scroll|enterAlways"
             app:title="">
 
             <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_gravity="start|center_vertical"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <com.nexachat.core.ui.components.AvatarView
                     android:id="@+id/inboxUserAvatar"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
                     android:clickable="true"
+                    android:contentDescription="@string/profile_title"
                     android:focusable="true" />
 
                 <TextView
                     android:id="@+id/inboxBrandTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
+                    android:layout_marginStart="12dp"
                     android:accessibilityHeading="true"
-                    tools:targetApi="p"
-                    android:text="@string/app_name"
+                    android:text="@string/inbox_title"
+                    android:textAppearance="?attr/textAppearanceHeadlineLarge"
                     android:textColor="?attr/colorOnSurface"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-
-                <LinearLayout
-                    android:id="@+id/inboxAiBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_unread_badge"
-                    android:backgroundTint="?attr/colorPrimaryContainer"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="2dp">
-
-                    <ImageView
-                        android:layout_width="12dp"
-                        android:layout_height="12dp"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_auto_awesome"
-                        app:tint="?attr/colorPrimary" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="2dp"
-                        android:text="@string/summary_badge_ai"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="11sp"
-                        android:textStyle="bold" />
-                </LinearLayout>
+                    tools:targetApi="p" />
             </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+            <ImageButton
+                android:id="@+id/moreButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="end|center_vertical"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="4dp"
-                android:paddingEnd="4dp">
-
-                <ImageButton
-                    android:id="@+id/themeButton"
-                    android:layout_width="@dimen/min_touch_target"
-                    android:layout_height="@dimen/min_touch_target"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/settings_theme_title"
-                    android:src="@drawable/ic_theme_mode"
-                    app:tint="?attr/colorOnSurface" />
-
-                <ImageButton
-                    android:id="@+id/contactsButton"
-                    android:layout_width="@dimen/min_touch_target"
-                    android:layout_height="@dimen/min_touch_target"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/contacts_title"
-                    android:src="@drawable/ic_people"
-                    app:tint="?attr/colorOnSurface" />
-
-                <ImageButton
-                    android:id="@+id/searchButton"
-                    android:layout_width="@dimen/min_touch_target"
-                    android:layout_height="@dimen/min_touch_target"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/search_title"
-                    android:src="@drawable/ic_search"
-                    app:tint="?attr/colorOnSurface" />
-
-                <ImageButton
-                    android:id="@+id/profileButton"
-                    android:layout_width="@dimen/min_touch_target"
-                    android:layout_height="@dimen/min_touch_target"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="@string/profile_title"
-                    android:src="@drawable/ic_account_circle"
-                    app:tint="?attr/colorOnSurface" />
-            </LinearLayout>
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/inbox_more_options"
+                android:src="@drawable/ic_more_vert"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/inboxSearchPill"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="4dp"
             android:layout_marginBottom="8dp"
             android:clickable="true"
+            android:contentDescription="@string/inbox_search_hint"
             android:focusable="true"
-            app:cardBackgroundColor="?attr/colorSurfaceVariant"
-            app:cardCornerRadius="26dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_full"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minHeight="@dimen/min_touch_target"
+                android:layout_height="match_parent"
                 android:gravity="center_vertical"
+                android:minHeight="44dp"
                 android:orientation="horizontal"
                 android:paddingHorizontal="16dp">
 
@@ -162,13 +99,6 @@
                     android:text="@string/inbox_search_hint"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_auto_awesome"
-                    app:tint="?attr/colorPrimary" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -184,9 +114,8 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="16dp"
-                android:paddingTop="4dp"
-                android:paddingBottom="6dp">
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp">
 
                 <TextView
                     android:id="@+id/activeNowTitle"
@@ -195,20 +124,20 @@
                     android:layout_weight="1"
                     android:letterSpacing="0.08"
                     android:text="@string/inbox_active_now_header"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <TextView
                     android:id="@+id/activeNowViewAll"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="@dimen/min_touch_target"
                     android:clickable="true"
                     android:focusable="true"
+                    android:gravity="center"
+                    android:minWidth="@dimen/min_touch_target"
                     android:text="@string/inbox_view_all"
-                    android:textColor="?attr/colorPrimary"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="?attr/colorPrimary" />
             </LinearLayout>
 
             <HorizontalScrollView
@@ -245,227 +174,87 @@
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterAllChip"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.NexaChat.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:checked="true"
                     android:text="@string/inbox_filter_all"
-                    app:checkedIconVisible="false"
-                    app:chipCornerRadius="20dp" />
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterUnreadChip"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.NexaChat.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/inbox_filter_unread"
-                    app:checkedIconVisible="false"
-                    app:chipCornerRadius="20dp" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/filterDirectChip"
-                    style="@style/Widget.Material3.Chip.Filter"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/inbox_filter_direct"
-                    app:checkedIconVisible="false"
-                    app:chipCornerRadius="20dp" />
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterGroupsChip"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.NexaChat.Chip.Filter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/inbox_filter_groups"
-                    app:checkedIconVisible="false"
-                    app:chipCornerRadius="20dp" />
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
             </com.google.android.material.chip.ChipGroup>
         </HorizontalScrollView>
     </com.google.android.material.appbar.AppBarLayout>
 
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/conversationList"
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipeRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/conversationList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="104dp"
+                android:paddingHorizontal="0dp"
+                android:paddingTop="0dp"
+                tools:listitem="@layout/item_inbox_conversation" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <com.nexachat.core.ui.components.LoadingStateView
+            android:id="@+id/loadingState"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingHorizontal="8dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="80dp" />
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            android:visibility="gone" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        <com.nexachat.core.ui.components.ErrorStateView
+            android:id="@+id/errorState"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <com.nexachat.core.ui.components.EmptyStateView
+            android:id="@+id/emptyState"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/createGroupFab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="16dp"
-        android:layout_marginBottom="76dp"
-        android:contentDescription="@string/group_create_title"
+        android:layout_marginBottom="24dp"
+        android:contentDescription="@string/inbox_new_chat"
+        android:minHeight="56dp"
+        android:paddingHorizontal="20dp"
+        android:text="@string/inbox_new_chat"
+        android:textAppearance="?attr/textAppearanceLabelLarge"
         app:backgroundTint="?attr/colorPrimary"
-        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Medium"
-        app:srcCompat="@drawable/ic_edit_compose"
-        app:tint="?attr/colorOnPrimary" />
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/inboxBottomNav"
-        android:layout_width="match_parent"
-        android:layout_height="64dp"
-        android:layout_gravity="bottom"
-        app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="0dp"
-        app:cardElevation="8dp"
-        app:strokeColor="?attr/colorOutlineVariant"
-        app:strokeWidth="1dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:id="@+id/navTabChats"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <FrameLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_unread_badge"
-                    android:backgroundTint="?attr/colorPrimaryContainer"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="4dp">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_forum_outline"
-                        app:tint="?attr/colorPrimary" />
-                </FrameLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/inbox_title"
-                    android:textColor="?attr/colorPrimary"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/navTabCalls"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_call"
-                    app:tint="?attr/colorOnSurfaceVariant" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/cd_call"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/navTabContacts"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_people"
-                    app:tint="?attr/colorOnSurfaceVariant" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/contacts_title"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/navTabSettings"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_account_circle"
-                    app:tint="?attr/colorOnSurfaceVariant" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/profile_title"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
-            </LinearLayout>
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.nexachat.core.ui.components.LoadingStateView
-        android:id="@+id/loadingState"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
-    <com.nexachat.core.ui.components.ErrorStateView
-        android:id="@+id/errorState"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
-    <com.nexachat.core.ui.components.EmptyStateView
-        android:id="@+id/emptyState"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone" />
-
+        app:elevation="@dimen/elevation_level2"
+        app:icon="@drawable/ic_chat_bubble_outline"
+        app:iconTint="?attr/colorOnPrimary"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -5,9 +5,13 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.util.TypedValue;
+import android.animation.ValueAnimator;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -43,6 +47,9 @@ import java.util.Set;
 public final class InboxFragment extends Fragment {
 
     private static final int LOAD_MORE_REMAINING_ITEMS = 5;
+    private static final int MENU_CONTACTS = 1;
+    private static final int MENU_NEW_GROUP = 2;
+    private static final int MENU_THEME = 3;
 
     private FragmentInboxBinding binding;
     private InboxViewModel viewModel;
@@ -50,7 +57,6 @@ public final class InboxFragment extends Fragment {
     private ConversationListAdapter adapter;
     private LinearLayoutManager layoutManager;
     @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
-    private int selectedFilterId = R.id.filterAllChip;
     @Nullable private InboxUiState lastState;
     @Nullable private String boundUserId;
     private int lastPaginationErrorMessageId;
@@ -74,52 +80,46 @@ public final class InboxFragment extends Fragment {
         binding.inboxUserAvatar.setOnlineStatus(true);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
+        binding.moreButton.setOnClickListener(this::showInboxMenu);
         layoutManager = new LinearLayoutManager(requireContext());
         binding.conversationList.setLayoutManager(layoutManager);
         paginationScrollListener = new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (binding != null && dy != 0) {
+                    boolean extend = dy < 0;
+                    if (extend != binding.createGroupFab.isExtended()) {
+                        if (!ValueAnimator.areAnimatorsEnabled()) {
+                            binding.createGroupFab.setExtended(extend);
+                        } else if (extend) {
+                            binding.createGroupFab.extend();
+                        } else {
+                            binding.createGroupFab.shrink();
+                        }
+                    }
+                }
                 maybeLoadMore();
             }
         };
         binding.conversationList.addOnScrollListener(paginationScrollListener);
         binding.swipeRefresh.setOnRefreshListener(viewModel::refresh);
-        binding.themeButton.setOnClickListener(v -> showThemeDialog());
-        binding.contactsButton.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
-        binding.searchButton.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.inboxSearchPill.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
-        binding.profileButton.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
 
         binding.activeNowViewAll.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
-        binding.navTabChats.setOnClickListener(
-                v -> binding.conversationList.smoothScrollToPosition(0));
-        binding.navTabCalls.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
-        binding.navTabContacts.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
-        binding.navTabSettings.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
 
-        binding.inboxFilterChips.check(selectedFilterId);
+        binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
         binding.inboxFilterChips.setOnCheckedStateChangeListener(
                 (group, checkedIds) -> {
                     if (checkedIds.isEmpty()) {
                         return;
                     }
-                    selectedFilterId = checkedIds.get(0);
-                    updateFilterChipsUi(lastState != null ? lastState.getTotalUnread() : 0);
-                    if (lastState != null) {
-                        render(lastState);
-                    }
+                    viewModel.selectFilter(filterForChip(checkedIds.get(0)));
                 });
         binding.createGroupFab.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment));
+                v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.errorState.setOnRetry(() -> {
             if (lastState != null && lastState.getNextPageError() != null) {
                 viewModel.loadNextPage();
@@ -155,6 +155,31 @@ public final class InboxFragment extends Fragment {
                 .show();
     }
 
+    private void showInboxMenu(@NonNull View anchor) {
+        PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        menu.getMenu().add(Menu.NONE, MENU_CONTACTS, Menu.NONE, R.string.contacts_title);
+        menu.getMenu().add(Menu.NONE, MENU_NEW_GROUP, Menu.NONE, R.string.group_create_title);
+        menu.getMenu().add(Menu.NONE, MENU_THEME, Menu.NONE, R.string.settings_theme_title);
+        menu.setOnMenuItemClickListener(this::onInboxMenuItemSelected);
+        menu.show();
+    }
+
+    private boolean onInboxMenuItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == MENU_CONTACTS) {
+            NavHostFragment.findNavController(this).navigate(R.id.contactsFragment);
+            return true;
+        }
+        if (item.getItemId() == MENU_NEW_GROUP) {
+            NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment);
+            return true;
+        }
+        if (item.getItemId() == MENU_THEME) {
+            showThemeDialog();
+            return true;
+        }
+        return false;
+    }
+
     private void openConversation(@NonNull String conversationId) {
         Bundle args = new Bundle();
         args.putString("conversationId", conversationId);
@@ -181,13 +206,15 @@ public final class InboxFragment extends Fragment {
         lastState = state;
         ensureAdapter(state.getCurrentUserId());
         List<ConversationSummary> rows = state.getConversations();
-        List<ConversationSummary> visibleRows = filterRows(rows);
+        List<ConversationSummary> visibleRows = state.getVisibleConversations();
         submitRowsPreservingPosition(visibleRows);
+        syncFilterChip(state.getSelectedFilter());
         updateFilterChipsUi(state.getTotalUnread());
         renderActiveNowStrip(rows);
         binding.swipeRefresh.setRefreshing(state.isLoading() && !rows.isEmpty());
 
-        boolean showLoading = state.isLoading() && rows.isEmpty();
+        boolean showLoading = (state.isLoading() && rows.isEmpty())
+                || (state.isLoadingMore() && visibleRows.isEmpty() && state.hasMore());
         ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
         boolean showError = error != null && rows.isEmpty();
         boolean showEmpty = !showLoading && !showError && visibleRows.isEmpty();
@@ -198,6 +225,9 @@ public final class InboxFragment extends Fragment {
         binding.swipeRefresh.setVisibility(showList ? View.VISIBLE : View.GONE);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
+        if (showEmpty) {
+            binding.emptyState.setMessage(getString(emptyMessageFor(state.getSelectedFilter())));
+        }
         if (showError && error != null) {
             binding.errorState.setMessage(getString(ChatErrorIds.messageId(error)));
         }
@@ -282,26 +312,25 @@ public final class InboxFragment extends Fragment {
 
         int primaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorPrimary);
         int onPrimaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnPrimary);
-        int surfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceVariant);
+        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainer);
         int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
 
         Chip[] chips = new Chip[] {
                 binding.filterAllChip,
                 binding.filterUnreadChip,
-                binding.filterDirectChip,
                 binding.filterGroupsChip
         };
 
         for (Chip chip : chips) {
-            boolean isSelected = chip.getId() == selectedFilterId;
+            boolean isSelected = chip.getId() == binding.inboxFilterChips.getCheckedChipId();
             if (isSelected) {
                 chip.setChipBackgroundColor(ColorStateList.valueOf(primaryColor));
                 chip.setTextColor(onPrimaryColor);
                 chip.setChipStrokeColor(ColorStateList.valueOf(Color.TRANSPARENT));
                 chip.setChipStrokeWidth(0f);
             } else {
-                chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceVariantColor));
+                chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
                 chip.setTextColor(onSurfaceVariantColor);
                 chip.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
                 chip.setChipStrokeWidth(1f);
@@ -385,28 +414,45 @@ public final class InboxFragment extends Fragment {
         }
     }
 
+    private void syncFilterChip(@NonNull InboxFilter filter) {
+        if (binding == null) {
+            return;
+        }
+        int chipId = chipForFilter(filter);
+        if (binding.inboxFilterChips.getCheckedChipId() != chipId) {
+            binding.inboxFilterChips.check(chipId);
+        }
+    }
+
+    private static int chipForFilter(@NonNull InboxFilter filter) {
+        if (filter == InboxFilter.UNREAD) {
+            return R.id.filterUnreadChip;
+        }
+        if (filter == InboxFilter.GROUPS) {
+            return R.id.filterGroupsChip;
+        }
+        return R.id.filterAllChip;
+    }
+
     @NonNull
-    private List<ConversationSummary> filterRows(@NonNull List<ConversationSummary> rows) {
-        if (selectedFilterId == R.id.filterAllChip) {
-            return rows;
+    private static InboxFilter filterForChip(int chipId) {
+        if (chipId == R.id.filterUnreadChip) {
+            return InboxFilter.UNREAD;
         }
-        List<ConversationSummary> filtered = new ArrayList<>();
-        for (ConversationSummary row : rows) {
-            boolean include;
-            if (selectedFilterId == R.id.filterUnreadChip) {
-                include = row.getUnreadCount() > 0;
-            } else if (selectedFilterId == R.id.filterDirectChip) {
-                include = !row.isGroup();
-            } else if (selectedFilterId == R.id.filterGroupsChip) {
-                include = row.isGroup();
-            } else {
-                include = true;
-            }
-            if (include) {
-                filtered.add(row);
-            }
+        if (chipId == R.id.filterGroupsChip) {
+            return InboxFilter.GROUPS;
         }
-        return filtered;
+        return InboxFilter.ALL;
+    }
+
+    private static int emptyMessageFor(@NonNull InboxFilter filter) {
+        if (filter == InboxFilter.UNREAD) {
+            return R.string.inbox_empty_unread;
+        }
+        if (filter == InboxFilter.GROUPS) {
+            return R.string.inbox_empty_groups;
+        }
+        return R.string.inbox_empty;
     }
 
     private static int resolveThemeColor(@NonNull Context context, int attr) {

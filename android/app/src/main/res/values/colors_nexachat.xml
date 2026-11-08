@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Design tokens mapped for the light Material 3 XML theme. -->
-    <color name="brand_indigo">#FF6D28D9</color>
-    <color name="brand_indigo_dark">#FF4C1D95</color>
-    <color name="brand_indigo_light">#FF8B5CF6</color>
-    <color name="brand_indigo_container">#FFEDE9FE</color>
-    <color name="brand_on_indigo_container">#FF2E1065</color>
+    <!-- Light design tokens. Dark counterparts live in values-night. -->
+    <color name="brand_indigo">#FF4F46E5</color>
+    <color name="brand_indigo_dark">#FF3730A3</color>
+    <color name="brand_indigo_light">#FF818CF8</color>
+    <color name="brand_indigo_container">#FFE0E7FF</color>
+    <color name="brand_on_indigo_container">#FF1E1B4B</color>
 
-    <color name="slate_secondary">#FF505F76</color>
-    <color name="slate_secondary_container">#FFD0E1FB</color>
-    <color name="slate_on_secondary_container">#FF1D283A</color>
-    <color name="slate_muted">#FF596A82</color>
-    <color name="slate_border">#FFCBD5E1</color>
+    <color name="slate_secondary">#FF64748B</color>
+    <color name="slate_secondary_container">#FFE2E8F0</color>
+    <color name="slate_on_secondary_container">#FF1E293B</color>
+    <color name="slate_muted">#FF475569</color>
+    <color name="slate_border">#FF94A3B8</color>
     <color name="slate_divider">#FFE2E8F0</color>
 
-    <color name="tertiary_sky">#FF0EA5E9</color>
-    <color name="tertiary_sky_container">#FFBAE6FD</color>
-    <color name="tertiary_on_sky_container">#FF075985</color>
+    <color name="tertiary_emerald">#FF047857</color>
+    <color name="tertiary_emerald_container">#FFD1FAE5</color>
+    <color name="tertiary_on_emerald_container">#FF064E3B</color>
+    <color name="tertiary_sky">@color/tertiary_emerald</color>
+    <color name="tertiary_sky_container">@color/tertiary_emerald_container</color>
+    <color name="tertiary_on_sky_container">@color/tertiary_on_emerald_container</color>
 
     <color name="background_light">#FFF8FAFC</color>
     <color name="surface_light">#FFFFFFFF</color>
@@ -24,25 +27,24 @@
     <color name="surface_container_low_light">#FFF8FAFC</color>
     <color name="surface_container_light">#FFF1F5F9</color>
     <color name="surface_container_high_light">#FFE2E8F0</color>
+    <color name="surface_container_highest_light">#FFE2E8F0</color>
     <color name="surface_variant_light">#FFF1F5F9</color>
-
     <color name="text_primary_light">#FF0F172A</color>
     <color name="text_secondary_light">#FF475569</color>
 
     <color name="error_red">#FFBA1A1A</color>
-    <color name="error_container_light">#FFFFDAD6</color>
-    <color name="on_error_container_light">#FF93000A</color>
-    <color name="success_emerald">#FF10B981</color>
+    <color name="error_container_light">#FFFEE2E2</color>
+    <color name="on_error_container_light">#FF7F1D1D</color>
+    <color name="success_emerald">@color/tertiary_emerald</color>
 
-    <!-- Stitch design tokens -->
-    <color name="stitch_online_dot">#FF10B981</color>
-    <color name="stitch_offline_dot">#FF94A3B8</color>
-    <color name="stitch_fab_fill">#FF6366F1</color>
-    <color name="stitch_ai_badge_bg">#FFF3E8FF</color>
-    <color name="stitch_ai_badge_stroke">#FFC4B5FD</color>
-    <color name="stitch_ai_badge_text">#FF6D28D9</color>
+    <color name="stitch_online_dot">@color/success_emerald</color>
+    <color name="stitch_offline_dot">#FF64748B</color>
+    <color name="stitch_fab_fill">@color/brand_indigo</color>
+    <color name="stitch_ai_badge_bg">@color/brand_indigo_container</color>
+    <color name="stitch_ai_badge_stroke">@color/brand_indigo_light</color>
+    <color name="stitch_ai_badge_text">@color/brand_on_indigo_container</color>
 
-    <!-- M3 role mapping (light) -->
+    <!-- Material 3 semantic roles. -->
     <color name="colorPrimary">@color/brand_indigo</color>
     <color name="colorOnPrimary">#FFFFFFFF</color>
     <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
@@ -51,10 +53,10 @@
     <color name="colorOnSecondary">#FFFFFFFF</color>
     <color name="colorSecondaryContainer">@color/slate_secondary_container</color>
     <color name="colorOnSecondaryContainer">@color/slate_on_secondary_container</color>
-    <color name="colorTertiary">@color/tertiary_sky</color>
-    <color name="colorOnTertiary">#FF082F49</color>
-    <color name="colorTertiaryContainer">@color/tertiary_sky_container</color>
-    <color name="colorOnTertiaryContainer">@color/tertiary_on_sky_container</color>
+    <color name="colorTertiary">@color/tertiary_emerald</color>
+    <color name="colorOnTertiary">#FFFFFFFF</color>
+    <color name="colorTertiaryContainer">@color/tertiary_emerald_container</color>
+    <color name="colorOnTertiaryContainer">@color/tertiary_on_emerald_container</color>
     <color name="colorError">@color/error_red</color>
     <color name="colorOnError">#FFFFFFFF</color>
     <color name="colorErrorContainer">@color/error_container_light</color>
@@ -64,11 +66,16 @@
     <color name="colorSurface">@color/surface_light</color>
     <color name="colorOnSurface">@color/text_primary_light</color>
     <color name="colorSurfaceVariant">@color/surface_variant_light</color>
+    <color name="colorSurfaceContainerLowest">@color/surface_container_lowest_light</color>
+    <color name="colorSurfaceContainerLow">@color/surface_container_low_light</color>
+    <color name="colorSurfaceContainer">@color/surface_container_light</color>
+    <color name="colorSurfaceContainerHigh">@color/surface_container_high_light</color>
+    <color name="colorSurfaceContainerHighest">@color/surface_container_highest_light</color>
     <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
     <color name="colorOutline">@color/slate_border</color>
     <color name="colorOutlineVariant">@color/slate_divider</color>
 
-    <color name="bubble_mine">#FFEDE9FE</color>
-    <color name="bubble_other">#FFFFFFFF</color>
-    <color name="tick_read">#FF2196F3</color>
+    <color name="bubble_mine">@color/colorPrimary</color>
+    <color name="bubble_other">@color/surface_container_light</color>
+    <color name="tick_read">@color/tertiary_emerald</color>
 </resources>

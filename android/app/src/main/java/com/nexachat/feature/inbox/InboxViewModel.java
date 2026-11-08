@@ -1,8 +1,10 @@
 package com.nexachat.feature.inbox;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
@@ -25,6 +27,9 @@ import javax.inject.Inject;
 @HiltViewModel
 public final class InboxViewModel extends ViewModel {
 
+    private static final String KEY_SELECTED_FILTER = "inbox_selected_filter";
+
+    private final SavedStateHandle savedStateHandle;
     private final ConversationRepository conversationRepository;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<InboxUiState> mutableUiState =
@@ -36,23 +41,48 @@ public final class InboxViewModel extends ViewModel {
 
     @Inject
     public InboxViewModel(
+            SavedStateHandle savedStateHandle,
             ConversationRepository conversationRepository,
             @Nullable TokenStore tokenStore,
             @Nullable Moshi moshi) {
-        this.conversationRepository =
-                Objects.requireNonNull(conversationRepository, "conversationRepository");
+        this(savedStateHandle, conversationRepository);
         start(tokenStore, moshi);
     }
 
     /** Test constructor — no token/JWT resolution. */
+    public InboxViewModel(
+            ConversationRepository conversationRepository,
+            SavedStateHandle savedStateHandle) {
+        this(savedStateHandle, conversationRepository);
+        start(null, null);
+    }
+
+    /** Test constructor — no token/JWT resolution or saved filter state. */
     public InboxViewModel(ConversationRepository conversationRepository) {
+        this(conversationRepository, new SavedStateHandle());
+    }
+
+    private InboxViewModel(
+            SavedStateHandle savedStateHandle,
+            ConversationRepository conversationRepository) {
+        this.savedStateHandle =
+                Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.conversationRepository =
                 Objects.requireNonNull(conversationRepository, "conversationRepository");
-        start(null, null);
+        InboxFilter restoredFilter = InboxFilter.fromSavedValue(
+                savedStateHandle.get(KEY_SELECTED_FILTER));
+        currentState = new InboxUiState().withSelectedFilter(restoredFilter);
+        mutableUiState.setValue(currentState);
     }
 
     public LiveData<InboxUiState> getUiState() {
         return mutableUiState;
+    }
+
+    public void selectFilter(@NonNull InboxFilter filter) {
+        Objects.requireNonNull(filter, "filter");
+        savedStateHandle.set(KEY_SELECTED_FILTER, filter.name());
+        updateState(state -> state.withSelectedFilter(filter));
     }
 
     /** Pulls the authoritative inbox from REST (launch + user refresh). */
