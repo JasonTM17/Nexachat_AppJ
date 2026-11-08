@@ -66,6 +66,41 @@ nexachat:
       local-model: ${NEXACHAT_SUMMARY_LOCAL_LLM_MODEL:qwen2.5:3b}
       local-api-key: ${NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY:local-ollama}
       local-timeout-ms: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:60000}
+  rag:
+    enabled: ${NEXACHAT_RAG_ENABLED:true}
+    embedding:
+      provider: ${NEXACHAT_RAG_EMBEDDING_PROVIDER:lexical}
+      mode: ${NEXACHAT_RAG_EMBEDDING_MODE:openai-compatible}
+      base-url: ${NEXACHAT_RAG_EMBEDDING_BASE_URL:}
+      model: ${NEXACHAT_RAG_EMBEDDING_MODEL:gemini-embedding-001}
+      api-key: ${NEXACHAT_RAG_EMBEDDING_API_KEY:${NEXACHAT_SUMMARY_LLM_API_KEY:}}
+      dim: ${NEXACHAT_RAG_EMBEDDING_DIM:256}
+      timeout-ms: ${NEXACHAT_RAG_EMBEDDING_TIMEOUT_MS:20000}
+      batch-size: ${NEXACHAT_RAG_EMBEDDING_BATCH_SIZE:32}
+    retrieval:
+      max-candidate-messages: ${NEXACHAT_RAG_MAX_CANDIDATE_MESSAGES:5000}
+      lexical-candidate-limit: ${NEXACHAT_RAG_LEXICAL_CANDIDATE_LIMIT:300}
+      lexical-term-limit: ${NEXACHAT_RAG_LEXICAL_TERM_LIMIT:8}
+      vector-candidate-limit: ${NEXACHAT_RAG_VECTOR_CANDIDATE_LIMIT:200}
+      neighbor-radius: ${NEXACHAT_RAG_NEIGHBOR_RADIUS:2}
+      max-context-chars: ${NEXACHAT_RAG_MAX_CONTEXT_CHARS:3000}
+      mmr-limit: ${NEXACHAT_RAG_MMR_LIMIT:12}
+      mmr-lambda: ${NEXACHAT_RAG_MMR_LAMBDA:0.72}
+      rrf-k: ${NEXACHAT_RAG_RRF_K:60}
+      not-found-threshold: ${NEXACHAT_RAG_NOT_FOUND_THRESHOLD:0.18}
+      extractive-threshold: ${NEXACHAT_RAG_EXTRACTIVE_THRESHOLD:0.62}
+      semantic-cache-threshold: ${NEXACHAT_RAG_SEMANTIC_CACHE_THRESHOLD:0.92}
+      max-snippet-chars: ${NEXACHAT_RAG_MAX_SNIPPET_CHARS:280}
+    index:
+      lazy-limit: ${NEXACHAT_RAG_INDEX_LAZY_LIMIT:500}
+      backfill-rate-per-minute: ${NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE:200}
+      cache-max-vectors: ${NEXACHAT_RAG_CACHE_MAX_VECTORS:4096}
+      backfill-enabled: ${NEXACHAT_RAG_BACKFILL_ENABLED:true}
+      backfill-interval-ms: ${NEXACHAT_RAG_BACKFILL_INTERVAL_MS:60000}
+    ask:
+      rate-limit-per-minute: ${NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE:20}
+      rate-limit-per-day: ${NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY:200}
+      cache-ttl-hours: ${NEXACHAT_RAG_ASK_CACHE_TTL_HOURS:24}
   fcm:
     enabled: ${FCM_ENABLED:false}
     project-id: ${FCM_PROJECT_ID:mock-project}
