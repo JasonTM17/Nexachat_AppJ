@@ -39,7 +39,7 @@ Every engineering document in the repository, grouped by domain. Start with
 | [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Design system specification and guidelines |
 | [docs/design/stitch/screens/](design/stitch/screens/) | HTML design references and exported design comps |
 | [docs/media/README.md](media/README.md) | Live emulator Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode UI showcase index |
-| [docs/media/screens/](media/screens/) | Captured Dark & Light Mode showcase (`stitch-01..10`) and core workflow PNGs (`01..17`) |
+| [docs/media/screens/](media/screens/) | Captured Dark & Light Mode showcase and core workflow PNGs (`01..17`) |
 
 ## Contributing & release history
 
