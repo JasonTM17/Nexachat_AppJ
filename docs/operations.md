@@ -64,6 +64,29 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
 
+#### Android client: `google-services.json`
+
+The Android app must be registered in the same Firebase project so it can
+obtain an FCM registration token. The app id is `com.nexachat` and debug builds
+append `.debug`, so the debug application id is `com.nexachat.debug`; register
+both ids if release builds should receive pushes too.
+
+1. Open the Firebase console (<https://console.firebase.google.com/>) and select
+   the project (`nguyenson-58d0b`).
+2. Project settings (gear icon) → **Your apps** → **Add app** → **Android**.
+3. Register `com.nexachat.debug` as the Android package name, then repeat for
+   `com.nexachat`.
+4. Download `google-services.json` and place it at
+   `android/app/google-services.json`. The root `.gitignore` already excludes
+   `google-services.json`, so the file stays out of git unless you decide
+   otherwise; never commit it.
+5. Build and run the app. It requests an FCM token on first launch and registers
+   it through `POST /api/v1/users/device-token`; the server then has a token it
+   can send to.
+
+Without this file the app cannot obtain a token, so the server-side checks above
+pass while no phone ever receives a push.
+
 To verify a setup with one test push:
 
 1. Put the service-account JSON inline in `FCM_SERVICE_ACCOUNT_JSON` (or set it

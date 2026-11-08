@@ -177,14 +177,132 @@ class GoogleHttpFcmGatewayTest {
     }
 
     @Test
-    void invalidArgumentReturnsUnregisteredResult() throws Exception {
+    void invalidArgumentFromFcmErrorRemovesToken() throws Exception {
+        // Real shape for an invalid registration token: Google answers
+        // INVALID_ARGUMENT with an FcmError detail naming the token failure.
         servers.setFcmStatus(400);
-        servers.setFcmResponseBody(
-                "{\"error\":{\"code\":400,\"status\":\"INVALID_ARGUMENT\",\"message\":\"bad token\"}}");
+        servers.setFcmResponseBody("{\"error\":{\"code\":400,"
+                + "\"status\":\"INVALID_ARGUMENT\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"INVALID_ARGUMENT\"}]}}");
 
         PushResult result = send(DEVICE_TOKEN);
 
         assertThat(result.unregistered()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("INVALID_ARGUMENT");
+    }
+
+    @Test
+    void badRequestInvalidArgumentKeepsToken() throws Exception {
+        // A request-shaped INVALID_ARGUMENT (bad data key, oversized payload,
+        // bad TTL) carries a BadRequest detail and no FcmError code: the
+        // registration token itself may still be valid and must not be removed.
+        servers.setFcmStatus(400);
+        servers.setFcmResponseBody("{\"error\":{\"code\":400,"
+                + "\"status\":\"INVALID_ARGUMENT\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.rpc.BadRequest\","
+                + "\"fieldViolations\":[{\"field\":\"message.data[0].value\"}]}]}}");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.unregistered()).isFalse();
+        assertThat(result.errorCode()).isEqualTo("HTTP_400");
+        assertThat(servers.fcmRequests()).hasSize(1);
+    }
+
+    @Test
+    void unregisteredFromNestedErrorCodeRemovesToken() throws Exception {
+        servers.setFcmStatus(404);
+        servers.setFcmResponseBody("{\"error\":{\"code\":404,"
+                + "\"status\":\"NOT_FOUND\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"UNREGISTERED\"}]}}");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.unregistered()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("UNREGISTERED");
+    }
+
+    @Test
+    void senderIdMismatchKeepsToken() throws Exception {
+        // A sender mismatch is a configuration error, not a dead token: Google
+        // says to abort, and removing every token would be destructive.
+        servers.setFcmStatus(403);
+        servers.setFcmResponseBody("{\"error\":{\"code\":403,"
+                + "\"status\":\"PERMISSION_DENIED\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"SENDER_ID_MISMATCH\"}]}}");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.unregistered()).isFalse();
+        assertThat(result.errorCode()).isEqualTo("HTTP_403");
+        assertThat(servers.fcmRequests()).hasSize(1);
+    }
+
+    @Test
+    void quotaExceededIsRetriedAfterRetryAfter() throws Exception {
+        servers.setQuotaResponses(1);
+        servers.setFcmResponseBody("{\"error\":{\"code\":429,"
+                + "\"status\":\"RESOURCE_EXHAUSTED\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"QUOTA_EXCEEDED\"}]}}");
+        servers.setFcmRetryAfter("0");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.success()).isTrue();
+        assertThat(servers.fcmRequests()).hasSize(2);
+    }
+
+    @Test
+    void quotaExceededGivesUpAfterBoundedRetries() throws Exception {
+        servers.setFcmStatus(429);
+        servers.setFcmResponseBody("{\"error\":{\"code\":429,"
+                + "\"status\":\"RESOURCE_EXHAUSTED\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"QUOTA_EXCEEDED\"}]}}");
+        servers.setFcmRetryAfter("0");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.errorCode()).isEqualTo("RESOURCE_EXHAUSTED");
+        assertThat(servers.fcmRequests()).hasSize(3);
+    }
+
+    @Test
+    void unavailableIsRetried() throws Exception {
+        servers.setUnavailableResponses(1);
+        servers.setFcmResponseBody("{\"error\":{\"code\":503,"
+                + "\"status\":\"UNAVAILABLE\","
+                + "\"details\":[{"
+                + "\"@type\":\"type.googleapis.com/google.firebase.fcm.v1.FcmError\","
+                + "\"errorCode\":\"UNAVAILABLE\"}]}}");
+
+        PushResult result = send(DEVICE_TOKEN);
+
+        assertThat(result.success()).isTrue();
+        assertThat(servers.fcmRequests()).hasSize(2);
+    }
+
+    @Test
+    void retryDelayHonoursRetryAfterThenQuotaFloorThenBackoff() {
+        assertThat(gateway.retryDelayMillis("RESOURCE_EXHAUSTED", 0, 5_000L))
+                .isEqualTo(5_000L);
+        assertThat(gateway.retryDelayMillis("RESOURCE_EXHAUSTED", 0, -1L))
+                .isGreaterThanOrEqualTo(60_000L);
+        assertThat(gateway.retryDelayMillis("HTTP_500", 0, -1L))
+                .isLessThan(60_000L);
     }
 
     @Test

@@ -39,6 +39,9 @@ final class FakeGoogleServers implements AutoCloseable {
     private final AtomicLong tokenCounter = new AtomicLong();
     private final AtomicInteger unauthorizedResponsesLeft = new AtomicInteger();
     private final AtomicInteger serverErrorResponsesLeft = new AtomicInteger();
+    private final AtomicInteger quotaResponsesLeft = new AtomicInteger();
+    private volatile int serverErrorStatus = 500;
+    private volatile String fcmRetryAfter;
 
     private volatile long expiresInSeconds = 3600L;
     private volatile int tokenStatus = 200;
@@ -134,7 +137,21 @@ final class FakeGoogleServers implements AutoCloseable {
     }
 
     void setServerErrorResponses(int count) {
+        this.serverErrorStatus = 500;
         this.serverErrorResponsesLeft.set(count);
+    }
+
+    void setUnavailableResponses(int count) {
+        this.serverErrorStatus = 503;
+        this.serverErrorResponsesLeft.set(count);
+    }
+
+    void setQuotaResponses(int count) {
+        this.quotaResponsesLeft.set(count);
+    }
+
+    void setFcmRetryAfter(String value) {
+        this.fcmRetryAfter = value;
     }
 
     List<String> tokenRequestBodies() {
@@ -201,10 +218,15 @@ final class FakeGoogleServers implements AutoCloseable {
         if (unauthorizedResponsesLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
             status = 401;
         } else if (serverErrorResponsesLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
-            status = 500;
+            status = serverErrorStatus;
+        } else if (quotaResponsesLeft.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+            status = 429;
         }
         byte[] payload = fcmResponseBody.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
+        if (fcmRetryAfter != null) {
+            exchange.getResponseHeaders().set("Retry-After", fcmRetryAfter);
+        }
         exchange.sendResponseHeaders(status, payload.length);
         exchange.getResponseBody().write(payload);
         exchange.close();
