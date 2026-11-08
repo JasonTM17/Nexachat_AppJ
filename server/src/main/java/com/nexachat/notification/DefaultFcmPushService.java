@@ -14,6 +14,7 @@ import java.util.UUID;
 public class DefaultFcmPushService implements FcmPushService {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultFcmPushService.class);
+
     private final UserDeviceTokenRepository tokenRepository;
     private final FcmGateway fcmGateway;
     private final DeviceTokenService deviceTokenService;
