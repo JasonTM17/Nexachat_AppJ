@@ -23,12 +23,30 @@ import java.util.concurrent.TimeUnit;
  * FCM v1 gateway that authenticates with a Google service-account OAuth2 access
  * token. Selected only when {@code nexachat.fcm.enabled=true}; the constructor
  * fails fast when the credentials are missing or malformed.
+ *
+ * <p>Google error responses are classified from the structured
+ * {@code error.details[].errorCode} and {@code error.status} fields instead of
+ * substring matching, because one HTTP status and status word cover both a dead
+ * registration token and a malformed request payload: a {@code BAD_REQUEST}
+ * detail means the token may still be valid, while an {@code FcmError} detail
+ * names the token-level failure that requires removing it.
  */
 @Component
 @ConditionalOnProperty(name = "nexachat.fcm.enabled", havingValue = "true")
 public class GoogleHttpFcmGateway implements FcmGateway {
 
     private static final Logger log = LoggerFactory.getLogger(GoogleHttpFcmGateway.class);
+
+    /** FCM-specific detail type; its {@code errorCode} is the actionable code. */
+    private static final String FCM_ERROR_DETAIL_TYPE = "google.firebase.fcm.v1.FcmError";
+    /** Request-shaped error detail: invalid field, payload, TTL or parameters. */
+    private static final String BAD_REQUEST_DETAIL_TYPE = "google.rpc.BadRequest";
+
+    /** Google requires at least a one-minute initial delay before retrying a quota rejection. */
+    private static final long QUOTA_MIN_RETRY_MILLIS = 60_000L;
+    private static final long MAX_RETRY_MILLIS = 5_000L;
+    private static final long MAX_RETRY_AFTER_MILLIS = 300_000L;
+    private static final long NO_RETRY_AFTER = -1L;
 
     private final FcmTokenProvider tokenProvider;
     private final URI apiUri;
@@ -99,7 +117,8 @@ public class GoogleHttpFcmGateway implements FcmGateway {
             return CompletableFuture.completedFuture(PushResult.failure("TOKEN_UNAVAILABLE", false));
         }
 
-        return execute(accessToken, payload).thenCompose(result -> {
+        return execute(accessToken, payload).thenCompose(outcome -> {
+            PushResult result = outcome.result();
             if (result.success() || result.unregistered()) {
                 return CompletableFuture.completedFuture(result);
             }
@@ -113,7 +132,8 @@ public class GoogleHttpFcmGateway implements FcmGateway {
                 }
             }
             if (isTransient(result.errorCode()) && transientAttempt < maxRetries) {
-                long delayMillis = retryDelay(transientAttempt);
+                long delayMillis = retryDelayMillis(result.errorCode(), transientAttempt,
+                        outcome.retryAfterMillis());
                 return CompletableFuture
                         .supplyAsync(() -> null,
                                 CompletableFuture.delayedExecutor(delayMillis, TimeUnit.MILLISECONDS))
@@ -123,7 +143,7 @@ public class GoogleHttpFcmGateway implements FcmGateway {
         });
     }
 
-    private CompletableFuture<PushResult> execute(String accessToken, String payload) {
+    private CompletableFuture<SendOutcome> execute(String accessToken, String payload) {
         HttpRequest request;
         try {
             request = HttpRequest.newBuilder(apiUri)
@@ -134,7 +154,8 @@ public class GoogleHttpFcmGateway implements FcmGateway {
                     .build();
         } catch (Exception ex) {
             log.warn("FCM send failed: request could not be built");
-            return CompletableFuture.completedFuture(PushResult.failure("REQUEST_BUILD_ERROR", false));
+            return CompletableFuture.completedFuture(
+                    new SendOutcome(PushResult.failure("REQUEST_BUILD_ERROR", false), NO_RETRY_AFTER));
         }
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))
@@ -144,9 +165,11 @@ public class GoogleHttpFcmGateway implements FcmGateway {
                             Thread.currentThread().interrupt();
                         }
                         log.debug("FCM send transport failure: {}", ex.getClass().getSimpleName());
-                        return PushResult.failure("TRANSPORT_" + ex.getClass().getSimpleName(), false);
+                        return new SendOutcome(
+                                PushResult.failure("TRANSPORT_" + ex.getClass().getSimpleName(), false),
+                                NO_RETRY_AFTER);
                     }
-                    return classify(response);
+                    return new SendOutcome(classify(response), retryAfterMillis(response));
                 });
     }
 
@@ -159,14 +182,87 @@ public class GoogleHttpFcmGateway implements FcmGateway {
             log.warn("FCM send rejected with HTTP 401 (access token rejected)");
             return PushResult.failure("HTTP_401", false);
         }
-        String body = response.body();
-        if (status == 404 || containsMarker(body, "UNREGISTERED")
-                || containsMarker(body, "NOT_FOUND") || containsMarker(body, "INVALID_ARGUMENT")) {
+
+        GoogleError error = parseError(response.body());
+        if (error.fcmErrorCode() != null) {
+            return switch (error.fcmErrorCode()) {
+                case "UNREGISTERED", "INVALID_ARGUMENT" -> {
+                    log.warn("FCM token no longer valid (HTTP {}), removing it", status);
+                    yield PushResult.unregistered(error.fcmErrorCode());
+                }
+                case "QUOTA_EXCEEDED", "RESOURCE_EXHAUSTED" ->
+                        PushResult.failure("RESOURCE_EXHAUSTED", false);
+                case "UNAVAILABLE", "INTERNAL" -> PushResult.failure(error.fcmErrorCode(), false);
+                default -> PushResult.failure("HTTP_" + status, false);
+            };
+        }
+        if (error.hasFcmErrorDetail() || error.badRequest()) {
+            // Either an FCM detail without a usable code, or a request-shaped
+            // error: the registration token itself may still be valid.
+            log.warn("FCM send rejected as a bad request (HTTP {}), device token kept", status);
+            return PushResult.failure("HTTP_" + status, false);
+        }
+        if (status == 404 || "NOT_FOUND".equals(error.status())) {
             log.warn("FCM token no longer valid (HTTP {}), removing it", status);
             return PushResult.unregistered("UNREGISTERED");
         }
+        if (status == 429 || "RESOURCE_EXHAUSTED".equals(error.status())) {
+            return PushResult.failure("RESOURCE_EXHAUSTED", false);
+        }
         log.warn("FCM send failed with HTTP {}", status);
         return PushResult.failure("HTTP_" + status, false);
+    }
+
+    /**
+     * Reads only the actionable fields of a Google error body. The message text
+     * is deliberately ignored: it is not logged and never leaves this method.
+     */
+    private GoogleError parseError(String body) {
+        if (body == null || body.isBlank()) {
+            return GoogleError.NONE;
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(body);
+        } catch (Exception ex) {
+            return GoogleError.NONE;
+        }
+        if (root == null || !root.isObject()) {
+            return GoogleError.NONE;
+        }
+        JsonNode error = root.get("error");
+        if (error == null || !error.isObject()) {
+            return GoogleError.NONE;
+        }
+
+        String fcmErrorCode = null;
+        boolean hasFcmErrorDetail = false;
+        boolean badRequest = false;
+        JsonNode details = error.get("details");
+        if (details != null && details.isArray()) {
+            for (JsonNode detail : details) {
+                if (detail == null || !detail.isObject()) {
+                    continue;
+                }
+                String type = text(detail.get("@type"));
+                if (type == null) {
+                    continue;
+                }
+                if (type.endsWith(FCM_ERROR_DETAIL_TYPE)) {
+                    hasFcmErrorDetail = true;
+                    if (fcmErrorCode == null) {
+                        fcmErrorCode = text(detail.get("errorCode"));
+                    }
+                } else if (type.endsWith(BAD_REQUEST_DETAIL_TYPE)) {
+                    badRequest = true;
+                }
+            }
+        }
+        return new GoogleError(fcmErrorCode, hasFcmErrorDetail, text(error.get("status")), badRequest);
+    }
+
+    private static String text(JsonNode node) {
+        return node != null && node.isTextual() ? node.asText() : null;
     }
 
     private String messageId(HttpResponse<String> response) {
@@ -182,22 +278,51 @@ public class GoogleHttpFcmGateway implements FcmGateway {
         return "fcm-" + System.currentTimeMillis();
     }
 
-    private static boolean containsMarker(String body, String marker) {
-        return body != null && body.contains(marker);
+    /** Retry-After is honoured in delta-seconds; the HTTP-date form is ignored. */
+    private static long retryAfterMillis(HttpResponse<String> response) {
+        return response.headers().firstValue("Retry-After")
+                .map(GoogleHttpFcmGateway::parseRetryAfter)
+                .filter(value -> value >= 0)
+                .orElse(NO_RETRY_AFTER);
+    }
+
+    private static long parseRetryAfter(String raw) {
+        try {
+            long seconds = Long.parseLong(raw.trim());
+            return seconds < 0 ? NO_RETRY_AFTER : seconds * 1000L;
+        } catch (Exception ex) {
+            return NO_RETRY_AFTER;
+        }
     }
 
     private static boolean isTransient(String errorCode) {
         if (errorCode == null) {
             return false;
         }
-        return errorCode.startsWith("HTTP_5") || errorCode.startsWith("TRANSPORT_");
+        return errorCode.startsWith("HTTP_5")
+                || errorCode.startsWith("TRANSPORT_")
+                || errorCode.equals("RESOURCE_EXHAUSTED")
+                || errorCode.equals("UNAVAILABLE")
+                || errorCode.equals("INTERNAL");
     }
 
-    private long retryDelay(int attempt) {
-        long base = Math.min(retryBaseDelayMillis, 5_000L);
+    /**
+     * Delay before the next attempt. A {@code Retry-After} hint wins when
+     * present; otherwise a quota rejection honours Google's one-minute floor and
+     * other transient errors use the bounded exponential backoff.
+     */
+    long retryDelayMillis(String errorCode, int attempt, long retryAfterMillis) {
+        if (retryAfterMillis >= 0) {
+            return Math.min(retryAfterMillis, MAX_RETRY_AFTER_MILLIS);
+        }
+        long base = Math.min(retryBaseDelayMillis, MAX_RETRY_MILLIS);
         long exponential = base * (1L << Math.min(attempt, 10));
         long jitter = ThreadLocalRandom.current().nextLong(base + 1);
-        return Math.min(exponential + jitter, 5_000L);
+        long delay = Math.min(exponential + jitter, MAX_RETRY_MILLIS);
+        if ("RESOURCE_EXHAUSTED".equals(errorCode)) {
+            delay = Math.max(delay, QUOTA_MIN_RETRY_MILLIS);
+        }
+        return delay;
     }
 
     private static URI resolveApiUrl(FcmProperties properties) {
@@ -206,6 +331,16 @@ public class GoogleHttpFcmGateway implements FcmGateway {
             return FcmEndpoints.apiUrl(override);
         }
         return FcmEndpoints.googleSendUrl(properties.getProjectId().strip());
+    }
+
+    /** Internal send outcome; the retry hint never leaves the gateway. */
+    private record SendOutcome(PushResult result, long retryAfterMillis) {
+    }
+
+    /** Structured view of a Google error body; only the actionable fields are kept. */
+    private record GoogleError(String fcmErrorCode, boolean hasFcmErrorDetail,
+                               String status, boolean badRequest) {
+        static final GoogleError NONE = new GoogleError(null, false, null, false);
     }
 
     @Override
