@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.media.AttachmentBlurHashRegistry;
+import com.nexachat.core.media.ImageCompressor;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.ProgressRequestBody;
@@ -23,7 +25,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import okhttp3.MediaType;
@@ -47,6 +51,7 @@ public final class AttachmentRepository {
     public static final String PART_FILE = "file";
     public static final String CACHE_DIR_NAME = "attachments";
 
+    private static final Logger LOGGER = Logger.getLogger("AttachmentRepository");
     private static final String DEFAULT_MIME = "application/octet-stream";
     private static final int READ_BUFFER = 64 * 1024;
     private static final String DEFAULT_FILENAME = "attachment";
@@ -54,13 +59,22 @@ public final class AttachmentRepository {
 
     private final AttachmentApi attachmentApi;
     private final Context context;
+    private final ImageCompressor imageCompressor;
 
     @Inject
     public AttachmentRepository(
             @NonNull AttachmentApi attachmentApi,
-            @ApplicationContext @NonNull Context context) {
+            @ApplicationContext @NonNull Context context,
+            @NonNull ImageCompressor imageCompressor) {
         this.attachmentApi = Objects.requireNonNull(attachmentApi, "attachmentApi");
         this.context = Objects.requireNonNull(context, "context");
+        this.imageCompressor = Objects.requireNonNull(imageCompressor, "imageCompressor");
+    }
+
+    public AttachmentRepository(
+            @NonNull AttachmentApi attachmentApi,
+            @ApplicationContext @NonNull Context context) {
+        this(attachmentApi, context, new ImageCompressor(context));
     }
 
     @NonNull
@@ -100,8 +114,35 @@ public final class AttachmentRepository {
             }
 
             String mime = resolveMime(metadata.getMimeType(), mimeHint);
-            MediaType mediaType = MediaType.parse(mime);
-            RequestBody byteBody = RequestBody.create(bytes, mediaType);
+            ImageCompressor.Result optimized = null;
+            try {
+                optimized = imageCompressor.compress(bytes, mime, metadata.getDisplayName());
+            } catch (ImageCompressor.PrivacyException exception) {
+                LOGGER.warning("Image location metadata could not be removed; upload stopped");
+                emitFailure(emitter, new ApiError.Unknown(ERROR_UNREADABLE));
+                return;
+            } catch (IOException | RuntimeException exception) {
+                // Optimizations are best-effort; the original remains the send fallback.
+                LOGGER.warning("Image optimization failed; using the original without a hash");
+            }
+
+            String uploadMime = optimized == null ? mime : optimized.mimeType();
+            String uploadName = optimized == null
+                    ? metadata.getDisplayName()
+                    : optimized.fileName();
+            MediaType mediaType = MediaType.parse(uploadMime);
+            File temporaryUpload = optimized == null ? null : optimized.file();
+            byte[] uploadBytes = optimized == null
+                    ? bytes
+                    : optimized.bytes() == null ? bytes : optimized.bytes();
+            RequestBody byteBody = temporaryUpload == null
+                    ? RequestBody.create(uploadBytes, mediaType)
+                    : RequestBody.create(temporaryUpload, mediaType);
+            RequestBody blurHashPart = optimized == null || optimized.blurHash() == null
+                    ? null
+                    : RequestBody.create(
+                            optimized.blurHash().getBytes(StandardCharsets.UTF_8),
+                            MediaType.parse("text/plain"));
             ProgressRequestBody requestBody = new ProgressRequestBody(
                     byteBody,
                     (written, total) -> {
@@ -113,15 +154,17 @@ public final class AttachmentRepository {
                     });
             MultipartBody.Part part = MultipartBody.Part.createFormData(
                     PART_FILE,
-                    metadata.getDisplayName() == null
+                    uploadName == null
                             ? DEFAULT_FILENAME
-                            : metadata.getDisplayName(),
+                            : uploadName,
                     requestBody);
 
             DisposableCall.subscribe(
-                    ApiResult.safeApiCall(attachmentApi.upload(part))
+                    ApiResult.safeApiCall(attachmentApi.upload(part, blurHashPart))
                             .subscribeOn(Schedulers.io()),
-                    emitter);
+                    emitter,
+                    temporaryUpload,
+                    optimized == null ? null : optimized.blurHash());
         }, BackpressureStrategy.BUFFER).subscribeOn(Schedulers.io());
     }
 
@@ -303,7 +346,7 @@ public final class AttachmentRepository {
             sanitized.append(safe ? character : '_');
         }
         String result = sanitized.toString();
-        return result.isBlank() ? DEFAULT_FILENAME : result;
+        return isBlank(result) ? DEFAULT_FILENAME : result;
     }
 
     @NonNull
@@ -321,13 +364,25 @@ public final class AttachmentRepository {
 
         private static void subscribe(
                 @NonNull Single<ApiResult<AttachmentDto>> call,
-                @NonNull FlowableEmitter<AttachmentUploadEvent> emitter) {
-            emitter.setDisposable(call.subscribe(
+                @NonNull FlowableEmitter<AttachmentUploadEvent> emitter,
+                @Nullable File temporaryUpload,
+                @Nullable String localBlurHash) {
+            Single<ApiResult<AttachmentDto>> upload = call;
+            if (temporaryUpload != null) {
+                upload = upload.doOnTerminate(() -> deleteTemporaryUpload(temporaryUpload))
+                        .doFinally(() -> deleteTemporaryUpload(temporaryUpload));
+            }
+            emitter.setDisposable(upload.subscribe(
                     result -> {
                         if (result instanceof ApiResult.Success<?> success) {
                             emitter.onNext(new AttachmentUploadEvent.Progress(1f));
+                            AttachmentDto attachment = (AttachmentDto) success.getBody();
+                            if (attachment.getBlurHash() == null && localBlurHash != null) {
+                                attachment = attachment.withBlurHash(localBlurHash);
+                            }
+                            AttachmentBlurHashRegistry.remember(attachment);
                             emitter.onNext(new AttachmentUploadEvent.Uploaded(
-                                    (AttachmentDto) success.getBody()));
+                                    attachment));
                         } else {
                             emitter.onNext(new AttachmentUploadEvent.Failed(
                                     apiFailure(result)));
@@ -339,6 +394,11 @@ public final class AttachmentRepository {
                                 new ApiError.Network(error.getMessage())));
                         emitter.onComplete();
                     }));
+        }
+
+        private static void deleteTemporaryUpload(File temporaryUpload) {
+            //noinspection ResultOfMethodCallIgnored
+            temporaryUpload.delete();
         }
 
         @NonNull

@@ -21,12 +21,27 @@ public final class AttachmentDto {
     @Nullable private final Integer height;
     @Nullable private final Long durationMs;
     @Nullable private final String url;
+    @Nullable private final String blurHash;
 
     public AttachmentDto() {
-        this(null, null, null, null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null, null, null, null);
     }
 
     public AttachmentDto(@Nullable String id, @Nullable String storageKey, @Nullable String originalName, @Nullable String mimeType, @Nullable Long sizeBytes, @Nullable Integer width, @Nullable Integer height, @Nullable Long durationMs, @Nullable String url) {
+        this(id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url, null);
+    }
+
+    public AttachmentDto(
+            @Nullable String id,
+            @Nullable String storageKey,
+            @Nullable String originalName,
+            @Nullable String mimeType,
+            @Nullable Long sizeBytes,
+            @Nullable Integer width,
+            @Nullable Integer height,
+            @Nullable Long durationMs,
+            @Nullable String url,
+            @Nullable String blurHash) {
         this.id = id;
         this.storageKey = storageKey;
         this.originalName = originalName;
@@ -36,6 +51,7 @@ public final class AttachmentDto {
         this.height = height;
         this.durationMs = durationMs;
         this.url = url;
+        this.blurHash = blurHash;
     }
 
     public AttachmentDto(String id, String originalName, String mimeType) {
@@ -82,6 +98,10 @@ public final class AttachmentDto {
         return url;
     }
 
+    @Nullable public String getBlurHash() {
+        return blurHash;
+    }
+
 
     @Nullable
     public String contentUrl() {
@@ -110,7 +130,24 @@ public final class AttachmentDto {
     }
 
     public AttachmentDto withMimeType(String mimeType) {
-        return new AttachmentDto(id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url);
+        return new AttachmentDto(
+                id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url,
+                blurHash);
+    }
+
+    public AttachmentDto withBlurHash(@Nullable String blurHash) {
+        return new AttachmentDto(
+                id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url,
+                blurHash);
+    }
+
+    /** Returns the Room-safe representation; placeholder hashes remain process-local only. */
+    public AttachmentDto withoutBlurHash() {
+        return blurHash == null
+                ? this
+                : new AttachmentDto(
+                        id, storageKey, originalName, mimeType, sizeBytes, width, height,
+                        durationMs, url, null);
     }
 
     @NonNull
@@ -150,11 +187,14 @@ public final class AttachmentDto {
                 && Objects.equals(width, that.width)
                 && Objects.equals(height, that.height)
                 && Objects.equals(durationMs, that.durationMs)
-                && Objects.equals(url, that.url);
+                && Objects.equals(url, that.url)
+                && Objects.equals(blurHash, that.blurHash);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url);
+        return Objects.hash(
+                id, storageKey, originalName, mimeType, sizeBytes, width, height, durationMs, url,
+                blurHash);
     }
 }
