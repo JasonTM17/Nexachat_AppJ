@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nexachat.summary.SummaryFallbackReason;
 import com.nexachat.summary.SummaryProviderException;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -31,18 +32,46 @@ public final class LlmClient {
     private static final int MAX_RESPONSE_BYTES = 256 * 1024;
 
     public record TargetConfig(URI endpoint, String apiKey, String model, int timeoutMs, int maxOutputTokens) {
+
+        @Override
+        public String toString() {
+            return "TargetConfig[endpoint=" + endpoint + ", apiKey=***, model=" + model
+                    + ", timeoutMs=" + timeoutMs + ", maxOutputTokens=" + maxOutputTokens + "]";
+        }
+    }
+
+    /**
+     * A validated completion plus the provider that produced it. The label is
+     * additive metadata only: it never carries a key or a model identifier.
+     */
+    public record LlmCallResult(
+            String content,
+            String model,
+            Integer promptTokens,
+            Integer completionTokens,
+            boolean fallbackUsed) {
     }
 
     record LlmCompletion(String content, Integer promptTokens, Integer completionTokens) {
     }
 
     private final LlmProperties properties;
+    private final LlmFallbackProperties fallbackProperties;
     private final ObjectMapper objectMapper;
     private final ThreadPoolExecutor executor;
     private final HttpClient httpClient;
 
     public LlmClient(LlmProperties properties, ObjectMapper objectMapper) {
+        this(properties, new LlmFallbackProperties(), objectMapper);
+    }
+
+    @Autowired
+    public LlmClient(
+            LlmProperties properties,
+            LlmFallbackProperties fallbackProperties,
+            ObjectMapper objectMapper) {
         this.properties = properties;
+        this.fallbackProperties = fallbackProperties;
         this.objectMapper = objectMapper;
         this.executor = new ThreadPoolExecutor(
                 2,
@@ -53,7 +82,8 @@ public final class LlmClient {
                 daemonThreads(),
                 new ThreadPoolExecutor.AbortPolicy());
         this.executor.allowCoreThreadTimeOut(true);
-        int maxTimeout = Math.max(1, Math.max(properties.getTimeoutMs(), properties.getLocalTimeoutMs()));
+        int maxTimeout = Math.max(1, Math.max(properties.getTimeoutMs(),
+                Math.max(properties.getLocalTimeoutMs(), fallbackProperties.getTimeoutMs())));
         this.httpClient = HttpClient.newBuilder()
                 .executor(executor)
                 .connectTimeout(Duration.ofMillis(maxTimeout))
@@ -85,6 +115,23 @@ public final class LlmClient {
                 properties.getMaxOutputTokens());
     }
 
+    /**
+     * The fallback provider target, or {@code null} when it is disabled or
+     * unusable. The fallback reuses the primary output-token budget because
+     * it receives the same prompt.
+     */
+    public TargetConfig fallbackTarget() {
+        if (!fallbackProperties.isUsable()) {
+            return null;
+        }
+        return new TargetConfig(
+                fallbackProperties.endpoint(),
+                fallbackProperties.getApiKey(),
+                fallbackProperties.getModel(),
+                fallbackProperties.getTimeoutMs(),
+                properties.getMaxOutputTokens());
+    }
+
     String complete(Prompt prompt) {
         return completeWithUsage(prompt).content();
     }
@@ -98,6 +145,46 @@ public final class LlmClient {
             throw unavailable();
         }
         return completeWithTarget(prompt, target);
+    }
+
+    /**
+     * Calls the primary target and, only when the primary fails with a
+     * retryable error, tries the fallback once. A non-retryable primary
+     * failure (bad request, auth, malformed output) is rethrown unchanged.
+     */
+    public LlmCallResult completeWithFallback(Prompt prompt, TargetConfig primary, TargetConfig fallback) {
+        if (primary == null) {
+            if (fallback == null) {
+                throw unavailable();
+            }
+            return completeFallback(prompt, fallback);
+        }
+        try {
+            return toResult(completeWithTarget(prompt, primary), primary, false);
+        } catch (SummaryProviderException exception) {
+            if (exception.isRetryable() && fallback != null) {
+                return completeFallback(prompt, fallback);
+            }
+            throw exception;
+        }
+    }
+
+    /** Plain-text variant of {@link #completeWithFallback} for the ask path. */
+    public LlmCallResult completeTextWithFallback(
+            String systemMessage, String userMessage, TargetConfig primary, TargetConfig fallback) {
+        Prompt prompt = new Prompt(systemMessage, userMessage, java.util.Map.of(),
+                java.util.Map.of(), java.util.List.of(), com.nexachat.summary.SummaryLanguage.EN);
+        return completeWithFallback(prompt, primary, fallback);
+    }
+
+    LlmCallResult completeWithTargetResult(Prompt prompt, TargetConfig target) {
+        return toResult(completeWithTarget(prompt, target), target, false);
+    }
+
+    public LlmCallResult completeTextWithTargetResult(String systemMessage, String userMessage, TargetConfig target) {
+        Prompt prompt = new Prompt(systemMessage, userMessage, java.util.Map.of(),
+                java.util.Map.of(), java.util.List.of(), com.nexachat.summary.SummaryLanguage.EN);
+        return completeWithTargetResult(prompt, target);
     }
 
     /**
@@ -152,7 +239,7 @@ public final class LlmClient {
                 }
                 if (status < 200 || status >= 300) {
                     closeQuietly(response.body());
-                    throw httpError();
+                    throw httpError(isRetryableStatus(status));
                 }
                 byte[] responseBody = readResponse(response.body());
                 return parseCompletion(responseBody);
@@ -164,10 +251,10 @@ public final class LlmClient {
             } catch (SummaryProviderException exception) {
                 throw exception;
             } catch (IOException | RuntimeException exception) {
-                throw httpError();
+                throw httpError(true);
             }
         }
-        throw httpError();
+        throw httpError(true);
     }
 
     @PreDestroy
@@ -257,7 +344,7 @@ public final class LlmClient {
         } catch (JsonProcessingException exception) {
             throw badOutput();
         } catch (IOException exception) {
-            throw httpError();
+            throw httpError(true);
         }
     }
 
@@ -324,14 +411,31 @@ public final class LlmClient {
     }
 
     private static SummaryProviderException timeout() {
-        return new SummaryProviderException(SummaryFallbackReason.LLM_TIMEOUT);
+        return new SummaryProviderException(SummaryFallbackReason.LLM_TIMEOUT, true);
     }
 
-    private static SummaryProviderException httpError() {
-        return new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
+    private static SummaryProviderException httpError(boolean retryable) {
+        return new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR, retryable);
     }
 
     private static SummaryProviderException badOutput() {
         return new SummaryProviderException(SummaryFallbackReason.LLM_BAD_OUTPUT);
+    }
+
+    private static boolean isRetryableStatus(int status) {
+        return status == 429 || (status >= 500 && status <= 599);
+    }
+
+    private static LlmCallResult toResult(LlmCompletion completion, TargetConfig target, boolean fallbackUsed) {
+        return new LlmCallResult(
+                completion.content(),
+                target.model(),
+                completion.promptTokens(),
+                completion.completionTokens(),
+                fallbackUsed);
+    }
+
+    private LlmCallResult completeFallback(Prompt prompt, TargetConfig fallback) {
+        return toResult(completeWithTarget(prompt, fallback), fallback, true);
     }
 }

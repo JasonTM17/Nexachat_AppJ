@@ -5,8 +5,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Locale;
 
 @Component
 @ConfigurationProperties(prefix = "nexachat.summary.llm")
@@ -160,66 +158,11 @@ public class LlmProperties {
     }
 
     public URI localEndpoint() {
-        if (localBaseUrl == null || localBaseUrl.isBlank()) {
-            return null;
-        }
-        try {
-            URI base = new URI(localBaseUrl.trim());
-            String scheme = base.getScheme() == null ? "" : base.getScheme().toLowerCase(Locale.ROOT);
-            String host = base.getHost();
-            if (host == null || host.isBlank() || base.getUserInfo() != null
-                    || base.getQuery() != null || base.getFragment() != null) {
-                return null;
-            }
-            if (!scheme.equals("http") && !scheme.equals("https")) {
-                return null;
-            }
-            String path = base.getPath() == null ? "" : base.getPath();
-            while (path.endsWith("/")) {
-                path = path.substring(0, path.length() - 1);
-            }
-            if (!path.endsWith("/chat/completions")) {
-                path += "/chat/completions";
-            }
-            return new URI(scheme, null, host, base.getPort(), path, null, null);
-        } catch (URISyntaxException | IllegalArgumentException exception) {
-            return null;
-        }
+        return LlmEndpoints.chatCompletions(localBaseUrl, true);
     }
 
     URI endpoint() {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            return null;
-        }
-        try {
-            URI base = new URI(baseUrl.trim());
-            String scheme = base.getScheme() == null ? "" : base.getScheme().toLowerCase(Locale.ROOT);
-            String host = base.getHost();
-            if (host == null || host.isBlank() || base.getUserInfo() != null
-                    || base.getQuery() != null || base.getFragment() != null) {
-                return null;
-            }
-            if (!scheme.equals("https") && !(scheme.equals("http") && isLoopback(host))) {
-                return null;
-            }
-            String path = base.getPath() == null ? "" : base.getPath();
-            while (path.endsWith("/")) {
-                path = path.substring(0, path.length() - 1);
-            }
-            if (!path.endsWith("/chat/completions")) {
-                path += "/chat/completions";
-            }
-            return new URI(scheme, null, host, base.getPort(), path, null, null);
-        } catch (URISyntaxException | IllegalArgumentException exception) {
-            return null;
-        }
-    }
-
-    private static boolean isLoopback(String host) {
-        return host.equalsIgnoreCase("localhost")
-                || host.equals("127.0.0.1")
-                || host.equals("::1")
-                || host.equals("[::1]");
+        return LlmEndpoints.chatCompletions(baseUrl, false);
     }
 
     @Override

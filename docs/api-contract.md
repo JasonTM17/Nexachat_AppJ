@@ -411,7 +411,7 @@ Response `200`:
     { "messageId": "uuid", "seq": 12, "snippet": "The server migration is ..." }
   ],
   "mode": "EXTRACTIVE",
-  "usage": { "llmCalls": 0, "inputChars": 0, "cached": false }
+  "usage": { "llmCalls": 0, "inputChars": 0, "cached": false, "provider": null }
 }
 ```
 
@@ -419,8 +419,9 @@ Response `200`:
 call), `EXTRACTIVE` (one cited message answers a lookup-like question) or `LLM`
 (retrieved, budgeted context). `answer` is `null` for `NOT_FOUND`; `citations`
 is never null and every cited message belongs to the conversation. `usage`
-reports the number of LLM calls, the message characters sent to the LLM and
-whether the answer came from the cache.
+reports the number of LLM calls, the message characters sent to the LLM,
+whether the answer came from the cache, and `provider` (`primary` or `fallback`
+for an `LLM` answer, otherwise null).
 
 Errors use the standard envelope: `400 VALIDATION_FAILED`, `403 NOT_MEMBER`,
 `404 CONVERSATION_NOT_FOUND`, `429 RATE_LIMITED` (ask bucket: 20/minute and
@@ -428,9 +429,9 @@ Errors use the standard envelope: `400 VALIDATION_FAILED`, `403 NOT_MEMBER`,
 the endpoint never answers `503` for a provider problem.
 
 `GET /api/v1/rag/stats` (Bearer) returns aggregate RAG counters only:
-`{requests, cacheHits, notFound, extractive, llmCalls, llmFailures, inputChars,
-meanInputChars, embeddingCalls, embeddingFailures, indexedMessages}`. No message
-text, questions or vectors are exposed.
+`{requests, cacheHits, notFound, extractive, llmCalls, llmFallbackCalls,
+llmFailures, inputChars, meanInputChars, embeddingCalls, embeddingFailures,
+indexedMessages}`. No message text, questions or vectors are exposed.
 
 ## WebSocket / STOMP
 

@@ -125,7 +125,8 @@ public class SummaryProviderSelector {
             ProviderResult result,
             String generatedBy,
             SummaryFallbackReason fallbackReason) {
-        return new SummaryGeneration(result.content(), result.language(), generatedBy, result.model(), fallbackReason);
+        return new SummaryGeneration(result.content(), result.language(), generatedBy, result.model(),
+                fallbackReason, result.provider());
     }
 
     private static SummaryProvider findProvider(List<SummaryProvider> providers, String id) {

@@ -16,6 +16,7 @@ public class RagStats {
     private final LongAdder notFound = new LongAdder();
     private final LongAdder extractive = new LongAdder();
     private final LongAdder llmCalls = new LongAdder();
+    private final LongAdder llmFallbackCalls = new LongAdder();
     private final LongAdder llmFailures = new LongAdder();
     private final LongAdder inputChars = new LongAdder();
     private final LongAdder embeddingCalls = new LongAdder();
@@ -39,7 +40,14 @@ public class RagStats {
     }
 
     public void recordLlmCall(int chars) {
+        recordLlmCall(chars, false);
+    }
+
+    public void recordLlmCall(int chars, boolean fallback) {
         llmCalls.increment();
+        if (fallback) {
+            llmFallbackCalls.increment();
+        }
         inputChars.add(Math.max(0, chars));
     }
 
@@ -68,6 +76,7 @@ public class RagStats {
                 notFound.sum(),
                 extractive.sum(),
                 calls,
+                llmFallbackCalls.sum(),
                 llmFailures.sum(),
                 inputChars.sum(),
                 meanInputChars,
@@ -82,6 +91,7 @@ public class RagStats {
         notFound.reset();
         extractive.reset();
         llmCalls.reset();
+        llmFallbackCalls.reset();
         llmFailures.reset();
         inputChars.reset();
         embeddingCalls.reset();
@@ -95,6 +105,7 @@ public class RagStats {
             long notFound,
             long extractive,
             long llmCalls,
+            long llmFallbackCalls,
             long llmFailures,
             long inputChars,
             double meanInputChars,

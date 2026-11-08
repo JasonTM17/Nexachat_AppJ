@@ -13,6 +13,7 @@ public record SummaryResponse(
         SummaryLanguage language,
         String generatedBy,
         String model,
+        String provider,
         String fallbackReason,
         boolean cached,
         Instant createdAt,
@@ -49,6 +50,7 @@ public record SummaryResponse(
                 generated.language(),
                 generated.generatedBy(),
                 generated.model(),
+                generated.provider(),
                 generated.fallbackReason() == null ? null : generated.fallbackReason().name(),
                 cached,
                 createdAt,
@@ -63,7 +65,7 @@ public record SummaryResponse(
 
     public SummaryResponse asCached() {
         return new SummaryResponse(summaryId, conversationId, fromSeq, toSeq, messageCount,
-                language, generatedBy, model, fallbackReason, true, createdAt, overview,
+                language, generatedBy, model, provider, fallbackReason, true, createdAt, overview,
                 keyPoints, decisions, actionItems, questions, topics, participants);
     }
 

@@ -76,11 +76,11 @@ public class SummaryService {
             SummaryGeneration generatedThisRequest) {
         if (prepared.provider().id().equals("LOCAL")) {
             return new SummaryGeneration(cachedGeneration.content(), cachedGeneration.language(), "LOCAL", null,
-                    prepared.fallbackReason());
+                    prepared.fallbackReason(), null);
         }
         if (generatedThisRequest != null && generatedThisRequest.fallbackReason() != null) {
             return new SummaryGeneration(cachedGeneration.content(), cachedGeneration.language(), "LOCAL", null,
-                    generatedThisRequest.fallbackReason());
+                    generatedThisRequest.fallbackReason(), null);
         }
         return cachedGeneration;
     }
