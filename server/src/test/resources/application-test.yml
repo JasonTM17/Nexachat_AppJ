@@ -13,3 +13,12 @@ spring:
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
       - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
       - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+
+# Unit tests run without a database or Flyway. Disable the separate management
+# context so no port is bound; the health test overrides this with a real port.
+management:
+  server:
+    port: -1
+  endpoint:
+    health:
+      validate-group-membership: false

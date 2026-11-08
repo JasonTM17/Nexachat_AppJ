@@ -18,12 +18,40 @@ spring:
       max-request-size: 25MB
 
 management:
+  # Actuator runs on a separate loopback-bound port. Only health is exposed by
+  # default; metrics and prometheus require MANAGEMENT_EXPOSURE to opt in.
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
   endpoints:
     web:
       exposure:
-        include: health
+        include: ${MANAGEMENT_EXPOSURE:health}
+  endpoint:
+    health:
+      # Component names and statuses only; details (paths, versions, errors)
+      # stay hidden from the public endpoint.
+      show-details: never
+      show-components: always
+      group:
+        liveness:
+          include: ping
+        readiness:
+          include: db,flyway,diskSpace
+  health:
+    diskspace:
+      path: ${nexachat.storage.root}
+      threshold: ${MANAGEMENT_DISK_THRESHOLD:1GB}
+  prometheus:
+    metrics:
+      export:
+        # The Prometheus registry must exist for /actuator/prometheus to be
+        # available; the exposure flag above still controls visibility.
+        enabled: ${MANAGEMENT_PROMETHEUS_ENABLED:true}
 
 nexachat:
+  observability:
+    slow-query-threshold-ms: ${NEXACHAT_SLOW_QUERY_THRESHOLD_MS:500}
   jwt:
     secret: ${JWT_SECRET:dev-secret-change-me-at-least-64-chars-long-0123456789}
     access-ttl-seconds: 900
