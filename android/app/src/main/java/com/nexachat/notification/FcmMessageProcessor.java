@@ -13,6 +13,7 @@ import com.nexachat.call.ui.IncomingCallActivity;
 import com.nexachat.data.SyncEngine;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.Map.Entry;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -24,6 +25,7 @@ import javax.inject.Singleton;
 @Singleton
 public final class FcmMessageProcessor {
 
+    private static final int MAX_PAYLOAD_BYTES = 512;
     public static final String TYPE_CALL_INVITE = "CALL_INVITE";
     public static final String TYPE_NEW_MESSAGE = "NEW_MESSAGE";
 
@@ -74,7 +76,7 @@ public final class FcmMessageProcessor {
     }
 
     public void processDataPayload(@Nullable Map<String, String> data) {
-        if (data == null || data.isEmpty()) {
+        if (data == null || data.isEmpty() || exceedsPayloadLimit(data)) {
             return;
         }
         String type = data.get("type");
@@ -83,6 +85,44 @@ public final class FcmMessageProcessor {
         } else if (TYPE_NEW_MESSAGE.equalsIgnoreCase(type)) {
             handleNewMessage(data);
         }
+    }
+
+    private static boolean exceedsPayloadLimit(Map<String, String> data) {
+        int byteCount = 0;
+        for (Entry<String, String> entry : data.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                return true;
+            }
+            byteCount = addUtf8Bytes(entry.getKey(), byteCount);
+            if (byteCount > MAX_PAYLOAD_BYTES) {
+                return true;
+            }
+            byteCount = addUtf8Bytes(entry.getValue(), byteCount);
+            if (byteCount > MAX_PAYLOAD_BYTES) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int addUtf8Bytes(String value, int currentCount) {
+        int count = currentCount;
+        for (int i = 0; i < value.length() && count <= MAX_PAYLOAD_BYTES; i++) {
+            char current = value.charAt(i);
+            if (current <= 0x7F) {
+                count++;
+            } else if (current <= 0x7FF) {
+                count += 2;
+            } else if (Character.isHighSurrogate(current)
+                    && i + 1 < value.length()
+                    && Character.isLowSurrogate(value.charAt(i + 1))) {
+                count += 4;
+                i++;
+            } else {
+                count += 3;
+            }
+        }
+        return count;
     }
 
     private void handleCallInvite(@NonNull Map<String, String> data) {
@@ -98,14 +138,21 @@ public final class FcmMessageProcessor {
         }
         long serverTs = 0L;
         String rawTs = data.get("serverTs");
+        if (rawTs == null) {
+            rawTs = data.get("timestamp");
+        }
         if (rawTs != null) {
             try {
                 serverTs = Long.parseLong(rawTs);
-            } catch (NumberFormatException ignored) {
+                if (serverTs <= 0L) {
+                    return;
+                }
+            } catch (NumberFormatException malformedTimestamp) {
+                return;
             }
         }
 
-        if (callId == null || conversationId == null || callerId == null) {
+        if (!hasText(callId) || !hasText(conversationId) || !hasText(callerId)) {
             return;
         }
 
@@ -122,8 +169,25 @@ public final class FcmMessageProcessor {
     }
 
     private void handleNewMessage(@NonNull Map<String, String> data) {
+        String conversationId = data.get("conversationId");
+        String messageId = data.get("messageId");
+        String rawSeq = data.get("seq");
+        if (!hasText(conversationId) || !hasText(messageId) || !hasText(rawSeq)) {
+            return;
+        }
+        try {
+            if (Long.parseLong(rawSeq) <= 0L) {
+                return;
+            }
+        } catch (NumberFormatException malformedSequence) {
+            return;
+        }
         syncEngine.sync()
                 .subscribeOn(Schedulers.io())
                 .subscribe(() -> { }, throwable -> { });
+    }
+
+    private static boolean hasText(@Nullable String value) {
+        return value != null && !value.isBlank();
     }
 }

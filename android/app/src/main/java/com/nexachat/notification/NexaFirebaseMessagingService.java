@@ -24,6 +24,7 @@ public class NexaFirebaseMessagingService extends FirebaseMessagingService {
     @InstallIn(SingletonComponent.class)
     public interface FcmServiceEntryPoint {
         FcmMessageProcessor fcmMessageProcessor();
+        DeviceTokenRegistrationManager deviceTokenRegistrationManager();
     }
 
     @Override
@@ -52,7 +53,14 @@ public class NexaFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
-        // Token refresh handling if required
+        try {
+            DeviceTokenRegistrationManager manager = resolveRegistrationManager(this);
+            if (manager != null) {
+                manager.onNewToken(token).subscribe(() -> { }, ignored -> { });
+            }
+        } catch (RuntimeException ignored) {
+            // A token callback must not crash if the app graph is not ready.
+        }
     }
 
     private static FcmMessageProcessor resolveProcessor(Context context) {
@@ -60,6 +68,16 @@ public class NexaFirebaseMessagingService extends FirebaseMessagingService {
             FcmServiceEntryPoint entryPoint = EntryPointAccessors.fromApplication(
                     context.getApplicationContext(), FcmServiceEntryPoint.class);
             return entryPoint.fcmMessageProcessor();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static DeviceTokenRegistrationManager resolveRegistrationManager(Context context) {
+        try {
+            FcmServiceEntryPoint entryPoint = EntryPointAccessors.fromApplication(
+                    context.getApplicationContext(), FcmServiceEntryPoint.class);
+            return entryPoint.deviceTokenRegistrationManager();
         } catch (RuntimeException e) {
             return null;
         }

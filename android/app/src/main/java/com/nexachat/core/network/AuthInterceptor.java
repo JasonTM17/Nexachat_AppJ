@@ -29,6 +29,9 @@ public final class AuthInterceptor implements Interceptor {
         if (AuthApi.isPublicAuthPath(request.url().encodedPath())) {
             return chain.proceed(request);
         }
+        if (request.header(HEADER_AUTHORIZATION) != null) {
+            return chain.proceed(request);
+        }
 
         final Tokens tokens;
         try {

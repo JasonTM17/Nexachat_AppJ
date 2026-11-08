@@ -104,6 +104,12 @@ public final class NetworkModule {
 
     @Provides
     @Singleton
+    public static DeviceTokenApi provideDeviceTokenApi(Retrofit retrofit) {
+        return retrofit.create(DeviceTokenApi.class);
+    }
+
+    @Provides
+    @Singleton
     public static AttachmentApi provideAttachmentApi(Retrofit retrofit) {
         return retrofit.create(AttachmentApi.class);
     }
