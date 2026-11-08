@@ -96,4 +96,11 @@ class RedactorTest {
         assertThat(Redactor.redact(null)).isNull();
         assertThat(Redactor.redact("")).isEmpty();
     }
+
+    @Test
+    void doesNotMaskTheWordAuthorizationAfterBearer() {
+        String message = "STOMP CONNECT rejected: missing Bearer Authorization header";
+
+        assertThat(Redactor.redact(message)).isEqualTo(message);
+    }
 }

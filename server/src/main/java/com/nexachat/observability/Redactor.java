@@ -16,7 +16,7 @@ public final class Redactor {
 
     /** {@code Authorization: Bearer <token>} (JWTs, FCM access tokens, API keys). */
     private static final Pattern BEARER =
-            Pattern.compile("(?i)Bearer\\s+[A-Za-z0-9\\-._~+/]+=*");
+            Pattern.compile("(?i)Bearer\\s+(?!Authorization\\b)[A-Za-z0-9\\-._~+/]+=*");
 
     /** Compact JWS JWTs, independent of the header. */
     private static final Pattern JWT =
