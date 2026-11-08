@@ -51,6 +51,8 @@ import java.io.File;
 import com.nexachat.feature.chat.adapter.MessageListAdapter;
 import com.nexachat.feature.chat.adapter.MessageListItem;
 import com.nexachat.feature.chat.adapter.MessageListMapper;
+import com.nexachat.feature.ask.AskBottomSheetFragment;
+import com.nexachat.feature.ask.AskCitationJump;
 import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
 import com.nexachat.summary.SummaryResponse;
@@ -149,6 +151,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (getChildFragmentManager().findFragmentByTag("summary_sheet")
                 instanceof com.nexachat.feature.summary.SummaryBottomSheetFragment existingSheet) {
             attachSummaryListener(existingSheet);
+        }
+        if (getChildFragmentManager().findFragmentByTag("ask_sheet")
+                instanceof AskBottomSheetFragment existingAskSheet) {
+            attachAskListener(existingAskSheet);
         }
         inboxViewModel.refresh();
     }
@@ -556,7 +562,34 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showMoreOptions() {
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setItems(new CharSequence[]{getString(R.string.summary_overflow_action)}, (dialog, which) -> showSummary()).show();
+                .setItems(new CharSequence[]{
+                        getString(R.string.ask_action),
+                        getString(R.string.summary_overflow_action)
+                }, (dialog, which) -> {
+                    if (which == 0) {
+                        showAsk();
+                    } else if (which == 1) {
+                        showSummary();
+                    }
+                }).show();
+    }
+
+    private void showAsk() {
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag("ask_sheet") != null) {
+            return;
+        }
+        AskBottomSheetFragment sheet = AskBottomSheetFragment.newInstance(conversationId);
+        attachAskListener(sheet);
+        sheet.show(getChildFragmentManager(), "ask_sheet");
+    }
+
+    private void attachAskListener(@NonNull AskBottomSheetFragment sheet) {
+        sheet.setListener(target -> {
+            if (viewModel != null) {
+                viewModel.jumpToMessage(target.getMessageId());
+            }
+        });
     }
 
     private void showSummary() {

@@ -4,6 +4,8 @@ import com.nexachat.summary.AiConsentApi;
 import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryApi;
 import com.nexachat.summary.SummaryRepository;
+import com.nexachat.feature.ask.AskApi;
+import com.nexachat.feature.ask.AskRepository;
 import android.os.Handler;
 import android.os.Looper;
 import dagger.Module;
@@ -53,5 +55,17 @@ public final class SummaryModule {
             AiConsentApi api,
             @Named("summary_main") Executor mainExecutor) {
         return new AiConsentRepository(api, mainExecutor);
+    }
+
+    @Provides
+    @Singleton
+    public static AskApi provideAskApi(Retrofit retrofit) {
+        return retrofit.create(AskApi.class);
+    }
+
+    @Provides
+    @Singleton
+    public static AskRepository provideAskRepository(AskApi api) {
+        return new AskRepository(api);
     }
 }
