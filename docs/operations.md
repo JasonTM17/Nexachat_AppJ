@@ -90,17 +90,20 @@ To verify a setup with one test push:
 ```sh
 docker compose up -d db app
 docker compose ps
-curl -fsS http://localhost:8080/actuator/health
+curl -fsS http://127.0.0.1:8081/actuator/health
 ```
 
 | Service | Host → container | Use |
 |---|---:|---|
-| App | `8080 → 8080` | REST API, STOMP WebSocket, health check |
+| App | `8080 → 8080` | REST API, STOMP WebSocket |
+| Management | `8081 → 8081` (loopback) | Health, metrics, Prometheus |
 | PostgreSQL | `5433 → 5432` | Local tools and integration tests |
 
-The app also serves STOMP WebSocket at `ws://localhost:8080/ws`. Only the health actuator endpoint is exposed. The
-named `pgdata` and `app-uploads` volumes persist database rows and uploads
-across container replacement.
+The app also serves STOMP WebSocket at `ws://localhost:8080/ws`. Only the
+health actuator endpoint is exposed by default; metrics and Prometheus stay
+behind `MANAGEMENT_EXPOSURE` (see [Observability](#observability)). The named
+`pgdata` and `app-uploads` volumes persist database rows and uploads across
+container replacement.
 
 Stop and resume the services without deleting those volumes:
 
@@ -125,6 +128,140 @@ docker compose logs --tail=200 db
 
 Do not paste raw logs into public issues; they may contain account identifiers
 or request metadata.
+
+## Observability
+
+The server exposes three observability surfaces, all on a separate
+loopback-bound management port so the public API port never serves actuator
+endpoints:
+
+| Surface | Default | How to enable |
+|---|---|---|
+| Health (`/actuator/health`) | Exposed | Always |
+| Metrics (`/actuator/metrics`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics` |
+| Prometheus (`/actuator/prometheus`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics,prometheus` |
+
+The management port defaults to `8081` and binds to `127.0.0.1`:
+
+```yaml
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+```
+
+Do not bind the management port to a public interface without adding
+authentication in front of it. The Compose health check must use the
+management port (`http://127.0.0.1:8081/actuator/health`), not `8080`.
+
+### Health
+
+`/actuator/health` is public and returns component names and statuses only
+(`show-details: never`). It includes:
+
+- `db` — a `SELECT 1` validation query against the configured DataSource.
+- `flyway` — Flyway validation plus the applied version and pending count
+  (details hidden).
+- `diskSpace` — free space on the upload directory (`nexachat.storage.root`)
+  with a configurable threshold (`MANAGEMENT_DISK_THRESHOLD`, default `1GB`).
+- `ping` — liveness.
+
+Two groups are exposed:
+
+- `/actuator/health/liveness` — `ping`.
+- `/actuator/health/readiness` — `db`, `flyway`, `diskSpace`.
+
+### Metrics
+
+Metrics use Micrometer. Tags are bounded; no user ids, phone numbers, email
+addresses, message text or tokens are used as tag values. The names are:
+
+| Name | Type | Tags |
+|---|---|---|
+| `nexachat.messages.sent` | counter | `type`, `outcome` (`CREATED`/`REPLAY`) |
+| `nexachat.outbox.replays` | counter | — |
+| `nexachat.idempotency.replays` | counter | — |
+| `nexachat.stomp.events` | counter | `event` (`CONNECT`/`SUBSCRIBE`/`UNSUBSCRIBE`/`DISCONNECT`) |
+| `nexachat.delta_sync.duration` | timer | `outcome` (`SUCCESS`/`ERROR`) |
+| `nexachat.delta_sync.response_bytes` | summary | `size_bucket` (`<1KB`, `1KB-10KB`, `10KB-100KB`, `100KB-1MB`, `>1MB`) |
+| `nexachat.push.sends` | counter | `result` (`SUCCESS`/`FAILURE`/`UNREGISTERED`/`ERROR`) |
+| `nexachat.call.transitions` | counter | `action`, `to`, `reason` |
+| `nexachat.rag.requests` | counter | `mode` (`CACHE`/`EXTRACTIVE`/`LLM`/`NOT_FOUND`), `provider` |
+| `nexachat.summary.requests` | counter | `provider`, `mode`, `fallback` |
+| `nexachat.llm.duration` | timer | `source` (`rag`/`summary`), `provider`, `outcome`, `fallback` |
+| `nexachat.ratelimit.rejections` | counter | `reason` (rule prefix) |
+| `nexachat.auth.failures` | counter | `reason` (`TOKEN_EXPIRED`/`TOKEN_INVALID`/`UNAUTHORIZED`/`FORBIDDEN`) |
+| `nexachat.repository.calls` | timer | `method`, `outcome` |
+| `nexachat.rag.stats.*` | counters | aggregate RAG counts (requests, cache hits, LLM calls/failures, embeddings, indexed messages) |
+
+`http.server.requests`, JVM, HikariCP and process metrics come from
+Spring Boot Actuator automatically.
+
+### Scraping
+
+Prometheus scrapes the management port (loopback only by default). In Compose,
+map the port to the host loopback if you need local scraping:
+
+```yaml
+ports:
+  - "127.0.0.1:8081:8081"
+```
+
+```yaml
+scrape_configs:
+  - job_name: nexachat
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["127.0.0.1:8081"]
+```
+
+### Alerts
+
+Example alerts (also in `tools/observability/prometheus-alerts.yml`):
+
+```promql
+# 5xx rate above 1% over 5 minutes
+sum(rate(http_server_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
+  / sum(rate(http_server_requests_seconds_count[5m])) > 0.01
+
+# delta-sync p95 above 2 seconds
+histogram_quantile(0.95,
+  sum(rate(nexachat_delta_sync_duration_seconds_bucket[5m])) by (le)) > 2
+
+# push failure rate above 5%
+sum(rate(nexachat_push_sends_total{result!="SUCCESS"}[15m]))
+  / sum(rate(nexachat_push_sends_total[15m])) > 0.05
+
+# LLM fallback rate above 20%
+sum(rate(nexachat_llm_duration_seconds_count{outcome="FAILURE"}[15m]))
+  / sum(rate(nexachat_llm_duration_seconds_count[15m])) > 0.20
+```
+
+### Structured JSON logs
+
+Set `SPRING_PROFILES_ACTIVE=prod,json-logs` (or add `json-logs` to the active
+profiles) to emit one JSON object per line:
+
+```json
+{"timestamp":"2026-11-08T12:00:00Z","level":"INFO","logger":"com.nexachat.auth.AuthService","thread":"http-nio-8080-exec-1","traceId":"6f1c2e0e-...","message":"Registered new account"}
+```
+
+The `traceId` comes from `X-Request-Id` (accepted when it matches
+`[A-Za-z0-9._-]{1,64}`, otherwise generated) and is echoed on the response.
+The JSON layout masks bearer tokens, JWTs, phone numbers, FCM registration
+tokens, API keys and `content`/`body`/`text`/`message` fields before writing.
+The same redaction is applied to exception text.
+
+### Slow repository calls
+
+Repository calls slower than `nexachat.observability.slow-query-threshold-ms`
+(default `500`) are logged at WARN with the method name only:
+
+```
+Slow repository call MessageRepository.findRowsAfter took 812 ms
+```
+
+Arguments are never logged, because they can carry user data or message text.
 
 ## Backup and restore
 

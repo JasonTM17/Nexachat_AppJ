@@ -1,0 +1,67 @@
+# Example Prometheus alert rules for the NexaChat server.
+#
+# These are starting points, not a finished monitoring policy. Adjust the
+# thresholds to the deployment's traffic and scrape interval. Apply with:
+#   promtool check rules prometheus-alerts.yml
+# and load through your Prometheus rule_files entry.
+groups:
+  - name: nexachat-errors
+    rules:
+      - alert: NexaChatHighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{outcome="SERVER_ERROR"}[5m]))
+            / sum(rate(http_server_requests_seconds_count[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: NexaChat 5xx rate is above 1%
+          description: "The 5xx share of HTTP requests has been above 1% for 5 minutes."
+
+  - name: nexachat-performance
+    rules:
+      - alert: NexaChatDeltaSyncSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nexachat_delta_sync_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Delta-sync p95 latency is above 2 seconds
+          description: "p95 of nexachat_delta_sync_duration has been above 2s for 10 minutes."
+
+  - name: nexachat-dependencies
+    rules:
+      - alert: NexaChatPushFailures
+        expr: |
+          sum(rate(nexachat_push_sends_total{result!="SUCCESS"}[15m]))
+            / sum(rate(nexachat_push_sends_total[15m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Push failure rate is above 5%
+          description: "More than 5% of push sends have failed for 15 minutes."
+
+      - alert: NexaChatLlmFallbackHigh
+        expr: |
+          sum(rate(nexachat_llm_duration_seconds_count{outcome="FAILURE"}[15m]))
+            / sum(rate(nexachat_llm_duration_seconds_count[15m])) > 0.20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: LLM fallback rate is above 20%
+          description: "More than 20% of LLM calls have failed or fallen back for 15 minutes."
+
+      - alert: NexaChatDatabaseSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nexachat_repository_calls_seconds_bucket{outcome="SUCCESS"}[5m])) by (le)) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Repository p95 latency is above 500 ms
+          description: "p95 of repository calls has been above 500ms for 10 minutes."
