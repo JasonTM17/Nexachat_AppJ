@@ -35,7 +35,7 @@
     <!-- Inbox -->
     <string name="inbox_title">Chats</string>
     <string name="inbox_empty">No conversations yet</string>
-    <string name="inbox_search_hint">Search chats, people, tags...</string>
+    <string name="inbox_search_hint">Search chats, people, tags…</string>
     <string name="inbox_active_now_header">ACTIVE NOW</string>
     <string name="inbox_view_all">View All</string>
     <string name="inbox_filter_all">All</string>
@@ -170,7 +170,7 @@
     <string name="message_deleted">This message was deleted</string>
 
     <!-- In-Chat Search -->
-    <string name="search_in_chat_placeholder">Search in conversation...</string>
+    <string name="search_in_chat_placeholder">Search in conversation…</string>
     <string name="search_in_chat_no_results">No messages found</string>
     <string name="search_in_chat_error">Could not search messages</string>
     <string name="search_in_chat_too_short">Type at least 2 characters</string>
@@ -180,7 +180,7 @@
 
     <!-- Forward Picker -->
     <string name="forward_title">Forward message</string>
-    <string name="forward_search_placeholder">Search conversations...</string>
+    <string name="forward_search_placeholder">Search conversations…</string>
     <string name="forward_send">Send</string>
     <string name="forward_no_matches">No conversations match</string>
 
@@ -217,5 +217,10 @@
     <string name="voice_duration_progress">%1$s / %2$s</string>
     <string name="voice_message_accessibility">Voice message, %1$s of %2$s, %3$s</string>
     <string name="voice_zero_duration">0:00</string>
+
+    <!-- Static audit sweep strings -->
+    <string name="auth_workspace_badge">✦ NEXACHAT WORKSPACE</string>
+    <string name="splash_tagline">✦ SECURE AI MESSAGING</string>
+    <string name="voice_recording_duration_zero">00:00</string>
 
 </resources>

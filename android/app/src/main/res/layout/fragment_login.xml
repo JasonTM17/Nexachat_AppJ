@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
@@ -41,7 +42,7 @@
                         android:letterSpacing="0.08"
                         android:paddingHorizontal="12dp"
                         android:paddingVertical="4dp"
-                        android:text="✦ NEXACHAT WORKSPACE"
+                        android:text="@string/auth_workspace_badge"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
@@ -51,6 +52,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
+                        android:accessibilityHeading="true"
+                        tools:targetApi="p"
                         android:text="@string/app_name"
                         android:textAppearance="?attr/textAppearanceHeadlineLarge"
                         android:textColor="?attr/colorOnSurface"
@@ -86,7 +89,11 @@
                                     android:id="@+id/phoneInput"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
-                                    android:inputType="phone" />
+                                    android:autofillHints="phone"
+                                    android:imeOptions="actionNext"
+                                    android:importantForAutofill="yes"
+                                    android:inputType="phone"
+                                    android:nextFocusDown="@id/passwordInput" />
                             </com.google.android.material.textfield.TextInputLayout>
 
                             <com.google.android.material.textfield.TextInputLayout
@@ -107,6 +114,9 @@
                                     android:id="@+id/passwordInput"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
+                                    android:autofillHints="password"
+                                    android:imeOptions="actionDone"
+                                    android:importantForAutofill="yes"
                                     android:inputType="textPassword" />
                             </com.google.android.material.textfield.TextInputLayout>
 

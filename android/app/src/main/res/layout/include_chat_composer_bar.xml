@@ -14,8 +14,8 @@
 
     <ImageButton
         android:id="@+id/attachButton"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:background="@drawable/bg_date_separator"
         android:backgroundTint="?attr/colorSurfaceVariant"
         android:contentDescription="@string/cd_attach"
@@ -65,7 +65,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:fontFamily="sans-serif-medium"
-            android:text="00:00"
+            android:text="@string/voice_recording_duration_zero"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorError" />
 
@@ -82,8 +82,8 @@
 
     <ImageButton
         android:id="@+id/sendButton"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:background="@drawable/bg_unread_badge"
         android:contentDescription="@string/cd_send"
         android:padding="10dp"
@@ -93,8 +93,8 @@
 
     <ImageButton
         android:id="@+id/micButton"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:background="@drawable/bg_unread_badge"
         android:contentDescription="@string/cd_record_voice"
         android:padding="10dp"

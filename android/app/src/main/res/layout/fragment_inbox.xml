@@ -40,6 +40,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="10dp"
+                    android:accessibilityHeading="true"
+                    tools:targetApi="p"
                     android:text="@string/app_name"
                     android:textColor="?attr/colorOnSurface"
                     android:textSize="20sp"
@@ -68,9 +70,9 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="2dp"
-                        android:text="AI"
+                        android:text="@string/summary_badge_ai"
                         android:textColor="?attr/colorPrimary"
-                        android:textSize="10sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
                 </LinearLayout>
             </LinearLayout>
@@ -81,12 +83,13 @@
                 android:layout_gravity="end|center_vertical"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
+                android:paddingStart="4dp"
                 android:paddingEnd="4dp">
 
                 <ImageButton
                     android:id="@+id/themeButton"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/settings_theme_title"
                     android:src="@drawable/ic_theme_mode"
@@ -94,8 +97,8 @@
 
                 <ImageButton
                     android:id="@+id/contactsButton"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/contacts_title"
                     android:src="@drawable/ic_people"
@@ -103,8 +106,8 @@
 
                 <ImageButton
                     android:id="@+id/searchButton"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/search_title"
                     android:src="@drawable/ic_search"
@@ -112,8 +115,8 @@
 
                 <ImageButton
                     android:id="@+id/profileButton"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="@string/profile_title"
                     android:src="@drawable/ic_account_circle"
@@ -138,7 +141,8 @@
 
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/min_touch_target"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:paddingHorizontal="16dp">
@@ -322,6 +326,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:baselineAligned="false"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 

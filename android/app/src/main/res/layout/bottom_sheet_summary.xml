@@ -80,7 +80,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:drawableStart="@drawable/ic_lock"
+                    app:drawableStartCompat="@drawable/ic_lock"
                     android:drawablePadding="4dp"
                     android:paddingHorizontal="6dp"
                     android:paddingVertical="2dp"
@@ -175,12 +175,14 @@
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/dialog_ai_consent_dismiss" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/summaryConsentConfirm"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/dialog_ai_consent_confirm" />
             </LinearLayout>
         </LinearLayout>
@@ -260,6 +262,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_xs"
+                android:minHeight="@dimen/min_touch_target"
                 android:text="@string/summary_action_copy"
                 app:icon="@drawable/ic_content_copy"
                 app:iconGravity="textStart" />
@@ -270,6 +273,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/space_xs"
                 android:layout_weight="1"
+                android:minHeight="@dimen/min_touch_target"
                 android:text="@string/summary_action_share"
                 app:icon="@drawable/ic_send"
                 app:iconGravity="textStart" />

@@ -10,13 +10,13 @@
     <color name="slate_secondary">#FF505F76</color>
     <color name="slate_secondary_container">#FFD0E1FB</color>
     <color name="slate_on_secondary_container">#FF1D283A</color>
-    <color name="slate_muted">#FF64748B</color>
+    <color name="slate_muted">#FF596A82</color>
     <color name="slate_border">#FFCBD5E1</color>
     <color name="slate_divider">#FFE2E8F0</color>
 
     <color name="tertiary_sky">#FF0EA5E9</color>
     <color name="tertiary_sky_container">#FFBAE6FD</color>
-    <color name="tertiary_on_sky_container">#FF0369A1</color>
+    <color name="tertiary_on_sky_container">#FF075985</color>
 
     <color name="background_light">#FFF8FAFC</color>
     <color name="surface_light">#FFFFFFFF</color>
@@ -52,7 +52,7 @@
     <color name="colorSecondaryContainer">@color/slate_secondary_container</color>
     <color name="colorOnSecondaryContainer">@color/slate_on_secondary_container</color>
     <color name="colorTertiary">@color/tertiary_sky</color>
-    <color name="colorOnTertiary">#FFFFFFFF</color>
+    <color name="colorOnTertiary">#FF082F49</color>
     <color name="colorTertiaryContainer">@color/tertiary_sky_container</color>
     <color name="colorOnTertiaryContainer">@color/tertiary_on_sky_container</color>
     <color name="colorError">@color/error_red</color>
