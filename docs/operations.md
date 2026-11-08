@@ -311,7 +311,7 @@ addresses, message text or tokens are used as tag values. The names are:
 | `nexachat.outbox.replays` | counter | — |
 | `nexachat.idempotency.replays` | counter | — |
 | `nexachat.stomp.events` | counter | `event` (`CONNECT`/`SUBSCRIBE`/`UNSUBSCRIBE`/`DISCONNECT`) |
-| `nexachat.delta_sync.duration` | timer | `outcome` (`SUCCESS`/`ERROR`) |
+| `nexachat.delta_sync.duration` | timer (histogram buckets) | `outcome` (`SUCCESS`/`ERROR`) |
 | `nexachat.delta_sync.response_bytes` | summary | `size_bucket` (`<1KB`, `1KB-10KB`, `10KB-100KB`, `100KB-1MB`, `>1MB`) |
 | `nexachat.push.sends` | counter | `result` (`SUCCESS`/`FAILURE`/`UNREGISTERED`/`ERROR`) |
 | `nexachat.call.transitions` | counter | `action`, `to`, `reason` |

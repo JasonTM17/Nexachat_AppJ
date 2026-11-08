@@ -57,11 +57,11 @@ groups:
 
       - alert: NexaChatDatabaseSlow
         expr: |
-          histogram_quantile(0.95,
-            sum(rate(nexachat_repository_calls_seconds_bucket{outcome="SUCCESS"}[5m])) by (le)) > 0.5
+          sum(rate(nexachat_repository_calls_seconds_sum{outcome="SUCCESS"}[5m])) by (method)
+            / sum(rate(nexachat_repository_calls_seconds_count{outcome="SUCCESS"}[5m])) by (method) > 0.5
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: Repository p95 latency is above 500 ms
-          description: "p95 of repository calls has been above 500ms for 10 minutes."
+          summary: Repository average latency is above 500 ms
+          description: "Average repository call latency has been above 500ms for 10 minutes."
