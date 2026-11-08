@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Real-database health content: db, flyway and the upload-dir disk probe must
- * all be present and UP, and the Prometheus endpoint must expose the NexaChat
- * metric names.
+ * all be present and UP. The Prometheus endpoint stays behind authentication
+ * (the management port is loopback-only).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("it")
