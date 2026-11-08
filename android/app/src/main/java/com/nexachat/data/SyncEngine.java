@@ -215,11 +215,8 @@ public final class SyncEngine {
                     }
                 }
 
-                // 5. Monotonically advance watermark
-                if (delta.getMaxSeq() > 0) {
-                    conversationDao.bumpPeerDeliveredSeq(conversationId, delta.getMaxSeq()).blockingAwait();
-                    conversationDao.bumpPeerReadSeq(conversationId, delta.getMaxSeq()).blockingAwait();
-                }
+                // 5. Peer receipt watermarks advance ONLY from the peer's own read/delivered
+                //    frames; a delta bundle says nothing about what the peer has read.
             }
         });
     }
