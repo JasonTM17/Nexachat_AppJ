@@ -32,7 +32,7 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       STORAGE_ROOT: ${STORAGE_ROOT:-/app/data/uploads}
-      # Cloud LLM Tier (DeepSeek Cloud)
+      # Cloud LLM Tier (primary: Gemini via its OpenAI-compatible endpoint)
       NEXACHAT_SUMMARY_LLM_ENABLED: ${NEXACHAT_SUMMARY_LLM_ENABLED:-false}
       NEXACHAT_SUMMARY_LLM_BASE_URL: ${NEXACHAT_SUMMARY_LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
       NEXACHAT_SUMMARY_LLM_MODEL: ${NEXACHAT_SUMMARY_LLM_MODEL:-gemini-3.1-flash-lite}
@@ -40,7 +40,7 @@ services:
       # Fallback cloud LLM tier (tried once when the primary fails retryably)
       NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED: ${NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED:-false}
       NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL: ${NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL:-https://api.deepseek.com}
-      NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:-deepseek-v4.1-flash}
+      NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:-deepseek-flash}
       NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY: ${NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY:-}
       NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS: ${NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS:-30000}
       # Local Server Model Tier (Ollama / vLLM / local server model)

@@ -15,7 +15,7 @@ class LlmFallbackPropertiesTest {
         assertThat(properties.hasApiKey()).isFalse();
         assertThat(properties.isUsable()).isFalse();
         assertThat(properties.getBaseUrl()).isEqualTo("https://api.deepseek.com");
-        assertThat(properties.getModel()).isEqualTo("deepseek-v4.1-flash");
+        assertThat(properties.getModel()).isEqualTo("deepseek-flash");
     }
 
     @Test
@@ -61,7 +61,7 @@ class LlmFallbackPropertiesTest {
         properties.setEnabled(true);
         properties.setApiKey("test-only-key");
         properties.setBaseUrl(baseUrl);
-        properties.setModel("deepseek-v4.1-flash");
+        properties.setModel("deepseek-flash");
         properties.setTimeoutMs(5_000);
         return properties;
     }

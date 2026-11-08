@@ -17,7 +17,7 @@ public class LlmFallbackProperties {
 
     private boolean enabled;
     private String baseUrl = "https://api.deepseek.com";
-    private String model = "deepseek-v4.1-flash";
+    private String model = "deepseek-flash";
     private String apiKey = "";
     private int timeoutMs = 30_000;
 

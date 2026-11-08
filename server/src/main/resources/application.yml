@@ -54,8 +54,8 @@ nexachat:
       min-participants: ${NEXACHAT_SUMMARY_COMPLEXITY_MIN_PARTICIPANTS:4}
     llm:
       enabled: ${NEXACHAT_SUMMARY_LLM_ENABLED:false}
-      base-url: ${NEXACHAT_SUMMARY_LLM_BASE_URL:https://api.deepseek.com}
-      model: ${NEXACHAT_SUMMARY_LLM_MODEL:deepseek-flash}
+      base-url: ${NEXACHAT_SUMMARY_LLM_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
+      model: ${NEXACHAT_SUMMARY_LLM_MODEL:gemini-3.1-flash-lite}
       api-key: ${NEXACHAT_SUMMARY_LLM_API_KEY:}
       timeout-ms: ${NEXACHAT_SUMMARY_LLM_TIMEOUT_MS:30000}
       max-input-chars: ${NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS:24000}
@@ -65,7 +65,7 @@ nexachat:
       llm-fallback:
         enabled: ${NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED:false}
         base-url: ${NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL:https://api.deepseek.com}
-        model: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:deepseek-v4.1-flash}
+        model: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:deepseek-flash}
         api-key: ${NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY:}
         timeout-ms: ${NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS:30000}
       # Dedicated Local Server Model Tier (Ollama / vLLM / local server model)
