@@ -76,7 +76,7 @@ public class DeviceTokenService {
             return;
         }
         tokenRepository.deleteByToken(token.strip());
-        log.info("Unregistered device token: {}", token);
+        log.info("Unregistered device token");
     }
 
     private static UserDeviceToken.Platform parsePlatform(String raw) {

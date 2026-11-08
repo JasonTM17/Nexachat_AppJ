@@ -56,8 +56,7 @@ public class NotificationEventListener {
                         conversationId,
                         event.message().id(),
                         event.message().seq(),
-                        event.message().senderDisplayName(),
-                        event.message().content()
+                        event.message().senderDisplayName()
                 );
             }
         }

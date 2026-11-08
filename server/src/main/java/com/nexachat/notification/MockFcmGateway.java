@@ -33,8 +33,7 @@ public class MockFcmGateway implements FcmGateway {
                                                       String priority, long ttlSeconds) {
         SentPush record = new SentPush(targetToken, Map.copyOf(data), priority, ttlSeconds);
         sentPushes.add(record);
-        log.info("MockFcmGateway: Recorded data push to token {} with type {}",
-                targetToken, data.get("type"));
+        log.info("MockFcmGateway: Recorded data push of type {}", data.get("type"));
 
         if (simulateUnregistered) {
             return CompletableFuture.completedFuture(PushResult.unregistered("UNREGISTERED"));
