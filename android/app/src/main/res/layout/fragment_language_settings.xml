@@ -13,14 +13,15 @@
         android:background="?attr/colorSurface"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:title="@string/settings_language" />
+        app:title="@string/settings_language"
+        app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="20dp"
+        app:cardCornerRadius="16dp"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorOutlineVariant"
         app:strokeWidth="1dp">
