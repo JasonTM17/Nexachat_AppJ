@@ -194,8 +194,9 @@ public class GoogleHttpFcmGateway implements FcmGateway {
     }
 
     private long retryDelay(int attempt) {
-        long exponential = retryBaseDelayMillis * (1L << Math.min(attempt, 10));
-        long jitter = ThreadLocalRandom.current().nextLong(retryBaseDelayMillis + 1);
+        long base = Math.min(retryBaseDelayMillis, 5_000L);
+        long exponential = base * (1L << Math.min(attempt, 10));
+        long jitter = ThreadLocalRandom.current().nextLong(base + 1);
         return Math.min(exponential + jitter, 5_000L);
     }
 
