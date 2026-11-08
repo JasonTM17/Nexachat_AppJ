@@ -76,7 +76,7 @@ cd android
 
 ```text
 server/src/main/java/com/nexachat/
-  auth/ user/ contact/ conversation/ message/ attachment/ presence/ call/ summary/ notification/ ws/ common/ config/
+  auth/ user/ contact/ conversation/ message/ attachment/ presence/ call/ summary/ notification/ rag/ ws/ common/ config/
 android/app/src/main/java/com/nexachat/
   call/                        Java call core/media/service/UI
   core/{common,database,network,storage,ui}/
@@ -84,7 +84,7 @@ android/app/src/main/java/com/nexachat/
   di/                         Hilt modules (`annotationProcessor`)
   feature/{auth,chat,contacts,group,inbox,interactions,media,profile,splash,summary}/
   summary/                    Java summary ViewModel + repository layer
-server/src/main/resources/db/migration/   Flyway V1–V7
+server/src/main/resources/db/migration/   Flyway V1–V10
 android/gradle/libs.versions.toml         dependency version catalog
 docs/                                     architecture, contracts, security, operations
 demo/                                     seed.sql + LAN bootstrap scripts

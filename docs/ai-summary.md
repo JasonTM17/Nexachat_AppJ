@@ -72,8 +72,8 @@ Provider selection uses the persisted `users.ai_summary_consent` value. The LLM 
 |---|---|---|
 | `nexachat.summary.provider` | `NEXACHAT_SUMMARY_PROVIDER` | `auto` |
 | `nexachat.summary.llm.enabled` | `NEXACHAT_SUMMARY_LLM_ENABLED` | `false` |
-| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://api.deepseek.com` |
-| `nexachat.summary.llm.model` | `NEXACHAT_SUMMARY_LLM_MODEL` | `deepseek-flash` |
+| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `nexachat.summary.llm.model` | `NEXACHAT_SUMMARY_LLM_MODEL` | `gemini-3.1-flash-lite` |
 | `nexachat.summary.llm.api-key` | `NEXACHAT_SUMMARY_LLM_API_KEY` | — (absent ⇒ provider unavailable) |
 | `nexachat.summary.llm.timeout-ms` | `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` | `30000` |
 | `nexachat.summary.llm.max-input-chars` | `NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS` | `24000` |
@@ -81,10 +81,12 @@ Provider selection uses the persisted `users.ai_summary_consent` value. The LLM 
 
 `provider` is `auto` (LLM only with a key and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
-endpoints are rejected unless the host is loopback. The reference vendor is DeepSeek
-(JSON mode, `response_format: {"type":"json_object"}`); any compatible endpoint works by
-changing the base URL and model. The key lives only in the gitignored `.env` and is never
-logged, serialized, or echoed in errors.
+endpoints are rejected unless the host is loopback. The provider is OpenAI-compatible
+(tested with Google Gemini `gemini-3.1-flash-lite` through the Gemini OpenAI-compatible
+base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, as well as standard
+OpenAI-compatible endpoints supporting JSON mode `response_format: {"type":"json_object"}`).
+Any compatible endpoint works by changing the base URL, model, and API key. The key
+lives only in the gitignored `.env` and is never logged, serialized, or echoed in errors.
 
 Safety behaviour:
 
@@ -119,7 +121,7 @@ The script loads `.env` into the process environment, runs the real adapter path
 token counts, the schema/citation validation verdict, and the number of items per
 section. It is skipped unless `RUN_LIVE_LLM=1`.
 
-## Hybrid Local-First Tiered Routing (Local Server Model + Cloud DeepSeek)
+## Hybrid Local-First Tiered Routing (Local Server Model + Cloud LLM)
 
 NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize privacy, latency, and cloud API token costs:
 
@@ -132,9 +134,9 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
    - Configured via `NEXACHAT_SUMMARY_LOCAL_LLM_*` (e.g. `http://host.docker.internal:11434/v1`, model `qwen2.5:3b` or `llama3.2:3b`).
    - Handles routine AI generative summaries on the server machine without burning cloud tokens or transmitting data outside your deployment infrastructure.
 
-3. **Tier 2: Cloud DeepSeek Model Tier (`LLM` / `deepseek-flash`)**
-   - Configured via `NEXACHAT_SUMMARY_LLM_*` (endpoint `https://api.deepseek.com`, model `deepseek-flash`).
-   - Automatically escalated to when the summary task is complex ("quá khó") or when the user explicitly triggers "Regenerate / Refresh" in AI mode.
+3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
+   - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
+   - Automatically escalated to when the summary task is complex or when the user explicitly triggers "Regenerate / Refresh" in AI mode.
    - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
      - Window message count $\ge 12$ messages (default `min-messages: 12`).
      - Window total length $\ge 1500$ characters (default `min-chars: 1500`).
@@ -142,5 +144,5 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
      - Explicit user refresh (`request.refresh() == true`).
 
 4. **Multi-Stage Graceful Fallback**
-   - If DeepSeek Cloud times out, encounters a network issue, or fails schema validation, the request automatically falls back to the Local Server Model (if configured).
+   - If Cloud LLM times out, encounters a network issue, or fails schema validation, the request automatically falls back to the Local Server Model (if configured).
    - If the Local Server Model is unreachable or fails, the request automatically falls back to the Native MMR Engine (`LOCAL`), guaranteeing the user always receives a valid, verified summary without an error banner.

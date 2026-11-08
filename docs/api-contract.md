@@ -1,9 +1,26 @@
 # NexaChat REST API Contract
 
 > Endpoint catalog for the current REST contract. Routes below are derived from
-> controllers under `server/src/main/java/com/nexachat/`. The summary
-> route is documented in its own section. The WebSocket /
-> STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
+> controllers under `server/src/main/java/com/nexachat/`.
+> The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
+> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API available, Android entry in progress).
+
+## Domain index
+
+| Domain / Resource | Base path | Key capabilities |
+|---|---|---|
+| [Auth & Users](#auth--apiv1auth-and-users-apiv1users) | `/api/v1/auth`, `/api/v1/users` | Register, login, token refresh, password, profile, settings, device token |
+| [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
+| [Conversations & Messages](#direct-conversations--apiv1conversations-and-messages-apiv1conversationsidmessages) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
+| [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
+| [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
+| [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
+| [Files](#files--apiv1files) | `/api/v1/files` | Streaming media download with HTTP Range support (`bytes=a-b`) |
+| [Delta Sync](#delta-sync--apiv1sync) | `/api/v1/sync` | Keyset watermark resync for offline recovery, reaction event audit stream |
+| [Calls](#calls--apiv1calls-and-apiv1conversations) | `/api/v1/calls` | ICE configuration, direct call history, and WebRTC signaling integration |
+| [Conversation Summary](#conversation-summary-api) | `/api/v1/conversations/{id}/summary` | Consent-gated catch-up summary (local extractive & OpenAI-compatible LLM) |
+| [Conversation Ask (RAG)](#conversation-ask-api-rag) | `/api/v1/conversations/{id}/ask` | Hybrid retrieval-augmented chat QA with citation validation and local lexical fallback |
+| [WebSocket / STOMP](#websocket--stomp) | `/ws` | Realtime messaging, delivery/read receipts, typing, and presence |
 
 ## Conventions
 
@@ -373,7 +390,8 @@ and at least five usable messages.
 
 `POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
 answers a question about the caller's own conversation. The design, privacy
-rules and cost controls are specified in [`docs/rag.md`](rag.md).
+rules and cost controls are specified in [`docs/rag.md`](rag.md). Note that the
+server API is available, while the Android entry point is currently in progress.
 
 Request:
 

@@ -11,6 +11,11 @@ after the tag.
 
 ### Added
 
+- Conversation RAG ("Ask this chat"): Server-side question-answering pipeline (`POST /api/v1/conversations/{id}/ask`, Flyway V9 `message_embeddings`, `rag_ask_cache`, `rag_ask_request_limits`) with hybrid BM25 lexical ranking and vector cosine ranking, reciprocal-rank fusion (`k=60`), MMR diversification, prompt budget constraints (3,000 characters), citation validation, deterministic 256-d local lexical embedding fallback, and evaluation benchmark tooling (`tools/rag-eval/`). Server API available; Android entry in progress.
+- Offline outbox for reactions and pins: Transactional producer in `MessageRepository` and idempotent background dispatcher in `OutboxSyncWorker` draining `offline_outbox` using RFC 4122 UUIDv5 idempotency keys. Server idempotency cache (`request_idempotency`), idempotent `PUT`/`DELETE /messages/{id}/reactions/{emoji}` and pin endpoints with `Idempotency-Key` header, and append-only `reaction_events` audit table for delta sync visibility (Flyway V10).
+- FCM HTTP v1 OAuth2 service-account push delivery: Server-side OAuth2 bearer assertion flow with JDK-signed RS256 JWT, token caching with single-flight refresh, bounded exponential retry backoff, and credential validation fail-fast (`server/notification`). Paired with Android encrypted device-token storage, session-triggered registration, and per-user sync cursor persistence (`app/notification`).
+- Media compression, BlurHash, and byte-range streaming: Android image compression with 1920px bound, EXIF orientation correction, GPS scrubbing, BlurHash placeholders (`attachments.blur_hash`), and authenticated Glide loader with 2 GiB bounded cache; inline voice player with Media3 and lazy 48-bar waveform extraction; HTTP Range streaming (`Range: bytes=a-b`, 206 / 416) and composite GIN trigram message search index on `(conversation_id, f_unaccent(content))` (Flyway V8); and keyset inbox pagination (30 conversations per page with full-walk pruning).
+- Modernized UI design (Auth, Profile/Settings, Calls): Clean direct-canvas login and registration forms with brand mark tiles, grouped settings cards with 16dp outline and tinted squircle icon tiles, and full-screen dark gradient call screens with concentric pulse rings respecting reduced-motion accessibility and circular action controls.
 - Room v8 schema migration (`MIGRATION_7_8`) adding `users`, `call_logs`, `offline_outbox`,
   and `conversations.peerDeliveredSeq`.
 - Server Flyway migration `V7__p0_receipts_sync_fcm.sql`: device tokens table (`user_device_tokens`),
@@ -21,10 +26,6 @@ after the tag.
   resolving 1-tick (sent), 2 gray ticks (delivered), and 2 blue ticks (seen).
 - Delta sync catch-up: `POST /api/v1/sync` (alias `/chat/sync`) and Android `SyncEngine`
   for holistic multi-conversation watermark resync.
-- Offline action table and drain path (no producer wired yet): `offline_outbox` table with RFC 4122 UUIDv5 idempotency keys
-  (`IdempotencyUtils`), lease locking, and WorkManager network-triggered sync (`OutboxSyncWorker`).
-- FCM token registration & push scaffolding: `DeviceTokenController` (`/api/v1/users/device-token`),
-  `GoogleHttpFcmGateway` (HTTP v1), `DefaultFcmPushService`, and Android `NexaFirebaseMessagingService`.
 - WebRTC roaming grace: 15-second disconnect grace (`disconnect-grace-ms: 15000`, `CallTimeoutScheduler`)
   and Android `CallManager` `RECONNECTING_NETWORK` state with ICE restart and FIFO signaling buffer.
 - GIF recording and conversion tooling: `tools/gif/record.py` and `tools/gif/README.md`.
@@ -37,7 +38,7 @@ after the tag.
   `unaccent` extension), a `presence` server package, and Room v7 migration
   (`android/app/schemas/.../7.json`).
 - Conversation catch-up summary: `POST /api/v1/conversations/{id}/summary`
-  with an extractive local engine, an optional DeepSeek-backed LLM engine,
+  with an extractive local engine, an optional OpenAI-compatible LLM engine (Gemini tested),
   citation-backed items, Flyway V6 schema, consent-gated provider selection,
   per-user rate limits, and an Android summary UI with EN/VI engine badges
   (`docs/ai-summary.md`).
@@ -72,6 +73,7 @@ after the tag.
 
 ### Changed
 
+- External summary LLM provider: Migrated to an OpenAI-compatible client tested with Gemini (`gemini-3.1-flash-lite` via Gemini's OpenAI-compatible base URL), replacing vendor-specific requirements with provider-neutral configuration.
 - Inbox and chat payloads now carry edit/delete metadata, peer presence,
   `otherUserId` and `lastMessageDeleted`.
 - `docs/design/stitch/screens/*` regenerated for the redesigned screens.
