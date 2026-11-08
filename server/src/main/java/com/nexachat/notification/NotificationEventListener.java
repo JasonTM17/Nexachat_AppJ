@@ -8,36 +8,38 @@ import com.nexachat.message.MessageCreatedEvent;
 import com.nexachat.presence.PresenceSessionState;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
 public class NotificationEventListener {
-
-    private static final Logger log = LoggerFactory.getLogger(NotificationEventListener.class);
 
     private final FcmPushService fcmPushService;
     private final ConversationMemberRepository memberRepository;
     private final PresenceSessionState presenceState;
     private final CallRegistry callRegistry;
     private final UserRepository userRepository;
+    private final UserDeviceTokenRepository tokenRepository;
 
     public NotificationEventListener(FcmPushService fcmPushService,
                                      ConversationMemberRepository memberRepository,
                                      PresenceSessionState presenceState,
                                      CallRegistry callRegistry,
-                                     UserRepository userRepository) {
+                                     UserRepository userRepository,
+                                     UserDeviceTokenRepository tokenRepository) {
         this.fcmPushService = fcmPushService;
         this.memberRepository = memberRepository;
         this.presenceState = presenceState;
         this.callRegistry = callRegistry;
         this.userRepository = userRepository;
+        this.tokenRepository = tokenRepository;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -46,19 +48,32 @@ public class NotificationEventListener {
         UUID senderId = event.message().senderId();
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
 
+        // One physical device can hold a token row per account; collect the
+        // offline recipients' tokens and de-duplicate by token value so a
+        // shared device receives the message exactly once.
+        List<UserDeviceToken> tokens = new ArrayList<>();
+        Set<String> dispatched = new HashSet<>();
         for (UUID memberId : memberIds) {
             if (memberId.equals(senderId)) {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
-                fcmPushService.sendNewMessageNotification(
-                        memberId,
-                        conversationId,
-                        event.message().id(),
-                        event.message().seq(),
-                        event.message().senderDisplayName()
-                );
+                for (UserDeviceToken token : tokenRepository.findByUserId(memberId)) {
+                    if (dispatched.add(token.getToken())) {
+                        tokens.add(token);
+                    }
+                }
             }
+        }
+
+        if (!tokens.isEmpty()) {
+            fcmPushService.sendNewMessageNotification(
+                    tokens,
+                    conversationId,
+                    event.message().id(),
+                    event.message().seq(),
+                    event.message().senderDisplayName()
+            );
         }
     }
 

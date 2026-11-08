@@ -42,6 +42,8 @@ class ReactionServiceTest {
     @Mock
     private MessageReactionRepository reactionRepository;
     @Mock
+    private ReactionEventRepository reactionEventRepository;
+    @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -56,7 +58,8 @@ class ReactionServiceTest {
     @BeforeEach
     void setUp() {
         reactionService = new ReactionService(
-                messageRepository, reactionRepository, memberRepository, eventPublisher);
+                messageRepository, reactionRepository, reactionEventRepository,
+                memberRepository, eventPublisher);
     }
 
     private Message messageInConversation() {
@@ -209,5 +212,84 @@ class ReactionServiceTest {
         verify(reactionRepository, org.mockito.Mockito.times(2))
                 .deleteOne(messageId, userId, composed);
         verify(reactionRepository).insertIgnoringConflict(messageId, userId, composed);
+    }
+
+    @Test
+    void toggle_add_recordsAddEvent() {
+        memberMessage();
+        when(reactionRepository.deleteOne(messageId, userId, "👍")).thenReturn(0);
+        when(reactionRepository.insertIgnoringConflict(messageId, userId, "👍")).thenReturn(1);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.toggle(userId, messageId, new ReactRequest("👍"));
+
+        verify(reactionEventRepository).insert(conversationId, messageId, userId, "👍", "ADD");
+    }
+
+    @Test
+    void toggle_remove_recordsRemoveEvent() {
+        memberMessage();
+        when(reactionRepository.deleteOne(messageId, userId, "👍")).thenReturn(1);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.toggle(userId, messageId, new ReactRequest("👍"));
+
+        verify(reactionEventRepository).insert(conversationId, messageId, userId, "👍", "REMOVE");
+    }
+
+    @Test
+    void add_insertsAndRecordsAddEvent() {
+        memberMessage();
+        when(reactionRepository.insertIgnoringConflict(messageId, userId, "👍")).thenReturn(1);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.add(userId, messageId, "👍");
+
+        verify(reactionRepository).insertIgnoringConflict(messageId, userId, "👍");
+        verify(reactionEventRepository).insert(conversationId, messageId, userId, "👍", "ADD");
+    }
+
+    @Test
+    void add_alreadyPresent_isNoopWithoutEvent() {
+        memberMessage();
+        when(reactionRepository.insertIgnoringConflict(messageId, userId, "👍")).thenReturn(0);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.add(userId, messageId, "👍");
+
+        verify(reactionEventRepository, never()).insert(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void remove_deletesAndRecordsRemoveEvent() {
+        memberMessage();
+        when(reactionRepository.deleteOne(messageId, userId, "👍")).thenReturn(1);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.remove(userId, messageId, "👍");
+
+        verify(reactionRepository).deleteOne(messageId, userId, "👍");
+        verify(reactionEventRepository).insert(conversationId, messageId, userId, "👍", "REMOVE");
+    }
+
+    @Test
+    void remove_notPresent_isNoopWithoutEvent() {
+        memberMessage();
+        when(reactionRepository.deleteOne(messageId, userId, "👍")).thenReturn(0);
+        when(reactionRepository.findRowsByMessageIdIn(List.of(messageId))).thenReturn(List.of());
+
+        reactionService.remove(userId, messageId, "👍");
+
+        verify(reactionEventRepository, never()).insert(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void add_blankEmoji_throwsValidationWithoutEvent() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> reactionService.add(userId, messageId, "  "));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(messageRepository, never()).findByIdForUpdate(any());
+        verify(reactionEventRepository, never()).insert(any(), any(), any(), any(), any());
     }
 }

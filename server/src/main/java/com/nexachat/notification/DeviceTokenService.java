@@ -45,8 +45,9 @@ public class DeviceTokenService {
             tokenEntity = existing.get();
             tokenEntity.updateUsage(deviceLabel, platform);
         } else {
-            tokenRepository.deleteByToken(cleanToken);
-            tokenRepository.flush();
+            // A token may be shared by several accounts on one physical
+            // device; the row is scoped to (user_id, token), so registering it
+            // for this account never evicts another account's row.
             tokenEntity = UserDeviceToken.create(user, cleanToken, platform, deviceLabel);
             tokenEntity = tokenRepository.save(tokenEntity);
         }

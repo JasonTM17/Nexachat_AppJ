@@ -14,6 +14,7 @@ import com.nexachat.message.dto.MessageDeletedPayload;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.PinUpdatedPayload;
+import com.nexachat.message.dto.ReactionEventId;
 import com.nexachat.message.dto.ReactionRow;
 import com.nexachat.message.dto.ReactionSlice;
 import com.nexachat.message.dto.ReactionUpdatedPayload;
@@ -82,43 +83,52 @@ public class MessageService {
     private final MessageRepository messageRepository;
     private final MessageAttachmentRepository attachmentRepository;
     private final MessageReactionRepository reactionRepository;
+    private final ReactionEventRepository reactionEventRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final SyncProperties syncProperties;
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
                           MessageAttachmentRepository attachmentRepository,
                           MessageReactionRepository reactionRepository,
+                          ReactionEventRepository reactionEventRepository,
                           ConversationRepository conversationRepository,
                           ConversationMemberRepository memberRepository,
                           PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
-                          ApplicationEventPublisher eventPublisher) {
-        this(messageRepository, attachmentRepository, reactionRepository, conversationRepository,
-                memberRepository, pinnedMessageRepository, storageService, eventPublisher, Clock.systemUTC());
+                          ApplicationEventPublisher eventPublisher,
+                          SyncProperties syncProperties) {
+        this(messageRepository, attachmentRepository, reactionRepository, reactionEventRepository,
+                conversationRepository, memberRepository, pinnedMessageRepository, storageService,
+                eventPublisher, syncProperties, Clock.systemUTC());
     }
 
     MessageService(MessageRepository messageRepository,
                    MessageAttachmentRepository attachmentRepository,
                    MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
                    ConversationRepository conversationRepository,
                    ConversationMemberRepository memberRepository,
                    PinnedMessageRepository pinnedMessageRepository,
                    StorageService storageService,
                    ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
                    Clock clock) {
         this.messageRepository = messageRepository;
         this.attachmentRepository = attachmentRepository;
         this.reactionRepository = reactionRepository;
+        this.reactionEventRepository = reactionEventRepository;
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.pinnedMessageRepository = pinnedMessageRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
+        this.syncProperties = syncProperties;
         this.clock = clock;
     }
 
@@ -471,8 +481,27 @@ public class MessageService {
                 deletedMessageIds = allDeleted.size() > limit ? allDeleted.subList(0, limit) : allDeleted;
             }
 
-            // 4. Reactions updated since timestamp
-            List<ReactionUpdatedPayload> reactionUpdates = reactionUpdates(conversationId, since);
+            // 4. Reactions updated since timestamp — derived from the append-only
+            //    event log so removals are visible, bounded per conversation and
+            //    resumed by an event-id cursor when the page is truncated.
+            List<ReactionUpdatedPayload> reactionUpdates = List.of();
+            Long reactionCursor = null;
+            boolean reactionsFullRefresh = false;
+            if (since != null) {
+                if (since.isBefore(clock.instant()
+                        .minus(syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS))) {
+                    // Events older than the retention window may already be purged,
+                    // so a partial delta could silently miss changes.
+                    reactionsFullRefresh = true;
+                } else {
+                    ReactionDelta reactionDelta = reactionUpdates(conversationId, since, wm.reactionCursor());
+                    reactionUpdates = reactionDelta.updates();
+                    reactionCursor = reactionDelta.cursor();
+                    if (reactionDelta.truncated()) {
+                        hasMore = true;
+                    }
+                }
+            }
 
             // 5. Max seq
             long maxSeq = messageRepository.findMaxSeqByConversationId(conversationId);
@@ -484,20 +513,34 @@ public class MessageService {
                     deletedMessageIds,
                     reactionUpdates,
                     maxSeq,
-                    hasMore
+                    hasMore,
+                    reactionCursor,
+                    reactionsFullRefresh
             ));
         }
 
         return new SyncResponse(deltas, requestTime);
     }
 
-    private List<ReactionUpdatedPayload> reactionUpdates(UUID conversationId, java.time.Instant since) {
-        if (since == null) {
-            return List.of();
-        }
-        List<UUID> messageIds = reactionRepository.findMessageIdsWithReactionsSince(conversationId, since);
+    /**
+     * One bounded page of reaction updates for a conversation. The page is cut
+     * at {@code maxReactionUpdates} events (so at most that many distinct
+     * message ids are returned); when the page is full the cursor is the last
+     * event id consumed and the caller must resume from it.
+     */
+    private ReactionDelta reactionUpdates(UUID conversationId, java.time.Instant since, Long cursor) {
+        int cap = Math.max(1, syncProperties.getMaxReactionUpdates());
+        List<ReactionEventId> events = reactionEventRepository.findEventIdsSince(
+                conversationId, since, cursor, cap + 1);
+        boolean truncated = events.size() > cap;
+        List<ReactionEventId> page = truncated ? events.subList(0, cap) : events;
+        Long nextCursor = truncated && !page.isEmpty() ? page.get(page.size() - 1).getId() : null;
+        List<UUID> messageIds = page.stream()
+                .map(ReactionEventId::getMessageId)
+                .distinct()
+                .toList();
         if (messageIds.isEmpty()) {
-            return List.of();
+            return new ReactionDelta(List.of(), nextCursor, truncated);
         }
         Map<UUID, Map<String, List<UUID>>> grouped = new LinkedHashMap<>();
         for (ReactionRow row : reactionRepository.findRowsByMessageIdIn(messageIds)) {
@@ -513,7 +556,11 @@ public class MessageService {
                     .toList();
             payloads.add(new ReactionUpdatedPayload(messageId, slices));
         }
-        return payloads;
+        return new ReactionDelta(payloads, nextCursor, truncated);
+    }
+
+    /** Reaction-delta page result: payloads, resume cursor, truncation flag. */
+    private record ReactionDelta(List<ReactionUpdatedPayload> updates, Long cursor, boolean truncated) {
     }
 
     // ------------------------------------------------------------- internals

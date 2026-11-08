@@ -246,11 +246,13 @@ public class BackendM1Iteration2RegressionTest {
                     messageRepository,
                     mock(MessageAttachmentRepository.class),
                     reactionRepository,
+                    mock(ReactionEventRepository.class),
                     conversationRepository,
                     memberRepository,
                     mock(PinnedMessageRepository.class),
                     mock(com.nexachat.attachment.StorageService.class),
-                    mock(ApplicationEventPublisher.class)
+                    mock(ApplicationEventPublisher.class),
+                    new SyncProperties()
             );
         }
 
@@ -348,8 +350,11 @@ public class BackendM1Iteration2RegressionTest {
         }
 
         @Test
-        @DisplayName("4.1 Registering token on shared device purges prior owner record before saving")
-        void registeringTokenPurgesPriorOwnerAssociation() {
+        @DisplayName("4.1 Registering a shared-device token keeps the prior owner's row")
+        void registeringSharedDeviceTokenKeepsPriorOwnerAssociation() {
+            // Uniqueness is now (user_id, token): one physical device can hold a
+            // row per account, so registering the token for user B must not evict
+            // user A's push registration.
             String sharedToken = "shared-physical-device-token-xyz";
 
             when(tokenRepository.findByUserIdAndToken(userBId, sharedToken)).thenReturn(Optional.empty());
@@ -361,8 +366,7 @@ public class BackendM1Iteration2RegressionTest {
             assertThat(response).isNotNull();
             assertThat(response.token()).isEqualTo(sharedToken);
 
-            verify(tokenRepository).deleteByToken(sharedToken);
-            verify(tokenRepository).flush();
+            verify(tokenRepository, org.mockito.Mockito.never()).deleteByToken(sharedToken);
             verify(tokenRepository).save(any(UserDeviceToken.class));
         }
     }

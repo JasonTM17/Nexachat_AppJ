@@ -62,12 +62,4 @@ public interface MessageReactionRepository extends JpaRepository<MessageReaction
             WHERE r.message.id IN :messageIds
             """)
     List<ReactionRow> findRowsByMessageIdIn(@Param("messageIds") Collection<UUID> messageIds);
-
-    @Query("""
-            SELECT DISTINCT r.message.id FROM MessageReaction r
-            WHERE r.message.conversation.id = :conversationId
-              AND r.createdAt > :since
-            """)
-    List<UUID> findMessageIdsWithReactionsSince(@Param("conversationId") UUID conversationId,
-                                                @Param("since") java.time.Instant since);
 }

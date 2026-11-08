@@ -71,11 +71,13 @@ public class BackendM1AdversarialChallengeTest {
                     messageRepository,
                     mock(MessageAttachmentRepository.class),
                     mock(MessageReactionRepository.class),
+                    mock(ReactionEventRepository.class),
                     conversationRepository,
                     memberRepository,
                     mock(PinnedMessageRepository.class),
                     mock(com.nexachat.attachment.StorageService.class),
-                    eventPublisher
+                    eventPublisher,
+                    new SyncProperties()
             );
             wsController = new WsMessageController(messageService, messaging);
         }
@@ -246,11 +248,13 @@ public class BackendM1AdversarialChallengeTest {
                     messageRepository,
                     mock(MessageAttachmentRepository.class),
                     reactionRepository,
+                    mock(ReactionEventRepository.class),
                     conversationRepository,
                     memberRepository,
                     mock(PinnedMessageRepository.class),
                     mock(com.nexachat.attachment.StorageService.class),
-                    mock(ApplicationEventPublisher.class)
+                    mock(ApplicationEventPublisher.class),
+                    new SyncProperties()
             );
             syncController = new SyncController(messageService);
         }

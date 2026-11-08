@@ -64,11 +64,13 @@ class MessageDeliveryReceiptTest {
                 messageRepository,
                 mock(MessageAttachmentRepository.class),
                 mock(MessageReactionRepository.class),
+                mock(ReactionEventRepository.class),
                 conversationRepository,
                 memberRepository,
                 mock(PinnedMessageRepository.class),
                 mock(com.nexachat.attachment.StorageService.class),
-                eventPublisher
+                eventPublisher,
+                new SyncProperties()
         );
         messageController = new MessageController(messageService);
         wsController = new WsMessageController(messageService, messaging);

@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +80,20 @@ class DeviceTokenControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(existing.getDeviceLabel()).isEqualTo("Pixel 8");
+    }
+
+    @Test
+    void registerTokenDoesNotEvictAnotherUsersRow() {
+        User user = mock(User.class);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(tokenRepository.findByUserIdAndToken(userId, "shared-device-token")).thenReturn(Optional.empty());
+        when(tokenRepository.save(any(UserDeviceToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        controller.registerToken(principal,
+                new DeviceTokenRequest("shared-device-token", "ANDROID", "Pixel 9"));
+
+        verify(tokenRepository, never()).deleteByToken(any());
+        verify(tokenRepository).save(any(UserDeviceToken.class));
     }
 
     @Test
