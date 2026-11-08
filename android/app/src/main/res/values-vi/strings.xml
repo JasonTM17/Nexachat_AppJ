@@ -218,4 +218,26 @@
 
     <string name="voice_recording_duration_zero">00:00</string>
 
+    <string name="ask_action">Hỏi cuộc trò chuyện này</string>
+    <string name="ask_title">Hỏi cuộc trò chuyện này</string>
+    <string name="ask_question_hint">Câu hỏi</string>
+    <string name="ask_send">Hỏi</string>
+    <string name="ask_send_accessibility">Gửi câu hỏi</string>
+    <string name="ask_cancel">Hủy</string>
+    <string name="ask_retry">Thử lại</string>
+    <string name="ask_close_accessibility">Đóng phần hỏi trong cuộc trò chuyện</string>
+    <string name="ask_loading">Đang tìm trong cuộc trò chuyện…</string>
+    <string name="ask_not_found">Không tìm thấy tin nhắn phù hợp.</string>
+    <string name="ask_error_generic">Chưa thể trả lời. Hãy thử lại.</string>
+    <string name="ask_chat_unavailable">Cuộc trò chuyện này không còn khả dụng.</string>
+    <string name="ask_invalid_question">Nhập câu hỏi dài từ 1 đến 500 ký tự.</string>
+    <string name="ask_consent_title">Dùng AI để trả lời?</string>
+    <string name="ask_consent_required">Cần đồng ý dùng AI để trả lời câu hỏi này.</string>
+    <string name="ask_rate_limited">Bạn gửi quá nhiều câu hỏi. Hãy thử lại sau.</string>
+    <string name="ask_rate_limited_retry">Thử lại sau %1$d giây.</string>
+    <string name="ask_question_counter">Câu hỏi: %1$d/500</string>
+    <string name="ask_from_message">Trích từ một tin nhắn</string>
+    <string name="ask_citations_label">Nguồn</string>
+    <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
+
 </resources>

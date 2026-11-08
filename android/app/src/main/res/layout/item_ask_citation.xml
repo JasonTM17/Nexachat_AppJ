@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.button.MaterialButton xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/citationButton"
+    style="@style/Widget.Material3.Button.OutlinedButton"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_xs"
+    android:ellipsize="end"
+    android:gravity="start|center_vertical"
+    android:minHeight="@dimen/min_touch_target"
+    android:paddingHorizontal="@dimen/space_md"
+    android:textAlignment="viewStart"
+    android:textColor="?attr/colorOnSurface"
+    android:maxLines="2"
+    app:cornerRadius="14dp"
+    app:strokeColor="?attr/colorOutlineVariant" />

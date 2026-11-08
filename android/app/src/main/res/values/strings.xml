@@ -220,4 +220,26 @@
 
     <string name="voice_recording_duration_zero">00:00</string>
 
+    <string name="ask_action">Ask this chat</string>
+    <string name="ask_title">Ask this chat</string>
+    <string name="ask_question_hint">Question</string>
+    <string name="ask_send">Ask</string>
+    <string name="ask_send_accessibility">Send question</string>
+    <string name="ask_cancel">Cancel</string>
+    <string name="ask_retry">Retry</string>
+    <string name="ask_close_accessibility">Close ask this chat</string>
+    <string name="ask_loading">Searching this chat…</string>
+    <string name="ask_not_found">No matching message was found.</string>
+    <string name="ask_error_generic">Could not get an answer. Try again.</string>
+    <string name="ask_chat_unavailable">This chat is no longer available.</string>
+    <string name="ask_invalid_question">Enter a question with 1–500 characters.</string>
+    <string name="ask_consent_title">Use AI to answer?</string>
+    <string name="ask_consent_required">AI consent is needed to answer this question.</string>
+    <string name="ask_rate_limited">Too many questions. Please try again later.</string>
+    <string name="ask_rate_limited_retry">Try again in %1$d seconds.</string>
+    <string name="ask_question_counter">Question: %1$d/500</string>
+    <string name="ask_from_message">From a message</string>
+    <string name="ask_citations_label">Sources</string>
+    <string name="ask_citation_accessibility">Open message: %1$s</string>
+
 </resources>
