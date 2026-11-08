@@ -2,6 +2,7 @@ package com.nexachat.feature.chat;
 
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
+import com.nexachat.core.ui.components.MessageGroupPosition;
 
 import java.util.List;
 
@@ -9,6 +10,8 @@ import java.util.List;
  * Pure presentation rules for chat bubble state and message lookup.
  */
 public final class ChatBubbleRules {
+
+    public static final int SENDER_PALETTE_SIZE = 8;
 
     private ChatBubbleRules() {}
 
@@ -25,6 +28,18 @@ public final class ChatBubbleRules {
 
     public static boolean isRetryAffordanceVisible(DeliveryStatus status) {
         return status == DeliveryStatus.FAILED;
+    }
+
+    public static int resolveSenderPaletteIndex(String senderId) {
+        return Math.floorMod(senderId == null ? 0 : senderId.hashCode(), SENDER_PALETTE_SIZE);
+    }
+
+    public static int bubbleRowPaddingTopDp(MessageGroupPosition position) {
+        return position == MessageGroupPosition.MIDDLE || position == MessageGroupPosition.LAST ? 1 : 4;
+    }
+
+    public static int bubbleRowPaddingBottomDp(MessageGroupPosition position) {
+        return position == MessageGroupPosition.FIRST || position == MessageGroupPosition.MIDDLE ? 1 : 4;
     }
 
     public static boolean isSeenReceiptVisible(

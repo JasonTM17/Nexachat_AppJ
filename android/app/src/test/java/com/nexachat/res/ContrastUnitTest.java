@@ -78,17 +78,25 @@ public final class ContrastUnitTest {
     private Map<String, String> loadAndResolveColors(File file) throws Exception {
         Map<String, String> rawColors = new HashMap<>();
 
+        File[] files = new File[] {
+                file,
+                new File(file.getParentFile(), "chat_bubble_colors.xml")
+        };
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        Document doc = builder.parse(file);
-        Element root = doc.getDocumentElement();
-
-        NodeList colorNodes = root.getElementsByTagName("color");
-        for (int i = 0; i < colorNodes.getLength(); i++) {
-            Element el = (Element) colorNodes.item(i);
-            String name = el.getAttribute("name");
-            String value = el.getTextContent().trim();
-            rawColors.put(name, value);
+        for (File colorFile : files) {
+            if (!colorFile.isFile()) {
+                continue;
+            }
+            Document doc = builder.parse(colorFile);
+            Element root = doc.getDocumentElement();
+            NodeList colorNodes = root.getElementsByTagName("color");
+            for (int i = 0; i < colorNodes.getLength(); i++) {
+                Element el = (Element) colorNodes.item(i);
+                String name = el.getAttribute("name");
+                String value = el.getTextContent().trim();
+                rawColors.put(name, value);
+            }
         }
 
         Map<String, String> resolved = new HashMap<>();
@@ -158,6 +166,7 @@ public final class ContrastUnitTest {
         // Graphical elements / large icons (≥ 3.0:1)
         assertContrastAtLeast("Light: tick_read on other bubble",
                 colors.get("tick_read"), colors.get("bubble_other"), 3.0);
+        assertBubblePaletteContrast("Light", colors);
     }
 
     @Test
@@ -202,6 +211,29 @@ public final class ContrastUnitTest {
         // Graphical elements / large icons (≥ 3.0:1)
         assertContrastAtLeast("Dark: tick_read on other bubble",
                 colors.get("tick_read"), colors.get("bubble_other"), 3.0);
+        assertBubblePaletteContrast("Dark", colors);
+    }
+
+    private static void assertBubblePaletteContrast(String theme, Map<String, String> colors) {
+        assertContrastAtLeast(theme + ": outgoing text on outgoing bubble",
+                colors.get("chat_bubble_outgoing_text"), colors.get("bubble_mine"), 4.5);
+        assertContrastAtLeast(theme + ": read tick on outgoing bubble",
+                colors.get("chat_bubble_read_tick"), colors.get("bubble_mine"), 3.0);
+
+        String[] senderColors = {
+                "colorPrimary",
+                "colorTertiary",
+                "slate_muted",
+                "colorError",
+                "colorOnPrimaryContainer",
+                "colorOnSecondaryContainer",
+                "colorOnTertiaryContainer",
+                "colorOnErrorContainer"
+        };
+        for (int index = 0; index < senderColors.length; index++) {
+            assertContrastAtLeast(theme + ": sender palette " + index + " on incoming bubble",
+                    colors.get(senderColors[index]), colors.get("bubble_other"), 4.5);
+        }
     }
 
     private static void assertContrastAtLeast(String label, String fg, String bg, double minRatio) {

@@ -11,7 +11,11 @@
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorSurface"
+        app:subtitleTextAppearance="@style/TextAppearance.NexaChat.BodySmall"
+        app:subtitleTextColor="?attr/colorOnSurfaceVariant"
         app:titleMarginStart="48dp"
+        app:titleTextAppearance="@style/TextAppearance.NexaChat.TitleMedium"
+        app:titleTextColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
@@ -41,7 +45,7 @@
             android:layout_height="match_parent"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorPrimary"/>
             <ImageButton android:id="@+id/searchInChatButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_search_in_chat" android:src="@drawable/ic_search" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
             <ImageButton android:id="@+id/infoButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_group_info" android:src="@drawable/ic_info" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
             <ImageButton android:id="@+id/summaryButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/summary_title" android:src="@drawable/ic_auto_awesome" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorPrimary"/>
@@ -134,6 +138,8 @@
         layout="@layout/include_chat_composer_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginBottom="@dimen/space_sm"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />

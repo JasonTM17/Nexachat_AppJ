@@ -4,17 +4,31 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:paddingVertical="@dimen/space_xs">
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/bubbleStartLimit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.22"
+        app:guidelineUseRtl="true" />
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/bubbleEndLimit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.78"
+        app:guidelineUseRtl="true" />
     <LinearLayout
         android:id="@+id/bubbleContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_message_bubble"
         android:backgroundTint="@color/bubble_other"
-        android:maxWidth="@dimen/bubble_max_width"
+        app:layout_constrainedWidth="true"
         android:orientation="vertical"
         android:paddingHorizontal="16dp"
         android:paddingVertical="10dp"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/bubbleEndLimit"
         app:layout_constraintHorizontal_bias="0"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">

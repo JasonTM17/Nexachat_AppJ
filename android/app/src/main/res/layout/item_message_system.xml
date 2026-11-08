@@ -4,19 +4,33 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:paddingVertical="6dp">
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/bubbleCenterStartLimit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.11"
+        app:guidelineUseRtl="true" />
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/bubbleCenterEndLimit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.89"
+        app:guidelineUseRtl="true" />
     <LinearLayout
         android:id="@+id/bubbleContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_date_separator"
         android:backgroundTint="?attr/colorSurfaceVariant"
-        android:maxWidth="@dimen/bubble_max_width"
+        app:layout_constrainedWidth="true"
         android:orientation="vertical"
         android:paddingHorizontal="14dp"
         android:paddingVertical="6dp"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/bubbleCenterEndLimit"
         app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintStart_toEndOf="@id/bubbleCenterStartLimit"
         app:layout_constraintTop_toTopOf="parent">
         <TextView android:id="@+id/senderName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceLabelSmall" android:visibility="gone"/>
         <include android:id="@+id/replyQuote" layout="@layout/include_message_reply_quote" android:visibility="gone"/>

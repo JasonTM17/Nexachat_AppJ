@@ -4,7 +4,7 @@
     android:id="@+id/pinnedRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorPrimaryContainer"
+    android:background="?attr/colorSurfaceContainerLow"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="@dimen/space_sm"
@@ -15,7 +15,7 @@
         android:layout_height="24dp"
         android:contentDescription="@string/pinned_title"
         android:src="@drawable/ic_push_pin"
-        app:tint="?attr/colorOnPrimaryContainer" />
+        app:tint="?attr/colorPrimary" />
 
     <TextView
         android:id="@+id/pinnedText"
@@ -25,6 +25,6 @@
         android:layout_weight="1"
         android:ellipsize="end"
         android:maxLines="2"
-        android:textColor="?attr/colorOnPrimaryContainer"
+        android:textColor="?attr/colorOnSurface"
         android:textStyle="bold" />
 </LinearLayout>

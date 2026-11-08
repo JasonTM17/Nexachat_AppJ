@@ -60,9 +60,10 @@ public final class MessageListMapper {
                 rows.add(MessageListItem.dateSeparator(label, message.getCreatedAtEpochMs()));
             }
 
-            MessageGroupPosition groupPosition = ChatUiRules.resolveGroupPosition(chronological, index);
+            MessageGroupPosition groupPosition = MessageGroupingRules.resolveGroupPosition(chronological, index);
             boolean showSender = isGroup
                     && !message.getMine()
+                    && !MessageViewTypeMapper.isSystemMessage(message)
                     && (groupPosition == MessageGroupPosition.FIRST
                     || groupPosition == MessageGroupPosition.SINGLE);
             boolean seen = ChatBubbleRules.isSeenReceiptVisible(
