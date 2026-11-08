@@ -241,8 +241,10 @@ with `content: null` and `deleted: true`.
 Search uses PostgreSQL `unaccent` + `ILIKE` with escaped `%`, `_`, and `\` so
 those characters are literal. Flyway V4 installs `unaccent`; filtering and
 newest-first pagination are scoped and ordered for the existing
-`idx_msg_conv_seq` index; PostgreSQL's cost planner may prefer a table scan on
-small datasets.
+`idx_msg_conv_seq` index. Flyway V8 adds a composite GIN trigram index on
+`(conversation_id, unaccent(content))` so the substring predicate is indexable
+on large conversations; PostgreSQL's cost planner may still prefer a table
+scan on small datasets.
 
 `GET /users/me/settings` returns `{showPresence: boolean, aiSummaryConsent: boolean}`;
 `aiSummaryConsent` defaults to `false`. `PATCH /users/me/settings` accepts either
@@ -277,11 +279,11 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /attachments` | Bearer | `multipart/form-data`, field `file` — upload-first: the attachment is bound to a message later via `SendMessageRequest.attachmentIds` | `201` `AttachmentResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+| `POST /attachments` | Bearer | `multipart/form-data`, field `file` plus optional `width`, `height`, `duration` and `blurHash` — upload-first: the attachment is bound to a message later via `SendMessageRequest.attachmentIds` | `201` `AttachmentResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
 | `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, server-sniffed `Content-Type`, inline `Content-Disposition`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `ATTACHMENT_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 
-`AttachmentResponse` = `{id, url, originalName, mimeType, sizeBytes, width?, height?, durationMs?}`. Internal owner/message/storage fields and creation time are not exposed in this DTO.
-Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`).
+`AttachmentResponse` = `{id, url, originalName, mimeType, sizeBytes, width?, height?, durationMs?, blurHash?}`. Internal owner/message/storage fields and creation time are not exposed in this DTO. `blurHash` is the optional BlurHash placeholder for image attachments; it is `null` (omitted on the wire) for non-image and legacy rows.
+Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`). `blurHash` is accepted only on image uploads and must be 6–64 characters from the BlurHash base83 alphabet; anything else is `400 VALIDATION_FAILED`.
 
 ## Interactions — reactions `/api/v1/messages`, pins `/api/v1/conversations/{id}/pins`
 
@@ -299,11 +301,15 @@ Pin limit serializes under a `FOR UPDATE` lock on the conversation row.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root | `200` raw bytes, server-sniffed `Content-Type` (octet-stream fallback), `Content-Disposition: inline`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
+| `GET /files/**` | Bearer | Storage key is the path after `/api/v1/files/` (the `avatarUrl` returned by upload), normalized and confined to the storage root. Optional `Range: bytes=a-b` / `bytes=a-` / `bytes=-n` | `200` raw bytes (no `Range`) or `206 Partial Content` (honoured `Range`); `Accept-Ranges: bytes`, server-sniffed `Content-Type` (octet-stream fallback), `Content-Disposition: inline`, `X-Content-Type-Options: nosniff`; `416` with `Content-Range: bytes */size` for an unsatisfiable/malformed range | `UNAUTHORIZED` 401 · `FILE_NOT_FOUND` 404 · `INTERNAL_ERROR` 500 |
 
 Generic uploads go through `POST /api/v1/attachments` above (upload-first,
 bound to a message on send); this endpoint serves every stored object —
 attachment keys are checked against the caller's conversation membership.
+
+Files are streamed, never buffered whole. Only the first range of a
+multi-range request is honoured (RFC 9110 permits a server to ignore the
+rest); `HEAD` behaves like `GET` without a body.
 
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
