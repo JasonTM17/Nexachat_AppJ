@@ -5,6 +5,16 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// `google-services.json` is a gitignored local file: apply the plugin only when it is
+// present so a fresh clone without it still builds and the no-Firebase code path is
+// exercised. The plugin fails the build on a malformed file when it is present.
+def googleServicesJsonFile = file('google-services.json')
+boolean googleServicesJsonPresent = googleServicesJsonFile.isFile()
+if (googleServicesJsonPresent) {
+    apply plugin: 'com.google.gms.google-services'
+}
+logger.lifecycle("Firebase configured: ${googleServicesJsonPresent ? 'yes' : 'no'}")
+
 // Backend base URL for BuildConfig.API_BASE_URL — local.properties
 // (`API_BASE_URL=...`) beats the default; -PapiBaseUrl beats both.
 def localProps = new Properties()
@@ -126,6 +136,55 @@ gradle.taskGraph.whenReady { graph ->
             'WARNING: release/keystore/signing.properties is missing; this release artifact is ' +
                 'signed with the debug key and is for local verification only.'
         )
+    }
+}
+
+// Reports the Firebase configuration state per variant. Prints package names and
+// booleans only — never API keys, app ids, or other values from google-services.json.
+def generatedValuesByVariant = ['debug', 'release'].collectEntries { variant ->
+    def capitalized = variant.capitalize()
+    [variant, [
+        file("build/generated/res/process${capitalized}GoogleServices/values/values.xml"),
+        file("build/generated/res/google-services/${variant}/values/values.xml")
+    ]]
+}
+
+tasks.register('checkFirebaseConfig') {
+    group = 'verification'
+    description = 'Reports whether google-services.json produced Firebase resources for each variant.'
+    dependsOn tasks.matching { it.name ==~ /process(Debug|Release)GoogleServices/ }
+    doLast {
+        if (!googleServicesJsonPresent) {
+            logger.lifecycle('Firebase configured: no')
+            return
+        }
+        def json = new groovy.json.JsonSlurper().parse(googleServicesJsonFile)
+        def clientPackages = json.client
+            .collect { it.client_info?.android_client_info?.package_name }
+            .findAll { it != null }
+        def appIds = [:]
+        ['debug', 'release'].each { variant ->
+            def expectedPackage = variant == 'debug' ? 'com.nexachat.debug' : 'com.nexachat'
+            def packageResolved = clientPackages.contains(expectedPackage)
+            def generated = generatedValuesByVariant[variant].find { it.isFile() }
+            def hasAppId = false
+            def hasWebClientId = false
+            if (generated != null) {
+                def resources = new XmlSlurper().parse(generated)
+                def appId = resources.string.find { it.@name == 'google_app_id' }
+                hasAppId = appId != null && appId.text().trim() ? true : false
+                appIds[variant] = hasAppId ? appId.text().trim() : null
+                hasWebClientId = resources.string.any {
+                    it.@name == 'default_web_client_id' && it.text().trim()
+                }
+            }
+            logger.lifecycle("Firebase configured: ${packageResolved && hasAppId ? 'yes' : 'no'} " +
+                "(variant=${variant}, client=${expectedPackage}, resolved=${packageResolved}, " +
+                "google_app_id=${hasAppId}, default_web_client_id=${hasWebClientId})")
+        }
+        if (appIds.debug != null && appIds.release != null) {
+            logger.lifecycle("Firebase debug and release app ids differ: ${appIds.debug != appIds.release}")
+        }
     }
 }
 
