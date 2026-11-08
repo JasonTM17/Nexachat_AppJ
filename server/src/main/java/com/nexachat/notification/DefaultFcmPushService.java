@@ -99,6 +99,11 @@ public class DefaultFcmPushService implements FcmPushService {
             }
             fcmGateway.sendDataPush(tokenValue, data, priority, ttlSeconds)
                     .thenAccept(result -> {
+                        if (result.success()) {
+                            // Never log the registration token or the message body.
+                            log.info("FCM push accepted (platform {}, label {})",
+                                    token.getPlatform(), token.getDeviceLabel());
+                        }
                         if (result.unregistered()) {
                             // The registration token is a credential: identify the
                             // row by its platform and label, never by the token value.

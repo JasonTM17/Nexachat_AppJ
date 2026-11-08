@@ -133,6 +133,33 @@ class FcmPushServiceTest {
     }
 
     @Test
+    void acceptedPushIsLoggedWithoutTheRegistrationToken() {
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "SECRET-ACCEPTED-TOKEN", UserDeviceToken.Platform.ANDROID, "Pixel");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DefaultFcmPushService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            pushService.sendNewMessageNotification(
+                    userId, conversationId, UUID.randomUUID(), 1L, "Alice");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .anyMatch(event -> event.getFormattedMessage().contains("FCM push accepted")
+                        && event.getFormattedMessage().contains("Pixel"));
+        assertThat(appender.list)
+                .noneMatch(event -> event.getFormattedMessage().contains("SECRET-ACCEPTED-TOKEN"));
+    }
+
+    @Test
     void unregisterFailureDoesNotLogTheRegistrationToken() {
         mockGateway.setSimulateUnregistered(true);
 
