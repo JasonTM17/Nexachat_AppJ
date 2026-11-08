@@ -121,6 +121,33 @@ public class LocalStorageService implements StorageService {
     }
 
     @Override
+    public StreamHandle open(String storageKey) {
+        if (storageKey == null || storageKey.isBlank()
+                || storageKey.contains("..") || storageKey.contains("\\")) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        Path target = root.resolve(storageKey).normalize();
+        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        final long size;
+        try {
+            size = Files.size(target);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+        try {
+            return new StreamHandle(Files.newInputStream(target), size);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    @Override
     public String resolveUrl(String storageKey) {
         return "/api/v1/files/" + storageKey;
     }

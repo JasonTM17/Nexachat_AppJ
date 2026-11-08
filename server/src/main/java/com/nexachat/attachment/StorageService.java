@@ -1,5 +1,8 @@
 package com.nexachat.attachment;
 
+import java.io.IOException;
+import java.io.InputStream;
+
 /**
  * Stores uploaded bytes under a server-generated key and resolves a public
  * URL path for them.
@@ -40,6 +43,32 @@ public interface StorageService {
      *                                                no stored file
      */
     byte[] read(String storageKey);
+
+    /**
+     * Opens a stream over the stored file for range-aware serving. The caller
+     * owns the handle and must close it; closing the stream releases the
+     * underlying resource.
+     *
+     * <p>Implementations must apply the same traversal guard as {@link #read}.
+     *
+     * @param storageKey key returned by {@link #store}
+     * @return the open stream plus its exact byte count
+     * @throws com.nexachat.common.error.ApiException {@code FILE_NOT_FOUND}
+     *                                                when the key resolves to
+     *                                                no stored file
+     */
+    StreamHandle open(String storageKey);
+
+    /**
+     * An open stored file: the stream positioned at offset zero plus its size.
+     */
+    record StreamHandle(InputStream content, long sizeBytes) implements AutoCloseable {
+
+        @Override
+        public void close() throws IOException {
+            content.close();
+        }
+    }
 
     /**
      * Resolves the public URL path for a key returned by {@link #store}.

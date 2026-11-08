@@ -806,6 +806,7 @@ public class MessageService {
                 attachment.getSizeBytes(),
                 attachment.getWidth(),
                 attachment.getHeight(),
-                attachment.getDurationMs());
+                attachment.getDurationMs(),
+                attachment.getBlurHash());
     }
 }

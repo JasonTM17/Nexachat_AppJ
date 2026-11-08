@@ -3,7 +3,10 @@ package com.nexachat.attachment;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.message.MessageAttachment;
 import com.nexachat.message.dto.AttachmentResponse;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -54,30 +57,44 @@ public class AttachmentController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Integer width,
             @RequestParam(required = false) Integer height,
-            @RequestParam(required = false) Integer duration) {
+            @RequestParam(required = false) Integer duration,
+            @RequestParam(required = false) String blurHash) {
         AttachmentResponse response = attachmentService.upload(
-                requireUserId(principal), file, width, height, duration);
+                requireUserId(principal), file, width, height, duration, blurHash);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/{id}/content")
-    public ResponseEntity<byte[]> content(
+    public ResponseEntity<?> content(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable("id") UUID attachmentId) {
         AttachmentService.AttachmentContent content =
                 attachmentService.loadContent(attachmentId, requireUserId(principal));
+        MessageAttachment attachment = content.attachment();
         // The persisted mime IS the upload-time sniff — never re-trust the
         // client-declared type; the filename is re-sanitized before it enters
         // the header even though upload already cleaned it once.
+        Resource resource = new InputStreamResource(content.content().content()) {
+            @Override
+            public long contentLength() {
+                return attachment.getSizeBytes();
+            }
+
+            @Override
+            public String getFilename() {
+                return attachment.getOriginalName();
+            }
+        };
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(content.attachment().getMimeType()))
+                .contentType(MediaType.parseMediaType(attachment.getMimeType()))
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
                         .filename(AttachmentService.sanitizeOriginalName(
-                                content.attachment().getOriginalName()), StandardCharsets.UTF_8)
+                                attachment.getOriginalName()), StandardCharsets.UTF_8)
                         .build()
                         .toString())
-                .body(content.bytes());
+                .contentLength(attachment.getSizeBytes())
+                .body(resource);
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

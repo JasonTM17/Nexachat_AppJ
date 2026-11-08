@@ -77,6 +77,13 @@ public class MessageAttachment {
     @Column(name = "duration_ms")
     private Integer durationMs;
 
+    /**
+     * Optional client-supplied BlurHash placeholder for image attachments
+     * (6..64 base83 characters). {@code null} for non-image and legacy rows.
+     */
+    @Column(name = "blur_hash", length = 64)
+    private String blurHash;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -90,7 +97,8 @@ public class MessageAttachment {
      */
     public static MessageAttachment upload(User owner, String storageKey, String originalName,
                                            String mimeType, long sizeBytes,
-                                           Integer width, Integer height, Integer durationMs) {
+                                           Integer width, Integer height, Integer durationMs,
+                                           String blurHash) {
         MessageAttachment attachment = new MessageAttachment();
         attachment.owner = owner;
         attachment.storageKey = storageKey;
@@ -100,6 +108,7 @@ public class MessageAttachment {
         attachment.width = width;
         attachment.height = height;
         attachment.durationMs = durationMs;
+        attachment.blurHash = blurHash;
         return attachment;
     }
 
@@ -158,6 +167,10 @@ public class MessageAttachment {
 
     public Integer getDurationMs() {
         return durationMs;
+    }
+
+    public String getBlurHash() {
+        return blurHash;
     }
 
     public Instant getCreatedAt() {

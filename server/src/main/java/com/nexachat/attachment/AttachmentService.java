@@ -1,5 +1,6 @@
 package com.nexachat.attachment;
 
+import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -15,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Attachment use cases (phase-09 multimedia, plan §10.2 + UC-09):
@@ -51,6 +53,12 @@ public class AttachmentService {
 
     private static final int MAX_ORIGINAL_NAME_LENGTH = 255;
 
+    /** BlurHash placeholders are 6..64 characters from the BlurHash base83 alphabet. */
+    static final int BLUR_HASH_MIN_LENGTH = 6;
+    static final int BLUR_HASH_MAX_LENGTH = 64;
+    private static final Pattern BLUR_HASH_ALPHABET =
+            Pattern.compile("^[0-9A-Za-z#$%*+,\\-.:;=?@\\[\\]^_{|}~]+$");
+
     private final MessageAttachmentRepository attachmentRepository;
     private final ConversationMemberRepository memberRepository;
     private final StorageService storageService;
@@ -66,8 +74,17 @@ public class AttachmentService {
         this.userRepository = userRepository;
     }
 
-    /** A stored attachment's metadata plus its bytes — ready to stream. */
-    public record AttachmentContent(MessageAttachment attachment, byte[] bytes) {
+    /**
+     * A stored attachment's metadata plus an open stream over its bytes. The
+     * caller owns the handle; closing it releases the underlying file.
+     */
+    public record AttachmentContent(MessageAttachment attachment, StorageService.StreamHandle content)
+            implements AutoCloseable {
+
+        @Override
+        public void close() throws java.io.IOException {
+            content.close();
+        }
     }
 
     /**
@@ -86,7 +103,8 @@ public class AttachmentService {
      */
     @Transactional
     public AttachmentResponse upload(UUID ownerId, MultipartFile file,
-                                     Integer width, Integer height, Integer duration) {
+                                     Integer width, Integer height, Integer duration,
+                                     String blurHash) {
         if (file == null || file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Attachment file is required");
         }
@@ -96,6 +114,7 @@ public class AttachmentService {
         validateDimension("width", width);
         validateDimension("height", height);
         validateDimension("duration", duration);
+        String validatedBlurHash = validateBlurHash(blurHash);
 
         final byte[] bytes;
         try {
@@ -105,6 +124,15 @@ public class AttachmentService {
         }
         if (bytes.length > MAX_FILE_SIZE_BYTES) {
             throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
+        }
+        // A blur hash describes an image placeholder; reject it before the bytes
+        // are written so a bad claim never leaves a stored file behind.
+        if (validatedBlurHash != null) {
+            String sniffed = MagicBytes.sniff(bytes);
+            if (sniffed == null || !sniffed.startsWith("image/")) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Only image attachments may carry a blurHash");
+            }
         }
 
         // store() re-sniffs the bytes and applies the magic-byte whitelist —
@@ -116,7 +144,7 @@ public class AttachmentService {
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         MessageAttachment attachment = MessageAttachment.upload(
                 owner, stored.storageKey(), sanitizeOriginalName(file.getOriginalFilename()),
-                stored.mimeType(), stored.sizeBytes(), width, height, duration);
+                stored.mimeType(), stored.sizeBytes(), width, height, duration, validatedBlurHash);
         attachmentRepository.save(attachment);
         return toResponse(attachment);
     }
@@ -134,7 +162,7 @@ public class AttachmentService {
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found"));
         assertReadable(attachment, requesterId);
-        return new AttachmentContent(attachment, storageService.read(attachment.getStorageKey()));
+        return new AttachmentContent(attachment, storageService.open(attachment.getStorageKey()));
     }
 
     /**
@@ -183,7 +211,28 @@ public class AttachmentService {
                 attachment.getSizeBytes(),
                 attachment.getWidth(),
                 attachment.getHeight(),
-                attachment.getDurationMs());
+                attachment.getDurationMs(),
+                attachment.getBlurHash());
+    }
+
+    /**
+     * Validates an optional client-supplied BlurHash: 6..64 characters from the
+     * BlurHash base83 alphabet. A null/blank value is accepted as "absent".
+     *
+     * @return the validated hash, or {@code null} when absent
+     * @throws ApiException {@code VALIDATION_FAILED} (400) on any invalid value
+     */
+    static String validateBlurHash(String blurHash) {
+        if (blurHash == null || blurHash.isBlank()) {
+            return null;
+        }
+        if (blurHash.length() < BLUR_HASH_MIN_LENGTH
+                || blurHash.length() > BLUR_HASH_MAX_LENGTH
+                || !BLUR_HASH_ALPHABET.matcher(blurHash).matches()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "blurHash must be 6 to 64 BlurHash base83 characters");
+        }
+        return blurHash;
     }
 
     private static void validateDimension(String field, Integer value) {
