@@ -43,6 +43,10 @@ services:
       NEXACHAT_SUMMARY_LOCAL_LLM_MODEL: ${NEXACHAT_SUMMARY_LOCAL_LLM_MODEL:-qwen2.5:3b}
       NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY: ${NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY:-local-ollama}
       NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:-60000}
+      # Firebase Cloud Messaging (service account supplied through the host environment)
+      FCM_ENABLED: ${FCM_ENABLED:-false}
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
