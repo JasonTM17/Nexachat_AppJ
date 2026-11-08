@@ -205,6 +205,45 @@ public final class SyncEngineTest {
     }
 
     @Test
+    public void syncEchoesLastServerTimeAsSinceOnSubsequentSync() {
+        List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse firstResponse = new SyncResponse(List.of(), "2026-11-08T10:00:00Z");
+        SyncResponse secondResponse = new SyncResponse(List.of(), "2026-11-08T10:05:00Z");
+
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> firstCall = mock(Call.class);
+        when(firstCall.clone()).thenReturn(firstCall);
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> secondCall = mock(Call.class);
+        when(secondCall.clone()).thenReturn(secondCall);
+        try {
+            when(firstCall.execute()).thenReturn(Response.success(firstResponse));
+            when(secondCall.execute()).thenReturn(Response.success(secondResponse));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(firstCall)
+                .thenReturn(secondCall);
+
+        TestObserver<Void> firstSync = syncEngine.sync().test();
+        firstSync.awaitCount(1);
+        firstSync.assertComplete();
+
+        TestObserver<Void> secondSync = syncEngine.sync().test();
+        secondSync.awaitCount(1);
+        secondSync.assertComplete();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, org.mockito.Mockito.times(2)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        org.junit.Assert.assertNull("first sync has no server time yet", requests.get(0).getSince());
+        org.junit.Assert.assertEquals("2026-11-08T10:00:00Z", requests.get(1).getSince());
+    }
+
+    @Test
     public void syncDoesNotFabricatePeerReceiptWatermarks() {
         List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));
