@@ -67,9 +67,9 @@ the implementing source file.
   direct `/user/{id}/queue/*`, unknown queues, and every other destination are denied
   by default
   (StompAuthChannelInterceptor.onSubscribe).
-- SEND authZ: `/app/conversations/{uuid}/{messages|typing|read}` re-checks
-  membership before any `@MessageMapping` runs — belt-and-braces under
-  MessageService.requireMember — and unknown destinations are dropped
+- SEND authZ: `/app/conversations/{uuid}/{messages|typing|read|delivered}` and
+  `/app/chat.{delivery|read}.ack` re-check membership before any `@MessageMapping` runs —
+  belt-and-braces under MessageService.requireMember — and unknown destinations are dropped
   (StompAuthChannelInterceptor.onSend); denial returns `null`.
 
 ## 4. Upload hardening
@@ -120,13 +120,14 @@ the implementing source file.
   contact-add 30/min, bucket key `user:<id>` (UserSearchRateLimitInterceptor
   .java, ContactAddRateLimitInterceptor.java). The IP fallback exists only for a
   stray unauthenticated call that the security layer rejects anyway.
-- STOMP SEND is per-user as well, with two independent buckets: 30 messages /
-  10 s (`stomp:messages:<userId>`) and 60 typing frames / 10 s
-  (`stomp:typing:<userId>`), configured by `nexachat.rate-limit.stomp.*`
+- STOMP SEND is per-user as well, with independent buckets: 30 messages /
+  10 s (`stomp:messages:<userId>`), 60 typing frames / 10 s
+  (`stomp:typing:<userId>`), and 120 receipt acknowledgment frames / 10 s
+  (`stomp:acks:<userId>`), configured by `nexachat.rate-limit.stomp.*`
   (application.yml). A denial drops the frame and reports `RATE_LIMITED` to
   the originating session as a `/user/queue/errors` frame carrying the
-  correlated `clientMessageId` (typing carries none)
-  (StompAuthChannelInterceptor.java:188-244).
+  correlated `clientMessageId` (typing and acks carry none)
+  (StompAuthChannelInterceptor.java:188-255).
 - Buckets are Bucket4j greedy-refill token buckets in a bounded in-memory LRU
   map (RateLimitService.java): the budget trickles back continuously instead of
   bursting at a window boundary; at most 10,000 keys are retained and an idle

@@ -199,6 +199,8 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 |
+| `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS`, label ≤100 chars | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
 ## Contacts — `/api/v1/contacts`
 
@@ -311,6 +313,15 @@ Files are streamed, never buffered whole. Only the first range of a
 multi-range request is honoured (RFC 9110 permits a server to ignore the
 rest); `HEAD` behaves like `GET` without a body.
 
+## Delta sync — `/api/v1/sync`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+
+`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore}], serverTime}`.
+Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)`.
+
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
 | Method & path | Auth | Request | Success | Errors |
@@ -343,7 +354,8 @@ above apply unchanged:
 
 - Send message: `SEND /app/conversations/{id}/messages`
 - Typing signal: `SEND /app/conversations/{id}/typing`
-- Read receipt: `SEND /app/conversations/{id}/read`
+- Delivery receipt: `SEND /app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`)
+- Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`)
 - Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/calls.md`](calls.md))
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.

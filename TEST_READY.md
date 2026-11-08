@@ -2,12 +2,12 @@
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
 
 - **Dự án**: NexaChat
-- **Kho lưu trữ**: `D:\ChatFaceHappy\nexachat`
+- **Kho lưu trữ**: Thư mục gốc dự án (`.`)
 - **Ràng buộc công nghệ**: 100% Pure Java 21 LTS (0 file Kotlin `.kt`/`.kts`), 0 leaked secrets, 0 broken markdown links.
 - **Tài liệu tham chiếu cơ sở**: [README.md](README.md), [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [TEST_INFRA.md](TEST_INFRA.md).
 - **Mã hiệu tài liệu**: `NEXA-TEST-READY-2026-V1`
 - **Ngày ban hành**: 08/11/2026
-- **Trạng thái**: Xuất bản chính thức (Publication-Grade)
+- **Trạng thái**: Đã kiểm chứng (Verified)
 
 ---
 
@@ -30,11 +30,8 @@ Mọi ca kiểm thử đều tuân thủ nghiêm ngặt nguyên tắc:
 Trình chạy dòng lệnh độc lập `tools/e2e/P0E2ETestRunner.java` thực thi trực tiếp bằng Java 21 LTS runtime mà không cần cài đặt thêm thư viện ngoài (zero external dependencies), cho kết quả tức thì trong dưới 100 mili-giây:
 
 ```powershell
-# Chuyển vào thư mục gốc của repository
-cd D:\ChatFaceHappy\nexachat
-
-# Thực thi trình chạy kiểm thử Java 21 E2E
-java tools\e2e\P0E2ETestRunner.java
+# Thực thi trình chạy kiểm thử Java 21 E2E từ thư mục gốc
+java tools/e2e/P0E2ETestRunner.java
 ```
 
 *Đầu ra quan sát được*:
@@ -69,7 +66,7 @@ Chạy toàn bộ hoặc từng phần bộ kiểm thử E2E thông qua Apache M
 
 ```powershell
 # Chuyển vào thư mục backend server
-cd D:\ChatFaceHappy\nexachat\server
+cd server
 
 # Chạy toàn bộ 81 ca kiểm thử E2E
 mvn test "-Dtest=Tier1FeatureCoverageTest,Tier2BoundaryCornerCasesTest,Tier3CrossFeatureCombinationsTest,Tier4RealWorldScenariosTest"

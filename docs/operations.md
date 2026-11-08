@@ -14,6 +14,9 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `DATABASE_PASSWORD` | Yes | None; set in `.env` | `replace-with-a-local-only-password` |
 | `JWT_SECRET` | Yes; at least 32 UTF-8 bytes | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
 | `STORAGE_ROOT` | Yes outside Compose; Compose supplies a default | `/app/data/uploads` | `/app/data/uploads` |
+| `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
+| `FCM_PROJECT_ID` | No (required only if `FCM_ENABLED=true`) | `mock-project` | `your-firebase-project-id` |
+| `FCM_SERVICE_ACCOUNT_JSON` | No (required only if `FCM_ENABLED=true`) | Empty | `{"type":"service_account",...}` |
 
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
@@ -21,6 +24,20 @@ if overriding environment variables for that process, use the host address.
 The database stores its initial role/password in the named volume on first
 initialization, so changing `DATABASE_PASSWORD` alone does not rotate an
 already-initialized database role.
+
+### Firebase Cloud Messaging (FCM)
+
+The server binds the properties `nexachat.fcm.enabled` (`${FCM_ENABLED:false}`),
+`nexachat.fcm.project-id` (`${FCM_PROJECT_ID:mock-project}`), and
+`nexachat.fcm.service-account-json` (`${FCM_SERVICE_ACCOUNT_JSON:}`)
+in `application.yml` and `GoogleHttpFcmGateway.java`.
+
+Real end-to-end FCM notification delivery to Android devices requires an active
+Google Firebase project, a valid Google service account JSON key on the server,
+and a client `google-services.json` in `android/app/`. None of these external
+credentials or files are bundled in the repository. When `FCM_ENABLED=false` (the
+default), the server activates `MockFcmGateway`, allowing local testing and CI
+verification without contacting external Google endpoints.
 
 ## Start, stop, and health
 
@@ -119,7 +136,8 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations apply on app startup
+Back up before replacing the app image. Flyway migrations (currently V1 through V7,
+`V1__init.sql` to `V7__p0_receipts_sync_fcm.sql`) apply on app startup
 and are forward-only: add a new versioned SQL migration; never edit one already
 applied to a database.
 
