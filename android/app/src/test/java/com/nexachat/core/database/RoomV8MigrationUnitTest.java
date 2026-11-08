@@ -8,53 +8,123 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import androidx.sqlite.db.SupportSQLiteDatabase;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
 public final class RoomV8MigrationUnitTest {
 
+    /** DDL smoke only; real row-preservation behavior is covered by RoomMigrationInstrumentedTest. */
     @Test
-    public void migration7To8ExecutesExpectedDdlStatements() {
+    public void migration7To8DdlMatchesExportedSchema() throws IOException {
         SupportSQLiteDatabase db = mock(SupportSQLiteDatabase.class);
         AppDatabase.MIGRATION_7_8.migrate(db);
 
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(db, org.mockito.Mockito.atLeast(5)).execSQL(sqlCaptor.capture());
+        org.mockito.Mockito.verify(db, org.mockito.Mockito.times(7)).execSQL(sqlCaptor.capture());
 
         java.util.List<String> executed = sqlCaptor.getAllValues();
+        String schemaJson = readExportedSchema("8.json");
 
-        boolean createdUsersTable = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE TABLE IF NOT EXISTS `users`")
-                        && sql.contains("`id` TEXT NOT NULL")
-                        && sql.contains("`displayName` TEXT"));
-        boolean createdUsersIndex = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE INDEX IF NOT EXISTS `index_users_displayName`"));
+        assertTableDdlMatchesSchema(executed, schemaJson, "users");
+        assertTableDdlMatchesSchema(executed, schemaJson, "call_logs");
+        assertTableDdlMatchesSchema(executed, schemaJson, "offline_outbox");
+        assertIndexDdlMatchesSchema(executed, schemaJson, "index_users_displayName", "users");
+        assertIndexDdlMatchesSchema(executed, schemaJson, "index_call_logs_startedAt", "call_logs");
+        assertIndexDdlMatchesSchema(
+                executed, schemaJson, "index_offline_outbox_idempotencyKey", "offline_outbox");
 
-        boolean createdCallLogsTable = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE TABLE IF NOT EXISTS `call_logs`")
-                        && sql.contains("`callId` TEXT NOT NULL")
-                        && sql.contains("`startedAt` INTEGER NOT NULL"));
-        boolean createdCallLogsIndex = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE INDEX IF NOT EXISTS `index_call_logs_startedAt`"));
+        String addedPeerDeliveredSeq =
+                findStatement(executed,
+                        "ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq`");
+        assertEquals(
+                "ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq` INTEGER NOT NULL DEFAULT 0",
+                normalizeSql(addedPeerDeliveredSeq));
+        assertTrue(
+                "Exported v8 schema must declare peerDeliveredSeq as a required integer",
+                Pattern.compile(
+                                "\\\"columnName\\\"\\s*:\\s*\\\"peerDeliveredSeq\\\""
+                                        + "\\s*,\\s*\\\"affinity\\\"\\s*:\\s*\\\"INTEGER\\\""
+                                        + "\\s*,\\s*\\\"notNull\\\"\\s*:\\s*true")
+                        .matcher(schemaJson)
+                        .find());
+    }
 
-        boolean createdOfflineOutboxTable = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE TABLE IF NOT EXISTS `offline_outbox`")
-                        && sql.contains("`id` TEXT NOT NULL")
-                        && sql.contains("`idempotencyKey` TEXT NOT NULL")
-                        && sql.contains("`actionType` TEXT NOT NULL"));
-        boolean createdOfflineOutboxIndex = executed.stream().anyMatch(sql ->
-                sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS `index_offline_outbox_idempotencyKey`"));
+    private static void assertTableDdlMatchesSchema(
+            java.util.List<String> executed, String schemaJson, String tableName) {
+        String expected = exportedTableCreateSql(schemaJson, tableName).replace("${TABLE_NAME}", tableName);
+        String actual = findStatement(executed, "CREATE TABLE IF NOT EXISTS `" + tableName + "`");
+        assertEquals("Migration DDL must match exported " + tableName + " columns and constraints",
+                normalizeSql(expected), normalizeSql(actual));
+    }
 
-        boolean addedPeerDeliveredSeq = executed.stream().anyMatch(sql ->
-                sql.contains("ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq`"));
+    private static void assertIndexDdlMatchesSchema(
+            java.util.List<String> executed, String schemaJson, String indexName, String tableName) {
+        String expected = exportedIndexCreateSql(schemaJson, indexName).replace("${TABLE_NAME}", tableName);
+        String actual = executed.stream()
+                .filter(statement -> statement.contains("`" + indexName + "`"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing migration index SQL: " + indexName));
+        assertEquals("Migration index DDL must match exported schema index " + indexName,
+                normalizeSql(expected), normalizeSql(actual));
+    }
 
-        assertTrue("Should create users table", createdUsersTable);
-        assertTrue("Should create users displayName index", createdUsersIndex);
-        assertTrue("Should create call_logs table", createdCallLogsTable);
-        assertTrue("Should create call_logs startedAt index", createdCallLogsIndex);
-        assertTrue("Should create offline_outbox table", createdOfflineOutboxTable);
-        assertTrue("Should create offline_outbox idempotencyKey unique index", createdOfflineOutboxIndex);
-        assertTrue("Should add peerDeliveredSeq to conversations", addedPeerDeliveredSeq);
+    private static String findStatement(java.util.List<String> statements, String prefix) {
+        return statements.stream()
+                .filter(statement -> normalizeSql(statement).startsWith(normalizeSql(prefix)))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing migration SQL: " + prefix));
+    }
+
+    private static String exportedTableCreateSql(String schemaJson, String tableName) {
+        Pattern pattern = Pattern.compile(
+                "\\\"tableName\\\"\\s*:\\s*\\\"" + Pattern.quote(tableName)
+                        + "\\\"\\s*,\\s*\\\"createSql\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+        Matcher matcher = pattern.matcher(schemaJson);
+        if (!matcher.find()) {
+            throw new AssertionError("Exported schema is missing table " + tableName);
+        }
+        return matcher.group(1);
+    }
+
+    private static String exportedIndexCreateSql(String schemaJson, String indexName) {
+        Pattern pattern = Pattern.compile(
+                "\\\"name\\\"\\s*:\\s*\\\"" + Pattern.quote(indexName)
+                        + "\\\"[\\s\\S]*?\\\"createSql\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
+        Matcher matcher = pattern.matcher(schemaJson);
+        if (!matcher.find()) {
+            throw new AssertionError("Exported schema is missing index " + indexName);
+        }
+        return matcher.group(1);
+    }
+
+    private static String readExportedSchema(String filename) throws IOException {
+        String resource =
+                "schemas/com.nexachat.core.database.AppDatabase/" + filename;
+        try (java.io.InputStream input =
+                RoomV8MigrationUnitTest.class.getClassLoader().getResourceAsStream(resource)) {
+            if (input != null) {
+                return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        }
+
+        Path modulePath = Path.of(
+                System.getProperty("user.dir"), "schemas", "com.nexachat.core.database.AppDatabase", filename);
+        Path repoRootPath = Path.of(
+                System.getProperty("user.dir"), "android", "app", "schemas",
+                "com.nexachat.core.database.AppDatabase", filename);
+        Path schemaPath = Files.isRegularFile(modulePath) ? modulePath : repoRootPath;
+        assertTrue("Exported Room schema not found at " + schemaPath, Files.isRegularFile(schemaPath));
+        return new String(Files.readAllBytes(schemaPath), StandardCharsets.UTF_8);
+    }
+
+    private static String normalizeSql(String sql) {
+        return sql.replaceAll("\\s+", " ").trim();
     }
 
     @Test
