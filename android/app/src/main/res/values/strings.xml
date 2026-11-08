@@ -206,5 +206,16 @@
     <string name="voice_release_to_cancel">Release to cancel</string>
     <string name="voice_too_short">Hold to record, release to send</string>
     <string name="voice_permission_required">Microphone permission is required to record voice messages</string>
+    <string name="voice_play">Play voice message</string>
+    <string name="voice_pause">Pause voice message</string>
+    <string name="voice_loading">Loading voice message</string>
+    <string name="voice_status_playing">playing</string>
+    <string name="voice_status_paused">paused</string>
+    <string name="voice_status_ready">ready</string>
+    <string name="voice_status_loading">loading</string>
+    <string name="voice_status_error">unavailable</string>
+    <string name="voice_duration_progress">%1$s / %2$s</string>
+    <string name="voice_message_accessibility">Voice message, %1$s of %2$s, %3$s</string>
+    <string name="voice_zero_duration">0:00</string>
 
 </resources>

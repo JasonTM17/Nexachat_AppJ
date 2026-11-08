@@ -227,6 +227,7 @@ public final class MessageBubbleBinder {
         TextView systemLabel = root.findViewById(R.id.systemLabel);
 
         hideAll(body, image, play, fileName, systemLabel);
+        if (VoiceBubbleBinder.bindIfVoice(root, message)) return;
 
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
         MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
