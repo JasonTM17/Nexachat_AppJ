@@ -13,30 +13,54 @@ if (localPropertiesFile.exists()) {
     localPropertiesFile.withInputStream { input -> localProps.load(input) }
 }
 
+// Release signing configuration:
+// Evaluated from Gradle properties, environment variables, or release/keystore/signing.properties.
+// CI/local unsigned packaging is enabled via -PskipSigning (or SKIP_SIGNING=true).
+def skipSigningProp = providers.gradleProperty('skipSigning')
+    .orElse(providers.environmentVariable('SKIP_SIGNING'))
+    .orNull
+def skipSigning = project.hasProperty('skipSigning') || (skipSigningProp != null && (skipSigningProp == '' || skipSigningProp.toBoolean()))
+
+def fileSigningProps = new Properties()
 def releaseSigningPropertiesFile = rootProject.file('../release/keystore/signing.properties')
-def releaseSigningProperties = new Properties()
-if (releaseSigningPropertiesFile.isFile()) {
-    releaseSigningPropertiesFile.withInputStream { input -> releaseSigningProperties.load(input) }
+if (!releaseSigningPropertiesFile.isFile()) {
+    releaseSigningPropertiesFile = rootProject.file('release/keystore/signing.properties')
 }
-def releaseSigningKeys = [
-    'storeFile',
-    'keyAlias',
-    'keystore.storePassword',
-    'keyPassword'
-]
 if (releaseSigningPropertiesFile.isFile()) {
-    def missingSigningKeys = releaseSigningKeys.findAll {
-        !releaseSigningProperties.getProperty(it)?.trim()
-    }
-    if (!missingSigningKeys.isEmpty()) {
-        throw new IllegalArgumentException(
-            "release/keystore/signing.properties is missing required entries: ${missingSigningKeys.join(', ')}"
-        )
-    }
-    if (!rootProject.file("../${releaseSigningProperties.getProperty('storeFile')}").isFile()) {
-        throw new IllegalArgumentException('The keystore configured in release/keystore/signing.properties does not exist')
-    }
+    releaseSigningPropertiesFile.withInputStream { input -> fileSigningProps.load(input) }
 }
+
+def releaseStoreFilePath = providers.gradleProperty('releaseStoreFile')
+    .orElse(providers.environmentVariable('RELEASE_STORE_FILE'))
+    .orNull ?: fileSigningProps.getProperty('storeFile')
+
+def releaseStorePassword = providers.gradleProperty('releaseStorePassword')
+    .orElse(providers.environmentVariable('RELEASE_STORE_PASSWORD'))
+    .orNull ?: fileSigningProps.getProperty('keystore.storePassword')
+
+def releaseKeyAlias = providers.gradleProperty('releaseKeyAlias')
+    .orElse(providers.environmentVariable('RELEASE_KEY_ALIAS'))
+    .orNull ?: fileSigningProps.getProperty('keyAlias')
+
+def releaseKeyPassword = providers.gradleProperty('releaseKeyPassword')
+    .orElse(providers.environmentVariable('RELEASE_KEY_PASSWORD'))
+    .orNull ?: fileSigningProps.getProperty('keyPassword')
+
+def hasReleaseSigning = releaseStoreFilePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
+File resolveStoreFile(String path) {
+    if (!path) return null
+    File f = new File(path)
+    if (f.isAbsolute()) return f
+    File fromRoot = rootProject.file(path)
+    if (fromRoot.exists()) return fromRoot
+    File fromRepo = rootProject.file("../${path}")
+    if (fromRepo.exists()) return fromRepo
+    return fromRoot
+}
+
+File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePath) : null
+
 
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
@@ -70,12 +94,12 @@ android {
     }
 
     signingConfigs {
-        if (releaseSigningPropertiesFile.isFile()) {
+        if (hasReleaseSigning) {
             release {
-                storeFile rootProject.file("../${releaseSigningProperties.getProperty('storeFile')}")
-                storePassword releaseSigningProperties.getProperty('keystore.storePassword')
-                keyAlias releaseSigningProperties.getProperty('keyAlias')
-                keyPassword releaseSigningProperties.getProperty('keyPassword')
+                storeFile resolvedStoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             }
         }
     }
@@ -84,8 +108,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
-            signingConfig releaseSigningPropertiesFile.isFile() ?
-                signingConfigs.getByName('release') : signingConfigs.getByName('debug')
+            signingConfig = (hasReleaseSigning && !skipSigning) ? signingConfigs.getByName('release') : null
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
@@ -117,15 +140,24 @@ android {
 
 gradle.taskGraph.whenReady { graph ->
     def releasePackagingRequested = graph.allTasks.any { task ->
-        task.path == ':app:assembleRelease' ||
-            task.path == ':app:packageRelease' ||
-            task.path == ':app:bundleRelease'
+        task.path in [':app:assembleRelease', ':app:packageRelease', ':app:bundleRelease', ':app:validateSigningRelease'] ||
+            task.name in ['assembleRelease', 'packageRelease', 'bundleRelease', 'validateSigningRelease']
     }
-    if (releasePackagingRequested && !releaseSigningPropertiesFile.isFile()) {
-        logger.warn(
-            'WARNING: release/keystore/signing.properties is missing; this release artifact is ' +
-                'signed with the debug key and is for local verification only.'
-        )
+    if (releasePackagingRequested && !skipSigning) {
+        if (!hasReleaseSigning) {
+            throw new GradleException(
+                'Release build requested but signing configuration is missing. ' +
+                'Provide signing credentials via environment variables ' +
+                '(RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD), ' +
+                'Gradle properties (-PreleaseStoreFile=..., -PreleaseStorePassword=..., -PreleaseKeyAlias=..., -PreleaseKeyPassword=...), ' +
+                'or pass -PskipSigning for unsigned artifacts.'
+            )
+        }
+        if (resolvedStoreFile == null || !resolvedStoreFile.isFile()) {
+            throw new GradleException(
+                "Configured release keystore file does not exist: ${resolvedStoreFile ? resolvedStoreFile.absolutePath : releaseStoreFilePath}"
+            )
+        }
     }
 }
 

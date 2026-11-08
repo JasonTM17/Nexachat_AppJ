@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Debug-source-set override: LAN demo traffic is cleartext HTTP/WS to the
-  dev machine's IP (API_BASE_URL in local.properties). Permitting cleartext
-  here is acceptable because this file ships only in debug builds — the
-  release source set keeps the restrictive main config (10.0.2.2 only)
-  and production traffic must be WSS/HTTPS behind a TLS proxy.
+  Debug-source-set override: Cleartext HTTP/WS is permitted for local development
+  including the Android emulator host alias (10.0.2.2) and LAN demo hosts.
+  This file ships only in debug builds. Release builds use the restrictive
+  main config where cleartext traffic is disabled globally.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />

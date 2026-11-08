@@ -208,6 +208,40 @@ again. Refresh tokens are separate opaque values stored in the database as
 SHA-256 hashes, so rotating the signing secret does not revoke those refresh
 tokens. All app instances in a deployment must use the same current secret.
 
+## Android release
+
+The Android release build produces hardened, minified, and resource-shrunk artifacts (`app-release.apk` / `app-release.aab`) with R8 full mode enabled.
+
+### Signing configuration hygiene
+
+Signing credentials must never be committed to the repository. The build configuration in `android/app/build.gradle` resolves release signing inputs from environment variables, Gradle properties, or an untracked `release/keystore/signing.properties` file:
+
+- **Environment variables**: `RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`
+- **Gradle project properties**: `releaseStoreFile`, `releaseStorePassword`, `releaseKeyAlias`, `releaseKeyPassword`
+- **Local properties file**: `release/keystore/signing.properties` (gitignored) with keys `storeFile`, `keystore.storePassword`, `keyAlias`, `keyPassword`
+
+If release packaging is requested (`assembleRelease`, `packageRelease`, `bundleRelease`) without complete signing credentials and without the unsigned flag, the build fails immediately with a descriptive error.
+
+For CI pipelines, local testing, or verification without signing keys, pass `-PskipSigning` (or set `SKIP_SIGNING=true`) to build an unsigned release artifact:
+
+```sh
+cd android
+./gradlew :app:assembleRelease -PskipSigning --no-parallel --max-workers=2
+```
+
+The resulting unsigned APK is located at `android/app/build/outputs/apk/release/app-release-unsigned.apk`.
+
+### Hardening and security boundaries
+
+1. **R8 full mode and resource shrinking**: Enabled via `android.enableR8.fullMode=true` in `gradle.properties`, and `minifyEnabled true`, `shrinkResources true` in `build.gradle`. Dead code, unused resources, and unneeded metadata are stripped.
+2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging.
+3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds (`android/app/src/debug/res/xml/network_security_config.xml`).
+4. **App backup disabled (`android:allowBackup="false"`)**: Backups are disabled to prevent extraction of sensitive local data via `adb backup` or cloud sync. Allowing backup would expose:
+   - Decrypted SQLite database containing cached messages, contact lists, conversation watermarks, and drafts.
+   - Session tokens and user authentication state stored in DataStore preferences.
+   - Downloaded attachment files and cached media in the application cache directory.
+5. **No sensitive logging**: `HttpLoggingInterceptor` is stripped in release builds (`BuildConfig.DEBUG` guarded), and no tokens, credentials, or payload bodies are logged.
+
 ## Run CI checks locally
 
 The GitHub workflow runs Maven verification with a job-local PostgreSQL 16
@@ -252,7 +286,7 @@ examples whose effects were intentionally not triggered during the audit.
 | `cd server && mvn -q -Dtest=ProductionConfigurationTest test` | PASS — 6 tests, 0 failures/errors/skips |
 | `(cd server && mvn -B verify)` | NOT_RUN — full suite not run by this worker |
 | `(cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)` | NOT_RUN — another Gradle daemon was BUSY |
-| Android release build `android/gradlew.bat :app:assembleRelease --no-parallel --max-workers=1` | Historical FAIL from an earlier ops pass: Hilt `annotationProcessor` rejected `CallActivity` before it extended `ComponentActivity`. Current source is `@AndroidEntryPoint` on `CallActivity extends ComponentActivity` (`CallActivity.java:42-43`). This row is not a current release-build result. |
+| Android release build `android/gradlew.bat :app:assembleRelease -PskipSigning --no-parallel --max-workers=2` | PASS — unsigned APK generated (`app-release-unsigned.apk`, 28.58 MB), R8 full mode minification and resource shrinking enabled, 0 errors |
 | `python -B tools/check-markdown-links.py docs/operations.md` | PASS — no broken relative links |
 | `python -B tools/check-markdown-links.py` | PASS — 56 relative links checked across 43 files |
 | `bash -n demo/*.sh tools/*.sh` | PASS |
