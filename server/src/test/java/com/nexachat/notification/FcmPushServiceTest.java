@@ -57,7 +57,8 @@ class FcmPushServiceTest {
         mockGateway = new MockFcmGateway();
         pushService = new DefaultFcmPushService(tokenRepository, mockGateway);
         eventListener = new NotificationEventListener(
-                pushService, memberRepository, presenceState, callRegistry, userRepository);
+                pushService, memberRepository, presenceState, callRegistry, userRepository,
+                tokenRepository);
     }
 
     @Test
@@ -244,5 +245,52 @@ class FcmPushServiceTest {
         assertThat(sent.get(0).token()).isEqualTo("callee-fcm-token");
         assertThat(sent.get(0).data().get("type")).isEqualTo("CALL_INVITE");
         assertThat(sent.get(0).data().get("callerName")).isEqualTo("John Caller");
+    }
+
+    @Test
+    void dispatchToTokensDeduplicatesByTokenValue() {
+        User user = mock(User.class);
+        UserDeviceToken first = UserDeviceToken.create(
+                user, "shared-token", UserDeviceToken.Platform.ANDROID, "Phone A");
+        UserDeviceToken second = UserDeviceToken.create(
+                user, "shared-token", UserDeviceToken.Platform.ANDROID, "Phone B");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(first, second));
+
+        pushService.sendNewMessageNotification(userId, conversationId, UUID.randomUUID(), 1L, "Alice");
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("shared-token");
+    }
+
+    @Test
+    void notificationEventListenerDeduplicatesSharedTokenAcrossMembers() {
+        UUID memberA = UUID.randomUUID();
+        UUID memberB = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, memberA, memberB));
+        when(presenceState.isOnline(memberA)).thenReturn(false);
+        when(presenceState.isOnline(memberB)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken tokenA = UserDeviceToken.create(
+                user, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        UserDeviceToken tokenB = UserDeviceToken.create(
+                user, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(memberA)).thenReturn(List.of(tokenA));
+        when(tokenRepository.findByUserId(memberB)).thenReturn(List.of(tokenB));
+
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.TEXT.name(), "Test message", UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null
+        );
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("shared-device-token");
     }
 }

@@ -6,8 +6,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -39,6 +41,16 @@ public class DefaultFcmPushService implements FcmPushService {
                                           long seq, String senderName) {
         List<UserDeviceToken> tokens = tokenRepository.findByUserId(recipientId);
         if (tokens.isEmpty()) {
+            return;
+        }
+        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName);
+    }
+
+    @Override
+    @Transactional
+    public void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
+                                          UUID messageId, long seq, String senderName) {
+        if (tokens == null || tokens.isEmpty()) {
             return;
         }
 
@@ -77,8 +89,14 @@ public class DefaultFcmPushService implements FcmPushService {
 
     private void dispatchToTokens(List<UserDeviceToken> tokens, Map<String, String> data,
                                   String priority, long ttlSeconds) {
+        // A shared physical device can hold one row per account; the same
+        // token must still receive a given push exactly once.
+        Set<String> dispatched = new HashSet<>();
         for (UserDeviceToken token : tokens) {
             String tokenValue = token.getToken();
+            if (!dispatched.add(tokenValue)) {
+                continue;
+            }
             fcmGateway.sendDataPush(tokenValue, data, priority, ttlSeconds)
                     .thenAccept(result -> {
                         if (result.unregistered()) {
