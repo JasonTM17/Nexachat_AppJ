@@ -56,6 +56,7 @@
 | `FILE_NOT_FOUND` | 404 | Stored file / attachment key missing |
 | `ATTACHMENT_NOT_FOUND` | 404 | Attachment record does not exist |
 | `PIN_LIMIT` | 409 | Conversation already has the maximum 3 pinned messages |
+| `IDEMPOTENCY_KEY_REUSED` | 409 | Same `Idempotency-Key` reused for a different endpoint or payload |
 | `MIME_NOT_ALLOWED` | 415 | Uploaded bytes failed the magic-byte sniff |
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
 | `RATE_LIMITED` | 429 | Per-user/IP rate limit exceeded |
@@ -92,6 +93,16 @@
   `details.retryAfterSeconds` (configured by the STOMP message-window properties).
 - `POST /contacts`, `PATCH /contacts/{id}`, `DELETE /contacts/{id}` and
   `POST /conversations/{id}/read` are safe to retry.
+- The mutating reaction endpoints (`POST`/`PUT`/`DELETE
+  /messages/{id}/reactions[/{emoji}]`) and pin endpoints
+  (`POST /conversations/{id}/pins`, `DELETE /conversations/{id}/pins/{messageId}`)
+  accept an optional `Idempotency-Key` header (a UUID). The first request with a
+  given `(user, key)` runs the operation and caches the outcome; a repeat with
+  the same key, endpoint and payload returns the original result without
+  running it again. Reusing a key for a different endpoint or payload is a
+  client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Keys expire after 24
+  hours. Absent header = no replay protection (the toggle endpoint still
+  toggles on every call).
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
   pair. Replaying an already-rotated refresh token returns
   `401 TOKEN_REUSED` and revokes the whole session family.
@@ -199,7 +210,7 @@ login 10 req / 5 min, refresh 30 req / 5 min.
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 |
-| `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS`, label ≤100 chars | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS`, label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
 ## Contacts — `/api/v1/contacts`
@@ -291,13 +302,18 @@ Upload validation reads magic bytes, not the client-declared MIME; text types pa
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 code points, normalized to NFC) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 |
+| `POST /messages/{messageId}/reactions` | Bearer member | `{emoji}` (≤16 code points, normalized to NFC) — **toggle**: same (user, emoji) removes | `204` (broadcasts `REACTION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `IDEMPOTENCY_KEY_REUSED` 409 |
+| `PUT /messages/{messageId}/reactions/{emoji}` | Bearer member | emoji in the path (≤16 code points, NFC) — **idempotent add** | `204` (broadcasts `REACTION_UPDATED`) | same as POST |
+| `DELETE /messages/{messageId}/reactions/{emoji}` | Bearer member | emoji in the path — **idempotent remove** | `204` (broadcasts `REACTION_UPDATED`) | same as POST |
 | `GET /conversations/{conversationId}/pins` | Bearer member | — | `200` `PinnedMessageView[]` newest-first | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation, not deleted | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `PIN_LIMIT` 409 |
-| `DELETE /conversations/{conversationId}/pins/{messageId}` | same as POST | — | `204` (broadcasts `PIN_UPDATED {pinned:false}`; idempotent no-op) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/pins` | Bearer member; **GROUP: ADMIN only** | `{messageId}` — same conversation, not deleted | `204` (broadcasts `PIN_UPDATED`; ≤3 per conversation, idempotent re-pin) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `PIN_LIMIT` 409 · `IDEMPOTENCY_KEY_REUSED` 409 |
+| `DELETE /conversations/{conversationId}/pins/{messageId}` | same as POST | — | `204` (broadcasts `PIN_UPDATED {pinned:false}`; idempotent no-op) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `MESSAGE_NOT_FOUND` 404 · `IDEMPOTENCY_KEY_REUSED` 409 |
 
 `PinnedMessageView` = `{messageId, pinnedBy, pinnedAt, message: MessageResponse}`.
 Pin limit serializes under a `FOR UPDATE` lock on the conversation row.
+`PUT`/`DELETE` reactions are the safe verbs for an offline outbox retry: a
+replayed add/remove never inverts state. The `Idempotency-Key` header applies
+to all five mutating endpoints (see [Idempotency and retries](#idempotency-and-retries)).
 
 ## Files — `/api/v1/files`
 
@@ -317,10 +333,22 @@ rest); `HEAD` behaves like `GET` without a body.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
-`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore}], serverTime}`.
+`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh}], serverTime}`.
 Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)`.
+
+`reactionUpdates` is derived from the append-only `reaction_events` table, so a
+removal is reported even though it deletes the `message_reactions` row. The
+page is bounded by `nexachat.sync.max-reaction-updates` (default 200 events,
+therefore at most 200 message ids). When the page is full, `hasMore=true` and
+`reactionCursor` carries the last event id consumed; the client echoes it as
+the watermark's `reactionCursor` on the next request so the follow-up page
+cannot skip rows (`reaction_events` is ordered by `id`). If `since` is older
+than `nexachat.sync.reaction-retention-days` (default 30), the events needed
+for a partial delta may have been purged, so the delta sets
+`reactionsFullRefresh=true` and the client must reload reactions from history
+instead of applying the (empty) partial page.
 
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
