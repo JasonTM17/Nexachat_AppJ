@@ -11,6 +11,7 @@ import com.nexachat.core.network.DeviceTokenApi;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -75,6 +76,39 @@ public final class DeviceTokenSyncExecutorTest {
         when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn(null);
 
         assertEquals(DeviceTokenSyncExecutor.Outcome.SUCCESS, executor.execute(0));
+
+        verify(deviceTokenApi, never()).register(any());
+    }
+
+    @Test
+    public void registersTokenFetchedWhenFirebaseIsConfigured() throws Exception {
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
+        when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn(DEVICE_TOKEN);
+        when(tokenStore.saveFcmDeviceToken(DEVICE_TOKEN)).thenReturn(Completable.complete());
+        Call<DeviceTokenApi.RegistrationResponse> call = mock(Call.class);
+        when(deviceTokenApi.register(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(new DeviceTokenApi.RegistrationResponse()));
+
+        assertEquals(DeviceTokenSyncExecutor.Outcome.SUCCESS, executor.execute(0));
+
+        verify(tokenStore).saveFcmDeviceToken(DEVICE_TOKEN);
+        ArgumentCaptor<DeviceTokenApi.RegistrationRequest> requestCaptor =
+                ArgumentCaptor.forClass(DeviceTokenApi.RegistrationRequest.class);
+        verify(deviceTokenApi).register(requestCaptor.capture());
+        assertEquals(DEVICE_TOKEN, requestCaptor.getValue().getToken());
+    }
+
+    @Test
+    public void tokenFetchFailureUsesBoundedRetryDecision() throws Exception {
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
+        when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.getTokenIfConfigured())
+                .thenThrow(new IOException("no play services"));
+
+        assertEquals(DeviceTokenSyncExecutor.Outcome.RETRY, executor.execute(0));
+        assertEquals(DeviceTokenSyncExecutor.Outcome.FAILURE,
+                executor.execute(DeviceTokenRetryPolicy.MAX_RETRIES));
 
         verify(deviceTokenApi, never()).register(any());
     }
