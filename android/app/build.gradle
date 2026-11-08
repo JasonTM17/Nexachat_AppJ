@@ -94,6 +94,7 @@ android {
     }
 
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
@@ -129,6 +130,8 @@ gradle.taskGraph.whenReady { graph ->
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     // Activity / Navigation / Lifecycle / Views
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
