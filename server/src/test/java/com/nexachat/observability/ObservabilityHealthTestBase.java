@@ -12,6 +12,7 @@ import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.user.User;
+import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.Mockito.mock;
@@ -81,6 +83,8 @@ abstract class ObservabilityHealthTestBase {
     /** A valid access token for {@code userId}; the mocked repository accepts it. */
     protected String accessToken(JwtService jwtService, UUID userId) {
         when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
         User user = mock(User.class);
         when(user.getId()).thenReturn(userId);
         return jwtService.generateAccessToken(user);

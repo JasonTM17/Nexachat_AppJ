@@ -219,13 +219,12 @@ request from the user row, so removing a phone takes effect immediately.
 ```sh
 docker compose up -d db app
 docker compose ps
-curl -fsS http://127.0.0.1:8081/actuator/health
+curl -fsS http://127.0.0.1:8080/actuator/health
 ```
 
 | Service | Host → container | Use |
 |---|---:|---|
 | App | `8080 → 8080` | REST API, STOMP WebSocket |
-| Management | `8081 → 8081` (loopback) | Health, metrics, Prometheus |
 | PostgreSQL | `5433 → 5432` | Local tools and integration tests |
 
 The app also serves STOMP WebSocket at `ws://localhost:8080/ws`. Only the
@@ -260,9 +259,9 @@ or request metadata.
 
 ## Observability
 
-The server exposes three observability surfaces, all on a separate
-loopback-bound management port so the public API port never serves actuator
-endpoints:
+The server exposes three observability surfaces. Only health is reachable by
+default, on the API port; metrics and Prometheus are opt-in and should be moved
+to a loopback-bound management port before exposure:
 
 | Surface | Default | How to enable |
 |---|---|---|
@@ -270,18 +269,19 @@ endpoints:
 | Metrics (`/actuator/metrics`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics` |
 | Prometheus (`/actuator/prometheus`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics,prometheus` |
 
-The management port defaults to `8081` and binds to `127.0.0.1`:
+By default the actuator shares port `8080`. Set `MANAGEMENT_PORT=8081` and
+`MANAGEMENT_ADDRESS=127.0.0.1` to move it to a loopback-only port:
 
 ```yaml
 management:
   server:
-    port: ${MANAGEMENT_PORT:8081}
-    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+    port: ${MANAGEMENT_PORT:}
+    address: ${MANAGEMENT_ADDRESS:}
 ```
 
 Do not bind the management port to a public interface without adding
-authentication in front of it. The Compose health check must use the
-management port (`http://127.0.0.1:8081/actuator/health`), not `8080`.
+authentication in front of it. When you move the port, point the Compose and
+Dockerfile health checks at it too.
 
 ### Health
 

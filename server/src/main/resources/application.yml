@@ -18,11 +18,12 @@ spring:
       max-request-size: 25MB
 
 management:
-  # Actuator runs on a separate loopback-bound port. Only health is exposed by
-  # default; metrics and prometheus require MANAGEMENT_EXPOSURE to opt in.
+  # Actuator shares the API port by default so existing health checks keep working.
+  # Set MANAGEMENT_PORT (and keep MANAGEMENT_ADDRESS on loopback) to move it to a
+  # separate port. Only health is exposed unless MANAGEMENT_EXPOSURE opts in.
   server:
-    port: ${MANAGEMENT_PORT:8081}
-    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+    port: ${MANAGEMENT_PORT:}
+    address: ${MANAGEMENT_ADDRESS:}
   endpoints:
     web:
       exposure:
