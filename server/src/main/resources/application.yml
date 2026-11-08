@@ -19,11 +19,8 @@ spring:
 
 management:
   # Actuator shares the API port by default so existing health checks keep working.
-  # Set MANAGEMENT_PORT (and keep MANAGEMENT_ADDRESS on loopback) to move it to a
-  # separate port. Only health is exposed unless MANAGEMENT_EXPOSURE opts in.
-  server:
-    port: ${MANAGEMENT_PORT:}
-    address: ${MANAGEMENT_ADDRESS:}
+  # Set MANAGEMENT_SERVER_PORT (with MANAGEMENT_SERVER_ADDRESS=127.0.0.1) to move it
+  # to a loopback-only port. Only health is exposed unless MANAGEMENT_EXPOSURE opts in.
   endpoints:
     web:
       exposure:

@@ -269,14 +269,14 @@ to a loopback-bound management port before exposure:
 | Metrics (`/actuator/metrics`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics` |
 | Prometheus (`/actuator/prometheus`) | Hidden | `MANAGEMENT_EXPOSURE=health,metrics,prometheus` |
 
-By default the actuator shares port `8080`. Set `MANAGEMENT_PORT=8081` and
-`MANAGEMENT_ADDRESS=127.0.0.1` to move it to a loopback-only port:
+By default the actuator shares port `8080`. Set `MANAGEMENT_SERVER_PORT=8081` and
+`MANAGEMENT_SERVER_ADDRESS=127.0.0.1` together to move it to a loopback-only port:
 
 ```yaml
 management:
   server:
-    port: ${MANAGEMENT_PORT:}
-    address: ${MANAGEMENT_ADDRESS:}
+    port: 8081
+    address: 127.0.0.1
 ```
 
 Do not bind the management port to a public interface without adding
