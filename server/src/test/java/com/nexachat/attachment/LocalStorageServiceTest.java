@@ -184,6 +184,39 @@ class LocalStorageServiceTest {
         assertThat(ex.getHttpStatus()).isEqualTo(404);
     }
 
+    // ------------------------------------------------------------------- open
+
+    @Test
+    void open_returnsStreamAtOffsetZeroWithExactSize() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        try (StorageService.StreamHandle handle = newService().open(stored.storageKey())) {
+            assertThat(handle.sizeBytes()).isEqualTo(png.length);
+            assertThat(handle.content().readAllBytes()).containsExactly(png);
+        }
+    }
+
+    @Test
+    void open_traversalAndAbsolutePath_throwsFileNotFound() {
+        for (String hostile : new String[] {
+                "..", "../escape.png", "a\\b.png", "  ",
+                tempDir.resolveSibling("outside.png").toAbsolutePath().toString().replace('\\', '/')}) {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> newService().open(hostile));
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        }
+    }
+
+    @Test
+    void open_missingFile_throwsFileNotFound() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> newService().open("attachments/never-written.png"));
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+    }
+
     private LocalStorageService newService() {
         return new LocalStorageService(tempDir.toString());
     }

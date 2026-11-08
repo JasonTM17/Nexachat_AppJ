@@ -137,7 +137,12 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                          @Param("lastSeq") long lastSeq,
                                          @Param("since") Instant since);
 
-    /** Conversation-scoped literal substring search, ordered through idx_msg_conv_seq. */
+    /**
+     * Conversation-scoped literal substring search, ordered through
+     * idx_msg_conv_seq. The {@code f_unaccent} wrapper is the IMMUTABLE form
+     * the trigram index is built on — calling the STABLE {@code unaccent}
+     * directly would make the index unusable for this predicate.
+     */
     @Query(value = """
             SELECT m.id AS id, m.conversation_id AS "conversationId", m.seq AS seq,
                    m.sender_id AS "senderId", u.display_name AS "senderDisplayName",
@@ -152,7 +157,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
-              AND public.unaccent(m.content) ILIKE public.unaccent(:pattern) ESCAPE chr(92)
+              AND public.f_unaccent(m.content) ILIKE public.f_unaccent(:pattern) ESCAPE chr(92)
             ORDER BY m.seq DESC
             """, nativeQuery = true)
     List<MessageSearchProjection> searchTextRows(@Param("conversationId") UUID conversationId,

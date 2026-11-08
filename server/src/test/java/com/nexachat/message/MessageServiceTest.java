@@ -430,7 +430,7 @@ class MessageServiceTest {
         ReflectionTestUtils.setField(owner, "id", ownerId);
         MessageAttachment attachment = MessageAttachment.upload(
                 owner, "attachments/" + UUID.randomUUID() + ".png", "photo.png",
-                mimeType, 128L, null, null, null);
+                mimeType, 128L, null, null, null, null);
         ReflectionTestUtils.setField(attachment, "id", UUID.randomUUID());
         return attachment;
     }
