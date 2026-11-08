@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material3 XML theme for the fragment host (launcher still uses splash Theme.NexaChat until B4). -->
     <style name="Theme.NexaChat.Views" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorOnPrimary">@color/colorOnPrimary</item>
@@ -23,12 +22,15 @@
         <item name="colorSurface">@color/colorSurface</item>
         <item name="colorOnSurface">@color/colorOnSurface</item>
         <item name="colorSurfaceVariant">@color/colorSurfaceVariant</item>
-        <item name="colorSurfaceContainerLow">@color/surface_container_low_light</item>
-        <item name="colorSurfaceContainer">@color/surface_container_light</item>
-        <item name="colorSurfaceContainerHigh">@color/surface_container_high_light</item>
+        <item name="colorSurfaceContainerLowest">@color/colorSurfaceContainerLowest</item>
+        <item name="colorSurfaceContainerLow">@color/colorSurfaceContainerLow</item>
+        <item name="colorSurfaceContainer">@color/colorSurfaceContainer</item>
+        <item name="colorSurfaceContainerHigh">@color/colorSurfaceContainerHigh</item>
+        <item name="colorSurfaceContainerHighest">@color/colorSurfaceContainerHighest</item>
         <item name="colorOnSurfaceVariant">@color/colorOnSurfaceVariant</item>
         <item name="colorOutline">@color/colorOutline</item>
         <item name="colorOutlineVariant">@color/colorOutlineVariant</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="materialButtonStyle">@style/Widget.NexaChat.Button</item>
@@ -53,40 +55,13 @@
         <item name="android:minHeight">@dimen/min_touch_target</item>
     </style>
 
-    <style name="TextAppearance.NexaChat.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge" />
-    <style name="TextAppearance.NexaChat.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium" />
-    <style name="TextAppearance.NexaChat.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall" />
-    <style name="TextAppearance.NexaChat.TitleLarge" parent="TextAppearance.Material3.TitleLarge" />
-    <style name="TextAppearance.NexaChat.TitleMedium" parent="TextAppearance.Material3.TitleMedium" />
-    <style name="TextAppearance.NexaChat.TitleSmall" parent="TextAppearance.Material3.TitleSmall" />
-    <style name="TextAppearance.NexaChat.BodyLarge" parent="TextAppearance.Material3.BodyLarge" />
-    <style name="TextAppearance.NexaChat.BodyMedium" parent="TextAppearance.Material3.BodyMedium" />
-    <style name="TextAppearance.NexaChat.BodySmall" parent="TextAppearance.Material3.BodySmall" />
-    <style name="TextAppearance.NexaChat.LabelLarge" parent="TextAppearance.Material3.LabelLarge" />
-    <style name="TextAppearance.NexaChat.LabelMedium" parent="TextAppearance.Material3.LabelMedium" />
-    <style name="TextAppearance.NexaChat.LabelSmall" parent="TextAppearance.Material3.LabelSmall" />
-
-    <style name="ShapeAppearance.NexaChat.Small" parent="ShapeAppearance.Material3.SmallComponent">
-        <item name="cornerSize">@dimen/corner_sm</item>
-    </style>
-    <style name="ShapeAppearance.NexaChat.Medium" parent="ShapeAppearance.Material3.MediumComponent">
-        <item name="cornerSize">@dimen/corner_md</item>
-    </style>
-    <style name="ShapeAppearance.NexaChat.Large" parent="ShapeAppearance.Material3.LargeComponent">
-        <item name="cornerSize">@dimen/corner_lg</item>
-    </style>
-
-    <style name="ShapeAppearance.NexaChat.Pill" parent="">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">@dimen/corner_xl</item>
-    </style>
-
     <style name="Widget.NexaChat.Chip.Filter" parent="Widget.Material3.Chip.Filter">
         <item name="checkedIconVisible">false</item>
-        <item name="chipCornerRadius">20dp</item>
+        <item name="chipCornerRadius">@dimen/corner_full</item>
         <item name="chipBackgroundColor">@color/stitch_chip_bg_tint</item>
         <item name="android:textColor">@color/stitch_chip_text_color</item>
         <item name="chipStrokeColor">@color/stitch_chip_stroke_color</item>
         <item name="chipStrokeWidth">1dp</item>
+        <item name="android:minHeight">@dimen/min_touch_target</item>
     </style>
 </resources>

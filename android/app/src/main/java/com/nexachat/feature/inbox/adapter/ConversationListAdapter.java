@@ -1,11 +1,11 @@
 package com.nexachat.feature.inbox.adapter;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -17,6 +17,7 @@ import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
+import com.nexachat.feature.inbox.InboxPreviewKind;
 
 /**
  * Inbox conversation rows with unread badge and relative timestamps.
@@ -86,6 +87,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView title;
         private final TextView time;
         private final TextView preview;
+        private final ImageView previewTypeIcon;
         private final TextView unreadBadge;
 
         Holder(@NonNull View itemView) {
@@ -94,6 +96,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             title = itemView.findViewById(R.id.title);
             time = itemView.findViewById(R.id.time);
             preview = itemView.findViewById(R.id.preview);
+            previewTypeIcon = itemView.findViewById(R.id.previewTypeIcon);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
         }
 
@@ -117,13 +120,28 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             avatar.setOnlineStatus(isOnline);
 
             boolean unread = conversation.getUnreadCount() > 0;
-            title.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
             preview.setText(ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
                     currentUserId
             ));
-            preview.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+            InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
+            int previewIcon = 0;
+            if (previewKind == InboxPreviewKind.PHOTO) {
+                previewIcon = R.drawable.ic_image;
+            } else if (previewKind == InboxPreviewKind.VOICE) {
+                previewIcon = R.drawable.ic_mic;
+            } else if (previewKind == InboxPreviewKind.FILE) {
+                previewIcon = R.drawable.ic_description;
+            } else if (previewKind == InboxPreviewKind.CALL) {
+                previewIcon = R.drawable.ic_call;
+            }
+            if (previewIcon == 0) {
+                previewTypeIcon.setVisibility(View.GONE);
+            } else {
+                previewTypeIcon.setImageResource(previewIcon);
+                previewTypeIcon.setVisibility(View.VISIBLE);
+            }
 
             Long at = conversation.getLastMessageAtEpochMs();
             if (at != null) {
@@ -134,7 +152,6 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                         justNowLabel,
                         yesterdayLabel
                 ));
-                time.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
                 int timeColor = resolveThemeColor(
                         itemView.getContext(),
                         unread ? com.google.android.material.R.attr.colorPrimary : com.google.android.material.R.attr.colorOnSurfaceVariant

@@ -35,13 +35,19 @@
     <!-- Inbox -->
     <string name="inbox_title">Chats</string>
     <string name="inbox_empty">No conversations yet</string>
-    <string name="inbox_search_hint">Search chats, people, tags…</string>
+    <string name="inbox_empty_unread">No unread chats</string>
+    <string name="inbox_empty_groups">No group chats</string>
+    <string name="inbox_search_hint">Search chats</string>
     <string name="inbox_active_now_header">ACTIVE NOW</string>
     <string name="inbox_view_all">View All</string>
     <string name="inbox_filter_all">All</string>
     <string name="inbox_filter_unread">Unread</string>
-    <string name="inbox_filter_direct">Direct</string>
     <string name="inbox_filter_groups">Groups</string>
+    <string name="inbox_new_chat">New chat</string>
+    <string name="inbox_more_options">More options</string>
+    <string name="inbox_preview_photo">Photo</string>
+    <string name="inbox_preview_voice">Voice message</string>
+    <string name="inbox_preview_file">File</string>
     <string name="inbox_your_status">Your status</string>
 
     <!-- Contacts & user search -->

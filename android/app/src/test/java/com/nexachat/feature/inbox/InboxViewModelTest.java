@@ -1,6 +1,7 @@
 package com.nexachat.feature.inbox;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
+import androidx.lifecycle.SavedStateHandle;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.data.ConversationRepository;
@@ -33,6 +34,7 @@ public final class InboxViewModelTest {
 
     private ConversationRepository repository;
     private BehaviorProcessor<List<ConversationSummary>> inboxFlow;
+    private SavedStateHandle savedStateHandle;
     private InboxViewModel viewModel;
 
     @Before
@@ -45,7 +47,8 @@ public final class InboxViewModelTest {
                 new Result.Success<Boolean>(Boolean.TRUE)));
         when(repository.loadNextInboxPage()).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.FALSE)));
-        viewModel = new InboxViewModel(repository);
+        savedStateHandle = new SavedStateHandle();
+        viewModel = new InboxViewModel(repository, savedStateHandle);
     }
 
     @After
@@ -159,6 +162,30 @@ public final class InboxViewModelTest {
 
         assertFalse(viewModel.getUiState().getValue().hasMore());
         verify(repository, never()).loadNextInboxPage();
+    }
+
+    @Test
+    public void selectedFilterIsPersistedAndRestoredWithVisibleRows() {
+        inboxFlow.onNext(List.of(
+                conversation("direct-unread", 2),
+                conversation("direct-read", 0),
+                conversation("group-unread", 1, "Team", "Team Chat")));
+
+        viewModel.selectFilter(InboxFilter.UNREAD);
+
+        InboxUiState selected = viewModel.getUiState().getValue();
+        assertEquals(InboxFilter.UNREAD, selected.getSelectedFilter());
+        assertEquals(List.of("direct-unread", "group-unread"),
+                selected.getVisibleConversations().stream()
+                        .map(ConversationSummary::getId).toList());
+
+        InboxViewModel restored = new InboxViewModel(repository, savedStateHandle);
+
+        assertEquals(InboxFilter.UNREAD,
+                restored.getUiState().getValue().getSelectedFilter());
+        assertEquals(List.of("direct-unread", "group-unread"),
+                restored.getUiState().getValue().getVisibleConversations().stream()
+                        .map(ConversationSummary::getId).toList());
     }
 
     private static ConversationSummary conversation(String id, int unread) {
