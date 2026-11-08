@@ -177,8 +177,8 @@ public final class CreateGroupFragment extends Fragment {
         public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             View row = LayoutInflater.from(parent.getContext())
                     .inflate(R.layout.item_user_search, parent, false);
-            CheckBox checkBox = new CheckBox(parent.getContext());
-            ((ViewGroup) row).addView(checkBox);
+            CheckBox checkBox = row.findViewById(R.id.selectionCheck);
+            checkBox.setVisibility(View.VISIBLE);
             return new Holder(row, checkBox);
         }
 

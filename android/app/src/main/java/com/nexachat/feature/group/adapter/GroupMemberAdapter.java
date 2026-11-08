@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.chip.Chip;
 import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.GroupMember;
@@ -64,12 +65,14 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
     static final class Holder extends RecyclerView.ViewHolder {
         private final AvatarView avatar;
         private final TextView memberName;
+        private final Chip memberRole;
         private final ImageButton removeMember;
 
         Holder(@NonNull View itemView) {
             super(itemView);
             avatar = itemView.findViewById(R.id.avatar);
             memberName = itemView.findViewById(R.id.memberName);
+            memberRole = itemView.findViewById(R.id.memberRole);
             removeMember = itemView.findViewById(R.id.removeMember);
         }
 
@@ -77,6 +80,7 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
             memberName.setText(member.getDisplayName());
             avatar.setName(member.getDisplayName());
             avatar.setAvatarUrl(member.getAvatarUrl());
+            memberRole.setVisibility(member.isAdmin() ? View.VISIBLE : View.GONE);
             itemView.setOnClickListener(v -> listener.onMemberClick(member.getUserId()));
             removeMember.setVisibility(showRemove && !member.isAdmin() ? View.VISIBLE : View.GONE);
             removeMember.setOnClickListener(v -> listener.onRemoveMember(member.getUserId()));

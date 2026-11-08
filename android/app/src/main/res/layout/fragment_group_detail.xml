@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
@@ -9,15 +8,16 @@
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/appBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
-            app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationContentDescription="@string/cd_back" />
+            app:navigationContentDescription="@string/cd_back"
+            app:navigationIcon="@drawable/ic_arrow_back" />
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -29,30 +29,31 @@
             android:id="@+id/detailColumn"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_horizontal"
             android:orientation="vertical"
-            android:padding="@dimen/space_md">
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_md">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                android:layout_marginTop="@dimen/space_md"
                 app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardElevation="0dp">
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_horizontal"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="16dp">
 
                     <com.nexachat.core.ui.components.AvatarView
                         android:id="@+id/groupAvatar"
-                        android:layout_width="88dp"
-                        android:layout_height="88dp" />
+                        android:layout_width="96dp"
+                        android:layout_height="96dp" />
 
                     <TextView
                         android:id="@+id/groupTitle"
@@ -60,6 +61,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textColor="?attr/colorOnSurface"
                         android:textStyle="bold" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -68,17 +70,16 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                app:cardCornerRadius="20dp"
                 app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp"
-                app:cardElevation="0dp">
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="12dp">
+                    android:orientation="vertical">
 
                     <com.nexachat.core.ui.components.SectionHeaderView
                         android:id="@+id/membersHeader"
@@ -93,25 +94,31 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/addMemberButton"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
+                        android:layout_marginHorizontal="@dimen/space_md"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:layout_marginBottom="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_add_member"
-                        android:visibility="gone" />
+                        android:visibility="gone"
+                        app:cornerRadius="12dp"
+                        app:icon="@drawable/ic_add"
+                        app:iconGravity="textStart" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/leaveGroupButton"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/action_leave_group"
-                android:textColor="?attr/colorError" />
+                android:textColor="?attr/colorError"
+                app:cornerRadius="12dp" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

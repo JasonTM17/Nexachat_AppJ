@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
@@ -36,7 +35,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardBackgroundColor="?attr/colorSurface"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
                 app:contentPadding="16dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -49,6 +48,7 @@
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/groupNameLayout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="@string/group_name_label"
@@ -77,10 +77,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                android:minHeight="52dp"
+                android:minHeight="@dimen/min_touch_target"
                 android:text="@string/action_create_group"
-                android:textStyle="bold"
-                app:cornerRadius="16dp" />
+                app:cornerRadius="12dp" />
         </LinearLayout>
     </ScrollView>
 

@@ -55,6 +55,7 @@
     <string name="contact_alias_label">Alias</string>
     <string name="action_search">Search</string>
     <string name="action_add_contact">Add contact</string>
+    <string name="action_add">Add</string>
     <string name="action_remove_contact">Remove contact</string>
     <string name="action_message">Message</string>
     <string name="action_save">Save</string>

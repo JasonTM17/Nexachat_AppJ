@@ -35,7 +35,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:paddingTop="6dp"
+        android:paddingTop="@dimen/space_sm"
         android:paddingBottom="88dp"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
@@ -47,7 +47,7 @@
         android:layout_margin="@dimen/space_lg"
         android:contentDescription="@string/action_add_contact"
         app:backgroundTint="?attr/colorPrimary"
-        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Medium"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large"
         app:srcCompat="@drawable/ic_add"
         app:tint="?attr/colorOnPrimary" />
 
