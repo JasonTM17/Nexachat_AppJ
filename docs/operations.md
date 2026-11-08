@@ -19,6 +19,12 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
 | `FCM_TOKEN_URI` | No (local testing only) | Empty (Google token endpoint) | `https://oauth2.googleapis.com/token` |
 | `FCM_API_URL` | No (local testing only) | Empty (Google FCM endpoint) | `https://fcm.googleapis.com/v1/projects/<id>/messages:send` |
+| `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
+| `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai/` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `NEXACHAT_SUMMARY_LLM_MODEL` | Yes when summary LLM enabled | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` |
+| `NEXACHAT_SUMMARY_LLM_API_KEY` | Yes when summary LLM enabled | None | `your-openai-or-gemini-api-key` |
+| `NEXACHAT_RAG_ENABLED` | No (optional conversation RAG) | `true` | `true` |
+| `NEXACHAT_RAG_EMBEDDING_PROVIDER` | No | `lexical` | `lexical` (or `openai-compatible`) |
 
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
@@ -176,10 +182,13 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations (currently V1 through V7,
-`V1__init.sql` to `V7__p0_receipts_sync_fcm.sql`) apply on app startup
+Back up before replacing the app image. Flyway migrations (currently V1 through V10,
+`V1__init.sql` to `V10__reaction_events_idempotency_device_tokens.sql`) apply on app startup
 and are forward-only: add a new versioned SQL migration; never edit one already
-applied to a database.
+applied to a database. Migrations V8–V10 introduce:
+- `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
+- `V9__conversation_rag.sql`: `message_embeddings` table with bytea vectors, `rag_ask_cache`, and `rag_ask_request_limits`.
+- `V10__reaction_events_idempotency_device_tokens.sql`: `reaction_events` audit table for delta sync, `request_idempotency` replay cache, and `UNIQUE(user_id, token)` device token constraint.
 
 ```sh
 bash demo/backup.sh

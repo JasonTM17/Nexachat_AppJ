@@ -3,7 +3,9 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V7) + file volume. Call signaling shares STOMP (`server/call`,
+> (Flyway V1–V10) + file volume. Conversation RAG server API is available
+> (`POST /api/v1/conversations/{id}/ask`, [docs/rag.md](rag.md)); Android entry in progress.
+> Call signaling shares STOMP (`server/call`,
 > `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
 > (`CallActivity`, `IncomingCallActivity`) and WebRTC audio (`WebRtcMediaEngine`);
 > see [docs/calls.md](calls.md).
@@ -43,6 +45,7 @@ flowchart LR
             CALL["call signaling"]
             SUM["summary"]
             NOTIF["notification"]
+            RAG["rag"]
             COMMON["common: errors, logging,<br/>config, E.164 util"]
         end
         WS["WebSocket/STOMP layer<br/>@MessageMapping +<br/>ChannelInterceptor authZ"]
@@ -50,9 +53,9 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V7 migrations")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V10 migrations<br/>seq · watermarks · idempotency · calls · rag · reaction_events")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
-    FCM[["FCM (HTTP v1, GoogleHttpFcmGateway)"]]
+    FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
     REST -- "HTTPS REST /api/v1" --> SEC
     STOMP -- "WSS · STOMP frames" --> WS
@@ -87,6 +90,7 @@ flowchart TB
         CALL["call signaling"]
         SUM["summary"]
         NOTIF["notification"]
+        RAG["rag"]
         COMMON["common: errors, logging,<br/>config, E.164 util"]
     end
 ```
@@ -116,13 +120,15 @@ sequenceDiagram
     Note over B: khi mở chat → POST /conversations/42/read {upToSeq}<br/>→ A nhận MESSAGE_READ cập nhật 2 vạch xanh ("Đã xem")
 ```
 
-## 4. Edit, delete, sync and offline outbox
+## 4. Edit, delete, sync, offline outbox, and media
 
 - **Edit:** an authenticated conversation member may edit their own `TEXT`
   message. The server trims and validates content, updates `editedAt`, commits,
   then broadcasts `MESSAGE_UPDATED`. Repeating the same normalized content is
   a no-op. The REST search endpoint searches live `TEXT` rows in one
-  conversation using escaped, accent-insensitive `unaccent` + `ILIKE` matching.
+  conversation using `public.f_unaccent` + `ILIKE` matching, accelerated by
+  a composite GIN trigram index `idx_msg_conv_content_trgm` on
+  `(conversation_id, f_unaccent(content))` (Flyway V8).
 - **Delete:** the author soft-deletes their message. The row and sequence stay
   in history as a tombstone (`content: null`); reactions and pins are removed.
   Attachment metadata and stored bytes are retained, but the deleted message's
@@ -130,13 +136,33 @@ sequenceDiagram
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
   from Room v8, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
-  server covering index `idx_messages_delta_sync` on `(conversation_id, seq)`.
+  server covering index `idx_messages_delta_sync` on `(conversation_id, seq)` and the
+  append-only `reaction_events` audit table (Flyway V10) with additive reaction cursors.
 - **Offline Outbox & WorkManager:** pending optimistic messages (`outbox`) and
   the `offline_outbox` action table (RFC 4122 UUIDv5 idempotency keys) are drained by
   `OutboxSyncWorker` via WorkManager with `NetworkType.CONNECTED` constraints and atomic
   lease locking. Reaction and pin toggles write the optimistic state and enqueue a durable
-  action in one Room transaction; the dispatcher replays the stored idempotency key,
-  retries transient failures with exponential backoff, and rolls back on a permanent 4xx.
+  action in one Room transaction (`MessageRepository.java`); the dispatcher replays the stored
+  idempotency key against idempotent server endpoints (`PUT`/`DELETE /messages/{id}/reactions/{emoji}`
+  and pin endpoints with `Idempotency-Key` header, Flyway V10 `request_idempotency`), retries
+  transient failures with exponential backoff, and rolls back on a permanent 4xx.
+- **Media Pipeline & Streaming:** client-side image compression applies a 1920px
+  long-edge cap, EXIF orientation correction, GPS metadata scrubbing, and BlurHash placeholder
+  generation (`attachments.blur_hash`, Flyway V8). Media downloads stream via HTTP Range
+  (`Range: bytes=a-b`, 206 Partial Content / 416), cached through an authenticated
+  origin-validated Glide loader with a 2 GiB bounded disk cache. Voice playback uses Media3
+  with lazy 48-bar waveform extraction cached per attachment.
+- **Conversation RAG ("Ask this chat"):** server-side RAG module (`server/rag/**`, Flyway V9
+  `message_embeddings`, `rag_ask_cache`, `rag_ask_request_limits`) exposes
+  `POST /api/v1/conversations/{id}/ask`. It executes hybrid BM25 lexical ranking and vector
+  cosine ranking with reciprocal-rank fusion (`k = 60`), MMR diversification, strict citation
+  validation against retrieved context, a 3,000-character context budget, and deterministic
+  256-d local lexical embedding fallback. Note: Server API is fully available; Android UI
+  entry is in progress (not yet merged into the app).
+- **AI Conversation Summary:** summary service (`server/summary/**`, Flyway V6) uses an
+  extractive local MMR engine or an optional external OpenAI-compatible LLM (tested with
+  Gemini `gemini-3.1-flash-lite` via Gemini's OpenAI-compatible base URL) gated by account-level
+  `aiSummaryConsent` and server complexity thresholds.
 - **Presence:** each authenticated STOMP session contributes to an
   in-memory per-user count. After commit, presence goes only to DIRECT peers
   when the subject allows presence. Hiding one's presence is one-way; it does
