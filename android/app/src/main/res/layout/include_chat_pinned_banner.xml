@@ -5,6 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="?attr/colorSurfaceContainerLow"
+    android:contentDescription="@string/pinned_title"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="@dimen/space_sm"
