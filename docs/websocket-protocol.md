@@ -6,7 +6,8 @@
 ## 1. Endpoint and transport
 
 - Endpoint: `ws://host/ws` (WSS in production, `wss://host/ws`), standard
-  HTTP upgrade; no session cookie and no query-string token.
+  HTTP upgrade; handshake allowed origins are restricted to `NEXACHAT_CORS_ALLOWED_ORIGINS`
+  (empty by default; wildcard `*` is rejected at boot); no session cookie and no query-string token.
 - Transport: raw WebSocket speaking STOMP 1.2 frames.
 - Frame size: incoming raw WebSocket text messages are effectively limited to 16,640 bytes by Spring WebSocket 6.2.1 over Tomcat 10.1.34 (Tomcat's own default is 8,192 bytes). The assembled STOMP decoder limit is 65,536 bytes, but the lower transport limit may close an oversized raw frame before STOMP can return an ERROR frame.
 - **No SockJS.** The only client is the native Android app (OkHttp
@@ -36,7 +37,10 @@ Why a header and not `?token=` on the URL:
   logged URL.
 
 The server validates the JWT in the inbound channel interceptor before it
-processes CONNECT. A rejected CONNECT is dropped and the server does not
+processes CONNECT, checking signature, expiry, and the revocation cutoff
+(`users.tokens_valid_after`, Flyway V11). A token issued before the user's
+revocation cutoff (after logout or password change) or an otherwise invalid/expired
+token is rejected: the rejected CONNECT is dropped and the server does not
 guarantee an `ERROR` frame; the client may see the CONNECT acknowledgement
 timeout instead. Before every socket attempt, `RealtimeSession` checks the
 stored access-token expiry and calls the shared, mutex-protected

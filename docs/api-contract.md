@@ -217,7 +217,9 @@ Each item of `attachments` is an `AttachmentResponse` =
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: register and
-login 10 req / 5 min, refresh 30 req / 5 min.
+login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone).
+
+**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
 ## Users — `/api/v1/users`
 
@@ -436,6 +438,10 @@ the endpoint never answers `503` for a provider problem.
 `{requests, cacheHits, notFound, extractive, llmCalls, llmFallbackCalls,
 llmFailures, inputChars, meanInputChars, embeddingCalls, embeddingFailures,
 indexedMessages}`. No message text, questions or vectors are exposed.
+**Authorization:** This endpoint is operator telemetry restricted to administrator
+phone numbers configured in `NEXACHAT_ADMIN_PHONES`. Non-admin authenticated
+callers receive `403 FORBIDDEN` (`code: FORBIDDEN`). When `NEXACHAT_ADMIN_PHONES`
+is empty or unset, the endpoint is denied to all users.
 
 ## WebSocket / STOMP
 

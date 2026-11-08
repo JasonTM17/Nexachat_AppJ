@@ -46,12 +46,28 @@ the implementing source file.
   a separate transaction before the 401 (rotate's transaction rolls back;
   TokenService.revokeAllForUser + RefreshTokenRepository). Logout is idempotent
   and ownership-checked; password change revokes all other sessions.
+- Access-token revocation (Flyway V11): `users.tokens_valid_after` stores the revocation
+  cutoff timestamp stamped on logout, logout-all, or password change (`AuthService.java`).
+  Both `JwtAuthFilter` and `StompAuthChannelInterceptor` check `iat < cutoff` and reject stale
+  access tokens with `401 TOKEN_INVALID`. The lookup is served from an in-memory bounded LRU
+  cache (`AccessTokenValidityCache`, `nexachat.security.validity-cache-ttl-seconds`, default 60 s)
+  with a database projection fallback (`findAuthValidityById`).
 
 ## 3. Transport authorization
 
 - REST is stateless: CSRF disabled, no HTTP session. Only register/login/refresh,
   actuator health, `/error`, and the WebSocket upgrade `/ws` are permitAll;
   every other request requires a Bearer token (SecurityConfig.java).
+- Actuator endpoints share the API port `8080` by default; only `/actuator/health` is public.
+  Metrics and Prometheus endpoints require opt-in via `MANAGEMENT_EXPOSURE`. Moving the management
+  endpoints to an isolated loopback port is opt-in via `MANAGEMENT_SERVER_PORT` and `MANAGEMENT_SERVER_ADDRESS`.
+- CORS uses an explicit allow-list (`nexachat.security.cors-allowed-origins`, env `NEXACHAT_CORS_ALLOWED_ORIGINS`).
+  The default is empty (admitting no cross-origin browser caller, safe for native mobile clients).
+  Wildcard `*` is rejected at boot, and credentials are never enabled.
+- The WebSocket handshake (`/ws`) enforces the same CORS allow-list.
+- Operator telemetry (`GET /api/v1/rag/stats`) is restricted to administrator phone numbers
+  in `nexachat.security.admin-phones` (`NEXACHAT_ADMIN_PHONES`) via `RagStatsAuthorizationManager`;
+  non-admin authenticated callers receive `403 FORBIDDEN`.
 - JwtAuthFilter parses `Authorization: Bearer <jwt>` once per request and sets a
   typed `JwtPrincipal`. A missing header leaves the request unauthenticated and
   the entry point answers 401 (`UNAUTHORIZED`/`TOKEN_EXPIRED`/`TOKEN_INVALID`)
@@ -87,6 +103,14 @@ the implementing source file.
   bytes yield 415 `MIME_NOT_ALLOWED` (MagicBytes.java, LocalStorageService
   .store). Fail-closed: no recognizable signature (including plain text, though
   `text/plain` is listed in ALLOWED_MIMES) means rejection, never guessing.
+- ISO-BMFF track sniffing: Android `MediaRecorder` voice notes produce generic `.m4a`
+  files with compatible brands (`isom`, `mp42`, `mp41`). A brand-only check would
+  misclassify them as `video/mp4`. `MagicBytes.java` walks the ISO-BMFF box tree and
+  inspects track handlers (`trak/mdia/hdlr`): only `soun` audio tracks yield `audio/mp4`,
+  whereas any `vide` track yields `video/mp4`. If `moov` is missing or truncated, the check
+  falls back to the brand. On `/api/v1/files/**`, `FileController` inspects a bounded 64 KiB
+  prefix and trailing 64 KiB window (`readSuffix`) for `moov`-at-end containers without
+  buffering entire files into memory.
 - Path safety: the key is server-minted `<subdir>/<UUID>.<sniffed-ext>`; the
   subdir rejects `..`, `/`, `\` and is charset-restricted
   (LocalStorageService.safeSubdir); resolved paths are normalized and confined
@@ -113,9 +137,15 @@ the implementing source file.
 
 ## 5. Rate limits
 
-- Pre-auth credential endpoints are IP-keyed (no user identity yet): login
-  10/5 min, register 10/5 min, refresh 30/5 min (RateLimitInterceptor.java);
-  `X-Forwarded-For` is ignored as client-spoofable without a trusted proxy.
+- Pre-auth credential endpoints are IP-keyed (login 10/5 min, register 10/5 min,
+  refresh 30/5 min; RateLimitInterceptor.java) **and** phone-keyed (login and
+  register 20/5 min per normalized E.164 phone; AuthService.java), preventing
+  distributed IP rotation from brute-forcing an account; `X-Forwarded-For` is
+  ignored as client-spoofable without a trusted reverse proxy.
+- Body bounds: JSON request bodies are bounded by `nexachat.security.max-json-body-bytes`
+  (`NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB); oversized payloads are rejected
+  with `413 PAYLOAD_TOO_LARGE` before Jackson deserialization (RequestBodySizeLimitFilter.java).
+  Multipart file uploads keep their separate 25 MB ceiling.
 - Post-auth endpoints are keyed by the JWT subject: user search 30/min and
   contact-add 30/min, bucket key `user:<id>` (UserSearchRateLimitInterceptor
   .java, ContactAddRateLimitInterceptor.java). The IP fallback exists only for a
@@ -144,7 +174,7 @@ the implementing source file.
 - Codes and HTTP statuses come from a single enum (ApiErrorCode.java) and are a
   stable public contract: e.g. `INVALID_CREDENTIALS` 401, `NOT_MEMBER` 403,
   `PHONE_EXISTS` 409, `ATTACHMENT_NOT_FOUND` 404, `MIME_NOT_ALLOWED` 415,
-  `FILE_TOO_LARGE` 413, `RATE_LIMITED` 429.
+  `FILE_TOO_LARGE` 413, `PAYLOAD_TOO_LARGE` 413, `RATE_LIMITED` 429.
 - REST exception logs contain the exception class only; `GlobalExceptionHandler`
   does not log exception messages or stack traces, and its response contains a
   sanitized error envelope. `WsMessageController` maps payload conversion or
@@ -156,10 +186,11 @@ the implementing source file.
 ## Known limits & future work
 
 - The Android client is pure Java 21 (`android/`, Groovy `build.gradle`, XML
-  views, ViewBinding, Hilt `annotationProcessor`). Cleartext HTTP is allowed
-  only for the emulator host `10.0.2.2`
-  (`android/app/src/main/res/xml/network_security_config.xml`;
-  `AndroidManifest.xml` sets `usesCleartextTraffic="false"`). Session tokens
+  views, ViewBinding, Hilt `annotationProcessor`). In production, cleartext HTTP/WS
+  is disabled globally (`android/app/src/main/res/xml/network_security_config.xml`
+  sets `cleartextTrafficPermitted="false"` with zero exemptions); cleartext access
+  to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds
+  (`android/app/src/debug/res/xml/network_security_config.xml`). Session tokens
   are stored by `TokenStore` on RxDataStore as Base64 of `IV || AES-GCM`
   ciphertext; the key is `AES/GCM/NoPadding` in AndroidKeyStore
   (`core/storage/AesGcmTokenCipher.java`). Production needs TLS termination
@@ -169,9 +200,9 @@ the implementing source file.
   broker relay, and RateLimitService's in-memory buckets need Redis/JDBC.
 - No end-to-end encryption: message and file content is plaintext at rest and
   protected only in transit (TLS in production).
-- Logout-all / password change revoke refresh tokens only; there is no
-  access-token denylist, so an already-issued access JWT stays valid until its
-  15-minute expiry (`AuthService.java:138-159`).
+- Access-token revocation is immediate on a single node and propagates across multiple
+  instances within the validity cache TTL (`nexachat.security.validity-cache-ttl-seconds`,
+  default 60 s). Refresh-token families rotate on use with reuse detection.
 - The prod profile fails fast when datasource credentials are missing or
   unresolved (`ProductionDataSourceConfiguration.java:16-34`); compose supplies
   `SPRING_DATASOURCE_*` so a fresh clone still boots.
@@ -180,6 +211,5 @@ the implementing source file.
   Every outbound conversation-topic frame also rechecks the recipient's current
   membership, closing the queued-SUBSCRIBE race. `GroupFlowIT` covers admin
   removal, self-leave, and an authorized SUBSCRIBE held until after removal.
-- Dev-grade permissive origins — CORS `*` and STOMP
-  `setAllowedOriginPatterns("*")` (SecurityConfig.java, WebSocketConfig.java) —
-  must be narrowed per environment before any public deployment.
+- CORS and WebSocket handshake origins default to an empty allow-list (admitting no
+  cross-origin browser callers), configurable via `NEXACHAT_CORS_ALLOWED_ORIGINS`.
