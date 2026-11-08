@@ -1,6 +1,9 @@
 package com.nexachat.feature.chat.adapter;
 
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.View;
@@ -12,11 +15,20 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.nexachat.R;
 import com.nexachat.call.ui.CallLogResourceResolver;
 import com.nexachat.core.common.AppConfig;
+import com.nexachat.core.media.AttachmentBlurHashRegistry;
+import com.nexachat.core.media.BlurHashDecoder;
+import com.nexachat.core.media.BlurHashPlaceholderCache;
+import com.nexachat.core.media.ImageAttachmentBinding;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.ui.MessageUiRules;
 import com.nexachat.core.ui.components.ChatUiRules;
@@ -35,6 +47,12 @@ import java.util.function.Function;
  * Binds a {@link MessageListItem} message row onto the B1 bubble layouts.
  */
 public final class MessageBubbleBinder {
+
+    private static final int BLUR_HASH_BITMAP_EDGE = 32;
+    private static final BlurHashPlaceholderCache<Bitmap> BLUR_HASH_BITMAPS =
+            new BlurHashPlaceholderCache<>();
+    private static final ImageAttachmentBinding<Drawable> IMAGE_BINDING =
+            new ImageAttachmentBinding<>();
 
     private final DateFormat timeFormat;
     @Nullable
@@ -226,6 +244,11 @@ public final class MessageBubbleBinder {
         TextView fileName = root.findViewById(R.id.fileName);
         TextView systemLabel = root.findViewById(R.id.systemLabel);
 
+        if (image != null) {
+            Glide.with(image).clear(image);
+            image.setTag(null);
+            image.setImageDrawable(null);
+        }
         hideAll(body, image, play, fileName, systemLabel);
 
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
@@ -259,12 +282,14 @@ public final class MessageBubbleBinder {
             image.setVisibility(View.VISIBLE);
             AttachmentDto attachment = message.getAttachments().get(0);
             String url = attachment.contentUrl();
-            if (url != null) {
-                Glide.with(image)
-                        .load(url.startsWith("http") ? url : AppConfig.absoluteMediaUrl(url))
-                        .centerCrop()
-                        .into(image);
-            }
+            String hash = attachment.getBlurHash() != null
+                    ? attachment.getBlurHash()
+                    : AttachmentBlurHashRegistry.get(attachment.getId());
+            Drawable placeholder = createBlurHashPlaceholder(image, hash);
+            String remoteUrl = url == null
+                    ? null
+                    : url.startsWith("http") ? url : AppConfig.absoluteMediaUrl(url);
+            bindImage(image, remoteUrl, placeholder);
             image.setOnClickListener(v -> openAttachment(message, attachment, true));
             return;
         }
@@ -332,6 +357,87 @@ public final class MessageBubbleBinder {
         } else {
             actionListener.onOpenFile(message.getId(), attachment);
         }
+    }
+
+    private static void bindImage(
+            ImageView image,
+            @Nullable String url,
+            @Nullable Drawable placeholder) {
+        ImageAttachmentBinding.Target<Drawable> target = new ImageAttachmentBinding.Target<>() {
+            @Override
+            public void clearRequest() {
+                Glide.with(image).clear(image);
+            }
+
+            @Override
+            public void setRequestToken(@NonNull Object requestToken) {
+                image.setTag(requestToken);
+            }
+
+            @Nullable
+            @Override
+            public Object requestToken() {
+                return image.getTag();
+            }
+
+            @Override
+            public void showPlaceholder(@Nullable Drawable value) {
+                image.setImageDrawable(value);
+            }
+        };
+        IMAGE_BINDING.bind(url, placeholder, target, (remoteUrl, value, token, bindingTarget) -> {
+            RequestListener<Drawable> listener = new RequestListener<>() {
+                @Override
+                public boolean onLoadFailed(
+                        @Nullable GlideException exception,
+                        Object model,
+                        @NonNull Target<Drawable> requestTarget,
+                        boolean firstResource) {
+                    return !ImageAttachmentBinding.isCurrent(bindingTarget, token);
+                }
+
+                @Override
+                public boolean onResourceReady(
+                        @NonNull Drawable resource,
+                        Object model,
+                        @NonNull Target<Drawable> requestTarget,
+                        @NonNull DataSource dataSource,
+                        boolean firstResource) {
+                    return !ImageAttachmentBinding.isCurrent(bindingTarget, token);
+                }
+            };
+            var request = Glide.with(image)
+                    .load(remoteUrl)
+                    .centerCrop()
+                    .diskCacheStrategy(DiskCacheStrategy.NONE)
+                    .skipMemoryCache(true)
+                    .listener(listener);
+            if (value != null) {
+                request = request.placeholder(value);
+            }
+            request.into(image);
+        });
+    }
+
+    @Nullable
+    private static Drawable createBlurHashPlaceholder(ImageView image, @Nullable String hash) {
+        if (hash == null) {
+            return null;
+        }
+        Bitmap bitmap = BLUR_HASH_BITMAPS.getOrCreate(hash, value -> {
+            try {
+                int[] pixels = BlurHashDecoder.decode(
+                        value, BLUR_HASH_BITMAP_EDGE, BLUR_HASH_BITMAP_EDGE);
+                return Bitmap.createBitmap(
+                        pixels,
+                        BLUR_HASH_BITMAP_EDGE,
+                        BLUR_HASH_BITMAP_EDGE,
+                        Bitmap.Config.ARGB_8888);
+            } catch (RuntimeException | OutOfMemoryError ignored) {
+                return null;
+            }
+        });
+        return bitmap == null ? null : new BitmapDrawable(image.getResources(), bitmap);
     }
 
     private void bindMetaRow(View root, ChatMessage message, boolean seen, boolean delivered) {

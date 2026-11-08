@@ -1,7 +1,9 @@
 package com.nexachat.core.network;
 
 import com.nexachat.core.network.dto.AttachmentDto;
+import androidx.annotation.Nullable;
 import okhttp3.MultipartBody;
+import okhttp3.RequestBody;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.http.GET;
@@ -20,7 +22,9 @@ public interface AttachmentApi {
 
     @Multipart
     @POST("api/v1/attachments")
-    Call<AttachmentDto> upload(@Part MultipartBody.Part file);
+    Call<AttachmentDto> upload(
+            @Part MultipartBody.Part file,
+            @Part("blurHash") @Nullable RequestBody blurHash);
 
     /** Raw bytes; the server sets a sniffed Content-Type. */
     @GET("api/v1/attachments/{id}/content")

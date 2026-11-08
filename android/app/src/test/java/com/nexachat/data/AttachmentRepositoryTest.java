@@ -1,10 +1,15 @@
 package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
@@ -17,6 +22,7 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.media.ImageCompressor;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.dto.AttachmentDto;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
@@ -24,12 +30,14 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.ResponseBody;
+import okhttp3.RequestBody;
 import okio.Buffer;
 import okio.BufferedSource;
 import okio.Okio;
@@ -61,8 +69,11 @@ public final class AttachmentRepositoryTest {
     private final AttachmentDto dto = new AttachmentDto("att-1", "pic.png", "image/png", 4L);
 
     @Before
-    public void setUp() {
-        repository = new AttachmentRepository(attachmentApi, context);
+    public void setUp() throws Exception {
+        File temporaryDirectory = Files.createTempDirectory("nexa-image-test").toFile();
+        ImageCompressor compressor = new ImageCompressor(
+                new FailingImageBackend(), temporaryDirectory);
+        repository = new AttachmentRepository(attachmentApi, context, compressor);
     }
 
     @Test
@@ -72,7 +83,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             // Drive the real ProgressRequestBody so intermediate fractions fire.
             partCaptor.getValue().body().writeTo(new Buffer());
@@ -112,7 +124,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             partCaptor.getValue().body().writeTo(new Buffer());
             return Response.success(dto.withMimeType("video/mp4"));
@@ -122,6 +135,104 @@ public final class AttachmentRepositoryTest {
 
         assertTrue(readerThread.get() != null);
         assertNotSame(callerThread, readerThread.get());
+        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull());
+    }
+
+    @Test
+    public void imageUploadAddsBlurHashAndUsesCompressedMimeAndFilename() throws Exception {
+        byte[] original = "original-image-payload".getBytes(StandardCharsets.UTF_8);
+        stubResolver(original, "image/png", original.length);
+        File temporaryDirectory = Files.createTempDirectory("nexa-compressed-upload").toFile();
+        ImageCompressor compressor = new ImageCompressor(
+                new SmallImageBackend(), temporaryDirectory);
+        repository = new AttachmentRepository(attachmentApi, context, compressor);
+
+        Call<AttachmentDto> uploadCall = mock(Call.class);
+        ArgumentCaptor<MultipartBody.Part> fileCaptor =
+                ArgumentCaptor.forClass(MultipartBody.Part.class);
+        ArgumentCaptor<RequestBody> hashCaptor = ArgumentCaptor.forClass(RequestBody.class);
+        when(attachmentApi.upload(fileCaptor.capture(), hashCaptor.capture())).thenReturn(uploadCall);
+        when(uploadCall.execute()).thenAnswer(invocation -> {
+            assertEquals(1, temporaryDirectory.listFiles().length);
+            MultipartBody.Part file = fileCaptor.getValue();
+            assertEquals("image/webp", file.body().contentType().toString());
+            assertTrue(file.headers().get("Content-Disposition").contains("pic.webp"));
+            Buffer encoded = new Buffer();
+            file.body().writeTo(encoded);
+            assertArrayEquals(new byte[] {8, 9, 10}, encoded.readByteArray());
+            assertEquals("text/plain", hashCaptor.getValue().contentType().toString());
+            Buffer hash = new Buffer();
+            hashCaptor.getValue().writeTo(hash);
+            assertEquals("000000", hash.readUtf8());
+            return Response.success(new AttachmentDto("att-image", "pic.webp", "image/webp"));
+        });
+
+        List<AttachmentUploadEvent> events = await(repository.upload(uri).test());
+
+        AttachmentUploadEvent.Uploaded uploaded =
+                (AttachmentUploadEvent.Uploaded) events.get(events.size() - 1);
+        assertEquals("000000", uploaded.getAttachment().getBlurHash());
+        assertEquals(0, temporaryDirectory.listFiles().length);
+    }
+
+    @Test
+    public void imageCompressionFailureUploadsOriginalWithoutBlurHash() throws Exception {
+        byte[] original = "original-image-payload".getBytes(StandardCharsets.UTF_8);
+        stubResolver(original, "image/jpeg", original.length);
+        Call<AttachmentDto> uploadCall = mock(Call.class);
+        ArgumentCaptor<MultipartBody.Part> fileCaptor =
+                ArgumentCaptor.forClass(MultipartBody.Part.class);
+        when(attachmentApi.upload(fileCaptor.capture(), isNull())).thenReturn(uploadCall);
+        AtomicReference<byte[]> sentBytes = new AtomicReference<>();
+        when(uploadCall.execute()).thenAnswer(invocation -> {
+            Buffer body = new Buffer();
+            fileCaptor.getValue().body().writeTo(body);
+            sentBytes.set(body.readByteArray());
+            return Response.success(dto);
+        });
+
+        await(repository.upload(uri).test());
+
+        assertArrayEquals(original, sentBytes.get());
+        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull());
+    }
+
+    @Test
+    public void imageTempFileIsDeletedBeforeFailedUploadCompletes() throws Exception {
+        byte[] original = "original-image-payload".getBytes(StandardCharsets.UTF_8);
+        stubResolver(original, "image/png", original.length);
+        File temporaryDirectory = Files.createTempDirectory("nexa-failed-upload").toFile();
+        repository = new AttachmentRepository(
+                attachmentApi, context,
+                new ImageCompressor(new SmallImageBackend(), temporaryDirectory));
+        Call<AttachmentDto> uploadCall = mock(Call.class);
+        when(attachmentApi.upload(any(MultipartBody.Part.class), any(RequestBody.class)))
+                .thenReturn(uploadCall);
+        when(uploadCall.execute()).thenThrow(new IOException("offline"));
+
+        List<AttachmentUploadEvent> events = await(repository.upload(uri).test());
+
+        assertTrue(singleFailure(events).getError() instanceof ApiError.Network);
+        assertEquals(0, temporaryDirectory.listFiles().length);
+    }
+
+    @Test
+    public void locationScrubFailureStopsImageUpload() throws Exception {
+        byte[] original = "sensitive-image-payload".getBytes(StandardCharsets.UTF_8);
+        stubResolver(original, "image/jpeg", original.length);
+        repository = new AttachmentRepository(
+                attachmentApi,
+                context,
+                new ImageCompressor(
+                        new PrivacyFailingImageBackend(),
+                        Files.createTempDirectory("nexa-privacy-failure").toFile()));
+
+        List<AttachmentUploadEvent> events = await(repository.upload(uri).test());
+
+        assertEquals(AttachmentRepository.ERROR_UNREADABLE,
+                ((ApiError.Unknown) singleFailure(events).getError()).getCode());
+        verify(attachmentApi, never()).upload(
+                any(MultipartBody.Part.class), nullable(RequestBody.class));
     }
 
     @Test
@@ -134,7 +245,8 @@ public final class AttachmentRepositoryTest {
         AttachmentUploadEvent.Failed failed = singleFailure(events);
         assertEquals(AttachmentRepository.ERROR_TOO_LARGE,
                 ((ApiError.Unknown) failed.getError()).getCode());
-        verify(attachmentApi, never()).upload(any(MultipartBody.Part.class));
+        verify(attachmentApi, never()).upload(
+                any(MultipartBody.Part.class), nullable(RequestBody.class));
     }
 
     @Test
@@ -155,7 +267,8 @@ public final class AttachmentRepositoryTest {
     public void httpErrorMapsToApiError() throws Exception {
         stubResolver(new byte[] {1, 2, 3, 4}, "image/png", 4);
         Call<AttachmentDto> uploadCall = mock(Call.class);
-        when(attachmentApi.upload(any(MultipartBody.Part.class))).thenReturn(uploadCall);
+        when(attachmentApi.upload(
+                any(MultipartBody.Part.class), nullable(RequestBody.class))).thenReturn(uploadCall);
         when(uploadCall.execute()).thenReturn(Response.error(
                 413, ResponseBody.create(MediaType.parse("text/plain"), "")));
 
@@ -169,7 +282,8 @@ public final class AttachmentRepositoryTest {
     public void networkFailureMapsToApiErrorNetwork() throws Exception {
         stubResolver(new byte[] {1, 2, 3, 4}, "image/png", 4);
         Call<AttachmentDto> uploadCall = mock(Call.class);
-        when(attachmentApi.upload(any(MultipartBody.Part.class))).thenReturn(uploadCall);
+        when(attachmentApi.upload(
+                any(MultipartBody.Part.class), nullable(RequestBody.class))).thenReturn(uploadCall);
         when(uploadCall.execute()).thenThrow(new IOException("down"));
 
         List<AttachmentUploadEvent> events = await(repository.upload(uri).test());
@@ -187,7 +301,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
             return Response.success(dto);
@@ -205,7 +320,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
             return Response.success(dto);
@@ -223,7 +339,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
             return Response.success(dto);
@@ -247,7 +364,8 @@ public final class AttachmentRepositoryTest {
         AttachmentUploadEvent.Failed failed = singleFailure(events);
         assertEquals(AttachmentRepository.ERROR_UNREADABLE,
                 ((ApiError.Unknown) failed.getError()).getCode());
-        verify(attachmentApi, never()).upload(any(MultipartBody.Part.class));
+        verify(attachmentApi, never()).upload(
+                any(MultipartBody.Part.class), nullable(RequestBody.class));
     }
 
     @Test
@@ -339,5 +457,86 @@ public final class AttachmentRepositoryTest {
                 return Okio.buffer(source);
             }
         };
+    }
+
+    private static class FailingImageBackend implements ImageCompressor.Backend {
+        @Override
+        public ImageCompressor.Dimensions readDimensions(byte[] source) throws IOException {
+            throw new IOException("test decode failure");
+        }
+
+        @Override public int readOrientation(byte[] source, String mimeType) { return 1; }
+        @Override public ImageCompressor.Raster decode(byte[] source, int sampleSize) { return null; }
+        @Override public ImageCompressor.Raster orientAndScale(
+                ImageCompressor.Raster source, int orientation, int maximumLongEdge) {
+            return null;
+        }
+        @Override public String encodeBlurHash(
+                ImageCompressor.Raster raster, int maximumEdge, int componentsX, int componentsY) {
+            return null;
+        }
+        @Override public int apiLevel() { return 30; }
+        @Override public byte[] encode(
+                ImageCompressor.Raster raster, ImageCompressor.Encoding encoding) {
+            return null;
+        }
+        @Override public byte[] stripLocationMetadata(byte[] source, String mimeType)
+                throws IOException {
+            return source;
+        }
+        @Override public void recycle(ImageCompressor.Raster raster) { }
+    }
+
+    private static final class PrivacyFailingImageBackend extends FailingImageBackend {
+        @Override
+        public byte[] stripLocationMetadata(byte[] source, String mimeType) throws IOException {
+            throw new IOException("controlled metadata cleanup failure");
+        }
+    }
+
+    private static final class SmallImageBackend implements ImageCompressor.Backend {
+        private final FakeRaster raster = new FakeRaster(2, 2, false);
+
+        @Override public ImageCompressor.Dimensions readDimensions(byte[] source) {
+            return new ImageCompressor.Dimensions(2, 2);
+        }
+        @Override public int readOrientation(byte[] source, String mimeType) { return 1; }
+        @Override public ImageCompressor.Raster decode(byte[] source, int sampleSize) {
+            return raster;
+        }
+        @Override public ImageCompressor.Raster orientAndScale(
+                ImageCompressor.Raster source, int orientation, int maximumLongEdge) {
+            return source;
+        }
+        @Override public String encodeBlurHash(
+                ImageCompressor.Raster source, int maximumEdge, int componentsX, int componentsY) {
+            return "000000";
+        }
+        @Override public int apiLevel() { return 30; }
+        @Override public byte[] encode(
+                ImageCompressor.Raster source, ImageCompressor.Encoding encoding) {
+            assertEquals(ImageCompressor.Encoding.WEBP_LOSSY, encoding);
+            return new byte[] {8, 9, 10};
+        }
+        @Override public byte[] stripLocationMetadata(byte[] source, String mimeType) {
+            return source;
+        }
+        @Override public void recycle(ImageCompressor.Raster source) { }
+    }
+
+    private static final class FakeRaster implements ImageCompressor.Raster {
+        private final int width;
+        private final int height;
+        private final boolean alpha;
+
+        private FakeRaster(int width, int height, boolean alpha) {
+            this.width = width;
+            this.height = height;
+            this.alpha = alpha;
+        }
+
+        @Override public int width() { return width; }
+        @Override public int height() { return height; }
+        @Override public boolean hasAlpha() { return alpha; }
     }
 }

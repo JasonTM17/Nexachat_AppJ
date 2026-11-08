@@ -1,11 +1,17 @@
 package com.nexachat.core.network;
 
+import android.content.Context;
+import androidx.annotation.NonNull;
+import com.nexachat.core.media.MediaCacheConfig;
+import com.nexachat.core.media.MediaCacheRequestInterceptor;
+import com.nexachat.core.media.MediaCacheResponseInterceptor;
 import com.nexachat.BuildConfig;
 import com.nexachat.core.common.AppConfig;
 import com.squareup.moshi.Moshi;
 import dagger.Module;
 import dagger.Provides;
 import dagger.hilt.InstallIn;
+import dagger.hilt.android.qualifiers.ApplicationContext;
 import dagger.hilt.components.SingletonComponent;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Singleton;
@@ -24,12 +30,15 @@ public final class NetworkModule {
     @Singleton
     public static Moshi provideMoshi() {
         // REST and STOMP DTOs use Moshi's reflective Java bean adapters.
-        return new Moshi.Builder().build();
+        return new Moshi.Builder()
+                .add(new com.nexachat.core.network.dto.AttachmentDtoJsonAdapterFactory())
+                .build();
     }
 
     @Provides
     @Singleton
     public static OkHttpClient provideOkHttpClient(
+            @ApplicationContext @NonNull Context context,
             AuthInterceptor authInterceptor,
             TokenAuthenticator tokenAuthenticator) {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
@@ -37,7 +46,10 @@ public final class NetworkModule {
                 .readTimeout(15, TimeUnit.SECONDS)
                 // 60s write window: attachment uploads may stream up to 25 MB.
                 .writeTimeout(60, TimeUnit.SECONDS)
+                .cache(MediaCacheConfig.createOkHttpCache(context.getCacheDir()))
+                .addInterceptor(new MediaCacheRequestInterceptor())
                 .addInterceptor(authInterceptor)
+                .addNetworkInterceptor(new MediaCacheResponseInterceptor())
                 .authenticator(tokenAuthenticator);
         if (BuildConfig.DEBUG) {
             // BASIC only: never log auth bodies/headers (plan §13 "Sensitive log").
