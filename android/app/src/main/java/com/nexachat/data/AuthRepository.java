@@ -17,6 +17,7 @@ import com.nexachat.core.network.dto.LoginRequest;
 import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.notification.DeviceTokenRegistrationManager;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -43,17 +44,21 @@ public final class AuthRepository {
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     private final TokenRefresher tokenRefresher;
+    private final DeviceTokenRegistrationManager deviceTokenRegistrationManager;
 
     @Inject
     public AuthRepository(
             @NonNull AuthApi authApi,
             @NonNull TokenStore tokenStore,
             @NonNull SessionEvents sessionEvents,
-            @NonNull TokenRefresher tokenRefresher) {
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
         this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
     }
 
     @NonNull
@@ -80,7 +85,16 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Boolean>> refresh() {
-        return Single.defer(() -> tokenRefresher.refresh().map(this::refreshMapping))
+        return Single.defer(() -> tokenRefresher.refresh().flatMap(outcome -> {
+                    Result<Boolean> result = refreshMapping(outcome);
+                    if (outcome instanceof TokenRefreshOutcome.FreshToken
+                            || outcome instanceof TokenRefreshOutcome.TransientFailure) {
+                        return deviceTokenRegistrationManager.onSessionAvailable()
+                                .onErrorComplete()
+                                .andThen(Single.just(result));
+                    }
+                    return Single.just(result);
+                }))
                 .subscribeOn(Schedulers.io());
     }
 
@@ -96,7 +110,9 @@ public final class AuthRepository {
                                 authApi.logout(logoutRequest(tokens.getRefreshToken())))
                         .ignoreElement())
                 .onErrorComplete();
-        return revoke
+        return deviceTokenRegistrationManager.onLogout()
+                .onErrorComplete()
+                .andThen(revoke)
                 .andThen(tokenStore.clear())
                 .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
                 .andThen(Single.<Result<Unit>>fromCallable(
@@ -110,9 +126,11 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Unit>> logoutAll() {
-        return Single.defer(() -> ApiResult.safeApiCall(authApi.logoutAll())
-                        .ignoreElement()
+        return Single.defer(() -> deviceTokenRegistrationManager.onLogout()
                         .onErrorComplete()
+                        .andThen(ApiResult.safeApiCall(authApi.logoutAll())
+                        .ignoreElement()
+                        .onErrorComplete())
                         .andThen(tokenStore.clear())
                         .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
                         .andThen(Single.<Result<Unit>>fromCallable(
@@ -144,6 +162,7 @@ public final class AuthRepository {
                             response.getAccessToken(),
                             System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
                             response.getRefreshToken())
+                    .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
                     .andThen(Single.just(result));
         }).subscribeOn(Schedulers.io());
     }

@@ -4,6 +4,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -187,6 +188,64 @@ public final class TokenStoreTest {
         store.readTokens().test().assertComplete().assertNoValues();
     }
 
+    @Test
+    public void fcmAndPendingUnregisterTokensRemainEncryptedAcrossLogoutClear() {
+        store.saveTokens("a", 1L, "r")
+                .andThen(store.saveFcmDeviceToken("device-token-fixture"))
+                .andThen(store.savePendingDeviceTokenUnregister("pending-token-fixture", "user-1"))
+                .test()
+                .assertComplete();
+
+        assertNotNull(state.getValue().get(PreferencesKeys.stringKey("fcm_device_token")));
+        assertNotNull(state.getValue().get(
+                PreferencesKeys.stringKey("pending_device_unregister_token")));
+        store.clear().test().assertComplete();
+
+        store.readTokens().test().assertComplete().assertNoValues();
+        store.readFcmDeviceToken().test().assertValue("device-token-fixture");
+        store.readPendingDeviceTokenUnregister().test().assertValue(pending ->
+                "pending-token-fixture".equals(pending.getToken())
+                        && "user-1".equals(pending.getOwnerUserId()));
+        assertNotEquals("device-token-fixture",
+                state.getValue().get(PreferencesKeys.stringKey("fcm_device_token")));
+        assertNotEquals("pending-token-fixture",
+                state.getValue().get(PreferencesKeys.stringKey("pending_device_unregister_token")));
+    }
+
+    @Test
+    public void syncCursorIsPersistedAndClearedPerUserAndOnLogout() {
+        store.saveSyncServerTime("user-1", "2026-11-08T10:00:00Z")
+                .andThen(store.saveSyncServerTime("user-2", "2026-11-08T11:00:00Z"))
+                .test()
+                .assertComplete();
+
+        assertNotNull(state.getValue().get(PreferencesKeys.stringKey("sync_server_time_user-1")));
+        assertNotNull(state.getValue().get(PreferencesKeys.stringKey(
+                "sync_server_time_user-2")));
+        store.readSyncServerTime("user-1").test().assertValue("2026-11-08T10:00:00Z");
+        store.readSyncServerTime("user-2").test().assertValue("2026-11-08T11:00:00Z");
+
+        store.clearSyncServerTime("user-1").test().assertComplete();
+        store.readSyncServerTime("user-1").test().assertComplete().assertNoValues();
+        store.readSyncServerTime("user-2").test().assertValue("2026-11-08T11:00:00Z");
+
+        store.clear().test().assertComplete();
+        store.readSyncServerTime("user-2").test().assertComplete().assertNoValues();
+    }
+
+    @Test
+    public void delayedUnregisterCompletionCannotClearANewerPendingRequest() {
+        store.savePendingDeviceTokenUnregister("old-token-fixture", "user-1")
+                .andThen(store.savePendingDeviceTokenUnregister("new-token-fixture", "user-2"))
+                .andThen(store.clearPendingDeviceTokenUnregister("old-token-fixture", "user-1"))
+                .test()
+                .assertComplete();
+
+        store.readPendingDeviceTokenUnregister().test().assertValue(pending ->
+                "new-token-fixture".equals(pending.getToken())
+                        && "user-2".equals(pending.getOwnerUserId()));
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static RxDataStore<Preferences> mockDataStore(
             BehaviorProcessor<Preferences> state) {
@@ -198,7 +257,8 @@ public final class TokenStoreTest {
                             invocation -> {
                                 Function<Preferences, Single<Preferences>> update =
                                         invocation.getArgument(0);
-                                return update.apply(state.getValue()).doOnSuccess(state::onNext);
+                                return Single.defer(() -> update.apply(state.getValue()))
+                                        .doOnSuccess(state::onNext);
                             });
         } catch (Exception error) {
             throw new AssertionError(error);

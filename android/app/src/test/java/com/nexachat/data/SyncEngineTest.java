@@ -30,11 +30,13 @@ import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.util.Collections;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
 import okhttp3.ResponseBody;
 import org.junit.Before;
@@ -72,6 +74,8 @@ public final class SyncEngineTest {
         }).when(appDatabase).runInTransaction(any(Runnable.class));
 
         when(tokenStore.readTokens()).thenReturn(Maybe.just(new Tokens("dummy-token", 1800000000000L, "dummy-refresh")));
+        when(tokenStore.readSyncServerTime(anyString())).thenReturn(Maybe.empty());
+        when(tokenStore.saveSyncServerTime(anyString(), anyString())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
@@ -205,10 +209,24 @@ public final class SyncEngineTest {
     }
 
     @Test
-    public void syncEchoesLastServerTimeAsSinceOnSubsequentSync() {
+    public void syncPersistsAndReloadsServerTimeAcrossEngineInstances() {
         List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-1"), 1800000000000L, "dummy-refresh")));
+
+        AtomicReference<String> persistedCursor = new AtomicReference<>();
+        when(tokenStore.readSyncServerTime("user-1")).thenAnswer(invocation -> {
+            String value = persistedCursor.get();
+            return value == null ? Maybe.empty() : Maybe.just(value);
+        });
+        when(tokenStore.saveSyncServerTime(
+                org.mockito.ArgumentMatchers.eq("user-1"), anyString()))
+                .thenAnswer(invocation -> {
+                    persistedCursor.set(invocation.getArgument(1));
+                    return Completable.complete();
+                });
 
         SyncResponse firstResponse = new SyncResponse(List.of(), "2026-11-08T10:00:00Z");
         SyncResponse secondResponse = new SyncResponse(List.of(), "2026-11-08T10:05:00Z");
@@ -232,6 +250,8 @@ public final class SyncEngineTest {
         firstSync.awaitCount(1);
         firstSync.assertComplete();
 
+        syncEngine = new SyncEngine(
+                appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore, moshi);
         TestObserver<Void> secondSync = syncEngine.sync().test();
         secondSync.awaitCount(1);
         secondSync.assertComplete();
@@ -241,6 +261,8 @@ public final class SyncEngineTest {
         List<SyncRequest> requests = requestCaptor.getAllValues();
         org.junit.Assert.assertNull("first sync has no server time yet", requests.get(0).getSince());
         org.junit.Assert.assertEquals("2026-11-08T10:00:00Z", requests.get(1).getSince());
+        verify(tokenStore).saveSyncServerTime("user-1", "2026-11-08T10:00:00Z");
+        verify(tokenStore).saveSyncServerTime("user-1", "2026-11-08T10:05:00Z");
     }
 
     @Test
@@ -277,5 +299,11 @@ public final class SyncEngineTest {
 
         verify(conversationDao, never()).bumpPeerReadSeq(anyString(), anyLong());
         verify(conversationDao, never()).bumpPeerDeliveredSeq(anyString(), anyLong());
+    }
+
+    private static String jwt(String userId) {
+        String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                ("{\"sub\":\"" + userId + "\"}").getBytes(StandardCharsets.UTF_8));
+        return "header." + payload + ".signature";
     }
 }

@@ -67,11 +67,86 @@ public final class FcmMessageProcessorTest {
     public void processNewMessageTriggersSyncEngine() {
         Map<String, String> data = new HashMap<>();
         data.put("type", FcmMessageProcessor.TYPE_NEW_MESSAGE);
+        data.put("conversationId", "conversation-1");
+        data.put("messageId", "message-1");
+        data.put("seq", "1");
 
         when(syncEngine.sync()).thenReturn(Completable.complete());
 
         processor.processDataPayload(data);
 
         verify(syncEngine).sync();
+    }
+
+    @Test
+    public void ignoresUnknownPayloadTypes() {
+        processor.processDataPayload(Map.of("type", "UNRECOGNIZED"));
+
+        verify(callManager, never()).hydrateIncomingCall(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(launcher, never()).launch(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(syncEngine, never()).sync();
+    }
+
+    @Test
+    public void ignoresMalformedCallInviteAndNewMessagePayloads() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_CALL_INVITE,
+                "callId", " ",
+                "conversationId", "conversation-1",
+                "callerId", "caller-1"));
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_CALL_INVITE,
+                "callId", "call-1",
+                "conversationId", "conversation-1",
+                "callerId", "caller-1",
+                "timestamp", "not-a-timestamp"));
+        processor.processDataPayload(Map.of("type", FcmMessageProcessor.TYPE_NEW_MESSAGE));
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_NEW_MESSAGE,
+                "conversationId", "conversation-1",
+                "messageId", "message-1",
+                "seq", "zero"));
+
+        verify(callManager, never()).hydrateIncomingCall(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(launcher, never()).launch(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(syncEngine, never()).sync();
+    }
+
+    @Test
+    public void acceptsServerCallTimestampField() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_CALL_INVITE,
+                "callId", "call-100",
+                "conversationId", "conv-200",
+                "callerId", "user-alice",
+                "callerName", "Alice",
+                "timestamp", "1700000000000"));
+
+        verify(callManager).hydrateIncomingCall(
+                "call-100", "conv-200", "user-alice", "Alice", 1700000000000L);
+        verify(launcher).launch(
+                "call-100", "conv-200", "user-alice", "Alice", 1700000000000L);
+    }
+
+    @Test
+    public void ignoresPayloadsOver512Utf8Bytes() {
+        Map<String, String> data = Map.of(
+                "type", FcmMessageProcessor.TYPE_CALL_INVITE,
+                "callId", "call-id",
+                "conversationId", "conversation-id",
+                "callerId", "caller-id",
+                "callerName", "x".repeat(600));
+
+        processor.processDataPayload(data);
+
+        verify(callManager, never()).hydrateIncomingCall(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(launcher, never()).launch(
+                anyString(), anyString(), anyString(), anyString(), anyLong());
+        verify(syncEngine, never()).sync();
     }
 }

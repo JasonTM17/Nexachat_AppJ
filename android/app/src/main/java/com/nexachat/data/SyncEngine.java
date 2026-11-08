@@ -75,33 +75,71 @@ public final class SyncEngine {
      * and atomically ingests new, edited, deleted messages and reaction updates in a Room transaction.
      */
     public Completable sync() {
-        return Single.zip(
-                messageDao.getAllMaxSeqs(),
-                conversationDao.getAllWatermarks(),
-                this::mergeWatermarks
-        )
-        .flatMap(watermarks -> {
-            if (watermarks.isEmpty()) {
-                return Single.just(new SyncResponse());
-            }
-            List<SyncRequest.Watermark> reqWatermarks = new ArrayList<>(watermarks.size());
-            for (ConversationWatermark wm : watermarks) {
-                reqWatermarks.add(new SyncRequest.Watermark(wm.getConversationId(), wm.getMaxSeq()));
-            }
-            SyncRequest request = new SyncRequest(reqWatermarks, 50, lastServerTime);
-            return ApiResult.safeApiCall(messageApi.syncDeltas(request)).map(apiResult -> {
-                if (apiResult instanceof ApiResult.Success<?> success) {
-                    SyncResponse response = (SyncResponse) success.getBody();
-                    if (response != null && response.getServerTime() != null) {
-                        lastServerTime = response.getServerTime();
+        return loadCursorState().flatMapCompletable(cursor ->
+                Single.zip(
+                                messageDao.getAllMaxSeqs(),
+                                conversationDao.getAllWatermarks(),
+                                this::mergeWatermarks)
+                        .flatMap(watermarks -> {
+                            lastServerTime = cursor.serverTime;
+                            if (watermarks.isEmpty()) {
+                                return Single.just(new SyncResponse());
+                            }
+                            List<SyncRequest.Watermark> reqWatermarks =
+                                    new ArrayList<>(watermarks.size());
+                            for (ConversationWatermark wm : watermarks) {
+                                reqWatermarks.add(new SyncRequest.Watermark(
+                                        wm.getConversationId(), wm.getMaxSeq()));
+                            }
+                            SyncRequest request = new SyncRequest(
+                                    reqWatermarks, 50, cursor.serverTime);
+                            return ApiResult.safeApiCall(messageApi.syncDeltas(request))
+                                    .map(apiResult -> {
+                                        if (apiResult instanceof ApiResult.Success<?> success) {
+                                            SyncResponse response = (SyncResponse) success.getBody();
+                                            return response == null ? new SyncResponse() : response;
+                                        }
+                                        return new SyncResponse();
+                                    });
+                        })
+                        .flatMapCompletable(response ->
+                                Completable.fromAction(() -> applyDeltaBundle(response))
+                                        .andThen(persistServerTime(cursor, response))))
+                .subscribeOn(Schedulers.io());
+    }
+
+    private Single<SyncCursor> loadCursorState() {
+        return tokenStore.readTokens()
+                .map(tokens -> Optional.ofNullable(
+                        TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi)))
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(userId -> {
+                    if (userId.isEmpty()) {
+                        return Single.just(new SyncCursor(null, null));
                     }
-                    return response;
-                }
-                return new SyncResponse();
-            });
-        })
-        .flatMapCompletable(response -> Completable.fromAction(() -> applyDeltaBundle(response)))
-        .subscribeOn(Schedulers.io());
+                    String value = userId.get();
+                    return tokenStore.readSyncServerTime(value)
+                            .map(serverTime -> new SyncCursor(value, serverTime))
+                            .defaultIfEmpty(new SyncCursor(value, null));
+                });
+    }
+
+    private Completable persistServerTime(SyncCursor cursor, SyncResponse response) {
+        if (cursor.userId == null || response == null || response.getServerTime() == null) {
+            return Completable.complete();
+        }
+        return tokenStore.saveSyncServerTime(cursor.userId, response.getServerTime())
+                .doOnComplete(() -> lastServerTime = response.getServerTime());
+    }
+
+    private static final class SyncCursor {
+        @Nullable private final String userId;
+        @Nullable private final String serverTime;
+
+        private SyncCursor(@Nullable String userId, @Nullable String serverTime) {
+            this.userId = userId;
+            this.serverTime = serverTime;
+        }
     }
 
     private List<ConversationWatermark> mergeWatermarks(
