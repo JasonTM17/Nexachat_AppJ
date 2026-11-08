@@ -11,10 +11,15 @@ public final class Mmr {
     private Mmr() {
     }
 
-    static List<SummaryCandidate> select(List<SummaryCandidate> candidates, int limit) {
+    public static List<SummaryCandidate> select(List<SummaryCandidate> candidates, int limit) {
+        return select(candidates, limit, RELEVANCE_WEIGHT);
+    }
+
+    public static List<SummaryCandidate> select(List<SummaryCandidate> candidates, int limit, double lambda) {
         if (limit <= 0 || candidates.isEmpty()) {
             return List.of();
         }
+        double relevanceWeight = Math.max(0.0, Math.min(1.0, lambda));
         Comparator<SummaryCandidate> stableOrder = Comparator
                 .comparingLong((SummaryCandidate candidate) -> candidate.message().seq())
                 .thenComparing(candidate -> safe(candidate.message().id()));
@@ -33,8 +38,8 @@ public final class Mmr {
                 if (similarity >= DUPLICATE_THRESHOLD) {
                     continue;
                 }
-                double utility = RELEVANCE_WEIGHT * candidate.score()
-                        - (1.0 - RELEVANCE_WEIGHT) * similarity;
+                double utility = relevanceWeight * candidate.score()
+                        - (1.0 - relevanceWeight) * similarity;
                 if (best == null || utility > bestUtility + 1.0e-12) {
                     best = candidate;
                     bestUtility = utility;
@@ -49,7 +54,7 @@ public final class Mmr {
         return List.copyOf(selected);
     }
 
-    static double similarity(SummaryCandidate left, SummaryCandidate right) {
+    public static double similarity(SummaryCandidate left, SummaryCandidate right) {
         if (left.terms().isEmpty() || right.terms().isEmpty()) {
             return 0.0;
         }

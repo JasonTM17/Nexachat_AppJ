@@ -341,6 +341,51 @@ response shapes, consent rules and provider behavior are specified in
 [`docs/ai-summary.md`](ai-summary.md). The server requires conversation membership
 and at least five usable messages.
 
+## Conversation ask API (RAG)
+
+`POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
+answers a question about the caller's own conversation. The design, privacy
+rules and cost controls are specified in [`docs/rag.md`](rag.md).
+
+Request:
+
+```json
+{ "question": "When is the server migration?", "language": "AUTO" }
+```
+
+`question` is trimmed, 1–500 characters; `language` is `AUTO|VI|EN`
+(default `AUTO`, detected from the question).
+
+Response `200`:
+
+```json
+{
+  "answer": "The server migration is scheduled for March 14 at 02:00.",
+  "citations": [
+    { "messageId": "uuid", "seq": 12, "snippet": "The server migration is ..." }
+  ],
+  "mode": "EXTRACTIVE",
+  "usage": { "llmCalls": 0, "inputChars": 0, "cached": false }
+}
+```
+
+`mode` is `CACHE` (question cache hit), `NOT_FOUND` (answerability gate, no LLM
+call), `EXTRACTIVE` (one cited message answers a lookup-like question) or `LLM`
+(retrieved, budgeted context). `answer` is `null` for `NOT_FOUND`; `citations`
+is never null and every cited message belongs to the conversation. `usage`
+reports the number of LLM calls, the message characters sent to the LLM and
+whether the answer came from the cache.
+
+Errors use the standard envelope: `400 VALIDATION_FAILED`, `403 NOT_MEMBER`,
+`404 CONVERSATION_NOT_FOUND`, `429 RATE_LIMITED` (ask bucket: 20/minute and
+200/day per user). Provider failures degrade to `NOT_FOUND` or `EXTRACTIVE`;
+the endpoint never answers `503` for a provider problem.
+
+`GET /api/v1/rag/stats` (Bearer) returns aggregate RAG counters only:
+`{requests, cacheHits, notFound, extractive, llmCalls, llmFailures, inputChars,
+meanInputChars, embeddingCalls, embeddingFailures, indexedMessages}`. No message
+text, questions or vectors are exposed.
+
 ## WebSocket / STOMP
 
 Realtime transport is STOMP 1.2 over `ws://localhost:8080/ws` (WSS in

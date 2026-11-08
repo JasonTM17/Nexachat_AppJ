@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-final class LanguageCheck {
+public final class LanguageCheck {
 
     private static final Set<String> VIETNAMESE_HINTS = Set.of(
             "va", "la", "cua", "trong", "da", "se", "khong", "cho", "voi", "cac", "nhung", "mot",
@@ -22,7 +22,7 @@ final class LanguageCheck {
     private LanguageCheck() {
     }
 
-    static SummaryLanguage detect(List<SummaryMessage> messages) {
+    public static SummaryLanguage detect(List<SummaryMessage> messages) {
         Signals signals = new Signals();
         if (messages != null) {
             messages.stream().filter(message -> message != null).map(SummaryMessage::text)
@@ -31,7 +31,7 @@ final class LanguageCheck {
         return signals.detected();
     }
 
-    static boolean matches(String text, SummaryLanguage language) {
+    public static boolean matches(String text, SummaryLanguage language) {
         Signals signals = new Signals();
         signals.add(text == null ? "" : text);
         if (signals.letters == 0) {
