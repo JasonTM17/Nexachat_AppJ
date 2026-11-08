@@ -7,9 +7,9 @@ pin, reply and forward text — in a bilingual (Vi/En) Material 3 UI that keeps
 message sending available offline.
 
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
-> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v7`, `Hilt`, `Material 3`)
+> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v8`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V6`, **WebRTC** 1-to-1 voice calls, and consent-gated
+> **PostgreSQL 16** with Flyway `V1–V7`, **WebRTC** 1-to-1 voice calls, and consent-gated
 > **AI conversation summaries**). Every architectural claim below links directly to its
 > executable source and verification suite.
 
@@ -81,7 +81,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 |---|---|---|
 | Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password | `server/auth`, `app/feature/auth`, `core/storage` |
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
-| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send + outbox retry, read receipts, typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat` |
+| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, durable offline outbox (Room v8) with WorkManager drain, 2-tick delivery & read receipts, delta sync, typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search, presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
 | Group Chat & Admin | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | Theme & Privacy Preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
@@ -100,7 +100,7 @@ flowchart LR
     subgraph Android["android/ — Java 21 LTS, XML Views + ViewBinding, Hilt"]
         UI["Fragments + XML Views<br/>(feature/*)"] --> VM["ViewModels<br/>(LiveData + RxJava 3, SavedStateHandle)"]
         VM --> REPO["Repositories"]
-        REPO --> ROOM[("Room v7 — SSOT<br/>messages · conversations<br/>outbox · reactions · pins · presence")]
+        REPO --> ROOM[("Room v8 — SSOT<br/>messages · conversations<br/>outbox · offline_outbox · reactions · pins")]
         REPO --> TS["TokenStore<br/>AES/GCM @ AndroidKeyStore"]
         REPO --> ST["StompClient<br/>(OkHttp raw WS)"]
         REPO --> RT["Retrofit APIs"]
@@ -109,12 +109,12 @@ flowchart LR
     subgraph Server["server/ — Spring Boot 3.4 modular monolith"]
         SEC["SecurityConfig<br/>JWT filter · stateless"]
         INT["StompAuthChannelInterceptor<br/>CONNECT authN · SUB/SEND authZ"]
-        SVC["Services: auth · user · contact<br/>conversation · message · attachment · presence · call signaling · summary"]
+        SVC["Services: auth · user · contact<br/>conversation · message · attachment · presence · call signaling · summary · notification"]
         EVT["@TransactionalEventListener<br/>AFTER_COMMIT broadcast"]
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V6<br/>seq · watermarks · idempotency · calls")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V7<br/>seq · watermarks · idempotency · calls")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -143,7 +143,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V6, `ddl-auto: validate` | Room 2.6.1 (v7, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V7, `ddl-auto: validate` | Room 2.6.1 (v8, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap | Glide 4.16, media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -158,7 +158,7 @@ Dark & Light Mode showcase frames are indexed in
 
 | Tool | Version | Notes |
 |---|---|---|
-| JDK | 21 LTS (Temurin) | `java -version` |
+| JDK | 21 LTS (Temurin) | `java -version`. Server requires JDK 21. Android Gradle can run on JDK 17 or JDK 21 (AGP 8.7.3 + Gradle 8.14.3) with `compileOptions` targeting Java 21 (`VERSION_21`). |
 | Maven | 3.9+ | system `mvn` (there is no `server/mvnw` wrapper) |
 | Android SDK | minSdk 26 · targetSdk 35 | via Android Studio |
 | Docker | recent | PostgreSQL + app image via `docker compose` |
@@ -276,8 +276,8 @@ nexachat/
 │  ├─ app/schemas/   Room-exported schema JSON (migration-test assets)
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
-│  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V6   # Flyway migrations
+│  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,notification,ws,common,config}/
+│  ├─ src/main/resources/db/migration/V1–V7   # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
 │  ├─ design/       design tokens + design-system references
@@ -315,5 +315,5 @@ and the CI secret scan enforce this.
 
 NexaChat is designed and operated as a single-node real-time messaging deployment;
 architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
-cleartext debug profile, and deferred E2EE/OTP/FCM integrations) are documented in
+cleartext debug profile, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
 [docs/known-limitations.md](docs/known-limitations.md).

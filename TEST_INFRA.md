@@ -2,7 +2,7 @@
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
 
 - **Dự án**: NexaChat
-- **Kho lưu trữ**: `D:\ChatFaceHappy\nexachat`
+- **Kho lưu trữ**: Thư mục gốc dự án (`.`)
 - **Ràng buộc công nghệ**: 100% Pure Java 21 LTS (0 file Kotlin `.kt`/`.kts`), 0 leaked secrets, 0 broken markdown links.
 - **Tài liệu tham chiếu cơ sở**: [README.md](README.md), [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [docs/api-contract.md](docs/api-contract.md), [docs/websocket-protocol.md](docs/websocket-protocol.md), [docs/calls.md](docs/calls.md).
 - **Mã hiệu tài liệu**: `NEXA-TEST-INFRA-2026-V1`
@@ -246,15 +246,14 @@ Toàn bộ 81 bài kiểm thử được đóng gói thành các lớp kiểm th
 
 **Lệnh chạy kiểm thử Maven**:
 ```powershell
-cd D:\ChatFaceHappy\nexachat\server
+cd server
 mvn test -Dtest=NexaChatP0E2ETestSuite
 ```
 
 ### 5.2 Thực thi qua Trình chạy Độc lập CLI Thuần Java 21 (Standalone CLI Runner)
-File thực thi Java 21 độc lập `D:\ChatFaceHappy\nexachat\tools\e2e\P0E2ETestRunner.java` cho phép chạy kiểm thử trực tiếp trên dòng lệnh mà không yêu cầu build công kềnh:
+File thực thi Java 21 độc lập `tools/e2e/P0E2ETestRunner.java` cho phép chạy kiểm thử trực tiếp trên dòng lệnh mà không yêu cầu build công kềnh:
 ```powershell
-cd D:\ChatFaceHappy\nexachat
-java tools\e2e\P0E2ETestRunner.java
+java tools/e2e/P0E2ETestRunner.java
 ```
 
 Trình chạy cung cấp báo cáo ANSI màu trực quan, tính toán thời gian thực thi mili-giây, thống kê tỷ lệ đạt/hỏng của từng tầng, và trả về mã thoát 0 khi tất cả kiểm thử đều xanh.

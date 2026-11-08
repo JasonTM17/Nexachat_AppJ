@@ -11,6 +11,23 @@ after the tag.
 
 ### Added
 
+- Room v8 schema migration (`MIGRATION_7_8`) adding `users`, `call_logs`, `offline_outbox`,
+  and `conversations.peerDeliveredSeq`.
+- Server Flyway migration `V7__p0_receipts_sync_fcm.sql`: device tokens table (`user_device_tokens`),
+  covering index for delta sync on `messages (conversation_id, seq)`, and watermark column
+  `conversation_members.last_delivered_seq`.
+- Two-tick delivery & read receipts: STOMP delivery ack `/app/conversations/{id}/delivered`
+  (alias `/app/chat.delivery.ack`), `MESSAGE_DELIVERED` event broadcast, and `ChatBubbleRules`
+  resolving 1-tick (sent), 2 gray ticks (delivered), and 2 blue ticks (seen).
+- Delta sync catch-up: `POST /api/v1/sync` (alias `/chat/sync`) and Android `SyncEngine`
+  for holistic multi-conversation watermark resync.
+- Durable offline outbox actions: `offline_outbox` table with RFC 4122 UUIDv5 idempotency keys
+  (`IdempotencyUtils`), lease locking, and WorkManager network-triggered sync (`OutboxSyncWorker`).
+- FCM token registration & push scaffolding: `DeviceTokenController` (`/api/v1/users/device-token`),
+  `GoogleHttpFcmGateway` (HTTP v1), `DefaultFcmPushService`, and Android `NexaFirebaseMessagingService`.
+- WebRTC roaming grace: 15-second disconnect grace (`disconnect-grace-ms: 15000`, `CallTimeoutScheduler`)
+  and Android `CallManager` `RECONNECTING_NETWORK` state with ICE restart and FIFO signaling buffer.
+- GIF recording and conversion tooling: `tools/gif/record.py` and `tools/gif/README.md`.
 - Message edit, delete and search: `PATCH`/`DELETE /conversations/{id}/messages/{messageId}`
   and `GET /conversations/{id}/messages/search`, with `MESSAGE_UPDATED` /
   `MESSAGE_DELETED` STOMP events and `NOT_MESSAGE_AUTHOR` / `MESSAGE_DELETED`

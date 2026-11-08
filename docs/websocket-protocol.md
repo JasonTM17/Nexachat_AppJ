@@ -68,6 +68,9 @@ and expects one from the server every 10 s.
 | C→S | `/app/conversations/{id}/messages` | SEND | `{clientMessageId,type,content,replyToId?,attachmentIds[]}` |
 | C→S | `/app/conversations/{id}/typing` | SEND | `{}` |
 | C→S | `/app/conversations/{id}/read` | SEND | `{upToSeq}` |
+| C→S | `/app/conversations/{id}/delivered` | SEND | `{upToSeq}` (delivery watermark ack) |
+| C→S | `/app/chat.delivery.ack` | SEND | `{conversationId,upToSeq}` (delivery ack alias) |
+| C→S | `/app/chat.read.ack` | SEND | `{conversationId,upToSeq}` (read ack alias) |
 | C→S | `/app/calls/{conversationId}/signal` | SEND | call signal JSON; see [`docs/calls.md`](calls.md) |
 | S→C | `/topic/conversations.{id}` | SUBSCRIBE | event envelope (§5); authorized by membership |
 | S→C | `/user/queue/inbox` | SUBSCRIBE | event envelope |
@@ -110,7 +113,8 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 | `MESSAGE_CREATED` | Full `MessageResponse` payload (including `id`, `conversationId`, `seq`, `senderId`, `type`, content/tombstone fields, and timestamps) |
 | `MESSAGE_UPDATED` | full `MessageResponse` with edited `content`/`editedAt` |
 | `MESSAGE_DELETED` | `{messageId, deletedAt}`; deleted content is never rebroadcast |
-| `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope |
+| `MESSAGE_DELIVERED` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has received up to `upToSeq` (renders 2 gray ticks on sender) |
+| `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has read up to `upToSeq` (renders 2 blue ticks on sender) |
 | `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
 | `PIN_UPDATED` | `{messageId, pinned}`; conversation id is in the envelope |
 | `USER_TYPING` | `{userId}`; conversation id is in the envelope and the Android client expires the indicator after a local 5 s TTL |
@@ -165,10 +169,19 @@ The sender flips its optimistic Room row from `SENDING` to `SENT` by matching
 **Ordering.** Render and diff by monotonic `seq` (BIGSERIAL), never by arrival
 time or `serverTs`; a delayed lower-`seq` event still inserts in position.
 
-**Read watermark.** `upToSeq` must be non-negative and cannot exceed the
-conversation's latest `seq`; the persisted watermark is monotonic (never moves
-backwards) and `MESSAGE_READ` broadcasts the *persisted* value, so a replayed
-frame is truthful.
+**Two-tick receipts and read watermarks.** Reception is acknowledged via
+`/app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`), advancing
+`conversation_members.last_delivered_seq` and broadcasting `MESSAGE_DELIVERED`.
+Reading is acknowledged via `/app/conversations/{id}/read` (or `/app/chat.read.ack`),
+advancing `last_read_seq` and broadcasting `MESSAGE_READ`. Watermarks are
+monotonic and cannot exceed the conversation's latest `seq`. In 1-1 chat,
+`messageSeq <= peerDeliveredSeq` renders 2 gray ticks (delivered);
+`messageSeq <= peerReadSeq` renders 2 blue ticks (seen/read) (`ChatBubbleRules.java`).
+
+**Resync and delta sync after reconnect.** The client can catch up either by
+single conversation via `GET /api/v1/conversations/{id}/messages?afterSeq=<lastSeq>`
+or holistically across all conversations via `POST /api/v1/sync` (`SyncEngine.java`),
+which returns new messages, edits, tombstones, and reaction deltas in one bundle.
 
 **Reconnect backoff.** On socket loss the client retries with delays
 `1s, 2s, 4s, 8s, 16s` plus ±20% jitter, at most 5 attempts
