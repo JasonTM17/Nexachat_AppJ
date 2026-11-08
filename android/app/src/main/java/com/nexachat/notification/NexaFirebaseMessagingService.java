@@ -56,10 +56,14 @@ public class NexaFirebaseMessagingService extends FirebaseMessagingService {
         try {
             DeviceTokenRegistrationManager manager = resolveRegistrationManager(this);
             if (manager != null) {
-                manager.onNewToken(token).subscribe(() -> { }, ignored -> { });
+                manager.onNewToken(token).subscribe(() -> { },
+                        error -> DeviceTokenDiagnostics.warnError(error.getClass()));
+            } else {
+                DeviceTokenDiagnostics.warn(DeviceTokenDiagnostics.TOKEN_CALLBACK_FAILED);
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
             // A token callback must not crash if the app graph is not ready.
+            DeviceTokenDiagnostics.warnError(failed.getClass());
         }
     }
 

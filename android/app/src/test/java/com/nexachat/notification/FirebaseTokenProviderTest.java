@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -64,6 +65,26 @@ public final class FirebaseTokenProviderTest {
         assertThrows(IllegalStateException.class, provider::getTokenIfConfigured);
 
         verify(tokenSource, never()).fetchToken();
+    }
+
+    @Test
+    public void isConfiguredMirrorsTheProbe() {
+        FirebaseTokenProvider.TokenSource tokenSource = mock(FirebaseTokenProvider.TokenSource.class);
+        FirebaseTokenProvider configured = new FirebaseTokenProvider(() -> true, tokenSource);
+        FirebaseTokenProvider absent = new FirebaseTokenProvider(() -> false, tokenSource);
+
+        assertTrue(configured.isConfigured());
+        assertFalse(absent.isConfigured());
+    }
+
+    @Test
+    public void configurationFailurePropagatesFromIsConfigured() {
+        FirebaseTokenProvider.FirebaseConfigProbe probe = mock(FirebaseTokenProvider.FirebaseConfigProbe.class);
+        when(probe.isDefaultAppConfigured()).thenThrow(new IllegalStateException("firebase runtime absent"));
+        FirebaseTokenProvider provider = new FirebaseTokenProvider(
+                probe, mock(FirebaseTokenProvider.TokenSource.class));
+
+        assertThrows(IllegalStateException.class, provider::isConfigured);
     }
 
     @Test

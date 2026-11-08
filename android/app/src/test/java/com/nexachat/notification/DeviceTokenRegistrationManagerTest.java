@@ -66,6 +66,13 @@ public final class DeviceTokenRegistrationManagerTest {
     }
 
     @Test
+    public void sessionAvailableEnqueuesSync() {
+        manager.onSessionAvailable().test().assertComplete();
+
+        verify(scheduler).enqueueSync();
+    }
+
+    @Test
     public void logoutQueuesUnregisterAndReturnsBeforeItsCallback() {
         Call<Void> call = mock(Call.class);
         when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens()));

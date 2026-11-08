@@ -38,6 +38,7 @@ public final class DeviceTokenRegistrationManager {
     @NonNull
     public Completable onNewToken(@NonNull String token) {
         if (token.isBlank()) {
+            DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.TOKEN_BLANK);
             return Completable.complete();
         }
         return tokenStore.saveFcmDeviceToken(token)
@@ -46,15 +47,22 @@ public final class DeviceTokenRegistrationManager {
                         .defaultIfEmpty(false)
                         .doOnSuccess(hasSession -> {
                             if (hasSession) {
+                                DeviceTokenDiagnostics.info(
+                                        DeviceTokenDiagnostics.TOKEN_STORED_SESSION);
                                 scheduler.enqueueSync();
+                            } else {
+                                DeviceTokenDiagnostics.info(
+                                        DeviceTokenDiagnostics.TOKEN_STORED_NO_SESSION);
                             }
                         })
-                        .ignoreElement());
+                        .ignoreElement())
+                .doOnError(error -> DeviceTokenDiagnostics.warnError(error.getClass()));
     }
 
     /** Called after login and successful or transient session restoration. */
     @NonNull
     public Completable onSessionAvailable() {
+        DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.SESSION_AVAILABLE);
         return Completable.fromAction(scheduler::enqueueSync);
     }
 

@@ -51,9 +51,14 @@ public final class DeviceTokenSyncWorker extends RxWorker {
     @NonNull
     @Override
     public Single<Result> createWork() {
-        return Single.fromCallable(() -> executor == null
-                        ? DeviceTokenSyncExecutor.Outcome.SUCCESS
-                        : executor.execute(getRunAttemptCount()))
+        if (executor == null) {
+            // A missing Hilt graph is transient: retry within budget instead of
+            // reporting success for work that never ran.
+            DeviceTokenDiagnostics.warn(DeviceTokenDiagnostics.EXECUTOR_MISSING);
+            return Single.just(DeviceTokenRetryPolicy.shouldRetry(getRunAttemptCount())
+                    ? Result.retry() : Result.failure());
+        }
+        return Single.fromCallable(() -> executor.execute(getRunAttemptCount()))
                 .subscribeOn(Schedulers.io())
                 .map(outcome -> {
                     if (outcome == DeviceTokenSyncExecutor.Outcome.SUCCESS) {
@@ -64,8 +69,10 @@ public final class DeviceTokenSyncWorker extends RxWorker {
                     }
                     return Result.failure();
                 })
-                .onErrorReturn(error -> DeviceTokenRetryPolicy.shouldRetry(getRunAttemptCount())
-                        ? Result.retry()
-                        : Result.failure());
+                .onErrorReturn(error -> {
+                    DeviceTokenDiagnostics.warnError(error.getClass());
+                    return DeviceTokenRetryPolicy.shouldRetry(getRunAttemptCount())
+                            ? Result.retry() : Result.failure();
+                });
     }
 }

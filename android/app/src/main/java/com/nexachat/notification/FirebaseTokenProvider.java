@@ -44,10 +44,15 @@ public final class FirebaseTokenProvider {
         this.tokenSource = tokenSource;
     }
 
+    /** True only when a default Firebase app is initialized, so a token fetch is safe to attempt. */
+    public boolean isConfigured() {
+        return configProbe.isDefaultAppConfigured();
+    }
+
     /** Returns null when this build has no Firebase options; retrieval failures propagate for retry. */
     @Nullable
     public String getTokenIfConfigured() throws Exception {
-        if (!configProbe.isDefaultAppConfigured()) {
+        if (!isConfigured()) {
             return null;
         }
         String token = tokenSource.fetchToken();

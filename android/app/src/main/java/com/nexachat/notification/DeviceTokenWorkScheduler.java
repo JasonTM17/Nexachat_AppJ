@@ -42,8 +42,9 @@ public final class DeviceTokenWorkScheduler {
                     WORK_NAME,
                     ExistingWorkPolicy.REPLACE,
                     request);
-        } catch (IllegalStateException ignored) {
+        } catch (IllegalStateException unavailable) {
             // Keep token callbacks safe in test and pre-initialization contexts.
+            DeviceTokenDiagnostics.warn(DeviceTokenDiagnostics.SCHEDULE_FAILED);
         }
     }
 }

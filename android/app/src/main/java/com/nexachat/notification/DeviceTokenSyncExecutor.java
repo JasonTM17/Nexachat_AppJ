@@ -41,8 +41,10 @@ public final class DeviceTokenSyncExecutor {
             return reconcile(runAttemptCount);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+            DeviceTokenDiagnostics.warnError(InterruptedException.class);
             return retryOrFail(runAttemptCount);
         } catch (Exception failedRequest) {
+            DeviceTokenDiagnostics.warnError(failedRequest.getClass());
             return retryOrFail(runAttemptCount);
         }
     }
@@ -51,15 +53,24 @@ public final class DeviceTokenSyncExecutor {
         Tokens session = tokenStore.readTokens().blockingGet();
         PendingDeviceTokenUnregister pending = tokenStore.readPendingDeviceTokenUnregister().blockingGet();
         if (session == null) {
-            return pending == null ? Outcome.SUCCESS : retryOrFail(runAttemptCount);
+            if (pending == null) {
+                DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.NO_SESSION);
+                return Outcome.SUCCESS;
+            }
+            DeviceTokenDiagnostics.warn("PENDING_UNREGISTER_NO_SESSION");
+            return retryOrFail(runAttemptCount);
         }
 
         String userId = TimeAndJwt.userIdFromJwt(session.getAccessToken(), moshi);
+        boolean firebaseConfigured = false;
         String deviceToken = tokenStore.readFcmDeviceToken().blockingGet();
         if (deviceToken == null) {
-            deviceToken = firebaseTokenProvider.getTokenIfConfigured();
-            if (deviceToken != null) {
-                tokenStore.saveFcmDeviceToken(deviceToken).blockingAwait();
+            firebaseConfigured = firebaseTokenProvider.isConfigured();
+            if (firebaseConfigured) {
+                deviceToken = firebaseTokenProvider.getTokenIfConfigured();
+                if (deviceToken != null) {
+                    tokenStore.saveFcmDeviceToken(deviceToken).blockingAwait();
+                }
             }
         }
 
@@ -68,20 +79,28 @@ public final class DeviceTokenSyncExecutor {
                     .unregister(new DeviceTokenApi.UnregisterRequest(pending.getToken()), null)
                     .execute();
             if (!unregisterResponse.isSuccessful()) {
+                DeviceTokenDiagnostics.warnHttp(unregisterResponse.code());
                 return retryOrFail(runAttemptCount);
             }
             tokenStore.clearPendingDeviceTokenUnregister(
                     pending.getToken(), pending.getOwnerUserId()).blockingAwait();
+            DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.UNREGISTERED);
             pending = null;
         }
 
         if (deviceToken == null) {
-            return Outcome.SUCCESS;
+            if (!firebaseConfigured) {
+                DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.FIREBASE_NOT_CONFIGURED);
+                return Outcome.SUCCESS;
+            }
+            DeviceTokenDiagnostics.warn(DeviceTokenDiagnostics.TOKEN_NULL);
+            return retryOrFail(runAttemptCount);
         }
 
         Response<DeviceTokenApi.RegistrationResponse> registerResponse = deviceTokenApi.register(
                 new DeviceTokenApi.RegistrationRequest(deviceToken)).execute();
         if (!registerResponse.isSuccessful()) {
+            DeviceTokenDiagnostics.warnHttp(registerResponse.code());
             return retryOrFail(runAttemptCount);
         }
 
@@ -90,6 +109,7 @@ public final class DeviceTokenSyncExecutor {
             tokenStore.clearPendingDeviceTokenUnregister(
                     pending.getToken(), pending.getOwnerUserId()).blockingAwait();
         }
+        DeviceTokenDiagnostics.info(DeviceTokenDiagnostics.REGISTERED);
         return Outcome.SUCCESS;
     }
 

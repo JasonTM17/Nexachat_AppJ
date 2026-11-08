@@ -1,6 +1,8 @@
 package com.nexachat.notification;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -15,7 +17,12 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -73,17 +80,19 @@ public final class DeviceTokenSyncExecutorTest {
     public void missingFirebaseConfigurationDegradesWithoutARegistrationRequest() throws Exception {
         when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
         when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
-        when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn(null);
+        when(firebaseTokenProvider.isConfigured()).thenReturn(false);
 
         assertEquals(DeviceTokenSyncExecutor.Outcome.SUCCESS, executor.execute(0));
 
         verify(deviceTokenApi, never()).register(any());
+        verify(firebaseTokenProvider, never()).getTokenIfConfigured();
     }
 
     @Test
     public void registersTokenFetchedWhenFirebaseIsConfigured() throws Exception {
         when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
         when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.isConfigured()).thenReturn(true);
         when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn(DEVICE_TOKEN);
         when(tokenStore.saveFcmDeviceToken(DEVICE_TOKEN)).thenReturn(Completable.complete());
         Call<DeviceTokenApi.RegistrationResponse> call = mock(Call.class);
@@ -100,9 +109,36 @@ public final class DeviceTokenSyncExecutorTest {
     }
 
     @Test
+    public void configuredButNullTokenRetriesWithoutRegistering() throws Exception {
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
+        when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.isConfigured()).thenReturn(true);
+        when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn(null);
+
+        assertEquals(DeviceTokenSyncExecutor.Outcome.RETRY, executor.execute(0));
+        assertEquals(DeviceTokenSyncExecutor.Outcome.FAILURE,
+                executor.execute(DeviceTokenRetryPolicy.MAX_RETRIES));
+
+        verify(deviceTokenApi, never()).register(any());
+    }
+
+    @Test
+    public void configuredButBlankTokenRetriesWithoutRegistering() throws Exception {
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
+        when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.isConfigured()).thenReturn(true);
+        when(firebaseTokenProvider.getTokenIfConfigured()).thenReturn("   ");
+
+        assertEquals(DeviceTokenSyncExecutor.Outcome.RETRY, executor.execute(0));
+
+        verify(deviceTokenApi, never()).register(any());
+    }
+
+    @Test
     public void tokenFetchFailureUsesBoundedRetryDecision() throws Exception {
         when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
         when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.empty());
+        when(firebaseTokenProvider.isConfigured()).thenReturn(true);
         when(firebaseTokenProvider.getTokenIfConfigured())
                 .thenThrow(new IOException("no play services"));
 
@@ -125,6 +161,44 @@ public final class DeviceTokenSyncExecutorTest {
         assertEquals(DeviceTokenSyncExecutor.Outcome.RETRY, executor.execute(0));
         assertEquals(DeviceTokenSyncExecutor.Outcome.FAILURE,
                 executor.execute(DeviceTokenRetryPolicy.MAX_RETRIES));
+    }
+
+    @Test
+    public void decisionLogCarriesReasonCodesWithoutTokenOrUserId() throws Exception {
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokens("user-1")));
+        when(tokenStore.readFcmDeviceToken()).thenReturn(Maybe.just(DEVICE_TOKEN));
+        Call<DeviceTokenApi.RegistrationResponse> call = mock(Call.class);
+        when(deviceTokenApi.register(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(new DeviceTokenApi.RegistrationResponse()));
+
+        Logger logger = Logger.getLogger("NexaChatDeviceToken");
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override public void flush() { }
+
+            @Override public void close() { }
+        };
+        logger.addHandler(handler);
+        try {
+            assertEquals(DeviceTokenSyncExecutor.Outcome.SUCCESS, executor.execute(0));
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertFalse(records.isEmpty());
+        boolean registered = false;
+        for (LogRecord record : records) {
+            assertFalse(record.getMessage().contains(DEVICE_TOKEN));
+            assertFalse(record.getMessage().contains("user-1"));
+            if (record.getMessage().contains(DeviceTokenDiagnostics.REGISTERED)) {
+                registered = true;
+            }
+        }
+        assertTrue(registered);
     }
 
     private static Tokens tokens(String userId) {
