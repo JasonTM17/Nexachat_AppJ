@@ -132,8 +132,8 @@ sequenceDiagram
   edits, tombstones, and reaction updates in a single Room transaction, backed by
   server covering index `idx_messages_delta_sync` on `(conversation_id, seq)`.
 - **Offline Outbox & WorkManager:** pending optimistic messages (`outbox`) and
-  offline actions (`offline_outbox` for reactions and pins with RFC 4122 UUIDv5
-  idempotency keys) are drained by `OutboxSyncWorker` via WorkManager with
+  the `offline_outbox` action table (RFC 4122 UUIDv5 idempotency keys; no producer
+  enqueues reactions or pins into it yet) is drained by `OutboxSyncWorker` via WorkManager with
   `NetworkType.CONNECTED` constraints and atomic lease locking.
 - **Presence:** each authenticated STOMP session contributes to an
   in-memory per-user count. After commit, presence goes only to DIRECT peers

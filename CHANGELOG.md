@@ -21,7 +21,7 @@ after the tag.
   resolving 1-tick (sent), 2 gray ticks (delivered), and 2 blue ticks (seen).
 - Delta sync catch-up: `POST /api/v1/sync` (alias `/chat/sync`) and Android `SyncEngine`
   for holistic multi-conversation watermark resync.
-- Durable offline outbox actions: `offline_outbox` table with RFC 4122 UUIDv5 idempotency keys
+- Offline action table and drain path (no producer wired yet): `offline_outbox` table with RFC 4122 UUIDv5 idempotency keys
   (`IdempotencyUtils`), lease locking, and WorkManager network-triggered sync (`OutboxSyncWorker`).
 - FCM token registration & push scaffolding: `DeviceTokenController` (`/api/v1/users/device-token`),
   `GoogleHttpFcmGateway` (HTTP v1), `DefaultFcmPushService`, and Android `NexaFirebaseMessagingService`.
