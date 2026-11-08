@@ -243,7 +243,7 @@ class MessageMutationServiceTest {
     private static MessageAttachment attachment(UUID ownerId, Message message) {
         MessageAttachment attachment = MessageAttachment.upload(
                 user(ownerId, "Owner"), "attachments/test.png", "test.png", "image/png", 5,
-                null, null, null);
+                null, null, null, null);
         ReflectionTestUtils.setField(attachment, "id", UUID.randomUUID());
         attachment.bindTo(message);
         return attachment;

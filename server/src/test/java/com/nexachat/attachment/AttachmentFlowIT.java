@@ -29,6 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -172,6 +173,189 @@ class AttachmentFlowIT {
             out[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
         }
         return out;
+    }
+
+    private JsonNode uploadWithBlurHash(TestUser uploader, String filename, String declaredType,
+                                        byte[] bytes, String blurHash) throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", filename, declaredType, bytes);
+        org.springframework.test.web.servlet.request.MockMultipartHttpServletRequestBuilder builder =
+                multipart("/api/v1/attachments").file(file);
+        if (blurHash != null) {
+            builder.param("blurHash", blurHash);
+        }
+        MvcResult result = mockMvc.perform(builder
+                        .header("Authorization", "Bearer " + uploader.accessToken()))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    // ======================================================== blurHash
+
+    @Test
+    void blurHashRoundTripsThroughUploadSendAndHistory() throws Exception {
+        UUID conversationId = openDirectConversation();
+        String blurHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
+
+        JsonNode uploaded = uploadWithBlurHash(
+                alice, "photo.png", "image/png", PNG_BYTES, blurHash);
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        assertThat(uploaded.get("blurHash").asText()).isEqualTo(blurHash);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT blur_hash FROM message_attachments WHERE id = ?",
+                String.class, attachmentId)).isEqualTo(blurHash);
+
+        MvcResult sent = postJson("/api/v1/conversations/" + conversationId + "/messages",
+                alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId.toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode embedded = objectMapper.readTree(sent.getResponse().getContentAsString())
+                .get("attachments").get(0);
+        assertThat(embedded.get("blurHash").asText()).isEqualTo(blurHash);
+
+        MvcResult history = mockMvc.perform(get(
+                        "/api/v1/conversations/{conversationId}/messages", conversationId)
+                        .header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode historyItem = null;
+        for (JsonNode item : objectMapper.readTree(history.getResponse().getContentAsString()).get("items")) {
+            if (item.get("attachments").size() == 1
+                    && item.get("attachments").get(0).get("id").asText().equals(attachmentId.toString())) {
+                historyItem = item;
+                break;
+            }
+        }
+        assertThat(historyItem).isNotNull();
+        assertThat(historyItem.get("attachments").get(0).get("blurHash").asText())
+                .isEqualTo(blurHash);
+
+        // A legacy row without a hash reports null, and the field is omitted on the wire.
+        JsonNode legacyUpload = upload(alice, "legacy.png", "image/png", PNG_BYTES);
+        assertThat(legacyUpload.has("blurHash")).isFalse();
+    }
+
+    @Test
+    void invalidBlurHashIsRejected() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES);
+        for (String bad : new String[] {"ABCDE", "A".repeat(65), "bad!hash"}) {
+            mockMvc.perform(multipart("/api/v1/attachments")
+                            .file(file)
+                            .param("blurHash", bad)
+                            .header("Authorization", "Bearer " + alice.accessToken()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void blurHashOnNonImageIsRejected() throws Exception {
+        byte[] pdfBytes = hex("255044462D312E340A25");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "doc.pdf", "application/pdf", pdfBytes);
+        mockMvc.perform(multipart("/api/v1/attachments")
+                        .file(file)
+                        .param("blurHash", "LEHV6nWB2yk8pyo0adR*.7kCMdnj")
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    // =========================================================== ranges
+
+    @Test
+    void rangeDownloadsHonourByteRanges() throws Exception {
+        UUID conversationId = openDirectConversation();
+        JsonNode uploaded = upload(alice, "photo.png", "image/png", PNG_BYTES);
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        postJson("/api/v1/conversations/" + conversationId + "/messages",
+                alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId.toString())))
+                .andExpect(status().isCreated());
+        String filesUrl = uploaded.get("url").asText();
+
+        // 200 with no Range: full bytes + Accept-Ranges + Content-Length.
+        mockMvc.perform(get(filesUrl).header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Accept-Ranges", "bytes"))
+                .andExpect(header().longValue("Content-Length", PNG_BYTES.length))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("Content-Disposition", "inline"));
+
+        // 206 first bytes.
+        MvcResult partial = mockMvc.perform(get(filesUrl)
+                        .header("Authorization", "Bearer " + bob.accessToken())
+                        .header("Range", "bytes=0-3"))
+                .andExpect(status().isPartialContent())
+                .andExpect(header().string("Content-Range", "bytes 0-3/" + PNG_BYTES.length))
+                .andExpect(header().longValue("Content-Length", 4))
+                .andReturn();
+        assertThat(partial.getResponse().getContentAsByteArray())
+                .containsExactly(java.util.Arrays.copyOf(PNG_BYTES, 4));
+
+        // 206 open-ended.
+        MvcResult tail = mockMvc.perform(get(filesUrl)
+                        .header("Authorization", "Bearer " + bob.accessToken())
+                        .header("Range", "bytes=-4"))
+                .andExpect(status().isPartialContent())
+                .andExpect(header().string("Content-Range",
+                        "bytes " + (PNG_BYTES.length - 4) + "-" + (PNG_BYTES.length - 1)
+                                + "/" + PNG_BYTES.length))
+                .andReturn();
+        assertThat(tail.getResponse().getContentAsByteArray())
+                .containsExactly(java.util.Arrays.copyOfRange(
+                        PNG_BYTES, PNG_BYTES.length - 4, PNG_BYTES.length));
+
+        // 416 unsatisfiable.
+        mockMvc.perform(get(filesUrl)
+                        .header("Authorization", "Bearer " + bob.accessToken())
+                        .header("Range", "bytes=999999-"))
+                .andExpect(status().isRequestedRangeNotSatisfiable())
+                .andExpect(header().string("Content-Range", "bytes */" + PNG_BYTES.length));
+
+        // HEAD works and reports the full length without a body.
+        mockMvc.perform(head(filesUrl).header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Accept-Ranges", "bytes"))
+                .andExpect(header().longValue("Content-Length", PNG_BYTES.length));
+    }
+
+    @Test
+    void deletedMessageAttachment_stillHiddenOnRangeRequests() throws Exception {
+        UUID conversationId = openDirectConversation();
+        JsonNode uploaded = upload(alice, "gone.png", "image/png", PNG_BYTES);
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        String filesUrl = uploaded.get("url").asText();
+        MvcResult sent = postJson("/api/v1/conversations/" + conversationId + "/messages",
+                alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId.toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID messageId = UUID.fromString(
+                objectMapper.readTree(sent.getResponse().getContentAsString()).get("id").asText());
+
+        mockMvc.perform(delete("/api/v1/conversations/{conversationId}/messages/{messageId}",
+                        conversationId, messageId)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+
+        for (String range : new String[] {null, "bytes=0-3", "bytes=-4"}) {
+            var request = get(filesUrl).header("Authorization", "Bearer " + bob.accessToken());
+            if (range != null) {
+                request = request.header("Range", range);
+            }
+            mockMvc.perform(request)
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_FOUND"));
+        }
     }
 
     // ================================================================ flow

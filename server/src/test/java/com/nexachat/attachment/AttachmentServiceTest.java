@@ -20,6 +20,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -62,6 +63,10 @@ class AttachmentServiceTest {
         lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
     }
 
+    private static StorageService.StreamHandle handle(byte[] content) {
+        return new StorageService.StreamHandle(new ByteArrayInputStream(content), content.length);
+    }
+
     private static User user(UUID id) {
         User user = User.create("+84901112233", "hash", "User");
         ReflectionTestUtils.setField(user, "id", id);
@@ -70,7 +75,7 @@ class AttachmentServiceTest {
 
     private MessageAttachment attachment(UUID ownerId, String storageKey, boolean bound) {
         MessageAttachment attachment = MessageAttachment.upload(
-                user(ownerId), storageKey, "photo.png", "image/png", 16L, null, null, null);
+                user(ownerId), storageKey, "photo.png", "image/png", 16L, null, null, null, null);
         ReflectionTestUtils.setField(attachment, "id", UUID.randomUUID());
         if (bound) {
             attachment.bindTo(messageIn(UUID.randomUUID()));
@@ -112,7 +117,7 @@ class AttachmentServiceTest {
         when(storageService.store(eq("attachments"), eq("photo.png"), eq("image/png"), eq(PNG_BYTES)))
                 .thenReturn(new StorageService.StoredFile("attachments/x.png", PNG_BYTES.length, "image/png"));
 
-        AttachmentResponse response = attachmentService.upload(ownerId, file, 320, 200, null);
+        AttachmentResponse response = attachmentService.upload(ownerId, file, 320, 200, null, null);
 
         ArgumentCaptor<MessageAttachment> saved = ArgumentCaptor.forClass(MessageAttachment.class);
         verify(attachmentRepository).save(saved.capture());
@@ -139,7 +144,7 @@ class AttachmentServiceTest {
                 .thenThrow(ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> attachmentService.upload(ownerId, file, null, null, null));
+                () -> attachmentService.upload(ownerId, file, null, null, null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
         assertThat(ex.getHttpStatus()).isEqualTo(415);
@@ -153,7 +158,7 @@ class AttachmentServiceTest {
         when(file.getSize()).thenReturn(AttachmentService.MAX_FILE_SIZE_BYTES + 1);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> attachmentService.upload(ownerId, file, null, null, null));
+                () -> attachmentService.upload(ownerId, file, null, null, null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_TOO_LARGE);
         assertThat(ex.getHttpStatus()).isEqualTo(413);
@@ -164,7 +169,7 @@ class AttachmentServiceTest {
     @Test
     void upload_missingFile_throwsValidation() {
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> attachmentService.upload(ownerId, null, null, null, null));
+                () -> attachmentService.upload(ownerId, null, null, null, null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
     }
@@ -176,10 +181,71 @@ class AttachmentServiceTest {
         when(storageService.store(anyString(), anyString(), anyString(), any()))
                 .thenReturn(new StorageService.StoredFile("attachments/x.png", PNG_BYTES.length, "image/png"));
 
-        AttachmentResponse response = attachmentService.upload(ownerId, file, null, null, null);
+        AttachmentResponse response = attachmentService.upload(ownerId, file, null, null, null, null);
 
         // The client name survives only as display metadata — never as a path.
         assertThat(response.originalName()).isEqualTo("evil.png");
+    }
+
+    @Test
+    void upload_blurHash_persistedAndReturned() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", PNG_BYTES);
+        when(storageService.store(eq("attachments"), eq("photo.png"), eq("image/png"), eq(PNG_BYTES)))
+                .thenReturn(new StorageService.StoredFile("attachments/x.png", PNG_BYTES.length, "image/png"));
+        String blurHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";
+
+        AttachmentResponse response = attachmentService.upload(
+                ownerId, file, null, null, null, blurHash);
+
+        ArgumentCaptor<MessageAttachment> saved = ArgumentCaptor.forClass(MessageAttachment.class);
+        verify(attachmentRepository).save(saved.capture());
+        assertThat(saved.getValue().getBlurHash()).isEqualTo(blurHash);
+        assertThat(response.blurHash()).isEqualTo(blurHash);
+    }
+
+    @Test
+    void upload_blurHashAbsent_isNull() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", PNG_BYTES);
+        when(storageService.store(eq("attachments"), eq("photo.png"), eq("image/png"), eq(PNG_BYTES)))
+                .thenReturn(new StorageService.StoredFile("attachments/x.png", PNG_BYTES.length, "image/png"));
+
+        AttachmentResponse response = attachmentService.upload(
+                ownerId, file, null, null, null, null);
+
+        assertThat(response.blurHash()).isNull();
+    }
+
+    @Test
+    void upload_invalidBlurHash_isRejectedBeforeStore() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", PNG_BYTES);
+
+        for (String bad : new String[] {
+                "ABCDE", "A".repeat(65), "bad!hash", "has space", "has/slash"}) {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> attachmentService.upload(ownerId, file, null, null, null, bad));
+            assertThat(ex.getCode()).as("blurHash %s", bad).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+            assertThat(ex.getHttpStatus()).isEqualTo(400);
+        }
+        verify(storageService, never()).store(any(), any(), any(), any());
+        verify(attachmentRepository, never()).save(any());
+    }
+
+    @Test
+    void upload_blurHashOnNonImage_isRejectedBeforeStore() {
+        byte[] pdfBytes = hex("255044462D312E340A25");
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "doc.pdf", "application/pdf", pdfBytes);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.upload(
+                        ownerId, file, null, null, null, "LEHV6nWB2yk8pyo0adR*.7kCMdnj"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(storageService, never()).store(any(), any(), any(), any());
+        verify(attachmentRepository, never()).save(any());
     }
 
     @Test
@@ -187,7 +253,7 @@ class AttachmentServiceTest {
         MockMultipartFile file = new MockMultipartFile("file", "p.png", "image/png", PNG_BYTES);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> attachmentService.upload(ownerId, file, -1, null, null));
+                () -> attachmentService.upload(ownerId, file, -1, null, null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(storageService, never()).store(any(), any(), any(), any());
@@ -208,16 +274,16 @@ class AttachmentServiceTest {
     // ---------------------------------------------------------------- download
 
     @Test
-    void loadContent_ownerOfUnboundUpload_allowed() {
+    void loadContent_ownerOfUnboundUpload_allowed() throws Exception {
         MessageAttachment attachment = attachment(ownerId, "attachments/x.png", false);
         when(attachmentRepository.findById(attachment.getId())).thenReturn(Optional.of(attachment));
-        when(storageService.read("attachments/x.png")).thenReturn(PNG_BYTES);
+        when(storageService.open("attachments/x.png")).thenReturn(handle(PNG_BYTES));
 
-        AttachmentService.AttachmentContent content =
-                attachmentService.loadContent(attachment.getId(), ownerId);
-
-        assertThat(content.bytes()).containsExactly(PNG_BYTES);
-        assertThat(content.attachment().getMimeType()).isEqualTo("image/png");
+        try (AttachmentService.AttachmentContent content =
+                     attachmentService.loadContent(attachment.getId(), ownerId)) {
+            assertThat(content.content().content().readAllBytes()).containsExactly(PNG_BYTES);
+            assertThat(content.attachment().getMimeType()).isEqualTo("image/png");
+        }
     }
 
     @Test
@@ -233,18 +299,18 @@ class AttachmentServiceTest {
     }
 
     @Test
-    void loadContent_memberOfBoundConversation_allowed() {
+    void loadContent_memberOfBoundConversation_allowed() throws Exception {
         MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
         UUID conversationId = attachment.getMessage().getConversation().getId();
         when(attachmentRepository.findById(attachment.getId())).thenReturn(Optional.of(attachment));
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, requesterId))
                 .thenReturn(true);
-        when(storageService.read("attachments/x.png")).thenReturn(PNG_BYTES);
+        when(storageService.open("attachments/x.png")).thenReturn(handle(PNG_BYTES));
 
-        AttachmentService.AttachmentContent content =
-                attachmentService.loadContent(attachment.getId(), requesterId);
-
-        assertThat(content.bytes()).containsExactly(PNG_BYTES);
+        try (AttachmentService.AttachmentContent content =
+                     attachmentService.loadContent(attachment.getId(), requesterId)) {
+            assertThat(content.content().content().readAllBytes()).containsExactly(PNG_BYTES);
+        }
     }
 
     @Test
@@ -259,7 +325,7 @@ class AttachmentServiceTest {
                 () -> attachmentService.loadContent(attachment.getId(), requesterId));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
-        verify(storageService, never()).read(anyString());
+        verify(storageService, never()).open(anyString());
     }
 
     @Test
