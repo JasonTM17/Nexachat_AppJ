@@ -61,6 +61,7 @@
     <string name="contact_alias_label">Biệt danh</string>
     <string name="action_search">Tìm kiếm</string>
     <string name="action_add_contact">Thêm liên hệ</string>
+    <string name="action_add">Thêm</string>
     <string name="action_remove_contact">Xóa liên hệ</string>
     <string name="action_message">Nhắn tin</string>
     <string name="action_save">Lưu</string>

@@ -1,5 +1,6 @@
 package com.nexachat.feature.group;
 
+import android.app.Dialog;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -10,7 +11,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -24,6 +24,8 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
@@ -32,6 +34,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
 import com.nexachat.data.GroupMember;
+import com.nexachat.databinding.BottomSheetGroupAddMemberBinding;
 import com.nexachat.databinding.FragmentGroupDetailBinding;
 import com.nexachat.feature.group.adapter.GroupMemberAdapter;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -51,7 +54,7 @@ public final class GroupDetailFragment extends Fragment {
     @Nullable private AlertDialog renameDialog;
     @Nullable private AlertDialog removeDialog;
     @Nullable private AlertDialog leaveDialog;
-    @Nullable private AlertDialog addMemberDialog;
+    @Nullable private Dialog addMemberDialog;
     @Nullable private AddMemberAdapter addMemberPickerAdapter;
     @Nullable private MaterialButton addMemberConfirmButton;
     @Nullable private EditText renameInput;
@@ -270,43 +273,28 @@ public final class GroupDetailFragment extends Fragment {
             }
             return;
         }
-        LinearLayout root = new LinearLayout(requireContext());
-        root.setOrientation(LinearLayout.VERTICAL);
-        int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
-        root.setPadding(pad, pad, pad, pad);
-
-        TextView heading = new TextView(requireContext());
-        heading.setText(R.string.action_add_member);
-        root.addView(heading);
-
-        RecyclerView list = new RecyclerView(requireContext());
-        list.setLayoutManager(new LinearLayoutManager(requireContext()));
-        int maxHeight = (int) (360 * getResources().getDisplayMetrics().density);
-        list.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                maxHeight));
+        BottomSheetGroupAddMemberBinding sheet =
+                BottomSheetGroupAddMemberBinding.inflate(LayoutInflater.from(requireContext()));
         addMemberPickerAdapter = new AddMemberAdapter(viewModel::toggleAddCandidate);
         addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
-        list.setAdapter(addMemberPickerAdapter);
-        root.addView(list);
-
-        addMemberConfirmButton = new MaterialButton(requireContext());
-        addMemberConfirmButton.setText(R.string.action_add_member);
+        sheet.addMemberList.setLayoutManager(new LinearLayoutManager(requireContext()));
+        sheet.addMemberList.setAdapter(addMemberPickerAdapter);
+        addMemberConfirmButton = sheet.addMemberConfirm;
         addMemberConfirmButton.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
         addMemberConfirmButton.setOnClickListener(v -> viewModel.addSelectedMembers());
-        root.addView(addMemberConfirmButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        addMemberDialog = new MaterialAlertDialogBuilder(requireContext())
-                .setView(root)
-                .setOnDismissListener(d -> {
-                    viewModel.dismissAddMember();
-                    addMemberDialog = null;
-                    addMemberPickerAdapter = null;
-                    addMemberConfirmButton = null;
-                })
-                .show();
+        BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
+        dialog.setContentView(sheet.getRoot());
+        dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
+        dialog.getBehavior().setSkipCollapsed(true);
+        dialog.setOnDismissListener(d -> {
+            viewModel.dismissAddMember();
+            addMemberDialog = null;
+            addMemberPickerAdapter = null;
+            addMemberConfirmButton = null;
+        });
+        addMemberDialog = dialog;
+        dialog.show();
     }
 
     @Override
@@ -369,8 +357,8 @@ public final class GroupDetailFragment extends Fragment {
         public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             View row = LayoutInflater.from(parent.getContext())
                     .inflate(R.layout.item_user_search, parent, false);
-            CheckBox box = new CheckBox(parent.getContext());
-            ((ViewGroup) row).addView(box);
+            CheckBox box = row.findViewById(R.id.selectionCheck);
+            box.setVisibility(View.VISIBLE);
             return new Holder(row, box);
         }
 
