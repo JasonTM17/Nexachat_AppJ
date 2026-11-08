@@ -195,6 +195,7 @@ public final class SyncEngineTest {
         when(messageDao.byId("m-del")).thenReturn(Maybe.just(existing));
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets("m-del")).thenReturn(Completable.complete());
+        when(conversationDao.byId("c1")).thenReturn(Maybe.empty());
 
         TestObserver<Void> observer = syncEngine.sync().test();
         observer.awaitCount(1);

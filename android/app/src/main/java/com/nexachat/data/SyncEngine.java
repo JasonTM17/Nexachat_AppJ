@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
+import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.ConversationWatermark;
 import com.nexachat.core.database.MessageDao;
 import com.nexachat.core.database.MessageEntity;
@@ -240,6 +241,12 @@ public final class SyncEngine {
                             messageDao.update(tombstone).blockingAwait();
                             reactionDao.deleteForMessageInTransaction(deletedId);
                             messageDao.clearReplySnippets(deletedId).blockingAwait();
+                            // Keep the inbox preview neutral when the deleted message was the
+                            // conversation's last one, as the live delete path already does.
+                            ConversationEntity row = conversationDao.byId(existing.getConversationId()).blockingGet();
+                            if (row != null && row.getLastMessageSeq() == existing.getSeq()) {
+                                conversationDao.markLastMessageDeleted(existing.getConversationId()).blockingAwait();
+                            }
                         }
                     }
                 }
