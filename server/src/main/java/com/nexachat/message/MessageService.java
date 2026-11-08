@@ -385,6 +385,9 @@ public class MessageService {
                     "upToSeq cannot exceed the latest message sequence");
         }
         memberRepository.advanceReadWatermark(conversationId, userId, upToSeq);
+        // Reading implies delivery: a read receipt without a delivered receipt
+        // would render an inconsistent two-tick state to the sender.
+        memberRepository.advanceDeliveredWatermark(conversationId, userId, upToSeq);
         long persistedWatermark = memberRepository.findReadWatermark(conversationId, userId);
         eventPublisher.publishEvent(new MessageReadEvent(conversationId, userId, persistedWatermark));
     }

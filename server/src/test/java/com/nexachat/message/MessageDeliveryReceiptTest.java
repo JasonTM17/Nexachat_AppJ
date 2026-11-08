@@ -184,4 +184,16 @@ class MessageDeliveryReceiptTest {
 
         verify(memberRepository).advanceReadWatermark(conversationId, userId, 40L);
     }
+
+    @Test
+    void markReadAdvancesDeliveredWatermarkToo() {
+        when(conversationRepository.existsById(conversationId)).thenReturn(true);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
+
+        messageService.markRead(userId, conversationId, new ReadRequest(80L));
+
+        verify(memberRepository).advanceReadWatermark(conversationId, userId, 80L);
+        verify(memberRepository).advanceDeliveredWatermark(conversationId, userId, 80L);
+    }
 }
