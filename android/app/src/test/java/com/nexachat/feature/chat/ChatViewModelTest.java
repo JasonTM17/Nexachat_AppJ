@@ -577,12 +577,21 @@ public final class ChatViewModelTest {
     }
 
     @Test
-    public void forwardSkipsDeletedAndPendingMessages() {
+    public void forwardSkipsDeletedPendingAndNonTextMessages() {
         messagesFlow.onNext(List.of(
                 changed(message("m-del", 1L, true), MessageDto.TYPE_TEXT, 1L),
-                message("cm-1", null, true, DeliveryStatus.SENDING, "cm-1")));
+                message("cm-1", null, true, DeliveryStatus.SENDING, "cm-1"),
+                changed(message("m-image", 2L, true), MessageDto.TYPE_IMAGE, null),
+                changed(message("m-audio", 3L, true), MessageDto.TYPE_AUDIO, null),
+                changed(message("m-video", 4L, true), MessageDto.TYPE_VIDEO, null),
+                changed(message("m-file", 5L, true), MessageDto.TYPE_FILE, null)));
         viewModel.forwardMessage("m-del", TARGET_CONVERSATION_ID);
         viewModel.forwardMessage("cm-1", TARGET_CONVERSATION_ID);
+        viewModel.forwardMessage("m-image", TARGET_CONVERSATION_ID);
+        viewModel.forwardMessage("m-audio", TARGET_CONVERSATION_ID);
+        viewModel.forwardMessage("m-video", TARGET_CONVERSATION_ID);
+        viewModel.forwardMessage("m-file", TARGET_CONVERSATION_ID);
+        viewModel.forwardMessage("m-not-loaded", TARGET_CONVERSATION_ID);
         verify(messageRepository, never()).send(anyString(), any(), any(), anyString(), any());
     }
 

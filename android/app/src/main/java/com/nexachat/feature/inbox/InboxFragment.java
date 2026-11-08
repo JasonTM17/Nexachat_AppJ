@@ -16,8 +16,10 @@ import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.components.AvatarView;
@@ -40,13 +42,18 @@ import java.util.Set;
 @AndroidEntryPoint
 public final class InboxFragment extends Fragment {
 
+    private static final int LOAD_MORE_REMAINING_ITEMS = 5;
+
     private FragmentInboxBinding binding;
     private InboxViewModel viewModel;
     private AppSettingsViewModel settingsViewModel;
     private ConversationListAdapter adapter;
+    private LinearLayoutManager layoutManager;
+    @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
     private int selectedFilterId = R.id.filterAllChip;
     @Nullable private InboxUiState lastState;
     @Nullable private String boundUserId;
+    private int lastPaginationErrorMessageId;
 
     @Nullable
     @Override
@@ -67,7 +74,15 @@ public final class InboxFragment extends Fragment {
         binding.inboxUserAvatar.setOnlineStatus(true);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
-        binding.conversationList.setLayoutManager(new LinearLayoutManager(requireContext()));
+        layoutManager = new LinearLayoutManager(requireContext());
+        binding.conversationList.setLayoutManager(layoutManager);
+        paginationScrollListener = new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                maybeLoadMore();
+            }
+        };
+        binding.conversationList.addOnScrollListener(paginationScrollListener);
         binding.swipeRefresh.setOnRefreshListener(viewModel::refresh);
         binding.themeButton.setOnClickListener(v -> showThemeDialog());
         binding.contactsButton.setOnClickListener(
@@ -105,7 +120,13 @@ public final class InboxFragment extends Fragment {
                 });
         binding.createGroupFab.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment));
-        binding.errorState.setOnRetry(viewModel::refresh);
+        binding.errorState.setOnRetry(() -> {
+            if (lastState != null && lastState.getNextPageError() != null) {
+                viewModel.loadNextPage();
+            } else {
+                viewModel.refresh();
+            }
+        });
         binding.emptyState.setMessage(getString(R.string.inbox_empty));
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
@@ -161,13 +182,13 @@ public final class InboxFragment extends Fragment {
         ensureAdapter(state.getCurrentUserId());
         List<ConversationSummary> rows = state.getConversations();
         List<ConversationSummary> visibleRows = filterRows(rows);
-        adapter.submitList(visibleRows);
+        submitRowsPreservingPosition(visibleRows);
         updateFilterChipsUi(state.getTotalUnread());
         renderActiveNowStrip(rows);
         binding.swipeRefresh.setRefreshing(state.isLoading() && !rows.isEmpty());
 
         boolean showLoading = state.isLoading() && rows.isEmpty();
-        ApiError error = state.getError();
+        ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
         boolean showError = error != null && rows.isEmpty();
         boolean showEmpty = !showLoading && !showError && visibleRows.isEmpty();
         boolean showList = !visibleRows.isEmpty();
@@ -180,6 +201,73 @@ public final class InboxFragment extends Fragment {
         if (showError && error != null) {
             binding.errorState.setMessage(getString(ChatErrorIds.messageId(error)));
         }
+        showPaginationError(state);
+    }
+
+    private void submitRowsPreservingPosition(@NonNull List<ConversationSummary> rows) {
+        if (adapter == null || binding == null) return;
+        int firstPosition = layoutManager == null ? RecyclerView.NO_POSITION
+                : layoutManager.findFirstVisibleItemPosition();
+        String anchorId = null;
+        int anchorOffset = 0;
+        if (firstPosition != RecyclerView.NO_POSITION && firstPosition < adapter.getItemCount()) {
+            anchorId = adapter.getCurrentList().get(firstPosition).getId();
+            View anchor = layoutManager.findViewByPosition(firstPosition);
+            if (anchor != null) anchorOffset = anchor.getTop() - binding.conversationList.getPaddingTop();
+        }
+        final String preservedId = anchorId;
+        final int preservedOffset = anchorOffset;
+        adapter.submitList(rows, () -> {
+            if (binding == null) return;
+            if (preservedId != null && layoutManager != null) {
+                List<ConversationSummary> current = adapter.getCurrentList();
+                for (int i = 0; i < current.size(); i++) {
+                    if (preservedId.equals(current.get(i).getId())) {
+                        layoutManager.scrollToPositionWithOffset(i, preservedOffset);
+                        break;
+                    }
+                }
+            }
+            binding.conversationList.post(this::maybeLoadMore);
+        });
+    }
+
+    private void maybeLoadMore() {
+        if (binding == null || adapter == null || lastState == null
+                || !lastState.hasMore()
+                || lastState.isLoading()
+                || lastState.isLoadingMore()
+                || lastState.getError() != null
+                || lastState.getNextPageError() != null) {
+            return;
+        }
+        int itemCount = adapter.getItemCount();
+        if (itemCount == 0) {
+            viewModel.loadNextPage();
+            return;
+        }
+        if (layoutManager == null) return;
+        int lastVisible = layoutManager.findLastVisibleItemPosition();
+        if (lastVisible == RecyclerView.NO_POSITION) {
+            if (itemCount <= LOAD_MORE_REMAINING_ITEMS) viewModel.loadNextPage();
+            return;
+        }
+        int remaining = itemCount - lastVisible - 1;
+        if (remaining <= LOAD_MORE_REMAINING_ITEMS) viewModel.loadNextPage();
+    }
+
+    private void showPaginationError(@NonNull InboxUiState state) {
+        ApiError error = state.getNextPageError();
+        if (error == null) {
+            lastPaginationErrorMessageId = 0;
+            return;
+        }
+        int messageId = ChatErrorIds.messageId(error);
+        if (lastPaginationErrorMessageId == messageId || binding == null) return;
+        lastPaginationErrorMessageId = messageId;
+        Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_LONG)
+                .setAction(R.string.action_retry, ignored -> viewModel.loadNextPage())
+                .show();
     }
 
     private void updateFilterChipsUi(int totalUnread) {
@@ -335,11 +423,17 @@ public final class InboxFragment extends Fragment {
     @Override
     public void onDestroyView() {
         if (binding != null) {
+            if (paginationScrollListener != null) {
+                binding.conversationList.removeOnScrollListener(paginationScrollListener);
+            }
             binding.conversationList.setAdapter(null);
         }
+        paginationScrollListener = null;
+        layoutManager = null;
         adapter = null;
         boundUserId = null;
         lastState = null;
+        lastPaginationErrorMessageId = 0;
         super.onDestroyView();
         binding = null;
     }

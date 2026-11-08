@@ -24,11 +24,14 @@ public class ForwardFilterTest {
     }
 
     @Test
-    public void onlyNonDeletedTextCanBeForwarded() {
+    public void attachmentsAndDeletedMessagesRemainNonForwardable() {
         assertTrue(ForwardFilter.canForward("TEXT", false));
         assertFalse("Deleted message cannot be forwarded", ForwardFilter.canForward("TEXT", true));
         assertFalse("Image cannot be forwarded", ForwardFilter.canForward("IMAGE", false));
         assertFalse("File cannot be forwarded", ForwardFilter.canForward("FILE", false));
         assertFalse("Video cannot be forwarded", ForwardFilter.canForward("VIDEO", false));
+        assertFalse("Audio cannot be forwarded", ForwardFilter.canForward("AUDIO", false));
+        assertFalse("Voice cannot be forwarded", ForwardFilter.canForward("VOICE", false));
+        assertFalse("Unknown types cannot be forwarded", ForwardFilter.canForward(null, false));
     }
 }
