@@ -7,7 +7,8 @@ public record SummaryGeneration(
         SummaryLanguage language,
         String generatedBy,
         String model,
-        SummaryFallbackReason fallbackReason) {
+        SummaryFallbackReason fallbackReason,
+        String provider) {
 
     public SummaryGeneration {
         Objects.requireNonNull(content, "content must not be null");
@@ -16,5 +17,14 @@ public record SummaryGeneration(
         if (language == SummaryLanguage.AUTO) {
             throw new IllegalArgumentException("Generated language must be resolved");
         }
+    }
+
+    public SummaryGeneration(
+            SummaryContent content,
+            SummaryLanguage language,
+            String generatedBy,
+            String model,
+            SummaryFallbackReason fallbackReason) {
+        this(content, language, generatedBy, model, fallbackReason, null);
     }
 }

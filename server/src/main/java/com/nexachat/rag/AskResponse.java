@@ -16,6 +16,10 @@ public record AskResponse(
         return new AskResponse(null, List.of(), AskMode.NOT_FOUND, new Usage(0, 0, false));
     }
 
-    public record Usage(int llmCalls, int inputChars, boolean cached) {
+    public record Usage(int llmCalls, int inputChars, boolean cached, String provider) {
+
+        public Usage(int llmCalls, int inputChars, boolean cached) {
+            this(llmCalls, inputChars, cached, null);
+        }
     }
 }

@@ -5,13 +5,23 @@ public record SummaryCachePayload(
         String generatedBy,
         String model,
         String fallbackReason,
-        SummaryContent content) {
+        SummaryContent content,
+        String provider) {
+
+    public SummaryCachePayload(
+            SummaryLanguage language,
+            String generatedBy,
+            String model,
+            String fallbackReason,
+            SummaryContent content) {
+        this(language, generatedBy, model, fallbackReason, content, null);
+    }
 
     public SummaryGeneration toGeneration() {
         SummaryFallbackReason reason = fallbackReason == null
                 ? null
                 : SummaryFallbackReason.valueOf(fallbackReason);
-        return new SummaryGeneration(content, language, generatedBy, model, reason);
+        return new SummaryGeneration(content, language, generatedBy, model, reason, provider);
     }
 
     public static SummaryCachePayload from(SummaryGeneration generation) {
@@ -20,6 +30,7 @@ public record SummaryCachePayload(
                 generation.generatedBy(),
                 generation.model(),
                 generation.fallbackReason() == null ? null : generation.fallbackReason().name(),
-                generation.content());
+                generation.content(),
+                generation.provider());
     }
 }

@@ -133,8 +133,9 @@ public class AskService {
                         llmAnswer, retrieval.messages(), AskMode.LLM, language);
                 if (answer != null) {
                     saveAnswer(conversationId, questionEmbedding, questionHash, answer);
-                    stats.recordLlmCall(retrieval.inputChars());
-                    return toResponse(answer, AskMode.LLM, 1, retrieval.inputChars(), false);
+                    stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
+                    return toResponse(answer, AskMode.LLM, 1, retrieval.inputChars(), false,
+                            llmAnswer.provider());
                 }
             }
         }
@@ -159,7 +160,7 @@ public class AskService {
         }
         saveAnswer(conversationId, questionEmbedding, questionHash, answer);
         stats.recordExtractive();
-        return toResponse(answer, AskMode.EXTRACTIVE, 0, 0, false);
+        return toResponse(answer, AskMode.EXTRACTIVE, 0, 0, false, null);
     }
 
     private void saveAnswer(
@@ -223,9 +224,14 @@ public class AskService {
     }
 
     private AskResponse toResponse(
-            RagQuestionCache.CachedAsk answer, AskMode mode, int llmCalls, int inputChars, boolean cached) {
+            RagQuestionCache.CachedAsk answer,
+            AskMode mode,
+            int llmCalls,
+            int inputChars,
+            boolean cached,
+            String provider) {
         return new AskResponse(answer.answer(), answer.citations(), mode,
-                new AskResponse.Usage(llmCalls, inputChars, cached));
+                new AskResponse.Usage(llmCalls, inputChars, cached, provider));
     }
 
     private boolean isLookupLike(String question) {

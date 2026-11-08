@@ -64,9 +64,6 @@ public final class LlmSummaryProvider implements SummaryProvider {
         if (!isConsentedCaller()) {
             throw new SummaryProviderException(SummaryFallbackReason.NO_CONSENT);
         }
-        if (!circuitBreaker.allowRequest()) {
-            throw new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
-        }
 
         boolean isComplex = complexityAssessor.isComplex(window, false);
         LlmClient.TargetConfig primary;
@@ -92,35 +89,43 @@ public final class LlmSummaryProvider implements SummaryProvider {
             }
         }
 
+        LlmClient.TargetConfig fallback = client.fallbackTarget();
         if (primary == null) {
             throw new SummaryProviderException(SummaryFallbackReason.LLM_DISABLED);
         }
 
+        boolean breakerAllows = circuitBreaker.allowRequest();
+        if (!breakerAllows && fallback == null) {
+            throw new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
+        }
+
         try {
             Prompt prompt = promptBuilder.build(window, language, properties.getMaxInputChars());
-            LlmClient.LlmCompletion completion;
-            LlmClient.TargetConfig usedTarget = primary;
+            LlmClient.LlmCallResult completion;
+            LlmClient.TargetConfig usedTarget;
             try {
-                completion = client.completeWithTarget(prompt, primary);
+                completion = client.completeWithFallback(prompt, breakerAllows ? primary : null, fallback);
+                usedTarget = completion.fallbackUsed() ? fallback : primary;
             } catch (SummaryProviderException ex) {
-                if (secondary != null) {
-                    usedTarget = secondary;
-                    completion = client.completeWithTarget(prompt, secondary);
-                } else {
+                if (secondary == null) {
                     throw ex;
                 }
+                completion = client.completeWithTargetResult(prompt, secondary);
+                usedTarget = secondary;
             } catch (RuntimeException ex) {
-                if (secondary != null) {
-                    usedTarget = secondary;
-                    completion = client.completeWithTarget(prompt, secondary);
-                } else {
+                if (secondary == null) {
                     throw ex;
                 }
+                completion = client.completeWithTargetResult(prompt, secondary);
+                usedTarget = secondary;
             }
 
             ProviderResult result = outputValidator.validate(completion.content(), prompt, usedTarget.model().trim());
             circuitBreaker.recordSuccess();
-            return result;
+            String provider = usedTarget == fallback
+                    ? "fallback"
+                    : (usedTarget == primary ? "primary" : null);
+            return new ProviderResult(result.content(), result.language(), result.model(), provider);
         } catch (SummaryProviderException exception) {
             circuitBreaker.recordFailure();
             throw exception;
