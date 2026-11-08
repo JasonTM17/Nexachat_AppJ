@@ -26,6 +26,7 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -169,8 +170,12 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return false;
         }
         final JwtPrincipal principal;
+        final Instant issuedAt;
         try {
-            principal = jwtService.parseAccessToken(header.substring(BEARER_PREFIX.length()));
+            JwtService.AccessTokenClaims claims =
+                    jwtService.parseAccessTokenClaims(header.substring(BEARER_PREFIX.length()));
+            principal = new JwtPrincipal(claims.userId());
+            issuedAt = claims.issuedAt();
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("STOMP CONNECT rejected: invalid access token");
             return false;
@@ -179,8 +184,26 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             log.warn("STOMP CONNECT rejected: authenticated account no longer exists");
             return false;
         }
+        // Same revocation boundary as the REST JWT filter: an access token that
+        // was issued before the user's cutoff (logout / password change) must
+        // not open a socket either.
+        if (isAccessTokenRevoked(principal.userId(), issuedAt)) {
+            log.warn("STOMP CONNECT rejected: access token was revoked");
+            return false;
+        }
         accessor.setUser(new StompUserPrincipal(principal.userId()));
         return true;
+    }
+
+    private boolean isAccessTokenRevoked(UUID userId, Instant issuedAt) {
+        // CONNECT is a cold path (once per socket), so the authoritative value
+        // is read straight from the database instead of the REST hot-path cache.
+        return userRepository.findAuthValidityById(userId)
+                .map(found -> {
+                    Instant cutoff = found.tokensValidAfter();
+                    return cutoff != null && issuedAt.isBefore(cutoff);
+                })
+                .orElse(true);
     }
 
     // ---------------------------------------------------------- SUBSCRIBE authZ

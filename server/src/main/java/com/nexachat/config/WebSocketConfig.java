@@ -39,19 +39,22 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor authChannelInterceptor;
+    private final SecurityProperties securityProperties;
 
-    public WebSocketConfig(StompAuthChannelInterceptor authChannelInterceptor) {
+    public WebSocketConfig(StompAuthChannelInterceptor authChannelInterceptor,
+                           SecurityProperties securityProperties) {
         this.authChannelInterceptor = authChannelInterceptor;
+        this.securityProperties = securityProperties;
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry
                 .addEndpoint("/ws")
-                // Dev-grade: the native client sends no Origin header; keep the
-                // same permissive stance as the REST CORS config and restrict
-                // per environment before any public deploy.
-                .setAllowedOriginPatterns("*");
+                // Same per-environment allow-list as REST CORS. A native client
+                // sends no Origin header, which the handshake interceptor admits
+                // regardless; a browser origin outside the list is rejected.
+                .setAllowedOrigins(securityProperties.corsAllowedOrigins().toArray(new String[0]));
     }
 
     @Override

@@ -18,6 +18,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -46,20 +50,30 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TokenService tokenService;
+    private final AccessTokenValidityCache validityCache;
+    private final RateLimitService rateLimitService;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
+
+    /** Per-phone credential budget, on top of the interceptor's per-IP limit. */
+    private static final long PHONE_RATE_CAPACITY = 20;
+    private static final Duration PHONE_RATE_PERIOD = Duration.ofMinutes(5);
 
     public AuthService(UserRepository userRepository,
                        PhoneService phoneService,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
-                       TokenService tokenService) {
+                       TokenService tokenService,
+                       AccessTokenValidityCache validityCache,
+                       RateLimitService rateLimitService) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.tokenService = tokenService;
+        this.validityCache = validityCache;
+        this.rateLimitService = rateLimitService;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -67,6 +81,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request, String deviceLabel) {
         final String phone = normalizeForRegister(request.phone());
+        enforcePhoneRateLimit("register", phone);
 
         if (userRepository.existsByPhone(phone)) {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
@@ -95,6 +110,7 @@ public class AuthService {
             passwordEncoder.matches(request.password(), dummyHash);
             throw invalidCredentials();
         }
+        enforcePhoneRateLimit("login", phone);
 
         User user = userRepository.findByPhone(phone).orElse(null);
         if (user == null) {
@@ -132,12 +148,21 @@ public class AuthService {
         return buildResponse(user, rotation.refreshToken());
     }
 
+    /**
+     * Logout revokes the presented refresh token and stamps the access-token
+     * cutoff, so the access token this session was using stops working now
+     * instead of at its natural expiry.
+     */
+    @Transactional
     public void logout(UUID userId, String rawRefreshToken) {
         tokenService.revokeIfOwned(rawRefreshToken, userId);
+        invalidateAccessTokens(userId);
     }
 
+    @Transactional
     public void logoutAll(UUID userId) {
         tokenService.revokeAllForUser(userId);
+        invalidateAccessTokens(userId);
     }
 
     @Transactional
@@ -151,6 +176,11 @@ public class AuthService {
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
 
+        // A password change must kill every access token issued so far; the
+        // client of the current session rotates with its kept refresh token.
+        // The loaded entity is managed, so the cutoff flushes with the commit.
+        invalidateAccessTokens(user);
+
         // "Revoke all other refresh tokens": keep the supplied session token alive
         // if the client passed one, otherwise revoke every session (FR-A6).
         if (request.refreshToken() != null && !request.refreshToken().isBlank()) {
@@ -159,6 +189,25 @@ public class AuthService {
             tokenService.revokeAllForUser(userId);
         }
         log.info("Password changed");
+    }
+
+    /**
+     * Stamps the cutoff on an already-managed entity and drops the cached
+     * validity so the next request sees it.
+     *
+     * <p>The cutoff is truncated to whole seconds because JWT {@code iat} has
+     * one-second resolution: a token minted moments after the logout would
+     * otherwise carry the same {@code iat} as the logout second and be rejected
+     * as well. Truncating means at most one second of slack, not a lockout.
+     */
+    private void invalidateAccessTokens(User user) {
+        user.invalidateAccessTokens(Instant.now().truncatedTo(ChronoUnit.SECONDS));
+        validityCache.evict(user.getId());
+    }
+
+    /** Same cutoff for a caller that only has the user id (logout, logout-all). */
+    private void invalidateAccessTokens(UUID userId) {
+        userRepository.findById(userId).ifPresent(this::invalidateAccessTokens);
     }
 
     private AuthResponse issueSession(User user, String deviceLabel) {
@@ -183,5 +232,21 @@ public class AuthService {
 
     private static ApiException invalidCredentials() {
         return ApiException.of(ApiErrorCode.INVALID_CREDENTIALS, "Invalid phone number or password");
+    }
+
+    /**
+     * Bounds credential guessing per account, not only per source address: an
+     * attacker rotating IPs still exhausts one phone's budget. Runs after the
+     * phone is normalized so the key is canonical E.164.
+     */
+    private void enforcePhoneRateLimit(String action, String phone) {
+        RateLimitService.Consumption consumption = rateLimitService.tryConsume(
+                action + "|phone|" + phone, PHONE_RATE_CAPACITY, PHONE_RATE_PERIOD);
+        if (!consumption.allowed()) {
+            throw ApiException.of(
+                    ApiErrorCode.RATE_LIMITED,
+                    "Rate limit exceeded, try again later",
+                    Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
+        }
     }
 }

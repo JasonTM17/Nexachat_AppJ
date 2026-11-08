@@ -147,6 +147,73 @@ Emulator verification (needs a Google Play system image):
    FCM-enabled server running. The data-only push wakes the app to sync; on next
    launch the message must be present without a manual refresh.
 
+## Security
+
+The server stores account credentials (bcrypt password hashes, E.164 phones),
+refresh-token hashes, message and attachment content, and short-lived access
+JWTs. The trust boundaries are the network edge (TLS terminated at the reverse
+proxy), the REST/STOMP authentication layer, and per-conversation authorization.
+
+### Access-token revocation
+
+Access tokens are HS256 JWTs with a 15-minute lifetime. Logout, logout-all and
+password change stamp `users.tokens_valid_after` (added by Flyway `V11`); the
+JWT filter rejects any token whose `iat` is before that cutoff, so a stolen
+access token stops working immediately instead of living out its lifetime.
+
+- The cutoff is stored at one-second resolution because JWT `iat` has no
+  sub-second precision: a token issued in the same second as the logout is
+  indistinguishable from one minted just after it, leaving at most one second of
+  slack.
+- The filter caches "account exists + cutoff" per user id in a bounded LRU
+  (`nexachat.security.validity-cache-ttl-seconds`, default 60, capped at the
+  access-token lifetime) so the hot path does no database work; a cache miss
+  falls back to a projection query.
+- Logout, logout-all and password change evict the cached entry, so revocation
+  is immediate on a single node. In a multi-node deployment each node keeps its
+  own cache, so revocation propagates within one TTL.
+
+Refresh-token rotation is unchanged: logout revokes only the presented refresh
+token, and a password change keeps the supplied session token alive.
+
+### Cross-origin and headers
+
+- CORS is an explicit allow-list from `nexachat.security.cors-allowed-origins`
+  (env `NEXACHAT_CORS_ALLOWED_ORIGINS`, comma-separated). The default is empty:
+  no cross-origin caller is admitted. `*` is rejected at startup. Credentials
+  are never enabled, so no origin can ride a logged-in browser session. The
+  native Android client sends no `Origin` header and is unaffected.
+- The WebSocket handshake (`/ws`) uses the same allow-list.
+- Every response carries `X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Auth responses
+  additionally carry `Cache-Control: no-store`.
+- Only `/actuator/health` is public. Every other actuator endpoint requires a
+  Bearer token and only `health` is exposed.
+
+### Admin-only telemetry
+
+`GET /api/v1/rag/stats` returns aggregate RAG counters (no message text,
+questions, vectors or user identifiers) but is operator telemetry, not user
+data. It is restricted to the E.164 numbers in
+`nexachat.security.admin-phones` (env `NEXACHAT_ADMIN_PHONES`); when the list
+is empty the endpoint is denied to everyone. The decision is re-evaluated per
+request from the user row, so removing a phone takes effect immediately.
+
+### Rate limits and body bounds
+
+- Credential endpoints are limited per source IP (login 10/5 min, register
+  10/5 min, refresh 30/5 min) **and** per normalized phone (login and register
+  20/5 min), so rotating IPs cannot brute-force one account.
+- JSON request bodies larger than `nexachat.security.max-json-body-bytes`
+  (env `NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB) are rejected with
+  `413 PAYLOAD_TOO_LARGE` before the dispatcher parses them. Multipart uploads
+  keep their own 25 MB ceiling. A chunked/streamed body is bounded at the
+  reverse proxy (`client_max_body_size`), which terminates every public
+  deployment in front of this service.
+- `/api/v1/files/**` normalizes the storage key and rejects any key containing
+  `..` or `\`; the storage layer re-checks that the resolved path stays inside
+  the configured root before opening it.
+
 ## Start, stop, and health
 
 ```sh
@@ -244,13 +311,14 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations (currently V1 through V10,
-`V1__init.sql` to `V10__reaction_events_idempotency_device_tokens.sql`) apply on app startup
+Back up before replacing the app image. Flyway migrations (currently V1 through V11,
+`V1__init.sql` to `V11__user_access_token_cutoff.sql`) apply on app startup
 and are forward-only: add a new versioned SQL migration; never edit one already
-applied to a database. Migrations V8–V10 introduce:
+applied to a database. Migrations V8–V11 introduce:
 - `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
 - `V9__conversation_rag.sql`: `message_embeddings` table with bytea vectors, `rag_ask_cache`, and `rag_ask_request_limits`.
 - `V10__reaction_events_idempotency_device_tokens.sql`: `reaction_events` audit table for delta sync, `request_idempotency` replay cache, and `UNIQUE(user_id, token)` device token constraint.
+- `V11__user_access_token_cutoff.sql`: `users.tokens_valid_after`, the access-token revocation cutoff.
 
 ```sh
 bash demo/backup.sh

@@ -59,4 +59,18 @@ class RateLimitServiceTest {
         assertThat(bounded.tryConsume("second", 1, window).allowed()).isTrue();
         assertThat(bounded.bucketCount()).isEqualTo(2);
     }
+
+    @Test
+    void resetDropsEveryBucketSoTheNextTestStartsClean() {
+        Duration window = Duration.ofMinutes(5);
+        for (int i = 0; i < 10; i++) {
+            rateLimitService.tryConsume("login|10.0.0.1", 10, window);
+        }
+        assertThat(rateLimitService.tryConsume("login|10.0.0.1", 10, window).allowed()).isFalse();
+
+        rateLimitService.reset();
+
+        assertThat(rateLimitService.bucketCount()).isZero();
+        assertThat(rateLimitService.tryConsume("login|10.0.0.1", 10, window).allowed()).isTrue();
+    }
 }

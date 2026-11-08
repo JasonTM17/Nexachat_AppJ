@@ -5,6 +5,7 @@ import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
 import com.nexachat.ws.dto.WsErrorResponse;
 import io.jsonwebtoken.JwtException;
@@ -22,6 +23,8 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,8 +108,11 @@ class StompAuthChannelInterceptorTest {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setNativeHeader("Authorization", "Bearer good-token");
         Message<?> message = message(accessor);
-        when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        when(jwtService.parseAccessTokenClaims("good-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now()));
         when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
 
         Message<?> result = interceptor.preSend(message, channel);
 
@@ -137,17 +143,46 @@ class StompAuthChannelInterceptorTest {
     void connect_invalidToken_rejected() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setNativeHeader("Authorization", "Bearer bad-token");
-        when(jwtService.parseAccessToken("bad-token"))
+        when(jwtService.parseAccessTokenClaims("bad-token"))
                 .thenThrow(new JwtException("signature invalid"));
 
         assertThat(interceptor.preSend(message(accessor), channel)).isNull();
     }
 
     @Test
+    void connect_revokedAccessToken_rejected() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer revoked-token");
+        // Issued before the cutoff stamped by the last logout/password change.
+        when(jwtService.parseAccessTokenClaims("revoked-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now().minusSeconds(60)));
+        when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, Instant.now())));
+
+        assertThat(interceptor.preSend(message(accessor), channel)).isNull();
+    }
+
+    @Test
+    void connect_tokenIssuedAfterTheCutoff_allowed() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer fresh-token");
+        Instant cutoff = Instant.now().minusSeconds(60);
+        when(jwtService.parseAccessTokenClaims("fresh-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now()));
+        when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, cutoff)));
+
+        assertThat(interceptor.preSend(message(accessor), channel)).isNotNull();
+    }
+
+    @Test
     void connect_nonexistentUser_rejected() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setNativeHeader("Authorization", "Bearer good-token");
-        when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        when(jwtService.parseAccessTokenClaims("good-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now()));
 
         assertThat(interceptor.preSend(message(accessor), channel)).isNull();
     }
@@ -360,8 +395,11 @@ class StompAuthChannelInterceptorTest {
         // A reconnect and a new subscription do not reset the shared user bucket.
         StompHeaderAccessor reconnectAccessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         reconnectAccessor.setNativeHeader("Authorization", "Bearer good-token");
-        when(jwtService.parseAccessToken("good-token")).thenReturn(new JwtPrincipal(userId));
+        when(jwtService.parseAccessTokenClaims("good-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now()));
         when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
         assertThat(interceptor.preSend(message(reconnectAccessor), channel)).isNotNull();
         assertThat(interceptor.preSend(subscribeMessage("/user/queue/inbox", true), channel)).isNotNull();
         assertThat(interceptor.preSend(sendMessage(

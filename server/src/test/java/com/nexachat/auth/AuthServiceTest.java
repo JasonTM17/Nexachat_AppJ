@@ -27,6 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -46,6 +47,10 @@ class AuthServiceTest {
     private JwtService jwtService;
     @Mock
     private TokenService tokenService;
+    @Mock
+    private RateLimitService rateLimitService;
+    @Mock
+    private AccessTokenValidityCache validityCache;
 
     private AuthService authService;
 
@@ -59,7 +64,10 @@ class AuthServiceTest {
         lenient().when(jwtService.accessTokenExpiresIn()).thenReturn(900L);
         lenient().when(tokenService.issue(any(), any())).thenReturn("refresh-opaque");
         lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
-        authService = new AuthService(userRepository, phoneService, passwordEncoder, jwtService, tokenService);
+        lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
+                .thenReturn(new RateLimitService.Consumption(true, 0));
+        authService = new AuthService(userRepository, phoneService, passwordEncoder, jwtService,
+                tokenService, validityCache, rateLimitService);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
