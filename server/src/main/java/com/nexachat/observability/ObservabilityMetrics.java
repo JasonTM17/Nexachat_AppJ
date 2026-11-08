@@ -61,6 +61,7 @@ public class ObservabilityMetrics {
                 .register(registry);
         Timer.builder(DELTA_SYNC_DURATION)
                 .description("Delta-sync request duration")
+                .publishPercentileHistogram()
                 .register(registry);
         DistributionSummary.builder(DELTA_SYNC_BYTES)
                 .description("Delta-sync response size")
