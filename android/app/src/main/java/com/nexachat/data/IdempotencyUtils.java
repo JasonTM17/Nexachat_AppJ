@@ -105,4 +105,18 @@ public final class IdempotencyUtils {
         String seed = userId + ":" + conversationId + ":" + messageId + ":" + (pinned ? "PIN" : "UNPIN");
         return uuidV5(NAMESPACE_NEXACHAT, seed).toString();
     }
+
+    /**
+     * Computes deterministic RFC 4122 UUIDv5 action idempotency key based on
+     * action type, conversationId, messageId, and client timestamp.
+     */
+    @NonNull
+    public static String actionIdempotencyKey(
+            @NonNull String actionType,
+            @NonNull String conversationId,
+            @NonNull String messageId,
+            long clientTimestamp) {
+        String seed = actionType + ":" + conversationId + ":" + messageId + ":" + clientTimestamp;
+        return uuidV5(NAMESPACE_NEXACHAT, seed).toString();
+    }
 }

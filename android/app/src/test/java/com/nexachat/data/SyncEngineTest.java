@@ -73,6 +73,7 @@ public final class SyncEngineTest {
 
         when(tokenStore.readTokens()).thenReturn(Maybe.just(new Tokens("dummy-token", 1800000000000L, "dummy-refresh")));
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
+        when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets(anyString())).thenReturn(Completable.complete());
 
@@ -156,6 +157,7 @@ public final class SyncEngineTest {
                 org.mockito.ArgumentMatchers.eq("Bob"),
                 anyLong()
         );
+        verify(conversationDao).bumpPeerDeliveredSeq("c1", 15L);
         verify(conversationDao).bumpPeerReadSeq("c1", 15L);
     }
 

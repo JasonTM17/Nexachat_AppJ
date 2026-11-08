@@ -561,7 +561,8 @@ public final class ConversationRepository implements AutoCloseable {
                         row.getOtherUserId() != null
                                 ? row.getOtherUserId()
                                 : old != null ? old.getOtherUserId() : null,
-                        row.getLastMessageDeleted()));
+                        row.getLastMessageDeleted(),
+                        old != null ? old.getPeerDeliveredSeq() : 0L));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());

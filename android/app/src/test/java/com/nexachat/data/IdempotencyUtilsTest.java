@@ -46,4 +46,24 @@ public final class IdempotencyUtilsTest {
         String keyPinAgain = IdempotencyUtils.pinIdempotencyKey("user-1", "conv-1", "msg-123", true);
         assertEquals(keyPin, keyPinAgain);
     }
+
+    @Test
+    public void deterministicActionIdempotencyKeyDistinctForVariedInputs() {
+        String key1 = IdempotencyUtils.actionIdempotencyKey("SEND_MESSAGE", "conv-1", "msg-1", 1000L);
+        String key1Repeat = IdempotencyUtils.actionIdempotencyKey("SEND_MESSAGE", "conv-1", "msg-1", 1000L);
+        String keyDiffAction = IdempotencyUtils.actionIdempotencyKey("ADD_REACTION", "conv-1", "msg-1", 1000L);
+        String keyDiffConv = IdempotencyUtils.actionIdempotencyKey("SEND_MESSAGE", "conv-2", "msg-1", 1000L);
+        String keyDiffMsg = IdempotencyUtils.actionIdempotencyKey("SEND_MESSAGE", "conv-1", "msg-2", 1000L);
+        String keyDiffTime = IdempotencyUtils.actionIdempotencyKey("SEND_MESSAGE", "conv-1", "msg-1", 1001L);
+
+        assertNotNull(key1);
+        assertEquals(key1, key1Repeat);
+        assertEquals(UUID.fromString(key1).version(), 5);
+        assertEquals(UUID.fromString(key1).variant(), 2);
+
+        assertNotEquals(key1, keyDiffAction);
+        assertNotEquals(key1, keyDiffConv);
+        assertNotEquals(key1, keyDiffMsg);
+        assertNotEquals(key1, keyDiffTime);
+    }
 }

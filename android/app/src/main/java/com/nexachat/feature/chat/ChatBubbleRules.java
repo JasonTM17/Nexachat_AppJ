@@ -33,8 +33,7 @@ public final class ChatBubbleRules {
             Long messageSeq,
             long peerReadSeq
     ) {
-        return !isGroup && mine
-                && (messageSeq == null ? Long.MAX_VALUE : messageSeq) <= peerReadSeq;
+        return !isGroup && mine && messageSeq != null && messageSeq > 0 && messageSeq <= peerReadSeq;
     }
 
     public static boolean isDeliveredReceiptVisible(
@@ -43,8 +42,7 @@ public final class ChatBubbleRules {
             Long messageSeq,
             long peerDeliveredSeq
     ) {
-        return !isGroup && mine
-                && (messageSeq == null ? Long.MAX_VALUE : messageSeq) <= peerDeliveredSeq;
+        return !isGroup && mine && messageSeq != null && messageSeq > 0 && messageSeq <= peerDeliveredSeq;
     }
 
     public static int findMessageReversedIndex(List<ChatMessage> messages, String targetId) {

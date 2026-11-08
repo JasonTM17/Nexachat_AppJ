@@ -22,21 +22,21 @@ public interface OfflineOutboxDao {
     Completable insertAll(List<OfflineOutboxEntity> items);
 
     /**
-     * Atomic claim query to transition claimable items (either SENDING or stale IN_PROGRESS)
+     * Atomic claim query to transition claimable items (either PENDING/SENDING or stale IN_PROGRESS)
      * to IN_PROGRESS and mark lastAttemptEpochMs with current timestamp.
      */
     @Query("UPDATE offline_outbox SET state = 'IN_PROGRESS', lastAttemptEpochMs = :now "
-            + "WHERE state = 'SENDING' OR (state = 'IN_PROGRESS' AND lastAttemptEpochMs < :staleThreshold)")
+            + "WHERE state IN ('PENDING', 'SENDING') OR (state = 'IN_PROGRESS' AND lastAttemptEpochMs < :staleThreshold)")
     Single<Integer> claimLeases(long now, long staleThreshold);
 
     /**
      * Atomic claim query for a specific row by id.
      */
     @Query("UPDATE offline_outbox SET state = 'IN_PROGRESS', lastAttemptEpochMs = :now "
-            + "WHERE id = :id AND (state = 'SENDING' OR (state = 'IN_PROGRESS' AND lastAttemptEpochMs < :staleThreshold))")
+            + "WHERE id = :id AND (state IN ('PENDING', 'SENDING') OR (state = 'IN_PROGRESS' AND lastAttemptEpochMs < :staleThreshold))")
     Single<Integer> claimLease(String id, long now, long staleThreshold);
 
-    @Query("SELECT * FROM offline_outbox WHERE state = 'SENDING' "
+    @Query("SELECT * FROM offline_outbox WHERE state IN ('PENDING', 'SENDING') "
             + "OR (state = 'IN_PROGRESS' AND lastAttemptEpochMs < :staleThreshold) "
             + "ORDER BY createdAtEpochMs ASC")
     Single<List<OfflineOutboxEntity>> getClaimableItems(long staleThreshold);
@@ -51,6 +51,15 @@ public interface OfflineOutboxDao {
             + "lastAttemptEpochMs = :lastAttemptEpochMs WHERE id = :id")
     Completable updateState(String id, String state, int retryCount, long lastAttemptEpochMs);
 
+    @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now WHERE id = :id")
+    Completable markSent(String id, long now);
+
+    @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now WHERE id = :id")
+    Completable markFailed(String id, long now);
+
+    @Query("UPDATE offline_outbox SET state = 'PENDING', retryCount = retryCount + 1, lastAttemptEpochMs = 0 WHERE id = :id")
+    Completable releaseLease(String id);
+
     @Query("DELETE FROM offline_outbox WHERE id = :id")
     Completable deleteById(String id);
 
@@ -63,7 +72,7 @@ public interface OfflineOutboxDao {
     @Query("SELECT * FROM offline_outbox ORDER BY createdAtEpochMs ASC")
     Single<List<OfflineOutboxEntity>> getAllOrderedList();
 
-    @Query("SELECT COUNT(*) FROM offline_outbox WHERE state != 'FAILED'")
+    @Query("SELECT COUNT(*) FROM offline_outbox WHERE state NOT IN ('FAILED', 'SENT')")
     Flowable<Integer> countActive();
 
     @Query("DELETE FROM offline_outbox")
