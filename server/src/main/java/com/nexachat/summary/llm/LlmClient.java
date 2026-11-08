@@ -100,6 +100,17 @@ public final class LlmClient {
         return completeWithTarget(prompt, target);
     }
 
+    /**
+     * Plain-text completion for callers outside the summary package. The
+     * summary {@link Prompt} record stays package-private; only the two prompt
+     * strings are needed to build the OpenAI-compatible request body.
+     */
+    public String completeTextWithTarget(String systemMessage, String userMessage, TargetConfig target) {
+        Prompt prompt = new Prompt(systemMessage, userMessage, java.util.Map.of(),
+                java.util.Map.of(), java.util.List.of(), com.nexachat.summary.SummaryLanguage.EN);
+        return completeWithTarget(prompt, target).content();
+    }
+
     public LlmCompletion completeWithTarget(Prompt prompt, TargetConfig target) {
         if (target == null || target.endpoint() == null || target.model() == null) {
             throw unavailable();

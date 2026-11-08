@@ -2,14 +2,14 @@ package com.nexachat.summary.engine;
 
 import java.util.List;
 
-record SummaryCandidate(
+public record SummaryCandidate(
         SummaryMessage message,
         List<String> terms,
         List<String> originalTerms,
         double score
 ) {
-    SummaryCandidate {
-        terms = List.copyOf(terms);
-        originalTerms = List.copyOf(originalTerms);
+    public SummaryCandidate {
+        terms = terms == null ? List.of() : List.copyOf(terms);
+        originalTerms = originalTerms == null ? List.of() : List.copyOf(originalTerms);
     }
 }
