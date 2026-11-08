@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -127,6 +128,36 @@ class FcmPushServiceTest {
 
         assertThat(appender.list)
                 .as("registration token must never reach the log")
+                .noneMatch(event -> event.getFormattedMessage().contains("SECRET-REGISTRATION-TOKEN"));
+    }
+
+    @Test
+    void unregisterFailureDoesNotLogTheRegistrationToken() {
+        mockGateway.setSimulateUnregistered(true);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "SECRET-REGISTRATION-TOKEN", UserDeviceToken.Platform.ANDROID, "Old Phone");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+        doThrow(new RuntimeException(
+                "DELETE FROM user_device_tokens WHERE token = 'SECRET-REGISTRATION-TOKEN'"))
+                .when(tokenRepository).deleteByToken("SECRET-REGISTRATION-TOKEN");
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DefaultFcmPushService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            pushService.sendNewMessageNotification(
+                    userId, conversationId, UUID.randomUUID(), 1L, "Alice");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .as("a SQL error message can echo the registration token; it must not be logged")
                 .noneMatch(event -> event.getFormattedMessage().contains("SECRET-REGISTRATION-TOKEN"));
     }
 
