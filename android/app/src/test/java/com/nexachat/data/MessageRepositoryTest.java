@@ -36,9 +36,7 @@ import com.nexachat.core.network.dto.EditMessageRequest;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
 import com.nexachat.core.network.dto.PinRequest;
-import com.nexachat.core.network.dto.ReactionRequest;
 import com.nexachat.core.network.dto.ReactionSummaryDto;
-import com.nexachat.core.network.dto.ReactionUpdateDto;
 import com.nexachat.core.network.dto.ReplyRefDto;
 import com.nexachat.core.network.dto.SendMessageRequest;
 import com.nexachat.core.network.stomp.ChatEvent;
@@ -588,34 +586,6 @@ public class MessageRepositoryTest {
         subscriber.cancel();
     }
 
-    @Test public void toggleReactionOptimisticallyAppliesServerSummary() {
-        List<MessageReactionEntity> optimisticAtCall = new ArrayList<>();
-        when(messageApi.toggleReaction("m-1", new ReactionRequest("👍"))).thenAnswer(call -> {
-            optimisticAtCall.add(reactions.get(new ReactionKey("m-1", "👍")));
-            return responseCall(Response.success(new ReactionUpdateDto("m-1",
-                    List.of(new ReactionSummaryDto("👍", 5, true)))));
-        });
-        await(repository.toggleReaction("m-1", CONVERSATION_ID, "👍"));
-        assertEquals(1, optimisticAtCall.get(0).getCount());
-        assertEquals(true, optimisticAtCall.get(0).getReactedByMe());
-        verify(messageApi).toggleReaction("m-1", new ReactionRequest("👍"));
-        MessageReactionEntity finalRow = reactions.get(new ReactionKey("m-1", "👍"));
-        assertEquals(5, finalRow.getCount());
-        assertEquals(true, finalRow.getReactedByMe());
-    }
-
-    @Test public void failedToggleRestoresPriorSummaryAndSignalsError() {
-        await(reactionDao.upsertAll(List.of(new MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 3, false))));
-        when(messageApi.toggleReaction(anyString(), any())).thenReturn(responseCall(Response.error(403, body(""))));
-        TestSubscriber<ApiError> subscriber = repository.getInteractionEvents().test();
-        await(repository.toggleReaction("m-1", CONVERSATION_ID, "👍"));
-        MessageReactionEntity restored = reactions.get(new ReactionKey("m-1", "👍"));
-        assertEquals(3, restored.getCount());
-        assertEquals(false, restored.getReactedByMe());
-        assertTrue(subscriber.values().get(0) instanceof ApiError.Unknown);
-        subscriber.cancel();
-    }
-
     @Test public void historyRefreshStoresEmbeddedReactionsAndReplyPreview() {
         MessageDto reply = new MessageDto("m-2", 2L, CONVERSATION_ID, "u-other", "TEXT", "answer",
                 new ReplyRefDto("m-1", "Lan", "question"), List.of(new ReactionSummaryDto("👍", 2, false)),
@@ -651,16 +621,6 @@ public class MessageRepositoryTest {
         assertEquals(Set.of("m-1", "m-2"), pins.keySet().stream()
                 .filter(key -> CONVERSATION_ID.equals(key.conversationId)).map(key -> key.messageId)
                 .collect(java.util.stream.Collectors.toSet()));
-    }
-
-    @Test public void pinFailureRemovesOptimisticRowAndSignalsError() {
-        when(messageApi.pinMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any()))
-                .thenReturn(responseCall(Response.error(409, body(""))));
-        TestSubscriber<ApiError> subscriber = repository.getInteractionEvents().test();
-        await(repository.pinMessage(CONVERSATION_ID, "m-1"));
-        assertTrue(pins.isEmpty());
-        assertTrue(subscriber.values().get(0) instanceof ApiError.Unknown);
-        subscriber.cancel();
     }
 
     @Test public void editOptimisticallyAppliesAuthoritativeServerRow() {

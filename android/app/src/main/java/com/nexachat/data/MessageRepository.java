@@ -5,12 +5,15 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
+import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.MessageDao;
 import com.nexachat.core.database.MessageEntity;
 import com.nexachat.core.database.MessageReactionEntity;
 import com.nexachat.core.database.OutboxDao;
 import com.nexachat.core.database.OutboxEntity;
 import com.nexachat.core.database.OutboxState;
+import com.nexachat.core.database.OfflineOutboxDao;
+import com.nexachat.core.database.OfflineOutboxEntity;
 import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.PinnedMessageEntity;
 import com.nexachat.core.database.ReactionDao;
@@ -105,6 +108,10 @@ public final class MessageRepository {
     private final OutboxDao outboxDao;
     private final ReactionDao reactionDao;
     private final PinDao pinDao;
+    private final AppDatabase appDatabase;
+    private final OfflineOutboxDao offlineOutboxDao;
+    private final OfflineActionApi offlineActionApi;
+    @Nullable private final OfflineOutboxScheduler offlineOutboxScheduler;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
@@ -128,7 +135,7 @@ public final class MessageRepository {
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
-    /** Reaction and pin action failures surfaced to the screen after Room rollback. */
+    /** Permanent reaction and pin failures surfaced after the queued state rolls back. */
     private final FlowableProcessor<ApiError> interactionEvents = PublishProcessor.<ApiError>create().toSerialized();
     @Nullable private volatile Disposable rateLimitRetry;
     @Nullable private volatile TokenUser tokenToUser;
@@ -142,9 +149,12 @@ public final class MessageRepository {
     public MessageRepository(MessageApi messageApi, MessageDao messageDao,
             ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
             PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
-            SessionEvents sessionEvents, Moshi moshi) {
+            SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
+            OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
+            OfflineOutboxScheduler offlineOutboxScheduler) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
-                session, tokenStore, sessionEvents, moshi, Schedulers.computation());
+                session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
+                appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -152,12 +162,27 @@ public final class MessageRepository {
             ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
             PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
             SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler,
+                null, null, null, null);
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler) {
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
         this.outboxDao = outboxDao;
         this.reactionDao = reactionDao;
         this.pinDao = pinDao;
+        this.appDatabase = appDatabase;
+        this.offlineOutboxDao = offlineOutboxDao;
+        this.offlineActionApi = offlineActionApi;
+        this.offlineOutboxScheduler = offlineOutboxScheduler;
         this.session = session;
         this.tokenStore = tokenStore;
         this.sessionEvents = sessionEvents;
@@ -922,39 +947,236 @@ public final class MessageRepository {
         return pinDao.delete(event.getConversationId(), event.getMessageId());
     }
 
-    /** Optimistic whole-set reaction toggle; newer server state wins over a stale rollback. */
-    /**
-     * Optimistically flips an emoji chip in Room, then calls the REST toggle.
-     * Server response or realtime broadcast reconciles the summary; failure
-     * restores the previous snapshot and emits an interaction error.
-     */
+    /** Flips the local reaction and durably queues the desired server state. */
     public Completable toggleReaction(String messageId, String conversationId, String emoji) {
-        return reactionDao.forMessage(messageId).flatMapCompletable(before -> {
-            List<MessageReactionEntity> optimistic = toggledCopy(before, messageId, conversationId, emoji);
-            return reactionDao.replaceForMessage(messageId, optimistic)
-                    .andThen(call(messageApi.toggleReaction(messageId, new ReactionRequest(emoji))))
-                    .flatMapCompletable(result -> {
-                        if (result instanceof Result.Success<?> success) {
-                            ReactionUpdateDtoBox payload = optionalReactionPayload(success.getValue());
-                            if (payload.value == null || payload.value.isEmpty()) return Completable.complete();
-                            return currentUserId().map(Optional::of).defaultIfEmpty(Optional.empty())
-                                    .flatMapCompletable(myIdOpt -> {
-                                        List<MessageReactionEntity> rows = new ArrayList<>();
-                                        for (ReactionSummaryDto summary : payload.value) {
-                                            MessageReactionEntity row = toReactionEntity(summary, messageId,
-                                                    conversationId, myIdOpt.orElse(null));
-                                            if (row != null) rows.add(row);
-                                        }
-                                        return reactionDao.replaceForMessage(messageId, rows);
-                                    });
-                        }
-                        ApiError error = ((Result.Failure<?>) result).getError();
-                        return reactionDao.forMessage(messageId).flatMapCompletable(current -> {
-                            if (current.equals(optimistic)) return reactionDao.replaceForMessage(messageId, before);
-                            return Completable.complete();
-                        }).andThen(Completable.fromAction(() -> interactionEvents.onNext(error)));
-                    });
+        return Completable.fromAction(() -> {
+            requireOfflineOutbox();
+            AtomicReference<Boolean> schedule = new AtomicReference<>(false);
+            appDatabase.runInTransaction(() -> {
+                List<MessageReactionEntity> before = offlineOutboxDao.getReactionsBlocking(messageId);
+                MessageReactionEntity existing = reactionForEmoji(before, emoji);
+                boolean wasReacted = existing != null && existing.getReactedByMe();
+                int previousCount = existing == null ? 0 : existing.getCount();
+                boolean desired = !wasReacted;
+                List<MessageReactionEntity> optimistic = toggledCopy(
+                        before, messageId, conversationId, emoji);
+                QueuedInteraction previous = latestInteractionBlocking(
+                        messageId, conversationId, emoji, true);
+                long createdAt = nextOfflineActionCreatedAtBlocking();
+
+                if (previous != null && isUnleased(previous.row)
+                        && previous.action.desiredState() != desired) {
+                    offlineOutboxDao.deleteByIdBlocking(previous.row.getId());
+                    replaceReactionsBlocking(messageId, optimistic);
+                    return;
+                }
+
+                boolean stateBefore = previous == null ? wasReacted : previous.action.desiredState();
+                int countBefore = previous == null ? previousCount : reactionCountAfter(previous.action);
+                String actionType = desired
+                        ? OfflineOutboxAction.REACTION_ADD : OfflineOutboxAction.REACTION_REMOVE;
+                OfflineOutboxAction action = newOfflineAction(actionType, messageId,
+                        conversationId, emoji, createdAt, stateBefore, countBefore, 0L);
+                replaceReactionsBlocking(messageId, optimistic);
+                insertOfflineActionBlocking(action);
+                schedule.set(true);
+            });
+            if (schedule.get() && offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
         }).subscribeOn(Schedulers.io());
+    }
+
+    /** One set endpoint dispatches a persisted action; the idempotency key never changes. */
+    public Single<ApiResult<?>> dispatchOfflineAction(OfflineOutboxEntity item) {
+        try {
+            OfflineOutboxAction action = OfflineOutboxAction.fromJson(item.getPayloadJson(), moshi);
+            if (!item.getActionType().equals(action.getActionType())
+                    || !item.getIdempotencyKey().equals(action.getIdempotencyKey())
+                    || item.getCreatedAtEpochMs() != action.getCreatedAt()) {
+                return Single.error(new IOException("offline outbox payload does not match row"));
+            }
+            return offlineActionApi.dispatch(action);
+        } catch (IOException | RuntimeException invalidPayload) {
+            return Single.error(new IOException("invalid offline outbox payload", invalidPayload));
+        }
+    }
+
+    /** Re-encodes a persisted action with the next attempt count, preserving its idempotency key. */
+    public String payloadWithAttemptCount(OfflineOutboxEntity item, int attempts) throws IOException {
+        OfflineOutboxAction action = OfflineOutboxAction.fromJson(item.getPayloadJson(), moshi);
+        return action.withAttemptCount(attempts).toJson(moshi);
+    }
+
+    /** Marks a terminal action failure and restores/rebases local state atomically. */
+    public Completable failOfflineAction(OfflineOutboxEntity item, ApiError error) {
+        return Completable.fromAction(() -> {
+            requireOfflineOutbox();
+            AtomicReference<Boolean> changed = new AtomicReference<>(false);
+            appDatabase.runInTransaction(() -> {
+                OfflineOutboxEntity current = offlineOutboxDao.findByIdBlocking(item.getId());
+                if (current == null || !com.nexachat.core.database.OutboxState.IN_PROGRESS
+                        .equals(current.getState())) return;
+                OfflineOutboxAction action = null;
+                try {
+                    action = OfflineOutboxAction.fromJson(current.getPayloadJson(), moshi);
+                } catch (IOException ignored) {
+                    // A corrupt action cannot safely mutate a reaction or pin row.
+                }
+                if (offlineOutboxDao.markFailedBlocking(current.getId(), System.currentTimeMillis()) == 0) {
+                    return;
+                }
+                if (action != null) rebaseAfterFailureBlocking(action);
+                changed.set(true);
+            });
+            if (changed.get()) interactionEvents.onNext(error);
+        }).subscribeOn(Schedulers.io());
+    }
+
+    private void rebaseAfterFailureBlocking(OfflineOutboxAction failed) {
+        boolean state = failed.getStateBefore();
+        int count = failed.getReactionCountBefore();
+        long pinnedAt = failed.getPinnedAtBefore();
+        for (OfflineOutboxEntity queued : offlineOutboxDao.getAllOrderedBlocking()) {
+            if (!isActive(queued) || queued.getCreatedAtEpochMs() <= failed.getCreatedAt()) continue;
+            OfflineOutboxAction action;
+            try {
+                action = OfflineOutboxAction.fromJson(queued.getPayloadJson(), moshi);
+            } catch (IOException ignored) {
+                continue;
+            }
+            if (!sameTarget(action, failed)) continue;
+            OfflineOutboxAction rebased = action.withBeforeState(state, count, pinnedAt);
+            if (action.desiredState() == state) {
+                offlineOutboxDao.deleteByIdBlocking(queued.getId());
+                continue;
+            }
+            try {
+                offlineOutboxDao.updatePayloadBlocking(queued.getId(), rebased.toJson(moshi));
+            } catch (IOException ignored) {
+                continue;
+            }
+            if (action.isReaction()) {
+                count = Math.max(0, count + (action.desiredState() ? 1 : -1));
+            }
+            state = action.desiredState();
+            pinnedAt = OfflineOutboxAction.PIN.equals(action.getActionType())
+                    ? action.getCreatedAt() : 0L;
+        }
+        if (failed.isReaction()) {
+            List<MessageReactionEntity> current = offlineOutboxDao.getReactionsBlocking(failed.getMessageId());
+            List<MessageReactionEntity> restored = new ArrayList<>();
+            for (MessageReactionEntity row : current) {
+                if (!failed.getEmoji().equals(row.getEmoji())) restored.add(row);
+            }
+            if (count > 0) restored.add(new MessageReactionEntity(failed.getMessageId(),
+                    failed.getConversationId(), failed.getEmoji(), count, state));
+            replaceReactionsBlocking(failed.getMessageId(), restored);
+        } else if (state) {
+            offlineOutboxDao.insertPinBlocking(new PinnedMessageEntity(failed.getConversationId(),
+                    failed.getMessageId(), pinnedAt > 0L ? pinnedAt : failed.getCreatedAt()));
+        } else {
+            offlineOutboxDao.deletePinBlocking(failed.getConversationId(), failed.getMessageId());
+        }
+    }
+
+    private OfflineOutboxAction newOfflineAction(String actionType, String messageId,
+            String conversationId, @Nullable String emoji, long createdAt,
+            boolean stateBefore, int reactionCountBefore, long pinnedAtBefore) {
+        String key = UUID.randomUUID().toString();
+        return new OfflineOutboxAction(actionType, messageId, conversationId, emoji,
+                key, createdAt, 0, stateBefore, reactionCountBefore, pinnedAtBefore);
+    }
+
+    private void insertOfflineActionBlocking(OfflineOutboxAction action) {
+        try {
+            String json = action.toJson(moshi);
+            offlineOutboxDao.insertBlocking(new OfflineOutboxEntity(
+                    UUID.randomUUID().toString(), action.getIdempotencyKey(), action.getActionType(),
+                    json, com.nexachat.core.database.OutboxState.PENDING, 0,
+                    action.getCreatedAt(), 0L));
+        } catch (IOException failure) {
+            throw new IllegalStateException("could not encode offline outbox action", failure);
+        }
+    }
+
+    private long nextOfflineActionCreatedAtBlocking() {
+        long lastCreatedAt = 0L;
+        for (OfflineOutboxEntity row : offlineOutboxDao.getAllOrderedBlocking()) {
+            lastCreatedAt = Math.max(lastCreatedAt, row.getCreatedAtEpochMs());
+        }
+        return Math.max(System.currentTimeMillis(), lastCreatedAt + 1L);
+    }
+
+    private QueuedInteraction latestInteractionBlocking(String messageId, String conversationId,
+            @Nullable String emoji, boolean reaction) {
+        QueuedInteraction latest = null;
+        for (OfflineOutboxEntity row : offlineOutboxDao.getAllOrderedBlocking()) {
+            if (!isActive(row)) continue;
+            try {
+                OfflineOutboxAction action = OfflineOutboxAction.fromJson(row.getPayloadJson(), moshi);
+                if (sameTarget(action, messageId, conversationId, emoji, reaction)
+                        && (latest == null || action.getCreatedAt() > latest.action.getCreatedAt())) {
+                    latest = new QueuedInteraction(row, action);
+                }
+            } catch (IOException ignored) {
+                // Leave malformed rows for the dispatcher to mark as failed.
+            }
+        }
+        return latest;
+    }
+
+    private void replaceReactionsBlocking(String messageId, List<MessageReactionEntity> rows) {
+        offlineOutboxDao.deleteReactionsBlocking(messageId);
+        if (!rows.isEmpty()) offlineOutboxDao.insertReactionsBlocking(rows);
+    }
+
+    private static MessageReactionEntity reactionForEmoji(List<MessageReactionEntity> rows, String emoji) {
+        for (MessageReactionEntity row : rows) if (emoji.equals(row.getEmoji())) return row;
+        return null;
+    }
+
+    private static int reactionCountAfter(OfflineOutboxAction action) {
+        if (action.desiredState() == action.getStateBefore()) return action.getReactionCountBefore();
+        return Math.max(0, action.getReactionCountBefore() + (action.desiredState() ? 1 : -1));
+    }
+
+    private static boolean isActive(OfflineOutboxEntity row) {
+        String state = row.getState();
+        return com.nexachat.core.database.OutboxState.PENDING.equals(state)
+                || com.nexachat.core.database.OutboxState.SENDING.equals(state)
+                || com.nexachat.core.database.OutboxState.IN_PROGRESS.equals(state);
+    }
+
+    private static boolean isUnleased(OfflineOutboxEntity row) {
+        return com.nexachat.core.database.OutboxState.PENDING.equals(row.getState())
+                || com.nexachat.core.database.OutboxState.SENDING.equals(row.getState());
+    }
+
+    private static boolean sameTarget(OfflineOutboxAction left, OfflineOutboxAction right) {
+        return sameTarget(left, right.getMessageId(), right.getConversationId(),
+                right.getEmoji(), right.isReaction());
+    }
+
+    private static boolean sameTarget(OfflineOutboxAction action, String messageId,
+            String conversationId, @Nullable String emoji, boolean reaction) {
+        return action.getMessageId().equals(messageId)
+                && action.getConversationId().equals(conversationId)
+                && action.isReaction() == reaction
+                && (!reaction || Objects.equals(action.getEmoji(), emoji));
+    }
+
+    private void requireOfflineOutbox() {
+        if (appDatabase == null || offlineOutboxDao == null || offlineActionApi == null) {
+            throw new IllegalStateException("offline outbox dependencies are unavailable");
+        }
+    }
+
+    private static final class QueuedInteraction {
+        final OfflineOutboxEntity row;
+        final OfflineOutboxAction action;
+        QueuedInteraction(OfflineOutboxEntity row, OfflineOutboxAction action) {
+            this.row = row;
+            this.action = action;
+        }
     }
 
     private ReactionUpdateDtoBox optionalReactionPayload(Object body) {
@@ -1010,34 +1232,56 @@ public final class MessageRepository {
         }).subscribeOn(Schedulers.io());
     }
 
-    /** Optimistically pins a message; restores and signals on authorization or limit failure. */
+    /** Optimistically pins a message and queues the desired state in the same Room transaction. */
     public Completable pinMessage(String conversationId, String messageId) {
-        PinnedMessageEntity entry = new PinnedMessageEntity(conversationId, messageId, System.currentTimeMillis());
-        return pinDao.upsert(entry).andThen(call(messageApi.pinMessage(conversationId, new PinRequest(messageId))))
-                .flatMapCompletable(result -> {
-                    if (result instanceof Result.Success<?>) return Completable.complete();
-                    ApiError error = ((Result.Failure<?>) result).getError();
-                    return pinDao.find(conversationId, messageId).map(Optional::of)
-                            .defaultIfEmpty(Optional.empty()).flatMapCompletable(current ->
-                                    current.isPresent() && samePin(current.get(), entry)
-                                            ? pinDao.delete(conversationId, messageId) : Completable.complete())
-                            .andThen(Completable.fromAction(() -> interactionEvents.onNext(error)));
-                }).subscribeOn(Schedulers.io());
+        return setPinState(conversationId, messageId, true);
     }
 
-    /** Optimistically removes a pin; restores it and signals if the request fails. */
+    /** Optimistically removes a pin and queues the desired state in the same Room transaction. */
     public Completable unpinMessage(String conversationId, String messageId) {
-        return pinDao.find(conversationId, messageId).map(Optional::of).defaultIfEmpty(Optional.empty())
-                .flatMapCompletable(before -> pinDao.delete(conversationId, messageId)
-                        .andThen(call(messageApi.unpinMessage(conversationId, messageId)))
-                        .flatMapCompletable(result -> {
-                            if (result instanceof Result.Success<?>) return Completable.complete();
-                            ApiError error = ((Result.Failure<?>) result).getError();
-                            return pinDao.find(conversationId, messageId).isEmpty()
-                                    .flatMapCompletable(absent -> absent && before.isPresent()
-                                            ? pinDao.upsert(before.get()) : Completable.complete())
-                                    .andThen(Completable.fromAction(() -> interactionEvents.onNext(error)));
-                        })).subscribeOn(Schedulers.io());
+        return setPinState(conversationId, messageId, false);
+    }
+
+    private Completable setPinState(String conversationId, String messageId, boolean desired) {
+        return Completable.fromAction(() -> {
+            requireOfflineOutbox();
+            AtomicReference<Boolean> schedule = new AtomicReference<>(false);
+            appDatabase.runInTransaction(() -> {
+                PinnedMessageEntity current = offlineOutboxDao.findPinBlocking(conversationId, messageId);
+                boolean wasPinned = current != null;
+                QueuedInteraction previous = latestInteractionBlocking(
+                        messageId, conversationId, null, false);
+                if (wasPinned == desired) return;
+                long createdAt = nextOfflineActionCreatedAtBlocking();
+                if (previous != null && isUnleased(previous.row)
+                        && previous.action.desiredState() != desired) {
+                    offlineOutboxDao.deleteByIdBlocking(previous.row.getId());
+                    writePinStateBlocking(conversationId, messageId, desired, createdAt);
+                    return;
+                }
+                boolean stateBefore = previous == null ? wasPinned : previous.action.desiredState();
+                long pinnedAtBefore = previous == null
+                        ? (current == null ? 0L : current.getPinnedAt())
+                        : (previous.action.desiredState() ? previous.action.getCreatedAt() : 0L);
+                String actionType = desired ? OfflineOutboxAction.PIN : OfflineOutboxAction.UNPIN;
+                OfflineOutboxAction action = newOfflineAction(actionType, messageId,
+                        conversationId, null, createdAt, stateBefore, 0, pinnedAtBefore);
+                writePinStateBlocking(conversationId, messageId, desired, createdAt);
+                insertOfflineActionBlocking(action);
+                schedule.set(true);
+            });
+            if (schedule.get() && offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
+        }).subscribeOn(Schedulers.io());
+    }
+
+    private void writePinStateBlocking(
+            String conversationId, String messageId, boolean pinned, long pinnedAt) {
+        if (pinned) {
+            offlineOutboxDao.insertPinBlocking(new PinnedMessageEntity(
+                    conversationId, messageId, pinnedAt));
+        } else {
+            offlineOutboxDao.deletePinBlocking(conversationId, messageId);
+        }
     }
 
     /** Forward resync pages until the server reports no further history. */
@@ -1070,6 +1314,7 @@ public final class MessageRepository {
         return messageDao.deleteAll().andThen(conversationDao.clear()).andThen(outboxDao.clear())
                 .andThen(reactionDao.clear()).andThen(pinDao.clear())
                 .andThen(Completable.fromAction(() -> {
+                    if (offlineOutboxDao != null) offlineOutboxDao.clearBlocking();
                     lastMarkedRead.clear();
                     activeConversation.set(null);
                     tokenToUser = null;

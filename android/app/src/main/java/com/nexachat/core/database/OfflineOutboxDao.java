@@ -18,6 +18,10 @@ public interface OfflineOutboxDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     Completable insert(OfflineOutboxEntity item);
 
+    /** Synchronous row operations used only inside AppDatabase.runInTransaction. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    void insertBlocking(OfflineOutboxEntity item);
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     Completable insertAll(List<OfflineOutboxEntity> items);
 
@@ -41,6 +45,12 @@ public interface OfflineOutboxDao {
             + "ORDER BY createdAtEpochMs ASC")
     Single<List<OfflineOutboxEntity>> getClaimableItems(long staleThreshold);
 
+    @Query("SELECT * FROM offline_outbox ORDER BY createdAtEpochMs ASC")
+    List<OfflineOutboxEntity> getAllOrderedBlocking();
+
+    @Query("SELECT * FROM offline_outbox WHERE id = :id")
+    OfflineOutboxEntity findByIdBlocking(String id);
+
     @Query("SELECT * FROM offline_outbox WHERE id = :id")
     Maybe<OfflineOutboxEntity> findById(String id);
 
@@ -51,20 +61,60 @@ public interface OfflineOutboxDao {
             + "lastAttemptEpochMs = :lastAttemptEpochMs WHERE id = :id")
     Completable updateState(String id, String state, int retryCount, long lastAttemptEpochMs);
 
+    @Query("UPDATE offline_outbox SET payloadJson = :payloadJson WHERE id = :id "
+            + "AND state IN ('PENDING', 'SENDING', 'IN_PROGRESS')")
+    int updatePayloadBlocking(String id, String payloadJson);
+
     @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now WHERE id = :id")
     Completable markSent(String id, long now);
+
+    @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now "
+            + "WHERE id = :id AND state = 'IN_PROGRESS'")
+    int markSentBlocking(String id, long now);
 
     @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now WHERE id = :id")
     Completable markFailed(String id, long now);
 
-    @Query("UPDATE offline_outbox SET state = 'PENDING', retryCount = retryCount + 1, lastAttemptEpochMs = 0 WHERE id = :id")
-    Completable releaseLease(String id);
+    @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now "
+            + "WHERE id = :id AND state = 'IN_PROGRESS'")
+    int markFailedBlocking(String id, long now);
+
+    @Query("UPDATE offline_outbox SET state = 'PENDING', retryCount = :retryCount, "
+            + "payloadJson = :payloadJson, lastAttemptEpochMs = 0 "
+            + "WHERE id = :id AND state = 'IN_PROGRESS'")
+    Completable releaseLease(String id, int retryCount, String payloadJson);
 
     @Query("DELETE FROM offline_outbox WHERE id = :id")
     Completable deleteById(String id);
 
+    @Query("DELETE FROM offline_outbox WHERE id = :id")
+    int deleteByIdBlocking(String id);
+
     @Query("DELETE FROM offline_outbox WHERE idempotencyKey = :idempotencyKey")
     Completable deleteByIdempotencyKey(String idempotencyKey);
+
+    @Query("DELETE FROM offline_outbox")
+    void clearBlocking();
+
+    @Query("SELECT * FROM message_reactions WHERE messageId = :messageId")
+    List<MessageReactionEntity> getReactionsBlocking(String messageId);
+
+    @Query("DELETE FROM message_reactions WHERE messageId = :messageId")
+    void deleteReactionsBlocking(String messageId);
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    void insertReactionsBlocking(List<MessageReactionEntity> reactions);
+
+    @Query("SELECT * FROM pinned_messages WHERE conversationId = :conversationId "
+            + "AND messageId = :messageId")
+    PinnedMessageEntity findPinBlocking(String conversationId, String messageId);
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    void insertPinBlocking(PinnedMessageEntity pin);
+
+    @Query("DELETE FROM pinned_messages WHERE conversationId = :conversationId "
+            + "AND messageId = :messageId")
+    void deletePinBlocking(String conversationId, String messageId);
 
     @Query("SELECT * FROM offline_outbox ORDER BY createdAtEpochMs ASC")
     Flowable<List<OfflineOutboxEntity>> getAllOrdered();
