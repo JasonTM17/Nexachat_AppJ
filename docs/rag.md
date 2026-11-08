@@ -112,6 +112,23 @@ Incremental summaries: the ask cache already avoids re-answering unchanged
 questions. Merging new messages into an existing summary instead of
 re-sending the whole window is a follow-up for the summary path.
 
+## LLM provider fallback
+
+The ask path uses the same LLM tier as summaries. The primary cloud provider
+(`nexachat.summary.llm.*`) can be paired with a fallback provider
+(`nexachat.summary.llm-fallback.*`), disabled by default and activated only
+when its key is configured. On a primary transport error, timeout, HTTP 5xx,
+HTTP 429 or an open circuit, the fallback is tried once with the same
+already-redacted prompt and the same output validation; a primary 4xx other
+than 429 (bad request, auth) is not retried against the fallback, and the
+provider error body is never leaked. If both providers fail, the ask router
+degrades to `EXTRACTIVE` or `NOT_FOUND` as before.
+
+`usage.provider` is `primary` or `fallback` for an `LLM` answer and `null`
+otherwise. `GET /api/v1/rag/stats` exposes `llmFallbackCalls` next to
+`llmCalls`. A fallback call counts toward the same per-user rate limit and the
+same question cache as a primary call; a cache hit never calls either provider.
+
 ## Configuration
 
 | Configuration key | Environment variable | Default |
@@ -133,6 +150,11 @@ re-sending the whole window is a follow-up for the summary path.
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |
 | `nexachat.rag.ask.cache-ttl-hours` | `NEXACHAT_RAG_ASK_CACHE_TTL_HOURS` | `24` |
+| `nexachat.summary.llm-fallback.enabled` | `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | `false` |
+| `nexachat.summary.llm-fallback.base-url` | `NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL` | `https://api.deepseek.com` |
+| `nexachat.summary.llm-fallback.model` | `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | `deepseek-v4.1-flash` |
+| `nexachat.summary.llm-fallback.api-key` | `NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY` | — (absent ⇒ fallback unavailable) |
+| `nexachat.summary.llm-fallback.timeout-ms` | `NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` | `30000` |
 
 All settings work offline with no key.
 

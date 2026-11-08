@@ -34,7 +34,7 @@ Response `200`:
   "summaryId": "uuid", "conversationId": "uuid",
   "fromSeq": 120, "toSeq": 187, "messageCount": 64,
   "language": "VI", "generatedBy": "LOCAL", "model": null,
-  "fallbackReason": null, "cached": false, "createdAt": "2026-11-05T12:00:00Z",
+  "provider": null, "fallbackReason": null, "cached": false, "createdAt": "2026-11-05T12:00:00Z",
   "overview": "string, at most 400 chars",
   "keyPoints":   [{ "text": "...", "messageIds": ["uuid"] }],
   "decisions":   [{ "text": "...", "messageIds": ["uuid"] }],
@@ -46,6 +46,8 @@ Response `200`:
 ```
 
 Arrays are never null. Every `messageIds` is non-empty and a subset of the input window.
+`provider` is `primary` or `fallback` when an LLM produced the summary, and `null` when
+the local engine produced it.
 
 Errors use the standard envelope: `400 VALIDATION_FAILED`, `400 TOO_FEW_MESSAGES` (fewer than 5 usable messages), `403 NOT_MEMBER`, `404` unknown conversation, `429 RATE_LIMITED`. The endpoint never answers `503`: provider trouble degrades to the local engine (`fallbackReason`: `NO_CONSENT | LLM_DISABLED | LLM_TIMEOUT | LLM_BAD_OUTPUT | LLM_HTTP_ERROR`).
 
@@ -78,6 +80,11 @@ Provider selection uses the persisted `users.ai_summary_consent` value. The LLM 
 | `nexachat.summary.llm.timeout-ms` | `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` | `30000` |
 | `nexachat.summary.llm.max-input-chars` | `NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS` | `24000` |
 | `nexachat.summary.llm.max-output-tokens` | `NEXACHAT_SUMMARY_LLM_MAX_OUTPUT_TOKENS` | `4000` |
+| `nexachat.summary.llm-fallback.enabled` | `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | `false` |
+| `nexachat.summary.llm-fallback.base-url` | `NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL` | `https://api.deepseek.com` |
+| `nexachat.summary.llm-fallback.model` | `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | `deepseek-v4.1-flash` |
+| `nexachat.summary.llm-fallback.api-key` | `NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY` | — (absent ⇒ fallback unavailable) |
+| `nexachat.summary.llm-fallback.timeout-ms` | `NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` | `30000` |
 
 `provider` is `auto` (LLM only with a key and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
@@ -105,6 +112,23 @@ Safety behaviour:
   LLM_DISABLED | NO_CONSENT`). The endpoint never answers `503`.
 - One retry on 5xx within the timeout budget, none on 4xx. A circuit breaker opens for
   60 seconds after 5 consecutive failures. Response bodies are capped at 256 KiB.
+
+## Cloud provider fallback
+
+The primary cloud provider can be paired with a fallback provider under
+`nexachat.summary.llm-fallback.*`. The fallback is disabled by default and
+becomes usable only when its key is configured, so a deployment with an empty
+fallback balance never calls it. It uses the same OpenAI-compatible client,
+consent check, redaction, base-URL validation and output validation as the
+primary, and it receives the same already-redacted prompt.
+
+On a primary transport error, timeout, HTTP 5xx, HTTP 429 or an open circuit,
+the fallback is tried once. A primary 4xx other than 429 (bad request, auth) is
+not retried against the fallback: it would repeat the same bug, and the
+provider error body is never leaked. If both providers fail, the request
+degrades to the local engine exactly as before. The response `provider` field
+is `primary` or `fallback` when an LLM answered, and `null` when the local
+engine answered.
 
 Limits: 10 requests/min and 60/day per user; the window is capped at 500 usable
 messages; each message is truncated to 1,000 characters before redaction.
