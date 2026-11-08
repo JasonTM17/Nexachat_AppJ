@@ -28,6 +28,7 @@
             android:layout_marginBottom="2dp"
             android:background="@drawable/bg_unread_badge"
             android:backgroundTint="?attr/colorPrimary"
+            android:importantForAccessibility="no"
             android:padding="2dp"
             android:src="@drawable/ic_add"
             android:visibility="gone"

@@ -84,12 +84,15 @@
                         style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_cancel" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/saveName"
+                        style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_save" />
                 </LinearLayout>
 
@@ -99,6 +102,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/cd_edit_name" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -251,6 +255,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/profile_change_password" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
