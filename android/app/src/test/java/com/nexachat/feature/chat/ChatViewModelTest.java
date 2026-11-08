@@ -359,6 +359,24 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void recordedVoiceDurationIsPassedThroughTheUpload() {
+        long durationMs = 3_200L;
+        AttachmentDto audio = new AttachmentDto(
+                "att-audio", null, "voice.m4a", "audio/mp4", 23_730L,
+                null, null, durationMs, "/api/v1/files/voice.m4a");
+        when(attachmentRepository.describe(uri)).thenReturn(Single.just(
+                new LocalAttachment(uri, "voice.m4a", "audio/mp4", 23_730L, "AUDIO")));
+        when(attachmentRepository.upload(uri, "audio/mp4", durationMs)).thenReturn(Flowable.just(
+                new AttachmentUploadEvent.Uploaded(audio)));
+
+        viewModel.sendAttachments(List.of(uri), durationMs);
+
+        verify(attachmentRepository).upload(uri, "audio/mp4", durationMs);
+        verifySend(messageRepository, CONVERSATION_ID, "voice.m4a", null,
+                "AUDIO", List.of(audio), 1);
+    }
+
+    @Test
     public void serverSniffedVideoMimeWinsWhenPickerCannotIdentifyUri() {
         AttachmentDto video = new AttachmentDto("att-video", "clip.mp4", "video/mp4", 4L);
         when(attachmentRepository.describe(uri)).thenReturn(Single.just(

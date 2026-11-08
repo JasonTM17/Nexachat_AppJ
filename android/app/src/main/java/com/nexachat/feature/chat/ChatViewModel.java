@@ -507,7 +507,13 @@ public final class ChatViewModel extends ViewModel {
     // ---- attachments ----
 
     public void sendAttachments(List<Uri> uris) {
-        for (Uri uri : uris) {
+        sendAttachments(uris, null);
+    }
+
+    public void sendAttachments(List<Uri> uris, @Nullable Long durationMs) {
+        for (int index = 0; index < uris.size(); index++) {
+            Uri uri = uris.get(index);
+            Long attachmentDurationMs = index == 0 ? durationMs : null;
             String localId = UUID.randomUUID().toString();
             CompositeDisposable uploadTask = new CompositeDisposable();
             uploadDisposables.put(localId, uploadTask);
@@ -515,7 +521,8 @@ public final class ChatViewModel extends ViewModel {
             Disposable describe = attachmentRepository.describe(uri)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(local -> startUpload(localId, uri, local, uploadTask),
+                    .subscribe(local -> startUpload(
+                                    localId, uri, local, attachmentDurationMs, uploadTask),
                             error -> uploadDisposables.remove(localId));
             // CompositeDisposable preserves both handles when the description
             // completes synchronously before its subscription is returned.
@@ -524,7 +531,11 @@ public final class ChatViewModel extends ViewModel {
     }
 
     private void startUpload(
-            String localId, Uri uri, LocalAttachment local, CompositeDisposable uploadTask) {
+            String localId,
+            Uri uri,
+            LocalAttachment local,
+            @Nullable Long durationMs,
+            CompositeDisposable uploadTask) {
         updatePending(rows -> {
             List<PendingAttachment> next = new ArrayList<>(rows);
             next.add(new PendingAttachment(
@@ -537,7 +548,9 @@ public final class ChatViewModel extends ViewModel {
                     PendingAttachment.PendingState.UPLOADING));
             return next;
         });
-        Flowable<AttachmentUploadEvent> uploads = attachmentRepository.upload(uri, local.getMimeType());
+        Flowable<AttachmentUploadEvent> uploads = durationMs == null
+                ? attachmentRepository.upload(uri, local.getMimeType())
+                : attachmentRepository.upload(uri, local.getMimeType(), durationMs);
         uploadTask.add(uploads.subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(event -> onUploadEvent(localId, local, event),

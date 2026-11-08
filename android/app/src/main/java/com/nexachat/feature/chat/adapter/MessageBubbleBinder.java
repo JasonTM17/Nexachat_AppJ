@@ -16,6 +16,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.TextViewCompat;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ViewModelStoreOwner;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
@@ -70,15 +72,31 @@ public final class MessageBubbleBinder {
     private final Function<String, ChatMessage> resolveOriginal;
     @Nullable
     private final MessageActionListener actionListener;
+    @Nullable
+    private final LifecycleOwner voiceLifecycleOwner;
+    @Nullable
+    private final ViewModelStoreOwner voiceStoreOwner;
 
     public MessageBubbleBinder(
             @NonNull DateFormat timeFormat,
             @Nullable Function<String, ChatMessage> resolveOriginal,
             @Nullable MessageActionListener actionListener
     ) {
+        this(timeFormat, resolveOriginal, actionListener, null, null);
+    }
+
+    public MessageBubbleBinder(
+            @NonNull DateFormat timeFormat,
+            @Nullable Function<String, ChatMessage> resolveOriginal,
+            @Nullable MessageActionListener actionListener,
+            @Nullable LifecycleOwner voiceLifecycleOwner,
+            @Nullable ViewModelStoreOwner voiceStoreOwner
+    ) {
         this.timeFormat = timeFormat;
         this.resolveOriginal = resolveOriginal;
         this.actionListener = actionListener;
+        this.voiceLifecycleOwner = voiceLifecycleOwner;
+        this.voiceStoreOwner = voiceStoreOwner;
     }
 
     public void bindMessageRow(@NonNull View root, @NonNull MessageListItem item) {
@@ -296,7 +314,8 @@ public final class MessageBubbleBinder {
             image.setImageDrawable(null);
         }
         hideAll(body, image, play, fileName, systemLabel);
-        if (VoiceBubbleBinder.bindIfVoice(root, message)) return;
+        if (VoiceBubbleBinder.bindIfVoice(
+                root, message, voiceLifecycleOwner, voiceStoreOwner)) return;
 
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
         MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);

@@ -83,7 +83,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+        when(attachmentApi.upload(
+                partCaptor.capture(), nullable(RequestBody.class), nullable(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             // Drive the real ProgressRequestBody so intermediate fractions fire.
@@ -109,6 +110,30 @@ public final class AttachmentRepositoryTest {
     }
 
     @Test
+    public void voiceUploadSendsRecordedDurationAsMilliseconds() throws Exception {
+        byte[] bytes = new byte[] {1, 2, 3, 4};
+        stubResolver(bytes, "audio/mp4", bytes.length);
+        Call<AttachmentDto> uploadCall = mock(Call.class);
+        ArgumentCaptor<MultipartBody.Part> fileCaptor =
+                ArgumentCaptor.forClass(MultipartBody.Part.class);
+        ArgumentCaptor<RequestBody> durationCaptor = ArgumentCaptor.forClass(RequestBody.class);
+        when(attachmentApi.upload(fileCaptor.capture(), durationCaptor.capture(), isNull()))
+                .thenReturn(uploadCall);
+        when(uploadCall.execute()).thenReturn(Response.success(dto.withMimeType("audio/mp4")));
+
+        List<AttachmentUploadEvent> events = await(repository.upload(uri, "audio/mp4", 3_200L).test());
+        assertTrue(events.get(events.size() - 1) instanceof AttachmentUploadEvent.Uploaded);
+        verify(attachmentApi).upload(
+                any(MultipartBody.Part.class), durationCaptor.capture(), isNull());
+
+        assertEquals("audio/mp4", fileCaptor.getValue().body().contentType().toString());
+        assertTrue(durationCaptor.getValue().contentType().toString().startsWith("text/plain"));
+        Buffer body = new Buffer();
+        durationCaptor.getValue().writeTo(body);
+        assertEquals("3200", body.readUtf8());
+    }
+
+    @Test
     public void uploadReadsResolverStreamAwayFromCallerDispatcher() throws Exception {
         byte[] bytes = new byte[] {1, 2, 3, 4};
         stubResolver(bytes, "video/mp4", bytes.length);
@@ -124,7 +149,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+        when(attachmentApi.upload(
+                partCaptor.capture(), nullable(RequestBody.class), nullable(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             partCaptor.getValue().body().writeTo(new Buffer());
@@ -135,7 +161,7 @@ public final class AttachmentRepositoryTest {
 
         assertTrue(readerThread.get() != null);
         assertNotSame(callerThread, readerThread.get());
-        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull());
+        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull(), isNull());
     }
 
     @Test
@@ -151,7 +177,8 @@ public final class AttachmentRepositoryTest {
         ArgumentCaptor<MultipartBody.Part> fileCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
         ArgumentCaptor<RequestBody> hashCaptor = ArgumentCaptor.forClass(RequestBody.class);
-        when(attachmentApi.upload(fileCaptor.capture(), hashCaptor.capture())).thenReturn(uploadCall);
+        when(attachmentApi.upload(fileCaptor.capture(), isNull(), hashCaptor.capture()))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             assertEquals(1, temporaryDirectory.listFiles().length);
             MultipartBody.Part file = fileCaptor.getValue();
@@ -182,7 +209,7 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> fileCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(fileCaptor.capture(), isNull())).thenReturn(uploadCall);
+        when(attachmentApi.upload(fileCaptor.capture(), isNull(), isNull())).thenReturn(uploadCall);
         AtomicReference<byte[]> sentBytes = new AtomicReference<>();
         when(uploadCall.execute()).thenAnswer(invocation -> {
             Buffer body = new Buffer();
@@ -194,7 +221,7 @@ public final class AttachmentRepositoryTest {
         await(repository.upload(uri).test());
 
         assertArrayEquals(original, sentBytes.get());
-        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull());
+        verify(attachmentApi).upload(any(MultipartBody.Part.class), isNull(), isNull());
     }
 
     @Test
@@ -206,7 +233,7 @@ public final class AttachmentRepositoryTest {
                 attachmentApi, context,
                 new ImageCompressor(new SmallImageBackend(), temporaryDirectory));
         Call<AttachmentDto> uploadCall = mock(Call.class);
-        when(attachmentApi.upload(any(MultipartBody.Part.class), any(RequestBody.class)))
+        when(attachmentApi.upload(any(MultipartBody.Part.class), isNull(), any(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenThrow(new IOException("offline"));
 
@@ -232,7 +259,7 @@ public final class AttachmentRepositoryTest {
         assertEquals(AttachmentRepository.ERROR_UNREADABLE,
                 ((ApiError.Unknown) singleFailure(events).getError()).getCode());
         verify(attachmentApi, never()).upload(
-                any(MultipartBody.Part.class), nullable(RequestBody.class));
+                any(MultipartBody.Part.class), nullable(RequestBody.class), nullable(RequestBody.class));
     }
 
     @Test
@@ -246,7 +273,7 @@ public final class AttachmentRepositoryTest {
         assertEquals(AttachmentRepository.ERROR_TOO_LARGE,
                 ((ApiError.Unknown) failed.getError()).getCode());
         verify(attachmentApi, never()).upload(
-                any(MultipartBody.Part.class), nullable(RequestBody.class));
+                any(MultipartBody.Part.class), nullable(RequestBody.class), nullable(RequestBody.class));
     }
 
     @Test
@@ -268,7 +295,8 @@ public final class AttachmentRepositoryTest {
         stubResolver(new byte[] {1, 2, 3, 4}, "image/png", 4);
         Call<AttachmentDto> uploadCall = mock(Call.class);
         when(attachmentApi.upload(
-                any(MultipartBody.Part.class), nullable(RequestBody.class))).thenReturn(uploadCall);
+                any(MultipartBody.Part.class), nullable(RequestBody.class), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenReturn(Response.error(
                 413, ResponseBody.create(MediaType.parse("text/plain"), "")));
 
@@ -283,7 +311,8 @@ public final class AttachmentRepositoryTest {
         stubResolver(new byte[] {1, 2, 3, 4}, "image/png", 4);
         Call<AttachmentDto> uploadCall = mock(Call.class);
         when(attachmentApi.upload(
-                any(MultipartBody.Part.class), nullable(RequestBody.class))).thenReturn(uploadCall);
+                any(MultipartBody.Part.class), nullable(RequestBody.class), nullable(RequestBody.class)))
+                .thenReturn(uploadCall);
         when(uploadCall.execute()).thenThrow(new IOException("down"));
 
         List<AttachmentUploadEvent> events = await(repository.upload(uri).test());
@@ -301,7 +330,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+        when(attachmentApi.upload(
+                partCaptor.capture(), nullable(RequestBody.class), nullable(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
@@ -320,7 +350,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+        when(attachmentApi.upload(
+                partCaptor.capture(), nullable(RequestBody.class), nullable(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
@@ -339,7 +370,8 @@ public final class AttachmentRepositoryTest {
         Call<AttachmentDto> uploadCall = mock(Call.class);
         ArgumentCaptor<MultipartBody.Part> partCaptor =
                 ArgumentCaptor.forClass(MultipartBody.Part.class);
-        when(attachmentApi.upload(partCaptor.capture(), nullable(RequestBody.class)))
+        when(attachmentApi.upload(
+                partCaptor.capture(), nullable(RequestBody.class), nullable(RequestBody.class)))
                 .thenReturn(uploadCall);
         when(uploadCall.execute()).thenAnswer(invocation -> {
             sentType.set(partCaptor.getValue().body().contentType().toString());
@@ -365,7 +397,7 @@ public final class AttachmentRepositoryTest {
         assertEquals(AttachmentRepository.ERROR_UNREADABLE,
                 ((ApiError.Unknown) failed.getError()).getCode());
         verify(attachmentApi, never()).upload(
-                any(MultipartBody.Part.class), nullable(RequestBody.class));
+                any(MultipartBody.Part.class), nullable(RequestBody.class), nullable(RequestBody.class));
     }
 
     @Test

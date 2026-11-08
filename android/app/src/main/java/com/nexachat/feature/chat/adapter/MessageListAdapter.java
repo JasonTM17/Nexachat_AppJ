@@ -4,8 +4,11 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.ViewModelStoreOwner;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import java.text.DateFormat;
 import java.util.function.Function;
@@ -23,8 +26,19 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
             @NonNull Function<String, ChatMessage> resolveOriginal,
             @NonNull MessageActionListener actionListener
     ) {
+        this(timeFormat, resolveOriginal, actionListener, null, null);
+    }
+
+    public MessageListAdapter(
+            @NonNull DateFormat timeFormat,
+            @NonNull Function<String, ChatMessage> resolveOriginal,
+            @NonNull MessageActionListener actionListener,
+            @Nullable LifecycleOwner lifecycleOwner,
+            @Nullable ViewModelStoreOwner storeOwner
+    ) {
         super(new MessageListDiffCallback());
-        this.binder = new MessageBubbleBinder(timeFormat, resolveOriginal, actionListener);
+        this.binder = new MessageBubbleBinder(
+                timeFormat, resolveOriginal, actionListener, lifecycleOwner, storeOwner);
     }
 
     @Override
