@@ -121,6 +121,30 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
+    public void remoteMediaDuringReconnectingIsBufferedAndDeliveredOnReconnect() {
+        establishActiveCall();
+
+        signaling.disconnect();
+        scheduler.runCurrent();
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_ICE, "CALL_ICE", "call-roam-1",
+                "conversation-1", null, null,
+                new CallSignal(CallSignal.Type.ICE, "call-roam-1", null,
+                        new CallSignal.IceCandidate("audio", 0, "candidate:remote")),
+                null, null, null));
+        scheduler.runCurrent();
+        assertTrue("roaming must buffer remote media, not drop it", media.remoteIce.isEmpty());
+
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+        assertEquals(1, media.remoteIce.size());
+        assertEquals("candidate:remote", media.remoteIce.get(0).getCandidate());
+    }
+
+    @Test
     public void hydrateIncomingCallTransitionsToIncomingRingingOnInvite() {
         manager.hydrateIncomingCall("call-push-1", "conv-push-1", "peer-push-1", "Push Peer", nowMs);
         scheduler.runCurrent();
@@ -265,6 +289,7 @@ public final class CallManagerRoamingTest {
 
     private static final class FakeMediaEngine implements CallMediaEngine {
         int restartIceCount;
+        final List<CallSignal.IceCandidate> remoteIce = new ArrayList<>();
         Listener listener;
 
         @Override
@@ -281,7 +306,9 @@ public final class CallManagerRoamingTest {
         public void onRemoteSdp(CallSignal.Sdp sdp) { }
 
         @Override
-        public void onRemoteIce(CallSignal.IceCandidate candidate) { }
+        public void onRemoteIce(CallSignal.IceCandidate candidate) {
+            remoteIce.add(candidate);
+        }
 
         @Override
         public void setMuted(boolean muted) { }
