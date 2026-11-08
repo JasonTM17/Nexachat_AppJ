@@ -1,5 +1,6 @@
 package com.nexachat.feature.chat.voice;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -7,7 +8,9 @@ import static org.junit.Assert.assertTrue;
 import com.nexachat.core.network.dto.AttachmentDto;
 import java.io.File;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -103,18 +106,100 @@ public final class VoicePlaybackControllerTest {
         assertEquals(0, player.prepareCount);
     }
 
+    @Test
+    public void lateDownloadFromReplacedAttachmentCannotStartPlayback() {
+        attachments.completeImmediately = false;
+        AttachmentDto first = attachment("first-delayed");
+        AttachmentDto second = attachment("second-delayed");
+
+        controller.toggle(first);
+        controller.toggle(second);
+        attachments.complete("first-delayed");
+
+        assertEquals(0, player.prepareCount);
+        assertEquals(VoicePlaybackState.Status.LOADING,
+                controller.snapshotFor(second).getStatus());
+
+        attachments.complete("second-delayed");
+        assertEquals(1, player.prepareCount);
+        assertEquals(VoicePlaybackState.Status.PLAYING,
+                controller.snapshotFor(second).getStatus());
+    }
+
+    @Test
+    public void failedDownloadPublishesErrorAndReleasesFocus() {
+        attachments.completeImmediately = false;
+        AttachmentDto attachment = attachment("download-fails");
+        controller.toggle(attachment);
+
+        attachments.fail("download-fails", new java.io.IOException("offline"));
+
+        assertEquals(VoicePlaybackState.Status.ERROR,
+                controller.snapshotFor(attachment).getStatus());
+        assertTrue(attachments.cancelled.contains("download-fails"));
+        assertTrue(focus.abandonCount > 0);
+        assertEquals(0, player.prepareCount);
+    }
+
+    @Test
+    public void waveformExtractionFailureFallsBackToFlatBarsAndKeepsPlayback() {
+        controller = new VoicePlaybackController(
+                attachments,
+                file -> { throw new IllegalStateException("decoder failed"); },
+                () -> player,
+                focus,
+                new ImmediateScheduler(),
+                new MemoryWaveformStore());
+        AttachmentDto attachment = attachment("waveform-fails");
+
+        controller.toggle(attachment);
+
+        assertEquals(VoicePlaybackState.Status.PLAYING,
+                controller.snapshotFor(attachment).getStatus());
+        assertArrayEquals(WaveformExtractor.flatBars(),
+                controller.snapshotFor(attachment).getWaveform());
+    }
+
+    @Test
+    public void playerFailureStopsCurrentTrackAndPublishesError() {
+        AttachmentDto attachment = attachment("player-fails");
+        controller.toggle(attachment);
+
+        player.fail(new IllegalStateException("decoder failed"));
+
+        assertEquals(VoicePlaybackState.Status.ERROR,
+                controller.snapshotFor(attachment).getStatus());
+        assertTrue(player.stopCount > 0);
+        assertTrue(focus.abandonCount > 0);
+    }
+
     private static AttachmentDto attachment(String id) {
         return new AttachmentDto(id, null, id + ".m4a", "audio/mp4", null,
                 null, null, 10_000L, null);
     }
 
     private static final class FakeAttachmentSource implements VoicePlaybackController.AttachmentSource {
+        private final Map<String, VoicePlaybackController.DownloadCallback> callbacks = new HashMap<>();
+        private final Set<String> cancelled = new HashSet<>();
+        private boolean completeImmediately = true;
+
         @Override
         public void download(AttachmentDto attachment, VoicePlaybackController.DownloadCallback callback) {
-            callback.onLoaded(new File(attachment.getId() + ".m4a"));
+            callbacks.put(attachment.getId(), callback);
+            if (completeImmediately) {
+                callback.onLoaded(new File(attachment.getId() + ".m4a"));
+            }
         }
 
-        @Override public void cancel(String attachmentId) { }
+        @Override public void cancel(String attachmentId) { cancelled.add(attachmentId); }
+
+        private void complete(String attachmentId) {
+            callbacks.get(attachmentId).onLoaded(new File(attachmentId + ".m4a"));
+        }
+
+        private void fail(String attachmentId, Throwable failure) {
+            callbacks.get(attachmentId).onFailure(failure);
+        }
     }
 
     private static final class FakePlayer implements VoicePlaybackController.Player {
@@ -142,6 +227,8 @@ public final class VoicePlaybackControllerTest {
         @Override public long durationMs() { return 10_000L; }
         @Override public void stop() { stopCount++; positionMs = 0L; }
         @Override public void release() { releaseCount++; }
+
+        private void fail(Throwable failure) { listener.onFailure(failure); }
     }
 
     private static final class FakeFocus implements VoicePlaybackController.AudioFocus {
