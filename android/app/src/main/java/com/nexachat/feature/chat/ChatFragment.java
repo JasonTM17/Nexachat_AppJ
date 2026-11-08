@@ -163,7 +163,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void configureList() {
         DateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-        adapter = new MessageListAdapter(timeFormat, this::resolveOriginal, this);
+        adapter = new MessageListAdapter(
+                timeFormat, this::resolveOriginal, this, getViewLifecycleOwner(), this);
         RecyclerView list = binding.messageList;
         LinearLayoutManager layout = new LinearLayoutManager(requireContext());
         layout.setStackFromEnd(true);
@@ -356,7 +357,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                                         requireContext(),
                                         requireContext().getPackageName() + ".fileprovider",
                                         audioFile);
-                                viewModel.sendAttachments(Collections.singletonList(voiceUri));
+                                viewModel.sendAttachments(Collections.singletonList(voiceUri), durationMs);
                             }
                         }
                     }

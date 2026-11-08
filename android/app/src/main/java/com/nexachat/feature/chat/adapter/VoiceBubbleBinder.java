@@ -36,6 +36,14 @@ public final class VoiceBubbleBinder {
 
     /** Returns true when this row is fully handled by the inline voice player. */
     public static boolean bindIfVoice(@NonNull View row, @NonNull ChatMessage message) {
+        return bindIfVoice(row, message, null, null);
+    }
+
+    static boolean bindIfVoice(
+            @NonNull View row,
+            @NonNull ChatMessage message,
+            @Nullable LifecycleOwner suppliedLifecycleOwner,
+            @Nullable ViewModelStoreOwner suppliedStoreOwner) {
         View playerRoot = row.findViewById(R.id.voicePlayerRoot);
         if (playerRoot == null) {
             return false;
@@ -53,12 +61,16 @@ public final class VoiceBubbleBinder {
         }
 
         AttachmentDto attachment = message.getAttachments().get(0);
-        LifecycleOwner lifecycleOwner = ViewTreeLifecycleOwner.get(row);
-        ViewModelStoreOwner storeOwner = ViewTreeViewModelStoreOwner.get(row);
+        LifecycleOwner lifecycleOwner = suppliedLifecycleOwner != null
+                ? suppliedLifecycleOwner : ViewTreeLifecycleOwner.get(row);
+        ViewModelStoreOwner storeOwner = suppliedStoreOwner != null
+                ? suppliedStoreOwner : ViewTreeViewModelStoreOwner.get(row);
         if (lifecycleOwner == null || storeOwner == null) {
-            playerRoot.setVisibility(View.GONE);
-            disposeBinding(row);
-            return false;
+            playerRoot.setVisibility(View.VISIBLE);
+            if (!row.isAttachedToWindow()) {
+                deferUntilAttached(row, message, suppliedLifecycleOwner, suppliedStoreOwner);
+            }
+            return true;
         }
 
         VoicePlaybackViewModel viewModel = new ViewModelProvider(storeOwner)
@@ -95,7 +107,27 @@ public final class VoiceBubbleBinder {
         if (tag instanceof Binding binding) {
             binding.dispose();
             row.setTag(R.id.voice_binder_binding, null);
+        } else if (tag instanceof PendingBinding pending) {
+            pending.dispose();
+        } else {
+            row.setTag(R.id.voice_binder_binding, null);
         }
+    }
+
+    private static void deferUntilAttached(
+            @NonNull View row,
+            @NonNull ChatMessage message,
+            @Nullable LifecycleOwner lifecycleOwner,
+            @Nullable ViewModelStoreOwner storeOwner) {
+        Object tag = row.getTag(R.id.voice_binder_binding);
+        if (tag instanceof PendingBinding pending) {
+            pending.update(message, lifecycleOwner, storeOwner);
+            return;
+        }
+        disposeBinding(row);
+        PendingBinding pending = new PendingBinding(row, message, lifecycleOwner, storeOwner);
+        row.setTag(R.id.voice_binder_binding, pending);
+        row.addOnAttachStateChangeListener(pending);
     }
 
     static String formatDuration(long durationMs) {
@@ -105,6 +137,67 @@ public final class VoiceBubbleBinder {
         NumberFormat format = NumberFormat.getIntegerInstance(Locale.getDefault());
         format.setGroupingUsed(false);
         return format.format(minutes) + ":" + String.format(Locale.getDefault(), "%02d", seconds);
+    }
+
+    static long durationMsOf(@Nullable AttachmentDto attachment) {
+        if (attachment == null || attachment.getDurationMs() == null) {
+            return 0L;
+        }
+        return Math.max(0L, attachment.getDurationMs());
+    }
+
+    private static final class PendingBinding implements View.OnAttachStateChangeListener {
+        private final View row;
+        private ChatMessage message;
+        @Nullable private LifecycleOwner lifecycleOwner;
+        @Nullable private ViewModelStoreOwner storeOwner;
+        private boolean disposed;
+
+        PendingBinding(
+                View row,
+                ChatMessage message,
+                @Nullable LifecycleOwner lifecycleOwner,
+                @Nullable ViewModelStoreOwner storeOwner) {
+            this.row = row;
+            this.message = message;
+            this.lifecycleOwner = lifecycleOwner;
+            this.storeOwner = storeOwner;
+        }
+
+        void update(
+                ChatMessage nextMessage,
+                @Nullable LifecycleOwner nextLifecycleOwner,
+                @Nullable ViewModelStoreOwner nextStoreOwner) {
+            message = nextMessage;
+            lifecycleOwner = nextLifecycleOwner;
+            storeOwner = nextStoreOwner;
+        }
+
+        @Override
+        public void onViewAttachedToWindow(View view) {
+            if (disposed) {
+                return;
+            }
+            ChatMessage nextMessage = message;
+            LifecycleOwner nextLifecycleOwner = lifecycleOwner;
+            ViewModelStoreOwner nextStoreOwner = storeOwner;
+            dispose();
+            bindIfVoice(row, nextMessage, nextLifecycleOwner, nextStoreOwner);
+        }
+
+        @Override
+        public void onViewDetachedFromWindow(View view) { }
+
+        void dispose() {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            row.removeOnAttachStateChangeListener(this);
+            if (row.getTag(R.id.voice_binder_binding) == this) {
+                row.setTag(R.id.voice_binder_binding, null);
+            }
+        }
     }
 
     private static final class Binding implements View.OnAttachStateChangeListener,
@@ -160,7 +253,7 @@ public final class VoiceBubbleBinder {
                 return;
             }
             VoicePlaybackState.Status status = state.getStatus();
-            long total = Math.max(state.getDurationMs(), durationOf(attachment));
+            long total = Math.max(state.getDurationMs(), durationMsOf(attachment));
             long position = Math.min(state.getPositionMs(), total);
             boolean playing = status == VoicePlaybackState.Status.PLAYING;
             playButton.setImageResource(playing ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
@@ -236,11 +329,5 @@ public final class VoiceBubbleBinder {
             }
         }
 
-        private static long durationOf(@Nullable AttachmentDto attachment) {
-            if (attachment == null || attachment.getDurationMs() == null) {
-                return 0L;
-            }
-            return Math.max(0L, attachment.getDurationMs());
-        }
     }
 }

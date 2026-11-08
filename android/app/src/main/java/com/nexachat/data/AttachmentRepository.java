@@ -85,13 +85,21 @@ public final class AttachmentRepository {
 
     @NonNull
     public Flowable<AttachmentUploadEvent> upload(@NonNull Uri uri) {
-        return upload(uri, null);
+        return upload(uri, null, null);
     }
 
     @NonNull
     public Flowable<AttachmentUploadEvent> upload(
             @NonNull Uri uri,
             @Nullable String mimeHint) {
+        return upload(uri, mimeHint, null);
+    }
+
+    @NonNull
+    public Flowable<AttachmentUploadEvent> upload(
+            @NonNull Uri uri,
+            @Nullable String mimeHint,
+            @Nullable Long durationMs) {
         return Flowable.<AttachmentUploadEvent>create(rawEmitter -> {
             FlowableEmitter<AttachmentUploadEvent> emitter = rawEmitter.serialize();
             emitter.onNext(new AttachmentUploadEvent.Progress(0f));
@@ -143,6 +151,12 @@ public final class AttachmentRepository {
                     : RequestBody.create(
                             optimized.blurHash().getBytes(StandardCharsets.UTF_8),
                             MediaType.parse("text/plain"));
+            RequestBody durationPart = durationMs == null
+                    || durationMs < 0L
+                    || durationMs > Integer.MAX_VALUE
+                    ? null
+                    : RequestBody.create(
+                            String.valueOf(durationMs), MediaType.parse("text/plain"));
             ProgressRequestBody requestBody = new ProgressRequestBody(
                     byteBody,
                     (written, total) -> {
@@ -160,7 +174,7 @@ public final class AttachmentRepository {
                     requestBody);
 
             DisposableCall.subscribe(
-                    ApiResult.safeApiCall(attachmentApi.upload(part, blurHashPart))
+                    ApiResult.safeApiCall(attachmentApi.upload(part, durationPart, blurHashPart))
                             .subscribeOn(Schedulers.io()),
                     emitter,
                     temporaryUpload,

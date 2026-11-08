@@ -24,6 +24,7 @@ public interface AttachmentApi {
     @POST("api/v1/attachments")
     Call<AttachmentDto> upload(
             @Part MultipartBody.Part file,
+            @Part("duration") @Nullable RequestBody duration,
             @Part("blurHash") @Nullable RequestBody blurHash);
 
     /** Raw bytes; the server sets a sniffed Content-Type. */
