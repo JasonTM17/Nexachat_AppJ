@@ -35,6 +35,9 @@ nexachat:
     disconnect-coalesce-ms: 0
   calls:
     disconnect-grace-ms: 100
+  reminders:
+    # Integration tests drive the scheduler explicitly for determinism.
+    enabled: false
   jwt:
     # Fixed HS256 secret (>= 32 bytes) — ITs must not depend on env vars.
     secret: "it-only-secret-0123456789abcdef-not-for-prod"

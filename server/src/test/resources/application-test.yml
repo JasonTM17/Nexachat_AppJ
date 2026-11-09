@@ -22,3 +22,8 @@ management:
   endpoint:
     health:
       validate-group-membership: false
+
+nexachat:
+  reminders:
+    # This profile has no database; the scheduler must not poll.
+    enabled: false
