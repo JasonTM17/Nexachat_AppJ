@@ -120,6 +120,7 @@ public final class MessageRepository {
     private final RealtimeSession session;
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
+    private final SessionOperationTracker operationTracker;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
     /** Reads loose JSON as maps, lists, and scalar values for the pin endpoint. */
@@ -158,10 +159,12 @@ public final class MessageRepository {
             PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
             SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
-            OfflineOutboxScheduler offlineOutboxScheduler) {
+            OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
-                appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler);
+                appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                operationTracker);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -171,7 +174,20 @@ public final class MessageRepository {
             SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler,
-                null, null, null, null);
+                null, null, null, null, new SessionOperationTracker());
+    }
+
+    /** Local persistence test constructor with the production timer default. */
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
+            OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
+            @Nullable OfflineOutboxScheduler offlineOutboxScheduler) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, Schedulers.computation(), appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                new SessionOperationTracker());
     }
 
     MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -180,6 +196,19 @@ public final class MessageRepository {
             SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
             AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                new SessionOperationTracker());
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker) {
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -193,16 +222,20 @@ public final class MessageRepository {
         this.session = session;
         this.tokenStore = tokenStore;
         this.sessionEvents = sessionEvents;
+        this.operationTracker = operationTracker;
         this.moshi = moshi;
         this.timerScheduler = timerScheduler;
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
         this.anyAdapter = moshi.adapter(Object.class);
         this.messageAdapter = moshi.adapter(MessageDto.class);
-        collectInBackground(session.getEvents().concatMapCompletable(this::routeSessionEvent));
-        collectInBackground(session.getResyncRequests().concatMapCompletable(ignored -> resyncOnReconnect()));
+        collectInBackground(session.getEvents().concatMapCompletable(event ->
+                operationTracker.track(routeSessionEvent(event))));
+        collectInBackground(session.getResyncRequests().concatMapCompletable(ignored ->
+                operationTracker.track(resyncOnReconnect())));
         collectInBackground(sessionEvents.getEvents()
-                .filter(event -> event instanceof SessionEvents.Event.LoggedOut)
-                .concatMapCompletable(ignored -> wipeOnLogout()));
+                .filter(event -> event instanceof SessionEvents.Event.LoggedOut
+                        || event instanceof SessionEvents.Event.SessionAvailable)
+                .concatMapCompletable(ignored -> Completable.fromAction(this::resetSessionState)));
     }
 
     public Flowable<TypingEvent> getTypingEvents() {
@@ -281,7 +314,7 @@ public final class MessageRepository {
      * can observe the returned {@code hasMore} value.
      */
     public Completable openConversation(String conversationId) {
-        return Completable.fromAction(() -> {
+        return operationTracker.track(Completable.fromAction(() -> {
                     activeConversation.set(conversationId);
                     session.ensureConnected();
                     session.watchConversation(conversationId);
@@ -289,7 +322,7 @@ public final class MessageRepository {
                 .andThen(messageDao.maxSeq(conversationId).flatMapCompletable(seq -> sendRead(conversationId, seq)))
                 .andThen(flushOutbox())
                 .andThen(refreshPins(conversationId).ignoreElement())
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     public void closeConversation(String conversationId) {
@@ -299,7 +332,8 @@ public final class MessageRepository {
 
     /** Hides a message on this signed-in device without changing server history. */
     public Completable hideMessageForMe(String messageId) {
-        return tokenStore.hideMessageForMe(messageId).subscribeOn(Schedulers.io());
+        return operationTracker.track(
+                tokenStore.hideMessageForMe(messageId).subscribeOn(Schedulers.io()));
     }
 
     public Single<Result<MessagePageDto>> refreshHistory(String conversationId) {
@@ -308,7 +342,8 @@ public final class MessageRepository {
 
     /** Fetches one history page and writes it through to Room. */
     public Single<Result<MessagePageDto>> refreshHistory(String conversationId, @Nullable Long beforeSeq) {
-        return call(messageApi.getMessages(conversationId, beforeSeq, null, MessageApi.DEFAULT_PAGE_SIZE))
+        return operationTracker.track(call(messageApi.getMessages(
+                conversationId, beforeSeq, null, MessageApi.DEFAULT_PAGE_SIZE))
                 .flatMap(result -> {
                     if (result instanceof Result.Success<?> success) {
                         MessagePageDto page = (MessagePageDto) success.getValue();
@@ -316,7 +351,7 @@ public final class MessageRepository {
                                 .andThen(Single.just(result));
                     }
                     return Single.just(result);
-                }).subscribeOn(Schedulers.io());
+                }).subscribeOn(Schedulers.io()));
     }
 
     public Single<MessageJump> loadUntilLoaded(String conversationId, String messageId) {
@@ -329,7 +364,7 @@ public final class MessageRepository {
      * write-through path and is bounded by {@code maxPages}.
      */
     public Single<MessageJump> loadUntilLoaded(String conversationId, String messageId, int maxPages) {
-        return messageDao.exists(messageId).flatMap(found -> {
+        return operationTracker.track(messageDao.exists(messageId).flatMap(found -> {
             if (found) return Single.just(MessageJump.Found);
             return messageDao.minSeq(conversationId).flatMap(min -> {
                 if (min > 0L) return loadOlderPages(conversationId, messageId, maxPages);
@@ -342,7 +377,7 @@ public final class MessageRepository {
                             : loadOlderPages(conversationId, messageId, maxPages));
                 });
             });
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     private Single<MessageJump> loadOlderPages(String conversationId, String messageId, int pagesLeft) {
@@ -448,7 +483,8 @@ public final class MessageRepository {
         if (trimmed.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_VALIDATION_FAILED)));
         AtomicReference<MessageEntity> optimisticRef = new AtomicReference<>();
         AtomicReference<MessageEntity> beforeRef = new AtomicReference<>();
-        return messageDao.byId(messageId).map(Optional::of).defaultIfEmpty(Optional.empty()).<Result<Unit>>flatMap(beforeOpt -> {
+        return operationTracker.track(messageDao.byId(messageId).map(Optional::of)
+                .defaultIfEmpty(Optional.empty()).<Result<Unit>>flatMap(beforeOpt -> {
             if (beforeOpt.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND)));
             MessageEntity before = beforeOpt.get();
             beforeRef.set(before);
@@ -510,7 +546,7 @@ public final class MessageRepository {
             MessageEntity optimistic = optimisticRef.get();
             MessageEntity before = beforeRef.get();
             if (optimistic != null && before != null) scheduleDetached(rollbackEdit(messageId, before, optimistic));
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     private Completable rollbackEdit(String messageId, MessageEntity before, MessageEntity optimistic) {
@@ -525,7 +561,7 @@ public final class MessageRepository {
      * current group-admin permission. A concurrent delete event wins.
      */
     public Single<Result<Unit>> deleteMessage(String conversationId, String messageId) {
-        return Single.defer(() -> {
+        return operationTracker.track(Single.defer(() -> {
             if (!pendingDeleteIds.add(messageId)) return Single.just(new Result.Success<>(Unit.INSTANCE));
             confirmedDeleteIds.remove(messageId);
             AtomicReference<DeleteRollback> rollbackRef = new AtomicReference<>();
@@ -587,7 +623,7 @@ public final class MessageRepository {
                 .doOnSuccess(ignored -> clearDeleteState(messageId))
                 .doOnError(ignored -> clearDeleteState(messageId))
                 .subscribeOn(Schedulers.io());
-        });
+        }));
     }
 
     private void clearDeleteState(String messageId) {
@@ -639,7 +675,7 @@ public final class MessageRepository {
         if (trimmed.length() < MIN_SEARCH_CHARS) {
             return Single.just(new Result.Success<>(new MessageSearchResult(Collections.emptyList(), false, null)));
         }
-        return call(messageApi.searchMessages(conversationId, trimmed,
+        return operationTracker.track(call(messageApi.searchMessages(conversationId, trimmed,
                         Math.max(1, Math.min(limit, MAX_SEARCH_LIMIT)), beforeSeq))
                 .<Result<MessageSearchResult>>flatMap(result -> {
                     if (!(result instanceof Result.Success<?> success)) return Single.just(Result.cast(result));
@@ -669,7 +705,7 @@ public final class MessageRepository {
                                 return new Result.Success<>(new MessageSearchResult(items,
                                         page.getHasMore(), page.getNextBeforeSeq()));
                             }));
-                }).subscribeOn(Schedulers.io());
+                }).subscribeOn(Schedulers.io()));
     }
 
     /** True when {@code row} is the inbox preview used by edit and delete. */
@@ -708,9 +744,9 @@ public final class MessageRepository {
             String type, List<AttachmentDto> attachments, List<MessageMention> mentions,
             boolean mentionAll) {
         if (removedConversations.contains(conversationId)) {
-            return Completable.fromAction(this::emitNotMember);
+            return operationTracker.track(Completable.fromAction(this::emitNotMember));
         }
-        return nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
+        return operationTracker.track(nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
             String attachmentsJson = "";
             if (!attachments.isEmpty()) {
                 try { attachmentsJson = attachmentsAdapter.toJson(attachments); }
@@ -720,7 +756,7 @@ public final class MessageRepository {
                     content, replyToId, OutboxState.SENDING, createdAt, attachmentsJson,
                     MessageMentionCodec.encode(mentions), mentionAll);
             return outboxDao.insert(entry).andThen(dispatchOutbox(entry));
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     /** Stable FIFO key despite same-millisecond sends or a wall-clock setback. */
@@ -741,7 +777,8 @@ public final class MessageRepository {
 
     /** Requeues and dispatches a FAILED bubble after the user taps retry. */
     public Completable retry(String clientMessageId) {
-        return outboxDao.byId(clientMessageId).map(Optional::of).defaultIfEmpty(Optional.empty())
+        return operationTracker.track(outboxDao.byId(clientMessageId)
+                .map(Optional::of).defaultIfEmpty(Optional.empty())
                 .flatMapCompletable(entryOpt -> {
                     if (entryOpt.isEmpty()) return Completable.complete();
                     OutboxEntity old = entryOpt.get();
@@ -756,14 +793,14 @@ public final class MessageRepository {
                                 old.isMentionAll());
                         return outboxDao.insert(queued).andThen(flushOutbox());
                     });
-                }).subscribeOn(Schedulers.io());
+                }).subscribeOn(Schedulers.io()));
     }
 
     /** Flushes SENDING rows in queue order, normally after a connection or reconnect. */
     public Completable flushOutbox() {
-        return outboxDao.pendingList().flatMapCompletable(entries ->
+        return operationTracker.track(outboxDao.pendingList().flatMapCompletable(entries ->
                 Flowable.fromIterable(entries).concatMapCompletable(this::dispatchOutbox))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     private Completable dispatchOutbox(OutboxEntity entry) {
@@ -826,7 +863,7 @@ public final class MessageRepository {
      * advance the acknowledged watermark sends nothing.
      */
     public Completable sendRead(String conversationId, long upToSeq) {
-        return readCeilingSeq(conversationId).flatMapCompletable(lastSeq -> {
+        return operationTracker.track(readCeilingSeq(conversationId).flatMapCompletable(lastSeq -> {
             long clamped = Math.min(upToSeq, lastSeq);
             if (clamped <= 0L) return Completable.complete();
             AtomicReference<Boolean> shouldSend = new AtomicReference<>(false);
@@ -844,7 +881,7 @@ public final class MessageRepository {
                     .flatMapCompletable(result -> result instanceof Result.Success<?>
                             ? conversationDao.clearUnread(conversationId) : Completable.complete())
                     .subscribeOn(Schedulers.io());
-        });
+        }));
     }
 
     /**
@@ -1076,7 +1113,7 @@ public final class MessageRepository {
 
     /** Flips the local reaction and durably queues the desired server state. */
     public Completable toggleReaction(String messageId, String conversationId, String emoji) {
-        return Completable.fromAction(() -> {
+        return operationTracker.track(Completable.fromAction(() -> {
             requireOfflineOutbox();
             AtomicReference<Boolean> schedule = new AtomicReference<>(false);
             appDatabase.runInTransaction(() -> {
@@ -1109,7 +1146,7 @@ public final class MessageRepository {
                 schedule.set(true);
             });
             if (schedule.get() && offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     /** One set endpoint dispatches a persisted action; the idempotency key never changes. */
@@ -1121,7 +1158,7 @@ public final class MessageRepository {
                     || item.getCreatedAtEpochMs() != action.getCreatedAt()) {
                 return Single.error(new IOException("offline outbox payload does not match row"));
             }
-            return offlineActionApi.dispatch(action);
+            return operationTracker.track(offlineActionApi.dispatch(action));
         } catch (IOException | RuntimeException invalidPayload) {
             return Single.error(new IOException("invalid offline outbox payload", invalidPayload));
         }
@@ -1135,7 +1172,7 @@ public final class MessageRepository {
 
     /** Marks a terminal action failure and restores/rebases local state atomically. */
     public Completable failOfflineAction(OfflineOutboxEntity item, ApiError error) {
-        return Completable.fromAction(() -> {
+        return operationTracker.track(Completable.fromAction(() -> {
             requireOfflineOutbox();
             AtomicReference<Boolean> changed = new AtomicReference<>(false);
             appDatabase.runInTransaction(() -> {
@@ -1155,7 +1192,7 @@ public final class MessageRepository {
                 changed.set(true);
             });
             if (changed.get()) interactionEvents.onNext(error);
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     private void rebaseAfterFailureBlocking(OfflineOutboxAction failed) {
@@ -1344,7 +1381,7 @@ public final class MessageRepository {
      * and writes the complete set through Room.
      */
     public Single<Result<Unit>> refreshPins(String conversationId) {
-        return call(messageApi.getPins(conversationId)).<Result<Unit>>flatMap(result -> {
+        return operationTracker.track(call(messageApi.getPins(conversationId)).<Result<Unit>>flatMap(result -> {
             if (!(result instanceof Result.Success<?> success)) return Single.just(Result.cast(result));
             try {
                 String body = ((ResponseBody) success.getValue()).string();
@@ -1356,17 +1393,17 @@ public final class MessageRepository {
             } catch (IOException | RuntimeException error) {
                 return Single.just(Result.failure(new ApiError.Network("body read failed")));
             }
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     /** Optimistically pins a message and queues the desired state in the same Room transaction. */
     public Completable pinMessage(String conversationId, String messageId) {
-        return setPinState(conversationId, messageId, true);
+        return operationTracker.track(setPinState(conversationId, messageId, true));
     }
 
     /** Optimistically removes a pin and queues the desired state in the same Room transaction. */
     public Completable unpinMessage(String conversationId, String messageId) {
-        return setPinState(conversationId, messageId, false);
+        return operationTracker.track(setPinState(conversationId, messageId, false));
     }
 
     private Completable setPinState(String conversationId, String messageId, boolean desired) {
@@ -1413,10 +1450,10 @@ public final class MessageRepository {
 
     /** Forward resync pages until the server reports no further history. */
     public Completable resyncForward(String conversationId) {
-        return messageDao.maxSeq(conversationId).flatMapCompletable(afterSeq -> {
+        return operationTracker.track(messageDao.maxSeq(conversationId).flatMapCompletable(afterSeq -> {
             if (afterSeq <= 0L) return refreshHistory(conversationId).ignoreElement();
             return resyncForwardPage(conversationId, afterSeq);
-        }).subscribeOn(Schedulers.io());
+        }).subscribeOn(Schedulers.io()));
     }
 
     private Completable resyncForwardPage(String conversationId, long afterSeq) {
@@ -1436,17 +1473,18 @@ public final class MessageRepository {
                 });
     }
 
-    /** Removes local server-owned data when the session ends. */
-    private Completable wipeOnLogout() {
-        return messageDao.deleteAll().andThen(conversationDao.clear()).andThen(outboxDao.clear())
-                .andThen(reactionDao.clear()).andThen(pinDao.clear())
-                .andThen(Completable.fromAction(() -> {
-                    if (offlineOutboxDao != null) offlineOutboxDao.clearBlocking();
-                    lastMarkedRead.clear();
-                    activeConversation.set(null);
-                    removedConversations.clear();
-                    tokenToUser = null;
-                }));
+    /** Resets process-local account state after logout or the next successful login. */
+    private void resetSessionState() {
+        lastMarkedRead.clear();
+        activeConversation.set(null);
+        removedConversations.clear();
+        pendingDeleteIds.clear();
+        confirmedDeleteIds.clear();
+        tokenToUser = null;
+        lastOutboxCreatedAt.set(0L);
+        Disposable retry = rateLimitRetry;
+        if (retry != null) retry.dispose();
+        rateLimitRetry = null;
     }
 
     /** Access-token subject, memoized until the token changes. */
@@ -1636,7 +1674,8 @@ public final class MessageRepository {
     }
 
     private void scheduleDetached(Completable cleanup) {
-        Disposable disposable = cleanup.subscribeOn(Schedulers.io()).subscribe(() -> {}, RxJavaPlugins::onError);
+        Disposable disposable = operationTracker.track(cleanup)
+                .subscribeOn(Schedulers.io()).subscribe(() -> {}, RxJavaPlugins::onError);
         subscriptions.add(disposable);
     }
 

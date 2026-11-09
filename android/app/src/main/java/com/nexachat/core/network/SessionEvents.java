@@ -17,11 +17,17 @@ public final class SessionEvents {
     public Flowable<Event> getEvents() { return events; }
 
     public void emitLoggedOut() { events.onNext(Event.LoggedOut.INSTANCE); }
+    public void emitSessionAvailable() { events.onNext(Event.SessionAvailable.INSTANCE); }
 
     public interface Event {
         final class LoggedOut implements Event {
             public static final LoggedOut INSTANCE = new LoggedOut();
             private LoggedOut() { }
+        }
+
+        final class SessionAvailable implements Event {
+            public static final SessionAvailable INSTANCE = new SessionAvailable();
+            private SessionAvailable() { }
         }
     }
 }

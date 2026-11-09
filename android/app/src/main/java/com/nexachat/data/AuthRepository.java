@@ -46,8 +46,26 @@ public final class AuthRepository {
     private final SessionEvents sessionEvents;
     private final TokenRefresher tokenRefresher;
     private final DeviceTokenRegistrationManager deviceTokenRegistrationManager;
+    @Nullable private final AccountDataCleaner accountDataCleaner;
 
     @Inject
+    public AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @NonNull AccountDataCleaner accountDataCleaner) {
+        this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
+        this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
+        this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+    }
+
+    /** Preserves the narrow constructor used by local auth repository tests. */
     public AuthRepository(
             @NonNull AuthApi authApi,
             @NonNull TokenStore tokenStore,
@@ -60,6 +78,7 @@ public final class AuthRepository {
         this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = null;
     }
 
     @NonNull
@@ -106,18 +125,24 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Unit>> logout() {
-        Completable revoke = tokenStore.readTokens()
-                .flatMapCompletable(tokens -> ApiResult.safeApiCall(
-                                authApi.logout(logoutRequest(tokens.getRefreshToken())))
-                        .ignoreElement())
-                .onErrorComplete();
-        return deviceTokenRegistrationManager.onLogout()
-                .onErrorComplete()
-                .andThen(revoke)
-                .andThen(tokenStore.clear())
-                .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
-                .andThen(Single.<Result<Unit>>fromCallable(
-                        () -> new Result.Success<>(Unit.INSTANCE)))
+        return Single.<Result<Unit>>defer(() -> tokenStore.readTokens()
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(tokens -> {
+                    Completable revoke = tokens.isEmpty()
+                            ? Completable.complete()
+                            : ApiResult.safeApiCall(authApi.logout(
+                                    logoutRequest(tokens.get().getRefreshToken())))
+                                    .ignoreElement().onErrorComplete();
+                    return Completable.fromAction(tokenRefresher::onLogout)
+                            .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
+                                    .onErrorComplete()
+                                    .andThen(revoke)
+                                    .andThen(tokenStore.clear())
+                                    .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
+                            .andThen(Single.<Result<Unit>>fromCallable(
+                                    () -> new Result.Success<>(Unit.INSTANCE)));
+                }))
                 .subscribeOn(Schedulers.io());
     }
 
@@ -127,15 +152,16 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Unit>> logoutAll() {
-        return Single.defer(() -> deviceTokenRegistrationManager.onLogout()
-                        .onErrorComplete()
-                        .andThen(ApiResult.safeApiCall(authApi.logoutAll())
-                        .ignoreElement()
-                        .onErrorComplete())
-                        .andThen(tokenStore.clear())
-                        .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
+        return Single.defer(() -> Completable.fromAction(tokenRefresher::onLogout)
+                        .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
+                                .onErrorComplete()
+                                .andThen(ApiResult.safeApiCall(authApi.logoutAll())
+                                        .ignoreElement().onErrorComplete())
+                                .andThen(tokenStore.clear())
+                                .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
                         .andThen(Single.<Result<Unit>>fromCallable(
-                                () -> new Result.Success<>(Unit.INSTANCE))))
+                                () -> new Result.Success<>(Unit.INSTANCE)))
+                )
                 .subscribeOn(Schedulers.io());
     }
 
@@ -159,15 +185,26 @@ public final class AuthRepository {
                 return Single.just(result);
             }
             AuthResponse response = (AuthResponse) success.getValue();
-            return tokenStore.saveSession(
+            Completable saveSession = tokenStore.saveSession(
                             response.getAccessToken(),
                             System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
                             response.getRefreshToken(),
                             new RecallWindowConfig(response.getRecallWindowSeconds(),
-                                    response.getGroupAdminMayRecallAfterWindow()))
+                                    response.getGroupAdminMayRecallAfterWindow()));
+            Completable establishSession = accountDataCleaner == null
+                    ? saveSession.andThen(Completable.fromAction(sessionEvents::emitSessionAvailable))
+                    : accountDataCleaner.startSession(saveSession,
+                            Completable.fromAction(sessionEvents::emitSessionAvailable));
+            return establishSession
                     .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
                     .andThen(Single.just(result));
         }).subscribeOn(Schedulers.io());
+    }
+
+    private Completable clearAndFinishLogout(Completable finishBoundary) {
+        return accountDataCleaner == null
+                ? finishBoundary
+                : accountDataCleaner.clearForLogout(finishBoundary);
     }
 
     @NonNull
