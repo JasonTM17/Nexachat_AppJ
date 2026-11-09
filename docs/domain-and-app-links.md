@@ -166,6 +166,33 @@ To rotate an expiring or compromised Vercel token:
    vercel whoami
    ```
 5. Return to the Vercel Tokens dashboard and **Delete / Revoke** the old token.
+
+---
+
+## 8. Vercel build skip (`ignoreCommand`)
+
+Vercel project settings previously used `git diff --quiet HEAD^ HEAD -- .`, which only
+compares the latest commit and can **skip deployments** when a push contains multiple
+commits that touch `site/`.
+
+The repository now owns this logic in `site/vercel.json` via `ignoreCommand`, using
+`$VERCEL_GIT_PREVIOUS_SHA` with safe fallbacks:
+
+- If `VERCEL_GIT_PREVIOUS_SHA` is empty or not present in the clone, the command **exits 1**
+  and Vercel **builds** (no silent skip).
+- Otherwise, Vercel skips the build only when `git diff` between the previous and current
+  deployment SHAs is empty for files under the site root directory.
+
+**Operator action:** In the Vercel project dashboard, **clear** any custom “Ignored Build Step”
+command so the `ignoreCommand` from `site/vercel.json` is authoritative. The release lead
+performs this dashboard change; do not store or read Vercel tokens from the repo.
+
+Validate locally after edits:
+
+```bash
+python site/check.py
+```
+
 ## Android build configuration for App Links
 
 ## Overview

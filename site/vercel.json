@@ -1,5 +1,6 @@
 {
   "name": "nexachat-site",
+  "ignoreCommand": "bash -c 'if [ -z \"$VERCEL_GIT_PREVIOUS_SHA\" ]; then exit 1; fi; if ! git rev-parse --verify \"$VERCEL_GIT_PREVIOUS_SHA\" >/dev/null 2>&1; then exit 1; fi; git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" \"$VERCEL_GIT_COMMIT_SHA\" -- .'",
   "rewrites": [
     {
       "source": "/join/:token",
