@@ -31,7 +31,7 @@ login. Tokens are never printed.
 ```bash
 bash tools/e2e/smoke-api.sh              # or: pwsh tools/e2e/smoke-api.ps1
 python tools/e2e/stomp_e2e.py            # ~30 s: events, presence, rate limit
-python tools/e2e/perf_e2e.py             # ~35 s: 550-message corpus + latency
+python tools/e2e/perf_e2e.py             # ~2 min: 550-message corpus + latency
 python tools/e2e/summary/summary_e2e.py    # AI summary API (fixture +849000003xx)
 ```
 
@@ -47,7 +47,7 @@ and exits non-zero.
 | --- | --- |
 | `smoke_api.py` | health; two-user login; idempotent DIRECT create; send/history; edit (`editedAt` set, identical edit no-op, foreign author 403 `NOT_MESSAGE_AUTHOR`, blank 400); delete idempotent (204/204), edit-after-delete 409 `MESSAGE_DELETED`; tombstone history shape (`content:null`, `attachments:[]`, `reactions:[]`, seq kept); search hit/miss/2-char floor/literal `%` and `_`/cursor paging/non-member 403 `NOT_MEMBER`; settings round-trip; unauthenticated 401. |
 | `stomp_e2e.py` | `MESSAGE_CREATED` to peer and sender; `MESSAGE_UPDATED` payload equals the REST row; `MESSAGE_DELETED {messageId, deletedAt}`; duplicate `clientMessageId` re-broadcast with one row; `USER_ONLINE`/`USER_OFFLINE` with the 5 s coalescing window and flap suppression; `showPresence=false` silence plus hidden `peerPresence`; `RATE_LIMITED` on `/user/queue/errors` past 30 SENDs / 10 s. |
-| `perf_e2e.py` | 500-message corpus at 20 req/s, then 50 samples each of edit/delete/search with p50/p95. |
+| `perf_e2e.py` | 500-message corpus paced at 25 sends / 10 s per author (under the 30 sends / 10 s bucket), then 50 samples each of edit/delete/search with p50/p95. |
 
 ## New-feature live suite
 
@@ -88,14 +88,44 @@ The recall-after check waits `E2E_RECALL_WAIT_SECONDS` (default 70) and expects
 the server window to be shorter than that wait. A live run that proves the
 minimum window sets `NEXACHAT_MESSAGE_RECALL_WINDOW=PT1M`. Muted-conversation
 push suppression has no HTTP hook: set `E2E_APP_CONTAINER` to the app container
-(the suite counts `MockFcmGateway` / `FCM push accepted` lines for the device
-label `e2e-mute-probe`) or `E2E_PUSH_LOG_FILE` for the offline self-test. With
+(the suite counts `MockFcmGateway: Recorded data push of type NEW_MESSAGE`
+lines; the server does not log the device label) or `E2E_PUSH_LOG_FILE` for
+the offline self-test. With
 neither set, that scenario is `NOT_RUN` and does not fail the process.
 
 There is no account-delete or conversation-delete endpoint, so the throwaway
 accounts, their DIRECT conversation and the test GROUP conversations remain in
 the database; all mutable state is reverted. Run it against a disposable local
 database.
+
+## Final-pass scenarios
+
+`tools/e2e/final/final_live.py` covers the checks that need a disposable
+database and, for two of them, a short row lock held through `psql` in the
+suite's own Postgres container:
+
+```bash
+python tools/e2e/final/final_live.py --phase http \
+    --base-url http://127.0.0.1:18082 \
+    --db-container nexachat_e2e_grok2-db-1 \
+    --db-user e2egrok2 --db-name nexachat_e2e_grok2
+python tools/e2e/final/final_live.py --phase retention-seed ...
+python tools/e2e/final/final_live.py --phase retention-observe --expect dry-run ...
+python tools/e2e/final/final_live.py --phase retention-observe --expect deleted ...
+```
+
+- N parallel joins on a `maxUses=2` link never admit more than 2 members.
+- A revoke that lands while a join is waiting on the conversation row does not
+  reopen the link.
+- Approving pending join requests stops at `maxUses`.
+- Recalling a message removes that conversation's ask-cache rows.
+- A spoofed `X-Forwarded-For` does not reset the per-IP invite preview bucket
+  (60 previews / minute on the socket peer).
+- Retention is opt-in. Seed aged rows, restart with dry-run, read
+  `nexachat.retention.rows.observed`, then restart with deletion enabled.
+  Active invites, unfired and repeating reminders, open polls, and attachments
+  that are still bound to a live message stay. The script refuses any database
+  container whose name is not the `nexachat_e2e_grok2` project.
 
 ## Cleanup / side effects
 

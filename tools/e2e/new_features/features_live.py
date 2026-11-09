@@ -192,7 +192,9 @@ def _mention(user_id: str, content: str, needle: str) -> dict[str, Any]:
 _DEFAULT_RECALL_WAIT_SECONDS = 70.0
 _PUSH_DEVICE_LABEL = "e2e-mute-probe"
 _PUSH_DEVICE_TOKEN = "e2e-mute-probe-device"
-_PUSH_NEEDLE = f"FCM push accepted (platform ANDROID, label {_PUSH_DEVICE_LABEL})"
+# The server records the push type and platform only. Device labels are not
+# written to the log, so the isolated run counts this mock-gateway line.
+_PUSH_NEEDLE = "MockFcmGateway: Recorded data push of type NEW_MESSAGE"
 _INVITE_PREVIEW_KEYS = {
     "conversationId", "title", "avatarUrl", "memberCount",
     "requiresApproval", "isMember",

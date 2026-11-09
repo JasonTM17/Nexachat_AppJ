@@ -879,12 +879,7 @@ class FakeClient:
             mentioned = mention_all or member_id in mentioned_ids
             if member.get("muted") and not mentioned:
                 continue
-            lines.append(
-                "FCM push accepted (platform {platform}, label {label})\n".format(
-                    platform=device.get("platform") or "ANDROID",
-                    label=device.get("label") or "",
-                )
-            )
+            lines.append("MockFcmGateway: Recorded data push of type NEW_MESSAGE\n")
         if not lines:
             return
         with open(self.push_log_path, "a", encoding="utf-8") as handle:
