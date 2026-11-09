@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep in-flight main builds; PR pushes may supersede older runs on the same ref.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -92,18 +93,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check Markdown links
         run: python tools/check-markdown-links.py
+      - name: Check static site
+        run: python site/check.py
       - name: Check Android string resources
         run: |
           python tools/check-android-strings.py --self-test
           python tools/check-android-strings.py
-      - name: Check shell syntax and style when available
+      - name: Validate GitHub Actions workflows
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- 1.7.7
+          ./actionlint .github/workflows/*.yml
+      - name: Check shell syntax and style
         shell: bash
         run: |
-          bash -n demo/*.sh tools/*.sh
+          mapfile -t scripts < <(find demo tools -name '*.sh' -type f | sort)
+          for script in "${scripts[@]}"; do
+            bash -n "$script"
+          done
           if command -v shellcheck >/dev/null 2>&1; then
-            shellcheck demo/*.sh tools/*.sh
+            shellcheck "${scripts[@]}"
           else
-            echo "::notice::shellcheck is not installed on this runner; bash -n passed."
+            echo "::notice::shellcheck not on runner; skipped style checks (bash -n passed)."
           fi
 
   secret-scan:
@@ -114,9 +124,11 @@ jobs:
       - name: Block committed secrets without echoing matched values
         shell: bash
         run: |
-          if matches="$(grep -rIlE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}' \
+          if matches="$(grep -rIlE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}|VERCEL_TOKEN=[A-Za-z0-9]{20,}|FCM_SERVICE_ACCOUNT_JSON=\{' \
               --include='*.java' --include='*.gradle' --include='*.yml' \
-              --exclude='ci.yml' --exclude-dir='.git' .)"; then
+              --include='*.json' --include='*.sh' --include='*.py' \
+              --exclude='ci.yml' --exclude='assetlinks.json' --exclude='google-services.json' \
+              --exclude='.env.example' --exclude-dir='.git' --exclude-dir='node_modules' .)"; then
             echo "::error::Possible committed secret pattern found in these files (values omitted):"
             printf '%s\n' "$matches"
             exit 1
