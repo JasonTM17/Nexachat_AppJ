@@ -124,7 +124,7 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 | `MESSAGE_UPDATED` | full `MessageResponse` with edited `content`/`editedAt` |
 | `MESSAGE_DELETED` | `{messageId, deletedAt}`; deleted content is never rebroadcast |
 | `MESSAGE_DELIVERED` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has received up to `upToSeq` (renders 2 gray ticks on sender) |
-| `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has read up to `upToSeq` (renders 2 blue ticks on sender) |
+| `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has read up to `upToSeq` (renders 2 blue ticks on sender). Not broadcast when the reader has `showSeen=false`, and not delivered to a recipient whose own `showSeen=false` (reciprocal) |
 | `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
 | `PIN_UPDATED` | `{messageId, pinned}`; conversation id is in the envelope |
 | `USER_TYPING` | `{userId}`; conversation id is in the envelope and the Android client expires the indicator after a local 5 s TTL |
@@ -187,6 +187,16 @@ advancing `last_read_seq` and broadcasting `MESSAGE_READ`. Watermarks are
 monotonic and cannot exceed the conversation's latest `seq`. In 1-1 chat,
 `messageSeq <= peerDeliveredSeq` renders 2 gray ticks (delivered);
 `messageSeq <= peerReadSeq` renders 2 blue ticks (seen/read) (`ChatBubbleRules.java`).
+
+**Seen privacy (`users.show_seen`, Flyway V16).** The switch is reciprocal and
+server-enforced: when the reader has `showSeen=false`, `MESSAGE_READ` is not
+broadcast at all; when a recipient has `showSeen=false`, the outbound channel
+drops other members' `MESSAGE_READ` frames before they reach that session. The
+reader's own `last_read_seq` and unread badge still advance exactly as before,
+and `MESSAGE_DELIVERED` is never suppressed. Consequently a hidden user cannot
+see peers' blue ticks and peers cannot see theirs; changing the setting back to
+`true` resumes receipts for subsequent reads. The topic destination, envelope
+and payload shape do not change.
 
 **Resync and delta sync after reconnect.** The client can catch up either by
 single conversation via `GET /api/v1/conversations/{id}/messages?afterSeq=<lastSeq>`

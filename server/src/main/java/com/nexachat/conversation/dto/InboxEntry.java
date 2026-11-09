@@ -9,6 +9,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * One row of {@code GET /conversations} — the inbox spec shape: members for
  * title/avatar derivation, denormalized {@code lastMessage} preview (no extra
  * query), and the caller's unread count + watermark.
+ *
+ * <p>{@code pinned}/{@code pinnedAt} are the caller's own per-member pin
+ * state; {@code pinnedAt} is omitted while the conversation is not pinned.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InboxEntry(
@@ -23,7 +26,9 @@ public record InboxEntry(
         PeerPresence peerPresence,
         boolean muted,
         Instant mutedUntil,
-        boolean archived
+        boolean archived,
+        boolean pinned,
+        Instant pinnedAt
 ) {
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

@@ -26,13 +26,16 @@ import java.util.stream.Collectors;
 
 /**
  * Inbox read model for {@code GET /conversations}: three batched queries —
- * member rows ordered by {@code lastMessageSeq DESC}, member views for all
- * conversations, unread counts grouped per conversation — plus one IN query
- * for the last-message rows. No N+1 (plan §9.3.7).
+ * member rows ordered by the caller's {@code pinned} flag and then
+ * {@code lastMessageSeq DESC}, member views for all conversations, unread
+ * counts grouped per conversation — plus one IN query for the last-message
+ * rows. No N+1 (plan §9.3.7).
  *
  * <p>The optional {@code archived} filter selects the default (non-archived)
  * view or the archived view; omitting it means "not archived", which keeps
  * archived conversations out of the inbox clients already know how to page.
+ * The keyset cursor carries the pinned rank so a page boundary inside the
+ * pinned group stays stable.
  */
 @Service
 public class InboxService {
@@ -44,7 +47,8 @@ public class InboxService {
     public record InboxPage(List<InboxEntry> items, String nextCursor) {
     }
 
-    private record Cursor(long lastMessageSeq, Instant createdAt, UUID conversationId) {
+    private record Cursor(boolean pinned, long lastMessageSeq, Instant createdAt,
+                          UUID conversationId) {
     }
 
     private final ConversationMemberRepository memberRepository;
@@ -92,7 +96,8 @@ public class InboxService {
         Cursor cursor = cursorToken == null ? null : decodeCursor(cursorToken);
         if (limit == null) {
             List<InboxConversationRow> rows = memberRepository.findInboxConversationsAfterCursor(
-                    userId, cursor == null ? null : cursor.lastMessageSeq(),
+                    userId, cursor == null ? null : cursor.pinned(),
+                    cursor == null ? null : cursor.lastMessageSeq(),
                     cursor == null ? null : cursor.createdAt(),
                     cursor == null ? null : cursor.conversationId(),
                     includeArchived);
@@ -101,7 +106,8 @@ public class InboxService {
 
         int pageSize = normalizeLimit(limit);
         List<InboxConversationRow> rows = memberRepository.findInboxConversationsPage(
-                userId, cursor == null ? null : cursor.lastMessageSeq(),
+                userId, cursor == null ? null : cursor.pinned(),
+                cursor == null ? null : cursor.lastMessageSeq(),
                 cursor == null ? null : cursor.createdAt(),
                 cursor == null ? null : cursor.conversationId(),
                 includeArchived,
@@ -169,7 +175,9 @@ public class InboxService {
                                     ? peerPresenceByConversation.get(row.id()) : null,
                             muted,
                             muted ? row.mutedUntil() : null,
-                            row.archived());
+                            row.archived(),
+                            row.pinned(),
+                            row.pinned() ? row.pinnedAt() : null);
                 })
                 .toList();
     }
@@ -180,7 +188,8 @@ public class InboxService {
 
     private static String encodeCursor(InboxConversationRow row) {
         long sortSeq = Objects.requireNonNullElse(row.lastMessageSeq(), 0L);
-        String value = "v1|" + sortSeq + "|" + row.createdAt() + "|" + row.id();
+        String value = "v2|" + (row.pinned() ? "1" : "0") + "|" + sortSeq + "|"
+                + row.createdAt() + "|" + row.id();
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
@@ -189,16 +198,29 @@ public class InboxService {
         try {
             String value = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
             String[] fields = value.split("\\|", -1);
-            if (fields.length != 4 || !"v1".equals(fields[0])) {
+            if (fields.length == 4 && "v1".equals(fields[0])) {
+                // Legacy cursor from before pins existed: it can only have
+                // pointed into the unpinned part of the activity order.
+                long seq = Long.parseLong(fields[1]);
+                Instant createdAt = Instant.parse(fields[2]);
+                UUID conversationId = UUID.fromString(fields[3]);
+                if (seq < 0) {
+                    throw new IllegalArgumentException("invalid cursor sequence");
+                }
+                return new Cursor(false, seq, createdAt, conversationId);
+            }
+            if (fields.length != 5 || !"v2".equals(fields[0])
+                    || !("0".equals(fields[1]) || "1".equals(fields[1]))) {
                 throw new IllegalArgumentException("invalid cursor version");
             }
-            long seq = Long.parseLong(fields[1]);
-            Instant createdAt = Instant.parse(fields[2]);
-            UUID conversationId = UUID.fromString(fields[3]);
+            boolean pinned = "1".equals(fields[1]);
+            long seq = Long.parseLong(fields[2]);
+            Instant createdAt = Instant.parse(fields[3]);
+            UUID conversationId = UUID.fromString(fields[4]);
             if (seq < 0) {
                 throw new IllegalArgumentException("invalid cursor sequence");
             }
-            return new Cursor(seq, createdAt, conversationId);
+            return new Cursor(pinned, seq, createdAt, conversationId);
         } catch (RuntimeException ex) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Invalid inbox cursor");
         }

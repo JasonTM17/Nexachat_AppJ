@@ -15,8 +15,9 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * {@code GET /api/v1/conversations} — the caller's inbox, ordered
- * {@code lastMessageSeq DESC} (conversations without messages last).
+ * {@code GET /api/v1/conversations} — the caller's inbox, ordered with the
+ * caller's pinned conversations first and then {@code lastMessageSeq DESC}
+ * (conversations without messages last).
  *
  * <p>{@code archived} selects the view: omitted or {@code false} returns the
  * default inbox (archived conversations hidden), {@code true} returns only
