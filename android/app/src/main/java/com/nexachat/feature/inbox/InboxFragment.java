@@ -477,7 +477,10 @@ public final class InboxFragment extends Fragment {
             return;
         }
         if (totalUnread > 0) {
-            binding.filterUnreadChip.setText(getString(R.string.inbox_filter_unread) + " (" + totalUnread + ")");
+            binding.filterUnreadChip.setText(getString(
+                    R.string.a11y_inbox_filter_unread_count,
+                    getString(R.string.inbox_filter_unread),
+                    totalUnread));
         } else {
             binding.filterUnreadChip.setText(R.string.inbox_filter_unread);
         }

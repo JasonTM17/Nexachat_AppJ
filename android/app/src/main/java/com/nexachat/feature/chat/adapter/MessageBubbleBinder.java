@@ -790,7 +790,8 @@ public final class MessageBubbleBinder {
         int index = 0;
         for (ReactionChip chip : reactions) {
             Chip view = new Chip(root.getContext());
-            view.setText(chip.getEmoji() + " " + chip.getCount());
+            view.setText(root.getResources().getString(
+                    R.string.a11y_reaction_chip, chip.getEmoji(), chip.getCount()));
             view.setCheckable(false);
             view.setClickable(true);
             view.setTextSize(12f);

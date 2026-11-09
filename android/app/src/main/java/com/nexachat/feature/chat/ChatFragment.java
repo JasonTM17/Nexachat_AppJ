@@ -273,8 +273,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 () -> visualPicker.launch(new PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE).build()),
                 () -> documentPicker.launch(new String[]{"*/*"})));
         binding.composerBar.sendButton.setOnClickListener(v -> {
-            if (editingMessage == null) viewModel.send();
-            else if (!editInput.isBlank()) { viewModel.editMessage(editingMessage.getId(), editingMentionDraft); editingMessage = null; editInput = ""; editingMentionDraft = MentionDraft.empty(""); mentionQuery = null; render(); }
+            if (!binding.composerBar.sendButton.isEnabled()) {
+                return;
+            }
+            binding.composerBar.sendButton.setEnabled(false);
+            if (editingMessage == null) {
+                viewModel.send();
+            } else if (!editInput.isBlank()) {
+                viewModel.editMessage(editingMessage.getId(), editingMentionDraft);
+                editingMessage = null;
+                editInput = "";
+                editingMentionDraft = MentionDraft.empty("");
+                mentionQuery = null;
+                render();
+            }
         });
         binding.composerBar.messageInput.setOnEditorActionListener((text, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND) { binding.composerBar.sendButton.performClick(); return true; }
@@ -461,7 +473,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     binding.composerBar.attachButton.setVisibility(View.GONE);
                     binding.composerBar.messageInput.setVisibility(View.GONE);
                     binding.composerBar.recordingOverlay.setVisibility(View.VISIBLE);
-                    binding.composerBar.recordingDuration.setText("00:00");
+                    binding.composerBar.recordingDuration.setText(R.string.voice_recording_duration_zero);
                     binding.composerBar.recordingCancelLabel.setText(R.string.voice_slide_to_cancel);
                     binding.composerBar.recordingCancelLabel.setTextColor(
                             ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
@@ -688,9 +700,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(android.view.Gravity.CENTER_VERTICAL);
             TextView label = new TextView(requireContext());
-            label.setText((item.getDisplayName() == null ? item.getType() : item.getDisplayName())
-                    + (item.getState() == com.nexachat.feature.media.PendingAttachment.PendingState.FAILED
-                    ? " — " + getString(R.string.error_generic) : " " + Math.round(item.getProgress() * 100) + "%"));
+            String attachmentLabel = item.getDisplayName() != null
+                    ? item.getDisplayName()
+                    : item.getType();
+            if (item.getState() == com.nexachat.feature.media.PendingAttachment.PendingState.FAILED) {
+                label.setText(getString(R.string.a11y_attachment_pending_failed,
+                        attachmentLabel, getString(R.string.error_generic)));
+            } else {
+                label.setText(getString(R.string.a11y_attachment_pending_progress,
+                        attachmentLabel, Math.round(item.getProgress() * 100)));
+            }
             row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             TextView remove = new TextView(requireContext());
             remove.setText("×");
@@ -708,9 +727,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private void renderUnread(InboxUiState inbox) {
         ConversationSummary row = inbox.getConversations().stream().filter(c -> conversationId.equals(c.getId())).findFirst().orElse(null);
         int unread = row == null ? 0 : row.getUnreadCount();
-        binding.unreadBanner.setVisibility(unread >= 20 ? View.VISIBLE : View.GONE);
-        if (unread >= 20) binding.unreadBanner.setText(getString(R.string.summary_overflow_action) + " (" + unread + ")");
-        binding.unreadBanner.setOnClickListener(v -> showSummary());
+        if (unread >= 20) {
+            binding.unreadBanner.setVisibility(View.VISIBLE);
+            binding.unreadBanner.bind(unread, this::showSummary,
+                    () -> binding.unreadBanner.setVisibility(View.GONE));
+        } else {
+            binding.unreadBanner.setVisibility(View.GONE);
+        }
     }
 
     private void submitMessages(List<ChatMessage> messages) {

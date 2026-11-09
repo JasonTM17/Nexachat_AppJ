@@ -241,7 +241,10 @@ public final class ContactsFragment extends Fragment {
         if (addResultText != null) {
             if (found != null) {
                 addResultText.setVisibility(View.VISIBLE);
-                addResultText.setText(found.getDisplayName() + "\n" + found.getPhone());
+                addResultText.setText(getString(
+                        R.string.a11y_contact_found_lines,
+                        found.getDisplayName(),
+                        found.getPhone()));
             } else {
                 addResultText.setVisibility(View.GONE);
             }

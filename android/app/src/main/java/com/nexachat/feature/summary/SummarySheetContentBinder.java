@@ -83,7 +83,7 @@ public final class SummarySheetContentBinder {
                     LinearLayout.LayoutParams.WRAP_CONTENT));
             for (String topic : summary.getTopics()) {
                 Chip chip = new Chip(context);
-                chip.setText("#" + topic);
+                chip.setText(context.getString(R.string.a11y_summary_topic_chip, topic));
                 chip.setCheckable(false);
                 chip.setClickable(false);
                 topicRow.addView(chip);

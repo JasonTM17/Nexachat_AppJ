@@ -64,7 +64,7 @@
                 android:layout_gravity="bottom|end"
                 android:layout_margin="@dimen/space_xs" />
         </FrameLayout>
-        <TextView android:id="@+id/fileName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:drawableStart="@drawable/ic_description" android:drawablePadding="10dp" android:drawableTint="?attr/colorPrimary" android:gravity="center_vertical" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface" android:visibility="gone"/>
+        <TextView android:id="@+id/fileName" android:layout_width="wrap_content" android:layout_height="wrap_content" app:drawableStartCompat="@drawable/ic_description" android:drawablePadding="10dp" app:drawableTint="?attr/colorPrimary" android:gravity="center_vertical" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurface" android:visibility="gone"/>
         <TextView android:id="@+id/systemLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:visibility="gone"/>
         <include android:id="@+id/reactionsRow" layout="@layout/include_message_reactions_row"/>
     </LinearLayout>
