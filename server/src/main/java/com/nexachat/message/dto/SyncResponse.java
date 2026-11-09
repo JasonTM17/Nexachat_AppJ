@@ -1,5 +1,7 @@
 package com.nexachat.message.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -8,6 +10,13 @@ public record SyncResponse(
         List<ConversationDelta> deltas,
         Instant serverTime
 ) {
+    /**
+     * One conversation's delta. The trailing {@code muted}/{@code mutedUntil}/
+     * {@code archived} triple is the <b>caller's own</b> per-member preference
+     * state, carried on every delta so a mute or archive made on one device
+     * reaches the others without a separate inbox fetch. {@code mutedUntil} is
+     * omitted when the mute is forever or the conversation is not muted.
+     */
     public record ConversationDelta(
             UUID conversationId,
             List<MessageResponse> newMessages,
@@ -31,7 +40,10 @@ public record SyncResponse(
              * full reaction refresh (history reload) instead of applying the
              * empty {@code reactionUpdates}.
              */
-            boolean reactionsFullRefresh
+            boolean reactionsFullRefresh,
+            boolean muted,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Instant mutedUntil,
+            boolean archived
     ) {
     }
 }

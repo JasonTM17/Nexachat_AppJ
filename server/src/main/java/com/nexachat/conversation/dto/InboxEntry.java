@@ -20,7 +20,10 @@ public record InboxEntry(
         LastMessage lastMessage,
         long unreadCount,
         long lastReadSeq,
-        PeerPresence peerPresence
+        PeerPresence peerPresence,
+        boolean muted,
+        Instant mutedUntil,
+        boolean archived
 ) {
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

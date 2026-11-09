@@ -17,6 +17,10 @@ import java.util.UUID;
 /**
  * {@code GET /api/v1/conversations} — the caller's inbox, ordered
  * {@code lastMessageSeq DESC} (conversations without messages last).
+ *
+ * <p>{@code archived} selects the view: omitted or {@code false} returns the
+ * default inbox (archived conversations hidden), {@code true} returns only
+ * archived conversations.
  */
 @RestController
 @RequestMapping("/api/v1/conversations")
@@ -32,12 +36,13 @@ public class ConversationInboxController {
     public ResponseEntity<List<InboxEntry>> inbox(
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam(required = false) Integer limit,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Boolean archived) {
         UUID userId = requireUserId(principal);
         if (limit == null && cursor == null) {
-            return ResponseEntity.ok(inboxService.listInbox(userId));
+            return ResponseEntity.ok(inboxService.listInbox(userId, archived));
         }
-        InboxService.InboxPage page = inboxService.listInbox(userId, limit, cursor);
+        InboxService.InboxPage page = inboxService.listInbox(userId, limit, cursor, archived);
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (page.nextCursor() != null) {
             response.header("X-Next-Cursor", page.nextCursor());

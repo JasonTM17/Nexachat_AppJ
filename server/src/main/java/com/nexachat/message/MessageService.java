@@ -7,6 +7,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.conversation.ConversationUpdatedEvent;
 import com.nexachat.conversation.dto.ConversationUpdatePayload;
+import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
@@ -447,6 +448,16 @@ public class MessageService {
             watermarks = watermarks.subList(0, 100);
         }
 
+        // The caller's own mute/archive flags, batched once for the whole request
+        // (no N+1) so a preference changed on another device is reflected here.
+        Map<UUID, MemberFlagsRow> flagsByConversation = new LinkedHashMap<>();
+        for (MemberFlagsRow flags : memberRepository.findMemberFlags(
+                userId, watermarks.stream()
+                        .map(SyncRequest.ConversationWatermark::conversationId)
+                        .toList())) {
+            flagsByConversation.put(flags.conversationId(), flags);
+        }
+
         List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
         for (SyncRequest.ConversationWatermark wm : watermarks) {
             UUID conversationId = wm.conversationId();
@@ -506,6 +517,13 @@ public class MessageService {
             // 5. Max seq
             long maxSeq = messageRepository.findMaxSeqByConversationId(conversationId);
 
+            // 6. The caller's own mute/archive flags; a mute whose instant has
+            //    passed is reported as not muted (lazy expiry, no sweep job).
+            MemberFlagsRow flags = flagsByConversation.get(conversationId);
+            boolean muted = flags != null && flags.isMutedAt(requestTime);
+            java.time.Instant mutedUntil = flags == null ? null : flags.effectiveMutedUntil(requestTime);
+            boolean archived = flags != null && flags.archived();
+
             deltas.add(new SyncResponse.ConversationDelta(
                     conversationId,
                     newMessages,
@@ -515,7 +533,10 @@ public class MessageService {
                     maxSeq,
                     hasMore,
                     reactionCursor,
-                    reactionsFullRefresh
+                    reactionsFullRefresh,
+                    muted,
+                    mutedUntil,
+                    archived
             ));
         }
 
