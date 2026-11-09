@@ -97,6 +97,17 @@ member is never silently added to or removed from a conversation. A muted
 conversation still receives messages, receipts and live WebSocket events, and
 its `unreadCount` keeps advancing — only the push is suppressed.
 
+#### Reminder delivery
+
+By default, the scheduler starts after five seconds and polls once per second.
+It reads due reminders from PostgreSQL and persists each claim with a lease
+before sending pushes. `FOR UPDATE SKIP LOCKED` lets multiple instances
+claim different rows; expired leases make abandoned work eligible again after a
+crash. Repeating reminders send one catch-up push after downtime, then advance
+to the next future occurrence. Delivery is at-least-once: a crash after FCM
+accepts a push but before the database advance can produce a duplicate. See
+`ReminderScheduler`, `ReminderClaimService` and `ReminderSchedulerIT`.
+
 #### Android client: `google-services.json`
 
 The Android app must be registered in the same Firebase project so it can
@@ -207,6 +218,9 @@ access token stops working immediately instead of living out its lifetime.
 - Logout, logout-all and password change evict the cached entry, so revocation
   is immediate on a single node. In a multi-node deployment each node keeps its
   own cache, so revocation propagates within one TTL.
+- After the revocation transaction commits, the local `StompSessionRegistry`
+  closes that user's tracked WebSocket sessions. The event is process-local;
+  multi-instance deployments do not broadcast the close to other servers.
 
 Refresh-token rotation is unchanged: logout revokes only the presented refresh
 token, and a password change keeps the supplied session token alive.
@@ -485,14 +499,19 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations (currently V1 through V11,
-`V1__init.sql` to `V11__user_access_token_cutoff.sql`) apply on app startup
-and are forward-only: add a new versioned SQL migration; never edit one already
-applied to a database. Migrations V8–V11 introduce:
+Back up before replacing the app image. Flyway migrations V1 through V15 apply
+on app startup and are forward-only: add a new versioned SQL migration; never
+edit one already applied to a database. Migrations V8–V11 introduce:
 - `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
 - `V9__conversation_rag.sql`: `message_embeddings` table with bytea vectors, `rag_ask_cache`, and `rag_ask_request_limits`.
 - `V10__reaction_events_idempotency_device_tokens.sql`: `reaction_events` audit table for delta sync, `request_idempotency` replay cache, and `UNIQUE(user_id, token)` device token constraint.
 - `V11__user_access_token_cutoff.sql`: `users.tokens_valid_after`, the access-token revocation cutoff.
+
+The next migrations add per-member mute/archive preferences (V12), conversation
+AI opt-outs (V13), reminders and delivery claims (V14), and group polls (V15).
+Ensure every migration file V1–V15 is present in the source tree before
+rebuilding the dev app container; the image packages the server migration
+resources used by Flyway at startup.
 
 ```sh
 bash demo/backup.sh
@@ -559,11 +578,17 @@ python tools/check-markdown-links.py
 bash -n demo/*.sh tools/*.sh
 ```
 
-For local `mvn verify`, set `IT_DB_URL`, `IT_DB_USER`, and `IT_DB_PASSWORD` to a
-disposable PostgreSQL test database (the Compose DB maps to host port `5433`).
-The Android command above limits workers to avoid competing with other local
-Gradle builds. Run `shellcheck demo/*.sh tools/*.sh` when ShellCheck is
-installed.
+For local server verification, set `IT_DB_URL`, `IT_DB_USER`, and
+`IT_DB_PASSWORD` to a private, disposable PostgreSQL test database; for the
+local Compose PostgreSQL host, use port `5433` and create a separate test
+database first. Then run `(cd server && mvn -B verify)`. The integration tests
+run Flyway and write test data, so do not point them at the app database or a
+shared/production database. Unset every inherited `FCM_*` environment variable
+before testing: `FCM_ENABLED=true` selects the real Google gateway, while the
+credential and URL overrides can enable external calls or route them away from
+the local fake endpoints. The default is the mock gateway. The Android command
+above limits workers to avoid competing with other local Gradle builds. Run
+`shellcheck demo/*.sh tools/*.sh` when ShellCheck is installed.
 
 ## Audit command status
 

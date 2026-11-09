@@ -1,6 +1,6 @@
 # Conversation RAG — "Ask this chat"
 
-Status: server shipped (retrieval, embeddings, ask route, caches, eval benchmark); Android entry in progress (not yet merged into the app).
+Status: server shipped (retrieval, embeddings, ask route, caches, eval benchmark); the Android Ask screen is present in this checkout.
 
 ## What it does
 

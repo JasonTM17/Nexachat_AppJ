@@ -3,7 +3,7 @@
 > Endpoint catalog for the current REST contract. Routes below are derived from
 > controllers under `server/src/main/java/com/nexachat/`.
 > The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
-> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API available, Android entry in progress).
+> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API and Android Ask screen available).
 
 ## Domain index
 
@@ -336,9 +336,9 @@ Inbox entries for DIRECT conversations may include
 Presence changes are described in the WebSocket section and are in-memory on a
 single backend node.
 
-`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt, aiOptOut}`.
-`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, aiOptOut, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted. Null optional values may be omitted.
-`aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.
+`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted. Null optional values may be omitted.
+The opt-out state is not included in `ConversationResponse` or `InboxEntry`. `GET /api/v1/conversations/{id}/ai-opt-out` returns `{conversationId, aiOptOut}` for the caller; another member's choice is never included.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
@@ -653,8 +653,8 @@ conversation; the local engine may still use those messages.
 
 `POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
 answers a question about the caller's own conversation. The design, privacy
-rules and cost controls are specified in [`docs/rag.md`](rag.md). Note that the
-server API is available, while the Android entry point is currently in progress.
+rules and cost controls are specified in [`docs/rag.md`](rag.md). The server API
+and Android Ask screen are available.
 
 Request:
 
