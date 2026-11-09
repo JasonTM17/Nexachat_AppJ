@@ -151,6 +151,23 @@ class ReactionDeltaIdempotencyIT {
                 .get("id").asText());
     }
 
+    /**
+     * Delta assertions need a conversation whose only reaction events are the
+     * test's own. A DIRECT room is idempotent per user pair, so every test in
+     * this class that reused alice↔bob saw the other tests' events in its
+     * window; a GROUP is always a new row, which isolates the event stream.
+     */
+    private UUID openDeltaRoom(TestUser creator, TestUser member, String label) throws Exception {
+        MvcResult result = postJson("/api/v1/conversations/group", creator.accessToken(),
+                Map.of("title", "delta-" + label + "-" + UUID.randomUUID(),
+                        "memberIds", List.of(member.id().toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return UUID.fromString(objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("id").asText());
+    }
+
     private UUID sendRest(UUID conversationId, TestUser sender, String content) throws Exception {
         MvcResult result = postJson(
                 "/api/v1/conversations/" + conversationId + "/messages", sender.accessToken(),
@@ -187,7 +204,7 @@ class ReactionDeltaIdempotencyIT {
 
     @Test
     void removalIsVisibleInTheReactionDelta() throws Exception {
-        UUID conversationId = openDirectConversation(alice, bob);
+        UUID conversationId = openDeltaRoom(alice, bob, "removal");
         UUID messageId = sendRest(conversationId, alice, "react to me");
 
         // alice adds 👍 via the idempotent verb
@@ -351,7 +368,7 @@ class ReactionDeltaIdempotencyIT {
 
     @Test
     void deltaReplaysAReactionThatCommitsAfterTheSinceSnapshot() throws Exception {
-        UUID conversationId = openDirectConversation(alice, bob);
+        UUID conversationId = openDeltaRoom(alice, bob, "late-commit");
         UUID messageId = sendRest(conversationId, alice, "late reaction event");
         Instant since = Instant.now().minusSeconds(5);
         CountDownLatch eventInserted = new CountDownLatch(1);
@@ -396,7 +413,7 @@ class ReactionDeltaIdempotencyIT {
     }
 
     private void assertSerializedWriterScenario(TestUser firstWriter, TestUser secondWriter) throws Exception {
-        UUID conversationId = openDirectConversation(firstWriter, secondWriter);
+        UUID conversationId = openDeltaRoom(firstWriter, secondWriter, "cursor");
         List<UUID> messageIds = new java.util.ArrayList<>();
         for (int index = 0; index < 5; index++) {
             messageIds.add(sendRest(conversationId, secondWriter, "cursor race " + index));
