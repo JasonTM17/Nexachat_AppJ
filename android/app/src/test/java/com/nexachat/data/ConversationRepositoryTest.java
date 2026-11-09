@@ -467,6 +467,88 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void concurrentLoadNextInboxPageSharesOneNetworkRequest() throws Exception {
+        buildRepository();
+        stubInboxPage(null, "cursor-shared", inboxJson("conv-a", 20));
+        repository.refreshInboxPage().blockingGet();
+
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger executes = new java.util.concurrent.atomic.AtomicInteger();
+        when(messageApi.getConversations(eq(30), eq("cursor-shared"))).thenReturn(blockingInboxCall(
+                inboxJson("conv-b", 10), null, entered, release, executes));
+
+        java.util.List<Result<Boolean>> results = java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.List<Throwable> errors = java.util.Collections.synchronizedList(new ArrayList<>());
+        Runnable load = () -> {
+            try {
+                results.add(repository.loadNextInboxPage().blockingGet());
+            } catch (Throwable error) {
+                errors.add(error);
+            }
+        };
+        Thread first = new Thread(load, "inbox-page-a");
+        Thread second = new Thread(load, "inbox-page-b");
+        first.start();
+        second.start();
+        assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        release.countDown();
+        first.join(5_000);
+        second.join(5_000);
+
+        assertTrue(errors.isEmpty());
+        assertEquals(2, results.size());
+        assertTrue(results.get(0) instanceof Result.Success<?>);
+        assertEquals(results.get(0), results.get(1));
+        assertEquals(1, executes.get());
+        verify(messageApi, times(1)).getConversations(eq(30), eq("cursor-shared"));
+        assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
+    }
+
+    private Call<ResponseBody> blockingInboxCall(
+            String body,
+            String nextCursor,
+            java.util.concurrent.CountDownLatch entered,
+            java.util.concurrent.CountDownLatch release,
+            java.util.concurrent.atomic.AtomicInteger executes) {
+        return new Call<>() {
+            private boolean executed;
+
+            @Override
+            public Response<ResponseBody> execute() {
+                executes.incrementAndGet();
+                entered.countDown();
+                try {
+                    assertTrue(release.await(10, java.util.concurrent.TimeUnit.SECONDS));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+                executed = true;
+                return inboxResponse(body, nextCursor);
+            }
+
+            @Override
+            public void enqueue(Callback<ResponseBody> callback) {
+                try {
+                    callback.onResponse(this, execute());
+                } catch (RuntimeException error) {
+                    callback.onFailure(this, error);
+                }
+            }
+
+            @Override public boolean isExecuted() { return executed; }
+            @Override public void cancel() { }
+            @Override public boolean isCanceled() { return false; }
+            @Override public Call<ResponseBody> clone() { return this; }
+            @Override public Request request() {
+                return new Request.Builder().url("https://example.invalid/").build();
+            }
+            @Override public Timeout timeout() { return Timeout.NONE; }
+        };
+    }
+
+    @Test
     public void failedPageCanBeRetriedAtTheSameCursor() throws Exception {
         buildRepository();
         stubInboxPage(null, "cursor-retry", inboxJson("conv-a", 20));
