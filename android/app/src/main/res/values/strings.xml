@@ -45,6 +45,33 @@
     <string name="inbox_filter_groups">Groups</string>
     <string name="inbox_new_chat">New chat</string>
     <string name="inbox_more_options">More options</string>
+    <string name="archive_title">Shared media</string>
+    <string name="archive_tab_media">Photos &amp; videos</string>
+    <string name="archive_tab_files">Files</string>
+    <string name="archive_tab_links">Links</string>
+    <string name="archive_filter_all_senders">All senders</string>
+    <string name="archive_filter_sender">Sender</string>
+    <string name="archive_filter_date">Date</string>
+    <string name="archive_filter_sender_value">Sender: %1$s</string>
+    <string name="archive_filter_date_value" translatable="false">%1$s – %2$s</string>
+    <string name="archive_details_format" translatable="false">%1$s · %2$s</string>
+    <string name="archive_file_details" translatable="false">%1$s · %2$s</string>
+    <string name="archive_clear_filters">Clear</string>
+    <string name="archive_empty">Nothing here yet</string>
+    <string name="archive_loading">Loading shared items</string>
+    <string name="archive_error">Couldn’t load shared items</string>
+    <string name="archive_offline">You’re offline. Check your connection and try again.</string>
+    <string name="archive_forbidden">You no longer have access to this conversation.</string>
+    <string name="archive_unknown_sender">Unknown sender</string>
+    <string name="archive_action_open">Open</string>
+    <string name="archive_action_original">View original message</string>
+    <string name="archive_action_share">Share</string>
+    <string name="archive_share_chooser">Share item</string>
+    <string name="archive_item_options">Item options</string>
+    <string name="archive_kind_video">Video</string>
+    <string name="archive_media_description">%1$s, from %2$s, %3$s</string>
+    <string name="archive_link_unsafe">Only secure HTTPS links can be opened</string>
+    <string name="archive_open_failed">Couldn’t open this item</string>
     <string name="inbox_preview_photo">Photo</string>
     <string name="inbox_preview_voice">Voice message</string>
     <string name="inbox_preview_file">File</string>

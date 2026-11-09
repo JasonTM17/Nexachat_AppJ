@@ -45,6 +45,33 @@
     <string name="inbox_filter_groups">Nhóm</string>
     <string name="inbox_new_chat">Trò chuyện mới</string>
     <string name="inbox_more_options">Tùy chọn khác</string>
+    <string name="archive_title">Kho lưu trữ</string>
+    <string name="archive_tab_media">Ảnh/Video</string>
+    <string name="archive_tab_files">Tệp</string>
+    <string name="archive_tab_links">Liên kết</string>
+    <string name="archive_filter_all_senders">Tất cả người gửi</string>
+    <string name="archive_filter_sender">Người gửi</string>
+    <string name="archive_filter_date">Ngày</string>
+    <string name="archive_filter_sender_value">Người gửi: %1$s</string>
+    <string name="archive_filter_date_value" translatable="false">%1$s – %2$s</string>
+    <string name="archive_details_format" translatable="false">%1$s · %2$s</string>
+    <string name="archive_file_details" translatable="false">%1$s · %2$s</string>
+    <string name="archive_clear_filters">Xóa lọc</string>
+    <string name="archive_empty">Chưa có nội dung nào</string>
+    <string name="archive_loading">Đang tải nội dung đã chia sẻ</string>
+    <string name="archive_error">Không tải được nội dung đã chia sẻ</string>
+    <string name="archive_offline">Bạn đang ngoại tuyến. Hãy kiểm tra kết nối rồi thử lại.</string>
+    <string name="archive_forbidden">Bạn không còn quyền truy cập cuộc trò chuyện này.</string>
+    <string name="archive_unknown_sender">Người gửi không xác định</string>
+    <string name="archive_action_open">Mở</string>
+    <string name="archive_action_original">Xem tin nhắn gốc</string>
+    <string name="archive_action_share">Chia sẻ</string>
+    <string name="archive_share_chooser">Chia sẻ nội dung</string>
+    <string name="archive_item_options">Tùy chọn nội dung</string>
+    <string name="archive_kind_video">Đoạn video</string>
+    <string name="archive_media_description">%1$s, từ %2$s, %3$s</string>
+    <string name="archive_link_unsafe">Chỉ có thể mở liên kết HTTPS an toàn</string>
+    <string name="archive_open_failed">Không mở được nội dung này</string>
     <string name="inbox_preview_photo">Ảnh</string>
     <string name="inbox_preview_voice">Tin nhắn thoại</string>
     <string name="inbox_preview_file">Tệp</string>

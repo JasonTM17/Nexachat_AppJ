@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/archiveMediaCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="@dimen/space_xs"
+    android:layout_marginEnd="@dimen/space_xs"
+    android:layout_marginBottom="@dimen/space_sm"
+    android:clickable="true"
+    android:focusable="true"
+    android:minHeight="@dimen/min_touch_target"
+    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardCornerRadius="@dimen/corner_md"
+    app:cardElevation="@dimen/elevation_level1"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="136dp">
+
+            <ImageView
+                android:id="@+id/archiveThumbnail"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="centerCrop" />
+
+            <TextView
+                android:id="@+id/archiveMediaKind"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_margin="@dimen/space_xs"
+                android:background="@drawable/bg_message_image_meta"
+                android:paddingStart="@dimen/space_sm"
+                android:paddingTop="@dimen/space_xs"
+                android:paddingEnd="@dimen/space_sm"
+                android:paddingBottom="@dimen/space_xs"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="@android:color/white"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/space_sm"
+            android:paddingEnd="@dimen/space_xs">
+
+            <TextView
+                android:id="@+id/archiveMediaTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <ImageButton
+                android:id="@+id/archiveMediaOptions"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/archive_item_options"
+                android:padding="@dimen/space_sm"
+                android:src="@drawable/ic_more_vert"
+                app:tint="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/archiveMediaDetails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="@dimen/space_sm"
+            android:paddingEnd="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_sm"
+            android:lineSpacingExtra="2dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
