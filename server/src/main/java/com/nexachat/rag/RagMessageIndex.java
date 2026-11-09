@@ -38,4 +38,7 @@ public interface RagMessageIndex {
 
     /** Look up a single message by id, scoped to a conversation. */
     RagMessage findMessage(UUID conversationId, UUID messageId);
+
+    /** Removes stored vectors for one message so backfill can re-embed edited text. */
+    void deleteEmbeddingsForMessage(UUID messageId);
 }

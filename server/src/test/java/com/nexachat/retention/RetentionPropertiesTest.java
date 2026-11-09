@@ -1,11 +1,20 @@
 package com.nexachat.retention;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
+
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,6 +48,21 @@ class RetentionPropertiesTest {
     void invalidRetentionAgeFailsApplicationStartupValidation() {
         runner.withPropertyValues("nexachat.retention.jobs.call-records.retention-days=0")
                 .run(context -> assertThat(context).hasFailed());
+    }
+
+    @Test
+    void invalidBatchSizeFromComposeStyleEnvironmentVariableFailsValidation() {
+        var source = new SystemEnvironmentPropertySource(
+                "systemEnvironment", Map.of("NEXACHAT_RETENTION_BATCH_SIZE", "0"));
+        Binder binder = new Binder(ConfigurationPropertySources.from(source));
+        RetentionProperties properties = binder
+                .bind("nexachat.retention", Bindable.of(RetentionProperties.class))
+                .get();
+        Set<ConstraintViolation<RetentionProperties>> violations = Validation
+                .buildDefaultValidatorFactory()
+                .getValidator()
+                .validate(properties);
+        assertThat(violations).isNotEmpty();
     }
 
     @Configuration(proxyBeanMethods = false)

@@ -1,6 +1,7 @@
 package com.nexachat.reminder;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -26,7 +27,8 @@ public interface ConversationReminderRepository extends JpaRepository<Conversati
             ORDER BY r.remindAt ASC, r.id ASC
             """)
     List<ConversationReminder> findUpcoming(@Param("conversationId") UUID conversationId,
-                                            @Param("now") Instant now);
+                                            @Param("now") Instant now,
+                                            Pageable pageable);
 
     /** Active rows counted against the 50-reminder ceiling. */
     @Query("""
