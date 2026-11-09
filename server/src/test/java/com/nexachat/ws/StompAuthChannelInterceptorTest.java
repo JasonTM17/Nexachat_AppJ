@@ -22,12 +22,17 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,9 +64,13 @@ class StompAuthChannelInterceptorTest {
     @BeforeEach
     void setUp() {
         rateLimitService = new RateLimitService();
-        interceptor = new StompAuthChannelInterceptor(
-                jwtService, userRepository, memberRepository, rateLimitService, messaging,
-                new ObjectMapper(), 2, 60, 3, 10);
+        interceptor = newInterceptor(rateLimitService);
+    }
+
+    private StompAuthChannelInterceptor newInterceptor(RateLimitService limits) {
+        return new StompAuthChannelInterceptor(
+                jwtService, userRepository, memberRepository, limits, messaging,
+                new ObjectMapper(), 2, 60, 3, 10, 3, 10);
     }
 
     private Message<?> message(StompHeaderAccessor accessor) {
@@ -74,11 +83,15 @@ class StompAuthChannelInterceptorTest {
     }
 
     private Message<?> subscribeMessage(String destination, boolean authenticated) {
+        return subscribeMessage(destination, authenticated ? userId : null);
+    }
+
+    private Message<?> subscribeMessage(String destination, UUID authenticatedUser) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination(destination);
         accessor.setSubscriptionId("sub-1");
-        if (authenticated) {
-            accessor.setUser(new StompUserPrincipal(userId));
+        if (authenticatedUser != null) {
+            accessor.setUser(new StompUserPrincipal(authenticatedUser));
         }
         return message(accessor);
     }
@@ -99,6 +112,18 @@ class StompAuthChannelInterceptorTest {
         byte[] payload = ("{\"clientMessageId\":\"" + clientMessageId + "\"}")
                 .getBytes(StandardCharsets.UTF_8);
         return message(accessor, payload);
+    }
+
+    private Message<?> sendAckMessage(String destination, UUID authenticatedUser, UUID targetConversationId) {
+        return sendAckMessage(destination, authenticatedUser,
+                "{\"conversationId\":\"" + targetConversationId + "\",\"upToSeq\":1}");
+    }
+
+    private Message<?> sendAckMessage(String destination, UUID authenticatedUser, String payloadJson) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination(destination);
+        accessor.setUser(new StompUserPrincipal(authenticatedUser));
+        return message(accessor, payloadJson.getBytes(StandardCharsets.UTF_8));
     }
 
     // --------------------------------------------------------------- CONNECT
@@ -398,17 +423,160 @@ class StompAuthChannelInterceptorTest {
     }
 
     @Test
-    void send_chatDeliveryAck_allowed() {
-        Message<?> message = sendMessage("/app/chat.delivery.ack", true);
+    void send_chatDeliveryAck_member_allowed() {
+        lenient().when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        Message<?> message = sendAckMessage("/app/chat.delivery.ack", userId, conversationId);
 
         assertThat(interceptor.preSend(message, channel)).isSameAs(message);
     }
 
     @Test
-    void send_chatReadAck_allowed() {
-        Message<?> message = sendMessage("/app/chat.read.ack", true);
+    void send_chatReadAck_member_allowed() {
+        lenient().when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        Message<?> message = sendAckMessage("/app/chat.read.ack", userId, conversationId);
 
         assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
+    void send_chatDeliveryAck_nonMember_rejectedBeforeHandlerDispatch() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(false);
+        Message<?> message = sendAckMessage("/app/chat.delivery.ack", userId, conversationId);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void send_chatReadAck_nonMember_rejectedBeforeHandlerDispatch() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(false);
+        Message<?> message = sendAckMessage("/app/chat.read.ack", userId, conversationId);
+
+        assertThat(interceptor.preSend(message, channel)).isNull();
+    }
+
+    @Test
+    void send_chatAckWithoutConversationId_reachesHandlerValidation() {
+        assertThat(interceptor.preSend(sendMessage("/app/chat.delivery.ack", true), channel)).isNotNull();
+        assertThat(interceptor.preSend(sendMessage("/app/chat.read.ack", true), channel)).isNotNull();
+    }
+
+    @Test
+    void send_chatAckMalformedConversationId_continuesToPayloadConversion() {
+        Message<?> delivery = sendAckMessage("/app/chat.delivery.ack", userId,
+                "{\"conversationId\":\"not-a-uuid\",\"upToSeq\":1}");
+        Message<?> read = sendAckMessage("/app/chat.read.ack", userId,
+                "{\"conversationId\":\"not-a-uuid\",\"upToSeq\":1}");
+
+        assertThat(interceptor.preSend(delivery, channel)).isSameAs(delivery);
+        assertThat(interceptor.preSend(read, channel)).isSameAs(read);
+    }
+
+    @Test
+    void send_chatAckUsesAcksRateLimitForMembers() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        for (int i = 0; i < 3; i++) {
+            Message<?> allowed = sendAckMessage("/app/chat.delivery.ack", userId, conversationId);
+            assertThat(interceptor.preSend(allowed, channel)).isSameAs(allowed);
+        }
+
+        Message<?> limited = sendAckMessage("/app/chat.read.ack", userId, conversationId);
+        assertThat(interceptor.preSend(limited, channel)).isNull();
+    }
+
+    @Test
+    void subscribe_matrixDestinationsEnforceTheirDeclaredPolicy() throws Exception {
+        List<StompMatrixRoute> routes = readStompMatrix();
+        UUID otherUser = UUID.randomUUID();
+        int subscriptions = 0;
+
+        for (StompMatrixRoute route : routes) {
+            if (!route.kind().equals("SUBSCRIBE")) {
+                continue;
+            }
+            subscriptions++;
+            String destination = resolveMatrixDestination(route.destination());
+            if (route.policy().equals("OWN_QUEUE")) {
+                Message<?> ownQueue = subscribeMessage(destination, true);
+                assertThat(interceptor.preSend(ownQueue, channel))
+                        .as("own queue in STOMP matrix: " + route.destination())
+                        .isSameAs(ownQueue);
+            } else if (route.policy().equals("CONVERSATION_MEMBER")) {
+                when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                        .thenReturn(true);
+                when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, otherUser))
+                        .thenReturn(false);
+                Message<?> member = subscribeMessage(destination, userId);
+                Message<?> outsider = subscribeMessage(destination, otherUser);
+                assertThat(interceptor.preSend(member, channel))
+                        .as("member topic in STOMP matrix: " + route.destination())
+                        .isSameAs(member);
+                assertThat(interceptor.preSend(outsider, channel))
+                        .as("nonmember topic in STOMP matrix: " + route.destination())
+                        .isNull();
+            } else {
+                throw new AssertionError("Unmapped STOMP SUBSCRIBE policy: " + route.policy());
+            }
+        }
+        assertThat(subscriptions).as("STOMP subscription rows consumed by tests").isPositive();
+    }
+
+    @Test
+    void send_matrixDestinationsEnforceTheirDeclaredPolicy() throws Exception {
+        List<StompMatrixRoute> routes = readStompMatrix();
+        UUID otherUser = UUID.randomUUID();
+        int handlers = 0;
+
+        for (StompMatrixRoute route : routes) {
+            if (!route.kind().equals("HANDLER")) {
+                continue;
+            }
+            handlers++;
+            String destination = resolveMatrixDestination(route.destination());
+            StompAuthChannelInterceptor routeInterceptor = newInterceptor(new RateLimitService());
+            when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+            when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, otherUser)).thenReturn(false);
+            Message<?> member;
+            Message<?> outsider;
+            if (route.policy().equals("PAYLOAD_CONVERSATION_MEMBER")) {
+                member = sendAckMessage(destination, userId, conversationId);
+                outsider = sendAckMessage(destination, otherUser, conversationId);
+            } else if (route.policy().equals("CONVERSATION_MEMBER")) {
+                member = sendMessage(destination, userId, UUID.randomUUID());
+                outsider = sendMessage(destination, otherUser, UUID.randomUUID());
+            } else {
+                throw new AssertionError("Unmapped STOMP HANDLER policy: " + route.policy());
+            }
+            assertThat(routeInterceptor.preSend(member, channel))
+                    .as("member SEND in STOMP matrix: " + route.destination())
+                    .isSameAs(member);
+            assertThat(routeInterceptor.preSend(outsider, channel))
+                    .as("nonmember SEND in STOMP matrix: " + route.destination())
+                    .isNull();
+        }
+        assertThat(handlers).as("STOMP handler rows consumed by tests").isPositive();
+    }
+
+    private static List<StompMatrixRoute> readStompMatrix() throws Exception {
+        try (var stream = StompAuthChannelInterceptorTest.class.getResourceAsStream(
+                "/stomp-authz-matrix.tsv")) {
+            assertThat(stream).as("STOMP authorization matrix resource").isNotNull();
+            try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                List<StompMatrixRoute> routes = new ArrayList<>();
+                assertThat(reader.readLine()).isEqualTo("kind\tdestination\tpolicy\trole_scenario");
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] columns = line.split("\\t", -1);
+                    assertThat(columns).hasSize(4);
+                    assertThat(columns[3]).isNotBlank();
+                    routes.add(new StompMatrixRoute(columns[0], columns[1], columns[2]));
+                }
+                return routes;
+            }
+        }
+    }
+
+    private String resolveMatrixDestination(String template) {
+        return template.replaceAll("\\{[^}]+}", conversationId.toString());
     }
 
     @Test
@@ -475,5 +643,8 @@ class StompAuthChannelInterceptorTest {
         Message<?> message = message(StompHeaderAccessor.create(StompCommand.DISCONNECT));
 
         assertThat(interceptor.preSend(message, channel)).isSameAs(message);
+    }
+
+    private record StompMatrixRoute(String kind, String destination, String policy) {
     }
 }
