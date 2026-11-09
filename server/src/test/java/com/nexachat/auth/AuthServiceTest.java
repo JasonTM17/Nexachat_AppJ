@@ -222,8 +222,10 @@ class AuthServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.TOKEN_REUSED);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        // Family revocation must still be invoked (committed in its own transaction).
-        verify(tokenService).revokeAllForUser(userId);
+        // Both refresh and access tokens must be revoked in the separate
+        // transaction that commits before the 401 is returned.
+        verify(accessTokenRevocationService).revokeRefreshFamilyAndAccessTokens(userId);
+        verify(tokenService, never()).revokeAllForUser(userId);
     }
 
     @Test

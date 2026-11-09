@@ -34,7 +34,7 @@ import java.util.UUID;
  *
  * <p>Transaction note: {@link #refresh} is deliberately NOT {@code @Transactional}
  * at this level — when {@link TokenService#rotate} reports reuse/expiry, the
- * family revocation must commit in its own transaction before the 401 is thrown;
+ * family and access-token revocation must commit in its own transaction before the 401 is thrown;
  * rolling it back together with the rotation would silently defeat reuse
  * detection.
  */
@@ -133,8 +133,9 @@ public class AuthService {
             rotation = tokenService.rotate(request.refreshToken(), deviceLabel);
         } catch (RefreshTokenException e) {
             if (e.userId() != null) {
-                // Separate transaction → the revocation COMMITS although we then throw.
-                tokenService.revokeAllForUser(e.userId());
+                // Separate transaction → refresh-family and access-token
+                // revocation commit although this method then throws the 401.
+                accessTokenRevocationService.revokeRefreshFamilyAndAccessTokens(e.userId());
                 log.warn("Refresh-token {} detected; revoked all sessions",
                         e.errorCode() == ApiErrorCode.TOKEN_REUSED ? "reuse" : "expiry");
             }

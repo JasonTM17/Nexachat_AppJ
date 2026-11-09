@@ -112,4 +112,27 @@ class AccessTokenRevocationIT extends SecurityITBase {
                 .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
     }
 
+    @Test
+    void refreshTokenReuseInvalidatesPreviouslyIssuedAccessTokens() throws Exception {
+        Registered user = register("+84905551205");
+        ResultActions rotated = postJson("/api/v1/auth/refresh",
+                Map.of("refreshToken", user.refreshToken()));
+        rotated.andExpect(status().isOk());
+        String rotatedAccessToken = objectMapper.readTree(
+                        rotated.andReturn().getResponse().getContentAsString())
+                .get("accessToken").asText();
+
+        letTheTokenFallInThePreviousSecond();
+        postJson("/api/v1/auth/refresh", Map.of("refreshToken", user.refreshToken()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
+
+        getWithAuth("/api/v1/users/me", user.accessToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+        getWithAuth("/api/v1/users/me", rotatedAccessToken)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+    }
+
 }

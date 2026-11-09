@@ -123,7 +123,8 @@
   protection (the toggle endpoint still toggles on every call).
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
   pair. Replaying an already-rotated refresh token returns
-  `401 TOKEN_REUSED` and revokes the whole session family.
+  `401 TOKEN_REUSED` and revokes the whole refresh family plus its existing
+  access tokens.
 
 ## Response wire formats
 

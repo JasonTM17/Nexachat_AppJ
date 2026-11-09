@@ -14,16 +14,27 @@ import java.util.UUID;
 public class AccessTokenRevocationService {
 
     private final UserRepository userRepository;
+    private final TokenService tokenService;
     private final ApplicationEventPublisher eventPublisher;
 
     public AccessTokenRevocationService(UserRepository userRepository,
+                                        TokenService tokenService,
                                         ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
+        this.tokenService = tokenService;
         this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public void revoke(UUID userId) {
+        stampAccessTokenCutoff(userId);
+        eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
+    }
+
+    /** Revokes a reused refresh family and its access tokens in one transaction. */
+    @Transactional
+    public void revokeRefreshFamilyAndAccessTokens(UUID userId) {
+        tokenService.revokeAllForUser(userId);
         stampAccessTokenCutoff(userId);
         eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
     }
