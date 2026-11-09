@@ -15,7 +15,7 @@ Every engineering document in the repository, grouped by domain. Start with
 
 | Doc | Contents |
 |---|---|
-| [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`), including auth, conversations, messages, attachments, calls and summary routes |
+| [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`) with a feature matrix, migration history (V1–V22) and operational notes, covering auth, conversations, messages, reminders, polls, labels, invites, attachments, calls and summary routes |
 | [docs/websocket-protocol.md](websocket-protocol.md) | STOMP over WebSocket (`/ws`) destinations, event envelope, delivery guarantees and rate limits |
 | [docs/calls.md](calls.md) | 1-to-1 WebRTC voice call signaling, call events, ICE configuration, call history and Android UI |
 | [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & OpenAI-compatible (Gemini-tested) LLM engines, citation guard and consent model |

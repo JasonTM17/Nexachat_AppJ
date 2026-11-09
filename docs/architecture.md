@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V15) + file volume. Conversation RAG is available through the
+> (Flyway V1–V20) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -47,6 +47,11 @@ flowchart LR
             SUM["summary"]
             NOTIF["notification"]
             RAG["rag"]
+            REMINDER["reminder"]
+            POLL["poll"]
+            LABEL["label"]
+            INVITE["invite"]
+            ARCHIVE["archive"]
             COMMON["common: errors, logging,<br/>config, E.164 util"]
         end
         WS["WebSocket/STOMP layer<br/>@MessageMapping +<br/>ChannelInterceptor authZ"]
@@ -54,7 +59,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V15 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · token_cutoff")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -92,6 +97,11 @@ flowchart TB
         SUM["summary"]
         NOTIF["notification"]
         RAG["rag"]
+        REMINDER["reminder"]
+        POLL["poll"]
+        LABEL["label"]
+        INVITE["invite"]
+        ARCHIVE["archive"]
         COMMON["common: errors, logging,<br/>config, E.164 util"]
     end
 ```
@@ -181,6 +191,51 @@ sequenceDiagram
   when the subject allows presence. Hiding one's presence is one-way; it does
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
+
+## 5. V12–V20 feature modules
+
+- **Per-member conversation preferences (V12, V16):** `conversation_members`
+  carries `muted` / `muted_until` / `archived` and `pinned` / `pinned_at`.
+  Mute, archive and pin are caller-scoped: the inbox, delta sync and push
+  policy read the caller's own row, and no endpoint exposes another member's
+  preference. `users.show_seen` (V16) is the reciprocal read-receipt switch,
+  enforced in both directions on the STOMP outbound channel.
+- **Per-conversation AI opt-out (V13):** `conversation_ai_opt_outs` excludes an
+  opted-out author's messages from external AI input (summary LLM, RAG
+  embeddings/answers and cached-answer replay). The account-level
+  `aiSummaryConsent` and the per-conversation flag are combined; the provider
+  rechecks both immediately before an outbound request.
+- **Shared reminders (V14):** `conversation_reminders` is a durable board with
+  repeat rules and an `anchor_at` so monthly repeats clamp to month end. The
+  scheduler claims due rows with `FOR UPDATE SKIP LOCKED` plus a lease, pushes a
+  data-only FCM message to every current member, then advances or completes the
+  row under a row lock. Delivery is at-least-once.
+- **Group polls (V15):** `polls` / `poll_options` / `poll_votes` with a
+  `poll_version_seq` sequence. Votes replace the caller's selection atomically
+  under a poll-row lock; the change feed
+  (`GET /conversations/{id}/polls/changes`) is a compacted current-state feed
+  ordered by `version`.
+- **Group mentions and `@all` (V17):** `message_mentions` stores UTF-16 ranges
+  into the stored content; validation rejects out-of-bounds, overlapping or
+  surrogate-splitting ranges, non-members, duplicates and non-TEXT/non-GROUP
+  messages. `mentionAll` is a separate group-admin flag.
+- **Private labels (V18):** `conversation_labels` and
+  `conversation_label_assignments` are caller-private; inbox entries carry the
+  caller's label IDs and the inbox can be filtered by `labelId`.
+- **Delta-sync indexes (V19):** partial indexes on
+  `(conversation_id, edited_at)` and `(conversation_id, deleted_at)` keep the
+  edited/deleted scans bounded; the common insert path does not touch them.
+- **Group invite links (V20):** `group_invite_links` stores SHA-256 token
+  hashes (raw tokens returned once), `group_join_requests` holds the approval
+  queue, and `group_invite_bans` blocks removed users from rejoining via the
+  same link. Joins and approvals serialize on the conversation row to enforce
+  the member cap.
+- **Recall window and muted push policy:** author recall is bounded by
+  `nexachat.message.recall-window` (default 24 h, inclusive) with
+  `409 RECALL_WINDOW_EXPIRED`; group admins bypass it. `NEW_MESSAGE` pushes are
+  skipped for muted members, except when the message mentions them or has
+  `mentionAll: true`, when a `SYSTEM` event is about that member, and for
+  `CALL_INVITE` (a call must ring).
 
 Theme mode (`SYSTEM`, `LIGHT`, `DARK`) and locale are local Android settings;
 they are applied by the app and are not persisted as server account settings.
