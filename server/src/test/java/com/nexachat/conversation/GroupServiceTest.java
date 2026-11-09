@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
@@ -412,7 +413,7 @@ class GroupServiceTest {
 
         verify(memberRepository).delete(bobMember);
         verify(messageService).postSystemMessage(
-                eq(adminId), eq(conversationId), eq("Admin Alice removed Bob"));
+                eq(adminId), eq(conversationId), eq("Admin Alice removed Bob"), eq(bobId));
         ConversationUpdatedEvent event = updateEvent().getValue();
         assertThat(event.payload().change()).isEqualTo("MEMBER_REMOVED");
         // The kicked user is no longer a member at fan-out time — they are
@@ -506,7 +507,7 @@ class GroupServiceTest {
 
         verify(memberRepository).delete(bobMember);
         verify(messageService).postSystemMessage(
-                eq(bobId), eq(conversationId), eq("Bob left the group"));
+                eq(bobId), eq(conversationId), eq("Bob left the group"), isNull());
         ConversationUpdatedEvent event = updateEvent().getValue();
         assertThat(event.payload().change()).isEqualTo("MEMBER_LEFT");
         assertThat(event.extraAudienceUserIds()).containsExactly(bobId);

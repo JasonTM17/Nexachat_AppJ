@@ -331,17 +331,22 @@ other member. Pinned conversations sort ahead of the activity order (pinned
 rows first, then `lastMessageSeq DESC` within each group); the pin ceiling is
 five conversations per user and applies only to NEW pins, so re-pinning an
 already pinned conversation is an idempotent `204` even at the ceiling.
-A muted conversation suppresses the recipient's ordinary `NEW_MESSAGE` data push (see
+A muted conversation suppresses the recipient's `NEW_MESSAGE` data push (see
 [Push notifications](operations.md#push-notifications-fcm)); the conversation
 still receives messages, read/delivery receipts and live WebSocket events, and
-`unreadCount` keeps advancing. **Push rule:** only `NEW_MESSAGE` pushes for
-non-`SYSTEM` messages are gated by mute unless that member is explicitly
-mentioned or the message has `mentionAll: true`; those push pointers carry
-`mentioned: "true"`. `CALL_INVITE` pushes always go out (a
-call must ring), and `SYSTEM` messages (group membership events) keep their
-current behavior so a member is never silently removed or added. Mute expiry is
-lazy: a `mutedUntil` instant in the past is treated as not muted, so no cleanup
-job is required. Archiving only changes inbox visibility — the default
+`unreadCount` keeps advancing. **Push rule:** every `NEW_MESSAGE` push is gated
+by mute, including `SYSTEM` messages (group membership and title notices). A
+muted member still receives a `NEW_MESSAGE` push when the message explicitly
+mentions that member or has `mentionAll: true` (those push pointers carry
+`mentioned: "true"`), or when the `SYSTEM` event's subject is that member —
+they were removed from the group or their role changed — so nobody is removed
+or demoted silently. A removed member's mute row is deleted with their
+membership, so the removal notice reaches them even if they had muted the
+conversation. Avatar-only changes broadcast `CONVERSATION_UPDATED` and post no
+SYSTEM message, so they produce no `NEW_MESSAGE` push to gate. `CALL_INVITE`
+pushes always go out (a call must ring). Mute expiry is lazy: a `mutedUntil`
+instant in the past is treated as not muted, so no cleanup job is required.
+Archiving only changes inbox visibility — the default
 `GET /conversations` (and every request that omits `archived`) excludes archived
 rows, while `archived=true` returns only archived rows.
 

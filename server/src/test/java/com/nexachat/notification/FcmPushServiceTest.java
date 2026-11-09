@@ -408,7 +408,47 @@ class FcmPushServiceTest {
     }
 
     @Test
-    void notificationEventListenerPushesSystemMessageToMutedMember() {
+    void notificationEventListenerSkipsSystemMessagePushForMutedMember() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice added Bob")));
+
+        assertThat(mockGateway.getSentPushes()).isEmpty();
+        verify(tokenRepository, never()).findByUserId(mutedMember);
+    }
+
+    @Test
+    void notificationEventListenerPushesSystemMessageToUnmutedMember() {
+        UUID unmutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, unmutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(presenceState.isOnline(unmutedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "system-unmuted-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(unmutedMember)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice added Bob")));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("system-unmuted-token");
+        assertThat(sent.get(0).data().get("type")).isEqualTo("NEW_MESSAGE");
+    }
+
+    @Test
+    void notificationEventListenerPushesSystemMessageToMutedSubject() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
         when(memberRepository.findMemberUserIds(conversationId))
@@ -419,21 +459,183 @@ class FcmPushServiceTest {
 
         User user = mock(User.class);
         UserDeviceToken token = UserDeviceToken.create(
-                user, "system-notice-token", UserDeviceToken.Platform.ANDROID, "Phone");
+                user, "system-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice changed Bob's role"), mutedMember));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("system-subject-token");
+    }
+
+    @Test
+    void notificationEventListenerPushesRemovalNoticeToSubjectWhoIsNoLongerMember() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID removedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+        when(presenceState.isOnline(removedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "removed-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(removedMember)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice removed Bob"), removedMember));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("removed-subject-token");
+        verify(tokenRepository, never()).findByUserId(mutedMember);
+    }
+
+    @Test
+    void notificationEventListenerSkipsSystemMessagePushForMutedNonSubject() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID subjectMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember, subjectMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+        when(presenceState.isOnline(subjectMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "other-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(subjectMember)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice removed Carol"), subjectMember));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("other-subject-token");
+        verify(tokenRepository, never()).findByUserId(mutedMember);
+    }
+
+    @Test
+    void notificationEventListenerPushesMentionedMutedMemberForSystemMessage() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+        when(presenceState.isOnline(mutedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "system-mention-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice added Bob",
+                        List.of(new com.nexachat.message.dto.MessageMentionResponse(mutedMember, 0, 3)))));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("system-mention-token");
+        assertThat(sent.get(0).data().get("mentioned")).isEqualTo("true");
+    }
+
+    @Test
+    void notificationEventListenerPushesMentionAllMutedMemberForSystemMessage() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+        when(presenceState.isOnline(mutedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "system-mention-all-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
 
         MessageResponse message = new MessageResponse(
                 UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
                 Message.Type.SYSTEM.name(), "Alice added Bob", UUID.randomUUID(), null,
-                null, List.of(), List.of(), Instant.now(), null, null
+                null, List.of(), List.of(), Instant.now(), null, null,
+                List.of(), true
         );
 
         eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
 
         List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
         assertThat(sent).hasSize(1);
-        assertThat(sent.get(0).token()).isEqualTo("system-notice-token");
-        assertThat(sent.get(0).data().get("type")).isEqualTo("NEW_MESSAGE");
+        assertThat(sent.get(0).token()).isEqualTo("system-mention-all-token");
+        assertThat(sent.get(0).data().get("mentioned")).isEqualTo("true");
+    }
+
+    @Test
+    void notificationEventListenerPushesSystemMessageWhenMuteExpired() {
+        UUID member = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, member));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of()); // an expired mute is not active
+        when(presenceState.isOnline(member)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "expired-mute-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(member)).thenReturn(List.of(token));
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId,
+                systemMessage(conversationId, senderId, "Alice added Bob")));
+
+        assertThat(mockGateway.getSentPushes()).hasSize(1);
+    }
+
+    @Test
+    void notificationEventListenerNeverGatesCallInvite() {
+        UUID callerId = UUID.randomUUID();
+        UUID calleeId = UUID.randomUUID();
+        UUID callId = UUID.randomUUID();
+
+        CallSession session = CallSession.ringing(callId, conversationId, callerId, calleeId, Instant.now());
+        when(callRegistry.find(callId)).thenReturn(Optional.of(session));
+        when(presenceState.isOnline(calleeId)).thenReturn(false);
+
+        User caller = mock(User.class);
+        when(caller.getDisplayName()).thenReturn("John Caller");
+        when(userRepository.findById(callerId)).thenReturn(Optional.of(caller));
+
+        User callee = mock(User.class);
+        UserDeviceToken calleeToken = UserDeviceToken.create(
+                callee, "muted-callee-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(calleeId)).thenReturn(List.of(calleeToken));
+
+        eventListener.onCallRinging(new CallRingingEvent(callId));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("muted-callee-token");
+        assertThat(sent.get(0).data().get("type")).isEqualTo("CALL_INVITE");
+        verify(memberRepository, never()).findMutedMemberIds(any(), any());
+    }
+
+    private MessageResponse systemMessage(UUID conversationId, UUID senderId, String content) {
+        return systemMessage(conversationId, senderId, content, List.of());
+    }
+
+    private MessageResponse systemMessage(UUID conversationId, UUID senderId, String content,
+                                          List<com.nexachat.message.dto.MessageMentionResponse> mentions) {
+        return new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.SYSTEM.name(), content, UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null,
+                mentions, false
+        );
     }
 
     @Test

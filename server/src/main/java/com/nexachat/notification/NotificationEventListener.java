@@ -4,7 +4,6 @@ import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallRingingEvent;
 import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
-import com.nexachat.message.Message;
 import com.nexachat.message.MessageCreatedEvent;
 import com.nexachat.presence.PresenceSessionState;
 import com.nexachat.user.User;
@@ -17,6 +16,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,34 +52,45 @@ public class NotificationEventListener {
     /**
      * Dispatches the {@code NEW_MESSAGE} pointer to offline members.
      *
-     * <p>A member who muted the conversation is skipped for ordinary messages.
-     * {@code SYSTEM} messages (group membership events) keep their current
-     * behavior so a member is never silently added or removed, and
+     * <p>A member who muted the conversation is skipped for ordinary messages
+     * and for {@code SYSTEM} messages, unless the message mentions them or the
+     * {@code SYSTEM} event is about that member (they were removed from the
+     * group or their role changed), so nobody is removed or demoted silently.
+     * A removed subject is no longer a member at fan-out time, so they are
+     * added back to the recipient set for that one event.
      * {@link #onCallRinging} is never gated — a call must ring.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onMessageCreated(MessageCreatedEvent event) {
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
+        UUID subjectUserId = event.subjectUserId();
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
+        // A removed subject is already gone from the member list at fan-out
+        // time; keep them as a candidate so the removal notice still reaches
+        // their devices.
+        Set<UUID> recipientIds = new LinkedHashSet<>(memberIds);
+        if (subjectUserId != null) {
+            recipientIds.add(subjectUserId);
+        }
         Set<UUID> mutedMemberIds = new HashSet<>(
                 memberRepository.findMutedMemberIds(conversationId, clock.instant()));
         Set<UUID> mentionedMemberIds = new HashSet<>();
         event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
         boolean mentionAll = event.message().mentionAll();
-        boolean systemNotice = Message.Type.SYSTEM.name().equals(event.message().type());
 
         // One physical device can hold a token row per account; collect the
         // offline recipients' tokens and de-duplicate by token value so a
         // shared device receives the message exactly once.
         Map<String, UserDeviceToken> tokensByValue = new LinkedHashMap<>();
         Set<String> mentionedTokenValues = new HashSet<>();
-        for (UUID memberId : memberIds) {
+        for (UUID memberId : recipientIds) {
             if (memberId.equals(senderId)) {
                 continue;
             }
             boolean mentioned = mentionAll || mentionedMemberIds.contains(memberId);
-            if (!systemNotice && mutedMemberIds.contains(memberId) && !mentioned) {
+            boolean subject = memberId.equals(subjectUserId);
+            if (mutedMemberIds.contains(memberId) && !mentioned && !subject) {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {

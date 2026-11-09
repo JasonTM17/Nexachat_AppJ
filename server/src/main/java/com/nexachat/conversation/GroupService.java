@@ -287,10 +287,13 @@ public class GroupService {
 
         String actorName = caller.getUser().getDisplayName();
         // The system line is posted BEFORE the member row is deleted so the
-        // acting user is still a member when postSystemMessage checks.
+        // acting user is still a member when postSystemMessage checks. A
+        // removed member is the event subject so push gating can still reach
+        // them (a self-leave is not a removal and carries no subject).
         messageService.postSystemMessage(callerId, conversationId, selfRemoval
                 ? actorName + " left the group"
-                : actorName + " removed " + target.getUser().getDisplayName());
+                : actorName + " removed " + target.getUser().getDisplayName(),
+                selfRemoval ? null : targetUserId);
         memberRepository.delete(target);
         revokeTopicSubscriptionsAfterCommit(targetUserId, conversationId);
         publishUpdate(conversation,
