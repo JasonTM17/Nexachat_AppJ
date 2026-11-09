@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Completable;
@@ -170,7 +171,9 @@ public final class TokenRefresher {
                 if (generation.get() != startedGeneration) {
                     return Completable.complete();
                 }
-                tokenStore.saveTokens(body.getAccessToken(), expiresAt, body.getRefreshToken())
+                tokenStore.saveSession(body.getAccessToken(), expiresAt, body.getRefreshToken(),
+                        new RecallWindowConfig(body.getRecallWindowSeconds(),
+                                body.getGroupAdminMayRecallAfterWindow()))
                         .blockingAwait();
                 return Completable.complete();
             }

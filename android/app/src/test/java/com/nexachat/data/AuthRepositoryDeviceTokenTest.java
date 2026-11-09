@@ -16,6 +16,7 @@ import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.Tokens;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import io.reactivex.rxjava3.core.Completable;
@@ -42,7 +43,7 @@ public final class AuthRepositoryDeviceTokenTest {
         Call<AuthResponse> call = mock(Call.class);
         when(authApi.login(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(response));
-        when(tokenStore.saveTokens(anyString(), anyLong(), anyString()))
+        when(tokenStore.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
                 .thenReturn(Completable.complete());
         when(tokenManager.onSessionAvailable()).thenReturn(Completable.complete());
 
@@ -53,7 +54,7 @@ public final class AuthRepositoryDeviceTokenTest {
                 .blockingGet();
 
         assertTrue(result instanceof Result.Success<?>);
-        verify(tokenStore).saveTokens(anyString(), anyLong(), anyString());
+        verify(tokenStore).saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class));
         verify(tokenManager).onSessionAvailable();
     }
 

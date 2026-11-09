@@ -147,6 +147,28 @@ public final class TokenStoreTest {
     }
 
     @Test
+    public void sessionPersistsRecallConfigAndLocalHidesUntilLogout() {
+        TestSubscriber<RecallWindowConfig> config = store.observeRecallWindowConfig().test();
+        TestSubscriber<java.util.Set<String>> hidden = store.observeLocallyHiddenMessageIds().test();
+        config.assertValueAt(0, RecallWindowConfig.DEFAULT);
+        hidden.assertValueAt(0, java.util.Collections.emptySet());
+
+        store.saveSession("access", 1_700_000_000_000L, "refresh",
+                        new RecallWindowConfig(172_800L, true))
+                .andThen(store.hideMessageForMe("message-fixture"))
+                .test()
+                .assertComplete();
+
+        config.assertValueAt(1, new RecallWindowConfig(172_800L, true));
+        hidden.assertValueAt(1, java.util.Set.of("message-fixture"));
+        store.clear().test().assertComplete();
+        config.assertValueAt(2, RecallWindowConfig.DEFAULT);
+        hidden.assertValueAt(2, java.util.Collections.emptySet());
+        config.cancel();
+        hidden.cancel();
+    }
+
+    @Test
     public void hasValidRefreshMapsStoredRefreshTokenPresence() {
         TestSubscriber<Boolean> observer = store.hasValidRefresh().test();
         observer.assertValueAt(0, false);

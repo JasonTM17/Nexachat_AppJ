@@ -11,6 +11,8 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
 import com.nexachat.data.AttachmentUploadEvent;
 import com.nexachat.data.ChatMessage;
@@ -87,6 +89,7 @@ public final class ChatViewModelTest {
     private ConversationRepository conversationRepository;
     private AttachmentRepository attachmentRepository;
     private RealtimeSession session;
+    private TokenStore tokenStore;
     private BehaviorProcessor<List<ChatMessage>> messagesFlow;
     private PublishProcessor<Optional<ConversationSummary>> conversationFlow;
     private PublishProcessor<TypingEvent> typingFlow;
@@ -106,6 +109,7 @@ public final class ChatViewModelTest {
         conversationRepository = Mockito.mock(ConversationRepository.class);
         attachmentRepository = Mockito.mock(AttachmentRepository.class);
         session = Mockito.mock(RealtimeSession.class);
+        tokenStore = Mockito.mock(TokenStore.class);
         messagesFlow = BehaviorProcessor.createDefault(List.of());
         conversationFlow = PublishProcessor.create();
         typingFlow = PublishProcessor.create();
@@ -121,6 +125,8 @@ public final class ChatViewModelTest {
         doNothing().when(messageRepository).closeConversation(anyString());
         when(messageRepository.openConversation(anyString())).thenReturn(Completable.complete());
         when(messageRepository.refreshHistory(anyString(), nullable(Long.class)))
+                .thenReturn(Single.just(new Result.Success<>(new MessagePageDto())));
+        when(messageRepository.refreshHistory(anyString()))
                 .thenReturn(Single.just(new Result.Success<>(new MessagePageDto())));
         when(messageRepository.sendRead(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageRepository.send(anyString(), any(), any(), anyString(), any()))
@@ -138,6 +144,8 @@ public final class ChatViewModelTest {
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(messageRepository.deleteMessage(anyString(), anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(messageRepository.hideMessageForMe(anyString())).thenReturn(Completable.complete());
+        when(tokenStore.observeRecallWindowConfig()).thenReturn(Flowable.just(RecallWindowConfig.DEFAULT));
         when(messageRepository.searchMessages(anyString(), anyString(), nullable(Long.class), anyInt()))
                 .thenReturn(Single.just(new Result.Success<>(
                         new MessageSearchResult(List.of(), false, null))));
@@ -168,7 +176,7 @@ public final class ChatViewModelTest {
 
     private ChatViewModel newViewModel(SavedStateHandle handle) {
         ChatViewModel created = new ChatViewModel(
-                handle, messageRepository, conversationRepository, attachmentRepository, session);
+                handle, messageRepository, conversationRepository, attachmentRepository, session, tokenStore);
         viewModelStore.put("chat-" + (++viewModelCount), created);
         return created;
     }
@@ -577,6 +585,25 @@ public final class ChatViewModelTest {
                 .thenReturn(Single.just(Result.failure(new ApiError.Unknown("NOT_MESSAGE_AUTHOR"))));
         viewModel.deleteMessage("m-2");
         assertEquals(new ApiError.Unknown("NOT_MESSAGE_AUTHOR"), state().getError());
+    }
+
+    @Test
+    public void expiredRecallShowsLocalizedErrorAndRefreshesHistory() {
+        when(messageRepository.deleteMessage(anyString(), anyString()))
+                .thenReturn(Single.just(Result.failure(new ApiError.Unknown("RECALL_WINDOW_EXPIRED"))));
+
+        viewModel.deleteMessage("m-expired");
+
+        assertEquals(new ApiError.Unknown(ChatViewModel.ERROR_RECALL_WINDOW_EXPIRED), state().getError());
+        verify(messageRepository).refreshHistory(CONVERSATION_ID);
+    }
+
+    @Test
+    public void deleteForMePersistsLocallyWithoutCallingServer() {
+        viewModel.deleteMessageForMe("m-expired");
+
+        verify(messageRepository).hideMessageForMe("m-expired");
+        verify(messageRepository, Mockito.never()).deleteMessage(anyString(), anyString());
     }
 
     @Test

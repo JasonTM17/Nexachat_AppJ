@@ -14,6 +14,7 @@ public class MessageRecallProperties {
     public static final Duration DEFAULT_RECALL_WINDOW = Duration.ofHours(24);
     public static final Duration MIN_RECALL_WINDOW = Duration.ofMinutes(1);
     public static final Duration MAX_RECALL_WINDOW = Duration.ofDays(7);
+    public static final boolean GROUP_ADMIN_MAY_RECALL_AFTER_WINDOW = true;
 
     private Duration recallWindow = DEFAULT_RECALL_WINDOW;
 

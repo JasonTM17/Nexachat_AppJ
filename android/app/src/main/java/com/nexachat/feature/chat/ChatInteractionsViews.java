@@ -15,6 +15,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
 import com.nexachat.core.ui.ForwardFilter;
+import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.chat.adapter.ForwardTargetAdapter;
@@ -30,7 +31,7 @@ public final class ChatInteractionsViews {
     public interface MessageActions {
         void reply(@NonNull ChatMessage message);
         void edit(@NonNull ChatMessage message);
-        void delete(@NonNull ChatMessage message);
+        void delete(@NonNull ChatMessage message, @NonNull RecallWindowRules.DeleteAction action);
         void react(@NonNull ChatMessage message, @NonNull String emoji);
         void pin(@NonNull ChatMessage message);
         void forward(@NonNull ChatMessage message);
@@ -41,6 +42,7 @@ public final class ChatInteractionsViews {
             @NonNull ChatMessage message,
             boolean canPin,
             boolean pinned,
+            @NonNull RecallWindowRules.DeleteAction deleteAction,
             @NonNull MessageActions actions) {
         List<String> labels = new ArrayList<>();
         List<Runnable> callbacks = new ArrayList<>();
@@ -62,8 +64,16 @@ public final class ChatInteractionsViews {
         if (message.getMine() && sent && "TEXT".equals(message.getType())) {
             labels.add(context.getString(R.string.action_edit)); callbacks.add(() -> actions.edit(message));
         }
-        if (message.getMine() && sent) {
-            labels.add(context.getString(R.string.action_delete)); callbacks.add(() -> confirmDelete(context, message, actions));
+        if (deleteAction != RecallWindowRules.DeleteAction.NONE) {
+            int actionLabel = switch (deleteAction) {
+                case RECALL -> R.string.action_recall;
+                case DELETE_FOR_ME -> R.string.action_delete_for_me;
+                case ADMIN_DELETE -> R.string.action_admin_delete;
+                case NONE -> throw new IllegalStateException("No delete action label");
+                default -> throw new IllegalStateException("Unknown delete action");
+            };
+            labels.add(context.getString(actionLabel));
+            callbacks.add(() -> confirmDelete(context, message, deleteAction, actions));
         }
         new MaterialAlertDialogBuilder(context)
                 .setTitle(message.getContent() == null ? context.getString(R.string.chat_title) : message.getContent())
@@ -79,12 +89,33 @@ public final class ChatInteractionsViews {
                 .show();
     }
 
-    private static void confirmDelete(Context context, ChatMessage message, MessageActions actions) {
+    private static void confirmDelete(
+            Context context,
+            ChatMessage message,
+            RecallWindowRules.DeleteAction action,
+            MessageActions actions) {
+        int title;
+        int body;
+        switch (action) {
+            case RECALL -> {
+                title = R.string.dialog_recall_message_title;
+                body = R.string.dialog_recall_message_body;
+            }
+            case DELETE_FOR_ME -> {
+                title = R.string.dialog_delete_for_me_title;
+                body = R.string.dialog_delete_for_me_body;
+            }
+            case ADMIN_DELETE -> {
+                title = R.string.dialog_admin_delete_title;
+                body = R.string.dialog_admin_delete_body;
+            }
+            default -> throw new IllegalArgumentException("A delete action is required");
+        }
         new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.dialog_delete_message_title)
-                .setMessage(R.string.dialog_delete_message_body)
+                .setTitle(title)
+                .setMessage(body)
                 .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.action_delete, (dialog, which) -> actions.delete(message))
+                .setPositiveButton(R.string.action_delete, (dialog, which) -> actions.delete(message, action))
                 .show();
     }
 

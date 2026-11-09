@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.network.stomp.dto.MessageDeletedDto;
 import com.nexachat.core.network.stomp.dto.PresenceEventDto;
 import com.nexachat.core.network.stomp.dto.ReadUpdateDto;
@@ -93,6 +94,15 @@ public final class DtoWireRoundTripTest {
         assertEquals("u", auth.getUser().getId());
         assertNull(auth.getUser().getAvatarUrl());
         assertEquals(900L, auth.getAccessTokenExpiresIn());
+        assertEquals(RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS,
+                auth.getRecallWindowSeconds());
+        assertFalse(auth.getGroupAdminMayRecallAfterWindow());
+        AuthResponse configuredAuth = moshi.adapter(AuthResponse.class).fromJson(
+                "{\"user\":{\"id\":\"u\",\"phone\":\"+84900000000\",\"displayName\":\"Demo\"},"
+                        + "\"accessToken\":\"a\",\"accessTokenExpiresIn\":900,\"refreshToken\":\"r\","
+                        + "\"recallWindowSeconds\":172800,\"groupAdminMayRecallAfterWindow\":true}");
+        assertEquals(172800L, configuredAuth.getRecallWindowSeconds());
+        assertTrue(configuredAuth.getGroupAdminMayRecallAfterWindow());
         assertEquals("PHONE_EXISTS", ErrorResponse.errorCodeOf(
                 "{\"error\":{\"code\":\"PHONE_EXISTS\",\"message\":\"Already registered\"}}"));
     }

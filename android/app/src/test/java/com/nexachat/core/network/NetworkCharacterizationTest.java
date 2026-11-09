@@ -20,6 +20,7 @@ import com.nexachat.core.network.stomp.ReconnectPolicy;
 import com.nexachat.core.network.stomp.StompClient;
 import com.nexachat.core.network.stomp.StompCommand;
 import com.nexachat.core.network.stomp.StompFrame;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
@@ -67,7 +68,7 @@ public final class NetworkCharacterizationTest {
         release.countDown();
         refresh.join(10_000);
         assertNull(store.readTokens().blockingGet());
-        verify(store, never()).saveTokens(anyString(), anyLong(), anyString());
+        verify(store, never()).saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class));
     }
 
     @Test
@@ -119,7 +120,8 @@ public final class NetworkCharacterizationTest {
         when(store.readTokens()).thenAnswer(ignored -> Maybe.defer(() ->
                 current.get() == null ? Maybe.empty() : Maybe.just(current.get())));
         when(store.getHasValidRefresh()).thenReturn(hasToken);
-        when(store.saveTokens(anyString(), anyLong(), anyString())).thenAnswer(invocation ->
+        when(store.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
+                .thenAnswer(invocation ->
                 Completable.fromAction(() -> {
                     current.set(new Tokens(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
                     hasToken.onNext(true);

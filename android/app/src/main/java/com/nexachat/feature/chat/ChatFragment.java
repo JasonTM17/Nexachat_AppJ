@@ -42,7 +42,9 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
+import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
@@ -92,6 +94,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private MessageListAdapter adapter;
     private ChatViewModel.UiState state = new ChatViewModel.UiState();
     private ChatSearchState searchState = new ChatSearchState();
+    private RecallWindowConfig recallWindowConfig = RecallWindowConfig.DEFAULT;
     private String conversationId = "";
     private String pulsingMessageId;
     private ChatMessage editingMessage;
@@ -402,6 +405,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void observeViewModel() {
+        viewModel.getRecallWindowConfig().observe(getViewLifecycleOwner(), config -> {
+            if (config != null) recallWindowConfig = config;
+        });
         viewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
             if (next != null) {
                 state = next;
@@ -827,10 +833,28 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     @Override public void onMessageTap(@NonNull String messageId) { if (searchOpen) { setSearchOpen(false); viewModel.jumpToMessage(messageId); } }
     @Override public void onMessageLongPress(@NonNull String messageId) {
         ChatMessage message = resolveOriginal(messageId); if (message == null) return;
-        ChatInteractionsViews.showMessageActions(requireContext(), message, state.getCanPin(), state.isPinned(messageId), new ChatInteractionsViews.MessageActions() {
+        boolean groupAdmin = state.isGroup() && state.getCanPin();
+        RecallWindowRules.DeleteAction deleteAction = RecallWindowRules.deleteAction(
+                message.getStatus() == DeliveryStatus.SENT,
+                message.isDeleted(),
+                message.getMine(),
+                groupAdmin,
+                recallWindowConfig.mayGroupAdminRecallAfterWindow(),
+                message.getCreatedAtEpochMs(),
+                System.currentTimeMillis(),
+                recallWindowConfig.getRecallWindowSeconds());
+        ChatInteractionsViews.showMessageActions(requireContext(), message, state.getCanPin(),
+                state.isPinned(messageId), deleteAction, new ChatInteractionsViews.MessageActions() {
             @Override public void reply(@NonNull ChatMessage value) { viewModel.setReplyTarget(value); }
             @Override public void edit(@NonNull ChatMessage value) { showEdit(value); }
-            @Override public void delete(@NonNull ChatMessage value) { viewModel.deleteMessage(value.getId()); }
+            @Override public void delete(@NonNull ChatMessage value,
+                    @NonNull RecallWindowRules.DeleteAction action) {
+                if (action == RecallWindowRules.DeleteAction.DELETE_FOR_ME) {
+                    viewModel.deleteMessageForMe(value.getId());
+                } else {
+                    viewModel.deleteMessage(value.getId());
+                }
+            }
             @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
             @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
             @Override public void forward(@NonNull ChatMessage value) { showForward(value); }

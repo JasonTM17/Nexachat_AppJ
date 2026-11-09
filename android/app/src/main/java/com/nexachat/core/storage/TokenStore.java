@@ -37,6 +37,12 @@ public final class TokenStore {
             PreferencesKeys.longKey("access_expires_at");
     private static final Preferences.Key<String> REFRESH_TOKEN =
             PreferencesKeys.stringKey("refresh_token");
+    private static final Preferences.Key<Long> RECALL_WINDOW_SECONDS =
+            PreferencesKeys.longKey("recall_window_seconds");
+    private static final Preferences.Key<Boolean> GROUP_ADMIN_RECALL_AFTER_WINDOW =
+            PreferencesKeys.booleanKey("group_admin_recall_after_window");
+    private static final Preferences.Key<Set<String>> LOCALLY_HIDDEN_MESSAGE_IDS =
+            PreferencesKeys.stringSetKey("locally_hidden_message_ids");
     private static final Preferences.Key<String> FCM_DEVICE_TOKEN =
             PreferencesKeys.stringKey("fcm_device_token");
     private static final Preferences.Key<String> PENDING_DEVICE_UNREGISTER_TOKEN =
@@ -62,6 +68,25 @@ public final class TokenStore {
     @NonNull
     public Completable saveTokens(
             @NonNull String access, long accessExpiresAtEpochMs, @NonNull String refresh) {
+        return persistSession(access, accessExpiresAtEpochMs, refresh, null);
+    }
+
+    /** Atomically persists session credentials and the additive server recall configuration. */
+    @NonNull
+    public Completable saveSession(
+            @NonNull String access,
+            long accessExpiresAtEpochMs,
+            @NonNull String refresh,
+            @NonNull RecallWindowConfig recallWindowConfig) {
+        return persistSession(access, accessExpiresAtEpochMs, refresh,
+                Objects.requireNonNull(recallWindowConfig, "recallWindowConfig"));
+    }
+
+    private Completable persistSession(
+            @NonNull String access,
+            long accessExpiresAtEpochMs,
+            @NonNull String refresh,
+            @Nullable RecallWindowConfig recallWindowConfig) {
         return dataStore.updateDataAsync(
                         preferences ->
                                 Single.fromCallable(
@@ -81,9 +106,55 @@ public final class TokenStore {
                                                             cipher.encrypt(
                                                                     refresh.getBytes(
                                                                             StandardCharsets.UTF_8))));
+                                            if (recallWindowConfig != null) {
+                                                updated.set(RECALL_WINDOW_SECONDS,
+                                                        recallWindowConfig.getRecallWindowSeconds());
+                                                updated.set(GROUP_ADMIN_RECALL_AFTER_WINDOW,
+                                                        recallWindowConfig
+                                                                .mayGroupAdminRecallAfterWindow());
+                                            }
                                             return (Preferences) updated;
                                         }))
                 .ignoreElement();
+    }
+
+    /** Emits the persisted policy, or the documented 24-hour legacy fallback. */
+    @NonNull
+    public Flowable<RecallWindowConfig> observeRecallWindowConfig() {
+        return dataStore.data()
+                .map(preferences -> new RecallWindowConfig(
+                        valueOrDefault(preferences.get(RECALL_WINDOW_SECONDS)),
+                        Boolean.TRUE.equals(preferences.get(GROUP_ADMIN_RECALL_AFTER_WINDOW))))
+                .distinctUntilChanged();
+    }
+
+    /** Persists a locally hidden message id; it is cleared when this session logs out. */
+    @NonNull
+    public Completable hideMessageForMe(@NonNull String messageId) {
+        Objects.requireNonNull(messageId, "messageId");
+        if (messageId.isBlank()) return Completable.complete();
+        return dataStore.updateDataAsync(preferences -> Single.fromCallable(() -> {
+                    MutablePreferences updated = preferences.toMutablePreferences();
+                    Set<String> ids = updated.get(LOCALLY_HIDDEN_MESSAGE_IDS);
+                    Set<String> next = new HashSet<>(ids == null ? Collections.emptySet() : ids);
+                    next.add(messageId);
+                    updated.set(LOCALLY_HIDDEN_MESSAGE_IDS, next);
+                    return (Preferences) updated;
+                }))
+                .ignoreElement();
+    }
+
+    /** Emits the local hide set so chat and pin projections can filter it after relaunch. */
+    @NonNull
+    public Flowable<Set<String>> observeLocallyHiddenMessageIds() {
+        return dataStore.data()
+                .map(preferences -> {
+                    Set<String> ids = preferences.get(LOCALLY_HIDDEN_MESSAGE_IDS);
+                    return ids == null
+                            ? Collections.<String>emptySet()
+                            : Collections.unmodifiableSet(new HashSet<>(ids));
+                })
+                .distinctUntilChanged();
     }
 
     /** Empty when tokens are absent or either encrypted token cannot decrypt. */
@@ -227,6 +298,9 @@ public final class TokenStore {
                                             updated.remove(ACCESS_TOKEN);
                                             updated.remove(ACCESS_EXPIRES_AT);
                                             updated.remove(REFRESH_TOKEN);
+                                            updated.remove(RECALL_WINDOW_SECONDS);
+                                            updated.remove(GROUP_ADMIN_RECALL_AFTER_WINDOW);
+                                            updated.remove(LOCALLY_HIDDEN_MESSAGE_IDS);
                                             Set<String> userIds = updated.get(SYNC_CURSOR_USER_IDS);
                                             if (userIds != null) {
                                                 for (String userId : userIds) {
@@ -237,6 +311,10 @@ public final class TokenStore {
                                             return (Preferences) updated;
                                         }))
                 .ignoreElement();
+    }
+
+    private static long valueOrDefault(@Nullable Long seconds) {
+        return seconds == null ? RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS : seconds;
     }
 
     /**

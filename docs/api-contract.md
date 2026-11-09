@@ -155,11 +155,13 @@ JSON `null` values.
   },
   "accessToken": "eyJhbGciOi...",
   "accessTokenExpiresIn": 900,
-  "refreshToken": "d3f1... (opaque, DB-backed)"
+  "refreshToken": "d3f1... (opaque, DB-backed)",
+  "recallWindowSeconds": 86400,
+  "groupAdminMayRecallAfterWindow": true
 }
 ```
 
-`AuthResponse` is `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken}`.
+`AuthResponse` is `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`. The last two fields are additive on register, login, and refresh responses. `recallWindowSeconds` reports the effective `nexachat.message.recall-window` setting (default 86400); `groupAdminMayRecallAfterWindow` reports whether current group admins may moderate messages after that window.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`; `ContactResponse` adds
 `contactUserId`, `aliasName`, `avatarUrl` and `createdAt`.
 
@@ -268,8 +270,12 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 
 Author message recall uses the server-side `nexachat.message.recall-window`
 setting, defaulting to 24 hours and bounded from 1 minute through 7 days. The
-effective setting is not exposed in API responses; clients should use the
-documented 24-hour default when deciding whether to show the recall action.
+effective seconds and the group-admin expired-window moderation rule are
+included in register, login, and refresh `AuthResponse` payloads so clients can
+hide unavailable actions without relying on the default. Android uses a local
+"Delete for me" action after an author's window expires; this hides the message
+from that signed-in device without sending the server recall request. A group
+admin's "Admin delete" action still uses the server-authorized message DELETE.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|

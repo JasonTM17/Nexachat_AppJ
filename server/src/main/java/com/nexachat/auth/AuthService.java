@@ -7,6 +7,7 @@ import com.nexachat.auth.dto.RefreshRequest;
 import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.message.MessageRecallProperties;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
@@ -50,6 +51,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final AccessTokenRevocationService accessTokenRevocationService;
     private final RateLimitService rateLimitService;
+    private final MessageRecallProperties messageRecallProperties;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -64,7 +66,8 @@ public class AuthService {
                        JwtService jwtService,
                        TokenService tokenService,
                        AccessTokenRevocationService accessTokenRevocationService,
-                       RateLimitService rateLimitService) {
+                       RateLimitService rateLimitService,
+                       MessageRecallProperties messageRecallProperties) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.passwordEncoder = passwordEncoder;
@@ -72,6 +75,7 @@ public class AuthService {
         this.tokenService = tokenService;
         this.accessTokenRevocationService = accessTokenRevocationService;
         this.rateLimitService = rateLimitService;
+        this.messageRecallProperties = messageRecallProperties;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -198,7 +202,9 @@ public class AuthService {
                 UserResponse.from(user),
                 jwtService.generateAccessToken(user),
                 jwtService.accessTokenExpiresIn(),
-                refreshToken);
+                refreshToken,
+                messageRecallProperties.getRecallWindow().toSeconds(),
+                MessageRecallProperties.GROUP_ADMIN_MAY_RECALL_AFTER_WINDOW);
     }
 
     private String normalizeForRegister(String rawPhone) {

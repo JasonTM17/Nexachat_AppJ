@@ -205,6 +205,9 @@
     <string name="action_forward">Chuyển tiếp</string>
     <string name="action_edit">Chỉnh sửa</string>
     <string name="action_delete">Xoá</string>
+    <string name="action_recall">Thu hồi</string>
+    <string name="action_delete_for_me">Xóa khỏi cuộc trò chuyện của tôi</string>
+    <string name="action_admin_delete">Gỡ tin nhắn</string>
     <string name="action_more_options">Tuỳ chọn khác</string>
     <string name="attachment_picker_title">Thêm tệp đính kèm</string>
     <string name="attachment_pick_image">Ảnh</string>
@@ -220,7 +223,14 @@
     <!-- Message Delete -->
     <string name="dialog_delete_message_title">Xoá tin nhắn?</string>
     <string name="dialog_delete_message_body">Xoá tin nhắn này cho tất cả mọi người?</string>
+    <string name="dialog_recall_message_title">Thu hồi tin nhắn?</string>
+    <string name="dialog_recall_message_body">Xóa tin nhắn này khỏi cuộc trò chuyện của mọi người?</string>
+    <string name="dialog_delete_for_me_title">Xóa tin nhắn với riêng tôi?</string>
+    <string name="dialog_delete_for_me_body">Tin nhắn chỉ bị ẩn trên thiết bị này.</string>
+    <string name="dialog_admin_delete_title">Gỡ tin nhắn?</string>
+    <string name="dialog_admin_delete_body">Xóa tin nhắn này cho mọi người với quyền quản trị viên?</string>
     <string name="message_deleted">Tin nhắn đã bị xoá</string>
+    <string name="recall_window_expired">Đã hết thời hạn thu hồi. Cuộc trò chuyện đã được làm mới.</string>
 
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Tìm trong cuộc trò chuyện…</string>

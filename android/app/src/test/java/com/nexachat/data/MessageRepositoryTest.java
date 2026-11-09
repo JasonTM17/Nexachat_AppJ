@@ -94,6 +94,7 @@ public class MessageRepositoryTest {
     private io.reactivex.rxjava3.processors.BehaviorProcessor<List<OutboxEntity>> outboxChanges;
     private io.reactivex.rxjava3.processors.BehaviorProcessor<Integer> reactionChanges;
     private io.reactivex.rxjava3.processors.BehaviorProcessor<Integer> pinChanges;
+    private io.reactivex.rxjava3.processors.BehaviorProcessor<Set<String>> hiddenMessageIds;
     private io.reactivex.rxjava3.processors.PublishProcessor<ChatEvent> events;
     private io.reactivex.rxjava3.processors.PublishProcessor<Object> resyncRequests;
     private io.reactivex.rxjava3.processors.PublishProcessor<SessionEvents.Event> logoutEvents;
@@ -107,6 +108,7 @@ public class MessageRepositoryTest {
         outboxChanges = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(List.of());
         reactionChanges = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(0);
         pinChanges = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(0);
+        hiddenMessageIds = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(Set.of());
         events = io.reactivex.rxjava3.processors.PublishProcessor.create();
         resyncRequests = io.reactivex.rxjava3.processors.PublishProcessor.create();
         logoutEvents = io.reactivex.rxjava3.processors.PublishProcessor.create();
@@ -323,6 +325,12 @@ public class MessageRepositoryTest {
         doNothing().when(session).unwatchConversation(anyString());
         when(sessionEvents.getEvents()).thenReturn(logoutEvents);
         when(tokenStore.readTokens()).thenReturn(Maybe.just(new Tokens(jwtFor("me-1"), Long.MAX_VALUE, "refresh")));
+        when(tokenStore.observeLocallyHiddenMessageIds()).thenReturn(hiddenMessageIds);
+        when(tokenStore.hideMessageForMe(anyString())).thenAnswer(call -> Completable.fromAction(() -> {
+            Set<String> next = new java.util.HashSet<>(hiddenMessageIds.getValue());
+            next.add(call.getArgument(0));
+            hiddenMessageIds.onNext(next);
+        }));
         when(messageApi.getMessages(anyString(), nullable(Long.class), nullable(Long.class), anyInt()))
                 .thenReturn(responseCall(Response.success(new MessagePageDto())));
         when(messageApi.markRead(anyString(), any())).thenReturn(responseCall(Response.success(204, null)));
@@ -874,6 +882,29 @@ public class MessageRepositoryTest {
         await(messageDao.upsert(copy(own("m-1", 1L, ""), null, null, null, 5L, null)));
         assertTrue(await(repository.deleteMessage(CONVERSATION_ID, "m-1")) instanceof Result.Success<?>);
         verify(messageApi, times(0)).deleteMessage(anyString(), anyString());
+    }
+
+    @Test public void deleteForMeHidesTheMessageFromTheRoomProjection() {
+        await(messageDao.upsert(own("m-local", 1L, "private to this device")));
+        TestSubscriber<List<ChatMessage>> observer = repository.messagesFlow(CONVERSATION_ID).test();
+        observer.assertValueAt(0, items -> items.stream().anyMatch(item -> "m-local".equals(item.getId())));
+
+        await(repository.hideMessageForMe("m-local"));
+
+        observer.assertValueAt(observer.values().size() - 1,
+                items -> items.stream().noneMatch(item -> "m-local".equals(item.getId())));
+        observer.cancel();
+    }
+
+    @Test public void messageDeleteRequestReachesServerForAdminAuthorization() {
+        await(messageDao.upsert(stored("m-admin", 2L)));
+        when(messageApi.deleteMessage(CONVERSATION_ID, "m-admin"))
+                .thenReturn(responseCall(Response.success(204, null)));
+
+        assertTrue(await(repository.deleteMessage(CONVERSATION_ID, "m-admin"))
+                instanceof Result.Success<?>);
+
+        verify(messageApi).deleteMessage(CONVERSATION_ID, "m-admin");
     }
 
     @Test public void searchWritesThroughAndHydratesPage() {

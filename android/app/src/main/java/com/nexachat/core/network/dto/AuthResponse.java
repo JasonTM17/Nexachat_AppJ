@@ -2,6 +2,7 @@ package com.nexachat.core.network.dto;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.NonNull;
+import com.nexachat.core.storage.RecallWindowConfig;
 import java.util.Objects;
 
 /** Reflective Moshi bean. Absent JSON keeps the no-arg defaults. */
@@ -10,16 +11,29 @@ public final class AuthResponse {
     private final String accessToken;
     private final long accessTokenExpiresIn;
     private final String refreshToken;
+    private final long recallWindowSeconds;
+    private final boolean groupAdminMayRecallAfterWindow;
 
     public AuthResponse() {
-        this(null, null, 0L, null);
+        this(null, null, 0L, null,
+                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false);
     }
 
     public AuthResponse(@NonNull UserDto user, @NonNull String accessToken, long accessTokenExpiresIn, @NonNull String refreshToken) {
+        this(user, accessToken, accessTokenExpiresIn, refreshToken,
+                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false);
+    }
+
+    public AuthResponse(@NonNull UserDto user, @NonNull String accessToken,
+            long accessTokenExpiresIn, @NonNull String refreshToken,
+            long recallWindowSeconds, boolean groupAdminMayRecallAfterWindow) {
         this.user = user;
         this.accessToken = accessToken;
         this.accessTokenExpiresIn = accessTokenExpiresIn;
         this.refreshToken = refreshToken;
+        this.recallWindowSeconds = RecallWindowConfig.isValidWindow(recallWindowSeconds)
+                ? recallWindowSeconds : RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS;
+        this.groupAdminMayRecallAfterWindow = groupAdminMayRecallAfterWindow;
     }
 
     @NonNull public UserDto getUser() {
@@ -38,6 +52,14 @@ public final class AuthResponse {
         return refreshToken;
     }
 
+    public long getRecallWindowSeconds() {
+        return recallWindowSeconds;
+    }
+
+    public boolean getGroupAdminMayRecallAfterWindow() {
+        return groupAdminMayRecallAfterWindow;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof AuthResponse that)) {
@@ -46,11 +68,14 @@ public final class AuthResponse {
         return Objects.equals(user, that.user)
                 && Objects.equals(accessToken, that.accessToken)
                 && accessTokenExpiresIn == that.accessTokenExpiresIn
-                && Objects.equals(refreshToken, that.refreshToken);
+                && Objects.equals(refreshToken, that.refreshToken)
+                && recallWindowSeconds == that.recallWindowSeconds
+                && groupAdminMayRecallAfterWindow == that.groupAdminMayRecallAfterWindow;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(user, accessToken, accessTokenExpiresIn, refreshToken);
+        return Objects.hash(user, accessToken, accessTokenExpiresIn, refreshToken,
+                recallWindowSeconds, groupAdminMayRecallAfterWindow);
     }
 }
