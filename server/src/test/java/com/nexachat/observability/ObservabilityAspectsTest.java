@@ -27,9 +27,11 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -200,6 +202,39 @@ class ObservabilityAspectsTest {
 
         assertThat(registry.get(ObservabilityMetrics.RATE_LIMIT_REJECTIONS)
                 .tag("reason", "message-send").counter().count()).isEqualTo(1);
+    }
+
+    @Test
+    void rateLimitRejectionsCollapseIdentityAndUnknownPartsToBoundedTags() {
+        RateLimitMetricsAspect aspect = new RateLimitMetricsAspect(metrics);
+        UUID firstUser = UUID.randomUUID();
+        UUID secondUser = UUID.randomUUID();
+
+        recordRejection(aspect, "call:invite:" + firstUser);
+        recordRejection(aspect, "call:invite:" + secondUser);
+        recordRejection(aspect, "stomp:messages:" + firstUser);
+        recordRejection(aspect, "custom-rule|user:" + firstUser);
+
+        assertThat(registry.get(ObservabilityMetrics.RATE_LIMIT_REJECTIONS)
+                .tag("reason", "call:invite").counter().count()).isEqualTo(2);
+        assertThat(registry.get(ObservabilityMetrics.RATE_LIMIT_REJECTIONS)
+                .tag("reason", "stomp:messages").counter().count()).isEqualTo(1);
+        assertThat(registry.get(ObservabilityMetrics.RATE_LIMIT_REJECTIONS)
+                .tag("reason", "OTHER").counter().count()).isEqualTo(1);
+
+        Set<String> reasons = registry.getMeters().stream()
+                .filter(meter -> ObservabilityMetrics.RATE_LIMIT_REJECTIONS.equals(meter.getId().getName()))
+                .map(meter -> meter.getId().getTag("reason"))
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        assertThat(reasons).containsExactlyInAnyOrder("call:invite", "stomp:messages", "OTHER");
+        assertThat(reasons).doesNotContain(firstUser.toString(), secondUser.toString());
+    }
+
+    private static void recordRejection(RateLimitMetricsAspect aspect, String key) {
+        JoinPoint joinPoint = mock(JoinPoint.class);
+        when(joinPoint.getArgs()).thenReturn(new Object[] { key });
+        aspect.recordRejection(joinPoint, new RateLimitService.Consumption(false, 5));
     }
 
     @Test
