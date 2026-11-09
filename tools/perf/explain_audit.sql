@@ -273,6 +273,35 @@ EXPLAIN (ANALYZE, BUFFERS)
 DELETE FROM reaction_events WHERE created_at < now() - interval '1 day';
 ROLLBACK;
 
+\echo '=== 27. conversation AI opt-outs for the inbox (optedOutConversationIds)'
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT conversation_id FROM conversation_ai_opt_outs WHERE user_id = :'hot_user';
+
+\echo '=== 28. opted-out author check (hasOptedOutMessages)'
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT EXISTS (
+    SELECT 1
+    FROM conversation_ai_opt_outs o
+    JOIN messages m
+      ON m.conversation_id = o.conversation_id
+     AND m.sender_id = o.user_id
+    WHERE o.conversation_id = :'hot_conv'
+      AND m.type = 'TEXT'
+      AND m.deleted_at IS NULL
+      AND m.content IS NOT NULL
+      AND btrim(m.content) <> ''
+);
+
+\echo '=== 29. direct peer broadcast fan-out (findDirectPeerUserIds)'
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT DISTINCT peer.user_id
+FROM conversation_members own
+JOIN conversation_members peer ON peer.conversation_id = own.conversation_id
+JOIN conversations c ON c.id = own.conversation_id
+WHERE own.user_id = :'hot_user'
+  AND c.type = 'DIRECT'
+  AND peer.user_id <> :'hot_user';
+
 -- ---------------------------------------------------------------------------
 -- Generic plans. The JDBC driver server-prepares a statement after 5
 -- executions, so production runs the GENERIC plan for these nullable-bind
