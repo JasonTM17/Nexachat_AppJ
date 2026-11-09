@@ -10,6 +10,7 @@ import com.nexachat.message.MessageRepository;
 import com.nexachat.message.PinnedMessageRepository;
 import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
+import com.nexachat.reminder.ConversationReminderRepository;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,6 +58,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private com.nexachat.notification.UserDeviceTokenRepository userDeviceTokenRepository;
+
+    @MockitoBean
+    private ConversationReminderRepository conversationReminderRepository;
 
     @Test
     void contextLoads() {
