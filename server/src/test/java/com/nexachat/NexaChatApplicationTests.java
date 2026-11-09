@@ -19,6 +19,7 @@ import com.nexachat.poll.PollOptionRepository;
 import com.nexachat.poll.PollRepository;
 import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -89,6 +90,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private GroupInviteBanRepository groupInviteBanRepository;
+
+    @MockitoBean
+    private EntityManager entityManager;
 
     @Test
     void contextLoads() {
