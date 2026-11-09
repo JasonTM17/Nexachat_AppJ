@@ -17,6 +17,7 @@ public final class AccountDataCleaner {
     private final Object lock = new Object();
     private final AppDatabase database;
     private final Supplier<Completable> cancelOutbox;
+    private final Runnable scheduleOutbox;
     private final SessionOperationTracker operationTracker;
     private CompletableSubject transitionTail;
 
@@ -28,6 +29,7 @@ public final class AccountDataCleaner {
         this.database = Objects.requireNonNull(database, "database");
         OfflineOutboxScheduler scheduler = Objects.requireNonNull(outboxScheduler, "outboxScheduler");
         this.cancelOutbox = scheduler::cancelPending;
+        this.scheduleOutbox = scheduler::schedule;
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker");
     }
 
@@ -38,12 +40,31 @@ public final class AccountDataCleaner {
         this.database = Objects.requireNonNull(database, "database");
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker");
         this.cancelOutbox = Objects.requireNonNull(cancelOutbox, "cancelOutbox");
+        this.scheduleOutbox = () -> {};
     }
 
-    /** Invalidates accepted work, stops the outbox, and clears every Room table. */
+    /** Binds ownerless v12 message rows only to the identity of a stored startup session. */
+    @NonNull
+    public Completable assignLegacyOutboxOwner(@NonNull String ownerUserId) {
+        if (ownerUserId.isBlank()) return Completable.complete();
+        return database.outboxDao().assignLegacyOwner(ownerUserId);
+    }
+
+    /** Closes the upgrade claim window when no stored session can prove ownership. */
+    @NonNull
+    public Completable sealUnassignedLegacyOutboxOwners() {
+        return database.outboxDao().sealUnassignedLegacyOwners();
+    }
+
+    /** Schedules retained messages after startup restore confirms a session remains usable. */
+    public void scheduleOutbox() {
+        scheduleOutbox.run();
+    }
+
+    /** Invalidates accepted work, stops scheduled delivery, and clears account cache. */
     @NonNull
     public Completable clearForSessionBoundary() {
-        return enqueueTransition(Completable.complete(), false, Completable.complete());
+        return enqueueTransition(Completable.complete(), false, false, Completable.complete());
     }
 
     /**
@@ -54,18 +75,25 @@ public final class AccountDataCleaner {
     public Completable startSession(
             @NonNull Completable persistSession,
             @NonNull Completable publishSessionAvailable) {
-        return enqueueTransition(persistSession, true, publishSessionAvailable);
+        return enqueueTransition(persistSession, true, false, publishSessionAvailable);
     }
 
     /** Serializes cleanup and token/event updates as one logout transition. */
     @NonNull
     public Completable clearForLogout(@NonNull Completable finishBoundary) {
-        return enqueueTransition(finishBoundary, false, Completable.complete());
+        return clearForLogout(finishBoundary, false);
+    }
+
+    /** Explicit logout-all/account removal also deletes every queued send. */
+    @NonNull
+    public Completable clearForLogout(@NonNull Completable finishBoundary, boolean clearOutbox) {
+        return enqueueTransition(finishBoundary, false, clearOutbox, Completable.complete());
     }
 
     private Completable enqueueTransition(
             @NonNull Completable finishBeforeActivation,
             boolean activateSession,
+            boolean clearOutbox,
             @NonNull Completable finishAfterActivation) {
         return Completable.defer(() -> {
             Completable prior;
@@ -79,7 +107,13 @@ public final class AccountDataCleaner {
                 transitionTail = transition;
             }
             prior.andThen(cancelOutbox.get())
-                    .andThen(Completable.fromAction(database::clearAllTables))
+                    .andThen(Completable.fromAction(() -> {
+                        if (clearOutbox) database.clearAllTables();
+                        else database.clearAccountDataPreservingOutbox();
+                    }))
+                    .andThen(Completable.defer(() -> activateSession
+                            ? sealUnassignedLegacyOutboxOwners()
+                            : Completable.complete()))
                     .andThen(finishBeforeActivation)
                     .andThen(activateSession
                             ? Completable.fromAction(() -> {

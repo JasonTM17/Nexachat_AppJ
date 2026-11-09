@@ -103,7 +103,7 @@ public final class SyncEngineTest {
         pinDao = mock(PinDao.class);
         outboxDao = mock(OutboxDao.class);
         when(pinDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
-        when(outboxDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        when(outboxDao.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());
         when(appDatabase.pinDao()).thenReturn(pinDao);
         when(appDatabase.outboxDao()).thenReturn(outboxDao);
         when(appDatabase.messageDao()).thenReturn(messageDao);
@@ -777,7 +777,7 @@ public final class SyncEngineTest {
         verify(messageDao).deleteForConversation("c2");
         verify(reactionDao).deleteForConversation("c2");
         verify(pinDao).deleteForConversation("c2");
-        verify(outboxDao).deleteForConversation("c2");
+        verify(outboxDao).deleteForConversation("c2", "user-1");
         verify(conversationDao, never()).deleteById("c1");
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }

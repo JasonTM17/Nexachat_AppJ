@@ -126,18 +126,29 @@ public sealed interface ApiError
     /** Anything else; keeps the raw server {@code code} for logging/debug. */
     final class Unknown implements ApiError {
         @Nullable private final String code;
+        private final int httpStatus;
 
         public Unknown() {
-            this(null);
+            this(null, -1);
         }
 
         public Unknown(@Nullable String code) {
+            this(code, -1);
+        }
+
+        public Unknown(@Nullable String code, int httpStatus) {
             this.code = code;
+            this.httpStatus = httpStatus;
         }
 
         @Nullable
         public String getCode() {
             return code;
+        }
+
+        /** HTTP status when this error came from a response; -1 for local errors. */
+        public int getHttpStatus() {
+            return httpStatus;
         }
 
         @Override
@@ -169,6 +180,6 @@ public sealed interface ApiError
         if ("RATE_LIMITED".equals(serverCode) || httpStatus == 429) {
             return RateLimited.INSTANCE;
         }
-        return new Unknown(serverCode);
+        return new Unknown(serverCode, httpStatus);
     }
 }

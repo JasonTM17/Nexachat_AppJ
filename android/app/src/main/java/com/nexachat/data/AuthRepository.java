@@ -19,6 +19,7 @@ import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
+import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -47,8 +48,28 @@ public final class AuthRepository {
     private final TokenRefresher tokenRefresher;
     private final DeviceTokenRegistrationManager deviceTokenRegistrationManager;
     @Nullable private final AccountDataCleaner accountDataCleaner;
+    @Nullable private final Moshi moshi;
 
     @Inject
+    public AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull Moshi moshi) {
+        this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
+        this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
+        this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.moshi = Objects.requireNonNull(moshi, "moshi");
+    }
+
+    /** Preserves the narrow constructor used by local auth repository tests. */
     public AuthRepository(
             @NonNull AuthApi authApi,
             @NonNull TokenStore tokenStore,
@@ -63,6 +84,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.moshi = null;
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -79,6 +101,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = null;
+        this.moshi = null;
     }
 
     @NonNull
@@ -105,10 +128,12 @@ public final class AuthRepository {
      */
     @NonNull
     public Single<Result<Boolean>> refresh() {
-        return Single.defer(() -> tokenRefresher.refresh().flatMap(outcome -> {
+        return Single.defer(() -> bindLegacyOutboxToStoredSession()
+                .andThen(Single.defer(tokenRefresher::refresh)).flatMap(outcome -> {
                     Result<Boolean> result = refreshMapping(outcome);
                     if (outcome instanceof TokenRefreshOutcome.FreshToken
                             || outcome instanceof TokenRefreshOutcome.TransientFailure) {
+                        if (accountDataCleaner != null) accountDataCleaner.scheduleOutbox();
                         return deviceTokenRegistrationManager.onSessionAvailable()
                                 .onErrorComplete()
                                 .andThen(Single.just(result));
@@ -116,6 +141,21 @@ public final class AuthRepository {
                     return Single.just(result);
                 }))
                 .subscribeOn(Schedulers.io());
+    }
+
+    private Completable bindLegacyOutboxToStoredSession() {
+        if (accountDataCleaner == null || moshi == null) return Completable.complete();
+        return tokenStore.readTokens().map(Optional::of).defaultIfEmpty(Optional.empty())
+                .flatMapCompletable(stored -> {
+                    if (stored.isEmpty()) {
+                        return accountDataCleaner.sealUnassignedLegacyOutboxOwners();
+                    }
+                    String ownerUserId = TimeAndJwt.userIdFromJwt(
+                            stored.get().getAccessToken(), moshi);
+                    return ownerUserId == null || ownerUserId.isBlank()
+                            ? accountDataCleaner.sealUnassignedLegacyOutboxOwners()
+                            : accountDataCleaner.assignLegacyOutboxOwner(ownerUserId);
+                });
     }
 
     /**
@@ -158,7 +198,7 @@ public final class AuthRepository {
                                 .andThen(ApiResult.safeApiCall(authApi.logoutAll())
                                         .ignoreElement().onErrorComplete())
                                 .andThen(tokenStore.clear())
-                                .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
+                                .andThen(Completable.fromAction(sessionEvents::emitLoggedOut)), true))
                         .andThen(Single.<Result<Unit>>fromCallable(
                                 () -> new Result.Success<>(Unit.INSTANCE)))
                 )
@@ -185,26 +225,32 @@ public final class AuthRepository {
                 return Single.just(result);
             }
             AuthResponse response = (AuthResponse) success.getValue();
-            Completable saveSession = tokenStore.saveSession(
-                            response.getAccessToken(),
-                            System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
-                            response.getRefreshToken(),
-                            new RecallWindowConfig(response.getRecallWindowSeconds(),
-                                    response.getGroupAdminMayRecallAfterWindow()));
-            Completable establishSession = accountDataCleaner == null
-                    ? saveSession.andThen(Completable.fromAction(sessionEvents::emitSessionAvailable))
-                    : accountDataCleaner.startSession(saveSession,
-                            Completable.fromAction(sessionEvents::emitSessionAvailable));
-            return establishSession
-                    .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
-                    .andThen(Single.just(result));
+            return bindLegacyOutboxToStoredSession().andThen(Single.defer(() -> {
+                Completable saveSession = Completable.defer(() -> tokenStore.saveSession(
+                        response.getAccessToken(),
+                        System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
+                        response.getRefreshToken(),
+                        new RecallWindowConfig(response.getRecallWindowSeconds(),
+                                response.getGroupAdminMayRecallAfterWindow())));
+                Completable establishSession = accountDataCleaner == null
+                        ? saveSession.andThen(Completable.fromAction(sessionEvents::emitSessionAvailable))
+                        : accountDataCleaner.startSession(saveSession,
+                                Completable.fromAction(sessionEvents::emitSessionAvailable));
+                return establishSession
+                        .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
+                        .andThen(Single.just(result));
+            }));
         }).subscribeOn(Schedulers.io());
     }
 
     private Completable clearAndFinishLogout(Completable finishBoundary) {
+        return clearAndFinishLogout(finishBoundary, false);
+    }
+
+    private Completable clearAndFinishLogout(Completable finishBoundary, boolean clearOutbox) {
         return accountDataCleaner == null
                 ? finishBoundary
-                : accountDataCleaner.clearForLogout(finishBoundary);
+                : accountDataCleaner.clearForLogout(finishBoundary, clearOutbox);
     }
 
     @NonNull

@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 12,
+        version = 13,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -35,6 +35,20 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract UserDao userDao();
     public abstract CallLogDao callLogDao();
     public abstract OfflineOutboxDao offlineOutboxDao();
+
+    /** Clears cached account data and other offline actions while retaining message sends. */
+    public void clearAccountDataPreservingOutbox() {
+        SupportSQLiteDatabase db = getOpenHelper().getWritableDatabase();
+        runInTransaction(() -> {
+            db.execSQL("DELETE FROM `messages`");
+            db.execSQL("DELETE FROM `conversations`");
+            db.execSQL("DELETE FROM `message_reactions`");
+            db.execSQL("DELETE FROM `pinned_messages`");
+            db.execSQL("DELETE FROM `users`");
+            db.execSQL("DELETE FROM `call_logs`");
+            db.execSQL("DELETE FROM `offline_outbox`");
+        });
+    }
 
     /** Additive defaulted attachment column; the default matches OutboxEntity. */
     public static final Migration MIGRATION_1_2 =
@@ -210,6 +224,21 @@ public abstract class AppDatabase extends RoomDatabase {
                 public void migrate(SupportSQLiteDatabase db) {
                     db.execSQL(
                             "ALTER TABLE `conversations` ADD COLUMN `labelIdsCsv` TEXT NOT NULL DEFAULT ''");
+                }
+            };
+
+    /** Scopes queued optimistic messages to the account that created them. */
+    public static final Migration MIGRATION_12_13 =
+            new Migration(12, 13) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE `outbox` ADD COLUMN `ownerUserId` TEXT NOT NULL DEFAULT ''");
+                    db.execSQL(
+                            "ALTER TABLE `outbox` ADD COLUMN `ownerResolved` INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "CREATE INDEX IF NOT EXISTS `index_outbox_ownerUserId_state_createdAt` "
+                                    + "ON `outbox` (`ownerUserId`, `state`, `createdAt`)");
                 }
             };
 }

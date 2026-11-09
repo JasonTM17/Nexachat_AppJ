@@ -27,7 +27,7 @@ public final class OutboxDaoOrderingInstrumentedTest {
             dao.insert(row("oldest", 100L)).blockingAwait();
             dao.insert(row("middle", 200L)).blockingAwait();
 
-            List<String> orderedIds = dao.pendingList().blockingGet().stream()
+            List<String> orderedIds = dao.pendingList("user-1").blockingGet().stream()
                     .map(OutboxEntity::getClientMessageId)
                     .collect(Collectors.toList());
             assertEquals(List.of("oldest", "middle", "newest"), orderedIds);
@@ -38,6 +38,7 @@ public final class OutboxDaoOrderingInstrumentedTest {
 
     private static OutboxEntity row(String id, long createdAt) {
         return new OutboxEntity(
-                id, "conversation", "TEXT", id, null, OutboxState.SENDING, createdAt, "");
+                id, "conversation", "TEXT", id, null, OutboxState.SENDING, createdAt,
+                "", "[]", false, "user-1");
     }
 }

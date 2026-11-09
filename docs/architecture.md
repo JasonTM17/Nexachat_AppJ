@@ -1,7 +1,7 @@
 # NexaChat Architecture
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
-> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v12) → REST
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v13) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
 > (Flyway V1–V22) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
@@ -24,7 +24,7 @@ flowchart LR
         subgraph DS["Data Sources"]
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
-            ROOM[("Room DB v9 (RxJava 3)<br/>cache · caller-owned labels · outbox · offline_outbox · users · call_logs")]
+            ROOM[("Room DB v13 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
@@ -148,14 +148,16 @@ sequenceDiagram
   keys are not referenced elsewhere. The deleted message's attachments cannot
   be downloaded through the message binding.
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
-  from Room v12, requests `POST /api/v1/sync`, and atomically applies new messages,
+  from Room v13, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
   server covering index `idx_messages_delta_sync` on `(conversation_id, seq)` and the
   append-only `reaction_events` audit table (Flyway V10) with additive reaction cursors.
 - **Offline Outbox & WorkManager:** pending optimistic messages (`outbox`) and
   the `offline_outbox` action table (RFC 4122 UUIDv5 idempotency keys) are drained by
   `OutboxSyncWorker` via WorkManager with `NetworkType.CONNECTED` constraints and atomic
-  lease locking. Reaction and pin toggles write the optimistic state and enqueue a durable
+  lease locking. Message rows are scoped to their account and retained through ordinary
+  logout/login; explicit logout-all clears them. Message retries reuse `clientMessageId`.
+  Reaction and pin toggles write the optimistic state and enqueue a durable
   action in one Room transaction (`MessageRepository.java`); the dispatcher replays the stored
   idempotency key against idempotent server endpoints (`PUT`/`DELETE /messages/{id}/reactions/{emoji}`
   and pin endpoints with `Idempotency-Key` header, Flyway V10 `request_idempotency`), retries

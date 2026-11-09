@@ -34,6 +34,7 @@ import org.junit.runner.RunWith;
 public final class RoomMigrationTest {
     private static final String LEGACY_DB = "nexachat-migration-legacy.db";
     private static final String EXPORTED_DB = "nexachat-migration-exported.db";
+    private static final String OUTBOX_DB = "nexachat-outbox-owner-retention.db";
 
     /** Schema as shipped in version 1 (before any migration). */
     private static final List<String> V1_SCHEMA =
@@ -78,6 +79,7 @@ public final class RoomMigrationTest {
     public void cleanUp() {
         context.deleteDatabase(LEGACY_DB);
         context.deleteDatabase(EXPORTED_DB);
+        context.deleteDatabase(OUTBOX_DB);
     }
 
     @Test
@@ -88,6 +90,113 @@ public final class RoomMigrationTest {
     @Test
     public void v8SchemaCreatesFromExportedJson() throws Exception {
         helper.createDatabase(EXPORTED_DB, 8).close();
+    }
+
+    @Test
+    public void v12ToV13MigrationPreservesLegacyOutboxWithoutGuessingItsOwner() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(EXPORTED_DB, 12);
+        try {
+            oldDb.execSQL(
+                    "INSERT INTO outbox (clientMessageId, conversationId, type, content, "
+                            + "replyToId, state, createdAt, attachmentsJson, mentionsJson, mentionAll) "
+                            + "VALUES ('cm-legacy', 'c-1', 'TEXT', 'queued', NULL, 'SENDING', "
+                            + "100, '', '[]', 0)");
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                EXPORTED_DB, 13, true, AppDatabase.MIGRATION_12_13);
+        try {
+            assertEquals("legacy row remains queued", 1L,
+                    singleLong(db, "SELECT COUNT(*) FROM outbox WHERE clientMessageId = 'cm-legacy'"));
+            assertEquals("migration leaves legacy owner unknown", "",
+                    singleString(db, "SELECT ownerUserId FROM outbox WHERE clientMessageId = 'cm-legacy'"));
+            assertEquals("owner index exists", 1L,
+                    singleLong(db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' "
+                            + "AND name = 'index_outbox_ownerUserId_state_createdAt'"));
+        } finally {
+            db.close();
+        }
+
+        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            migrated.outboxDao().assignLegacyOwner("restored-user").blockingAwait();
+            assertEquals(1, migrated.outboxDao().pendingList("restored-user").blockingGet().size());
+            assertEquals(0, migrated.outboxDao().pendingList("another-user").blockingGet().size());
+            assertTrue(migrated.outboxDao().byId("cm-legacy", "restored-user")
+                    .blockingGet().isOwnerResolved());
+        } finally {
+            migrated.close();
+        }
+    }
+
+    @Test
+    public void v12LegacyRowsSealedWithoutStoredIdentityCannotBeClaimedByLaterLogin() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(EXPORTED_DB, 12);
+        try {
+            oldDb.execSQL(
+                    "INSERT INTO outbox (clientMessageId, conversationId, type, content, "
+                            + "replyToId, state, createdAt, attachmentsJson, mentionsJson, mentionAll) "
+                            + "VALUES ('cm-unassigned', 'c-1', 'TEXT', 'queued', NULL, 'SENDING', "
+                            + "100, '', '[]', 0)");
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase migratedSchema = helper.runMigrationsAndValidate(
+                EXPORTED_DB, 13, true, AppDatabase.MIGRATION_12_13);
+        migratedSchema.close();
+
+        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            migrated.outboxDao().sealUnassignedLegacyOwners().blockingAwait();
+            migrated.outboxDao().assignLegacyOwner("later-user").blockingAwait();
+
+            assertEquals(0, migrated.outboxDao().pendingList("later-user").blockingGet().size());
+            assertEquals(1L, singleLong(migrated.getOpenHelper().getWritableDatabase(),
+                    "SELECT COUNT(*) FROM outbox WHERE clientMessageId = 'cm-unassigned' "
+                            + "AND ownerUserId = '' AND ownerResolved = 1"));
+        } finally {
+            migrated.close();
+        }
+    }
+
+    @Test
+    public void ownerScopedQueueSurvivesDatabaseReopenAndAccountCacheClear() {
+        context.deleteDatabase(OUTBOX_DB);
+        AppDatabase database = Room.databaseBuilder(context, AppDatabase.class, OUTBOX_DB)
+                .allowMainThreadQueries()
+                .build();
+        try {
+            database.messageDao().upsert(new MessageEntity(
+                    "m-1", "c-1", 1L, "user-a", "A", "TEXT", "cached", null, null,
+                    null, null, 100L, null, null, null)).blockingAwait();
+            database.outboxDao().insert(new OutboxEntity(
+                    "cm-a", "c-1", "TEXT", "queued", null, OutboxState.SENDING, 101L,
+                    "", "[]", false, "user-a")).blockingAwait();
+            database.close();
+
+            database = Room.databaseBuilder(context, AppDatabase.class, OUTBOX_DB)
+                    .allowMainThreadQueries()
+                    .build();
+            assertEquals("file-backed outbox survives a database reopen", 1,
+                    database.outboxDao().pendingList("user-a").blockingGet().size());
+            assertEquals("other account cannot see the durable row", 0,
+                    database.outboxDao().pendingList("user-b").blockingGet().size());
+
+            database.clearAccountDataPreservingOutbox();
+
+            assertEquals(false, database.messageDao().exists("m-1").blockingGet());
+            assertEquals(1, database.outboxDao().pendingList("user-a").blockingGet().size());
+            assertEquals(0, database.outboxDao().pendingList("user-b").blockingGet().size());
+        } finally {
+            database.close();
+        }
     }
 
     @Test
@@ -302,7 +411,8 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_8_9,
                         AppDatabase.MIGRATION_9_10,
                         AppDatabase.MIGRATION_10_11,
-                        AppDatabase.MIGRATION_11_12)
+                        AppDatabase.MIGRATION_11_12,
+                        AppDatabase.MIGRATION_12_13)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()
@@ -325,6 +435,20 @@ public final class RoomMigrationTest {
             db.setVersion(version);
         } finally {
             db.close();
+        }
+    }
+
+    private static long singleLong(SupportSQLiteDatabase db, String sql) {
+        try (Cursor cursor = db.query(sql)) {
+            assertTrue(cursor.moveToFirst());
+            return cursor.getLong(0);
+        }
+    }
+
+    private static String singleString(SupportSQLiteDatabase db, String sql) {
+        try (Cursor cursor = db.query(sql)) {
+            assertTrue(cursor.moveToFirst());
+            return cursor.getString(0);
         }
     }
 

@@ -48,7 +48,7 @@ public final class OutboxSyncWorkerTest {
 
     @Test
     public void createWorkFlushesOutboxAndReturnsSuccessOnComplete() {
-        when(messageRepository.flushOutbox()).thenReturn(Completable.complete());
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.complete());
         OfflineOutboxDao offlineOutboxDao = emptyDao();
 
         OutboxSyncWorker worker = new OutboxSyncWorker(
@@ -62,7 +62,7 @@ public final class OutboxSyncWorkerTest {
 
     @Test
     public void createWorkReturnsRetryWhenFlushFails() {
-        when(messageRepository.flushOutbox()).thenReturn(Completable.error(new IOException("offline")));
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.error(new IOException("offline")));
         OfflineOutboxDao offlineOutboxDao = emptyDao();
 
         OutboxSyncWorker worker = new OutboxSyncWorker(
@@ -95,7 +95,7 @@ public final class OutboxSyncWorkerTest {
                 .thenReturn(Single.just(1));
         when(offlineOutboxDao.findById("item-1")).thenReturn(Maybe.just(entity));
         when(offlineOutboxDao.markSent(eq("item-1"), anyLong())).thenReturn(Completable.complete());
-        when(messageRepository.flushOutbox()).thenReturn(Completable.complete());
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.complete());
         when(messageRepository.dispatchOfflineAction(entity))
                 .thenReturn(Single.just(new ApiResult.Success<>(null)));
 
@@ -120,7 +120,7 @@ public final class OutboxSyncWorkerTest {
                 "item-2", "idemp-2", "PIN_ADD", "{}", "PENDING", 0, 1001L, 0L);
         FakeOfflineOutboxDao fakeDao = new FakeOfflineOutboxDao(first);
         List<String> dispatched = new ArrayList<>();
-        when(messageRepository.flushOutbox()).thenReturn(Completable.complete());
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.complete());
         when(messageRepository.dispatchOfflineAction(any())).thenAnswer(invocation -> {
             OfflineOutboxEntity item = invocation.getArgument(0);
             dispatched.add(item.getId());
@@ -151,7 +151,7 @@ public final class OutboxSyncWorkerTest {
         when(offlineOutboxDao.getClaimableItems(anyLong())).thenReturn(Single.just(List.of(entity)));
         when(offlineOutboxDao.claimLease(eq("item-2"), anyLong(), anyLong()))
                 .thenReturn(Single.just(0)); // Already locked by another worker
-        when(messageRepository.flushOutbox()).thenReturn(Completable.complete());
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.complete());
 
         OutboxSyncWorker worker = new OutboxSyncWorker(
                 context, workerParameters, messageRepository, offlineOutboxDao);

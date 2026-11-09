@@ -29,4 +29,13 @@ public final class ApiErrorTest {
         assertEquals(new ApiError.Unknown("FUTURE_CODE"), ApiError.from(422, "FUTURE_CODE"));
         assertEquals(new ApiError.Unknown(null), ApiError.from(500, null));
     }
+
+    @Test
+    public void unknownHttpErrorsRetainStatusForRetryPolicy() {
+        ApiError.Unknown failure = (ApiError.Unknown) ApiError.from(503, "SERVER_BUSY");
+
+        assertEquals("SERVER_BUSY", failure.getCode());
+        assertEquals(503, failure.getHttpStatus());
+        assertEquals(-1, new ApiError.Unknown("LOCAL_FAILURE").getHttpStatus());
+    }
 }

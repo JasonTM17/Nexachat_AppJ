@@ -122,7 +122,7 @@ public final class ConversationRepositoryTest {
         when(messageDao.deleteForConversation(any())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(any())).thenReturn(Completable.complete());
         when(pinDao.deleteForConversation(any())).thenReturn(Completable.complete());
-        when(outboxDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(outboxDao.deleteForConversation(any(), any())).thenReturn(Completable.complete());
     }
 
     @After
@@ -468,6 +468,7 @@ public final class ConversationRepositoryTest {
         Result<Boolean> retried = repository.loadNextInboxPage().blockingGet();
 
         assertTrue(failed instanceof Result.Failure<?>);
+        assertTrue("retry should be successful: " + retried, retried instanceof Result.Success<?>);
         assertFalse(((Result.Success<Boolean>) retried).getValue());
         assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
         verify(messageApi, times(2)).getConversations(eq(30), eq("cursor-retry"));
@@ -850,7 +851,7 @@ public final class ConversationRepositoryTest {
         verify(messageDao).deleteForConversation("conv-a");
         verify(reactionDao).deleteForConversation("conv-a");
         verify(pinDao).deleteForConversation("conv-a");
-        verify(outboxDao).deleteForConversation("conv-a");
+        verify(outboxDao).deleteForConversation("conv-a", MY_ID);
     }
 
     @Test

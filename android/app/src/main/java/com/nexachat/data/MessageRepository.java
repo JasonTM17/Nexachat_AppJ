@@ -19,6 +19,7 @@ import com.nexachat.core.database.PinnedMessageEntity;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.MessageApi;
+import com.nexachat.core.network.NetworkMonitor;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
@@ -46,6 +47,7 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.exceptions.Exceptions;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -102,6 +104,7 @@ public final class MessageRepository {
     public static final String ERROR_RATE_LIMITED = "RATE_LIMITED";
     public static final String ERROR_NOT_MEMBER = "NOT_MEMBER";
     public static final String ERROR_CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND";
+    public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
     private static final List<String> PIN_LIST_KEYS =
@@ -143,6 +146,9 @@ public final class MessageRepository {
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
+    /** Emits whether the most recent REST response reached the server. */
+    private final FlowableProcessor<Boolean> restReachabilityEvents =
+            BehaviorProcessor.<Boolean>create().toSerialized();
     /** Permanent reaction and pin failures surfaced after the queued state rolls back. */
     private final FlowableProcessor<ApiError> interactionEvents = PublishProcessor.<ApiError>create().toSerialized();
     @Nullable private volatile Disposable rateLimitRetry;
@@ -160,11 +166,11 @@ public final class MessageRepository {
             SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
-            SessionOperationTracker operationTracker) {
+            SessionOperationTracker operationTracker, NetworkMonitor networkMonitor) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker);
+                operationTracker, networkMonitor);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -174,7 +180,7 @@ public final class MessageRepository {
             SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler,
-                null, null, null, null, new SessionOperationTracker());
+                null, null, null, null, new SessionOperationTracker(), null);
     }
 
     /** Local persistence test constructor with the production timer default. */
@@ -187,7 +193,7 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(), appDatabase,
                 offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                new SessionOperationTracker());
+                new SessionOperationTracker(), null);
     }
 
     MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -199,7 +205,7 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
                 offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                new SessionOperationTracker());
+                new SessionOperationTracker(), null);
     }
 
     MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -209,6 +215,18 @@ public final class MessageRepository {
             AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler, operationTracker, null);
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor) {
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -228,6 +246,12 @@ public final class MessageRepository {
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
         this.anyAdapter = moshi.adapter(Object.class);
         this.messageAdapter = moshi.adapter(MessageDto.class);
+        if (networkMonitor != null) {
+            collectInBackground(networkMonitor.getIsOnline()
+                    .filter(online -> !online)
+                    .concatMapCompletable(ignored -> Completable.fromAction(
+                            () -> restReachabilityEvents.onNext(false))));
+        }
         collectInBackground(session.getEvents().concatMapCompletable(event ->
                 operationTracker.track(routeSessionEvent(event))));
         collectInBackground(session.getResyncRequests().concatMapCompletable(ignored ->
@@ -235,7 +259,13 @@ public final class MessageRepository {
         collectInBackground(sessionEvents.getEvents()
                 .filter(event -> event instanceof SessionEvents.Event.LoggedOut
                         || event instanceof SessionEvents.Event.SessionAvailable)
-                .concatMapCompletable(ignored -> Completable.fromAction(this::resetSessionState)));
+                .concatMapCompletable(event -> Completable.fromAction(() -> {
+                    resetSessionState();
+                    if (event instanceof SessionEvents.Event.SessionAvailable
+                            && offlineOutboxScheduler != null) {
+                        offlineOutboxScheduler.schedule();
+                    }
+                })));
     }
 
     public Flowable<TypingEvent> getTypingEvents() {
@@ -253,19 +283,25 @@ public final class MessageRepository {
                 io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
     }
 
+    public Flowable<Boolean> getRestReachability() {
+        return restReachabilityEvents.onBackpressureLatest();
+    }
+
     /**
      * Room messages plus pending outbox rows. Sent rows sort by sequence and
      * pending rows trail in FIFO order so retries return to the bottom.
      */
     public Flowable<List<ChatMessage>> messagesFlow(String conversationId) {
-        return Flowable.combineLatest(
-                Flowable.combineLatest(messageDao.messagesForConversation(conversationId),
-                        outboxDao.pendingOrdered(), reactionDao.reactionsForConversation(conversationId),
-                        MessageSnapshot::new),
+        return currentUserId().toFlowable().switchIfEmpty(Flowable.empty())
+                .switchMap(ownerUserId -> Flowable.combineLatest(
+                        Flowable.combineLatest(messageDao.messagesForConversation(conversationId),
+                                outboxDao.pendingOrdered(ownerUserId),
+                                reactionDao.reactionsForConversation(conversationId),
+                                (messages, pending, reactions) -> new MessageSnapshot(
+                                        messages, pending, reactions, ownerUserId)),
                 tokenStore.observeLocallyHiddenMessageIds(),
-                (snapshot, hiddenIds) -> snapshot.withHiddenIds(hiddenIds))
-                .concatMapSingle(snapshot -> currentUserId().map(Optional::of)
-                        .defaultIfEmpty(Optional.empty()).map(myId -> {
+                (snapshot, hiddenIds) -> snapshot.withHiddenIds(hiddenIds)))
+                .concatMapSingle(snapshot -> Single.fromCallable(() -> {
                     Map<String, List<ReactionChip>> chips = new java.util.HashMap<>();
                     for (MessageReactionEntity reaction : snapshot.reactions) {
                         chips.computeIfAbsent(reaction.getMessageId(), ignored -> new ArrayList<>())
@@ -274,7 +310,7 @@ public final class MessageRepository {
                     List<ChatMessage> result = new ArrayList<>(snapshot.messages.size() + snapshot.pending.size());
                     for (MessageEntity message : snapshot.messages) {
                         if (snapshot.hiddenIds.contains(message.getId())) continue;
-                        result.add(toChatMessage(message, myId.orElse(null),
+                        result.add(toChatMessage(message, snapshot.ownerUserId,
                                 chips.getOrDefault(message.getId(), Collections.emptyList())));
                     }
                     snapshot.pending.stream().filter(item -> conversationId.equals(item.getConversationId()))
@@ -746,22 +782,28 @@ public final class MessageRepository {
         if (removedConversations.contains(conversationId)) {
             return operationTracker.track(Completable.fromAction(this::emitNotMember));
         }
-        return operationTracker.track(nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
-            String attachmentsJson = "";
-            if (!attachments.isEmpty()) {
-                try { attachmentsJson = attachmentsAdapter.toJson(attachments); }
-                catch (RuntimeException ignored) { attachmentsJson = ""; }
-            }
-            OutboxEntity entry = new OutboxEntity(UUID.randomUUID().toString(), conversationId, type,
-                    content, replyToId, OutboxState.SENDING, createdAt, attachmentsJson,
-                    MessageMentionCodec.encode(mentions), mentionAll);
-            return outboxDao.insert(entry).andThen(dispatchOutbox(entry));
-        }).subscribeOn(Schedulers.io()));
+        return operationTracker.track(currentUserId()
+                .switchIfEmpty(Maybe.error(new IllegalStateException("No active account")))
+                .flatMapCompletable(ownerUserId -> nextOutboxCreatedAt(ownerUserId)
+                        .flatMapCompletable(createdAt -> {
+                            String attachmentsJson = "";
+                            if (!attachments.isEmpty()) {
+                                try { attachmentsJson = attachmentsAdapter.toJson(attachments); }
+                                catch (RuntimeException ignored) { attachmentsJson = ""; }
+                            }
+                            OutboxEntity entry = new OutboxEntity(UUID.randomUUID().toString(),
+                                    conversationId, type, content, replyToId, OutboxState.SENDING,
+                                    createdAt, attachmentsJson, MessageMentionCodec.encode(mentions),
+                                    mentionAll, ownerUserId);
+                            return outboxDao.insert(entry).andThen(Completable.fromAction(() -> {
+                                if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
+                            })).andThen(dispatchOutbox(entry));
+                        })).subscribeOn(Schedulers.io()));
     }
 
     /** Stable FIFO key despite same-millisecond sends or a wall-clock setback. */
-    private Single<Long> nextOutboxCreatedAt() {
-        return outboxDao.pendingOrdered().first(Collections.emptyList()).map(rows -> {
+    private Single<Long> nextOutboxCreatedAt(String ownerUserId) {
+        return outboxDao.pendingOrdered(ownerUserId).first(Collections.emptyList()).map(rows -> {
             long persistedMax = 0L;
             for (OutboxEntity row : rows) persistedMax = Math.max(persistedMax, row.getCreatedAt());
             long now = System.currentTimeMillis();
@@ -777,53 +819,85 @@ public final class MessageRepository {
 
     /** Requeues and dispatches a FAILED bubble after the user taps retry. */
     public Completable retry(String clientMessageId) {
-        return operationTracker.track(outboxDao.byId(clientMessageId)
-                .map(Optional::of).defaultIfEmpty(Optional.empty())
-                .flatMapCompletable(entryOpt -> {
-                    if (entryOpt.isEmpty()) return Completable.complete();
-                    OutboxEntity old = entryOpt.get();
-                    if (removedConversations.contains(old.getConversationId())) {
-                        return outboxDao.delete(old.getClientMessageId())
-                                .andThen(Completable.fromAction(this::emitNotMember));
-                    }
-                    return nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
-                        OutboxEntity queued = new OutboxEntity(old.getClientMessageId(), old.getConversationId(),
-                                old.getType(), old.getContent(), old.getReplyToId(), OutboxState.SENDING,
-                                createdAt, old.getAttachmentsJson(), old.getMentionsJson(),
-                                old.isMentionAll());
-                        return outboxDao.insert(queued).andThen(flushOutbox());
-                    });
-                }).subscribeOn(Schedulers.io()));
+        return operationTracker.track(currentUserId().flatMapCompletable(ownerUserId ->
+                outboxDao.byId(clientMessageId, ownerUserId)
+                        .flatMapCompletable(old -> {
+                            if (removedConversations.contains(old.getConversationId())) {
+                                return outboxDao.delete(old.getClientMessageId(), ownerUserId)
+                                        .andThen(Completable.fromAction(this::emitNotMember));
+                            }
+                            return nextOutboxCreatedAt(ownerUserId).flatMapCompletable(createdAt -> {
+                                OutboxEntity queued = new OutboxEntity(old.getClientMessageId(),
+                                        old.getConversationId(), old.getType(), old.getContent(),
+                                        old.getReplyToId(), OutboxState.SENDING, createdAt,
+                                        old.getAttachmentsJson(), old.getMentionsJson(),
+                                        old.isMentionAll(), ownerUserId);
+                                return outboxDao.insert(queued).andThen(flushOutbox());
+                            });
+                        })).subscribeOn(Schedulers.io()));
     }
 
     /** Flushes SENDING rows in queue order, normally after a connection or reconnect. */
     public Completable flushOutbox() {
-        return operationTracker.track(outboxDao.pendingList().flatMapCompletable(entries ->
-                Flowable.fromIterable(entries).concatMapCompletable(this::dispatchOutbox))
-                .subscribeOn(Schedulers.io()));
+        return flushOutbox(false);
+    }
+
+    /** Uses REST acknowledgements so WorkManager can retry uncertain sends with backoff. */
+    public Completable flushOutboxForWorker() {
+        return flushOutbox(true);
+    }
+
+    private Completable flushOutbox(boolean workerAttempt) {
+        return operationTracker.track(currentUserId().flatMapCompletable(ownerUserId ->
+                outboxDao.pendingList(ownerUserId).flatMapCompletable(entries ->
+                        Flowable.fromIterable(entries).concatMapCompletable(entry ->
+                                dispatchOutbox(entry, ownerUserId, workerAttempt)))))
+                .subscribeOn(Schedulers.io());
     }
 
     private Completable dispatchOutbox(OutboxEntity entry) {
+        return currentUserId().flatMapCompletable(ownerUserId ->
+                dispatchOutbox(entry, ownerUserId, false));
+    }
+
+    private Completable dispatchOutbox(
+            OutboxEntity entry, String ownerUserId, boolean workerAttempt) {
+        if (!ownerUserId.equals(entry.getOwnerUserId())) return Completable.complete();
         if (removedConversations.contains(entry.getConversationId())) {
-            return outboxDao.delete(entry.getClientMessageId())
+            return outboxDao.delete(entry.getClientMessageId(), ownerUserId)
                     .andThen(Completable.fromAction(this::emitNotMember));
         }
         return Completable.fromAction(session::ensureConnected).andThen(Completable.defer(() -> {
             SendMessageRequest request = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
                     entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
                     MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
-            if (session.sendMessage(entry.getConversationId(), request)) return Completable.complete();
-            if (session.isCurrentlyOpen()) return Completable.complete();
+            if (!workerAttempt && session.sendMessage(entry.getConversationId(), request)) {
+                return Completable.complete();
+            }
+            if (!workerAttempt && session.isCurrentlyOpen()) {
+                if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
+                return Completable.complete();
+            }
             return call(messageApi.sendMessage(entry.getConversationId(), request)).flatMapCompletable(result -> {
                 if (result instanceof Result.Success<?> success) {
-                    return acknowledge(entry.getConversationId(), (MessageDto) success.getValue());
+                    return acknowledge(ownerUserId, entry.getConversationId(),
+                            (MessageDto) success.getValue());
                 }
                 ApiError error = ((Result.Failure<?>) result).getError();
-                if (error instanceof ApiError.RateLimited) {
-                    scheduleRateLimitRetry();
+                boolean rateLimited = error instanceof ApiError.RateLimited;
+                boolean transientFailure = error instanceof ApiError.Network
+                        || rateLimited
+                        || (error instanceof ApiError.Unknown unknown
+                                && (unknown.getHttpStatus() >= 500
+                                        || ERROR_INTERNAL.equals(unknown.getCode())));
+                if (transientFailure) {
+                    if (workerAttempt) {
+                        return Completable.error(new IOException("outbox delivery will retry"));
+                    }
+                    if (rateLimited) scheduleRateLimitRetry();
+                    if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
                     return Completable.complete();
                 }
-                if (error instanceof ApiError.Network) return Completable.complete();
                 if (error instanceof ApiError.Unknown unknown
                         && (ERROR_NOT_MEMBER.equals(unknown.getCode())
                         || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()))) {
@@ -834,7 +908,8 @@ public final class MessageRepository {
                         || ERROR_NOT_ADMIN.equals(unknown.getCode()))) {
                     interactionEvents.onNext(unknown);
                 }
-                return outboxDao.updateState(entry.getClientMessageId(), OutboxState.FAILED);
+                return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
+                        OutboxState.FAILED);
             });
         }));
     }
@@ -849,10 +924,15 @@ public final class MessageRepository {
 
     /** Shared acknowledgement path for the REST fallback and realtime dedup. */
     private Completable acknowledge(String conversationId, MessageDto dto) {
+        return currentUserId().flatMapCompletable(ownerUserId ->
+                acknowledge(ownerUserId, conversationId, dto));
+    }
+
+    private Completable acknowledge(String ownerUserId, String conversationId, MessageDto dto) {
         MessageEntity entity = toEntity(dto, conversationId);
         if (entity == null) return Completable.complete();
         Completable ack = entity.getClientMessageId() == null ? Completable.complete()
-                : outboxDao.delete(entity.getClientMessageId());
+                : outboxDao.delete(entity.getClientMessageId(), ownerUserId);
         return ack.andThen(messageDao.upsert(entity)).andThen(updateInboxProjection(entity));
     }
 
@@ -940,7 +1020,8 @@ public final class MessageRepository {
                     || ERROR_NOT_ADMIN.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
-            return outboxDao.updateState(clientId, OutboxState.FAILED);
+            return currentUserId().flatMapCompletable(ownerUserId ->
+                    outboxDao.updateState(clientId, ownerUserId, OutboxState.FAILED));
         }
         if (event instanceof ChatEvent.ConversationUpdated updated) {
             return onConversationUpdated(updated);
@@ -963,7 +1044,8 @@ public final class MessageRepository {
                     if (update.isSelfRemoval(userId)) {
                         removedConversations.add(conversationId);
                         activeConversation.compareAndSet(conversationId, null);
-                        return outboxDao.deleteForConversation(conversationId);
+                        return userId == null ? Completable.complete()
+                                : outboxDao.deleteForConversation(conversationId, userId);
                     }
                     if (userId != null && update.getMemberIds().contains(userId)) {
                         removedConversations.remove(conversationId);
@@ -984,8 +1066,10 @@ public final class MessageRepository {
         if (entity == null) return Completable.complete();
         Completable acknowledge = Completable.complete();
         if (entity.getClientMessageId() != null) {
-            acknowledge = isMine(entity.getSenderId()).flatMapCompletable(mine -> mine
-                    ? outboxDao.delete(entity.getClientMessageId()) : Completable.complete());
+            acknowledge = currentUserId().flatMapCompletable(ownerUserId ->
+                    isMine(entity.getSenderId()).flatMapCompletable(mine -> mine
+                            ? outboxDao.delete(entity.getClientMessageId(), ownerUserId)
+                            : Completable.complete()));
         }
         Completable deliveryAck = isMine(entity.getSenderId()).flatMapCompletable(mine -> {
             if (!mine && entity.getSeq() > 0) {
@@ -1494,7 +1578,7 @@ public final class MessageRepository {
             TokenUser cached = tokenToUser;
             if (cached != null && cached.token.equals(token)) return Maybe.just(cached.userId);
             String userId = TimeAndJwt.userIdFromJwt(token, moshi);
-            if (userId == null) return Maybe.empty();
+            if (userId == null || userId.isBlank()) return Maybe.empty();
             tokenToUser = new TokenUser(token, userId);
             return Maybe.just(userId);
         }).subscribeOn(Schedulers.io());
@@ -1650,7 +1734,10 @@ public final class MessageRepository {
      * unexpected-empty-body failure instead of escaping the stream.
      */
     private <T> Single<Result<T>> call(Call<T> call) {
-        return ApiResult.safeApiCall(call).<Result<T>>map(result -> {
+        return ApiResult.safeApiCall(call)
+                .doOnSuccess(result ->
+                        restReachabilityEvents.onNext(!(result instanceof ApiResult.NetworkError<?>)))
+                .<Result<T>>map(result -> {
             if (result instanceof ApiResult.Success<?> success) {
                 @SuppressWarnings("unchecked") T body = (T) success.getBody();
                 return new Result.Success<>(body);
@@ -1768,17 +1855,18 @@ public final class MessageRepository {
         final List<OutboxEntity> pending;
         final List<MessageReactionEntity> reactions;
         final Set<String> hiddenIds;
+        final String ownerUserId;
         MessageSnapshot(List<MessageEntity> messages, List<OutboxEntity> pending,
-                List<MessageReactionEntity> reactions) {
-            this(messages, pending, reactions, Collections.emptySet());
+                List<MessageReactionEntity> reactions, String ownerUserId) {
+            this(messages, pending, reactions, ownerUserId, Collections.emptySet());
         }
         MessageSnapshot(List<MessageEntity> messages, List<OutboxEntity> pending,
-                List<MessageReactionEntity> reactions, Set<String> hiddenIds) {
+                List<MessageReactionEntity> reactions, String ownerUserId, Set<String> hiddenIds) {
             this.messages = messages; this.pending = pending; this.reactions = reactions;
-            this.hiddenIds = hiddenIds;
+            this.ownerUserId = ownerUserId; this.hiddenIds = hiddenIds;
         }
         MessageSnapshot withHiddenIds(Set<String> hiddenIds) {
-            return new MessageSnapshot(messages, pending, reactions, hiddenIds);
+            return new MessageSnapshot(messages, pending, reactions, ownerUserId, hiddenIds);
         }
     }
     private static final class PinSnapshot {

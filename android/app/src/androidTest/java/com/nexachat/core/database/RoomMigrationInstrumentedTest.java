@@ -35,7 +35,7 @@ public final class RoomMigrationInstrumentedTest {
     private static final String V9_TO_V10_DB = "nexachat-room-v9-v10.db";
     private static final String V10_TO_V11_DB = "nexachat-room-v10-v11.db";
     private static final String V11_TO_V12_DB = "nexachat-room-v11-v12.db";
-    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v12.db";
+    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v13.db";
     private static final String ATTACHMENTS_JSON =
             "[{\"fileId\":\"attachment-1\",\"url\":\"https://example.test/image.jpg\","
                     + "\"mimeType\":\"image/jpeg\"}]";
@@ -213,7 +213,7 @@ public final class RoomMigrationInstrumentedTest {
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 12, db.getVersion());
+            assertEquals("full chain reaches the current schema", 13, db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
@@ -229,6 +229,10 @@ public final class RoomMigrationInstrumentedTest {
             assertEquals("full-chain label cache defaults empty", "",
                     singleString(db,
                             "SELECT labelIdsCsv FROM conversations WHERE id = 'c-1'"));
+            assertEquals("legacy outbox remains unassigned", "",
+                    singleString(db, "SELECT ownerUserId FROM outbox WHERE clientMessageId = 'cm-1'"));
+            assertEquals("legacy ownership claim remains open until startup resolves it", 0L,
+                    singleLong(db, "SELECT ownerResolved FROM outbox WHERE clientMessageId = 'cm-1'"));
             assertNoForeignKeyViolations(db);
         } finally {
             database.close();
@@ -247,7 +251,8 @@ public final class RoomMigrationInstrumentedTest {
             AppDatabase.MIGRATION_8_9,
             AppDatabase.MIGRATION_9_10,
             AppDatabase.MIGRATION_10_11,
-            AppDatabase.MIGRATION_11_12
+            AppDatabase.MIGRATION_11_12,
+            AppDatabase.MIGRATION_12_13
         };
     }
 
