@@ -7,8 +7,10 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.MediaType;
 import okhttp3.ResponseBody;
 import org.junit.Before;
@@ -104,6 +107,100 @@ public final class SyncEngineTest {
         observer.assertComplete();
 
         verify(messageApi, never()).syncDeltas(any());
+    }
+
+    @Test
+    public void syncBatchesWatermarksAndAppliesEveryResponseWithOneStableSince() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        int[] counts = {100, 101, 250};
+        int[] expectedBatches = {1, 2, 3};
+        for (int scenario = 0; scenario < counts.length; scenario++) {
+            int watermarkCount = counts[scenario];
+            int batchCount = expectedBatches[scenario];
+            clearInvocations(messageApi, messageDao, appDatabase, tokenStore);
+            when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks(watermarkCount)));
+            when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+            AtomicInteger responseNumber = new AtomicInteger();
+            when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+                SyncRequest request = invocation.getArgument(0);
+                String conversationId = request.getWatermarks().get(0).getConversationId();
+                int responseIndex = responseNumber.incrementAndGet();
+                MessageDto message = new MessageDto(
+                        "m-batch-" + responseIndex, (long) responseIndex,
+                        conversationId, "user-2", "Bob",
+                        null, null, "TEXT", "batch", null, null, List.of(), List.of(),
+                        "2026-11-08T10:00:00Z", null, null);
+                SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                        conversationId, List.of(message), List.of(), List.of(), List.of(),
+                        (long) responseIndex, false);
+                return responseCall(new SyncResponse(
+                        List.of(delta), "cursor-next-" + responseIndex));
+            });
+
+            syncEngine.sync().blockingAwait();
+
+            ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+            verify(messageApi, times(batchCount)).syncDeltas(requestCaptor.capture());
+            int totalWatermarks = 0;
+            for (SyncRequest request : requestCaptor.getAllValues()) {
+                assertTrue("each request must respect the server cap",
+                        request.getWatermarks().size() <= 100);
+                assertEquals("all batches must use the same since cursor",
+                        "cursor-start", request.getSince());
+                assertEquals(Integer.valueOf(50), request.getLimitPerConv());
+                totalWatermarks += request.getWatermarks().size();
+            }
+            assertEquals(watermarkCount, totalWatermarks);
+            verify(messageDao, times(batchCount)).upsertAll(anyList());
+            verify(appDatabase, times(batchCount)).runInTransaction(any(Runnable.class));
+            verify(tokenStore).saveSyncServerTime("user-1", "cursor-next-" + batchCount);
+        }
+    }
+
+    @Test
+    public void syncDoesNotAdvanceCursorWhenMiddleWatermarkBatchFails() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks(250)));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        MessageDto message = new MessageDto(
+                "m-first-batch", 1L, "conversation-0", "user-2", "Bob", null, null,
+                "TEXT", "batch", null, null, List.of(), List.of(),
+                "2026-11-08T10:00:00Z", null, null);
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "conversation-0", List.of(message), List.of(), List.of(), List.of(), 1L, false);
+        Call<SyncResponse> successfulFirstBatch = responseCall(
+                new SyncResponse(List.of(delta), "cursor-first-batch"));
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> failedSecondBatch = mock(Call.class);
+        when(failedSecondBatch.clone()).thenReturn(failedSecondBatch);
+        try {
+            when(failedSecondBatch.execute()).thenReturn(Response.error(
+                    503, ResponseBody.create(MediaType.parse("application/json"), "{}")));
+        } catch (java.io.IOException ignored) {
+            throw new AssertionError(ignored);
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(successfulFirstBatch, failedSecondBatch);
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        observer.awaitDone(5, java.util.concurrent.TimeUnit.SECONDS);
+        observer.assertError(java.io.IOException.class);
+
+        verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
+        verify(messageDao).upsertAll(anyList());
+        verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
     }
 
     @Test
@@ -371,6 +468,26 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    private static List<ConversationWatermark> watermarks(int count) {
+        java.util.ArrayList<ConversationWatermark> result = new java.util.ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            result.add(new ConversationWatermark("conversation-" + index, index));
+        }
+        return result;
+    }
+
+    private static Call<SyncResponse> responseCall(SyncResponse response) {
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        try {
+            when(call.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+            throw new AssertionError(ignored);
+        }
+        return call;
     }
 
     private static String jwt(String userId) {

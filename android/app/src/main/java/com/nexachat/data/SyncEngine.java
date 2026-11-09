@@ -23,14 +23,18 @@ import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -40,6 +44,9 @@ import javax.inject.Singleton;
  */
 @Singleton
 public final class SyncEngine {
+    private static final int MAX_WATERMARKS_PER_REQUEST = 100;
+    private static final int DELTA_LIMIT_PER_CONVERSATION = 50;
+
     private final AppDatabase appDatabase;
     private final MessageApi messageApi;
     private final MessageDao messageDao;
@@ -81,10 +88,10 @@ public final class SyncEngine {
                                 messageDao.getAllMaxSeqs(),
                                 conversationDao.getAllWatermarks(),
                                 this::mergeWatermarks)
-                        .flatMap(watermarks -> {
+                        .flatMapCompletable(watermarks -> {
                             lastServerTime = cursor.serverTime;
                             if (watermarks.isEmpty()) {
-                                return Single.just(new SyncResponse());
+                                return Completable.complete();
                             }
                             List<SyncRequest.Watermark> reqWatermarks =
                                     new ArrayList<>(watermarks.size());
@@ -92,21 +99,53 @@ public final class SyncEngine {
                                 reqWatermarks.add(new SyncRequest.Watermark(
                                         wm.getConversationId(), wm.getMaxSeq()));
                             }
-                            SyncRequest request = new SyncRequest(
-                                    reqWatermarks, 50, cursor.serverTime);
-                            return ApiResult.safeApiCall(messageApi.syncDeltas(request))
-                                    .map(apiResult -> {
-                                        if (apiResult instanceof ApiResult.Success<?> success) {
-                                            SyncResponse response = (SyncResponse) success.getBody();
-                                            return response == null ? new SyncResponse() : response;
-                                        }
-                                        return new SyncResponse();
-                                    });
-                        })
-                        .flatMapCompletable(response ->
-                                Completable.fromAction(() -> applyDeltaBundle(response))
-                                        .andThen(persistServerTime(cursor, response))))
+                            List<SyncRequest> requests = splitWatermarks(
+                                    reqWatermarks, cursor.serverTime);
+                            AtomicReference<SyncResponse> lastResponse = new AtomicReference<>();
+                            AtomicBoolean missingServerTime = new AtomicBoolean();
+                            return Flowable.fromIterable(requests)
+                                    .concatMapCompletable(request -> fetchDeltaResponse(request)
+                                            .flatMapCompletable(response ->
+                                                    Completable.fromAction(() -> applyDeltaBundle(response))
+                                                            .andThen(Completable.fromAction(() -> {
+                                                                lastResponse.set(response);
+                                                                if (response.getServerTime() == null) {
+                                                                    missingServerTime.set(true);
+                                                                }
+                                                            }))))
+                                    .andThen(Completable.defer(() -> missingServerTime.get()
+                                            ? Completable.complete()
+                                            : persistServerTime(cursor, lastResponse.get())));
+                        }))
                 .subscribeOn(Schedulers.io());
+    }
+
+    private static List<SyncRequest> splitWatermarks(
+            List<SyncRequest.Watermark> watermarks, @Nullable String since) {
+        List<SyncRequest> requests = new ArrayList<>(
+                (watermarks.size() + MAX_WATERMARKS_PER_REQUEST - 1)
+                        / MAX_WATERMARKS_PER_REQUEST);
+        for (int start = 0; start < watermarks.size(); start += MAX_WATERMARKS_PER_REQUEST) {
+            int end = Math.min(start + MAX_WATERMARKS_PER_REQUEST, watermarks.size());
+            requests.add(new SyncRequest(
+                    new ArrayList<>(watermarks.subList(start, end)),
+                    DELTA_LIMIT_PER_CONVERSATION,
+                    since));
+        }
+        return requests;
+    }
+
+    private Single<SyncResponse> fetchDeltaResponse(SyncRequest request) {
+        return ApiResult.safeApiCall(messageApi.syncDeltas(request))
+                .flatMap(apiResult -> {
+                    if (apiResult instanceof ApiResult.Success<?> success) {
+                        SyncResponse response = (SyncResponse) success.getBody();
+                        if (response != null) {
+                            return Single.just(response);
+                        }
+                    }
+                    return Single.error(new IOException("sync delta batch failed"));
+                });
     }
 
     private Single<SyncCursor> loadCursorState() {
