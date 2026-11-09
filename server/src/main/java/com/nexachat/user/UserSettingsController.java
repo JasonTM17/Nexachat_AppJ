@@ -34,7 +34,7 @@ public class UserSettingsController {
     public UserSettingsResponse update(@AuthenticationPrincipal JwtPrincipal principal,
                                        @Valid @RequestBody UpdateUserSettingsRequest request) {
         return settingsService.updateSettings(requireUserId(principal),
-                request.showPresence(), request.aiSummaryConsent());
+                request.showPresence(), request.showSeen(), request.aiSummaryConsent());
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

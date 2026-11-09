@@ -50,6 +50,15 @@ public class User {
     @Column(name = "show_presence", nullable = false)
     private boolean showPresence = true;
 
+    /**
+     * Read-receipt privacy switch (V16). {@code true} (the default) broadcasts
+     * this user's {@code MESSAGE_READ} receipts and lets the user receive
+     * other members' receipts; {@code false} is the reciprocal Zalo-style
+     * "hidden seen" state. Unread counts are never affected.
+     */
+    @Column(name = "show_seen", nullable = false)
+    private boolean showSeen = true;
+
     @Column(name = "ai_summary_consent", nullable = false)
     private boolean aiSummaryConsent;
 
@@ -126,6 +135,10 @@ public class User {
         return showPresence;
     }
 
+    public boolean isShowSeen() {
+        return showSeen;
+    }
+
     public boolean isAiSummaryConsent() {
         return aiSummaryConsent;
     }
@@ -144,6 +157,10 @@ public class User {
 
     public void changeShowPresence(boolean showPresence) {
         this.showPresence = showPresence;
+    }
+
+    public void changeShowSeen(boolean showSeen) {
+        this.showSeen = showSeen;
     }
 
     public void changeAiSummaryConsent(boolean aiSummaryConsent) {
