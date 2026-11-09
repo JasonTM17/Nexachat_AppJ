@@ -27,7 +27,7 @@ production Play Store key, use strong unique passwords stored in your secrets ma
 
 ```bash
 tools/sign-release.sh            # → release/nexachat-v1.0.0.apk (+ -unsigned.apk)
-tools/sign-release.sh v1.0.1     # custom version tag
+tools/sign-release.sh v1.0.1     # app versionName 1.0.1, versionCode 1000001
 tools/sign-release.sh -PapiBaseUrl=https://chat.example.com
 ```
 
@@ -54,7 +54,18 @@ The PowerShell wrapper forwards the same `-PapiBaseUrl` and
 `--allow-http-smoke` options. Do not use the HTTP override for a release that
 will be distributed.
 
-The script runs `./gradlew assembleRelease` on JDK 21 LTS, runs `zipalign`,
+Release tags must be `MAJOR.MINOR.PATCH`, optionally prefixed with `v`, with
+minor and patch components below 1000. The app `versionName` is the tag without
+the leading `v`; `versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH`, bounded
+by Android's `2100000000` limit. Plain Gradle invocations without
+`releaseVersionName` / `releaseVersionCode` properties keep the project
+defaults (`1.0.0` / `1`).
+
+For isolated signing checks, `RELEASE_SIGNING_PROPERTIES` may point to a
+properties file outside the repository. The script builds an unsigned APK and
+passes signing passwords to `apksigner` through environment password sources.
+
+The script runs unsigned `./gradlew assembleRelease` on JDK 21 LTS, runs `zipalign`,
 signs the APK with the newest `apksigner` under `$ANDROID_HOME/build-tools/`,
 and prints `apksigner verify --print-certs`.
 
