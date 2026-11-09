@@ -188,6 +188,52 @@ public final class InboxViewModelTest {
                         .map(ConversationSummary::getId).toList());
     }
 
+    @Test
+    public void togglePinCallsPinWhenUnpinned() {
+        ConversationSummary unpinned = conversation("c-1", 0);
+        when(repository.setConversationPinned("c-1", true))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.togglePin(unpinned);
+
+        verify(repository, times(1)).setConversationPinned("c-1", true);
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    @Test
+    public void togglePinCallsUnpinWhenPinned() {
+        ConversationSummary pinned = pinnedConversation("c-1");
+        when(repository.setConversationPinned("c-1", false))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.togglePin(pinned);
+
+        verify(repository, times(1)).setConversationPinned("c-1", false);
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    @Test
+    public void togglePinSurfacesCapErrorAndAllowsClearing() {
+        ConversationSummary unpinned = conversation("c-1", 0);
+        ApiError capError = new ApiError.Unknown("CONVERSATION_PIN_LIMIT");
+        when(repository.setConversationPinned("c-1", true))
+                .thenReturn(Single.just(Result.failure(capError)));
+
+        viewModel.togglePin(unpinned);
+
+        assertEquals(capError, viewModel.getPinError().getValue());
+
+        viewModel.clearPinError();
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    private static ConversationSummary pinnedConversation(String id) {
+        return new ConversationSummary(
+                id, "DIRECT", null, "last " + id, "Peer " + id, 1_700_000_000_000L,
+                42L, 0, "Peer " + id, null, null, 0L, 0L, null, null, false, null,
+                true, 1_700_000_000_000L);
+    }
+
     private static ConversationSummary conversation(String id, int unread) {
         return conversation(id, unread, "Peer " + id, null);
     }

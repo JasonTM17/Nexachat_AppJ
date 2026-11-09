@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 8,
+        version = 9,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -154,6 +154,18 @@ public abstract class AppDatabase extends RoomDatabase {
 
                     db.execSQL(
                             "ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq` INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /** Adds conversation pin state (pinned boolean, pinnedAt epoch ms). */
+    public static final Migration MIGRATION_8_9 =
+            new Migration(8, 9) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE `conversations` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE `conversations` ADD COLUMN `pinnedAt` INTEGER");
                 }
             };
 }

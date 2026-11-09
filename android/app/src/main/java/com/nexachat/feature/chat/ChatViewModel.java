@@ -504,6 +504,19 @@ public final class ChatViewModel extends ViewModel {
                 .subscribe(() -> { }, this::surfaceStreamFailure));
     }
 
+    public void toggleConversationPin() {
+        if (conversationId.isBlank()) return;
+        boolean currentlyPinned = currentUiState().isConversationPinned();
+        disposables.add(conversationRepository.setConversationPinned(conversationId, !currentlyPinned)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Failure<?> failure) {
+                        updateUiState(state -> state.withError(failure.getError()));
+                    }
+                }, error -> updateUiState(state -> state.withError(new ApiError.Network(error.getMessage())))));
+    }
+
     // ---- attachments ----
 
     public void sendAttachments(List<Uri> uris) {
@@ -764,6 +777,8 @@ public final class ChatViewModel extends ViewModel {
         private final long peerDeliveredSeq;
         @Nullable private final PeerPresence peerPresence;
         @Nullable private final String otherUserId;
+        private final boolean showSeen;
+        private final boolean conversationPinned;
 
         public UiState() {
             this("");
@@ -771,7 +786,7 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState(String input) {
             this(true, List.of(), List.of(), input, false, null, false, true, true,
-                    false, null, List.of(), null, List.of(), 0L, 0L, null, null);
+                    false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false);
         }
 
         private UiState(
@@ -792,7 +807,9 @@ public final class ChatViewModel extends ViewModel {
                 long peerReadSeq,
                 long peerDeliveredSeq,
                 @Nullable PeerPresence peerPresence,
-                @Nullable String otherUserId) {
+                @Nullable String otherUserId,
+                boolean showSeen,
+                boolean conversationPinned) {
             this.loading = loading;
             this.messages = List.copyOf(messages);
             this.sending = List.copyOf(sending);
@@ -811,6 +828,8 @@ public final class ChatViewModel extends ViewModel {
             this.peerDeliveredSeq = peerDeliveredSeq;
             this.peerPresence = peerPresence;
             this.otherUserId = otherUserId;
+            this.showSeen = showSeen;
+            this.conversationPinned = conversationPinned;
         }
 
         public boolean isLoading() { return loading; }
@@ -837,6 +856,8 @@ public final class ChatViewModel extends ViewModel {
         public long getPeerDeliveredSeq() { return peerDeliveredSeq; }
         @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
         @Nullable public String getOtherUserId() { return otherUserId; }
+        public boolean isShowSeen() { return showSeen; }
+        public boolean isConversationPinned() { return conversationPinned; }
 
         public boolean isPinned(String messageId) {
             for (ChatMessage pin : pins) {
@@ -853,7 +874,8 @@ public final class ChatViewModel extends ViewModel {
                     .collect(java.util.stream.Collectors.toList());
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withConversation(ConversationSummary conversation) {
@@ -865,61 +887,79 @@ public final class ChatViewModel extends ViewModel {
                     connected, hasMore, error, pendingAttachments, replyTarget, pins,
                     conversation.getPeerReadSeq(), conversation.getPeerDeliveredSeq(),
                     conversation.getPeerPresence(),
-                    blankToNull(conversation.getOtherUserId()));
+                    blankToNull(conversation.getOtherUserId()),
+                    showSeen,
+                    conversation.isPinned());
         }
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, nextConnected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, nextHasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, nextError, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPendingAttachments(List<PendingAttachment> pending) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pending, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, target, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, nextPins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
+        }
+
+        private UiState withShowSeen(boolean nextShowSeen) {
+            return copy(loading, messages, sending, input, peerTyping, peerName, group,
+                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    nextShowSeen, conversationPinned);
         }
 
         private static UiState copy(
@@ -940,10 +980,13 @@ public final class ChatViewModel extends ViewModel {
                 long peerReadSeq,
                 long peerDeliveredSeq,
                 @Nullable PeerPresence peerPresence,
-                @Nullable String otherUserId) {
+                @Nullable String otherUserId,
+                boolean showSeen,
+                boolean conversationPinned) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         @Nullable

@@ -601,6 +601,88 @@ public final class ConversationRepositoryTest {
         verify(messageDao, never()).deleteForConversation(any());
     }
 
+    @Test
+    public void pinConversationAppliesOptimisticallyThenPersistsOnSuccess() {
+        buildRepository();
+        dao().upsert(conversation("conv-pin", 100)).blockingAwait();
+        when(messageApi.pinConversation("conv-pin")).thenReturn(asCall(Response.success(null)));
+
+        Result<?> result = repository.pinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertTrue(row.isPinned());
+        assertTrue(row.getPinnedAt() != null && row.getPinnedAt() > 0);
+        verify(messageApi, times(1)).pinConversation("conv-pin");
+    }
+
+    @Test
+    public void pinConversationRevertsOnCapError() {
+        buildRepository();
+        dao().upsert(conversation("conv-pin", 100)).blockingAwait();
+        ResponseBody errorBody = ResponseBody.create(
+                okhttp3.MediaType.parse("application/json"),
+                "{\"code\":\"CONVERSATION_PIN_LIMIT\",\"message\":\"Pin limit reached\"}");
+        when(messageApi.pinConversation("conv-pin")).thenReturn(asCall(Response.error(409, errorBody)));
+
+        Result<?> result = repository.pinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertFalse(row.isPinned());
+        assertEquals(null, row.getPinnedAt());
+    }
+
+    @Test
+    public void unpinConversationAppliesOptimisticallyThenPersistsOnSuccess() {
+        buildRepository();
+        ConversationEntity pinned = conversation("conv-pin", 100).withPinned(true, 123456L);
+        dao().upsert(pinned).blockingAwait();
+        when(messageApi.unpinConversation("conv-pin")).thenReturn(asCall(Response.success(null)));
+
+        Result<?> result = repository.unpinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertFalse(row.isPinned());
+        assertEquals(null, row.getPinnedAt());
+        verify(messageApi, times(1)).unpinConversation("conv-pin");
+    }
+
+    @Test
+    public void unpinConversationRevertsOnNetworkError() throws Exception {
+        buildRepository();
+        ConversationEntity pinned = conversation("conv-pin", 100).withPinned(true, 123456L);
+        dao().upsert(pinned).blockingAwait();
+        Call<Void> failingCall = org.mockito.Mockito.mock(Call.class);
+        when(failingCall.execute()).thenThrow(new java.io.IOException("Network down"));
+        when(messageApi.unpinConversation("conv-pin")).thenReturn(failingCall);
+
+        Result<?> result = repository.unpinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertTrue(row.isPinned());
+        assertEquals(Long.valueOf(123456L), row.getPinnedAt());
+    }
+
+    @Test
+    public void inboxFlowSortsPinnedConversationsFirstWithTies() {
+        buildRepository();
+        ConversationEntity c1 = conversation("c1", 100).withPinned(true, 2000L);
+        ConversationEntity c2 = conversation("c2", 50).withPinned(true, 3000L);
+        ConversationEntity c3 = conversation("c3", 200).withPinned(true, 2000L);
+        ConversationEntity u1 = conversation("u1", 500);
+        ConversationEntity u2 = conversation("u2", 600);
+
+        dao().upsertAll(List.of(u1, c1, u2, c2, c3)).blockingAwait();
+
+        List<ConversationSummary> summaries = repository.inboxFlow().blockingFirst();
+        List<String> ids = summaries.stream().map(ConversationSummary::getId).toList();
+
+        assertEquals(List.of("c2", "c3", "c1", "u2", "u1"), ids);
+    }
+
     private FakeConversationDao dao() {
         return (FakeConversationDao) conversationDao;
     }
@@ -812,6 +894,17 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public Completable updatePin(String conversationId, boolean pinned, Long pinnedAt) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, row.withPinned(pinned, pinnedAt));
+                    publish();
+                }
+            });
+        }
+
+        @Override
         public Single<List<ConversationWatermark>> getAllWatermarks() {
             return Single.fromCallable(() -> {
                 List<ConversationWatermark> list = new ArrayList<>();
@@ -824,9 +917,19 @@ public final class ConversationRepositoryTest {
 
         private void publish() {
             List<ConversationEntity> ordered = new ArrayList<>(rows.values());
-            ordered.sort(Comparator.comparing(
-                    ConversationEntity::getLastMessageAt,
-                    Comparator.nullsLast(Comparator.<Long>reverseOrder())));
+            ordered.sort((a, b) -> {
+                int pinCompare = Boolean.compare(b.isPinned(), a.isPinned());
+                if (pinCompare != 0) return pinCompare;
+                long aPinnedAt = a.getPinnedAt() != null ? a.getPinnedAt() : 0L;
+                long bPinnedAt = b.getPinnedAt() != null ? b.getPinnedAt() : 0L;
+                int pinnedAtCompare = Long.compare(bPinnedAt, aPinnedAt);
+                if (pinnedAtCompare != 0) return pinnedAtCompare;
+                long aMsgAt = a.getLastMessageAt() != null ? a.getLastMessageAt() : 0L;
+                long bMsgAt = b.getLastMessageAt() != null ? b.getLastMessageAt() : 0L;
+                int msgCompare = Long.compare(bMsgAt, aMsgAt);
+                if (msgCompare != 0) return msgCompare;
+                return a.getId().compareTo(b.getId());
+            });
             inbox.onNext(Collections.unmodifiableList(ordered));
         }
 
@@ -835,7 +938,8 @@ public final class ConversationRepositoryTest {
                     row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                     row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                     unread, row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), row.getLastMessageDeleted());
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), row.getLastMessageDeleted(),
+                    row.getPeerDeliveredSeq(), row.isPinned(), row.getPinnedAt());
         }
 
         private ConversationEntity withLastMessage(
@@ -843,7 +947,8 @@ public final class ConversationRepositoryTest {
             return new ConversationEntity(
                     row.getId(), row.getType(), row.getTitle(), seq, content, sender, at,
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted);
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
+                    row.getPeerDeliveredSeq(), row.isPinned(), row.getPinnedAt());
         }
     }
 

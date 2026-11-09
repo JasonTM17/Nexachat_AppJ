@@ -529,7 +529,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             int anchor = manager.findFirstVisibleItemPosition();
             if (anchor >= 0 && anchor < oldCount) anchorId = adapter.getCurrentList().get(anchor).getStableId();
         }
-        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), state.getPeerReadSeq(), state.getPeerDeliveredSeq(), pulsingMessageId,
+        long effectivePeerReadSeq = state != null && state.isShowSeen() ? state.getPeerReadSeq() : 0L;
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), effectivePeerReadSeq, state.getPeerDeliveredSeq(), pulsingMessageId,
                 new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)), System.currentTimeMillis());
         String stableAnchor = anchorId;
         adapter.submitList(rows, () -> {
@@ -593,11 +594,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showMoreOptions() {
+        String pinAction = state != null && state.isConversationPinned()
+                ? getString(R.string.action_unpin_conversation)
+                : getString(R.string.action_pin_conversation);
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(new CharSequence[]{
                         getString(R.string.ask_action),
                         getString(R.string.summary_overflow_action),
-                        getString(R.string.archive_title)
+                        getString(R.string.archive_title),
+                        pinAction
                 }, (dialog, which) -> {
                     if (which == 0) {
                         showAsk();
@@ -605,6 +610,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         showSummary();
                     } else if (which == 2) {
                         openArchive();
+                    } else if (which == 3) {
+                        viewModel.toggleConversationPin();
                     }
                 }).show();
     }

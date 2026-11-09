@@ -36,6 +36,10 @@ public final class ConversationSummary {
     private final boolean lastMessageDeleted;
     /** Live or seeded direct-peer presence; null for groups or hidden peers. */
     @Nullable private final PeerPresence peerPresence;
+    /** True if the conversation is pinned by the caller. */
+    private final boolean pinned;
+    /** Epoch milliseconds when pinned; null while not pinned. */
+    @Nullable private final Long pinnedAtEpochMs;
 
     public ConversationSummary(
             String id,
@@ -56,7 +60,8 @@ public final class ConversationSummary {
             @Nullable PeerPresence peerPresence) {
         this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
                 lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence);
+                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence,
+                false, null);
     }
 
     public ConversationSummary(
@@ -77,6 +82,32 @@ public final class ConversationSummary {
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
             @Nullable PeerPresence peerPresence) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted, peerPresence,
+                false, null);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs) {
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -94,6 +125,8 @@ public final class ConversationSummary {
         this.otherUserId = otherUserId;
         this.lastMessageDeleted = lastMessageDeleted;
         this.peerPresence = peerPresence;
+        this.pinned = pinned;
+        this.pinnedAtEpochMs = pinnedAtEpochMs;
     }
 
     public String getId() { return id; }
@@ -113,6 +146,32 @@ public final class ConversationSummary {
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
     @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
+    public boolean isPinned() { return pinned; }
+    @Nullable public Long getPinnedAtEpochMs() { return pinnedAtEpochMs; }
+
+    /**
+     * Deterministic inbox ordering: pinned conversations first (by pinnedAt desc).
+     * Ties among pinned and all unpinned conversations sort by activity (lastMessageAt desc),
+     * broken by id.
+     */
+    public static final java.util.Comparator<ConversationSummary> INBOX_COMPARATOR = (a, b) -> {
+        if (a.isPinned() != b.isPinned()) {
+            return a.isPinned() ? -1 : 1;
+        }
+        if (a.isPinned()) {
+            long aPin = a.getPinnedAtEpochMs() != null ? a.getPinnedAtEpochMs() : 0L;
+            long bPin = b.getPinnedAtEpochMs() != null ? b.getPinnedAtEpochMs() : 0L;
+            if (aPin != bPin) {
+                return Long.compare(bPin, aPin);
+            }
+        }
+        long aAt = a.getLastMessageAtEpochMs() != null ? a.getLastMessageAtEpochMs() : 0L;
+        long bAt = b.getLastMessageAtEpochMs() != null ? b.getLastMessageAtEpochMs() : 0L;
+        if (aAt != bAt) {
+            return Long.compare(bAt, aAt);
+        }
+        return a.getId().compareTo(b.getId());
+    };
 
     /** The group title wins over the direct peer name. */
     public String getDisplayName() {
@@ -138,6 +197,8 @@ public final class ConversationSummary {
                 && peerReadSeq == that.peerReadSeq
                 && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
+                && pinned == that.pinned
+                && Objects.equals(pinnedAtEpochMs, that.pinnedAtEpochMs)
                 && id.equals(that.id)
                 && type.equals(that.type)
                 && Objects.equals(title, that.title)
@@ -157,6 +218,6 @@ public final class ConversationSummary {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
-                lastMessageDeleted, peerPresence);
+                lastMessageDeleted, peerPresence, pinned, pinnedAtEpochMs);
     }
 }

@@ -18,9 +18,12 @@ public interface ConversationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     Completable upsertAll(List<ConversationEntity> conversations);
 
-    /** Inbox ordering: newest activity first, empty conversations last. */
-    @Query("SELECT * FROM conversations ORDER BY COALESCE(lastMessageAt, 0) DESC")
+    /** Inbox ordering: pinned conversations first (by pinnedAt desc), then newest activity. */
+    @Query("SELECT * FROM conversations ORDER BY pinned DESC, COALESCE(pinnedAt, 0) DESC, COALESCE(lastMessageAt, 0) DESC, id ASC")
     Flowable<List<ConversationEntity>> inboxFlow();
+
+    @Query("UPDATE conversations SET pinned = :pinned, pinnedAt = :pinnedAt WHERE id = :conversationId")
+    Completable updatePin(String conversationId, boolean pinned, Long pinnedAt);
 
     @Query("SELECT id AS conversationId, COALESCE(lastMessageSeq, 0) AS maxSeq FROM conversations")
     Single<List<ConversationWatermark>> getAllWatermarks();

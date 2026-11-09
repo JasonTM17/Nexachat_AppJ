@@ -38,9 +38,11 @@ public final class SyncResponse {
         private final boolean hasMore;
         @Nullable private final Long reactionCursor;
         private final boolean reactionsFullRefresh;
+        @Nullable private final Boolean pinned;
+        @Nullable private final String pinnedAt;
 
         public ConversationDeltaDto() {
-            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false, null, false);
+            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false, null, false, null, null);
         }
 
         public ConversationDeltaDto(
@@ -52,7 +54,7 @@ public final class SyncResponse {
                 @Nullable Long maxSeq,
                 boolean hasMore) {
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
-                    reactionUpdates, maxSeq, hasMore, null, false);
+                    reactionUpdates, maxSeq, hasMore, null, false, null, null);
         }
 
         public ConversationDeltaDto(
@@ -65,6 +67,23 @@ public final class SyncResponse {
                 boolean hasMore,
                 @Nullable Long reactionCursor,
                 boolean reactionsFullRefresh) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
+                    null, null);
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Long reactionCursor,
+                boolean reactionsFullRefresh,
+                @Nullable Boolean pinned,
+                @Nullable String pinnedAt) {
             this.conversationId = conversationId;
             this.newMessages = newMessages == null ? List.of() : newMessages;
             this.editedMessages = editedMessages == null ? List.of() : editedMessages;
@@ -74,6 +93,8 @@ public final class SyncResponse {
             this.hasMore = hasMore;
             this.reactionCursor = reactionCursor;
             this.reactionsFullRefresh = reactionsFullRefresh;
+            this.pinned = pinned;
+            this.pinnedAt = pinnedAt;
         }
 
         @Nullable public String getConversationId() { return conversationId; }
@@ -85,5 +106,8 @@ public final class SyncResponse {
         public boolean isHasMore() { return hasMore; }
         @Nullable public Long getReactionCursor() { return reactionCursor; }
         public boolean isReactionsFullRefresh() { return reactionsFullRefresh; }
+        @Nullable public Boolean getPinned() { return pinned; }
+        public boolean isPinned() { return Boolean.TRUE.equals(pinned); }
+        @Nullable public String getPinnedAt() { return pinnedAt; }
     }
 }

@@ -131,6 +131,14 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
+        viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                if (binding != null) {
+                    Snackbar.make(binding.getRoot(), com.nexachat.feature.chat.ChatErrorText.messageId(error), Snackbar.LENGTH_SHORT).show();
+                }
+                viewModel.clearPinError();
+            }
+        });
     }
 
     private void showThemeDialog() {
@@ -192,11 +200,34 @@ public final class InboxFragment extends Fragment {
         }
         boundUserId = currentUserId;
         adapter = new ConversationListAdapter(
-                this::openConversation,
+                new ConversationListAdapter.Listener() {
+                    @Override
+                    public void onConversationClick(@NonNull String conversationId) {
+                        openConversation(conversationId);
+                    }
+
+                    @Override
+                    public void onConversationLongClick(@NonNull ConversationSummary conversation) {
+                        showConversationContextMenu(conversation);
+                    }
+                },
                 currentUserId,
                 getString(R.string.time_just_now),
                 getString(R.string.time_yesterday));
         binding.conversationList.setAdapter(adapter);
+    }
+
+    private void showConversationContextMenu(@NonNull ConversationSummary conversation) {
+        String pinAction = conversation.isPinned()
+                ? getString(R.string.action_unpin_conversation)
+                : getString(R.string.action_pin_conversation);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setItems(new CharSequence[]{pinAction}, (dialog, which) -> {
+                    if (which == 0) {
+                        viewModel.togglePin(conversation);
+                    }
+                })
+                .show();
     }
 
     private void render(@NonNull InboxUiState state) {

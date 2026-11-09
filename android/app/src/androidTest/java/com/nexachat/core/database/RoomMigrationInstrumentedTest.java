@@ -31,7 +31,8 @@ import org.junit.runner.RunWith;
 public final class RoomMigrationInstrumentedTest {
     private static final String V6_TO_V7_DB = "nexachat-room-v6-v7.db";
     private static final String V7_TO_V8_DB = "nexachat-room-v7-v8.db";
-    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v8.db";
+    private static final String V8_TO_V9_DB = "nexachat-room-v8-v9.db";
+    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v9.db";
     private static final String ATTACHMENTS_JSON =
             "[{\"fileId\":\"attachment-1\",\"url\":\"https://example.test/image.jpg\","
                     + "\"mimeType\":\"image/jpeg\"}]";
@@ -49,6 +50,7 @@ public final class RoomMigrationInstrumentedTest {
     public void cleanUp() {
         context.deleteDatabase(V6_TO_V7_DB);
         context.deleteDatabase(V7_TO_V8_DB);
+        context.deleteDatabase(V8_TO_V9_DB);
         context.deleteDatabase(FULL_CHAIN_DB);
     }
 
@@ -99,6 +101,29 @@ public final class RoomMigrationInstrumentedTest {
     }
 
     @Test
+    public void migrateV8ToV9PreservesRowsAndAddsExpectedDefaults() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(V8_TO_V9_DB, 8);
+        try {
+            seedRows(oldDb, 8);
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                V8_TO_V9_DB, 9, true, AppDatabase.MIGRATION_8_9);
+        try {
+            assertExistingRows(db);
+            assertEquals("pinned defaults to zero", 0L,
+                    singleLong(db, "SELECT pinned FROM conversations WHERE id = 'c-1'"));
+            assertNull("pinnedAt defaults to null",
+                    singleNullableLong(db, "SELECT pinnedAt FROM conversations WHERE id = 'c-1'"));
+            assertNoForeignKeyViolations(db);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void fullChainFromOldestExportedSchemaPreservesRows() throws Exception {
         SupportSQLiteDatabase oldDb = helper.createDatabase(FULL_CHAIN_DB, 6);
         try {
@@ -113,11 +138,15 @@ public final class RoomMigrationInstrumentedTest {
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 8, db.getVersion());
+            assertEquals("full chain reaches the current schema", 9, db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
                     singleLong(db, "SELECT peerDeliveredSeq FROM conversations WHERE id = 'c-1'"));
+            assertEquals("pinned defaults to zero", 0L,
+                    singleLong(db, "SELECT pinned FROM conversations WHERE id = 'c-1'"));
+            assertNull("pinnedAt defaults to null",
+                    singleNullableLong(db, "SELECT pinnedAt FROM conversations WHERE id = 'c-1'"));
             assertV8Indexes(db);
             assertNewTablesAcceptRows(db);
             assertNoForeignKeyViolations(db);
@@ -134,7 +163,8 @@ public final class RoomMigrationInstrumentedTest {
             AppDatabase.MIGRATION_4_5,
             AppDatabase.MIGRATION_5_6,
             AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8
+            AppDatabase.MIGRATION_7_8,
+            AppDatabase.MIGRATION_8_9
         };
     }
 
@@ -348,6 +378,14 @@ public final class RoomMigrationInstrumentedTest {
         try (Cursor cursor = db.query(query)) {
             assertTrue("query returned no row: " + query, cursor.moveToFirst());
             return cursor.getLong(0);
+        }
+    }
+
+    @androidx.annotation.Nullable
+    private static Long singleNullableLong(SupportSQLiteDatabase db, String query) {
+        try (Cursor cursor = db.query(query)) {
+            assertTrue("query returned no row: " + query, cursor.moveToFirst());
+            return cursor.isNull(0) ? null : cursor.getLong(0);
         }
     }
 
