@@ -17,9 +17,9 @@ public interface RequestIdempotencyRepository
                                                     @Param("key") String key);
 
     /**
-     * Race-safe insert: two concurrent requests with the same key both run
-     * their action, but only the first insert wins; the loser re-reads the
-     * winner's row to decide between a replay and a key-reuse error.
+     * Race-safe reservation insert: a concurrent conflicting insert waits for
+     * this transaction, then returns 0 after the winner commits. The service
+     * reserves before invoking the action so same-key mutations run once.
      *
      * @return 1 when this call stored the row, 0 when the key already existed
      */

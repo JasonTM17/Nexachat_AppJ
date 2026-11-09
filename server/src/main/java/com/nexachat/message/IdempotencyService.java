@@ -3,6 +3,7 @@ package com.nexachat.message;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -51,7 +52,7 @@ public class IdempotencyService {
      *                      non-UUID key), {@code IDEMPOTENCY_KEY_REUSED}
      *                      (same key, different endpoint or payload)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void execute(UUID userId, String key, String endpoint, String payload, Runnable action) {
         if (key == null || key.isBlank()) {
             action.run();
@@ -66,16 +67,21 @@ public class IdempotencyService {
             return; // replay: the original result is returned without re-running
         }
 
-        action.run();
-
+        // Reserve the key before running a toggle. PostgreSQL makes a
+        // concurrent insert for the same (user, key) wait for this transaction
+        // to commit or roll back, so only the reservation winner runs action.
         int inserted = repository.insert(userId, cleanKey, endpoint, payloadHash, hash("204 No Content"));
         if (inserted == 0) {
-            // A concurrent request won the insert; its row decides the outcome.
             RequestIdempotency winner = repository.findByUserIdAndKey(userId, cleanKey)
                     .orElseThrow(() -> ApiException.of(
                             ApiErrorCode.INTERNAL_ERROR, "Idempotency row disappeared"));
             requireSameOperation(winner, endpoint, payloadHash);
+            return;
         }
+
+        // A failed action rolls back the reservation with this transaction, so
+        // unsuccessful operations remain retryable.
+        action.run();
     }
 
     private void requireSameOperation(RequestIdempotency row, String endpoint, String payloadHash) {

@@ -117,9 +117,10 @@
   given `(user, key)` runs the operation and caches the outcome; a repeat with
   the same key, endpoint and payload returns the original result without
   running it again. Reusing a key for a different endpoint or payload is a
-  client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Keys expire after 24
-  hours. Absent header = no replay protection (the toggle endpoint still
-  toggles on every call).
+  client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Concurrent requests
+  with the same key serialize on a database reservation, so only one request
+  runs the mutation. Keys expire after 24 hours. Absent header = no replay
+  protection (the toggle endpoint still toggles on every call).
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
   pair. Replaying an already-rotated refresh token returns
   `401 TOKEN_REUSED` and revokes the whole session family.

@@ -157,7 +157,7 @@ class IdempotencyServiceTest {
     }
 
     @Test
-    void concurrentWinnerWithSameOperation_isTolerated() {
+    void conflictingReservationWithSameOperation_skipsAction() {
         when(repository.findByUserIdAndKey(userId, key.toString()))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(row("POST /x", "p")));
@@ -167,7 +167,7 @@ class IdempotencyServiceTest {
 
         service.execute(userId, key.toString(), "POST /x", "p", runs::incrementAndGet);
 
-        assertThat(runs).hasValue(1);
+        assertThat(runs).hasValue(0);
     }
 
     @Test
