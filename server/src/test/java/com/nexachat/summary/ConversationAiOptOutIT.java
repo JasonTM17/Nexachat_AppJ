@@ -173,6 +173,62 @@ class ConversationAiOptOutIT {
                 .extracting(RagMessage::id).contains(message.id());
     }
 
+    @Test
+    void inboxExposesOnlyTheCallersOwnAiOptOutState() throws Exception {
+        putOptOut(peer).andExpect(status().isOk());
+
+        assertThat(entryFor(inbox(caller), conversationId).path("aiOptOut").asBoolean())
+                .as("the caller has not opted out")
+                .isFalse();
+        assertThat(entryFor(inbox(peer), conversationId).path("aiOptOut").asBoolean())
+                .as("each member sees their own state")
+                .isTrue();
+    }
+
+    @Test
+    void directConversationResponseCarriesTheCallersOptOutState() throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/v1/conversations/direct")
+                        .header("Authorization", bearer(caller))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"" + peer.getId() + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.aiOptOut").value(false))
+                .andReturn();
+        UUID directId = UUID.fromString(objectMapper.readTree(
+                created.getResponse().getContentAsString()).path("id").asText());
+        try {
+            mockMvc.perform(put("/api/v1/conversations/" + directId + "/ai-opt-out")
+                            .header("Authorization", bearer(caller)))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(post("/api/v1/conversations/direct")
+                            .header("Authorization", bearer(caller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"userId\":\"" + peer.getId() + "\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.aiOptOut").value(true));
+        } finally {
+            jdbcTemplate.update("DELETE FROM conversations WHERE id = ?", directId);
+        }
+    }
+
+    private JsonNode inbox(User user) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/v1/conversations")
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private static JsonNode entryFor(JsonNode inbox, UUID conversationId) {
+        for (JsonNode entry : inbox) {
+            if (conversationId.toString().equals(entry.path("id").asText())) {
+                return entry;
+            }
+        }
+        throw new AssertionError("Conversation is missing from the inbox");
+    }
+
     private ResultActions putOptOut(User user) throws Exception {
         return mockMvc.perform(put("/api/v1/conversations/" + conversationId + "/ai-opt-out")
                 .header("Authorization", bearer(user)));

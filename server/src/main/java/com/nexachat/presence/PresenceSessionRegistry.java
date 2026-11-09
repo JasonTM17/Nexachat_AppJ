@@ -59,6 +59,13 @@ public class PresenceSessionRegistry {
     @EventListener
     public void onSessionConnected(SessionConnectedEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+        if (accessor.getUser() instanceof StompUserPrincipal principal
+                && principal.expiresAt() != null
+                && !Instant.now().isBefore(principal.expiresAt())) {
+            // The socket is about to be closed by the session registry; an
+            // expired token must never mark its user online.
+            return;
+        }
         UUID userId = userId(accessor.getUser());
         String sessionId = accessor.getSessionId();
         if (userId != null && sessionId != null) {

@@ -89,6 +89,16 @@ public class SummaryService {
                     conversationId, window, contentHash, generated.generatedBy(), request.language(), generated);
             entry = saved.entry();
             cached = !saved.inserted();
+            if (cached && !replayAllowed(entry, window, optedOut)) {
+                // A concurrent fill that started before the opt-out won the
+                // insert. It must not be replayed: drop it and store this
+                // request's own generation under the same cache key.
+                cacheRepository.delete(conversationId, entry.fromSeq(), entry.toSeq(),
+                        entry.contentHash(), entry.cacheProvider(), entry.requestedLanguage());
+                entry = cacheRepository.replace(conversationId, window, contentHash,
+                        generated.generatedBy(), request.language(), generated);
+                cached = false;
+            }
         }
         SummaryGeneration responseGeneration = forRequest(
                 entry.payload().toGeneration(), prepared, generated);

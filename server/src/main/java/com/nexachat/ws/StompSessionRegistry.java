@@ -2,6 +2,7 @@ package com.nexachat.ws;
 
 import com.nexachat.auth.AccessTokensRevokedEvent;
 import com.nexachat.user.UserRepository;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -20,12 +21,23 @@ import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
-/** Tracks raw WebSocket sessions so a committed token revocation can close them. */
+/**
+ * Tracks raw WebSocket sessions so a committed token revocation can close them.
+ * A session is bound to its authenticated user only for the lifetime of the
+ * access token that opened it: the registry closes the socket at the token's
+ * expiry, and the outbound gate refuses frames for a session whose binding has
+ * already expired.
+ */
 @Component
 public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, WebSocketMessageBrokerConfigurer {
 
@@ -35,6 +47,14 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     private final ConcurrentHashMap<String, WebSocketSession> socketsBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, UUID> userBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Set<String>> sessionsByUser = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Instant> expiresBySession = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> expiryTasks = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService expiryScheduler =
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "nexachat-stomp-expiry");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     public StompSessionRegistry(UserRepository userRepository) {
         this.userRepository = userRepository;
@@ -79,12 +99,11 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         if (socket == null || !socket.isOpen()) {
             return;
         }
-
-        bind(sessionId, principal.userId());
-        if ((principal.expiresAt() != null && !Instant.now().isBefore(principal.expiresAt()))
-                || (principal.issuedAt() != null && isRevoked(principal))) {
+        if (isExpired(principal) || (principal.issuedAt() != null && isRevoked(principal))) {
             closeSession(sessionId);
+            return;
         }
+        bind(sessionId, principal.userId(), principal.expiresAt());
     }
 
     @EventListener
@@ -100,14 +119,32 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
             return;
         }
         for (String sessionId : Set.copyOf(sessionIds)) {
-            userBySession.remove(sessionId, event.userId());
-            closeSocket(sessionId);
+            if (event.userId().equals(userBySession.get(sessionId))) {
+                closeSession(sessionId);
+            }
         }
     }
 
-    /** True while the STOMP session is still bound to an authenticated user. */
+    @PreDestroy
+    public void shutdown() {
+        expiryScheduler.shutdownNow();
+    }
+
+    /** True while the STOMP session is still bound to a user with a live access token. */
     public boolean isAuthenticatedSession(String sessionId) {
-        return userBySession.containsKey(sessionId);
+        if (!userBySession.containsKey(sessionId)) {
+            return false;
+        }
+        Instant expiresAt = expiresBySession.get(sessionId);
+        if (expiresAt != null && !Instant.now().isBefore(expiresAt)) {
+            closeSession(sessionId);
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isExpired(StompUserPrincipal principal) {
+        return principal.expiresAt() != null && !Instant.now().isBefore(principal.expiresAt());
     }
 
     /** The user bound to a session, or {@code null} for an unknown/unbound session. */
@@ -124,15 +161,21 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
                 .orElse(true);
     }
 
-    private void bind(String sessionId, UUID userId) {
+    private void bind(String sessionId, UUID userId, Instant expiresAt) {
         UUID previous = userBySession.putIfAbsent(sessionId, userId);
         if (previous != null) {
             return;
         }
         sessionsByUser.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet()).add(sessionId);
+        if (expiresAt != null) {
+            expiresBySession.put(sessionId, expiresAt);
+            scheduleExpiry(sessionId, expiresAt);
+        }
     }
 
     private void unbind(String sessionId) {
+        cancelExpiry(sessionId);
+        expiresBySession.remove(sessionId);
         UUID userId = userBySession.remove(sessionId);
         if (userId == null) {
             return;
@@ -143,6 +186,28 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
             if (sessions.isEmpty()) {
                 sessionsByUser.remove(userId, sessions);
             }
+        }
+    }
+
+    private void scheduleExpiry(String sessionId, Instant expiresAt) {
+        long delayMillis = Math.max(1L, Duration.between(Instant.now(), expiresAt).toMillis());
+        ScheduledFuture<?> task = expiryScheduler.schedule(() -> {
+            expiryTasks.remove(sessionId);
+            closeSession(sessionId);
+        }, delayMillis, TimeUnit.MILLISECONDS);
+        ScheduledFuture<?> previous = expiryTasks.put(sessionId, task);
+        if (previous != null) {
+            previous.cancel(false);
+        }
+        if (task.isDone()) {
+            expiryTasks.remove(sessionId, task);
+        }
+    }
+
+    private void cancelExpiry(String sessionId) {
+        ScheduledFuture<?> task = expiryTasks.remove(sessionId);
+        if (task != null) {
+            task.cancel(false);
         }
     }
 
@@ -159,7 +224,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         try {
             socket.close(CloseStatus.POLICY_VIOLATION);
         } catch (IOException e) {
-            log.warn("Could not close a revoked STOMP session");
+            log.warn("Could not close an expired or revoked STOMP session");
         }
     }
 }

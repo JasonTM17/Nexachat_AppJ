@@ -208,9 +208,12 @@ public class ArchiveService {
             applyOffset = false;
             maxSeq = lastScannedSeq - 1;
         }
-        String next = items.isEmpty()
-                ? null
-                : cursorCodec.encode(conversationId, ArchiveKind.LINK, lastScannedSeq, "-1");
+        // The scan budget ran out before the conversation was exhausted, even
+        // if every scanned message was rejected by the extractor: continue
+        // below the last scanned sequence so older links stay reachable.
+        String next = lastScannedSeq > 0
+                ? cursorCodec.encode(conversationId, ArchiveKind.LINK, lastScannedSeq, "-1")
+                : null;
         return new ArchiveResponse(List.copyOf(items), next);
     }
 

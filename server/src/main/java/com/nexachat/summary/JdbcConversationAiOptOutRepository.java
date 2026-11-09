@@ -89,7 +89,10 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
     /**
      * Inserts the opt-out idempotently and removes every derived artifact in
      * the same transaction: stored vectors for the member's messages in this
-     * conversation and cached ask answers that cite any of them.
+     * conversation and every cached ask answer for the conversation. The cache
+     * row records only the cited messages, while the external prompt can use
+     * the member's messages as uncited context, so the whole conversation's
+     * ask cache is the smallest set that is guaranteed to be free of it.
      */
     @Transactional
     public void optOut(UUID conversationId, UUID userId) {
@@ -107,13 +110,9 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
                   AND m.sender_id = ?
                 """, conversationId, userId);
         jdbcTemplate.update("""
-                DELETE FROM rag_ask_cache c
-                USING messages m
-                WHERE c.conversation_id = ?
-                  AND m.conversation_id = c.conversation_id
-                  AND m.sender_id = ?
-                  AND m.id = ANY (c.cited_message_ids)
-                """, conversationId, userId);
+                DELETE FROM rag_ask_cache
+                WHERE conversation_id = ?
+                """, conversationId);
     }
 
     @Transactional
