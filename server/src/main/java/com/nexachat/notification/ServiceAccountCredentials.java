@@ -44,7 +44,7 @@ final class ServiceAccountCredentials {
      * messages name the missing field only, never the offending value.
      */
     static ServiceAccountCredentials load(String configured, ObjectMapper objectMapper) {
-        String json = readConfigured(configured);
+        String json = readConfigured(configured, objectMapper);
         JsonNode root;
         try {
             root = objectMapper.readTree(json);
@@ -60,19 +60,87 @@ final class ServiceAccountCredentials {
         return new ServiceAccountCredentials(clientEmail, parsePrivateKey(privateKeyPem), tokenUri);
     }
 
-    private static String readConfigured(String configured) {
+    private static String readConfigured(String configured, ObjectMapper objectMapper) {
         if (configured == null || configured.isBlank()) {
             throw new IllegalStateException("FCM is enabled but nexachat.fcm.service-account-json is empty");
         }
-        String value = configured.strip();
-        if (!value.startsWith("{") && looksLikePath(value)) {
+        String value = stripBom(configured.strip());
+        String inlineJson = inlineJson(value, objectMapper);
+        if (inlineJson != null) {
+            return inlineJson;
+        }
+        String pathValue = stripQuotes(value);
+        if (looksLikePath(pathValue)) {
             try {
-                return Files.readString(Path.of(value), StandardCharsets.UTF_8);
+                return Files.readString(Path.of(pathValue), StandardCharsets.UTF_8);
             } catch (Exception ex) {
-                throw new IllegalStateException("FCM service account file cannot be read: " + value);
+                throw new IllegalStateException(
+                        "FCM service account file cannot be read: " + displayName(pathValue));
             }
         }
         return value;
+    }
+
+    /**
+     * Inline JSON is accepted when the value starts with an object or array, or
+     * when a deployment template wrapped the JSON in quotes (optionally behind a
+     * UTF-8 BOM). A double-quoted value is unescaped by the parser so the
+     * original JSON text reaches {@link #load}.
+     */
+    private static String inlineJson(String value, ObjectMapper objectMapper) {
+        String candidate = value;
+        if (isQuoted(candidate, '\'')) {
+            candidate = candidate.substring(1, candidate.length() - 1);
+        }
+        if (candidate.startsWith("{") || candidate.startsWith("[")) {
+            return candidate;
+        }
+        if (isQuoted(candidate, '"')) {
+            try {
+                JsonNode node = objectMapper.readTree(candidate);
+                if (node != null && node.isTextual()) {
+                    String inner = node.asText();
+                    if (inner != null && (inner.startsWith("{") || inner.startsWith("["))) {
+                        return inner;
+                    }
+                }
+            } catch (Exception ignored) {
+                // Not a quoted JSON document; fall through to path handling.
+            }
+        }
+        return null;
+    }
+
+    private static String stripBom(String value) {
+        return value.startsWith("\uFEFF") ? value.substring(1) : value;
+    }
+
+    private static String stripQuotes(String value) {
+        if (isQuoted(value, '"') || isQuoted(value, '\'')) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
+    }
+
+    private static boolean isQuoted(String value, char quote) {
+        return value.length() >= 2 && value.charAt(0) == quote && value.charAt(value.length() - 1) == quote;
+    }
+
+    /**
+     * A path is reported by file name only: the configured value can be a
+     * filesystem path with host-specific directories, and the value itself must
+     * never reach a log or an exception message.
+     */
+    private static String displayName(String pathValue) {
+        try {
+            Path fileName = Path.of(pathValue).getFileName();
+            if (fileName != null && !fileName.toString().isBlank()) {
+                return fileName.toString();
+            }
+        } catch (RuntimeException ignored) {
+            // Not a usable path; fall through to the fixed label.
+        }
+        return "configured service-account file";
     }
 
     private static boolean looksLikePath(String value) {

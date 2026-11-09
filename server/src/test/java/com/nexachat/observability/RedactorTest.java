@@ -103,4 +103,68 @@ class RedactorTest {
 
         assertThat(Redactor.redact(message)).isEqualTo(message);
     }
+
+    @Test
+    void masksPrivateKeyPemBlocks() {
+        String pem = pemBlock("PRIVATE KEY",
+                "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7VJSSTUoFQo=");
+
+        String redacted = Redactor.redact("{\"private_key\":\"" + pem.replace("\n", "\\n") + "\"}");
+
+        assertThat(redacted).doesNotContain("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7VJSSTUoFQo=");
+        assertThat(redacted).doesNotContain("BEGIN PRIVATE KEY");
+        assertThat(redacted).doesNotContain("END PRIVATE KEY");
+        assertThat(redacted).contains("[REDACTED]");
+    }
+
+    @Test
+    void masksRsaPrivateKeyPemBlocksWithEscapedNewlines() {
+        String pem = pemBlock("RSA PRIVATE KEY", "fake-body-0001");
+
+        String redacted = Redactor.redact("{\"private_key\":\"" + pem.replace("\n", "\\n") + "\"}");
+
+        assertThat(redacted).doesNotContain("fake-body-0001");
+        assertThat(redacted).doesNotContain("BEGIN RSA PRIVATE KEY");
+        assertThat(redacted).contains("[REDACTED]");
+    }
+
+    @Test
+    void masksEscapedQuotedPrivateKeyPemBlocks() {
+        String pem = pemBlock("PRIVATE KEY", "MIIEsecretkeybody").replace("\n", "\\n");
+
+        String redacted = Redactor.redact("{\\\"private_key\\\":\\\"" + pem + "\\\"}");
+
+        assertThat(redacted).doesNotContain("MIIEsecretkeybody");
+        assertThat(redacted).doesNotContain("BEGIN PRIVATE KEY");
+        assertThat(redacted).contains("[REDACTED]");
+    }
+
+    private static String pemBlock(String algorithm, String body) {
+        return "-----BEGIN " + algorithm + "-----\n" + body + "\n-----END " + algorithm + "-----";
+    }
+
+    @Test
+    void masksClientEmailFields() {
+        String redacted = Redactor.redact("{\"client_email\":\"svc@project.iam.gserviceaccount.com\"}");
+
+        assertThat(redacted).doesNotContain("svc@project.iam.gserviceaccount.com");
+        assertThat(redacted).contains("client_email=[REDACTED]");
+    }
+
+    @Test
+    void masksEscapedClientEmailFields() {
+        String redacted = Redactor.redact(
+                "{\\\"client_email\\\":\\\"svc@project.iam.gserviceaccount.com\\\"}");
+
+        assertThat(redacted).doesNotContain("svc@project.iam.gserviceaccount.com");
+        assertThat(redacted).contains("[REDACTED]");
+    }
+
+    @Test
+    void masksPrivateKeyAssignedValues() {
+        String redacted = Redactor.redact("private_key=abcdefghijklmnop");
+
+        assertThat(redacted).doesNotContain("abcdefghijklmnop");
+        assertThat(redacted).contains("private_key=[REDACTED]");
+    }
 }
