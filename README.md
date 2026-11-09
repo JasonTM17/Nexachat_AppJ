@@ -321,6 +321,8 @@ and the CI secret scan enforce this.
 
 ## License & status
 
+Released under the [MIT License](LICENSE).
+
 NexaChat is designed and operated as a single-node real-time messaging deployment;
 architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
 cleartext debug profile, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
