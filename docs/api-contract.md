@@ -368,7 +368,11 @@ page is bounded by `nexachat.sync.max-reaction-updates` (default 200 events,
 therefore at most 200 message ids). When the page is full, `hasMore=true` and
 `reactionCursor` carries the last event id consumed; the client echoes it as
 the watermark's `reactionCursor` on the next request so the follow-up page
-cannot skip rows (`reaction_events` is ordered by `id`). If `since` is older
+and keeps the same `since`. The first page filters events by `created_at > since`;
+follow-up pages use the cursor alone so new events committed during pagination
+remain visible. Reaction writers and delta readers serialize on a transaction-
+scoped conversation lock, which allocates event ids in commit order and prevents
+a late commit from landing below an already-issued cursor. If `since` is older
 than `nexachat.sync.reaction-retention-days` (default 30), the events needed
 for a partial delta may have been purged, so the delta sets
 `reactionsFullRefresh=true` and the client must reload reactions from history

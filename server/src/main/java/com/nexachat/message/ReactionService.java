@@ -166,6 +166,7 @@ public class ReactionService {
     /** Appends the change to the audit log in the same transaction as the toggle. */
     private void recordEvent(UUID conversationId, UUID messageId, UUID userId, String emoji,
                              ReactionEvent.Action action) {
+        reactionEventRepository.lockConversationEvents(conversationId);
         reactionEventRepository.insert(conversationId, messageId, userId, emoji, action.name());
     }
 
