@@ -236,6 +236,14 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
         return messages.stream().findFirst().orElse(null);
     }
 
+    @Override
+    public void deleteEmbeddingsForMessage(UUID messageId) {
+        if (messageId == null) {
+            return;
+        }
+        jdbcTemplate.update("DELETE FROM message_embeddings WHERE message_id = ?", messageId);
+    }
+
     private static java.sql.Array uuidArray(PreparedStatement statement, Collection<UUID> ids)
             throws SQLException {
         return statement.getConnection().createArrayOf("uuid", ids.toArray(UUID[]::new));

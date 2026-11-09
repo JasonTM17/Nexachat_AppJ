@@ -161,4 +161,17 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
                 .findFirst()
                 .orElse(null);
     }
+
+    @Override
+    public void deleteEmbeddingsForMessage(UUID messageId) {
+        if (messageId == null) {
+            return;
+        }
+        for (Map<UUID, float[]> modelVectors : vectors.values()) {
+            modelVectors.remove(messageId);
+        }
+        for (Map<UUID, String> modelHashes : hashes.values()) {
+            modelHashes.remove(messageId);
+        }
+    }
 }
