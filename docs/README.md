@@ -27,6 +27,7 @@ Every engineering document in the repository, grouped by domain. Start with
 |---|---|
 | [docs/security.md](security.md) | Security architecture — authentication, authorization, storage, rate limits and hardening |
 | [docs/operations.md](operations.md) | Operator setup, Docker Compose runtime configuration, backup and recovery notes |
+| [docs/testing.md](testing.md) | Server test setup, PostgreSQL requirements, environment isolation and concurrent runs |
 | [tools/README-release.md](../tools/README-release.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and sample conversations |
 | [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | Local LAN stack bootstrap (Git Bash / PowerShell) |
