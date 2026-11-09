@@ -751,4 +751,57 @@ public final class ChatViewModelTest {
         assertNull(afterRotation.get().consume());
         viewModel.getActionEvents().removeObserver(secondObserver);
     }
+
+    @Test
+    public void aiOptOutLoadFailureShowsAnInlineError() {
+        ApiError failure = new ApiError.Network("down");
+        when(conversationRepository.getAiOptOut(CONVERSATION_ID))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.loadAiOptOut();
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertFalse(state.isLoading());
+        assertEquals(failure, state.getError());
+    }
+
+    @Test
+    public void aiOptOutSaveFailureRevertsTheOptimisticSwitch() {
+        ApiError failure = new ApiError.Network("down");
+        when(conversationRepository.setAiOptOut(CONVERSATION_ID, true))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.setAiOptOut(true);
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertFalse("failed save must revert the switch", state.getOptOut());
+        assertFalse(state.isSaving());
+        assertEquals(failure, state.getError());
+    }
+
+    @Test
+    public void aiOptOutSaveSuccessTakesTheServerState() {
+        when(conversationRepository.setAiOptOut(CONVERSATION_ID, true))
+                .thenReturn(Single.just(new Result.Success<>(Boolean.TRUE)));
+
+        viewModel.setAiOptOut(true);
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertTrue(state.getOptOut());
+        assertFalse(state.isSaving());
+        assertNull(state.getError());
+    }
+
+    @Test
+    public void successfulMuteEmitsAOneShotConfirmation() {
+        when(conversationRepository.muteConversationForever(CONVERSATION_ID))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.muteConversation(null);
+
+        ChatSingleLiveEvent.Event<ChatActionEvent> event = viewModel.getActionEvents().getValue();
+        assertEquals(new ChatActionEvent.PreferenceChanged(
+                        ChatActionEvent.PreferenceChanged.Kind.MUTED),
+                event.consume());
+    }
 }

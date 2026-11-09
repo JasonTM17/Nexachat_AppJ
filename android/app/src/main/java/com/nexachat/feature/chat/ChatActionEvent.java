@@ -1,10 +1,12 @@
 package com.nexachat.feature.chat;
 
+import androidx.annotation.NonNull;
 import java.util.Objects;
 
 /** One-shot chat action results that the UI may surface, such as a forward toast. */
 public sealed interface ChatActionEvent
-        permits ChatActionEvent.MessageForwarded, ChatActionEvent.MessageEdited {
+        permits ChatActionEvent.MessageForwarded, ChatActionEvent.MessageEdited,
+                ChatActionEvent.PreferenceChanged {
 
     final class MessageForwarded implements ChatActionEvent {
         private final String targetConversationId;
@@ -59,6 +61,36 @@ public sealed interface ChatActionEvent
         @Override
         public String toString() {
             return "MessageEdited(messageId=" + messageId + ")";
+        }
+    }
+
+    /** A successful caller-scoped conversation preference change. */
+    final class PreferenceChanged implements ChatActionEvent {
+        public enum Kind { MUTED, UNMUTED, ARCHIVED, UNARCHIVED }
+
+        private final Kind kind;
+
+        public PreferenceChanged(@NonNull Kind kind) {
+            this.kind = Objects.requireNonNull(kind, "kind");
+        }
+
+        @NonNull public Kind getKind() {
+            return kind;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof PreferenceChanged that && kind == that.kind;
+        }
+
+        @Override
+        public int hashCode() {
+            return kind.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "PreferenceChanged(kind=" + kind + ")";
         }
     }
 }
