@@ -11,7 +11,7 @@
 |---|---|---|
 | [Auth & Users](#auth--apiv1auth) | `/api/v1/auth`, `/api/v1/users` | Register, login, token refresh, password, profile, settings, device token |
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
-| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
+| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks, per-member mute/archive |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
@@ -179,7 +179,9 @@ JSON `null` values.
     "createdAt": "2026-11-04T09:05:00Z"
   },
   "unreadCount": 2,
-  "lastReadSeq": 4
+  "lastReadSeq": 4,
+  "muted": false,
+  "archived": false
 }
 ```
 
@@ -249,13 +251,40 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /conversations/direct` | Bearer | `{phone}` **or** `{userId}` — exactly one (XOR) | `201` created / `200` existing — same `ConversationResponse` either way (idempotent) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
-| `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100) and stable opaque `cursor?`; omit both for the full list | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100), stable opaque `cursor?`, and `archived?` (`true` = archived only, `false` = non-archived only; **default when omitted is `false`**, so archived conversations are hidden from the default inbox). Omit `limit`/`cursor` for the full filtered list | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — `beforeSeq` newest-first; `afterSeq` oldest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters; at most 10 attachment IDs | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 | `PATCH /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | `{content}` — trimmed, non-blank, ≤10,000 chars; TEXT only | `200` current `MessageResponse`; identical content is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `RATE_LIMITED` 429 (30/min per user, shared with delete) |
 | `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
 | `GET /conversations/{conversationId}/messages/search` | Bearer member | `q` (trimmed, 2–100 chars), optional `limit` (1–50, default 20), `beforeSeq?` | `200` `MessagePageResponse`, newest-first; literal, case- and accent-insensitive TEXT substring match | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `RATE_LIMITED` 429 (60/min per user) |
 | `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/mute` | Bearer member | `{mutedUntil?, forever?}` — exactly one of `mutedUntil` (ISO-8601 UTC instant, strictly in the future, at most 365 days from now) or `forever: true` | `204` empty (idempotent; the mute is stored for the caller only) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/mute` | Bearer member | — | `204` empty (idempotent no-op when already unmuted) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent; hidden from the default inbox) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent no-op when not archived) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+
+Mute and archive are **per-member preferences**: they are stored on the caller's
+`conversation_members` row and are never visible to, or affect, any other member.
+A muted conversation suppresses the recipient's `NEW_MESSAGE` data push (see
+[Push notifications](operations.md#push-notifications-fcm)); the conversation
+still receives messages, read/delivery receipts and live WebSocket events, and
+`unreadCount` keeps advancing. **Push rule:** only `NEW_MESSAGE` pushes for
+non-`SYSTEM` messages are gated by mute. `CALL_INVITE` pushes always go out (a
+call must ring), and `SYSTEM` messages (group membership events) keep their
+current behavior so a member is never silently removed or added. Mute expiry is
+lazy: a `mutedUntil` instant in the past is treated as not muted, so no cleanup
+job is required. Archiving only changes inbox visibility — the default
+`GET /conversations` (and every request that omits `archived`) excludes archived
+rows, while `archived=true` returns only archived rows.
+
+**Client convention — Zalo-style mute presets.** The preset choices
+"1 hour", "4 hours", "until 8:00 AM" and "until turned back on" are computed on
+the client into the `PUT /mute` body: the first three become a `mutedUntil`
+instant (the next local 08:00 for "until 8:00 AM", converted to UTC) and
+"until turned back on" becomes `{forever: true}`. The server stores only the
+resulting instant or flag — it never interprets preset labels — and the same
+365-day bound and future-instant validation apply. `DELETE /mute` is the client's
+"turn back on" action.
 
 `PATCH` broadcasts `MESSAGE_UPDATED` after commit only when content changes.
 Identical normalized content is a successful no-op and produces no update event.
@@ -289,7 +318,7 @@ Presence changes are described in the WebSocket section and are in-memory on a
 single backend node.
 
 `ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
-`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. Null optional values may be omitted.
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted. Null optional values may be omitted.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
@@ -358,7 +387,7 @@ rest); `HEAD` behaves like `GET` without a body.
 |---|---|---|---|---|
 | `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
-`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh}], serverTime}`.
+`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh, muted, mutedUntil?, archived}], serverTime}`. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC), omitted when the mute is forever or the conversation is not muted. The flags are carried on every delta so a second device learns a mute/archive change made elsewhere without a separate inbox fetch.
 Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)`.
 
 `reactionUpdates` is derived from the append-only `reaction_events` table, so a

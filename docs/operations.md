@@ -89,6 +89,14 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
 
+**Mute gating.** `NEW_MESSAGE` pushes for non-`SYSTEM` messages are skipped for
+members who muted the conversation (per-member `muted` / `muted_until` on
+`conversation_members`; a past `muted_until` no longer mutes). `CALL_INVITE`
+pushes are never gated, and `SYSTEM` messages keep their current behavior, so a
+member is never silently added to or removed from a conversation. A muted
+conversation still receives messages, receipts and live WebSocket events, and
+its `unreadCount` keeps advancing — only the push is suppressed.
+
 #### Android client: `google-services.json`
 
 The Android app must be registered in the same Firebase project so it can
