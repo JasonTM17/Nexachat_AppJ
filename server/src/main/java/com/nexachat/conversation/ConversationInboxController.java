@@ -38,12 +38,31 @@ public class ConversationInboxController {
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam(required = false) Integer limit,
             @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Boolean archived) {
+            @RequestParam(required = false) Boolean archived,
+            @RequestParam(required = false) UUID labelId) {
         UUID userId = requireUserId(principal);
-        if (limit == null && cursor == null) {
-            return ResponseEntity.ok(inboxService.listInbox(userId, archived));
+        if (labelId == null) {
+            if (limit == null && cursor == null) {
+                return ResponseEntity.ok(inboxService.listInbox(userId, archived));
+            }
+            InboxService.InboxPage existingPage =
+                    inboxService.listInbox(userId, limit, cursor, archived);
+            return pagedResponse(existingPage);
         }
-        InboxService.InboxPage page = inboxService.listInbox(userId, limit, cursor, archived);
+        if (limit == null && cursor == null) {
+            return ResponseEntity.ok(inboxService.listInbox(userId, archived, labelId));
+        }
+        InboxService.InboxPage page = inboxService.listInbox(userId, limit, cursor, archived, labelId);
+        return pagedResponse(page);
+    }
+
+    /** Source-compatible overload for controller unit tests and direct callers. */
+    public ResponseEntity<List<InboxEntry>> inbox(
+            JwtPrincipal principal, Integer limit, String cursor, Boolean archived) {
+        return inbox(principal, limit, cursor, archived, null);
+    }
+
+    private static ResponseEntity<List<InboxEntry>> pagedResponse(InboxService.InboxPage page) {
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (page.nextCursor() != null) {
             response.header("X-Next-Cursor", page.nextCursor());
