@@ -866,14 +866,125 @@ instead of applying the (empty) partial page.
 
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
+1-to-1 voice calls use an authenticated STOMP signaling channel plus three REST
+helpers. Call state and busy reservations live in an in-memory registry on the
+current server node; PostgreSQL stores terminal history (`call_records`, Flyway
+V5). Only **DIRECT** conversations with exactly two members can place calls;
+group calls are out of scope. Signaling never carries audio bytes — WebRTC media
+is negotiated client-side after acceptance.
+
+The full lifecycle diagram, STOMP payload shapes, timeouts, limitations and E2E
+verification live in [`docs/calls.md`](calls.md). This section lists every route
+and the error surfaces verified from `CallRestController`, `CallController`,
+`CallService`, and `CallFlowIT` / `CallTimeoutSchedulerGraceTest`.
+
+### REST routes
+
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /calls/ice-config` | Bearer | — | `200` `{iceServers:[{urls:string[]}], ttlSeconds}` | `UNAUTHORIZED` 401 |
-| `GET /conversations/{id}/calls` | Bearer member of a DIRECT conversation | `limit?` (default 20, range 1–100), optional opaque `cursor?` | `200` `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
+| `GET /calls/ice-config` | Bearer | — | `200` `CallIceConfig` — `{iceServers:[{urls:string[]}], ttlSeconds}` (`ttlSeconds` is `3600`; URLs come from `nexachat.calls.ice-servers`, comma-separated) | `UNAUTHORIZED` 401 |
+| `GET /calls/{callId}/offer` | Bearer; caller or callee of the live call | Path `callId` (UUID) | `200` `CallOfferResponse` — `{callId, sdp:{type, description}, iceConfig}` | `UNAUTHORIZED` 401 · **see REST note below** |
+| `GET /conversations/{conversationId}/calls` | Bearer member of a **DIRECT** conversation | Query `limit?` (default `20`, clamped 1–100), optional opaque `cursor?` (keyset on `startedAt` + `callId`) | `200` `CallHistoryPage` — `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (non-direct conversation, bad `limit`, or malformed `cursor`) |
 
-Call signaling uses STOMP `SEND /app/calls/{conversationId}/signal` and events
-on `/user/queue/calls`; see [`docs/calls.md`](calls.md) for its frame and
-state-machine contract.
+`CallHistoryItem` =
+`{callId, callerId, calleeId, state, endReason?, startedAt, answeredAt?, endedAt?, durationSeconds?}`.
+`state` is `RINGING`, `ACTIVE`, or `ENDED`. `endReason` is one of
+`COMPLETED`, `REJECTED`, `CANCELLED`, `MISSED`, `BUSY`, or `FAILED` when the
+call has ended; otherwise it is omitted/null. Items are newest-first by
+`startedAt`; `nextCursor` is null on the last page.
+
+Each terminal call also writes one `SYSTEM` chat message
+`CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (older rows may omit the
+caller id); see [`docs/calls.md`](calls.md#design-note).
+
+**Fast-path offer (`GET /calls/{callId}/offer`).** The registry may hold one
+SDP offer per ringing/active `callId` for REST retrieval (intended for FCM wake /
+slow STOMP). The service returns the stored `sdp` plus the same
+`iceConfig` as `GET /calls/ice-config` when the authenticated user is a
+participant (`CallRegistry.find` + `peerOf`) and an offer is present
+(`CallRegistry.findOffer`). If the call or offer is missing, or the user is not a
+participant, `CallService` throws `CallException`
+(`CALL_NOT_FOUND` or `NOT_MEMBER`). **`CallException` is not registered on
+`GlobalExceptionHandler`**, so these domain failures currently become
+`500 INTERNAL_ERROR` on REST instead of structured call codes — only
+`UNAUTHORIZED` is shaped normally (`CallTimeoutSchedulerGraceTest` covers the
+happy path and non-participant rejection at the controller layer).
+As of `CallService.validateEnvelope`, STOMP `INVITE` frames must not include
+`sdp`, so the `saveOffer` branch on invite is unreachable through public
+signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
+
+### STOMP signaling
+
+| Destination | Auth | Payload | Success | Errors |
+|---|---|---|---|---|
+| `SEND /app/calls/{conversationId}/signal` | Bearer STOMP session; conversation member for DIRECT 1:1 | JSON `CallSignal` — `{type, callId, sdp?, candidate?}` (`type`: `INVITE`, `ACCEPT`, `REJECT`, `CANCEL`, `END`, `SDP`, `ICE`) | `204` implicit (no STOMP reply body); server events on `/user/queue/calls` | `/user/queue/errors` → `{code, clientMessageId?}` — see call codes below |
+| `SUBSCRIBE /user/queue/calls` | Same session | — | Server push `CallEvent` JSON | Non-members are rejected by the STOMP interceptor before the controller (`NOT_MEMBER`) |
+
+`CallSignal` rules (enforced before the state machine runs):
+
+- Every frame requires `type` and `callId`.
+- `INVITE` must not include `sdp` or `candidate` (control-only).
+- `SDP` carries `sdp` only (`type` `offer` or `answer`, `description` ≤ 16 KiB UTF-8).
+- `ICE` carries `candidate` only (`candidate` ≤ 1 KiB UTF-8; `sdpMid` ≤ 256 chars; `sdpMLineIndex` ≥ 0 when set).
+- Other control frames (`ACCEPT`, `REJECT`, `CANCEL`, `END`) must not include SDP/ICE.
+
+Server `CallEvent` envelopes and terminal `reason` / `durationSeconds` fields are
+specified in [`docs/calls.md`](calls.md#stomp-frames).
+
+### Call state machine (signaling)
+
+| Current state | Client `type` | Actor | Result |
+|---|---|---|---|
+| No call | `INVITE` | Caller (not busy) | `RINGING`; callee gets `CALL_INVITE`; record persisted |
+| No call | `INVITE` | Caller while callee busy | Terminal `ENDED(BUSY)`; caller gets `CALL_BUSY` only |
+| `RINGING` | `ACCEPT` | Callee | `ACTIVE`; both get `CALL_ACCEPTED` |
+| `RINGING` | `REJECT` | Callee | `ENDED(REJECTED)` |
+| `RINGING` | `CANCEL` | Caller | `ENDED(CANCELLED)` |
+| `RINGING` | (timeout) | Server | `ENDED(MISSED)`; `CALL_TIMEOUT` to both |
+| `RINGING` | `SDP` / `ICE` / `END` | Either | `CALL_STATE_INVALID` |
+| `ACTIVE` | `SDP` / `ICE` | Participant | Relayed as `CALL_SDP` / `CALL_ICE` to peer |
+| `ACTIVE` | `END` | Either participant | `ENDED(COMPLETED)` |
+| `ACTIVE` | Last STOMP session lost | Server (after grace) | `ENDED(FAILED)` |
+| `ENDED` / unknown `callId` | Any | — | `CALL_NOT_FOUND` |
+
+Concurrent control and registry mutations serialize on a fair per-node lock;
+SDP/ICE relay holds a read lock for the same transaction span (see limitations in
+[`docs/calls.md`](calls.md)).
+
+### STOMP error codes (`/user/queue/errors`)
+
+These strings are **not** entries in `ApiErrorCode`; they are returned as
+`WsErrorResponse.code` from `CallController` / validation:
+
+| Code | When |
+|---|---|
+| `VALIDATION_FAILED` | Malformed envelope, oversized SDP/ICE, non-direct call, or unexpected handler failure |
+| `NOT_MEMBER` | Missing STOMP principal or caller not in the DIRECT conversation |
+| `RATE_LIMITED` | Per-user call rate bucket exceeded |
+| `CALL_NOT_FOUND` | Unknown or expired `callId` |
+| `CALL_STATE_INVALID` | Frame incompatible with current call state (for example `SDP` while still ringing) |
+
+Default rate limits (`RateLimitService`, per user per minute): **20** `INVITE`,
+**300** combined `SDP`+`ICE` (`call:invite:` / `call:media:` keys).
+
+### Timeouts and configuration
+
+| Key | Default | Behavior |
+|---|---|---|
+| `nexachat.calls.ring-timeout-ms` | `45000` | Ring duration before server emits `CALL_TIMEOUT` / `MISSED` |
+| `nexachat.calls.disconnect-grace-ms` | `15000` | Grace after last STOMP disconnect on an `ACTIVE` call before `FAILED` |
+| `nexachat.calls.ice-servers` | `stun:stun.l.google.com:19302` | Comma-separated STUN/TURN URLs returned from `ice-config` and offer |
+
+Terminal registry entries are evicted from memory five minutes after `endedAt`;
+offers are removed with the session (`CallRegistry`).
+
+### Tests
+
+| Area | Tests |
+|---|---|
+| REST history + ice-config | `CallFlowIT` |
+| REST offer (unit) | `CallTimeoutSchedulerGraceTest#fastPathSdpRetrieval*` |
+| STOMP state machine + errors | `CallFlowIT`, `CallControllerTest`, `CallServiceTest`, `CallStateMachineTest` |
 
 ## Conversation summary API
 
