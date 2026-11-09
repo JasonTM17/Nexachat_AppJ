@@ -1,5 +1,8 @@
 package com.nexachat.message;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -317,6 +320,46 @@ class SyncControllerTest {
         assertThat(delta.reactionUpdates()).hasSize(1);
         assertThat(delta.reactionCursor()).isNull();
         assertThat(delta.hasMore()).isFalse();
+    }
+
+    @Test
+    void syncDeltaOmitsMutedUntilWhenTheMuteIsNotEffective() throws Exception {
+        ObjectMapper mapper = mapper();
+        SyncResponse.ConversationDelta delta = new SyncResponse.ConversationDelta(
+                conversationId, List.of(), List.of(), List.of(), List.of(),
+                0L, false, null, false, false, null, false);
+
+        JsonNode json = mapper.valueToTree(delta);
+
+        assertThat(json.has("mutedUntil")).isFalse();
+        assertThat(json.get("muted").asBoolean()).isFalse();
+        assertThat(json.get("archived").asBoolean()).isFalse();
+    }
+
+    @Test
+    void syncDeltaSerializesMutedUntilWhenMuted() throws Exception {
+        ObjectMapper mapper = mapper();
+        Instant until = Instant.parse("2026-12-09T10:00:00Z");
+        SyncResponse.ConversationDelta delta = new SyncResponse.ConversationDelta(
+                conversationId, List.of(), List.of(), List.of(), List.of(),
+                0L, false, null, false, true, until, true);
+
+        JsonNode json = mapper.valueToTree(delta);
+
+        assertThat(json.get("mutedUntil").asText()).isEqualTo("2026-12-09T10:00:00Z");
+        assertThat(json.get("muted").asBoolean()).isTrue();
+        assertThat(json.get("archived").asBoolean()).isTrue();
+    }
+
+    /**
+     * Matches the server's Spring Boot ObjectMapper: JavaTimeModule registered
+     * and {@code WRITE_DATES_AS_TIMESTAMPS} disabled, so {@code Instant}
+     * renders as an ISO-8601 string.
+     */
+    private static ObjectMapper mapper() {
+        return new ObjectMapper()
+                .findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     private record ReactionEventIdRow(Long id, UUID messageId) implements ReactionEventId {
