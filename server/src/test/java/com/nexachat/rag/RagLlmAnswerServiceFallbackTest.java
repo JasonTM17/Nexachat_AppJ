@@ -90,6 +90,87 @@ class RagLlmAnswerServiceFallbackTest {
     }
 
     @Test
+    void primaryDownWithHealthyLocalTierOpensTheBreakerButKeepsAnsweringLocally() throws Exception {
+        startServers();
+        FakeOpenAiServer local = new FakeOpenAiServer();
+        try {
+            fallbackProperties.setEnabled(false);
+            properties.setLocalEnabled(true);
+            properties.setLocalModel("qwen2.5:3b");
+            properties.setLocalBaseUrl(local.baseUrl());
+            rebuildService();
+            primary.handle((exchange, body, authorization) ->
+                    FakeOpenAiServer.respond(exchange, 500, "primary down"));
+            local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
+
+            for (int index = 0; index < 5; index++) {
+                RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+                assertThat(answer).isNotNull();
+                assertThat(answer.provider()).isNull();
+            }
+
+            assertThat(circuitBreaker.allowRequest()).isFalse();
+
+            int primaryCallsBefore = primary.requestCount();
+            RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+
+            assertThat(answer).isNotNull();
+            assertThat(answer.provider()).isNull();
+            assertThat(primary.requestCount()).isEqualTo(primaryCallsBefore);
+            assertThat(local.requestCount()).isPositive();
+        } finally {
+            local.close();
+        }
+    }
+
+    @Test
+    void openBreakerWithoutFallbackStillUsesTheLocalTier() throws Exception {
+        startServers();
+        FakeOpenAiServer local = new FakeOpenAiServer();
+        try {
+            fallbackProperties.setEnabled(false);
+            properties.setLocalEnabled(true);
+            properties.setLocalModel("qwen2.5:3b");
+            properties.setLocalBaseUrl(local.baseUrl());
+            rebuildService();
+            for (int index = 0; index < 5; index++) {
+                circuitBreaker.recordFailure();
+            }
+            primary.handle((exchange, body, authorization) ->
+                    FakeOpenAiServer.respond(exchange, 500, "primary down"));
+            local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
+
+            RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+
+            assertThat(answer).isNotNull();
+            assertThat(answer.provider()).isNull();
+            assertThat(primary.requestCount()).isZero();
+            assertThat(local.requestCount()).isPositive();
+        } finally {
+            local.close();
+        }
+    }
+
+    @Test
+    void openBreakerWithoutFallbackOrLocalReturnsNull() throws Exception {
+        startServers();
+        fallbackProperties.setEnabled(false);
+        rebuildService();
+        for (int index = 0; index < 5; index++) {
+            circuitBreaker.recordFailure();
+        }
+        primary.handle((exchange, body, authorization) ->
+                FakeOpenAiServer.respond(exchange, 500, "primary down"));
+
+        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+
+        assertThat(answer).isNull();
+        assertThat(primary.requestCount()).isZero();
+    }
+
+    @Test
     void bothProvidersFailingReturnsNull() throws Exception {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));

@@ -18,6 +18,10 @@ import java.util.UUID;
  * not-found instead of surfacing an error. When the primary provider fails
  * with a retryable error, the configured fallback provider is tried once
  * before the local tier and the extractive degradation.
+ *
+ * <p>The circuit breaker tracks the primary cloud tier only. A fallback or
+ * local answer neither resets it nor is skipped while it is open: an open
+ * breaker still tries the fallback and the healthy local tier before giving up.
  */
 @Service
 @Profile("!test")
@@ -60,23 +64,29 @@ public class RagLlmAnswerService {
         }
 
         boolean breakerAllows = circuitBreaker.allowRequest();
-        if (!breakerAllows && fallback == null) {
+        if (!breakerAllows && fallback == null && secondary == null) {
             return null;
         }
 
         RagPrompt prompt = promptBuilder.build(question, language, context);
+        boolean primaryAttempted = false;
+        boolean breakerRecorded = false;
         try {
             LlmClient.LlmCallResult completion;
             boolean fallbackUsed = false;
             boolean primaryUsed = false;
+            boolean primaryFailed = false;
             if (primary != null) {
+                primaryAttempted = breakerAllows;
                 try {
                     completion = llmClient.completeTextWithFallback(
                             prompt.systemMessage(), prompt.userMessage(),
                             breakerAllows ? primary : null, fallback);
                     fallbackUsed = completion.fallbackUsed();
-                    primaryUsed = !fallbackUsed;
+                    primaryUsed = breakerAllows && !fallbackUsed;
+                    primaryFailed = breakerAllows && fallbackUsed;
                 } catch (RuntimeException exception) {
+                    primaryFailed = breakerAllows;
                     if (secondary == null) {
                         throw exception;
                     }
@@ -87,7 +97,13 @@ public class RagLlmAnswerService {
                 completion = llmClient.completeTextWithTargetResult(
                         prompt.systemMessage(), prompt.userMessage(), secondary);
             }
-            circuitBreaker.recordSuccess();
+            if (primaryUsed) {
+                circuitBreaker.recordSuccess();
+                breakerRecorded = true;
+            } else if (primaryFailed) {
+                circuitBreaker.recordFailure();
+                breakerRecorded = true;
+            }
             RagLlmAnswer answer = outputValidator.validate(completion.content(), prompt);
             if (answer == null) {
                 return null;
@@ -95,7 +111,9 @@ public class RagLlmAnswerService {
             String provider = fallbackUsed ? "fallback" : (primaryUsed ? "primary" : null);
             return new RagLlmAnswer(answer.answer(), answer.citationIds(), provider);
         } catch (RuntimeException exception) {
-            circuitBreaker.recordFailure();
+            if (primaryAttempted && !breakerRecorded) {
+                circuitBreaker.recordFailure();
+            }
             stats.recordLlmFailure();
             return null;
         }

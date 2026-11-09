@@ -162,6 +162,72 @@ class LlmSummaryProviderFallbackTest {
     }
 
     @Test
+    void primaryDownWithHealthyLocalTierOpensTheBreakerButKeepsAnsweringLocally() throws Exception {
+        startServers();
+        FakeOpenAiServer local = new FakeOpenAiServer();
+        try {
+            fallbackProperties.setEnabled(false);
+            properties.setLocalEnabled(true);
+            properties.setLocalModel("qwen2.5:3b");
+            properties.setLocalBaseUrl(local.baseUrl());
+            rebuildClient();
+            primary.handle((exchange, body, authorization) ->
+                    FakeOpenAiServer.respond(exchange, 500, "primary down"));
+            local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse(validSummary("Local tier overview."))));
+            LlmSummaryProvider llm = complexProvider();
+
+            for (int index = 0; index < 5; index++) {
+                ProviderResult result = llm.summarize(window(), SummaryLanguage.EN);
+                assertThat(result.provider()).isNull();
+                assertThat(result.model()).isEqualTo("qwen2.5:3b");
+            }
+
+            assertThat(circuitBreaker.allowRequest()).isFalse();
+
+            int primaryCallsBefore = primary.requestCount();
+            ProviderResult result = llm.summarize(window(), SummaryLanguage.EN);
+
+            assertThat(result.provider()).isNull();
+            assertThat(result.model()).isEqualTo("qwen2.5:3b");
+            assertThat(primary.requestCount()).isEqualTo(primaryCallsBefore);
+            assertThat(local.requestCount()).isPositive();
+        } finally {
+            local.close();
+        }
+    }
+
+    @Test
+    void openCircuitWithoutFallbackStillUsesTheLocalTier() throws Exception {
+        startServers();
+        FakeOpenAiServer local = new FakeOpenAiServer();
+        try {
+            fallbackProperties.setEnabled(false);
+            properties.setLocalEnabled(true);
+            properties.setLocalModel("qwen2.5:3b");
+            properties.setLocalBaseUrl(local.baseUrl());
+            rebuildClient();
+            for (int index = 0; index < 5; index++) {
+                circuitBreaker.recordFailure();
+            }
+            primary.handle((exchange, body, authorization) ->
+                    FakeOpenAiServer.respond(exchange, 500, "primary down"));
+            local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse(validSummary("Local tier overview."))));
+            LlmSummaryProvider llm = complexProvider();
+
+            ProviderResult result = llm.summarize(window(), SummaryLanguage.EN);
+
+            assertThat(result.provider()).isNull();
+            assertThat(result.model()).isEqualTo("qwen2.5:3b");
+            assertThat(primary.requestCount()).isZero();
+            assertThat(local.requestCount()).isPositive();
+        } finally {
+            local.close();
+        }
+    }
+
+    @Test
     void fallbackReceivesTheSameRedactedPrompt() throws Exception {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
