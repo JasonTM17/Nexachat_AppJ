@@ -412,6 +412,12 @@ public class MessageService {
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
     }
 
+    /** Three-argument convenience form: a SYSTEM line with no member subject. */
+    @Transactional
+    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content) {
+        return postSystemMessage(actingUserId, conversationId, content, null);
+    }
+
     /**
      * Server-generated {@code SYSTEM} line for group membership events
      * (add/remove/leave/rename — phase-08). This is the ONLY way a SYSTEM row
@@ -430,12 +436,16 @@ public class MessageService {
      * {@link MessageCreatedEvent} fans out AFTER COMMIT as
      * {@code MESSAGE_CREATED} with {@code type=SYSTEM}.
      *
+     * @param subjectUserId the member the event is about — the removed member
+     *                      or the member whose role changed — or {@code null}
+     *                      when the event has no single member subject
      * @throws ApiException {@code NOT_MEMBER} (acting user is not a member —
      *                      system lines are always authored by a member),
      *                      {@code VALIDATION_FAILED} (blank content)
      */
     @Transactional
-    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content) {
+    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content,
+                                             UUID subjectUserId) {
         if (content == null || content.isBlank()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "System message content must not be blank");
@@ -455,7 +465,7 @@ public class MessageService {
         log.info("System message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, actingUserId);
 
         MessageResponse response = toResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response, subjectUserId));
         return response;
     }
 

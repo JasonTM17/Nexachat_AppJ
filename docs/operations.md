@@ -89,15 +89,20 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
 
-**Mute gating.** Ordinary `NEW_MESSAGE` pushes for non-`SYSTEM` messages are
-skipped for members who muted the conversation (per-member `muted` /
-`muted_until` on `conversation_members`; a past `muted_until` no longer mutes).
-A directly mentioned muted member and every muted member on `mentionAll` still
-receive a data-only push pointer with `mentioned="true"`; the payload contains
-no message content. `CALL_INVITE` pushes are never gated, and `SYSTEM` messages
-keep their current behavior, so a member is never silently added to or removed
-from a conversation. A muted conversation still receives messages, receipts
-and live WebSocket events, and its `unreadCount` keeps advancing.
+**Mute gating.** `NEW_MESSAGE` pushes are skipped for members who muted the
+conversation (per-member `muted` / `muted_until` on `conversation_members`; a
+past `muted_until` no longer mutes), including `SYSTEM` membership and title
+notices. A muted member still receives a data-only push pointer when the
+message explicitly mentions them or has `mentionAll: true`
+(`mentioned="true"`), and when a `SYSTEM` event is about that member — they
+were removed from the group or their role changed — so nobody is removed or
+demoted silently. A removed member's mute row is deleted with their membership,
+so the removal notice still reaches them. Avatar-only changes broadcast
+`CONVERSATION_UPDATED` and post no SYSTEM message, so they produce no
+`NEW_MESSAGE` push to gate. The payload contains no message content.
+`CALL_INVITE` pushes are never gated. A muted conversation still receives
+messages, receipts and live WebSocket events, and its `unreadCount` keeps
+advancing.
 
 #### Reminder delivery
 
