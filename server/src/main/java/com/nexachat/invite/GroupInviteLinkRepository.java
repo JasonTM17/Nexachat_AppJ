@@ -3,6 +3,7 @@ package com.nexachat.invite;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -21,4 +22,19 @@ public interface GroupInviteLinkRepository extends JpaRepository<GroupInviteLink
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT l FROM GroupInviteLink l WHERE l.id = :id")
     Optional<GroupInviteLink> findByIdForUpdate(@Param("id") UUID id);
+
+    /**
+     * Atomically consumes one use of the link when it is active, unexpired, and not
+     * exhausted. Returns the number of rows updated (0 or 1).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE group_invite_links
+               SET use_count = use_count + 1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+               AND (max_uses IS NULL OR use_count < max_uses)
+            """, nativeQuery = true)
+    int tryConsumeUse(@Param("id") UUID id);
 }

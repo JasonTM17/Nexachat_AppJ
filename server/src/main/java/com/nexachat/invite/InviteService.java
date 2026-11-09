@@ -15,9 +15,13 @@ import com.nexachat.invite.dto.JoinResponse;
 import com.nexachat.invite.dto.PatchInviteLinkRequest;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +41,8 @@ public class InviteService {
 
     private static final Logger log = LoggerFactory.getLogger(InviteService.class);
     private static final Duration MAX_EXPIRY = Duration.ofDays(30);
+    private static final int DEFAULT_JOIN_REQUEST_LIST_LIMIT = 100;
+    private static final int MAX_JOIN_REQUEST_LIST_LIMIT = 100;
 
     private final GroupInviteLinkRepository linkRepository;
     private final GroupJoinRequestRepository joinRequestRepository;
@@ -47,6 +53,7 @@ public class InviteService {
     private final GroupService groupService;
     private final InviteTokenGenerator tokenGenerator;
     private final InviteRateLimiter rateLimiter;
+    private final EntityManager entityManager;
     private final int maxMembers;
 
     public InviteService(
@@ -59,6 +66,7 @@ public class InviteService {
             GroupService groupService,
             InviteTokenGenerator tokenGenerator,
             InviteRateLimiter rateLimiter,
+            EntityManager entityManager,
             @Value("${nexachat.group.max-members:100}") int maxMembers) {
         this.linkRepository = linkRepository;
         this.joinRequestRepository = joinRequestRepository;
@@ -69,6 +77,7 @@ public class InviteService {
         this.groupService = groupService;
         this.tokenGenerator = tokenGenerator;
         this.rateLimiter = rateLimiter;
+        this.entityManager = entityManager;
         this.maxMembers = Math.max(2, maxMembers);
     }
 
@@ -82,6 +91,9 @@ public class InviteService {
         Conversation conversation = requireGroup(conversationId);
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
+
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
 
         Instant now = Instant.now();
         Instant expiresAt = null;
@@ -124,7 +136,12 @@ public class InviteService {
         GroupInviteLink link = new GroupInviteLink(
                 conversation, callerMember.getUser(), tokenHash,
                 requiresApproval, expiresAt, maxUses);
-        link = linkRepository.save(link);
+        try {
+            link = linkRepository.save(link);
+        } catch (DataIntegrityViolationException e) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Invite link was rotated concurrently; retry");
+        }
 
         log.info("Invite link created/rotated for conversation {} by {}", conversationId, callerId);
         return toInviteLinkResponse(link, rawToken);
@@ -250,10 +267,12 @@ public class InviteService {
             throw ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive");
         }
 
+        UUID linkId = link.getId();
         UUID conversationId = link.getConversation().getId();
         if (link.getConversation().getType() != Conversation.Type.GROUP) {
             throw ApiException.of(ApiErrorCode.NOT_A_GROUP, "Not a group conversation");
         }
+        entityManager.detach(link);
 
         // Idempotent: already a member
         if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, callerId)) {
@@ -261,7 +280,7 @@ public class InviteService {
         }
 
         // Banned / removed-by-admin check
-        if (banRepository.isBannedFromLink(conversationId, callerId, link.getId())) {
+        if (banRepository.isBannedFromLink(conversationId, callerId, linkId)) {
             throw ApiException.of(ApiErrorCode.FORBIDDEN,
                     "User was removed from this group by admin and cannot rejoin via this link");
         }
@@ -278,7 +297,7 @@ public class InviteService {
         }
 
         // Lock link row to serialize max_uses check
-        GroupInviteLink lockedLink = linkRepository.findByIdForUpdate(link.getId())
+        GroupInviteLink lockedLink = linkRepository.findByIdForUpdate(linkId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive"));
 
         if (!lockedLink.isValid(Instant.now())) {
@@ -286,9 +305,9 @@ public class InviteService {
         }
 
         if (!lockedLink.isRequiresApproval()) {
-            // Direct join
-            lockedLink.incrementUseCount();
-            linkRepository.save(lockedLink);
+            if (linkRepository.tryConsumeUse(linkId) == 0) {
+                throw ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive");
+            }
 
             groupService.addMemberFromInvite(callerId, conversationId, null);
             log.info("User {} joined group {} directly via invite link", callerId, conversationId);
@@ -324,16 +343,20 @@ public class InviteService {
      */
     @Transactional(readOnly = true)
     public List<JoinRequestResponse> listJoinRequests(
-            UUID callerId, UUID conversationId, GroupJoinRequest.Status status) {
+            UUID callerId, UUID conversationId, GroupJoinRequest.Status status, Integer limit) {
         requireGroup(conversationId);
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
 
+        int pageSize = resolveJoinRequestLimit(limit);
+        PageRequest page = PageRequest.of(0, pageSize, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+
         List<GroupJoinRequest> requests;
         if (status != null) {
-            requests = joinRequestRepository.findAllByConversation_IdAndStatusOrderByCreatedAtDesc(conversationId, status);
+            requests = joinRequestRepository.findByConversation_IdAndStatusOrderByCreatedAtDescIdDesc(
+                    conversationId, status, page);
         } else {
-            requests = joinRequestRepository.findAllByConversation_IdOrderByCreatedAtDesc(conversationId);
+            requests = joinRequestRepository.findByConversation_IdOrderByCreatedAtDescIdDesc(conversationId, page);
         }
         return requests.stream().map(this::toJoinRequestResponse).toList();
     }
@@ -385,9 +408,13 @@ public class InviteService {
                     Map.of("limit", maxMembers));
         }
 
-        // Increment use_count on invite link if still present
-        if (request.getInviteLink() != null) {
-            linkRepository.findByIdForUpdate(request.getInviteLink().getId()).ifPresent(GroupInviteLink::incrementUseCount);
+        UUID inviteLinkId = request.getInviteLink() != null ? request.getInviteLink().getId() : null;
+        if (inviteLinkId != null) {
+            linkRepository.findByIdForUpdate(inviteLinkId)
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive"));
+            if (linkRepository.tryConsumeUse(inviteLinkId) == 0) {
+                throw ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive");
+            }
         }
 
         // Add member to group
@@ -450,6 +477,16 @@ public class InviteService {
         if (member.getRole() != ConversationMember.Role.ADMIN) {
             throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Group admin role required");
         }
+    }
+
+    private static int resolveJoinRequestLimit(Integer limit) {
+        if (limit == null) {
+            return DEFAULT_JOIN_REQUEST_LIST_LIMIT;
+        }
+        if (limit < 1) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "limit must be at least 1");
+        }
+        return Math.min(limit, MAX_JOIN_REQUEST_LIST_LIMIT);
     }
 
     private InviteLinkResponse toInviteLinkResponse(GroupInviteLink link, String rawToken) {
