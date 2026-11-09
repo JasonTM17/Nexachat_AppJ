@@ -2,6 +2,7 @@ package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -22,9 +23,11 @@ import com.nexachat.core.database.ConversationWatermark;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
+import com.nexachat.core.network.dto.ConversationAiOptOutDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
+import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.storage.TokenStore;
@@ -69,6 +72,8 @@ public final class ConversationRepositoryTest {
 
     private final MessageApi messageApi = org.mockito.Mockito.mock(MessageApi.class);
     private final GroupApi groupApi = org.mockito.Mockito.mock(GroupApi.class);
+    private final com.nexachat.core.network.ConversationSettingsApi settingsApi =
+            org.mockito.Mockito.mock(com.nexachat.core.network.ConversationSettingsApi.class);
     private final RealtimeSession session = org.mockito.Mockito.mock(RealtimeSession.class);
     private final TokenStore tokenStore = org.mockito.Mockito.mock(TokenStore.class);
     private final Context context = org.mockito.Mockito.mock(Context.class);
@@ -102,6 +107,7 @@ public final class ConversationRepositoryTest {
         repository = new ConversationRepository(
                 messageApi,
                 groupApi,
+                settingsApi,
                 conversationDao,
                 presenceRepository,
                 session,
@@ -130,6 +136,21 @@ public final class ConversationRepositoryTest {
         }
     }
 
+    private void stubArchivedInbox(String body) {
+        when(messageApi.getArchivedConversations(eq(30), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), body))));
+    }
+
+    private void stubArchivedInboxPage(String requestCursor, String nextCursor, String body) {
+        Call<ResponseBody> call = asCall(inboxResponse(body, nextCursor));
+        if (requestCursor == null) {
+            when(messageApi.getArchivedConversations(eq(30), isNull())).thenReturn(call);
+        } else {
+            when(messageApi.getArchivedConversations(eq(30), eq(requestCursor))).thenReturn(call);
+        }
+    }
+
     private Response<ResponseBody> inboxResponse(String body, String nextCursor) {
         Headers.Builder headers = new Headers.Builder();
         if (nextCursor != null) headers.add("X-Next-Cursor", nextCursor);
@@ -139,6 +160,14 @@ public final class ConversationRepositoryTest {
     }
 
     private String inboxJson(Object... idAndSequences) {
+        return inboxJson(false, idAndSequences);
+    }
+
+    private String inboxJsonArchived(Object... idAndSequences) {
+        return inboxJson(true, idAndSequences);
+    }
+
+    private String inboxJson(boolean archived, Object... idAndSequences) {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i + 1 < idAndSequences.length; i += 2) {
             if (i > 0) json.append(',');
@@ -147,7 +176,9 @@ public final class ConversationRepositoryTest {
             String createdAt = Instant.ofEpochSecond(seq).toString();
             json.append("{\"id\":\"").append(id)
                     .append("\",\"type\":\"GROUP\",\"title\":\"").append(id)
-                    .append("\",\"members\":[],\"lastMessage\":{\"seq\":")
+                    .append("\",\"members\":[]");
+            if (archived) json.append(",\"archived\":true");
+            json.append(",\"lastMessage\":{\"seq\":")
                     .append(seq)
                     .append(",\"type\":\"TEXT\",\"contentSnippet\":\"message-")
                     .append(seq)
@@ -495,6 +526,155 @@ public final class ConversationRepositoryTest {
         updates.cancel();
     }
 
+    @Test
+    public void muteWritesThePresetInstantAndLocalFlag() {
+        buildRepository();
+        dao().upsert(conversation("conv-m")).blockingAwait();
+        Instant until = Instant.parse("2026-11-10T01:00:00Z");
+        when(settingsApi.mute(eq("conv-m"), eq(MuteRequest.until(until))))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.muteConversation("conv-m", until).blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-m");
+        assertTrue(row.isMuted());
+        assertEquals(Long.valueOf(until.toEpochMilli()), row.getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void muteForeverSendsTheForeverFlagWithoutAnExpiry() {
+        buildRepository();
+        dao().upsert(conversation("conv-m")).blockingAwait();
+        when(settingsApi.mute(eq("conv-m"), eq(MuteRequest.forever())))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.muteConversationForever("conv-m").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-m");
+        assertTrue(row.isMuted());
+        assertNull(row.getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void failedUnmuteLeavesTheLocalMuteStateUntouched() {
+        buildRepository();
+        ConversationEntity muted = withPreferences(
+                conversation("conv-m"), true, 2_000L, false, false);
+        dao().upsert(muted).blockingAwait();
+        when(settingsApi.unmute("conv-m")).thenReturn(asCall(Response.error(403,
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"NOT_MEMBER\"}}"))));
+
+        Result<Void> result = repository.unmuteConversation("conv-m").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertTrue(dao().rows.get("conv-m").isMuted());
+        assertEquals(Long.valueOf(2_000L), dao().rows.get("conv-m").getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void archiveAndUnarchiveWriteThroughToRoom() {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        when(settingsApi.archive("conv-a"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+        when(settingsApi.unarchive("conv-a"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        repository.setConversationArchived("conv-a", true).blockingGet();
+        assertTrue(dao().rows.get("conv-a").isArchived());
+
+        repository.setConversationArchived("conv-a", false).blockingGet();
+        assertFalse(dao().rows.get("conv-a").isArchived());
+    }
+
+    @Test
+    public void aiOptOutReadsWritesAndClearsTheCallerState() {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        when(settingsApi.getAiOptOut("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", true))));
+        when(settingsApi.optOutOfAi("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", true))));
+        when(settingsApi.clearAiOptOut("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", false))));
+
+        Result<Boolean> read = repository.getAiOptOut("conv-a").blockingGet();
+        assertEquals(Boolean.TRUE, ((Result.Success<?>) read).getValue());
+        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+
+        Result<Boolean> cleared = repository.setAiOptOut("conv-a", false).blockingGet();
+        assertEquals(Boolean.FALSE, ((Result.Success<?>) cleared).getValue());
+        assertFalse(dao().rows.get("conv-a").isAiOptOut());
+    }
+
+    @Test
+    public void inboxPayloadWithoutAiOptOutKeepsTheLastKnownCallerState() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        when(settingsApi.optOutOfAi("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", true))));
+
+        repository.setAiOptOut("conv-a", true).blockingGet();
+        stubInbox(List.of(inboxDto("conv-a")));
+        repository.refreshInbox().blockingGet();
+
+        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+    }
+
+    @Test
+    public void archivedInboxUsesTheArchivedEndpointAndPersistsTheFlag() {
+        buildRepository();
+        stubArchivedInbox("[{\"id\":\"conv-arch\",\"type\":\"GROUP\",\"title\":\"Arch\","
+                + "\"archived\":true,\"members\":[]}]");
+
+        Result<Boolean> result = repository.refreshInboxPage(true).blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertTrue(dao().rows.get("conv-arch").isArchived());
+        verify(messageApi).getArchivedConversations(eq(30), isNull());
+        verify(messageApi, never()).getConversations(any(), any());
+    }
+
+    @Test
+    public void archivedPagingContinuesOnTheArchivedEndpoint() throws Exception {
+        buildRepository();
+        stubArchivedInboxPage(null, "cursor-arch-2", inboxJsonArchived("conv-a", 10));
+        stubArchivedInboxPage("cursor-arch-2", null, inboxJsonArchived("conv-b", 5));
+
+        Result<Boolean> first = repository.refreshInboxPage(true).blockingGet();
+        assertTrue(((Result.Success<Boolean>) first).getValue());
+        Result<Boolean> second = repository.loadNextInboxPage().blockingGet();
+
+        assertFalse(((Result.Success<Boolean>) second).getValue());
+        verify(messageApi).getArchivedConversations(eq(30), eq("cursor-arch-2"));
+        verify(messageApi, never()).getConversations(any(), any());
+        assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
+    }
+
+    @Test
+    public void completedWalksPruneOnlyTheirOwnInboxVariant() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-inbox"),
+                withPreferences(conversation("conv-arch"), false, null, true, false)))
+                .blockingAwait();
+        stubInbox(List.of());
+
+        repository.refreshInboxPage(false).blockingGet();
+
+        assertFalse("default walk must not delete archived rows",
+                dao().rows.containsKey("conv-inbox"));
+        assertTrue(dao().rows.containsKey("conv-arch"));
+
+        stubArchivedInbox("[]");
+        repository.refreshInboxPage(true).blockingGet();
+
+        assertTrue(dao().rows.isEmpty());
+    }
+
     private FakeConversationDao dao() {
         return (FakeConversationDao) conversationDao;
     }
@@ -517,7 +697,24 @@ public final class ConversationRepositoryTest {
                 row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                 row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted());
+                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted(),
+                row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
+                row.isArchived(), row.isAiOptOut());
+    }
+
+    private ConversationEntity withPreferences(
+            ConversationEntity row,
+            boolean muted,
+            Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut) {
+        return new ConversationEntity(
+                row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
+                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
+                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
+                row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
+                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), muted,
+                mutedUntilEpochMs, archived, aiOptOut);
     }
 
     private ConversationInboxDto inboxDto(String id) {
@@ -671,17 +868,78 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
-        public Completable clear() {
+        public Completable updateMute(
+                String conversationId, boolean muted, Long mutedUntilEpochMs) {
             return Completable.fromAction(() -> {
-                rows.clear();
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, muted, mutedUntilEpochMs, row.isArchived(), row.isAiOptOut()));
+                }
                 publish();
             });
         }
 
         @Override
-        public Completable deleteAllExcept(List<String> ids) {
+        public Completable updateArchived(String conversationId, boolean archived) {
             return Completable.fromAction(() -> {
-                rows.keySet().retainAll(ids);
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, row.isMuted(), row.getMutedUntilEpochMs(), archived, row.isAiOptOut()));
+                }
+                publish();
+            });
+        }
+
+        @Override
+        public Completable updateAiOptOut(String conversationId, boolean aiOptOut) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, row.isMuted(), row.getMutedUntilEpochMs(), row.isArchived(), aiOptOut));
+                }
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clearInbox() {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> !row.isArchived());
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clearArchived() {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(ConversationEntity::isArchived);
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteInboxExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> !row.isArchived() && !ids.contains(row.getId()));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteArchivedExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> row.isArchived() && !ids.contains(row.getId()));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clear() {
+            return Completable.fromAction(() -> {
+                rows.clear();
                 publish();
             });
         }
@@ -721,7 +979,9 @@ public final class ConversationRepositoryTest {
                     row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                     row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                     unread, row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), row.getLastMessageDeleted());
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
+                    row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.isMuted(),
+                    row.getMutedUntilEpochMs(), row.isArchived(), row.isAiOptOut());
         }
 
         private ConversationEntity withLastMessage(
@@ -729,7 +989,9 @@ public final class ConversationRepositoryTest {
             return new ConversationEntity(
                     row.getId(), row.getType(), row.getTitle(), seq, content, sender, at,
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted);
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
+                    row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
+                    row.isArchived(), row.isAiOptOut());
         }
     }
 

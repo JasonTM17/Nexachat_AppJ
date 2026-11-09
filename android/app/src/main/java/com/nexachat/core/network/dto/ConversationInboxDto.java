@@ -23,12 +23,17 @@ public final class ConversationInboxDto {
     @Nullable private final String avatarUrl;
     @Nullable private final List<ConversationMemberDto> members;
     @Nullable private final PeerPresenceDto peerPresence;
+    @Nullable private final Boolean muted;
+    @Nullable private final String mutedUntil;
+    @Nullable private final Boolean archived;
+    @Nullable private final Boolean aiOptOut;
 
     public ConversationInboxDto() {
-        this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null);
+        this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
+                null, null, null, null);
     }
 
-    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence) {
+    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence, @Nullable Boolean muted, @Nullable String mutedUntil, @Nullable Boolean archived, @Nullable Boolean aiOptOut) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -45,10 +50,22 @@ public final class ConversationInboxDto {
         this.avatarUrl = avatarUrl;
         this.members = members == null ? List.of() : members;
         this.peerPresence = peerPresence;
+        this.muted = muted;
+        this.mutedUntil = mutedUntil;
+        this.archived = archived;
+        this.aiOptOut = aiOptOut;
     }
 
     public ConversationInboxDto(String id, String type, String title, java.util.List<ConversationMemberDto> members) {
-        this(id, type, title, null, null, null, null, null, null, null, null, null, null, null, members, null);
+        this(id, type, title, null, null, null, null, null, null, null, null, null, null, null, members, null,
+                null, null, null, null);
+    }
+
+    /** Legacy fixture shape without the caller-scoped preference flags. */
+    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, null, null, null, null);
     }
 
     @NonNull public String getId() {
@@ -113,6 +130,26 @@ public final class ConversationInboxDto {
 
     @Nullable public PeerPresenceDto getPeerPresence() {
         return peerPresence;
+    }
+
+    /** Caller's own mute flag; absent in legacy payloads. */
+    @Nullable public Boolean getMuted() {
+        return muted;
+    }
+
+    /** Caller's mute expiry as ISO-8601; null when forever or unmuted. */
+    @Nullable public String getMutedUntil() {
+        return mutedUntil;
+    }
+
+    /** Caller's own archive flag; absent in legacy payloads. */
+    @Nullable public Boolean getArchived() {
+        return archived;
+    }
+
+    /** Caller's own per-conversation AI opt-out flag; absent in legacy payloads. */
+    @Nullable public Boolean getAiOptOut() {
+        return aiOptOut;
     }
 
 
@@ -227,11 +264,15 @@ public final class ConversationInboxDto {
                 && Objects.equals(otherUserAvatar, that.otherUserAvatar)
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(members, that.members)
-                && Objects.equals(peerPresence, that.peerPresence);
+                && Objects.equals(peerPresence, that.peerPresence)
+                && Objects.equals(muted, that.muted)
+                && Objects.equals(mutedUntil, that.mutedUntil)
+                && Objects.equals(archived, that.archived)
+                && Objects.equals(aiOptOut, that.aiOptOut);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar, avatarUrl, members, peerPresence);
+        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar, avatarUrl, members, peerPresence, muted, mutedUntil, archived, aiOptOut);
     }
 }

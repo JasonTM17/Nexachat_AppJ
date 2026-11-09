@@ -91,6 +91,11 @@ public final class RoomMigrationTest {
     }
 
     @Test
+    public void v9SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 9).close();
+    }
+
+    @Test
     public void migrateV1ToV7PreservesRowsAndBackfillsColumns() throws Exception {
         createLegacyDatabase(
                 1,
@@ -283,7 +288,8 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_4_5,
                         AppDatabase.MIGRATION_5_6,
                         AppDatabase.MIGRATION_6_7,
-                        AppDatabase.MIGRATION_7_8)
+                        AppDatabase.MIGRATION_7_8,
+                        AppDatabase.MIGRATION_8_9)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()

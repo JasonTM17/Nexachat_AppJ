@@ -204,6 +204,70 @@ public final class SyncEngineTest {
     }
 
     @Test
+    public void syncAppliesCallerMuteAndArchiveFlagsFromEveryDelta() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(conversationDao.updateMute(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(Completable.complete());
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(), 10L, false,
+                true, "2026-11-10T01:00:00Z", true);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> mockCall = mock(Call.class);
+        when(mockCall.clone()).thenReturn(mockCall);
+        try {
+            when(mockCall.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao).updateMute(
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(true),
+                org.mockito.ArgumentMatchers.eq(
+                        java.time.Instant.parse("2026-11-10T01:00:00Z").toEpochMilli()));
+        verify(conversationDao).updateArchived(
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(true));
+    }
+
+    @Test
+    public void syncLeavesPreferenceColumnsAloneWhenDeltaOmitsThem() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(), 10L, false);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> mockCall = mock(Call.class);
+        when(mockCall.clone()).thenReturn(mockCall);
+        try {
+            when(mockCall.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao, never()).updateMute(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any());
+        verify(conversationDao, never()).updateArchived(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
     public void syncAggregatesWatermarksAndAppliesDeltaBundle() {
         List<ConversationWatermark> msgWms = List.of(
                 new ConversationWatermark("c1", 10L),

@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 8,
+        version = 9,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -154,6 +154,24 @@ public abstract class AppDatabase extends RoomDatabase {
 
                     db.execSQL(
                             "ALTER TABLE `conversations` ADD COLUMN `peerDeliveredSeq` INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /**
+     * Adds the caller-scoped conversation preferences: mute (with optional
+     * expiry), archive and per-conversation AI opt-out.
+     */
+    public static final Migration MIGRATION_8_9 =
+            new Migration(8, 9) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN muted INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL("ALTER TABLE conversations ADD COLUMN mutedUntilEpochMs INTEGER");
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN aiOptOut INTEGER NOT NULL DEFAULT 0");
                 }
             };
 }

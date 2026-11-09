@@ -26,6 +26,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
     public interface Listener {
         void onConversationClick(@NonNull String conversationId);
+
+        void onConversationLongClick(@NonNull ConversationSummary conversation);
     }
 
     private final Listener listener;
@@ -89,6 +91,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView preview;
         private final ImageView previewTypeIcon;
         private final TextView unreadBadge;
+        private final ImageView muteIcon;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -98,6 +101,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             preview = itemView.findViewById(R.id.preview);
             previewTypeIcon = itemView.findViewById(R.id.previewTypeIcon);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
+            muteIcon = itemView.findViewById(R.id.muteIcon);
         }
 
         void bind(
@@ -168,7 +172,15 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 unreadBadge.setVisibility(View.GONE);
             }
 
+            muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
+                    ? View.VISIBLE
+                    : View.GONE);
+
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));
+            itemView.setOnLongClickListener(v -> {
+                listener.onConversationLongClick(conversation);
+                return true;
+            });
         }
 
         private static int resolveThemeColor(@NonNull Context context, int attr) {

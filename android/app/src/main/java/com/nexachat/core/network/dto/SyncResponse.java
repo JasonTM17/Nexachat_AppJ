@@ -36,9 +36,15 @@ public final class SyncResponse {
         @Nullable private final List<ReactionUpdateDto> reactionUpdates;
         @Nullable private final Long maxSeq;
         private final boolean hasMore;
+        /** Caller's own mute flag; absent payloads leave local state unchanged. */
+        @Nullable private final Boolean muted;
+        /** Caller's mute expiry as ISO-8601; omitted when forever or unmuted. */
+        @Nullable private final String mutedUntil;
+        /** Caller's own archive flag; absent payloads leave local state unchanged. */
+        @Nullable private final Boolean archived;
 
         public ConversationDeltaDto() {
-            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false);
+            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -49,6 +55,21 @@ public final class SyncResponse {
                 @Nullable List<ReactionUpdateDto> reactionUpdates,
                 @Nullable Long maxSeq,
                 boolean hasMore) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, null, null, null);
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Boolean muted,
+                @Nullable String mutedUntil,
+                @Nullable Boolean archived) {
             this.conversationId = conversationId;
             this.newMessages = newMessages == null ? List.of() : newMessages;
             this.editedMessages = editedMessages == null ? List.of() : editedMessages;
@@ -56,6 +77,9 @@ public final class SyncResponse {
             this.reactionUpdates = reactionUpdates == null ? List.of() : reactionUpdates;
             this.maxSeq = maxSeq == null ? 0L : maxSeq;
             this.hasMore = hasMore;
+            this.muted = muted;
+            this.mutedUntil = mutedUntil;
+            this.archived = archived;
         }
 
         @Nullable public String getConversationId() { return conversationId; }
@@ -65,5 +89,8 @@ public final class SyncResponse {
         @NonNull public List<ReactionUpdateDto> getReactionUpdates() { return reactionUpdates == null ? List.of() : reactionUpdates; }
         public long getMaxSeq() { return maxSeq == null ? 0L : maxSeq; }
         public boolean isHasMore() { return hasMore; }
+        @Nullable public Boolean getMuted() { return muted; }
+        @Nullable public String getMutedUntil() { return mutedUntil; }
+        @Nullable public Boolean getArchived() { return archived; }
     }
 }

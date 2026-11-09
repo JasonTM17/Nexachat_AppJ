@@ -36,6 +36,14 @@ public final class ConversationSummary {
     private final boolean lastMessageDeleted;
     /** Live or seeded direct-peer presence; null for groups or hidden peers. */
     @Nullable private final PeerPresence peerPresence;
+    /** Caller's own mute flag as returned by the server. */
+    private final boolean muted;
+    /** Timed-mute expiry; null when the mute is forever or absent. */
+    @Nullable private final Long mutedUntilEpochMs;
+    /** Caller's own archive flag. */
+    private final boolean archived;
+    /** Caller's own per-conversation AI opt-out flag. */
+    private final boolean aiOptOut;
 
     public ConversationSummary(
             String id,
@@ -56,7 +64,8 @@ public final class ConversationSummary {
             @Nullable PeerPresence peerPresence) {
         this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
                 lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence);
+                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence,
+                false, null, false, false);
     }
 
     public ConversationSummary(
@@ -77,6 +86,34 @@ public final class ConversationSummary {
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
             @Nullable PeerPresence peerPresence) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, false, null, false, false);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut) {
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -94,6 +131,10 @@ public final class ConversationSummary {
         this.otherUserId = otherUserId;
         this.lastMessageDeleted = lastMessageDeleted;
         this.peerPresence = peerPresence;
+        this.muted = muted;
+        this.mutedUntilEpochMs = mutedUntilEpochMs;
+        this.archived = archived;
+        this.aiOptOut = aiOptOut;
     }
 
     public String getId() { return id; }
@@ -113,6 +154,18 @@ public final class ConversationSummary {
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
     @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
+    public boolean isMuted() { return muted; }
+    @Nullable public Long getMutedUntilEpochMs() { return mutedUntilEpochMs; }
+    public boolean isArchived() { return archived; }
+    public boolean isAiOptOut() { return aiOptOut; }
+
+    /**
+     * A timed mute expires lazily: the stored flag stays true while the expiry
+     * is in the past, so UI reads must combine both values with the clock.
+     */
+    public boolean isMutedAt(long nowEpochMs) {
+        return muted && (mutedUntilEpochMs == null || mutedUntilEpochMs > nowEpochMs);
+    }
 
     /** The group title wins over the direct peer name. */
     public String getDisplayName() {
@@ -138,6 +191,9 @@ public final class ConversationSummary {
                 && peerReadSeq == that.peerReadSeq
                 && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
+                && muted == that.muted
+                && archived == that.archived
+                && aiOptOut == that.aiOptOut
                 && id.equals(that.id)
                 && type.equals(that.type)
                 && Objects.equals(title, that.title)
@@ -149,7 +205,8 @@ public final class ConversationSummary {
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
-                && Objects.equals(peerPresence, that.peerPresence);
+                && Objects.equals(peerPresence, that.peerPresence)
+                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs);
     }
 
     @Override
@@ -157,6 +214,6 @@ public final class ConversationSummary {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
-                lastMessageDeleted, peerPresence);
+                lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut);
     }
 }
