@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import jakarta.persistence.EntityManager;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -57,6 +58,8 @@ class InviteServiceTest {
     private GroupService groupService;
     @Mock
     private InviteRateLimiter rateLimiter;
+    @Mock
+    private EntityManager entityManager;
 
     private InviteTokenGenerator tokenGenerator;
     private InviteService inviteService;
@@ -75,11 +78,6 @@ class InviteServiceTest {
     @BeforeEach
     void setUp() {
         tokenGenerator = new InviteTokenGenerator();
-        inviteService = new InviteService(
-                linkRepository, joinRequestRepository, banRepository,
-                conversationRepository, memberRepository, userRepository,
-                groupService, tokenGenerator, rateLimiter, 5);
-
         adminUser = userWithId(adminId, "+84900000001", "Admin");
         memberUser = userWithId(memberId, "+84900000002", "Member");
         strangerUser = userWithId(strangerId, "+84900000003", "Stranger");
@@ -89,6 +87,14 @@ class InviteServiceTest {
 
         directConversation = Conversation.direct(adminUser, "direct_pair_key");
         ReflectionTestUtils.setField(directConversation, "id", UUID.randomUUID());
+
+        inviteService = new InviteService(
+                linkRepository, joinRequestRepository, banRepository,
+                conversationRepository, memberRepository, userRepository,
+                groupService, tokenGenerator, rateLimiter, entityManager, 5);
+
+        lenient().when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(groupConversation));
     }
 
     private User userWithId(UUID id, String phone, String name) {
@@ -382,13 +388,14 @@ class InviteServiceTest {
         when(conversationRepository.findByIdForUpdate(conversationId)).thenReturn(Optional.of(groupConversation));
         when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
         when(linkRepository.findByIdForUpdate(linkId)).thenReturn(Optional.of(link));
+        when(linkRepository.tryConsumeUse(linkId)).thenReturn(1);
 
         JoinResponse response = inviteService.join(strangerId, token, "127.0.0.1");
 
         assertThat(response.status()).isEqualTo("JOINED");
         assertThat(response.conversationId()).isEqualTo(conversationId);
         assertThat(response.requestId()).isNull();
-        assertThat(link.getUseCount()).isEqualTo(1);
+        verify(linkRepository).tryConsumeUse(linkId);
         verify(groupService).addMemberFromInvite(strangerId, conversationId, null);
     }
 
@@ -571,13 +578,14 @@ class InviteServiceTest {
         when(conversationRepository.findByIdForUpdate(conversationId)).thenReturn(Optional.of(groupConversation));
         when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
         when(linkRepository.findByIdForUpdate(linkId)).thenReturn(Optional.of(link));
+        when(linkRepository.tryConsumeUse(linkId)).thenReturn(1);
         when(joinRequestRepository.save(request)).thenReturn(request);
 
         JoinRequestResponse response = inviteService.approveJoinRequest(adminId, conversationId, reqId);
 
         assertThat(response.status()).isEqualTo("APPROVED");
         assertThat(response.reviewedBy()).isEqualTo(adminId);
-        assertThat(link.getUseCount()).isEqualTo(1);
+        verify(linkRepository).tryConsumeUse(linkId);
         verify(groupService).addMemberFromInvite(strangerId, conversationId, adminId);
     }
 

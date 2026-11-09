@@ -385,4 +385,70 @@ class GroupInviteFlowIT {
         assertThat(successCount.get()).isEqualTo(3);
         assertThat(rejectedCount.get()).isEqualTo(3);
     }
+
+    @Test
+    void approvalCannotExceedInviteMaxUses() throws Exception {
+        UUID groupId = createGroup(alice, "Approval max uses", List.of(bob.id()));
+        MvcResult linkResult = postJson("/api/v1/conversations/" + groupId + "/invite-link",
+                alice.accessToken(), Map.of("requiresApproval", true, "maxUses", 1))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String token = objectMapper.readTree(linkResult.getResponse().getContentAsString())
+                .get("token").asText();
+
+        MvcResult charlieRequest = postJson("/api/v1/invite-links/" + token + "/join",
+                charlie.accessToken(), null)
+                .andExpect(status().isCreated())
+                .andReturn();
+        MvcResult daveRequest = postJson("/api/v1/invite-links/" + token + "/join",
+                dave.accessToken(), null)
+                .andExpect(status().isCreated())
+                .andReturn();
+        String charlieRequestId = objectMapper.readTree(charlieRequest.getResponse().getContentAsString())
+                .get("requestId").asText();
+        String daveRequestId = objectMapper.readTree(daveRequest.getResponse().getContentAsString())
+                .get("requestId").asText();
+
+        postJson("/api/v1/conversations/" + groupId + "/join-requests/" + charlieRequestId + "/approve",
+                alice.accessToken(), null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        MvcResult secondApproval = postJson(
+                "/api/v1/conversations/" + groupId + "/join-requests/" + daveRequestId + "/approve",
+                alice.accessToken(), null)
+                .andReturn();
+
+        assertThat(secondApproval.getResponse().getStatus())
+                .as("the second approval must not consume a link beyond maxUses")
+                .isEqualTo(404);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conversation_members WHERE conversation_id = ?",
+                Integer.class, groupId)).isEqualTo(3);
+    }
+
+    @Test
+    void adminJoinRequestListHonorsLimitAndOrdering() throws Exception {
+        UUID groupId = createGroup(alice, "Join request cap", List.of(bob.id()));
+        MvcResult linkResult = postJson("/api/v1/conversations/" + groupId + "/invite-link",
+                alice.accessToken(), Map.of("requiresApproval", true))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String token = objectMapper.readTree(linkResult.getResponse().getContentAsString())
+                .get("token").asText();
+
+        for (TestUser joiner : List.of(charlie, dave, eve)) {
+            postJson("/api/v1/invite-links/" + token + "/join", joiner.accessToken(), null)
+                    .andExpect(status().isCreated());
+        }
+
+        MvcResult capped = getJson("/api/v1/conversations/" + groupId + "/join-requests?limit=2",
+                alice.accessToken())
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode items = objectMapper.readTree(capped.getResponse().getContentAsString());
+        assertThat(items.size()).isEqualTo(2);
+        assertThat(items.get(0).get("createdAt").asText())
+                .isGreaterThanOrEqualTo(items.get(1).get("createdAt").asText());
+    }
 }
