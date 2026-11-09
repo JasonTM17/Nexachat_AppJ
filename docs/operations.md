@@ -22,6 +22,7 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `NEXACHAT_ADMIN_PHONES` | No (comma-separated admin E.164 phones allowed to read `/api/v1/rag/stats`) | Empty | `+84900000001` |
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
+| `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
@@ -294,6 +295,22 @@ data. It is restricted to the E.164 numbers in
 `nexachat.security.admin-phones` (env `NEXACHAT_ADMIN_PHONES`); when the list
 is empty the endpoint is denied to everyone. The decision is re-evaluated per
 request from the user row, so removing a phone takes effect immediately.
+
+### Reverse proxies and client IP for rate limits
+
+Production enables `server.forward-headers-strategy=framework` so Spring honors
+`X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS terminator. That filter
+can also rewrite `getRemoteAddr()` from `X-Forwarded-For`, which clients could
+otherwise spoof when they reach the app directly.
+
+Per-IP rate-limit buckets (credential endpoints, invite resolve/join, and the
+small IP fallbacks on authenticated interceptors) therefore use the **socket peer
+address** captured before the forwarded-header filter runs. Only when the peer
+matches an entry in `nexachat.security.trusted-proxy-cidrs` (env
+`NEXACHAT_TRUSTED_PROXY_CIDRS`, comma-separated CIDRs or exact IPs) does the
+service use the framework-rewritten client address. The default empty list is
+safe for direct exposure; set it to the subnet your reverse proxy connects from
+when TLS terminates in front of the JVM.
 
 ### Rate limits and body bounds
 

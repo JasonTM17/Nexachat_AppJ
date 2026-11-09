@@ -6,6 +6,8 @@
 # (nginx / Caddy / Traefik). The app itself serves plain HTTP + ws:// inside the
 # trusted network; `server.forward-headers-strategy=framework` makes Spring
 # honor X-Forwarded-Proto/Host so redirects and generated URLs use https/wss.
+# Per-IP rate limits use the socket peer unless the peer is listed in
+# `nexachat.security.trusted-proxy-cidrs` — see docs/operations.md.
 #
 # DEV-ONLY: `adb reverse tcp:8080 tcp:8080` and plain ws:// to a LAN IP are
 # local development conveniences (see docs/operations.md). Never expose this

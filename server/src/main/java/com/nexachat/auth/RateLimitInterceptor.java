@@ -1,5 +1,6 @@
 package com.nexachat.auth;
 
+import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +25,9 @@ import java.util.Map;
  * (not a servlet filter) so rejections flow through {@code GlobalExceptionHandler}
  * and keep the standard error envelope: {@code 429 {"error":{"code":"RATE_LIMITED"}}}.
  *
- * <p>Client IP = {@code request.getRemoteAddr()} — honest for the single-node LAN
- * deployment; X-Forwarded-For is deliberately NOT trusted because it is
- * client-supplied and trivially spoofed without a trusted proxy.
+ * <p>Client IP comes from {@link ClientIpResolver}: the socket peer by default,
+ * or the framework-rewritten address when the peer matches a configured
+ * trusted reverse proxy ({@code nexachat.security.trusted-proxy-cidrs}).
  */
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
@@ -40,9 +41,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)));
 
     private final RateLimitService rateLimitService;
+    private final ClientIpResolver clientIpResolver;
 
-    public RateLimitInterceptor(RateLimitService rateLimitService) {
+    public RateLimitInterceptor(RateLimitService rateLimitService, ClientIpResolver clientIpResolver) {
         this.rateLimitService = rateLimitService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Override
@@ -55,7 +58,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         String uri = request.getRequestURI();
         for (Rule rule : RULES) {
             if (rule.path().equals(uri)) {
-                String key = rule.name() + '|' + request.getRemoteAddr();
+                String key = rule.name() + '|' + clientIpResolver.rateLimitClientIp(request);
                 RateLimitService.Consumption consumption =
                         rateLimitService.tryConsume(key, rule.capacity(), rule.period());
                 if (!consumption.allowed()) {

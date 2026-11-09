@@ -1,6 +1,7 @@
 package com.nexachat.user;
 
 import com.nexachat.auth.RateLimitService;
+import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -47,9 +48,12 @@ public class UserSearchRateLimitInterceptor implements HandlerInterceptor {
     static final String BUCKET_PREFIX = "user-search|";
 
     private final RateLimitService rateLimitService;
+    private final ClientIpResolver clientIpResolver;
 
-    public UserSearchRateLimitInterceptor(RateLimitService rateLimitService) {
+    public UserSearchRateLimitInterceptor(RateLimitService rateLimitService,
+                                          ClientIpResolver clientIpResolver) {
         this.rateLimitService = rateLimitService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Override
@@ -59,7 +63,7 @@ public class UserSearchRateLimitInterceptor implements HandlerInterceptor {
         if (!HttpMethod.GET.matches(request.getMethod())) {
             return true;
         }
-        String key = BUCKET_PREFIX + principalKey(request);
+        String key = BUCKET_PREFIX + principalKey(request, clientIpResolver);
         RateLimitService.Consumption consumption =
                 rateLimitService.tryConsume(key, SEARCH_CAPACITY, SEARCH_PERIOD);
         if (!consumption.allowed()) {
@@ -71,13 +75,13 @@ public class UserSearchRateLimitInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    private static String principalKey(HttpServletRequest request) {
+    private static String principalKey(HttpServletRequest request, ClientIpResolver clientIpResolver) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof JwtPrincipal principal) {
             return "user:" + principal.userId();
         }
         // Unauthenticated calls are rejected by the security entry point anyway;
         // this is a belt-and-suspenders key so a stray path through still limits.
-        return "ip:" + request.getRemoteAddr();
+        return "ip:" + clientIpResolver.rateLimitClientIp(request);
     }
 }
