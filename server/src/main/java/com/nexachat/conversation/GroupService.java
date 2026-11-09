@@ -12,6 +12,7 @@ import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.conversation.dto.CreateGroupRequest;
 import com.nexachat.conversation.dto.MemberResponse;
 import com.nexachat.conversation.dto.PatchGroupRequest;
+import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
@@ -36,6 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -45,6 +47,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 /**
  * GROUP use cases (plan §10.2, phase-08): create, member add/remove, self-leave,
@@ -80,10 +83,14 @@ public class GroupService {
 
     static final int MAX_TITLE_LENGTH = 80;
     static final int MAX_AVATAR_URL_LENGTH = 255;
+    private static final String FILES_PATH = "/api/v1/files/";
+    private static final Pattern ATTACHMENT_STORAGE_KEY =
+            Pattern.compile("^attachments/[0-9a-fA-F-]{36}\\.[a-z0-9]+$");
 
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final MessageAttachmentRepository attachmentRepository;
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
@@ -93,6 +100,7 @@ public class GroupService {
     public GroupService(ConversationRepository conversationRepository,
                         ConversationMemberRepository memberRepository,
                         UserRepository userRepository,
+                        MessageAttachmentRepository attachmentRepository,
                         MessageService messageService,
                         ApplicationEventPublisher eventPublisher,
                         StorageService storageService,
@@ -101,6 +109,7 @@ public class GroupService {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
+        this.attachmentRepository = attachmentRepository;
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
@@ -373,7 +382,11 @@ public class GroupService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "avatarUrl must be at most " + MAX_AVATAR_URL_LENGTH + " characters");
             }
-            conversation.changeAvatarUrl(avatarUrl.isEmpty() ? null : avatarUrl);
+            String normalizedAvatarUrl = avatarUrl.isEmpty() ? null : avatarUrl;
+            if (normalizedAvatarUrl != null) {
+                normalizedAvatarUrl = lockAndCanonicalizeAttachmentAvatarReference(normalizedAvatarUrl);
+            }
+            conversation.changeAvatarUrl(normalizedAvatarUrl);
         }
 
         if (renamed) {
@@ -438,6 +451,77 @@ public class GroupService {
         if (member.getRole() != ConversationMember.Role.ADMIN) {
             throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Group admin role required");
         }
+    }
+
+    private String lockAndCanonicalizeAttachmentAvatarReference(String avatarUrl) {
+        URI uri;
+        try {
+            uri = URI.create(avatarUrl);
+        } catch (IllegalArgumentException malformedUrl) {
+            return avatarUrl;
+        }
+
+        String path = uri.getPath();
+        if (path == null) {
+            return avatarUrl;
+        }
+        int filePath = path.lastIndexOf(FILES_PATH);
+        if (filePath < 0) {
+            return avatarUrl;
+        }
+        String storageKey = path.substring(filePath + FILES_PATH.length());
+        if (!ATTACHMENT_STORAGE_KEY.matcher(storageKey).matches()) {
+            return avatarUrl;
+        }
+
+        String rawPath = uri.getRawPath();
+        String canonicalRawPath = normalizeUnreservedPercentEncodings(rawPath);
+        if (!canonicalRawPath.endsWith(FILES_PATH + storageKey)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Local attachment avatar URL must use canonical path separators");
+        }
+        if (attachmentRepository.lockStorageKeyForReference(storageKey).isEmpty()) {
+            throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+        }
+        if (!storageService.exists(storageKey)) {
+            throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+        }
+
+        if (rawPath.equals(canonicalRawPath)) {
+            return avatarUrl;
+        }
+        int rawPathOffset = avatarUrl.indexOf(rawPath);
+        if (rawPathOffset < 0) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Invalid attachment avatar URL");
+        }
+        return avatarUrl.substring(0, rawPathOffset) + canonicalRawPath
+                + avatarUrl.substring(rawPathOffset + rawPath.length());
+    }
+
+    private static String normalizeUnreservedPercentEncodings(String rawPath) {
+        StringBuilder normalized = new StringBuilder(rawPath.length());
+        for (int i = 0; i < rawPath.length(); i++) {
+            char current = rawPath.charAt(i);
+            if (current == '%' && i + 2 < rawPath.length()) {
+                int octet = Integer.parseInt(rawPath.substring(i + 1, i + 3), 16);
+                if (isUnreservedAscii(octet)) {
+                    normalized.append((char) octet);
+                } else {
+                    normalized.append(rawPath, i, i + 3);
+                }
+                i += 2;
+            } else {
+                normalized.append(current);
+            }
+        }
+        return normalized.toString();
+    }
+
+    private static boolean isUnreservedAscii(int octet) {
+        return (octet >= 'a' && octet <= 'z')
+                || (octet >= 'A' && octet <= 'Z')
+                || (octet >= '0' && octet <= '9')
+                || octet == '-' || octet == '.' || octet == '_' || octet == '~';
     }
 
     private static String normalizeTitle(String rawTitle) {

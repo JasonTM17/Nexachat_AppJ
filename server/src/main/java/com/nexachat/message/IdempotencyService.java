@@ -26,7 +26,7 @@ import java.util.UUID;
  *
  * <p>Only successful operations are recorded: a failed first attempt stores
  * nothing, so a retry re-runs. Rows expire after a bounded TTL (see
- * {@link RetentionCleanupTask}).
+ * the opt-in server retention cleanup job).
  */
 @Service
 public class IdempotencyService {

@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,10 +74,4 @@ public class ReminderClaimService {
         return true;
     }
 
-    /** Deletes completed one-off rows so the table cannot grow without bound. */
-    @Transactional
-    public int purgeFired(int retentionDays) {
-        Instant cutoff = Instant.now().minus(Math.max(1, retentionDays), ChronoUnit.DAYS);
-        return reminderRepository.deleteFiredBefore(cutoff);
-    }
 }

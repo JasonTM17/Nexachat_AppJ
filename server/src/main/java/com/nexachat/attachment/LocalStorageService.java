@@ -133,6 +133,75 @@ public class LocalStorageService implements StorageService {
         }
     }
 
+    @Override
+    public boolean exists(String storageKey) {
+        Path target = resolveDeletionPath(storageKey);
+        return target != null && Files.isRegularFile(target, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+    }
+
+    @Override
+    public boolean deleteIfExists(String storageKey) {
+        Path target = resolveDeletionPath(storageKey);
+        if (target == null) {
+            return false;
+        }
+        try {
+            return Files.deleteIfExists(target);
+        } catch (NoSuchFileException ex) {
+            return false;
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to delete stored file");
+        }
+    }
+
+    /**
+     * Resolves a deletion target without following a path outside the storage
+     * root. The nearest existing ancestor is canonicalized even when the file
+     * is already absent, so a symlinked directory cannot bypass the guard.
+     */
+    private Path resolveDeletionPath(String storageKey) {
+        if (storageKey == null || storageKey.isBlank()
+                || storageKey.contains("..") || storageKey.contains("\\")) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        Path target = root.resolve(storageKey).normalize();
+        if (!target.startsWith(root) || target.equals(root)) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        if (!Files.exists(root)) {
+            return null;
+        }
+        try {
+            Path realRoot = root.toRealPath();
+            Path existing = target;
+            while (existing != null
+                    && !Files.exists(existing, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                existing = existing.getParent();
+            }
+            if (existing == null || !existing.toRealPath().startsWith(realRoot)) {
+                throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+            }
+            if (Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                if (!Files.isRegularFile(target)) {
+                    throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+                }
+                Path realTarget = target.toRealPath();
+                if (!realTarget.startsWith(realRoot)) {
+                    throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+                }
+                String actualKey = realRoot.relativize(realTarget).toString().replace('\\', '/');
+                if (!actualKey.equals(storageKey)) {
+                    throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+                }
+            }
+            return target;
+        } catch (NoSuchFileException ex) {
+            return null;
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to resolve stored file");
+        }
+    }
+
     private Path resolveExactPath(String storageKey) {
         if (storageKey == null || storageKey.isBlank()
                 || storageKey.contains("..") || storageKey.contains("\\")) {

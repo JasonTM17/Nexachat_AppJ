@@ -551,7 +551,7 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V20 apply
+Back up before replacing the app image. Flyway migrations V1 through V22 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
@@ -589,6 +589,86 @@ docker compose up -d app
 If a migration fails, keep the app stopped while investigating. Recovery to a
 pre-upgrade database state requires restoring the pre-upgrade backup; starting
 an older app against a newer schema is not a rollback procedure.
+
+## Data retention and cleanup
+
+Retention cleanup runs in the server process. Every job is disabled by default,
+and the global switch is also off. When enabled, the scheduler executes at most
+one ordered batch per enabled job per interval. Database batches use
+`SKIP LOCKED`; batch size, statement timeout, and transaction timeout are
+validated and bounded. Start with dry-run counts, review the metrics and
+retention policy, then explicitly disable dry-run before allowing deletion.
+
+For example, this enables only the expired idempotency cleanup in dry-run mode:
+
+```sh
+export NEXACHAT_RETENTION_ENABLED=true
+export NEXACHAT_RETENTION_IDEMPOTENCY_ENABLED=true
+export NEXACHAT_RETENTION_DRY_RUN=true
+```
+
+After reviewing `nexachat.retention.rows.observed`, set
+`NEXACHAT_RETENTION_DRY_RUN=false` to delete eligible rows in batches. Restart
+the server after changing environment values. Supply these values to the server
+process through the deployment's environment configuration; setting them only
+in a host shell does not pass them into a container. The checked-in Compose demo
+does not currently forward retention variables to the app service. Do not enable
+the global switch alone if no cleanup job should run.
+
+All retention properties, their environment variables, and defaults are listed
+below. Every job-level `enabled` switch defaults to `false`.
+
+| Property | Environment variable | Default | Effect / validation |
+| --- | --- | --- | --- |
+| `nexachat.retention.enabled` | `NEXACHAT_RETENTION_ENABLED` | `false` | Global opt-in. |
+| `nexachat.retention.dry-run` | `NEXACHAT_RETENTION_DRY_RUN` | `true` | Count candidates without deleting. |
+| `nexachat.retention.batch-size` | `NEXACHAT_RETENTION_BATCH_SIZE` | `100` | Rows per job batch; 1–500. |
+| `nexachat.retention.statement-timeout-ms` | `NEXACHAT_RETENTION_STATEMENT_TIMEOUT_MS` | `2000` | PostgreSQL statement timeout; 100–30000 ms. |
+| `nexachat.retention.transaction-timeout-seconds` | `NEXACHAT_RETENTION_TRANSACTION_TIMEOUT_SECONDS` | `15` | Per-job transaction timeout; 5–60 s. |
+| `nexachat.retention.interval-ms` | `NEXACHAT_RETENTION_INTERVAL_MS` | `3600000` | Scheduler delay; 60000–86400000 ms. |
+| `nexachat.retention.jobs.join-requests.enabled` | `NEXACHAT_RETENTION_JOIN_REQUESTS_ENABLED` | `false` | Remove only reviewed requests after the retention age. |
+| `nexachat.retention.jobs.join-requests.retention-days` | `NEXACHAT_RETENTION_JOIN_REQUESTS_RETENTION_DAYS` | `30` | Age from `reviewed_at`; 1–3650 days. Pending requests are preserved. |
+| `nexachat.retention.jobs.invite-bans.enabled` | `NEXACHAT_RETENTION_INVITE_BANS_ENABLED` | `false` | Remove link-specific bans after their invite reaches the grace age. Global bans are preserved. |
+| `nexachat.retention.jobs.invite-links.enabled` | `NEXACHAT_RETENTION_INVITE_LINKS_ENABLED` | `false` | Remove expired, revoked, or used-up links after grace, once requests and link-specific bans are gone. |
+| `nexachat.retention.jobs.invite-links.grace-days` | `NEXACHAT_RETENTION_INVITE_LINKS_GRACE_DAYS` | `30` | Grace after expiry/revocation/last use; 1–365 days. |
+| `nexachat.retention.jobs.idempotency.enabled` | `NEXACHAT_RETENTION_IDEMPOTENCY_ENABLED` | `false` | Remove expired request replay records. |
+| `nexachat.retention.jobs.idempotency.ttl-hours` | `NEXACHAT_RETENTION_IDEMPOTENCY_TTL_HOURS` | `24` | Idempotency record age; 1–8760 hours. |
+| `nexachat.retention.jobs.refresh-tokens.enabled` | `NEXACHAT_RETENTION_REFRESH_TOKENS_ENABLED` | `false` | Remove expired or revoked refresh tokens after the retention age. |
+| `nexachat.retention.jobs.refresh-tokens.retention-days` | `NEXACHAT_RETENTION_REFRESH_TOKENS_RETENTION_DAYS` | `30` | Age; 1–3650 days. |
+| `nexachat.retention.jobs.device-tokens.enabled` | `NEXACHAT_RETENTION_DEVICE_TOKENS_ENABLED` | `false` | Remove stale device tokens. |
+| `nexachat.retention.jobs.device-tokens.stale-days` | `NEXACHAT_RETENTION_DEVICE_TOKENS_STALE_DAYS` | `180` | Age since last use, or since update for never-used tokens; 1–3650 days. |
+| `nexachat.retention.jobs.reminders.enabled` | `NEXACHAT_RETENTION_REMINDERS_ENABLED` | `false` | Remove only fired one-shot reminders. |
+| `nexachat.retention.jobs.reminders.retention-days` | `NEXACHAT_RETENTION_REMINDERS_RETENTION_DAYS` | `30` | Age since fire; 1–3650 days. Recurring and unfired reminders remain. |
+| `nexachat.retention.jobs.polls.enabled` | `NEXACHAT_RETENTION_POLLS_ENABLED` | `false` | Redact aged poll payloads and remove options/votes. The poll row remains as a change-feed tombstone. |
+| `nexachat.retention.jobs.polls.retention-days` | `NEXACHAT_RETENTION_POLLS_RETENTION_DAYS` | `365` | Age from the earliest close, scheduled close, or deletion time; 1–3650 days. |
+| `nexachat.retention.jobs.call-records.enabled` | `NEXACHAT_RETENTION_CALL_RECORDS_ENABLED` | `false` | Remove only ended call records. |
+| `nexachat.retention.jobs.call-records.retention-days` | `NEXACHAT_RETENTION_CALL_RECORDS_RETENTION_DAYS` | `365` | Age since end; 1–3650 days. |
+| `nexachat.retention.jobs.attachments.enabled` | `NEXACHAT_RETENTION_ATTACHMENTS_ENABLED` | `false` | Remove eligible attachment rows and stored files after safe-key/reference checks. |
+| `nexachat.retention.jobs.attachments.unbound-hours` | `NEXACHAT_RETENTION_ATTACHMENTS_UNBOUND_HOURS` | `24` | Age for uploads not bound to a message; 1–8760 hours. |
+| `nexachat.retention.jobs.attachments.deleted-message-days` | `NEXACHAT_RETENTION_ATTACHMENTS_DELETED_MESSAGE_DAYS` | `30` | Age since message soft deletion; 1–3650 days. |
+| `nexachat.retention.jobs.message-tombstones.enabled` | `NEXACHAT_RETENTION_MESSAGE_TOMBSTONES_ENABLED` | `false` | Clear old tombstone content, mention flags, embeddings, and mention rows; message rows remain. |
+| `nexachat.retention.jobs.message-tombstones.retention-days` | `NEXACHAT_RETENTION_MESSAGE_TOMBSTONES_RETENTION_DAYS` | `30` | Age since soft deletion; 1–3650 days. |
+| `nexachat.retention.jobs.reaction-events.enabled` | `NEXACHAT_RETENTION_REACTION_EVENTS_ENABLED` | `false` | Remove old reaction delta events. |
+| `nexachat.sync.reaction-retention-days` | `NEXACHAT_SYNC_REACTION_RETENTION_DAYS` | `30` | Reaction event retention horizon; 1–3650 days. Clients older than this window receive a full reaction refresh. |
+| `nexachat.retention.jobs.summaries.enabled` | `NEXACHAT_RETENTION_SUMMARIES_ENABLED` | `false` | Remove expired message summaries. |
+| `nexachat.retention.jobs.summary-limits.enabled` | `NEXACHAT_RETENTION_SUMMARY_LIMITS_ENABLED` | `false` | Remove expired summary request windows. |
+| `nexachat.retention.jobs.summary-limits.minute-retention-days` | `NEXACHAT_RETENTION_SUMMARY_LIMITS_MINUTE_DAYS` | `1` | Keep minute windows for 1–30 days. |
+| `nexachat.retention.jobs.summary-limits.day-retention-days` | `NEXACHAT_RETENTION_SUMMARY_LIMITS_DAY_DAYS` | `2` | Keep day windows for 1–365 days. |
+| `nexachat.retention.jobs.rag-cache.enabled` | `NEXACHAT_RETENTION_RAG_CACHE_ENABLED` | `false` | Remove expired RAG answer cache records. |
+| `nexachat.retention.jobs.rag-limits.enabled` | `NEXACHAT_RETENTION_RAG_LIMITS_ENABLED` | `false` | Remove expired RAG request windows. |
+| `nexachat.retention.jobs.rag-limits.minute-retention-days` | `NEXACHAT_RETENTION_RAG_LIMITS_MINUTE_DAYS` | `1` | Keep minute windows for 1–30 days. |
+| `nexachat.retention.jobs.rag-limits.day-retention-days` | `NEXACHAT_RETENTION_RAG_LIMITS_DAY_DAYS` | `2` | Keep day windows for 1–365 days. |
+
+The scheduler reports Micrometer counters `nexachat.retention.job.runs`
+(tagged by job and outcome), `nexachat.retention.rows.observed`,
+`nexachat.retention.rows.deleted`, `nexachat.retention.files.deleted`, and
+`nexachat.retention.job.errors`. Dry-run rows are reported as observed; deletion
+and file counters increase only when the corresponding removal succeeds.
+
+Message, conversation, and user rows are never removed by these jobs. Poll
+records stay as compact versioned tombstones so existing change-feed cursors
+continue to work. Enable retention in a private/staging environment first and
+compare the dry-run counts with your organization's retention requirements.
 
 ## JWT secret rotation
 

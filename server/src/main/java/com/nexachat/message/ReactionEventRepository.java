@@ -63,9 +63,4 @@ public interface ReactionEventRepository extends JpaRepository<ReactionEvent, Lo
                                             @Param("since") Instant since,
                                             @Param("cursor") Long cursor,
                                             @Param("limit") int limit);
-
-    /** Retention purge: deletes events older than {@code cutoff}. */
-    @Modifying
-    @Query("DELETE FROM ReactionEvent e WHERE e.createdAt < :cutoff")
-    int deleteOlderThan(@Param("cutoff") Instant cutoff);
 }

@@ -5,7 +5,6 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,9 +33,4 @@ public interface RequestIdempotencyRepository
                @Param("endpoint") String endpoint,
                @Param("payloadHash") String payloadHash,
                @Param("responseHash") String responseHash);
-
-    /** TTL purge: deletes idempotency rows older than {@code cutoff}. */
-    @Modifying
-    @Query("DELETE FROM RequestIdempotency r WHERE r.createdAt < :cutoff")
-    int deleteOlderThan(@Param("cutoff") Instant cutoff);
 }

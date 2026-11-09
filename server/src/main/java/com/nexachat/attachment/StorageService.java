@@ -60,6 +60,30 @@ public interface StorageService {
     StreamHandle open(String storageKey);
 
     /**
+     * Checks whether a safe, regular stored file exists under the storage root.
+     *
+     * <p>Implementations must apply the same root-containment and symlink
+     * guards as {@link #read}; malformed keys are rejected as missing files.</p>
+     *
+     * @param storageKey key returned by {@link #store}
+     * @return {@code true} only when the key resolves to a regular stored file
+     */
+    boolean exists(String storageKey);
+
+    /**
+     * Deletes a stored file if it still exists.
+     *
+     * <p>Implementations must apply the same root-containment guard as reads.
+     * The operation must be idempotent so a database retry can finish after a
+     * file was removed but its attachment row was not committed.</p>
+     *
+     * @param storageKey server-generated key returned by {@link #store}
+     * @return {@code true} when a file was removed, or {@code false} when it
+     *         was already absent
+     */
+    boolean deleteIfExists(String storageKey);
+
+    /**
      * An open stored file: the stream positioned at offset zero plus its size.
      */
     record StreamHandle(InputStream content, long sizeBytes) implements AutoCloseable {
