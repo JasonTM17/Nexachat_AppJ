@@ -60,18 +60,15 @@ public class AttachmentService {
             Pattern.compile("^[0-9A-Za-z#$%*+,\\-.:;=?@\\[\\]^_{|}~]+$");
 
     private final MessageAttachmentRepository attachmentRepository;
-    private final AttachmentStorageKeyLookupRepository storageKeyLookupRepository;
     private final ConversationMemberRepository memberRepository;
     private final StorageService storageService;
     private final UserRepository userRepository;
 
     public AttachmentService(MessageAttachmentRepository attachmentRepository,
-                             AttachmentStorageKeyLookupRepository storageKeyLookupRepository,
                              ConversationMemberRepository memberRepository,
                              StorageService storageService,
                              UserRepository userRepository) {
         this.attachmentRepository = attachmentRepository;
-        this.storageKeyLookupRepository = storageKeyLookupRepository;
         this.memberRepository = memberRepository;
         this.storageService = storageService;
         this.userRepository = userRepository;
@@ -172,33 +169,22 @@ public class AttachmentService {
      * Applies the attachment authZ rule to the raw {@code /api/v1/files/**}
      * path (FileController): an exact storage key that maps to a
      * {@code message_attachments} row must satisfy the same owner/member rule
-     * as {@link #loadContent}. A case-variant of an attachment key is rejected
-     * before storage is opened. Keys with no attachment row — avatars and
-     * other profile-public files — pass unchecked: they have no membership
-     * concept.
+     * as {@link #loadContent}. If the exact lookup misses, the storage layer
+     * still rejects case-variant paths before opening bytes. Keys with no
+     * attachment row — avatars and other profile-public files — pass unchecked:
+     * they have no membership concept.
      *
      * @throws ApiException {@code NOT_MEMBER} when the key is an attachment the
      *                      requester may not read
      */
     @Transactional(readOnly = true)
     public void assertStorageKeyReadable(String storageKey, UUID requesterId) {
-        attachmentRepository.findByStorageKey(storageKey).ifPresentOrElse(attachment -> {
+        attachmentRepository.findByStorageKey(storageKey).ifPresent(attachment -> {
             if (!attachment.getStorageKey().equals(storageKey)) {
                 throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
             }
             assertReadable(attachment, requesterId);
-        }, () -> {
-            if (mayBeAttachmentKey(storageKey)
-                    && storageKeyLookupRepository.existsByStorageKeyIgnoreCase(storageKey)) {
-                throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
-            }
         });
-    }
-
-    private static boolean mayBeAttachmentKey(String storageKey) {
-        String prefix = STORAGE_SUBDIR + "/";
-        return storageKey != null
-                && storageKey.regionMatches(true, 0, prefix, 0, prefix.length());
     }
 
     /**
