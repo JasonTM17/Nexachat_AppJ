@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.network.ApiResult;
@@ -101,6 +102,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final MessageApi messageApi;
     private final GroupApi groupApi;
     private final ConversationDao conversationDao;
+    private final AppDatabase appDatabase;
     private final PresenceRepository presenceRepository;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
@@ -138,10 +140,12 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull RealtimeSession session,
             @NonNull TokenStore tokenStore,
             @NonNull Moshi moshi,
-            @ApplicationContext @NonNull Context context) {
+            @ApplicationContext @NonNull Context context,
+            @NonNull AppDatabase appDatabase) {
         this.messageApi = messageApi;
         this.groupApi = groupApi;
         this.conversationDao = conversationDao;
+        this.appDatabase = appDatabase;
         this.presenceRepository = presenceRepository;
         this.session = session;
         this.tokenStore = tokenStore;
@@ -419,10 +423,41 @@ public final class ConversationRepository implements AutoCloseable {
             if (updated.getConversationId() != null) {
                 groupUpdateIds.onNext(updated.getConversationId());
             }
+            if (updated.isRemovalEvent()) {
+                handleConversationUpdate(updated).subscribe(
+                        removed -> {
+                            if (!removed) refreshRequests.onNext(Boolean.TRUE);
+                        }, RxJavaPlugins::onError);
+                return;
+            }
             refreshRequests.onNext(Boolean.TRUE);
         } else if (event instanceof ChatEvent.MessageCreated) {
             refreshRequests.onNext(Boolean.TRUE);
         }
+    }
+
+    /**
+     * Applies a membership snapshot. A removal frame is authoritative for the
+     * caller: when the snapshot no longer contains this user, the inbox row and
+     * its cached history are deleted instead of triggering a refresh that the
+     * conservative prune could keep. Removal of another member only refreshes.
+     */
+    Single<Boolean> handleConversationUpdate(ChatEvent.ConversationUpdated update) {
+        String conversationId = update.getConversationId();
+        if (conversationId == null) return Single.just(Boolean.FALSE);
+        return currentUserIdOptional().flatMap(myId -> {
+            if (!update.isSelfRemoval(myId.orElse(null))) {
+                return Single.just(Boolean.FALSE);
+            }
+            return Completable.fromAction(() -> {
+                synchronized (inboxPagingLock) {
+                    locallyCreatedIds.remove(conversationId);
+                    inboxWalkIds.remove(conversationId);
+                }
+                appDatabase.runInTransaction(() ->
+                        LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId));
+            }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
+        });
     }
 
     /** Decodes the JWT subject without copying token material into logs or fields. */

@@ -8,6 +8,7 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.PinUpdateDto;
 import com.nexachat.core.network.dto.ReactionUpdateDto;
+import com.nexachat.core.network.dto.ConversationUpdateDto;
 import com.nexachat.core.network.dto.SendMessageRequest;
 import com.nexachat.core.network.stomp.dto.MessageDeletedDto;
 import com.nexachat.core.network.stomp.dto.PresenceEventDto;
@@ -96,6 +97,7 @@ public final class RealtimeSession {
     private final JsonAdapter<PinUpdateDto> pinAdapter;
     private final JsonAdapter<MessageDeletedDto> messageDeletedAdapter;
     private final JsonAdapter<PresenceEventDto> presenceAdapter;
+    private final JsonAdapter<ConversationUpdateDto> conversationUpdateAdapter;
     private final JsonAdapter<Map<String, Object>> mapAdapter;
 
     private final FlowableProcessor<StompClient.State> state = BehaviorProcessor.<StompClient.State>createDefault(
@@ -112,6 +114,11 @@ public final class RealtimeSession {
     private boolean attemptActive;
     private int failures;
     private int parkedRounds;
+    /** Consecutive auth-suspect failures since the last successful CONNECT. */
+    private volatile int authRecoveryAttempts;
+    /** Set by the attempt's state listener so finishAttempt resolves auth before retrying. */
+    private volatile boolean authFailurePending;
+    @Nullable private volatile String attemptAccessToken;
 
     /** Destinations that must be (re-)subscribed on every Open. */
     private final Set<String> wantedSubscriptions = ConcurrentHashMap.newKeySet();
@@ -157,6 +164,7 @@ public final class RealtimeSession {
         pinAdapter = moshi.adapter(PinUpdateDto.class);
         messageDeletedAdapter = moshi.adapter(MessageDeletedDto.class);
         presenceAdapter = moshi.adapter(PresenceEventDto.class);
+        conversationUpdateAdapter = moshi.adapter(ConversationUpdateDto.class);
         Type mapType = Types.newParameterizedType(
                 Map.class, String.class, Object.class);
         mapAdapter = moshi.adapter(mapType);
@@ -196,12 +204,19 @@ public final class RealtimeSession {
     public boolean isCurrentlyOpen() { return Boolean.TRUE.equals(openState.getValue()); }
 
     private void onTokenPresence(boolean hasToken) {
+        boolean wasLoggedIn = hasSession;
         hasSession = hasToken;
         if (hasToken) {
+            if (!wasLoggedIn) {
+                authRecoveryAttempts = 0;
+                failures = 0;
+                parkedRounds = 0;
+            }
             launchConnectionLoop();
             return;
         }
         synchronized (this) { attemptActive = false; }
+        authRecoveryAttempts = 0;
         connection.set(Disposable.empty());
         parkedWake.set(Disposable.empty());
         stompClient.close();
@@ -242,8 +257,10 @@ public final class RealtimeSession {
     private void connectOnce() {
         SerialDisposable attemptHolder = new SerialDisposable();
         connection.set(attemptHolder);
+        authFailurePending = false;
         Flowable<StompClient.State> prepared = tokenStore.readTokens()
                 .flatMapPublisher(tokens -> {
+                    attemptAccessToken = tokens.getAccessToken();
                     Single<Boolean> valid = tokens.isAccessExpired()
                             ? tokenRefresher.refreshIfNeeded(tokens.getAccessToken()).map(Optional::isPresent)
                             : Single.just(true);
@@ -258,24 +275,43 @@ public final class RealtimeSession {
                     if (connectionState instanceof StompClient.State.Open) {
                         failures = 0;
                         parkedRounds = 0;
+                        authRecoveryAttempts = 0;
                         isOpen.onNext(true);
                         resubscribeWanted();
                         resyncRequests.onNext(new Object());
                     } else {
                         isOpen.onNext(false);
-                        if (connectionState instanceof StompClient.State.Failed
-                                && ((StompClient.State.Failed) connectionState).isAuth()) {
-                            tokenRefresher.refresh().subscribe(ignored -> { }, ignored -> { });
+                        if (isAuthSuspectFailure(connectionState)) {
+                            authFailurePending = true;
                         }
                     }
                 }, ignored -> finishAttempt(), this::finishAttempt);
         attemptHolder.set(attempt);
     }
 
+    /**
+     * A rejected CONNECT may be dropped without an ERROR frame, so a connect
+     * timeout is treated as auth-suspect as well. Both cases must resolve the
+     * token before another socket attempt.
+     */
+    private static boolean isAuthSuspectFailure(StompClient.State state) {
+        if (!(state instanceof StompClient.State.Failed failed)) {
+            return false;
+        }
+        return failed.isAuth()
+                || StompClient.REASON_NO_TOKEN.equals(failed.getReason())
+                || StompClient.REASON_CONNECT_TIMEOUT.equals(failed.getReason());
+    }
+
     private void finishAttempt() {
         synchronized (this) { attemptActive = false; }
         isOpen.onNext(false);
         if (!hasSession) return;
+        if (authFailurePending) {
+            authFailurePending = false;
+            recoverFromAuthFailure();
+            return;
+        }
         failures++;
         if (reconnectPolicy.shouldRetry(failures)) {
             Disposable timer = reconnectScheduler.scheduleDirect(
@@ -299,6 +335,54 @@ public final class RealtimeSession {
                 .take(1)
                 .subscribe(ignored -> launchConnectionLoop(), ignored -> { });
         parkedWake.set(wake);
+    }
+
+    /**
+     * Refreshes a rejected access token exactly once per failure streak. A
+     * fresh token re-arms one bounded retry; a failed refresh clears the
+     * session instead of letting the reconnect loop spin forever.
+     */
+    private void recoverFromAuthFailure() {
+        if (!hasSession) return;
+        if (authRecoveryAttempts >= 1) {
+            forceLogout();
+            return;
+        }
+        authRecoveryAttempts++;
+        tokenRefresher.refreshIfNeeded(attemptAccessToken)
+                .subscribe(fresh -> {
+                    if (!hasSession) return;
+                    if (fresh.isPresent()) {
+                        scheduleSingleRetry();
+                    } else {
+                        forceLogout();
+                    }
+                }, ignored -> forceLogout());
+    }
+
+    private void scheduleSingleRetry() {
+        synchronized (this) {
+            if (!hasSession || isCurrentlyOpen() || attemptActive) return;
+        }
+        failures = 0;
+        Disposable timer = reconnectScheduler.scheduleDirect(
+                this::launchConnectionLoop,
+                reconnectPolicy.delayMillis(1),
+                TimeUnit.MILLISECONDS);
+        connection.set(timer);
+    }
+
+    private void forceLogout() {
+        authRecoveryAttempts = 0;
+        failures = 0;
+        parkedRounds = 0;
+        synchronized (this) { hasSession = false; attemptActive = false; }
+        connection.set(Disposable.empty());
+        parkedWake.set(Disposable.empty());
+        tokenRefresher.logOut().subscribe(() -> { }, ignored -> { });
+        stompClient.close();
+        isOpen.onNext(false);
+        state.onNext(new StompClient.State.Closed(NORMAL_CODE, "auth failed"));
     }
 
     private void resubscribeWanted() {
@@ -449,7 +533,14 @@ public final class RealtimeSession {
                         update == null ? null : update.getResolvedSeq());
             }
             case EVENT_CONVERSATION_UPDATED:
-                return new ChatEvent.ConversationUpdated(conversationId);
+                ConversationUpdateDto conversationUpdate =
+                        parse(conversationUpdateAdapter, payloadJson(envelope));
+                return new ChatEvent.ConversationUpdated(
+                        conversationId,
+                        conversationUpdate == null ? null : conversationUpdate.getChange(),
+                        conversationUpdate == null
+                                ? Collections.emptyList()
+                                : conversationUpdate.getMemberIds());
             case EVENT_REACTION_UPDATED: {
                 ReactionUpdateDto update = parse(reactionAdapter, payloadJson(envelope));
                 return new ChatEvent.ReactionUpdated(

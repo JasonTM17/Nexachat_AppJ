@@ -45,6 +45,10 @@ public abstract class ReactionDao {
     @Query("DELETE FROM message_reactions")
     public abstract Completable clear();
 
+    /** Drops reaction summaries when the conversation is no longer accessible. */
+    @Query("DELETE FROM message_reactions WHERE conversationId = :conversationId")
+    public abstract Completable deleteForConversation(String conversationId);
+
     /** Atomic set replacement for one message. */
     @Transaction
     public void replaceForMessageInTransaction(

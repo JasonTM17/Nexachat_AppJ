@@ -97,6 +97,8 @@ public final class MessageRepository {
     public static final String ERROR_NOT_MESSAGE_AUTHOR = "NOT_MESSAGE_AUTHOR";
     public static final String ERROR_VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String ERROR_RATE_LIMITED = "RATE_LIMITED";
+    public static final String ERROR_NOT_MEMBER = "NOT_MEMBER";
+    public static final String ERROR_CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
     private static final List<String> PIN_LIST_KEYS =
@@ -125,6 +127,8 @@ public final class MessageRepository {
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     /** Conversation currently visible; its incoming messages must not bump unread count. */
     private final AtomicReference<String> activeConversation = new AtomicReference<>();
+    /** Conversations the server proved the caller no longer belongs to. */
+    private final java.util.Set<String> removedConversations = ConcurrentHashMap.newKeySet();
     /** Server-confirmed read watermark per conversation, used to deduplicate POST /read. */
     private final ConcurrentHashMap<String, Long> lastMarkedRead = new ConcurrentHashMap<>();
     /** A delete broadcast racing an optimistic DELETE must win over its rollback. */
@@ -662,6 +666,9 @@ public final class MessageRepository {
 
     public Completable send(String conversationId, String content, @Nullable String replyToId,
             String type, List<AttachmentDto> attachments) {
+        if (removedConversations.contains(conversationId)) {
+            return Completable.fromAction(this::emitNotMember);
+        }
         return nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
             String attachmentsJson = "";
             if (!attachments.isEmpty()) {
@@ -696,6 +703,10 @@ public final class MessageRepository {
                 .flatMapCompletable(entryOpt -> {
                     if (entryOpt.isEmpty()) return Completable.complete();
                     OutboxEntity old = entryOpt.get();
+                    if (removedConversations.contains(old.getConversationId())) {
+                        return outboxDao.delete(old.getClientMessageId())
+                                .andThen(Completable.fromAction(this::emitNotMember));
+                    }
                     return nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
                         OutboxEntity queued = new OutboxEntity(old.getClientMessageId(), old.getConversationId(),
                                 old.getType(), old.getContent(), old.getReplyToId(), OutboxState.SENDING,
@@ -713,6 +724,10 @@ public final class MessageRepository {
     }
 
     private Completable dispatchOutbox(OutboxEntity entry) {
+        if (removedConversations.contains(entry.getConversationId())) {
+            return outboxDao.delete(entry.getClientMessageId())
+                    .andThen(Completable.fromAction(this::emitNotMember));
+        }
         return Completable.fromAction(session::ensureConnected).andThen(Completable.defer(() -> {
             SendMessageRequest request = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
                     entry.getContent(), entry.getReplyToId(), attachmentIds(entry));
@@ -728,6 +743,12 @@ public final class MessageRepository {
                     return Completable.complete();
                 }
                 if (error instanceof ApiError.Network) return Completable.complete();
+                if (error instanceof ApiError.Unknown unknown
+                        && (ERROR_NOT_MEMBER.equals(unknown.getCode())
+                        || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()))) {
+                    removedConversations.add(entry.getConversationId());
+                    interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
+                }
                 return outboxDao.updateState(entry.getClientMessageId(), OutboxState.FAILED);
             });
         }));
@@ -827,11 +848,44 @@ public final class MessageRepository {
                 scheduleRateLimitRetry();
                 return Completable.complete();
             }
+            if (ERROR_NOT_MEMBER.equals(rejected.getCode())
+                    || ERROR_CONVERSATION_NOT_FOUND.equals(rejected.getCode())) {
+                interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
+            }
             return outboxDao.updateState(clientId, OutboxState.FAILED);
+        }
+        if (event instanceof ChatEvent.ConversationUpdated updated) {
+            return onConversationUpdated(updated);
         }
         if (event instanceof ChatEvent.ReactionUpdated reaction) return onReactionUpdated(reaction);
         if (event instanceof ChatEvent.PinUpdated pin) return onPinUpdated(pin);
         return Completable.complete();
+    }
+
+    /**
+     * Tracks membership snapshots. A self-removal blocks future sends before
+     * they reach the outbox, while re-adding clears the block.
+     */
+    private Completable onConversationUpdated(ChatEvent.ConversationUpdated update) {
+        String conversationId = update.getConversationId();
+        if (conversationId == null) return Completable.complete();
+        return currentUserId().map(Optional::of).defaultIfEmpty(Optional.empty())
+                .flatMapCompletable(myId -> {
+                    String userId = myId.orElse(null);
+                    if (update.isSelfRemoval(userId)) {
+                        removedConversations.add(conversationId);
+                        activeConversation.compareAndSet(conversationId, null);
+                        return outboxDao.deleteForConversation(conversationId);
+                    }
+                    if (userId != null && update.getMemberIds().contains(userId)) {
+                        removedConversations.remove(conversationId);
+                    }
+                    return Completable.complete();
+                });
+    }
+
+    private void emitNotMember() {
+        interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
     }
 
     private Completable onMessageCreated(ChatEvent.MessageCreated event) {
@@ -1338,6 +1392,7 @@ public final class MessageRepository {
                     if (offlineOutboxDao != null) offlineOutboxDao.clearBlocking();
                     lastMarkedRead.clear();
                     activeConversation.set(null);
+                    removedConversations.clear();
                     tokenToUser = null;
                 }));
     }
