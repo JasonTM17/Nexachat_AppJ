@@ -9,6 +9,7 @@ import com.nexachat.core.common.WhitespaceTrim;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AuthApi;
 import com.nexachat.core.network.SessionEvents;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.network.TokenRefreshOutcome;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AuthResponse;
@@ -158,10 +159,12 @@ public final class AuthRepository {
                 return Single.just(result);
             }
             AuthResponse response = (AuthResponse) success.getValue();
-            return tokenStore.saveTokens(
+            return tokenStore.saveSession(
                             response.getAccessToken(),
                             System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
-                            response.getRefreshToken())
+                            response.getRefreshToken(),
+                            new RecallWindowConfig(response.getRecallWindowSeconds(),
+                                    response.getGroupAdminMayRecallAfterWindow()))
                     .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
                     .andThen(Single.just(result));
         }).subscribeOn(Schedulers.io());

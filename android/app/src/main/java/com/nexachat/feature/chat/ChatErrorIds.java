@@ -50,6 +50,9 @@ public final class ChatErrorIds {
             if (ChatViewModel.ERROR_MESSAGE_GONE.equals(code)) {
                 return R.string.reply_unavailable;
             }
+            if (ChatViewModel.ERROR_RECALL_WINDOW_EXPIRED.equals(code)) {
+                return R.string.recall_window_expired;
+            }
             if (com.nexachat.data.MessageRepository.ERROR_NOT_MEMBER.equals(code)
                     || com.nexachat.data.MessageRepository.ERROR_CONVERSATION_NOT_FOUND.equals(code)) {
                 return R.string.error_not_member;

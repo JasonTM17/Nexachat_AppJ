@@ -212,6 +212,9 @@
     <string name="action_forward">Forward</string>
     <string name="action_edit">Edit</string>
     <string name="action_delete">Delete</string>
+    <string name="action_recall">Recall</string>
+    <string name="action_delete_for_me">Delete for me</string>
+    <string name="action_admin_delete">Admin delete</string>
     <string name="action_more_options">More options</string>
     <string name="attachment_picker_title">Add attachment</string>
     <string name="attachment_pick_image">Photo</string>
@@ -227,7 +230,14 @@
     <!-- Message Delete -->
     <string name="dialog_delete_message_title">Delete message?</string>
     <string name="dialog_delete_message_body">Delete this message for everyone?</string>
+    <string name="dialog_recall_message_title">Recall message?</string>
+    <string name="dialog_recall_message_body">Remove this message for everyone?</string>
+    <string name="dialog_delete_for_me_title">Delete for me?</string>
+    <string name="dialog_delete_for_me_body">This message will be hidden on this device only.</string>
+    <string name="dialog_admin_delete_title">Remove message?</string>
+    <string name="dialog_admin_delete_body">As a group admin, remove this message for everyone?</string>
     <string name="message_deleted">This message was deleted</string>
+    <string name="recall_window_expired">The recall window passed. The conversation was refreshed.</string>
 
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Search in conversation…</string>

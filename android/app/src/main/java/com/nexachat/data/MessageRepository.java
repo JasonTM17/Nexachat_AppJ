@@ -56,6 +56,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -224,9 +225,12 @@ public final class MessageRepository {
      * pending rows trail in FIFO order so retries return to the bottom.
      */
     public Flowable<List<ChatMessage>> messagesFlow(String conversationId) {
-        return Flowable.combineLatest(messageDao.messagesForConversation(conversationId),
-                outboxDao.pendingOrdered(), reactionDao.reactionsForConversation(conversationId),
-                (messages, pending, reactions) -> new MessageSnapshot(messages, pending, reactions))
+        return Flowable.combineLatest(
+                Flowable.combineLatest(messageDao.messagesForConversation(conversationId),
+                        outboxDao.pendingOrdered(), reactionDao.reactionsForConversation(conversationId),
+                        MessageSnapshot::new),
+                tokenStore.observeLocallyHiddenMessageIds(),
+                (snapshot, hiddenIds) -> snapshot.withHiddenIds(hiddenIds))
                 .concatMapSingle(snapshot -> currentUserId().map(Optional::of)
                         .defaultIfEmpty(Optional.empty()).map(myId -> {
                     Map<String, List<ReactionChip>> chips = new java.util.HashMap<>();
@@ -236,6 +240,7 @@ public final class MessageRepository {
                     }
                     List<ChatMessage> result = new ArrayList<>(snapshot.messages.size() + snapshot.pending.size());
                     for (MessageEntity message : snapshot.messages) {
+                        if (snapshot.hiddenIds.contains(message.getId())) continue;
                         result.add(toChatMessage(message, myId.orElse(null),
                                 chips.getOrDefault(message.getId(), Collections.emptyList())));
                     }
@@ -250,15 +255,18 @@ public final class MessageRepository {
      * history still appear as id-only stubs so the banner count matches server state.
      */
     public Flowable<List<ChatMessage>> pinsFlow(String conversationId) {
-        return Flowable.combineLatest(pinDao.pinnedFor(conversationId),
-                messageDao.messagesForConversation(conversationId),
-                (pins, messages) -> new PinSnapshot(pins, messages))
+        return Flowable.combineLatest(
+                Flowable.combineLatest(pinDao.pinnedFor(conversationId),
+                        messageDao.messagesForConversation(conversationId), PinSnapshot::new),
+                tokenStore.observeLocallyHiddenMessageIds(),
+                (snapshot, hiddenIds) -> snapshot.withHiddenIds(hiddenIds))
                 .concatMapSingle(snapshot -> currentUserId().map(Optional::of)
                         .defaultIfEmpty(Optional.empty()).map(myId -> {
                     Map<String, MessageEntity> byId = new java.util.HashMap<>();
                     for (MessageEntity message : snapshot.messages) byId.put(message.getId(), message);
                     List<ChatMessage> result = new ArrayList<>(snapshot.pins.size());
                     for (PinnedMessageEntity pin : snapshot.pins) {
+                        if (snapshot.hiddenIds.contains(pin.getMessageId())) continue;
                         MessageEntity stored = byId.get(pin.getMessageId());
                         result.add(stored == null ? pinStub(pin) : toChatMessage(stored, myId.orElse(null),
                                 Collections.emptyList()));
@@ -287,6 +295,11 @@ public final class MessageRepository {
     public void closeConversation(String conversationId) {
         if (Objects.equals(activeConversation.get(), conversationId)) activeConversation.set(null);
         session.unwatchConversation(conversationId);
+    }
+
+    /** Hides a message on this signed-in device without changing server history. */
+    public Completable hideMessageForMe(String messageId) {
+        return tokenStore.hideMessageForMe(messageId).subscribeOn(Schedulers.io());
     }
 
     public Single<Result<MessagePageDto>> refreshHistory(String conversationId) {
@@ -506,9 +519,10 @@ public final class MessageRepository {
     }
 
     /**
-     * Deletes a message for everyone. The optimistic tombstone clears content,
+     * Requests server-authorized deletion for everyone. The optimistic tombstone clears content,
      * attachments, reactions, and pins; a failed request restores the prior
-     * state only if no newer update replaced it. A concurrent delete event wins.
+     * state only if no newer update replaced it. The server checks author or
+     * current group-admin permission. A concurrent delete event wins.
      */
     public Single<Result<Unit>> deleteMessage(String conversationId, String messageId) {
         return Single.defer(() -> {
@@ -519,37 +533,36 @@ public final class MessageRepository {
                 .defaultIfEmpty(Optional.empty()).flatMap(beforeOpt -> {
                     if (beforeOpt.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_MESSAGE_NOT_FOUND)));
                     MessageEntity before = beforeOpt.get();
-                    return isMine(before.getSenderId()).flatMap(mine -> {
-                        if (!mine) return Single.just(Result.failure(new ApiError.Unknown(ERROR_NOT_MESSAGE_AUTHOR)));
-                        if (before.getDeletedAtEpochMs() != null) return Single.just(new Result.Success<>(Unit.INSTANCE));
-                        return reactionDao.forMessage(messageId).flatMap(reactions ->
-                                pinDao.find(conversationId, messageId).map(Optional::of)
-                                        .defaultIfEmpty(Optional.empty()).flatMap(pinOpt ->
-                                                isLastMessage(before).flatMap(wasLast -> {
-                                                    MessageEntity optimistic = copyMessage(before, "", null,
-                                                            before.getEditedAtEpochMs(), System.currentTimeMillis(),
-                                                            before.getReplyToSnippet());
-                                                    DeleteRollback state = new DeleteRollback(before, optimistic,
-                                                            reactions, pinOpt.orElse(null), wasLast);
-                                                    rollbackRef.set(state);
-                                                    Completable prepare = messageDao.update(optimistic)
-                                                            .andThen(reactionDao.deleteForMessage(messageId))
-                                                            .andThen(pinDao.delete(conversationId, messageId));
-                                                    if (wasLast) prepare = prepare.andThen(
-                                                            conversationDao.markLastMessageDeleted(conversationId));
-                                                    return prepare.andThen(call(messageApi.deleteMessage(conversationId, messageId)))
-                                                            .flatMap(result -> {
-                                                                if (result instanceof Result.Success<?>) {
-                                                                    return messageDao.clearReplySnippets(messageId)
-                                                                            .andThen(Single.just(new Result.Success<>(Unit.INSTANCE)));
-                                                                }
-                                                                return (confirmedDeleteIds.contains(messageId)
-                                                                        ? Completable.complete()
-                                                                        : rollbackDeleteIfUnchanged(conversationId, state))
-                                                                        .andThen(Single.just(Result.cast(result)));
-                                                            });
-                                                })));
-                    });
+                    if (before.getDeletedAtEpochMs() != null) {
+                        return Single.just(new Result.Success<>(Unit.INSTANCE));
+                    }
+                    return reactionDao.forMessage(messageId).flatMap(reactions ->
+                            pinDao.find(conversationId, messageId).map(Optional::of)
+                                    .defaultIfEmpty(Optional.empty()).flatMap(pinOpt ->
+                                            isLastMessage(before).flatMap(wasLast -> {
+                                                MessageEntity optimistic = copyMessage(before, "", null,
+                                                        before.getEditedAtEpochMs(), System.currentTimeMillis(),
+                                                        before.getReplyToSnippet());
+                                                DeleteRollback state = new DeleteRollback(before, optimistic,
+                                                        reactions, pinOpt.orElse(null), wasLast);
+                                                rollbackRef.set(state);
+                                                Completable prepare = messageDao.update(optimistic)
+                                                        .andThen(reactionDao.deleteForMessage(messageId))
+                                                        .andThen(pinDao.delete(conversationId, messageId));
+                                                if (wasLast) prepare = prepare.andThen(
+                                                        conversationDao.markLastMessageDeleted(conversationId));
+                                                return prepare.andThen(call(messageApi.deleteMessage(conversationId, messageId)))
+                                                        .flatMap(result -> {
+                                                            if (result instanceof Result.Success<?>) {
+                                                                return messageDao.clearReplySnippets(messageId)
+                                                                        .andThen(Single.just(new Result.Success<>(Unit.INSTANCE)));
+                                                            }
+                                                            return (confirmedDeleteIds.contains(messageId)
+                                                                    ? Completable.complete()
+                                                                    : rollbackDeleteIfUnchanged(conversationId, state))
+                                                                    .andThen(Single.just(Result.cast(result)));
+                                                        });
+                                            })));
                 });
         return operation.onErrorResumeNext(error -> {
                     DeleteRollback state = rollbackRef.get();
@@ -632,12 +645,17 @@ public final class MessageRepository {
                     if (!(result instanceof Result.Success<?> success)) return Single.just(Result.cast(result));
                     MessagePageDto page = (MessagePageDto) success.getValue();
                     return storeHistoryItems(conversationId, page.getItems())
-                            .andThen(currentUserId().map(Optional::of).defaultIfEmpty(Optional.empty()))
-                            .<Result<MessageSearchResult>>map(myIdOpt -> {
+                            .andThen(tokenStore.observeLocallyHiddenMessageIds()
+                                    .first(Collections.emptySet()))
+                            .flatMap(hiddenIds -> currentUserId().map(Optional::of)
+                                    .defaultIfEmpty(Optional.empty())
+                                    .toFlowable()
+                                    .firstOrError()
+                                    .<Result<MessageSearchResult>>map(myIdOpt -> {
                                 List<ChatMessage> items = new ArrayList<>();
                                 for (MessageDto dto : page.getItems()) {
                                     MessageEntity entity = toEntity(dto, conversationId);
-                                    if (entity == null) continue;
+                                    if (entity == null || hiddenIds.contains(entity.getId())) continue;
                                     List<ReactionChip> chips = new ArrayList<>();
                                     if (dto.getReactions() != null) {
                                         for (ReactionSummaryDto summary : dto.getReactions()) {
@@ -650,7 +668,7 @@ public final class MessageRepository {
                                 }
                                 return new Result.Success<>(new MessageSearchResult(items,
                                         page.getHasMore(), page.getNextBeforeSeq()));
-                            });
+                            }));
                 }).subscribeOn(Schedulers.io());
     }
 
@@ -1710,16 +1728,32 @@ public final class MessageRepository {
         final List<MessageEntity> messages;
         final List<OutboxEntity> pending;
         final List<MessageReactionEntity> reactions;
+        final Set<String> hiddenIds;
         MessageSnapshot(List<MessageEntity> messages, List<OutboxEntity> pending,
                 List<MessageReactionEntity> reactions) {
+            this(messages, pending, reactions, Collections.emptySet());
+        }
+        MessageSnapshot(List<MessageEntity> messages, List<OutboxEntity> pending,
+                List<MessageReactionEntity> reactions, Set<String> hiddenIds) {
             this.messages = messages; this.pending = pending; this.reactions = reactions;
+            this.hiddenIds = hiddenIds;
+        }
+        MessageSnapshot withHiddenIds(Set<String> hiddenIds) {
+            return new MessageSnapshot(messages, pending, reactions, hiddenIds);
         }
     }
     private static final class PinSnapshot {
         final List<PinnedMessageEntity> pins;
         final List<MessageEntity> messages;
+        final Set<String> hiddenIds;
         PinSnapshot(List<PinnedMessageEntity> pins, List<MessageEntity> messages) {
-            this.pins = pins; this.messages = messages;
+            this(pins, messages, Collections.emptySet());
+        }
+        PinSnapshot(List<PinnedMessageEntity> pins, List<MessageEntity> messages, Set<String> hiddenIds) {
+            this.pins = pins; this.messages = messages; this.hiddenIds = hiddenIds;
+        }
+        PinSnapshot withHiddenIds(Set<String> hiddenIds) {
+            return new PinSnapshot(pins, messages, hiddenIds);
         }
     }
     private static final class PinsBody {

@@ -13,6 +13,8 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.ui.ForwardFilter;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
 import com.nexachat.data.AttachmentUploadEvent;
 import com.nexachat.data.ChatMessage;
@@ -67,6 +69,7 @@ public final class ChatViewModel extends ViewModel {
     public static final long SEARCH_DEBOUNCE_MS = 300L;
     public static final int SEARCH_PAGE_SIZE = MessageApi.DEFAULT_SEARCH_LIMIT;
     public static final String ERROR_MESSAGE_GONE = "MESSAGE_NOT_FOUND";
+    public static final String ERROR_RECALL_WINDOW_EXPIRED = "RECALL_WINDOW_EXPIRED";
     private static final String KEY_INPUT = "chat_input";
     private static final String KEY_MENTIONS = "chat_mentions";
     private static final String KEY_MENTION_ALL_OFFSET = "chat_mention_all_offset";
@@ -78,6 +81,8 @@ public final class ChatViewModel extends ViewModel {
     private final ConversationRepository conversationRepository;
     private final AttachmentRepository attachmentRepository;
     private final RealtimeSession session;
+    private final MutableLiveData<RecallWindowConfig> recallWindowConfig =
+            new MutableLiveData<>(RecallWindowConfig.DEFAULT);
     @Nullable private final SettingsRepository settingsRepository;
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<AiOptOutState> aiOptOutState =
@@ -107,6 +112,7 @@ public final class ChatViewModel extends ViewModel {
             ConversationRepository conversationRepository,
             AttachmentRepository attachmentRepository,
             RealtimeSession session,
+            TokenStore tokenStore,
             @Nullable SettingsRepository settingsRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
@@ -115,6 +121,12 @@ public final class ChatViewModel extends ViewModel {
         this.attachmentRepository = Objects.requireNonNull(
                 attachmentRepository, "attachmentRepository");
         this.session = Objects.requireNonNull(session, "session");
+        if (tokenStore != null) {
+            disposables.add(tokenStore.observeRecallWindowConfig()
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(recallWindowConfig::setValue, ignored -> {}));
+        }
         this.settingsRepository = settingsRepository;
         String savedConversationId = savedStateHandle.get("conversationId");
         this.conversationId = savedConversationId == null ? "" : savedConversationId;
@@ -133,11 +145,26 @@ public final class ChatViewModel extends ViewModel {
             AttachmentRepository attachmentRepository,
             RealtimeSession session) {
         this(savedStateHandle, messageRepository, conversationRepository,
-                attachmentRepository, session, null);
+                attachmentRepository, session, null, null);
+    }
+
+    public ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore) {
+        this(savedStateHandle, messageRepository, conversationRepository,
+                attachmentRepository, session, tokenStore, null);
     }
 
     public LiveData<UiState> getUiState() {
         return mutableUiState;
+    }
+
+    public LiveData<RecallWindowConfig> getRecallWindowConfig() {
+        return recallWindowConfig;
     }
 
     /** Live per-conversation AI opt-out state used by the settings dialog. */
@@ -533,9 +560,26 @@ public final class ChatViewModel extends ViewModel {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(result -> {
                     if (result instanceof Result.Failure<?> failure) {
-                        updateUiState(state -> state.withError(failure.getError()));
+                        if (failure.getError() instanceof ApiError.Unknown unknown
+                                && ERROR_RECALL_WINDOW_EXPIRED.equals(unknown.getCode())) {
+                            updateUiState(state -> state.withError(
+                                    new ApiError.Unknown(ERROR_RECALL_WINDOW_EXPIRED)));
+                            disposables.add(messageRepository.refreshHistory(conversationId)
+                                    .subscribeOn(Schedulers.io())
+                                    .observeOn(AndroidSchedulers.mainThread())
+                                    .subscribe(ignored -> {}, this::surfaceStreamFailure));
+                        } else {
+                            updateUiState(state -> state.withError(failure.getError()));
+                        }
                     }
                 }, this::surfaceStreamFailure));
+    }
+
+    public void deleteMessageForMe(String messageId) {
+        disposables.add(messageRepository.hideMessageForMe(messageId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(() -> {}, this::surfaceStreamFailure));
     }
 
     public void forwardMessage(String messageId, String targetConversationId) {

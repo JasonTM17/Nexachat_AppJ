@@ -59,6 +59,7 @@ class AuthFlowIT {
                 () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"));
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
+        registry.add("nexachat.message.recall-window", () -> "PT48H");
     }
 
     private static String env(String name, String fallback) {
@@ -105,6 +106,8 @@ class AuthFlowIT {
                 .andExpect(jsonPath("$.accessToken").isString())
                 .andExpect(jsonPath("$.accessTokenExpiresIn").isNumber())
                 .andExpect(jsonPath("$.refreshToken").isString())
+                .andExpect(jsonPath("$.recallWindowSeconds").value(172800))
+                .andExpect(jsonPath("$.groupAdminMayRecallAfterWindow").value(true))
                 .andExpect(jsonPath("$.user.id").isString())
                 .andExpect(jsonPath("$.user.phone").value(phone))
                 .andExpect(jsonPath("$.user.displayName").value("IT User"))
@@ -118,12 +121,16 @@ class AuthFlowIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isString())
                 .andExpect(jsonPath("$.refreshToken").isString())
+                .andExpect(jsonPath("$.recallWindowSeconds").value(172800))
+                .andExpect(jsonPath("$.groupAdminMayRecallAfterWindow").value(true))
                 .andExpect(jsonPath("$.user.id").value(userId.toString()));
 
         // 3. Rotate rt1 → 200 and a NEW refresh token (rt2 != rt1).
         MvcResult refreshed = postJson("/api/v1/auth/refresh", Map.of("refreshToken", rt1))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isString())
+                .andExpect(jsonPath("$.recallWindowSeconds").value(172800))
+                .andExpect(jsonPath("$.groupAdminMayRecallAfterWindow").value(true))
                 .andExpect(jsonPath("$.refreshToken").isString())
                 .andReturn();
         String rt2 = objectMapper.readTree(refreshed.getResponse().getContentAsString())

@@ -258,11 +258,13 @@ JSON `null` values.
   },
   "accessToken": "eyJhbGciOi...",
   "accessTokenExpiresIn": 900,
-  "refreshToken": "d3f1... (opaque, DB-backed)"
+  "refreshToken": "d3f1... (opaque, DB-backed)",
+  "recallWindowSeconds": 86400,
+  "groupAdminMayRecallAfterWindow": true
 }
 ```
 
-`AuthResponse` is `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken}`.
+`AuthResponse` is `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`. The last two fields are additive on register, login, and refresh responses. `recallWindowSeconds` reports the effective `nexachat.message.recall-window` setting (default 86400); `groupAdminMayRecallAfterWindow` reports whether current group admins may moderate messages after that window.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`; `ContactResponse` adds
 `contactUserId`, `aliasName`, `avatarUrl` and `createdAt`.
 
@@ -338,7 +340,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 |
 
-`AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken}`.
+`AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: register and
 login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone).
 
@@ -372,11 +374,16 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 Author message recall uses the server-side `nexachat.message.recall-window`
 setting, defaulting to 24 hours and bounded from 1 minute through 7 days
 (`PT1M`–`P7D`; the boundary is inclusive, so a recall exactly at
-`createdAt + recallWindow` still succeeds). The effective setting is not
-exposed in API responses; clients should use the documented 24-hour default
-when deciding whether to show the recall action. A current group admin may
-recall any group message regardless of age — the window applies to the author
-only. Recalling an already-recalled message is a `204` no-op.
+`createdAt + recallWindow` still succeeds). The effective seconds and
+`groupAdminMayRecallAfterWindow` policy are returned in register, login, and
+refresh `AuthResponse` payloads; `recallWindowSeconds` reports the configured
+window so clients can hide unavailable actions without assuming the default.
+A current group admin may recall any group message regardless of age — the
+window applies to the author only. Recalling an already-recalled message is a
+`204` no-op. Android uses a local "Delete for me" action after an author's
+window expires; this hides the message from that signed-in device without
+sending the server recall request. A group admin's "Admin delete" action still
+uses the server-authorized message DELETE.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|

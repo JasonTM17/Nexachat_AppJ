@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
 import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Completable;
@@ -126,7 +127,8 @@ public final class TokenAuthenticatorTest {
         AtomicReference<Tokens> value = new AtomicReference<>(initial);
         when(store.readTokens()).thenAnswer(ignored -> Maybe.defer(() ->
                 value.get() == null ? Maybe.empty() : Maybe.just(value.get())));
-        when(store.saveTokens(anyString(), anyLong(), anyString())).thenAnswer(invocation -> {
+        when(store.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
+                .thenAnswer(invocation -> {
             value.set(new Tokens(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
             return Completable.complete();
         });

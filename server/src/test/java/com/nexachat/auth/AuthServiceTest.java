@@ -7,6 +7,7 @@ import com.nexachat.auth.dto.RefreshRequest;
 import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.message.MessageRecallProperties;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
@@ -67,7 +68,8 @@ class AuthServiceTest {
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         authService = new AuthService(userRepository, phoneService, passwordEncoder, jwtService,
-                tokenService, accessTokenRevocationService, rateLimitService);
+                tokenService, accessTokenRevocationService, rateLimitService,
+                new MessageRecallProperties());
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
@@ -91,6 +93,8 @@ class AuthServiceTest {
         assertThat(response.accessToken()).isEqualTo("access-jwt");
         assertThat(response.accessTokenExpiresIn()).isEqualTo(900);
         assertThat(response.refreshToken()).isEqualTo("refresh-opaque");
+        assertThat(response.recallWindowSeconds()).isEqualTo(86_400);
+        assertThat(response.groupAdminMayRecallAfterWindow()).isTrue();
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(saved.capture());
