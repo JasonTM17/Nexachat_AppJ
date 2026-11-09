@@ -125,6 +125,8 @@ class ReminderSchedulerIT {
             assertThat(push.data().get("type")).isEqualTo("REMINDER");
             assertThat(push.data().get("conversationId")).isEqualTo(conversationId.toString());
             assertThat(push.data().get("repeat")).isEqualTo("NONE");
+            assertThat(push.data()).doesNotContainKey("title");
+            assertThat(push.data()).doesNotContainKey("remindAt");
         });
         assertThat(pushes.stream().map(MockFcmGateway.SentPush::token).distinct().count())
                 .isEqualTo(3);

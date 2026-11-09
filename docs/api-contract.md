@@ -739,13 +739,12 @@ reminder.
   "type": "REMINDER",
   "reminderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   "conversationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  "title": "Họp team",
-  "remindAt": "2026-12-01T02:00:00Z",
   "repeat": "WEEKLY"
 }
 ```
 
-No message content travels through FCM. The reminder board has no WebSocket
+No reminder title, schedule, or chat content travels through FCM—only pointer
+ids (plus `repeat` for client routing). The reminder board has no WebSocket
 event; clients refresh `GET /conversations/{id}/reminders` when the board opens
 and when a `REMINDER` push arrives. Conversation mute is not part of this
 contract yet, so pushes are not filtered per member.
