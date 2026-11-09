@@ -111,15 +111,15 @@ public class DefaultFcmPushService implements FcmPushService {
             fcmGateway.sendDataPush(tokenValue, data, priority, ttlSeconds)
                     .thenAccept(result -> {
                         if (result.success()) {
-                            // Never log the registration token or the message body.
-                            log.info("FCM push accepted (platform {}, label {})",
-                                    token.getPlatform(), token.getDeviceLabel());
+                            // Never log the registration token, message body, or
+                            // user-supplied device label (may contain PII).
+                            log.info("FCM push accepted (platform {})", token.getPlatform());
                         }
                         if (result.unregistered()) {
                             // The registration token is a credential: identify the
-                            // row by its platform and label, never by the token value.
-                            log.warn("FCM token expired/unregistered, removing device token (platform {}, label {})",
-                                    token.getPlatform(), token.getDeviceLabel());
+                            // row by platform only, never by token or device label.
+                            log.warn("FCM token expired/unregistered, removing device token (platform {})",
+                                    token.getPlatform());
                             try {
                                 if (deviceTokenService != null) {
                                     deviceTokenService.unregisterToken(tokenValue);
