@@ -43,6 +43,23 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     @Test
+    public void conversationUpdatedDecodesChangeAndMemberSnapshot() {
+        RealtimeSession session = session(false, null);
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
+        frames.onNext(message("{\"eventType\":\"CONVERSATION_UPDATED\",\"conversationId\":\"c-1\","
+                + "\"payload\":{\"conversationId\":\"c-1\",\"change\":\"MEMBER_REMOVED\","
+                + "\"members\":[{\"userId\":\"u-2\"}]}}"));
+        ChatEvent.ConversationUpdated event =
+                (ChatEvent.ConversationUpdated) observer.awaitCount(1).values().get(0);
+        assertEquals("c-1", event.getConversationId());
+        assertEquals("MEMBER_REMOVED", event.getChange());
+        assertEquals(java.util.List.of("u-2"), event.getMemberIds());
+        assertTrue(event.isRemovalEvent());
+        assertTrue(event.isSelfRemoval("me-1"));
+        assertFalse(event.isSelfRemoval("u-2"));
+    }
+
+    @Test
     public void everyOpenResubscribesPresenceQueue() {
         TokenStore store = tokenStore(true);
         StompClient stomp = stomp();

@@ -73,6 +73,12 @@ public final class TokenRefresher {
                 .map(TokenRefresher::freshToken);
     }
 
+    /** Clears the stored session and drives the global logged-out navigation. */
+    @NonNull
+    public Completable logOut() {
+        return clear().andThen(Completable.fromAction(sessionEvents::emitLoggedOut));
+    }
+
     /** Synchronous bridge for OkHttp's Authenticator thread; never call on main. */
     @NonNull
     public TokenRefreshOutcome refreshBlocking() {

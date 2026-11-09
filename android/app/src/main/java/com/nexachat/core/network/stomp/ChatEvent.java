@@ -167,7 +167,43 @@ public sealed interface ChatEvent
         }
     }
 
-    record ConversationUpdated(@Nullable String conversationId) implements ChatEvent {
+    record ConversationUpdated(
+            @Nullable String conversationId,
+            @Nullable String change,
+            @NonNull List<String> memberIds) implements ChatEvent {
+
+        public ConversationUpdated(@Nullable String conversationId) {
+            this(conversationId, null, List.of());
+        }
+
+        public ConversationUpdated(
+                @Nullable String conversationId, @Nullable String change) {
+            this(conversationId, change, List.of());
+        }
+
+        @Nullable
+        public String getChange() {
+            return change;
+        }
+
+        @NonNull
+        public List<String> getMemberIds() {
+            return memberIds;
+        }
+
+        /** Whether this frame announces that somebody left or was removed. */
+        public boolean isRemovalEvent() {
+            return "MEMBER_REMOVED".equals(change) || "MEMBER_LEFT".equals(change);
+        }
+
+        /**
+         * True only when a removal frame's authoritative member snapshot no
+         * longer contains the current user. Another member leaving leaves the
+         * caller in the snapshot, so the conversation is retained.
+         */
+        public boolean isSelfRemoval(@Nullable String myUserId) {
+            return myUserId != null && isRemovalEvent() && !memberIds.contains(myUserId);
+        }
     }
 
     /** Full reaction summary set; an empty list clears the stored set. */

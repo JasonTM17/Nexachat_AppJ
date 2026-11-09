@@ -141,6 +141,83 @@ public final class RealtimeSessionReArmTest {
         assertEquals(0, connects.get());
     }
 
+    @Test
+    public void authFailureRefreshesOnceAndLogsOutWhenNoFreshTokenArrives() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals("a rejected refresh must stop the reconnect loop", 1, connects.get());
+    }
+
+    @Test
+    public void authFailureRetriesOnceWithARefreshedTokenThenStopsOnASecondRejection() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access"))
+                .thenReturn(Single.just(Optional.of("fresh-access")));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+        scheduler.triggerActions();
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals("refresh is attempted once per auth failure streak", 2, connects.get());
+    }
+
+    @Test
+    public void connectTimeoutTreatedAsAuthSuspectRefreshesAndStopsWhenRefreshFails() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed(StompClient.REASON_CONNECT_TIMEOUT));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals(1, connects.get());
+    }
+
     private static RealtimeSession session(
             TokenStore store,
             StompClient stomp,
