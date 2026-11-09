@@ -72,17 +72,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         })
 class PollFlowTest {
 
-    private static final String SCHEMA = "nexachat_poll_it";
+    private static final String DATABASE = "nexachat_poll_it";
+    private static String adminUrl;
+    private static String dbUser;
+    private static String dbPassword;
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
         String baseUrl = env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test");
-        String user = env("IT_DB_USER", "nexachat");
-        String password = env("IT_DB_PASSWORD", "nexachat");
-        ensureSchema(baseUrl, user, password);
-        registry.add("spring.datasource.url", () -> withSchema(baseUrl));
-        registry.add("spring.datasource.username", () -> user);
-        registry.add("spring.datasource.password", () -> password);
+        dbUser = env("IT_DB_USER", "nexachat");
+        dbPassword = env("IT_DB_PASSWORD", "nexachat");
+        String noQuery = baseUrl.contains("?") ? baseUrl.substring(0, baseUrl.indexOf('?')) : baseUrl;
+        String server = noQuery.substring(0, noQuery.lastIndexOf('/') + 1);
+        adminUrl = server + "postgres";
+        recreateDatabase();
+        // A dedicated database keeps this suite from leaving objects in the
+        // shared test database public schema, which later suites expect empty.
+        registry.add("spring.datasource.url", () -> server + DATABASE);
+        registry.add("spring.datasource.username", () -> dbUser);
+        registry.add("spring.datasource.password", () -> dbPassword);
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
         // The suite exercises many mutations from the same fixture users; keep
         // the production buckets but give the test run headroom.
@@ -91,31 +99,28 @@ class PollFlowTest {
         registry.add("nexachat.rate-limit.polls.manage-per-minute", () -> "1000");
     }
 
-    private static String withSchema(String baseUrl) {
-        if (baseUrl.contains("currentSchema=")) {
-            return baseUrl;
+    private static void recreateDatabase() {
+        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
+                adminUrl, dbUser, dbPassword);
+             java.sql.Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DROP DATABASE IF EXISTS " + DATABASE + " WITH (FORCE)");
+            statement.executeUpdate("CREATE DATABASE " + DATABASE);
+        } catch (java.sql.SQLException ex) {
+            throw new IllegalStateException("Could not prepare the poll test database", ex);
         }
-        // public stays on the search path so database-level extensions installed
-        // by a sibling suite (pg_trgm, unaccent) are visible to V1/V4.
-        return baseUrl + (baseUrl.contains("?") ? "&" : "?")
-                + "currentSchema=" + SCHEMA + ",public";
     }
 
-    private static void ensureSchema(String baseUrl, String user, String password) {
+    @AfterAll
+    static void dropDatabase() {
+        if (adminUrl == null) {
+            return;
+        }
         try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
-                baseUrl, user, password);
+                adminUrl, dbUser, dbPassword);
              java.sql.Statement statement = connection.createStatement()) {
-            // The migrations reference public.unaccent explicitly and use the
-            // public pg_trgm operator class; install them at database level
-            // before the isolated schema is created.
-            statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public");
-            statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public");
-            statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public");
-            statement.executeUpdate("CREATE EXTENSION IF NOT EXISTS btree_gin SCHEMA public");
-            statement.executeUpdate("DROP SCHEMA IF EXISTS " + SCHEMA + " CASCADE");
-            statement.executeUpdate("CREATE SCHEMA " + SCHEMA);
+            statement.executeUpdate("DROP DATABASE IF EXISTS " + DATABASE + " WITH (FORCE)");
         } catch (java.sql.SQLException ex) {
-            throw new IllegalStateException("Could not prepare the poll test schema", ex);
+            // best-effort cleanup; the next run recreates the database
         }
     }
 
@@ -149,11 +154,6 @@ class PollFlowTest {
         bob = registerUser(tag + " Bob");
         carol = registerUser(tag + " Carol");
         dave = registerUser(tag + " Dave");
-    }
-
-    @AfterAll
-    void removeFixtures() {
-        cleanupFixtures();
     }
 
     private void cleanupFixtures() {
