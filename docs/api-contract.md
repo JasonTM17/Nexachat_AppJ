@@ -13,6 +13,7 @@
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
 | [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
+| [Reminders](#reminders--apiv1conversationsidreminders) | `/api/v1/conversations/{id}/reminders` | Shared "Nhắc hẹn" board, repeat rules, durable FCM fan-out |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
 | [Files](#files--apiv1files) | `/api/v1/files` | Streaming media download with HTTP Range support (`bytes=a-b`) |
@@ -120,6 +121,10 @@
   client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Keys expire after 24
   hours. Absent header = no replay protection (the toggle endpoint still
   toggles on every call).
+- `POST /conversations/{id}/reminders` uses the same header and cache: a
+  replay returns `200` with the original reminder, while the first create
+  returns `201`. A key reused for a different reminder payload is
+  `409 IDEMPOTENCY_KEY_REUSED`.
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
   pair. Replaying an already-rotated refresh token returns
   `401 TOKEN_REUSED` and revokes the whole session family.
@@ -306,6 +311,83 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+
+## Reminders — `/api/v1/conversations/{id}/reminders`
+
+The shared "Nhắc hẹn" board for a DIRECT or GROUP conversation: any member
+creates a reminder, every member sees it, and its creator or a GROUP admin
+edits/deletes it. A durable database-backed scheduler fires at `remindAt`,
+pushes an FCM data message to every current member, then advances a repeating
+reminder.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /conversations/{conversationId}/reminders` | Bearer member | — | `200` `ReminderResponse[]`, `remindAt` ascending (future active rows only) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/reminders` | Bearer member | `{title, remindAt, repeat?}` — title trimmed 1–200 chars; `remindAt` future and ≤365 days ahead; `repeat` `NONE\|DAILY\|WEEKLY\|MONTHLY` (default `NONE`); optional `Idempotency-Key` (UUID) | `201` created / `200` idempotent replay — `ReminderResponse` | `VALIDATION_FAILED` 400 (including the 50-active ceiling) · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `IDEMPOTENCY_KEY_REUSED` 409 · `RATE_LIMITED` 429 (30/min per user) |
+| `PATCH /conversations/{conversationId}/reminders/{reminderId}` | Bearer; creator or GROUP admin | `{title?, remindAt?, repeat?}` — at least one field; each supplied field follows the create rules | `200` `ReminderResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 (GROUP) · `FORBIDDEN` 403 (DIRECT) · `CONVERSATION_NOT_FOUND` 404 · `NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/reminders/{reminderId}` | Bearer; creator or GROUP admin | — | `204` empty | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 (GROUP) · `FORBIDDEN` 403 (DIRECT) · `CONVERSATION_NOT_FOUND` 404 · `NOT_FOUND` 404 |
+
+`ReminderResponse`:
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "conversationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "title": "Họp team",
+  "remindAt": "2026-12-01T02:00:00Z",
+  "repeat": "WEEKLY",
+  "createdBy": "22222222-2222-4222-8222-222222222222",
+  "createdByName": "Binh",
+  "canEdit": true,
+  "createdAt": "2026-11-09T09:00:00Z",
+  "updatedAt": "2026-11-09T09:00:00Z"
+}
+```
+
+- `remindAt` is the next occurrence the server will fire. `repeat` is the
+  rule; `NONE` reminders disappear from the board after firing, while
+  repeating reminders advance to their next future occurrence.
+- `canEdit` is computed for the caller: true for the creator, or for a GROUP
+  admin. A DIRECT non-creator cannot edit; a GROUP plain member cannot edit
+  another member's reminder.
+- Only future, active reminders are listed. A conversation may hold at most
+  50 active reminders; the 51st create is `400 VALIDATION_FAILED` with
+  `details.limit = 50`. Completed one-off rows are excluded from the count and
+  purged after 30 days.
+- An unknown conversation is `404 CONVERSATION_NOT_FOUND`; a non-member is
+  `403 NOT_MEMBER` on every verb. A missing, deleted, or already-fired
+  reminder id is `404 NOT_FOUND`.
+- `POST` accepts an optional `Idempotency-Key` (UUID, 24-hour cache). The first
+  request returns `201`; a replay of the same endpoint and payload returns
+  `200` with the original reminder without creating a second row. Reusing the
+  key with a different payload is `409 IDEMPOTENCY_KEY_REUSED`. A replay
+  returns the original reminder even if its `remindAt` has since passed.
+- Creation is rate-limited per user (30 requests per minute by default);
+  excess requests are `429 RATE_LIMITED` with `details.retryAfterSeconds`.
+- The server scheduler is restart- and multi-instance-safe: it claims due rows
+  with `FOR UPDATE SKIP LOCKED` plus a lease, sends the push, then advances or
+  completes the row under a row lock. A missed repeating occurrence after
+  downtime produces one catch-up push, not one per missed interval. A crash
+  between push acceptance and the advance commit can duplicate a push; the
+  claim lease makes the reminder retry instead of dropping it.
+- At `remindAt` the server sends a data-only FCM push to every current member's
+  registered device tokens (shared device tokens are de-duplicated):
+
+```json
+{
+  "type": "REMINDER",
+  "reminderId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "conversationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "title": "Họp team",
+  "remindAt": "2026-12-01T02:00:00Z",
+  "repeat": "WEEKLY"
+}
+```
+
+No message content travels through FCM. The reminder board has no WebSocket
+event; clients refresh `GET /conversations/{id}/reminders` when the board opens
+and when a `REMINDER` push arrives. Conversation mute is not part of this
+contract yet, so pushes are not filtered per member.
 
 ## Attachments — `/api/v1/attachments`
 
