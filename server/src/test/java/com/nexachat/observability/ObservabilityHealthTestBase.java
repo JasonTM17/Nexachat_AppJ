@@ -13,6 +13,9 @@ import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.reminder.ConversationReminderRepository;
+import com.nexachat.poll.PollOptionRepository;
+import com.nexachat.poll.PollRepository;
+import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
@@ -70,6 +73,15 @@ abstract class ObservabilityHealthTestBase {
 
     @MockitoBean
     protected ArchiveRepository archiveRepository;
+
+    @MockitoBean
+    protected PollRepository pollRepository;
+
+    @MockitoBean
+    protected PollOptionRepository pollOptionRepository;
+
+    @MockitoBean
+    protected PollVoteRepository pollVoteRepository;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
