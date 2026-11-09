@@ -72,15 +72,10 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/pinnedBanner" />
 
-    <TextView
+    <com.nexachat.feature.summary.UnreadBannerView
         android:id="@+id/unreadBanner"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSecondaryContainer"
-        android:gravity="center"
-        android:minHeight="48dp"
-        android:padding="@dimen/space_sm"
-        android:textColor="?attr/colorOnSecondaryContainer"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

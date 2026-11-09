@@ -37,7 +37,7 @@
         <TextView android:id="@+id/messageBody" android:layout_width="wrap_content" android:layout_height="wrap_content" android:lineSpacingExtra="2dp" android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="@color/chat_bubble_outgoing_text" android:visibility="visible"/>
         <ImageView android:id="@+id/messageImage" android:layout_width="220dp" android:layout_height="160dp" android:contentDescription="@string/cd_open_attachment" android:scaleType="centerCrop" android:visibility="gone"/>
         <ImageButton android:id="@+id/playButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_open_attachment" android:src="@drawable/ic_play_arrow" android:visibility="gone"/>
-        <TextView android:id="@+id/fileName" android:layout_width="wrap_content" android:layout_height="wrap_content" android:drawableStart="@drawable/ic_description" android:gravity="center_vertical" android:visibility="gone"/>
+        <TextView android:id="@+id/fileName" android:layout_width="wrap_content" android:layout_height="wrap_content" app:drawableStartCompat="@drawable/ic_description" android:gravity="center_vertical" android:visibility="gone"/>
         <TextView android:id="@+id/systemLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" android:visibility="gone"/>
         <include android:id="@+id/bubbleMeta" layout="@layout/include_message_bubble_meta"/>
         <include android:id="@+id/reactionsRow" layout="@layout/include_message_reactions_row"/>

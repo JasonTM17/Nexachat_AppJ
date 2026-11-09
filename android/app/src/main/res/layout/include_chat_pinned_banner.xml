@@ -14,7 +14,7 @@
     <ImageView
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:contentDescription="@string/pinned_title"
+        android:importantForAccessibility="no"
         android:src="@drawable/ic_push_pin"
         app:tint="?attr/colorPrimary" />
 
