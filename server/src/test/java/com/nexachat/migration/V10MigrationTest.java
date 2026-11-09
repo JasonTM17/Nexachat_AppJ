@@ -9,6 +9,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,6 +93,41 @@ class V10MigrationTest {
         }
     }
 
+    @Test
+    void v11LeavesPreexistingUsersWithoutATokenCutoff() throws Exception {
+        String database = scratchDatabase("v10_user_cutoff");
+        createDatabase(database);
+        try {
+            DataSource dataSource = dataSource(database);
+            migrate(dataSource, "10");
+
+            UUID userId;
+            try (Connection connection = dataSource.getConnection();
+                 Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery(
+                         "INSERT INTO users (phone, password_hash, display_name)"
+                                 + " VALUES ('+84900000001', 'x', 'Pre V11 user') RETURNING id")) {
+                result.next();
+                userId = result.getObject(1, UUID.class);
+            }
+
+            migrate(dataSource, null);
+
+            try (Connection connection = dataSource.getConnection();
+                 java.sql.PreparedStatement query = connection.prepareStatement(
+                         "SELECT tokens_valid_after FROM users WHERE id = ?")) {
+                query.setObject(1, userId);
+                try (ResultSet result = query.executeQuery()) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getTimestamp("tokens_valid_after")).isNull();
+                }
+            }
+            validate(dataSource);
+        } finally {
+            dropDatabase(database);
+        }
+    }
+
     // ----------------------------------------------------------------- helpers
 
     private static void migrate(DataSource dataSource, String target) {
@@ -159,14 +195,21 @@ class V10MigrationTest {
     private static DataSource dataSource(String database) {
         SimpleDriverDataSource dataSource = new SimpleDriverDataSource();
         dataSource.setDriver(new org.postgresql.Driver());
-        dataSource.setUrl(serverUrl() + database);
+        dataSource.setUrl(databaseUrl(database));
         dataSource.setUsername(DB_USER);
         dataSource.setPassword(DB_PASSWORD);
         return dataSource;
     }
 
     private static String serverUrl() {
-        return JDBC_URL.substring(0, JDBC_URL.lastIndexOf('/') + 1);
+        String url = JDBC_URL.split("\\?", 2)[0];
+        return url.substring(0, url.lastIndexOf('/') + 1);
+    }
+
+    private static String databaseUrl(String database) {
+        int query = JDBC_URL.indexOf('?');
+        String options = query < 0 ? "" : JDBC_URL.substring(query);
+        return serverUrl() + database + options;
     }
 
     private static void createDatabase(String database) throws SQLException {
@@ -189,6 +232,6 @@ class V10MigrationTest {
         java.util.Properties properties = new java.util.Properties();
         properties.setProperty("user", DB_USER);
         properties.setProperty("password", DB_PASSWORD);
-        return driver.connect(serverUrl() + "postgres", properties);
+        return driver.connect(databaseUrl("postgres"), properties);
     }
 }
