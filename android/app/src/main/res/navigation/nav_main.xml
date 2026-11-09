@@ -12,12 +12,24 @@
     <fragment
         android:id="@+id/loginFragment"
         android:name="com.nexachat.feature.auth.LoginFragment"
-        android:label="@string/action_sign_in" />
+        android:label="@string/action_sign_in">
+        <argument
+            android:name="returnInviteToken"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
 
     <fragment
         android:id="@+id/registerFragment"
         android:name="com.nexachat.feature.auth.RegisterFragment"
-        android:label="@string/action_create_account" />
+        android:label="@string/action_create_account">
+        <argument
+            android:name="returnInviteToken"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
 
     <fragment
         android:id="@+id/inboxFragment"

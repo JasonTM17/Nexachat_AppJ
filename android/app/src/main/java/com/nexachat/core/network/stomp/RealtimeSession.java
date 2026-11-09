@@ -216,6 +216,7 @@ public final class RealtimeSession {
             return;
         }
         synchronized (this) { attemptActive = false; }
+        wantedSubscriptions.clear();
         authRecoveryAttempts = 0;
         connection.set(Disposable.empty());
         parkedWake.set(Disposable.empty());

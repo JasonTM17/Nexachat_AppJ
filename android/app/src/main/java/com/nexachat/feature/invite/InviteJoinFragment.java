@@ -36,12 +36,19 @@ public final class InviteJoinFragment extends Fragment {
         binding.joinButton.setOnClickListener(ignored -> viewModel.join());
         binding.checkStatusButton.setOnClickListener(ignored -> viewModel.refreshStatus());
         binding.retryButton.setOnClickListener(ignored -> viewModel.refresh());
-        binding.signInButton.setOnClickListener(
-                ignored -> NavHostFragment.findNavController(this).navigate(R.id.action_global_login));
+        binding.signInButton.setOnClickListener(ignored -> {
+            Bundle args = new Bundle();
+            args.putString("returnInviteToken", viewModel.inviteTokenForSignIn());
+            NavHostFragment.findNavController(this).navigate(R.id.action_global_login, args);
+        });
         binding.openChatButton.setOnClickListener(ignored -> openChat());
         viewModel.getState().observe(getViewLifecycleOwner(), this::render);
 
-        String rawUrl = requireActivity().getIntent().getDataString();
+        String tokenArgument = getArguments() == null
+                ? null : getArguments().getString("token");
+        String rawUrl = tokenArgument == null
+                ? requireActivity().getIntent().getDataString()
+                : InviteLinkParser.shareUrl(tokenArgument, null).orElse(null);
         viewModel.open(rawUrl);
     }
 

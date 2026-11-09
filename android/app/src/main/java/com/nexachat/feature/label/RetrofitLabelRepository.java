@@ -6,6 +6,7 @@ import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.data.ConversationRepository;
+import com.nexachat.data.SessionOperationTracker;
 import com.nexachat.core.network.ApiResult;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
@@ -22,54 +23,66 @@ public final class RetrofitLabelRepository implements LabelRepository {
     private final LabelApi api;
     private final ConversationDao conversationDao;
     private final ConversationRepository conversationRepository;
+    private final SessionOperationTracker operationTracker;
 
     @Inject
     public RetrofitLabelRepository(
             LabelApi api,
             ConversationDao conversationDao,
-            ConversationRepository conversationRepository) {
+            ConversationRepository conversationRepository,
+            SessionOperationTracker operationTracker) {
         this.api = api;
         this.conversationDao = conversationDao;
         this.conversationRepository = conversationRepository;
+        this.operationTracker = operationTracker;
+    }
+
+    /** Preserves the local repository test constructor. */
+    public RetrofitLabelRepository(
+            LabelApi api,
+            ConversationDao conversationDao,
+            ConversationRepository conversationRepository) {
+        this(api, conversationDao, conversationRepository, new SessionOperationTracker());
     }
 
     @Override
     public Single<List<ConversationLabel>> listLabels() {
-        return requiredBody(api.listLabels()).map(rows -> {
+        return operationTracker.track(requiredBody(api.listLabels()).map(rows -> {
             List<ConversationLabel> labels = new ArrayList<>(rows.size());
             for (LabelDto row : rows) labels.add(row.toLabel());
             return List.copyOf(labels);
-        });
+        }));
     }
 
     @Override
     public Single<ConversationLabel> createLabel(String name, LabelColor color) {
-        return requiredBody(api.createLabel(new LabelWriteRequest(name, color.getId())))
-                .map(LabelDto::toLabel);
+        return operationTracker.track(requiredBody(
+                api.createLabel(new LabelWriteRequest(name, color.getId())))
+                .map(LabelDto::toLabel));
     }
 
     @Override
     public Single<ConversationLabel> updateLabel(String labelId, String name, LabelColor color) {
-        return requiredBody(api.updateLabel(
+        return operationTracker.track(requiredBody(api.updateLabel(
                         labelId, new LabelWriteRequest(name, color.getId())))
-                .map(LabelDto::toLabel);
+                .map(LabelDto::toLabel));
     }
 
     @Override public Completable deleteLabel(String labelId) {
-        return emptyBody(api.deleteLabel(labelId));
+        return operationTracker.track(emptyBody(api.deleteLabel(labelId)));
     }
 
     @Override public Completable assignLabel(String conversationId, String labelId) {
-        return emptyBody(api.assignLabel(conversationId, labelId));
+        return operationTracker.track(emptyBody(api.assignLabel(conversationId, labelId)));
     }
 
     @Override public Completable unassignLabel(String conversationId, String labelId) {
-        return emptyBody(api.unassignLabel(conversationId, labelId));
+        return operationTracker.track(emptyBody(api.unassignLabel(conversationId, labelId)));
     }
 
     @Override
     public Single<Set<String>> filterConversationIds(String labelId) {
-        return conversationRepository.refreshInboxByLabel(labelId).flatMap(result -> {
+        return operationTracker.track(conversationRepository.refreshInboxByLabel(labelId).flatMap(result -> {
             if (result instanceof Result.Success<?> success) {
                 @SuppressWarnings("unchecked")
                 Set<String> ids = (Set<String>) success.getValue();
@@ -90,7 +103,7 @@ public final class RetrofitLabelRepository implements LabelRepository {
                 default -> 0;
             };
             return Single.error(new LabelApiException(status, code));
-        });
+        }));
     }
 
     @Override
@@ -102,12 +115,13 @@ public final class RetrofitLabelRepository implements LabelRepository {
 
     @Override
     public Completable cacheLabelIds(String conversationId, List<String> labelIds) {
-        return conversationDao.updateLabelIds(conversationId, LabelRules.toCsv(labelIds));
+        return operationTracker.track(
+                conversationDao.updateLabelIds(conversationId, LabelRules.toCsv(labelIds)));
     }
 
     @Override
     public Completable removeLabelFromCache(String labelId) {
-        return conversationDao.removeLabelIdFromAll(labelId);
+        return operationTracker.track(conversationDao.removeLabelIdFromAll(labelId));
     }
 
     private <T> Single<T> requiredBody(@NonNull Call<T> call) {

@@ -29,6 +29,11 @@ public final class InviteJoinViewModel extends ViewModel {
         return mutableState;
     }
 
+    @Nullable
+    String inviteTokenForSignIn() {
+        return token;
+    }
+
     public void open(@Nullable String rawUrl) {
         Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(rawUrl);
         if (parsed.isEmpty()) {

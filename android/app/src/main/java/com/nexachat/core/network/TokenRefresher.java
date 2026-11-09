@@ -7,6 +7,7 @@ import com.nexachat.core.network.dto.RefreshRequest;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
+import com.nexachat.data.AccountDataCleaner;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
@@ -27,6 +28,7 @@ public final class TokenRefresher {
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     private final Provider<AuthApi> authApi;
+    @Nullable private final AccountDataCleaner accountDataCleaner;
     private final Object lock = new Object();
     private final AtomicLong generation = new AtomicLong();
     @Nullable private Single<TokenRefreshOutcome> inFlight;
@@ -35,10 +37,23 @@ public final class TokenRefresher {
     public TokenRefresher(
             @NonNull TokenStore tokenStore,
             @NonNull SessionEvents sessionEvents,
+            @NonNull Provider<AuthApi> authApi,
+            @NonNull AccountDataCleaner accountDataCleaner) {
+        this.tokenStore = tokenStore;
+        this.sessionEvents = sessionEvents;
+        this.authApi = authApi;
+        this.accountDataCleaner = accountDataCleaner;
+    }
+
+    /** Retained for deterministic tests that do not construct a Room database. */
+    public TokenRefresher(
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
             @NonNull Provider<AuthApi> authApi) {
         this.tokenStore = tokenStore;
         this.sessionEvents = sessionEvents;
         this.authApi = authApi;
+        this.accountDataCleaner = null;
     }
 
     /** Forced rotation used when restoring a session at startup. */
@@ -77,7 +92,7 @@ public final class TokenRefresher {
     /** Clears the stored session and drives the global logged-out navigation. */
     @NonNull
     public Completable logOut() {
-        return clear().andThen(Completable.fromAction(sessionEvents::emitLoggedOut));
+        return clear();
     }
 
     /** Synchronous bridge for OkHttp's Authenticator thread; never call on main. */
@@ -100,16 +115,19 @@ public final class TokenRefresher {
         }
     }
 
-    /** Clears tokens and invalidates any refresh that began in an earlier session. */
+    /** Clears all account data and tokens, then publishes logout as one boundary. */
     @NonNull
     public Completable clear() {
         return Completable.fromAction(() -> {
             synchronized (lock) {
                 generation.incrementAndGet();
                 inFlight = null;
-                tokenStore.clear().blockingAwait();
             }
-        }).subscribeOn(Schedulers.io());
+        }).andThen(accountDataCleaner == null
+                ? tokenStore.clear().andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
+                : accountDataCleaner.clearForLogout(tokenStore.clear()
+                        .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
+                .subscribeOn(Schedulers.io());
     }
 
     private Single<TokenRefreshOutcome> singleFlight(
@@ -159,7 +177,7 @@ public final class TokenRefresher {
                             : TokenRefreshOutcome.NoRefreshToken.INSTANCE));
         }
         if (TokenRefreshRules.isDefinitiveRejection(response.code())) {
-            return clear().andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
+            return clear()
                     .andThen(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
         }
         return Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE);

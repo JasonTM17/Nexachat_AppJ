@@ -117,6 +117,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final ConversationSettingsApi settingsApi;
     private final ConversationDao conversationDao;
     private final AppDatabase appDatabase;
+    private final SessionOperationTracker operationTracker;
     private final PresenceRepository presenceRepository;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
@@ -158,12 +159,14 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull TokenStore tokenStore,
             @NonNull Moshi moshi,
             @ApplicationContext @NonNull Context context,
-            @NonNull AppDatabase appDatabase) {
+            @NonNull AppDatabase appDatabase,
+            @NonNull SessionOperationTracker operationTracker) {
         this.messageApi = messageApi;
         this.groupApi = groupApi;
         this.settingsApi = settingsApi;
         this.conversationDao = conversationDao;
         this.appDatabase = appDatabase;
+        this.operationTracker = operationTracker;
         this.presenceRepository = presenceRepository;
         this.session = session;
         this.tokenStore = tokenStore;
@@ -173,6 +176,22 @@ public final class ConversationRepository implements AutoCloseable {
         this.listAdapter = moshi.adapter(Types.newParameterizedType(
                 List.class, ConversationInboxDto.class));
         watchPushTriggers();
+    }
+
+    /** Retained for local repository tests without a shared account operation tracker. */
+    public ConversationRepository(
+            @NonNull MessageApi messageApi,
+            @NonNull GroupApi groupApi,
+            @NonNull ConversationSettingsApi settingsApi,
+            @NonNull ConversationDao conversationDao,
+            @NonNull PresenceRepository presenceRepository,
+            @NonNull RealtimeSession session,
+            @NonNull TokenStore tokenStore,
+            @NonNull Moshi moshi,
+            @ApplicationContext @NonNull Context context,
+            @NonNull AppDatabase appDatabase) {
+        this(messageApi, groupApi, settingsApi, conversationDao, presenceRepository,
+                session, tokenStore, moshi, context, appDatabase, new SessionOperationTracker());
     }
 
     /**
@@ -257,10 +276,10 @@ public final class ConversationRepository implements AutoCloseable {
             inboxWalkIds.clear();
             inFlightNextInboxPage = null;
         }
-        return currentUserIdOptional()
+        return operationTracker.track(currentUserIdOptional()
                 .flatMap(myId -> fetchAndPersistInboxPage(
                         generation, INBOX_PAGE_SIZE, null, myId.orElse(null), true, archived))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -269,7 +288,7 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Set<String>>> refreshInboxByLabel(@NonNull String labelId) {
-        return currentUserIdOptional()
+        return operationTracker.track(currentUserIdOptional()
                 .flatMap(myId -> fetchInboxItems(null, null, false, labelId).flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<Set<String>>>just(Result.cast(result));
@@ -282,7 +301,7 @@ public final class ConversationRepository implements AutoCloseable {
                             .andThen(Single.fromCallable(() ->
                                     new Result.Success<Set<String>>(Set.copyOf(ids))));
                 }))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -301,7 +320,7 @@ public final class ConversationRepository implements AutoCloseable {
             final String cursor = nextInboxCursor;
             final boolean archived = inboxArchivedMode;
             AtomicReference<Single<Result<Boolean>>> sharedRef = new AtomicReference<>();
-            Single<Result<Boolean>> shared = currentUserIdOptional()
+            Single<Result<Boolean>> shared = operationTracker.track(currentUserIdOptional()
                     .flatMap(myId -> fetchAndPersistInboxPage(
                             generation, INBOX_PAGE_SIZE, cursor, myId.orElse(null), false, archived))
                     .doFinally(() -> {
@@ -311,7 +330,7 @@ public final class ConversationRepository implements AutoCloseable {
                             }
                         }
                     })
-                    .cache();
+                    .cache());
             sharedRef.set(shared);
             inFlightNextInboxPage = shared;
             return shared;
@@ -331,34 +350,34 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Single<Result<Void>> muteConversation(
             @NonNull String conversationId, @NonNull java.time.Instant until) {
-        return callVoid(settingsApi.mute(conversationId, MuteRequest.until(until)))
+        return operationTracker.track(callVoid(settingsApi.mute(conversationId, MuteRequest.until(until)))
                 .flatMap(result -> result instanceof Result.Failure<?>
                         ? Single.just(result)
                         : conversationDao.updateMute(conversationId, true, until.toEpochMilli())
                                 .andThen(Single.just(successVoid())))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /** Mutes the conversation until the caller turns notifications back on. */
     @NonNull
     public Single<Result<Void>> muteConversationForever(@NonNull String conversationId) {
-        return callVoid(settingsApi.mute(conversationId, MuteRequest.forever()))
+        return operationTracker.track(callVoid(settingsApi.mute(conversationId, MuteRequest.forever()))
                 .flatMap(result -> result instanceof Result.Failure<?>
                         ? Single.just(result)
                         : conversationDao.updateMute(conversationId, true, null)
                                 .andThen(Single.just(successVoid())))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /** Clears the caller's mute; idempotent when already unmuted. */
     @NonNull
     public Single<Result<Void>> unmuteConversation(@NonNull String conversationId) {
-        return callVoid(settingsApi.unmute(conversationId))
+        return operationTracker.track(callVoid(settingsApi.unmute(conversationId))
                 .flatMap(result -> result instanceof Result.Failure<?>
                         ? Single.just(result)
                         : conversationDao.updateMute(conversationId, false, null)
                                 .andThen(Single.just(successVoid())))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /** Hides or restores the conversation in the caller's default inbox. */
@@ -368,18 +387,18 @@ public final class ConversationRepository implements AutoCloseable {
         Call<Void> call = archived
                 ? settingsApi.archive(conversationId)
                 : settingsApi.unarchive(conversationId);
-        return callVoid(call)
+        return operationTracker.track(callVoid(call)
                 .flatMap(result -> result instanceof Result.Failure<?>
                         ? Single.just(result)
                         : conversationDao.updateArchived(conversationId, archived)
                                 .andThen(Single.just(successVoid())))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /** Reads the caller's own AI opt-out state for one conversation. */
     @NonNull
     public Single<Result<Boolean>> getAiOptOut(@NonNull String conversationId) {
-        return call(settingsApi.getAiOptOut(conversationId))
+        return operationTracker.track(call(settingsApi.getAiOptOut(conversationId))
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<Boolean>>just(Result.cast(result));
@@ -389,7 +408,7 @@ public final class ConversationRepository implements AutoCloseable {
                     return conversationDao.updateAiOptOut(conversationId, value)
                             .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
                 })
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -402,7 +421,7 @@ public final class ConversationRepository implements AutoCloseable {
         Call<ConversationAiOptOutDto> call = optOut
                 ? settingsApi.optOutOfAi(conversationId)
                 : settingsApi.clearAiOptOut(conversationId);
-        return call(call)
+        return operationTracker.track(call(call)
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<Boolean>>just(Result.cast(result));
@@ -412,7 +431,7 @@ public final class ConversationRepository implements AutoCloseable {
                     return conversationDao.updateAiOptOut(conversationId, value)
                             .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
                 })
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -423,7 +442,7 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Single<Result<String>> createGroup(@NonNull String title, @NonNull List<String> memberIds) {
         String trimmed = title.trim();
-        return call(groupApi.createGroup(new CreateGroupRequest(trimmed, memberIds)))
+        return operationTracker.track(call(groupApi.createGroup(new CreateGroupRequest(trimmed, memberIds)))
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<String>>just(Result.cast(result));
@@ -434,7 +453,7 @@ public final class ConversationRepository implements AutoCloseable {
                     return upsertPreservingClientColumns(Collections.singletonList(row))
                             .andThen(Single.fromCallable(() -> new Result.Success<>(created.getId())));
                 })
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -444,27 +463,27 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<GroupDetail>> groupDetail(@NonNull String conversationId) {
-        return currentUserIdOptional()
+        return operationTracker.track(currentUserIdOptional()
                 .flatMap(myId -> groupDetailPage(
                         conversationId, myId.orElse(null), null, new HashSet<>()))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     @NonNull
     public Single<Result<Void>> addGroupMembers(
             @NonNull String conversationId,
             @NonNull List<String> userIds) {
-        return callVoid(groupApi.addMembers(
+        return operationTracker.track(callVoid(groupApi.addMembers(
                 conversationId, new AddGroupMembersRequest(userIds)))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     @NonNull
     public Single<Result<Void>> removeGroupMember(
             @NonNull String conversationId,
             @NonNull String userId) {
-        return callVoid(groupApi.removeMember(conversationId, userId))
-                .subscribeOn(Schedulers.io());
+        return operationTracker.track(callVoid(groupApi.removeMember(conversationId, userId))
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -475,7 +494,7 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Single<Result<Void>> renameGroup(@NonNull String conversationId, @NonNull String title) {
         String trimmed = title.trim();
-        return callVoid(groupApi.updateConversation(
+        return operationTracker.track(callVoid(groupApi.updateConversation(
                         conversationId, new UpdateConversationRequest(trimmed)))
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
@@ -485,7 +504,7 @@ public final class ConversationRepository implements AutoCloseable {
                             .flatMapCompletable(row -> conversationDao.upsert(withTitle(row, trimmed)))
                             .andThen(Single.fromCallable(ConversationRepository::successVoid));
                 })
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -495,7 +514,7 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> setGroupAvatar(@NonNull String conversationId, @NonNull Uri uri) {
-        return Maybe.fromCallable(() -> readBoundedAvatar(uri))
+        return operationTracker.track(Maybe.fromCallable(() -> readBoundedAvatar(uri))
                 .map(Optional::of)
                 .defaultIfEmpty(Optional.empty())
                 .subscribeOn(Schedulers.io())
@@ -524,7 +543,7 @@ public final class ConversationRepository implements AutoCloseable {
                                         .andThen(Single.fromCallable(
                                                 ConversationRepository::successVoid));
                             });
-                });
+                }));
     }
 
     /**
@@ -533,14 +552,14 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> leaveGroup(@NonNull String conversationId) {
-        return callVoid(groupApi.leaveGroup(conversationId))
+        return operationTracker.track(callVoid(groupApi.leaveGroup(conversationId))
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<Void>>just(Result.cast(result));
                     }
                     return conversationDao.clear().andThen(refreshInbox());
                 })
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -548,7 +567,7 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> pinConversation(@NonNull String conversationId) {
-        return conversationDao.byId(conversationId)
+        return operationTracker.track(conversationDao.byId(conversationId)
                 .flatMapSingle(existing -> {
                     boolean prevPinned = existing.isPinned();
                     Long prevPinnedAt = existing.getPinnedAt();
@@ -564,7 +583,7 @@ public final class ConversationRepository implements AutoCloseable {
                             });
                 })
                 .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -572,7 +591,7 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> unpinConversation(@NonNull String conversationId) {
-        return conversationDao.byId(conversationId)
+        return operationTracker.track(conversationDao.byId(conversationId)
                 .flatMapSingle(existing -> {
                     boolean prevPinned = existing.isPinned();
                     Long prevPinnedAt = existing.getPinnedAt();
@@ -587,7 +606,7 @@ public final class ConversationRepository implements AutoCloseable {
                             });
                 })
                 .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
-                .subscribeOn(Schedulers.io());
+                .subscribeOn(Schedulers.io()));
     }
 
     /**
@@ -648,7 +667,7 @@ public final class ConversationRepository implements AutoCloseable {
     Single<Boolean> handleConversationUpdate(ChatEvent.ConversationUpdated update) {
         String conversationId = update.getConversationId();
         if (conversationId == null) return Single.just(Boolean.FALSE);
-        return currentUserIdOptional().flatMap(myId -> {
+        return operationTracker.track(currentUserIdOptional().flatMap(myId -> {
             if (!update.isSelfRemoval(myId.orElse(null))) {
                 return Single.just(Boolean.FALSE);
             }
@@ -660,7 +679,7 @@ public final class ConversationRepository implements AutoCloseable {
                 appDatabase.runInTransaction(() ->
                         LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId));
             }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
-        });
+        }));
     }
 
     /** Decodes the JWT subject without copying token material into logs or fields. */

@@ -25,6 +25,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 
 /** WorkManager worker that dispatches durable reaction and pin actions. */
@@ -38,15 +39,18 @@ public final class OutboxSyncWorker extends RxWorker {
     public interface OutboxSyncWorkerEntryPoint {
         MessageRepository messageRepository();
         OfflineOutboxDao offlineOutboxDao();
+        SessionOperationTracker sessionOperationTracker();
     }
 
     private final MessageRepository messageRepository;
     private final OfflineOutboxDao offlineOutboxDao;
+    private final SessionOperationTracker operationTracker;
 
     public OutboxSyncWorker(
             @NonNull Context appContext,
             @NonNull WorkerParameters workerParams) {
-        this(appContext, workerParams, resolveRepository(appContext), resolveOfflineOutboxDao(appContext));
+        this(appContext, workerParams, resolveRepository(appContext),
+                resolveOfflineOutboxDao(appContext), resolveOperationTracker(appContext));
     }
 
     @VisibleForTesting
@@ -54,7 +58,7 @@ public final class OutboxSyncWorker extends RxWorker {
             @NonNull Context appContext,
             @NonNull WorkerParameters workerParams,
             MessageRepository messageRepository) {
-        this(appContext, workerParams, messageRepository, null);
+        this(appContext, workerParams, messageRepository, null, new SessionOperationTracker());
     }
 
     @VisibleForTesting
@@ -63,9 +67,22 @@ public final class OutboxSyncWorker extends RxWorker {
             @NonNull WorkerParameters workerParams,
             MessageRepository messageRepository,
             OfflineOutboxDao offlineOutboxDao) {
+        this(appContext, workerParams, messageRepository, offlineOutboxDao,
+                new SessionOperationTracker());
+    }
+
+    @VisibleForTesting
+    public OutboxSyncWorker(
+            @NonNull Context appContext,
+            @NonNull WorkerParameters workerParams,
+            MessageRepository messageRepository,
+            OfflineOutboxDao offlineOutboxDao,
+            SessionOperationTracker operationTracker) {
         super(appContext, workerParams);
         this.messageRepository = messageRepository;
         this.offlineOutboxDao = offlineOutboxDao;
+        this.operationTracker = operationTracker == null
+                ? new SessionOperationTracker() : operationTracker;
     }
 
     private static MessageRepository resolveRepository(Context context) {
@@ -88,15 +105,27 @@ public final class OutboxSyncWorker extends RxWorker {
         }
     }
 
+    private static SessionOperationTracker resolveOperationTracker(Context context) {
+        try {
+            OutboxSyncWorkerEntryPoint entryPoint = EntryPointAccessors.fromApplication(
+                    context.getApplicationContext(), OutboxSyncWorkerEntryPoint.class);
+            return entryPoint.sessionOperationTracker();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     @NonNull
     @Override
     public Single<Result> createWork() {
         if (offlineOutboxDao == null) return Single.just(Result.retry());
         Completable flushMessages = messageRepository == null
                 ? Completable.complete() : messageRepository.flushOutbox();
-        return flushMessages.andThen(drainOfflineOutbox())
+        return operationTracker.track(flushMessages.andThen(drainOfflineOutbox())
                 .toSingleDefault(Result.success())
-                .onErrorReturnItem(Result.retry());
+                .onErrorReturnItem(Result.retry()))
+                .onErrorReturn(error -> error instanceof CancellationException
+                        ? Result.success() : Result.retry());
     }
 
     public Completable drainOfflineOutbox() {
@@ -106,7 +135,7 @@ public final class OutboxSyncWorker extends RxWorker {
                 new IllegalStateException("offline outbox dispatcher is unavailable"));
         long now = System.currentTimeMillis();
         long staleThreshold = now - 60_000L;
-        return drainClaimableItems(staleThreshold);
+        return operationTracker.track(drainClaimableItems(staleThreshold));
     }
 
     private Completable drainClaimableItems(long staleThreshold) {

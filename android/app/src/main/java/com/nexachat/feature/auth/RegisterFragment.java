@@ -23,6 +23,7 @@ public final class RegisterFragment extends Fragment {
     private boolean rendering;
     private String confirmation = "";
     private boolean confirmChecked;
+    @Nullable private String returnInviteToken;
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
         binding = FragmentRegisterBinding.inflate(inflater, container, false);
@@ -32,6 +33,8 @@ public final class RegisterFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
+        returnInviteToken = getArguments() == null
+                ? null : getArguments().getString("returnInviteToken");
         binding.nameInput.addTextChangedListener(watcher(viewModel::onDisplayNameChange));
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
@@ -39,11 +42,22 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.addTextChangedListener(watcher(s -> { confirmation = s; render(viewModel.getUiState().getValue()); }));
         binding.confirmPasswordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.registerButton.setOnClickListener(v -> submit());
-        binding.secondaryAction.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.loginFragment));
+        binding.secondaryAction.setOnClickListener(v -> {
+            Bundle args = inviteReturnArgs();
+            NavHostFragment.findNavController(this).navigate(
+                    R.id.loginFragment, args.isEmpty() ? null : args);
+        });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
-            if (e == AuthViewModel.Event.LoggedIn) NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
-                    new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.registerFragment, true).build());
+            if (e == AuthViewModel.Event.LoggedIn) {
+                int destination = returnInviteToken == null
+                        ? R.id.inboxFragment : R.id.inviteJoinFragment;
+                Bundle args = returnInviteToken == null ? null : new Bundle();
+                if (args != null) args.putString("token", returnInviteToken);
+                NavHostFragment.findNavController(this).navigate(destination, args,
+                        new androidx.navigation.NavOptions.Builder()
+                                .setPopUpTo(R.id.registerFragment, true).build());
+            }
         });
     }
 
@@ -56,6 +70,12 @@ public final class RegisterFragment extends Fragment {
         AuthViewModel.UiState s = viewModel.getUiState().getValue(); render(s);
         if (AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation)) viewModel.register();
         else binding.confirmPasswordLayout.setError(getString(R.string.error_password_mismatch));
+    }
+
+    private Bundle inviteReturnArgs() {
+        Bundle args = new Bundle();
+        if (returnInviteToken != null) args.putString("returnInviteToken", returnInviteToken);
+        return args;
     }
     private TextWatcher watcher(java.util.function.Consumer<String> change) { return new TextWatcher() {
         @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}

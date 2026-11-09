@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.inOrder;
 
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.AuthApi;
@@ -24,6 +25,7 @@ import io.reactivex.rxjava3.core.Maybe;
 import org.junit.Assert;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -84,5 +86,34 @@ public final class AuthRepositoryDeviceTokenTest {
         Assert.assertEquals("refresh-fixture", request.getValue().getRefreshToken());
         verify(tokenStore).clear();
         verify(sessionEvents).emitLoggedOut();
+    }
+
+    @Test
+    public void logoutWaitsForFullRoomCleanupBeforePublishingLoggedOut() throws Exception {
+        AuthApi authApi = mock(AuthApi.class);
+        TokenStore tokenStore = mock(TokenStore.class);
+        SessionEvents sessionEvents = mock(SessionEvents.class);
+        TokenRefresher tokenRefresher = mock(TokenRefresher.class);
+        DeviceTokenRegistrationManager tokenManager = mock(DeviceTokenRegistrationManager.class);
+        com.nexachat.core.database.AppDatabase database =
+                mock(com.nexachat.core.database.AppDatabase.class);
+        AccountDataCleaner cleaner = new AccountDataCleaner(
+                database, new SessionOperationTracker(), Completable::complete);
+
+        Call<Void> call = mock(Call.class);
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens("access-fixture", 1L, "refresh-fixture")));
+        when(authApi.logout(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(null));
+        when(tokenManager.onLogout()).thenReturn(Completable.complete());
+        when(tokenStore.clear()).thenReturn(Completable.complete());
+
+        AuthRepository repository = new AuthRepository(
+                authApi, tokenStore, sessionEvents, tokenRefresher, tokenManager, cleaner);
+        repository.logout().blockingGet();
+
+        InOrder order = inOrder(database, sessionEvents);
+        order.verify(database).clearAllTables();
+        order.verify(sessionEvents).emitLoggedOut();
     }
 }

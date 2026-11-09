@@ -88,6 +88,12 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         holder.bind(conversation, currentUserId, justNowLabel, yesterdayLabel, listener, labelDefinitions);
     }
 
+    @Override
+    public void onViewRecycled(@NonNull Holder holder) {
+        holder.clearMuteExpiry();
+        super.onViewRecycled(holder);
+    }
+
     public void setLabelDefinitions(@NonNull List<ConversationLabel> labels) {
         if (labelDefinitions.equals(labels)) return;
         labelDefinitions = List.copyOf(labels);
@@ -104,6 +110,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView unreadBadge;
         private final ImageView muteIcon;
         private final ChipGroup labelChips;
+        @Nullable private ConversationSummary boundConversation;
+        @Nullable private Runnable muteExpiryRefresh;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -126,6 +134,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 @NonNull Listener listener,
                 @NonNull List<ConversationLabel> labelDefinitions
         ) {
+            clearMuteExpiry();
+            boundConversation = conversation;
             String displayTitle = ConversationPreviewHelper.displayTitle(itemView.getContext(), conversation);
             title.setText(displayTitle);
             avatar.setName(displayTitle);
@@ -190,11 +200,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             if (pinIndicator != null) {
                 pinIndicator.setVisibility(conversation.isPinned() ? View.VISIBLE : View.GONE);
             }
-            if (muteIcon != null) {
-                muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
-                        ? View.VISIBLE
-                        : View.GONE);
-            }
+            bindMuteIndicator(conversation);
 
             if (labelChips != null) {
                 labelChips.removeAllViews();
@@ -225,6 +231,33 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 listener.onConversationLongClick(conversation);
                 return true;
             });
+        }
+
+        private void bindMuteIndicator(@NonNull ConversationSummary conversation) {
+            if (muteIcon == null) return;
+            long now = System.currentTimeMillis();
+            muteIcon.setVisibility(conversation.isMutedAt(now) ? View.VISIBLE : View.GONE);
+            long refreshDelay = MuteIndicatorRules.refreshDelayMillis(
+                    conversation.isMuted(), conversation.getMutedUntilEpochMs(), now);
+            if (refreshDelay <= 0L) return;
+
+            Runnable refresh = new Runnable() {
+                @Override public void run() {
+                    if (boundConversation != conversation) return;
+                    muteExpiryRefresh = null;
+                    bindMuteIndicator(conversation);
+                }
+            };
+            muteExpiryRefresh = refresh;
+            itemView.postDelayed(refresh, refreshDelay);
+        }
+
+        void clearMuteExpiry() {
+            if (muteExpiryRefresh != null) {
+                itemView.removeCallbacks(muteExpiryRefresh);
+                muteExpiryRefresh = null;
+            }
+            boundConversation = null;
         }
 
         private static int resolveThemeColor(@NonNull Context context, int attr) {

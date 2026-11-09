@@ -494,10 +494,18 @@ public final class OfflineOutboxTest {
         assertEquals(row.getActionType(), parsed.getActionType());
     }
 
-    @Test public void logoutClearsPendingOfflineActions() {
+    @Test public void accountBoundaryClearsPendingOfflineActions() {
         await(repository.toggleReaction(MESSAGE_ID, CONVERSATION_ID, "👍"));
         assertEquals(1, dao.rows().size());
-        sessionSignalStream.onNext(SessionEvents.Event.LoggedOut.INSTANCE);
+
+        doAnswer(invocation -> {
+            dao.clearBlocking();
+            return null;
+        }).when(appDatabase).clearAllTables();
+        AccountDataCleaner cleaner = new AccountDataCleaner(
+                appDatabase, new SessionOperationTracker(), Completable::complete);
+        await(cleaner.clearForSessionBoundary());
+
         assertTrue("logout must drop actions queued for the previous session", dao.rows().isEmpty());
     }
 
