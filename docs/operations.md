@@ -628,9 +628,9 @@ After reviewing `nexachat.retention.rows.observed`, set
 `NEXACHAT_RETENTION_DRY_RUN=false` to delete eligible rows in batches. Restart
 the server after changing environment values. Supply these values to the server
 process through the deployment's environment configuration; setting them only
-in a host shell does not pass them into a container. The checked-in Compose demo
-does not currently forward retention variables to the app service. Do not enable
-the global switch alone if no cleanup job should run.
+in a host shell does not pass them into a container. The checked-in Compose demo forwards every `NEXACHAT_RETENTION_*` variable from
+`.env` into the `app` service (defaults keep all jobs off). Do not enable the
+global switch alone if no cleanup job should run.
 
 All retention properties, their environment variables, and defaults are listed
 below. Every job-level `enabled` switch defaults to `false`.

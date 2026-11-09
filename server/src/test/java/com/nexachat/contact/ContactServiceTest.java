@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -147,9 +148,20 @@ class ContactServiceTest {
     @Test
     void list_delegatesToProjectionQuery() {
         ContactResponse row = new ContactResponse(UUID.randomUUID(), "+8498", "Lan", "L", null, null);
-        when(contactRepository.findAllByOwnerId(ownerId)).thenReturn(List.of(row));
+        when(contactRepository.findAllByOwnerId(eq(ownerId), any())).thenReturn(List.of(row));
 
         assertThat(contactService.list(ownerId)).containsExactly(row);
+    }
+
+    @Test
+    void list_usesBoundedPageSize() {
+        ArgumentCaptor<org.springframework.data.domain.Pageable> pageable =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        when(contactRepository.findAllByOwnerId(eq(ownerId), pageable.capture())).thenReturn(List.of());
+
+        contactService.list(ownerId);
+
+        assertThat(pageable.getValue().getPageSize()).isEqualTo(ContactService.LIST_LIMIT);
     }
 
     // ------------------------------------------------------------ updateAlias

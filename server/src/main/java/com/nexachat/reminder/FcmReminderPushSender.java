@@ -26,9 +26,9 @@ import java.util.concurrent.TimeoutException;
 /**
  * FCM adapter for reminder fan-out.
  *
- * <p>The payload is data-only: the client decides how to render the reminder
- * notification and can open the conversation board. Only ids, the title and
- * the schedule travel through FCM; no message content does.</p>
+ * <p>The payload is data-only and pointer-sized: only ids (and optional repeat
+ * metadata) travel through FCM so lock screens never show reminder titles or
+ * chat content. The client loads board details after refresh.</p>
  */
 @Service
 public class FcmReminderPushSender implements ReminderPushSender {
@@ -68,8 +68,6 @@ public class FcmReminderPushSender implements ReminderPushSender {
         data.put("type", "REMINDER");
         data.put("reminderId", reminder.reminderId().toString());
         data.put("conversationId", reminder.conversationId().toString());
-        data.put("title", reminder.title());
-        data.put("remindAt", reminder.remindAt().toString());
         data.put("repeat", reminder.repeat().name());
 
         // One physical device can hold a token row per account; the same token

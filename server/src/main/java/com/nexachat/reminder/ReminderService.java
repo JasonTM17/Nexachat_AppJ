@@ -84,7 +84,10 @@ public class ReminderService {
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         ConversationMember member = requireMember(conversationId, userId);
         Instant now = Instant.now();
-        return reminderRepository.findUpcoming(conversationId, now).stream()
+        return reminderRepository.findUpcoming(
+                        conversationId, now,
+                        org.springframework.data.domain.PageRequest.of(0, MAX_ACTIVE_REMINDERS))
+                .stream()
                 .map(reminder -> toResponse(reminder, conversation.getType(), member, userId))
                 .toList();
     }
