@@ -967,6 +967,9 @@ public final class ConversationRepository implements AutoCloseable {
     private ConversationSummary toSummary(
             ConversationEntity row,
             Map<String, PeerPresence> presence) {
+        // Seed the last-known AI state from persisted Room rows before a refresh
+        // can see an inbox payload that omits the additive field.
+        knownAiOptOut.putIfAbsent(row.getId(), row.isAiOptOut());
         PeerPresence peer = TYPE_DIRECT.equals(row.getType()) && row.getOtherUserId() != null
                 ? presence.get(row.getOtherUserId())
                 : null;

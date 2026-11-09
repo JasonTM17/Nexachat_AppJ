@@ -625,6 +625,19 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void persistedAiOptOutSurvivesAColdStartRefreshWithOmittedPayload() throws Exception {
+        buildRepository();
+        dao().upsert(withPreferences(conversation("conv-a"), false, null, false, true))
+                .blockingAwait();
+        repository.inboxFlow().blockingFirst();
+
+        stubInbox(List.of(inboxDto("conv-a")));
+        repository.refreshInbox().blockingGet();
+
+        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+    }
+
+    @Test
     public void archivedInboxUsesTheArchivedEndpointAndPersistsTheFlag() {
         buildRepository();
         stubArchivedInbox("[{\"id\":\"conv-arch\",\"type\":\"GROUP\",\"title\":\"Arch\","
