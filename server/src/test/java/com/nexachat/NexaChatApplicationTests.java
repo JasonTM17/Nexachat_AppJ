@@ -1,5 +1,6 @@
 package com.nexachat;
 
+import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.RefreshTokenRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -61,6 +62,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private ConversationReminderRepository conversationReminderRepository;
+
+    @MockitoBean
+    private ArchiveRepository archiveRepository;
 
     @Test
     void contextLoads() {

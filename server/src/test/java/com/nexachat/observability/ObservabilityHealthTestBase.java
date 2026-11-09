@@ -1,5 +1,6 @@
 package com.nexachat.observability;
 
+import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.JwtService;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -66,6 +67,9 @@ abstract class ObservabilityHealthTestBase {
     protected UserDeviceTokenRepository userDeviceTokenRepository;
     @MockitoBean
     protected ConversationReminderRepository conversationReminderRepository;
+
+    @MockitoBean
+    protected ArchiveRepository archiveRepository;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
