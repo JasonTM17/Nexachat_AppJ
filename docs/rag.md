@@ -46,7 +46,7 @@ The route is `POST /api/v1/conversations/{id}/ask`; see
 | Provider | ID | Network | Default |
 |---|---|---|---|
 | Local lexical | `lexical` | none | yes |
-| OpenAI-compatible / native Gemini | `openai-compatible` | outbound HTTPS | no |
+| OpenAI-compatible / native Gemini | `openai-compatible:<model>` (for example `openai-compatible:gemini-embedding-001`) | outbound HTTPS | no |
 
 The local provider is a deterministic 256-d hashed character-trigram + word
 TF vector over accent-folded text. It works offline, costs nothing and keeps
@@ -66,9 +66,13 @@ is read from `NEXACHAT_RAG_EMBEDDING_API_KEY`, falling back to
 never logged, serialized or echoed in an exception.
 
 Vectors are stored per message in `message_embeddings` (Flyway V9) with the
-provider id in `model`. Only vectors whose `model` matches the provider used
-for the current request are read, so a lexical fallback never mixes spaces
-with an external index.
+provider identity in `model`; for an external provider that identity includes
+the configured model (`openai-compatible:<model>`). Only vectors whose `model`
+matches the provider used for the current request are read, so a lexical
+fallback never mixes spaces with an external index, and changing
+`NEXACHAT_RAG_EMBEDDING_MODEL` leaves the old rows unread so they are
+recomputed under the new identity. The in-memory vector cache and the ask
+cache are scoped by the same identity.
 
 ## Consent and privacy
 

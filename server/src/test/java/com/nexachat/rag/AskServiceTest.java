@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -134,6 +135,25 @@ class AskServiceTest {
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
         verify(llmAnswerService, never()).answer(any(), any(), any(), any());
+    }
+
+    @Test
+    void askCacheKeyUsesTheEmbeddingModelIdentity() {
+        RagEmbeddingService embeddingService = mock(RagEmbeddingService.class);
+        when(embeddingService.embedQuestion(any(), anyBoolean()))
+                .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
+                        new float[256], "openai-compatible:gemini-embedding-001"));
+        AskService modelAwareService = new AskService(
+                rateLimiter, conversationRepository, memberRepository, consentRepository,
+                embeddingService, retrieval, questionCache, llmAnswerService, properties, stats,
+                Clock.systemUTC());
+
+        modelAwareService.ask(conversationId, userId, new AskRequest("Hello?", null));
+
+        verify(questionCache).findExact(eq(conversationId),
+                eq("openai-compatible:gemini-embedding-001"), any());
+        verify(questionCache).findCandidates(eq(conversationId),
+                eq("openai-compatible:gemini-embedding-001"));
     }
 
     @Test

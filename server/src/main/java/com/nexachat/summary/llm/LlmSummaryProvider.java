@@ -95,24 +95,31 @@ public final class LlmSummaryProvider implements SummaryProvider {
         }
 
         boolean breakerAllows = circuitBreaker.allowRequest();
-        if (!breakerAllows && fallback == null) {
+        if (!breakerAllows && fallback == null && secondary == null) {
             throw new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
         }
 
+        boolean primaryAttempted = false;
+        boolean breakerRecorded = false;
         try {
             Prompt prompt = promptBuilder.build(window, language, properties.getMaxInputChars());
             LlmClient.LlmCallResult completion;
             LlmClient.TargetConfig usedTarget;
+            boolean primaryFailed = false;
             try {
+                primaryAttempted = breakerAllows;
                 completion = client.completeWithFallback(prompt, breakerAllows ? primary : null, fallback);
                 usedTarget = completion.fallbackUsed() ? fallback : primary;
+                primaryFailed = breakerAllows && completion.fallbackUsed();
             } catch (SummaryProviderException ex) {
+                primaryFailed = breakerAllows;
                 if (secondary == null) {
                     throw ex;
                 }
                 completion = client.completeWithTargetResult(prompt, secondary);
                 usedTarget = secondary;
             } catch (RuntimeException ex) {
+                primaryFailed = breakerAllows;
                 if (secondary == null) {
                     throw ex;
                 }
@@ -121,16 +128,26 @@ public final class LlmSummaryProvider implements SummaryProvider {
             }
 
             ProviderResult result = outputValidator.validate(completion.content(), prompt, usedTarget.model().trim());
-            circuitBreaker.recordSuccess();
+            if (usedTarget == primary) {
+                circuitBreaker.recordSuccess();
+                breakerRecorded = true;
+            } else if (primaryFailed) {
+                circuitBreaker.recordFailure();
+                breakerRecorded = true;
+            }
             String provider = usedTarget == fallback
                     ? "fallback"
                     : (usedTarget == primary ? "primary" : null);
             return new ProviderResult(result.content(), result.language(), result.model(), provider);
         } catch (SummaryProviderException exception) {
-            circuitBreaker.recordFailure();
+            if (primaryAttempted && !breakerRecorded) {
+                circuitBreaker.recordFailure();
+            }
             throw exception;
         } catch (RuntimeException exception) {
-            circuitBreaker.recordFailure();
+            if (primaryAttempted && !breakerRecorded) {
+                circuitBreaker.recordFailure();
+            }
             throw new SummaryProviderException(SummaryFallbackReason.LLM_HTTP_ERROR);
         }
     }

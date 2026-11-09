@@ -68,6 +68,14 @@ class OpenAiCompatibleEmbeddingProviderTest {
     }
 
     @Test
+    void idIncludesTheConfiguredModel() {
+        OpenAiCompatibleEmbeddingProvider provider = new OpenAiCompatibleEmbeddingProvider(
+                baseUrl(), "gemini-embedding-001", "secret-key", 256, 5_000, false);
+
+        assertThat(provider.id()).isEqualTo("openai-compatible:gemini-embedding-001");
+    }
+
+    @Test
     void sendsGeminiShapeWithOutputDimensionality() {
         OpenAiCompatibleEmbeddingProvider provider = new OpenAiCompatibleEmbeddingProvider(
                 baseUrl(), "gemini-embedding-001", "secret-key", 256, 5_000, true);

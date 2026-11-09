@@ -22,10 +22,20 @@ public final class Redactor {
     private static final Pattern JWT =
             Pattern.compile("\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*\\b");
 
-    /** Named credential fields: api_key=..., apiKey: ..., secret=..., token=..., bearer=... */
+    /** Named credential fields: api_key=..., apiKey: ..., secret=..., token=..., bearer=..., private_key=... */
     private static final Pattern NAMED_CREDENTIAL = Pattern.compile(
-            "(?i)(api[_-]?key|secret|password|passwd|token|bearer)\\s*[:=]\\s*['\"]?"
+            "(?i)(api[_-]?key|secret|password|passwd|token|bearer|private[_-]?key)\\s*[:=]\\s*['\"]?"
                     + "([A-Za-z0-9_\\-._~+/=]{8,})['\"]?");
+
+    /** Google service-account client e-mail, plain or escaped inside a JSON string. */
+    private static final Pattern CLIENT_EMAIL = Pattern.compile(
+            "(?i)(client[_-]?email)[\\\\\"']{0,2}\\s*[:=]\\s*[\\\\\"']{0,2}"
+                    + "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})");
+
+    /** PKCS#8/PKCS#1/OPENSSH private-key PEM blocks, including escaped newlines. */
+    private static final Pattern PEM_PRIVATE_KEY = Pattern.compile(
+            "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\\s\\S]*?"
+                    + "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----");
 
     /** FCM registration tokens, which are long and carry no distinguishing shape. */
     private static final Pattern FCM_TOKEN = Pattern.compile(
@@ -65,8 +75,10 @@ public final class Redactor {
             return input;
         }
         String result = input;
+        result = replaceAll(PEM_PRIVATE_KEY, result, REDACTED);
         result = replaceAll(BEARER, result, "Bearer " + REDACTED);
         result = replaceAll(JWT, result, REDACTED);
+        result = replaceAll(CLIENT_EMAIL, result, "$1=" + REDACTED);
         result = replaceAll(NAMED_CREDENTIAL, result, "$1=" + REDACTED);
         result = replaceAll(FCM_TOKEN, result, "$1=" + REDACTED);
         result = replaceAll(GOOGLE_KEY, result, REDACTED);
