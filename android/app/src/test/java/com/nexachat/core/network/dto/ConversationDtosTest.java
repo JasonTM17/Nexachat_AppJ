@@ -42,6 +42,16 @@ public final class ConversationDtosTest {
     }
 
     @Test
+    public void muteRequestSerializesExactlyOneOfInstantOrForever() throws IOException {
+        JsonAdapter<MuteRequest> adapter = moshi.adapter(MuteRequest.class);
+
+        assertEquals("{\"mutedUntil\":\"2026-11-10T01:00:00Z\"}",
+                adapter.toJson(MuteRequest.until(
+                        java.time.Instant.parse("2026-11-10T01:00:00Z"))));
+        assertEquals("{\"forever\":true}", adapter.toJson(MuteRequest.forever()));
+    }
+
+    @Test
     public void decodesCallerScopedMuteArchiveAndAiOptOutFlags() throws IOException {
         JsonAdapter<ConversationInboxDto> adapter = moshi.adapter(ConversationInboxDto.class);
         ConversationInboxDto row = adapter.fromJson(
