@@ -13,11 +13,16 @@ import com.nexachat.core.network.AuthApi;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AuthResponse;
+import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
+import org.junit.Assert;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -50,5 +55,33 @@ public final class AuthRepositoryDeviceTokenTest {
         assertTrue(result instanceof Result.Success<?>);
         verify(tokenStore).saveTokens(anyString(), anyLong(), anyString());
         verify(tokenManager).onSessionAvailable();
+    }
+
+    @Test
+    public void logoutRevokesRefreshTokenThenClearsLocalSession() throws Exception {
+        AuthApi authApi = mock(AuthApi.class);
+        TokenStore tokenStore = mock(TokenStore.class);
+        SessionEvents sessionEvents = mock(SessionEvents.class);
+        TokenRefresher tokenRefresher = mock(TokenRefresher.class);
+        DeviceTokenRegistrationManager tokenManager = mock(DeviceTokenRegistrationManager.class);
+
+        Call<Void> call = mock(Call.class);
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens("access-fixture", 1L, "refresh-fixture")));
+        when(authApi.logout(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(null));
+        when(tokenManager.onLogout()).thenReturn(Completable.complete());
+        when(tokenStore.clear()).thenReturn(Completable.complete());
+
+        AuthRepository repository = new AuthRepository(
+                authApi, tokenStore, sessionEvents, tokenRefresher, tokenManager);
+        Result<com.nexachat.core.common.Unit> result = repository.logout().blockingGet();
+
+        Assert.assertTrue(result instanceof Result.Success<?>);
+        ArgumentCaptor<LogoutRequest> request = ArgumentCaptor.forClass(LogoutRequest.class);
+        verify(authApi).logout(request.capture());
+        Assert.assertEquals("refresh-fixture", request.getValue().getRefreshToken());
+        verify(tokenStore).clear();
+        verify(sessionEvents).emitLoggedOut();
     }
 }
