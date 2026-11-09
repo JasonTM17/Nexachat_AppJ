@@ -7,7 +7,7 @@ Verifies P0 production features against a live running backend:
   2. Sync: POST /api/v1/sync delta sync, pagination across N=120 messages (50+50+20),
      strict ordering, non-member isolation, empty watermarks, and idempotency.
   3. Message Idempotency: Duplicate clientMessageId deduplication.
-  4. FCM Device Token: Registration, upsert, ownership transfer, unregister,
+  4. FCM Device Token: Registration, per-user rows, owner-scoped unregister,
      validation limits (>512 chars rejected with 400), and privacy leak checks.
   5. Auth & Errors: Standard 401 envelope for missing/invalid tokens.
 
@@ -60,10 +60,12 @@ from p0_helpers import (
 class TestLogger:
     """Standardized logger producing PASS / FAIL / SKIP records."""
 
-    def __init__(self):
+    def __init__(self, allow_skip: bool = False):
         self.passed = 0
         self.failed = 0
         self.skipped = 0
+        self.required_skipped = 0
+        self.allow_skip = allow_skip
         self.start_time = time.time()
 
     def pass_test(self, name: str, detail: str = "") -> None:
@@ -76,8 +78,10 @@ class TestLogger:
         suffix = f" - {detail}" if detail else ""
         print(f"FAIL {name}{suffix}")
 
-    def skip_test(self, name: str, reason: str = "") -> None:
+    def skip_test(self, name: str, reason: str = "", *, required: bool = False) -> None:
         self.skipped += 1
+        if required:
+            self.required_skipped += 1
         suffix = f" - {reason}" if reason else ""
         print(f"SKIP {name}{suffix}")
 
@@ -86,7 +90,25 @@ class TestLogger:
         print(
             f"\nResult: {self.passed} passed, {self.failed} failed, {self.skipped} skipped in {elapsed:.2f}s"
         )
-        return 1 if self.failed > 0 else 0
+        return 1 if self.failed > 0 or (self.required_skipped > 0 and not self.allow_skip) else 0
+
+
+def per_user_device_rows_preserved(
+    user_a_id: str | None,
+    user_b_id: str | None,
+    user_a_recheck_id: str | None,
+    user_b_recheck_id: str | None,
+) -> bool:
+    """Require distinct rows for one token across accounts and stable per-user upserts."""
+    return bool(
+        user_a_id
+        and user_b_id
+        and user_a_recheck_id
+        and user_b_recheck_id
+        and user_a_id != user_b_id
+        and user_a_id == user_a_recheck_id
+        and user_b_id == user_b_recheck_id
+    )
 
 
 class P0StompConnection:
@@ -336,6 +358,7 @@ def run_receipts_scenario(
             log.skip_test(
                 "receipts_delivered",
                 "Endpoint absent (STOMP /app/.../delivered not yet deployed on server)",
+                required=True,
             )
 
         # 3. User B marks READ
@@ -451,11 +474,11 @@ def run_sync_scenario(
             body={"watermarks": [{"conversationId": conv_id, "lastSeq": 0}], "limitPerConv": 50},
         )
         if sync_probe.status == 404:
-            log.skip_test("sync_pagination", "Endpoint absent (POST /api/v1/sync returned 404)")
-            log.skip_test("sync_non_member_isolated", "Endpoint absent (POST /api/v1/sync returned 404)")
-            log.skip_test("sync_empty_watermark", "Endpoint absent (POST /api/v1/sync returned 404)")
-            log.skip_test("sync_forged_clamped", "Endpoint absent (POST /api/v1/sync returned 404)")
-            log.skip_test("sync_idempotent", "Endpoint absent (POST /api/v1/sync returned 404)")
+            log.skip_test("sync_pagination", "Endpoint absent (POST /api/v1/sync returned 404)", required=True)
+            log.skip_test("sync_non_member_isolated", "Endpoint absent (POST /api/v1/sync returned 404)", required=True)
+            log.skip_test("sync_empty_watermark", "Endpoint absent (POST /api/v1/sync returned 404)", required=True)
+            log.skip_test("sync_forged_clamped", "Endpoint absent (POST /api/v1/sync returned 404)", required=True)
+            log.skip_test("sync_idempotent", "Endpoint absent (POST /api/v1/sync returned 404)", required=True)
             return
 
         # Messages already in the conversation before this scenario (the receipts scenario sends one).
@@ -673,7 +696,7 @@ def run_idempotency_scenario(
 def run_fcm_scenario(
     log: TestLogger, client: Client, user_a: dict, user_b: dict
 ) -> None:
-    """Verifies FCM device token registration, upsert, ownership transfer, unregister, and caps."""
+    """Verifies per-user FCM rows, owner-scoped unregister, and token validation."""
     try:
         # Probe FCM device token endpoint availability
         fcm_probe = client.post(
@@ -682,13 +705,13 @@ def run_fcm_scenario(
             body={"token": "probe-token", "platform": "ANDROID"},
         )
         if fcm_probe.status == 404:
-            log.skip_test("fcm_register", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_upsert", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_ownership_transfer", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_unregister", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_oversized_rejected", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_blank_rejected", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
-            log.skip_test("fcm_no_leak", "Endpoint absent (POST /api/v1/users/device-token returned 404)")
+            log.skip_test("fcm_register", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_upsert", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_per_user_rows", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_unregister", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_oversized_rejected", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_blank_rejected", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
+            log.skip_test("fcm_no_leak", "Endpoint absent (POST /api/v1/users/device-token returned 404)", required=True)
             return
 
         fcm_token = f"e2e-fcm-token-{uuid.uuid4()}"
@@ -699,7 +722,8 @@ def run_fcm_scenario(
             token=user_a["token"],
             body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8"},
         )
-        if r_reg.status == 200 and r_reg.json().get("platform") == "ANDROID":
+        row_a_id = r_reg.json().get("id") if r_reg.status == 200 else None
+        if r_reg.status == 200 and r_reg.json().get("platform") == "ANDROID" and row_a_id:
             log.pass_test("fcm_register", "Registered device token for User A")
         else:
             log.fail_test("fcm_register", f"Expected 200, got {r_reg.status}: {r_reg.text}")
@@ -710,29 +734,57 @@ def run_fcm_scenario(
             token=user_a["token"],
             body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8 Pro"},
         )
-        if r_up.status == 200 and r_up.json().get("deviceLabel") == "Pixel 8 Pro":
+        row_a_upsert_id = r_up.json().get("id") if r_up.status == 200 else None
+        if (r_up.status == 200 and r_up.json().get("deviceLabel") == "Pixel 8 Pro"
+                and row_a_upsert_id == row_a_id):
             log.pass_test("fcm_upsert", "Re-registration updated deviceLabel (upsert)")
         else:
-            log.fail_test("fcm_upsert", f"Expected updated deviceLabel, got {r_up.text}")
+            log.fail_test("fcm_upsert", "Re-registration did not update the account's existing row")
 
-        # 3. Second user registering same token -> ownership transfer
-        r_own = client.post(
+        # The contract permits one row for the same physical token in each account.
+        r_user_b = client.post(
             "/api/v1/users/device-token",
             token=user_b["token"],
             body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8 Pro"},
         )
-        if r_own.status == 200:
-            log.pass_test("fcm_ownership_transfer", "Second user successfully registered same token (transferred)")
+        row_b_id = r_user_b.json().get("id") if r_user_b.status == 200 else None
+        r_user_a_again = client.post(
+            "/api/v1/users/device-token",
+            token=user_a["token"],
+            body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8 Pro"},
+        )
+        row_a_again_id = r_user_a_again.json().get("id") if r_user_a_again.status == 200 else None
+        r_user_b_again = client.post(
+            "/api/v1/users/device-token",
+            token=user_b["token"],
+            body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8 Pro"},
+        )
+        row_b_again_id = r_user_b_again.json().get("id") if r_user_b_again.status == 200 else None
+        if (r_user_b.status == 200 and r_user_a_again.status == 200 and r_user_b_again.status == 200
+                and per_user_device_rows_preserved(
+                    row_a_id, row_b_id, row_a_again_id, row_b_again_id)):
+            log.pass_test("fcm_per_user_rows", "The same token retained a distinct stable row for each account")
         else:
-            log.fail_test("fcm_ownership_transfer", f"Expected 200 on ownership transfer, got {r_own.status}")
+            log.fail_test("fcm_per_user_rows", "Per-account token rows were not distinct and stable")
 
-        # 4. Unregister token
+        # Deleting User A's row must leave User B's row intact.
         unreg_url = f"/api/v1/users/device-token?token={urllib.parse.quote(fcm_token)}"
-        r_unreg = client.delete(unreg_url, token=user_b["token"])
-        if r_unreg.status in (200, 204):
-            log.pass_test("fcm_unregister", "Unregistered device token (HTTP 204/200)")
+        delete_a = client.delete(unreg_url, token=user_a["token"])
+        remaining_b = client.post(
+            "/api/v1/users/device-token",
+            token=user_b["token"],
+            body={"token": fcm_token, "platform": "ANDROID", "deviceLabel": "Pixel 8 Pro"},
+        )
+        remaining_b_id = remaining_b.json().get("id") if remaining_b.status == 200 else None
+        delete_b = client.delete(unreg_url, token=user_b["token"])
+        if (delete_a.status == 204 and remaining_b.status == 200 and remaining_b_id == row_b_id
+                and delete_b.status == 204):
+            log.pass_test("fcm_unregister", "Deleting one account's row preserved and then removed the other row")
         else:
-            log.fail_test("fcm_unregister", f"Expected 204/200 on unregister, got {r_unreg.status}")
+            log.fail_test("fcm_unregister", "Unregister did not remain scoped to the requesting account")
+
+        # Remove the endpoint-availability probe row as well.
+        client.delete("/api/v1/users/device-token?token=probe-token", token=user_a["token"])
 
         # 5. Invalid / oversized token (>512 chars) -> 400
         oversized = "x" * 513
@@ -795,6 +847,10 @@ def main() -> int:
     parser.add_argument("--ws-url", default="", help="STOMP WebSocket URL (defaults to base-url with ws:// /ws)")
     parser.add_argument("--sync-count", type=int, default=120, help="Number of messages to send for sync pagination test")
     parser.add_argument("--timeout", type=float, default=15.0, help="HTTP client timeout in seconds")
+    parser.add_argument(
+        "--allow-skip", action="store_true",
+        help="Return success when required live scenarios skip (offline service or absent endpoint)",
+    )
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -808,7 +864,7 @@ def main() -> int:
     else:
         ws_url = args.ws_url
 
-    log = TestLogger()
+    log = TestLogger(allow_skip=args.allow_skip)
 
     print("==========================================================================")
     print("   NEXACHAT P0 LIVE END-TO-END VERIFICATION SUITE                        ")
@@ -819,11 +875,11 @@ def main() -> int:
     if not check_server_health(base_url):
         print(f"\n[SKIP] Server at {base_url} is not answering on health/login.")
         print("Ensure the NexaChat backend is running before executing live E2E tests.")
-        log.skip_test("receipts", f"Server offline at {base_url}")
-        log.skip_test("sync", f"Server offline at {base_url}")
-        log.skip_test("idempotency", f"Server offline at {base_url}")
-        log.skip_test("fcm_registration", f"Server offline at {base_url}")
-        log.skip_test("auth_unauthorized", f"Server offline at {base_url}")
+        log.skip_test("receipts", f"Server offline at {base_url}", required=True)
+        log.skip_test("sync", f"Server offline at {base_url}", required=True)
+        log.skip_test("idempotency", f"Server offline at {base_url}", required=True)
+        log.skip_test("fcm_registration", f"Server offline at {base_url}", required=True)
+        log.skip_test("auth_unauthorized", f"Server offline at {base_url}", required=True)
         return log.summary()
 
     client = Client(base_url=base_url, timeout=args.timeout)

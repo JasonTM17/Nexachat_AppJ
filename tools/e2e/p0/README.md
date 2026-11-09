@@ -4,7 +4,7 @@ Live HTTP and STOMP 1.2 end-to-end verification for the NexaChat P0 production m
 - Delivery and read receipts over STOMP (`MESSAGE_DELIVERED`, `MESSAGE_READ`, monotonic watermark).
 - Batch delta sync (`POST /api/v1/sync`) with keyset pagination across N=120 messages (50+50+20).
 - Message send idempotency (`clientMessageId` deduplication).
-- FCM device token lifecycle (register, upsert, ownership transfer, unregister, and 512-char validation).
+- FCM device token lifecycle (register, per-user rows, owner-scoped unregister, and 512-char validation).
 - Standard authentication error envelope (`UNAUTHORIZED`, `TOKEN_INVALID`).
 
 Standard library + `websocket-client` (already used by `tools/e2e/stomp_e2e.py`). Zero additional dependencies.
@@ -29,12 +29,18 @@ Validates pure frame formatting, stream parsing, sequence monotonicity, PII mask
 python -m unittest tools/e2e/p0/test_p0_helpers.py
 ```
 
+The live-suite exit-code and required-skip rules also have offline unit coverage:
+
+```bash
+python -m unittest tools/e2e/p0/test_p0_live.py
+```
+
 ### Live End-to-End Suite
 
 Executes all 5 verification scenarios against the live backend:
 
 ```bash
-python tools/e2e/p0/p0_live.py [--base-url http://localhost:8080] [--ws-url ws://localhost:8080/ws]
+python tools/e2e/p0/p0_live.py [--base-url http://localhost:8080] [--ws-url ws://localhost:8080/ws] [--allow-skip]
 ```
 
 Parameters:
@@ -42,6 +48,7 @@ Parameters:
 - `--ws-url`: STOMP WebSocket URL (defaults to `ws://localhost:8080/ws`).
 - `--sync-count`: Message volume for sync pagination test (default: `120`).
 - `--timeout`: Network timeout in seconds (default: `15.0`).
+- `--allow-skip`: Explicitly allow a successful exit when a required scenario is skipped because the service is offline or a required endpoint returns 404. Without this flag, required skips make the live suite exit nonzero.
 
 ---
 
@@ -62,8 +69,8 @@ Parameters:
 | **`idempotency_dedup`** | Re-sending identical `clientMessageId` returns HTTP 200 with the existing row; exactly one row exists in history. |
 | **`fcm_register`** | Device token registration via `POST /api/v1/users/device-token`. |
 | **`fcm_upsert`** | Re-registering existing device token updates device metadata (`deviceLabel`) without duplicate rows. |
-| **`fcm_ownership_transfer`** | Second user registering same token transfers token ownership from previous user. |
-| **`fcm_unregister`** | Unregistering token via `DELETE /api/v1/users/device-token` returns HTTP 204. |
+| **`fcm_per_user_rows`** | The same physical token has a distinct, stable row for each account, matching the `(user, token)` uniqueness contract. |
+| **`fcm_unregister`** | Deleting one account's token row returns HTTP 204 and leaves the other account's row intact. |
 | **`fcm_oversized_rejected`** | Oversized tokens (>512 chars) and blank tokens are rejected with HTTP 400 `VALIDATION_FAILED`. |
 | **`fcm_no_leak`** | Error envelopes never leak raw secrets, tokens, or credentials in payload fields. |
 | **`auth_missing_token`** | Requests without `Authorization` header return HTTP 401 with standard error envelope `{"error":{"code":"UNAUTHORIZED"}}`. |
@@ -74,6 +81,7 @@ Parameters:
 ## 4. Expected Output Sample (Masked Data)
 
 ```text
+Command: python tools/e2e/p0/p0_live.py --allow-skip
 ==========================================================================
    NEXACHAT P0 LIVE END-TO-END VERIFICATION SUITE                        
    Target: http://localhost:8080 (WS: ws://localhost:8080/ws)
@@ -104,7 +112,7 @@ PASS idempotency_dedup - Duplicate send returned same message (id=55ab...267a)
 --- 4. FCM Device Token Lifecycle & Validation ---
 SKIP fcm_register - Endpoint absent (POST /api/v1/users/device-token returned 404)
 SKIP fcm_upsert - Endpoint absent (POST /api/v1/users/device-token returned 404)
-SKIP fcm_ownership_transfer - Endpoint absent (POST /api/v1/users/device-token returned 404)
+SKIP fcm_per_user_rows - Endpoint absent (POST /api/v1/users/device-token returned 404)
 SKIP fcm_unregister - Endpoint absent (POST /api/v1/users/device-token returned 404)
 SKIP fcm_oversized_rejected - Endpoint absent (POST /api/v1/users/device-token returned 404)
 SKIP fcm_blank_rejected - Endpoint absent (POST /api/v1/users/device-token returned 404)
@@ -117,7 +125,9 @@ PASS auth_invalid_token - Invalid token returned 401 TOKEN_INVALID
 Result: 9 passed, 0 failed, 13 skipped in 3.16s
 ```
 
-*(Note: When executed against an updated backend container built with Flyway V7 and P0 controllers, all 13 skipped tests execute and verify the respective endpoints).*
+This sample uses `--allow-skip` for illustration. The same run exits with status 1 by default because required scenarios skipped. With the current contract, the FCM scenario checks distinct stable rows for both users and account-scoped deletion.
+
+*(Note: When executed against a backend built through Flyway V11 with the P0 controllers, the required scenarios run against the current API contract.)*
 
 ---
 

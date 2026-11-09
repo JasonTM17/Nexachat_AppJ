@@ -33,6 +33,7 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
@@ -59,6 +60,7 @@ import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -540,6 +542,19 @@ class GroupFlowIT {
                 return true;
             }
         }
+    }
+
+    @Test
+    void nonAdminMemberCannotUploadGroupAvatarOverHttp() throws Exception {
+        UUID groupId = createGroup(alice, "Avatar authorization", List.of(bob.id()));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "avatar.png", "image/png", new byte[]{1, 2, 3});
+
+        mockMvc.perform(multipart("/api/v1/conversations/" + groupId + "/avatar")
+                        .file(file)
+                        .header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_ADMIN"));
     }
 
     @Test

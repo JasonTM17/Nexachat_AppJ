@@ -170,14 +170,21 @@ class V8MigrationTest {
     private static DataSource dataSource(String database) {
         SimpleDriverDataSource dataSource = new SimpleDriverDataSource();
         dataSource.setDriver(new org.postgresql.Driver());
-        dataSource.setUrl(serverUrl() + database);
+        dataSource.setUrl(databaseUrl(database));
         dataSource.setUsername(DB_USER);
         dataSource.setPassword(DB_PASSWORD);
         return dataSource;
     }
 
     private static String serverUrl() {
-        return JDBC_URL.substring(0, JDBC_URL.lastIndexOf('/') + 1);
+        String url = JDBC_URL.split("\\?", 2)[0];
+        return url.substring(0, url.lastIndexOf('/') + 1);
+    }
+
+    private static String databaseUrl(String database) {
+        int query = JDBC_URL.indexOf('?');
+        String options = query < 0 ? "" : JDBC_URL.substring(query);
+        return serverUrl() + database + options;
     }
 
     private static void createDatabase(String database) throws SQLException {
@@ -200,6 +207,6 @@ class V8MigrationTest {
         java.util.Properties properties = new java.util.Properties();
         properties.setProperty("user", DB_USER);
         properties.setProperty("password", DB_PASSWORD);
-        return driver.connect(serverUrl() + "postgres", properties);
+        return driver.connect(databaseUrl("postgres"), properties);
     }
 }

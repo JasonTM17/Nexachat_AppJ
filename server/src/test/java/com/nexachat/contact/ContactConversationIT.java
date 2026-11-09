@@ -251,6 +251,77 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @Test
+    void nonOwnerCannotPatchAnotherUsersContactAlias() throws Exception {
+        postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
+                .andExpect(status().isCreated());
+        postJson("/api/v1/contacts", carol.accessToken(), Map.of("phone", alice.phone()))
+                .andExpect(status().isCreated());
+        mockMvc.perform(patch("/api/v1/contacts/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("aliasName", "Alice only"))))
+                .andExpect(status().isOk());
+
+        try {
+            mockMvc.perform(patch("/api/v1/contacts/" + bob.id())
+                            .header("Authorization", "Bearer " + carol.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("aliasName", "Carol"))))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"));
+
+            getJson("/api/v1/contacts", alice.accessToken())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].contactUserId").value(bob.id().toString()))
+                    .andExpect(jsonPath("$[0].aliasName").value("Alice only"));
+            getJson("/api/v1/contacts", carol.accessToken())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].contactUserId").value(alice.id().toString()));
+        } finally {
+            mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                    .header("Authorization", "Bearer " + alice.accessToken()));
+            mockMvc.perform(delete("/api/v1/contacts/" + alice.id())
+                    .header("Authorization", "Bearer " + carol.accessToken()));
+        }
+    }
+
+    @Test
+    void nonOwnerCannotDeleteAnotherUsersContact() throws Exception {
+        postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
+                .andExpect(status().isCreated());
+        postJson("/api/v1/contacts", carol.accessToken(), Map.of("phone", alice.phone()))
+                .andExpect(status().isCreated());
+        mockMvc.perform(patch("/api/v1/contacts/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("aliasName", "Alice only"))))
+                .andExpect(status().isOk());
+
+        try {
+            mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                            .header("Authorization", "Bearer " + carol.accessToken()))
+                    .andExpect(status().isNoContent());
+
+            getJson("/api/v1/contacts", alice.accessToken())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].contactUserId").value(bob.id().toString()))
+                    .andExpect(jsonPath("$[0].aliasName").value("Alice only"));
+            getJson("/api/v1/contacts", carol.accessToken())
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].contactUserId").value(alice.id().toString()));
+        } finally {
+            mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                    .header("Authorization", "Bearer " + alice.accessToken()));
+            mockMvc.perform(delete("/api/v1/contacts/" + alice.id())
+                    .header("Authorization", "Bearer " + carol.accessToken()));
+        }
+    }
+
     // ------------------------------------------------- direct conversations
 
     @Test
