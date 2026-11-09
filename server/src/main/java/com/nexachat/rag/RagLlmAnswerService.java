@@ -1,14 +1,19 @@
 package com.nexachat.rag;
 
+import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.llm.CircuitBreaker;
 import com.nexachat.summary.llm.LlmClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,6 +38,7 @@ public class RagLlmAnswerService {
     private final CircuitBreaker circuitBreaker;
     private final SummaryConsentRepository consentRepository;
     private final RagStats stats;
+    private final ConversationAiOptOuts aiOptOuts;
 
     public RagLlmAnswerService(
             LlmClient llmClient,
@@ -41,16 +47,44 @@ public class RagLlmAnswerService {
             @Qualifier("ragCircuitBreaker") CircuitBreaker circuitBreaker,
             SummaryConsentRepository consentRepository,
             RagStats stats) {
+        this(llmClient, promptBuilder, outputValidator, circuitBreaker, consentRepository, stats,
+                ConversationAiOptOuts.none());
+    }
+
+    @Autowired
+    public RagLlmAnswerService(
+            LlmClient llmClient,
+            RagPromptBuilder promptBuilder,
+            RagOutputValidator outputValidator,
+            @Qualifier("ragCircuitBreaker") CircuitBreaker circuitBreaker,
+            SummaryConsentRepository consentRepository,
+            RagStats stats,
+            ConversationAiOptOuts aiOptOuts) {
         this.llmClient = llmClient;
         this.promptBuilder = promptBuilder;
         this.outputValidator = outputValidator;
         this.circuitBreaker = circuitBreaker;
         this.consentRepository = consentRepository;
         this.stats = stats;
+        this.aiOptOuts = aiOptOuts;
     }
 
     public RagLlmAnswer answer(
-            UUID userId, String question, SummaryLanguage language, List<RagContextItem> context) {
+            UUID userId,
+            UUID conversationId,
+            String question,
+            SummaryLanguage language,
+            List<RagContextItem> context,
+            Map<UUID, RagMessage> contextMessages) {
+        if (!consentRepository.isConsented(userId)) {
+            return null;
+        }
+        List<RagContextItem> externalContext = externalContext(conversationId, context, contextMessages);
+        if (externalContext.isEmpty()) {
+            return null;
+        }
+        // Re-check immediately before the outbound prompt is built: a consent
+        // revocation or an opt-out committed after retrieval must win the race.
         if (!consentRepository.isConsented(userId)) {
             return null;
         }
@@ -68,7 +102,7 @@ public class RagLlmAnswerService {
             return null;
         }
 
-        RagPrompt prompt = promptBuilder.build(question, language, context);
+        RagPrompt prompt = promptBuilder.build(question, language, externalContext);
         boolean primaryAttempted = false;
         boolean breakerRecorded = false;
         try {
@@ -117,5 +151,43 @@ public class RagLlmAnswerService {
             stats.recordLlmFailure();
             return null;
         }
+    }
+
+    /**
+     * Drops context items whose messages now belong to an opted-out author.
+     * Grouped items always share one sender, so dropping an item never splits
+     * a sender's text. An unknown message id is dropped rather than risk
+     * sending unverified text.
+     */
+    private List<RagContextItem> externalContext(
+            UUID conversationId,
+            List<RagContextItem> context,
+            Map<UUID, RagMessage> contextMessages) {
+        if (context == null || context.isEmpty()) {
+            return List.of();
+        }
+        if (conversationId == null) {
+            return context;
+        }
+        Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
+        if (optedOut.isEmpty()) {
+            return context;
+        }
+        List<RagContextItem> kept = new ArrayList<>();
+        for (RagContextItem item : context) {
+            boolean allowed = true;
+            for (UUID messageId : item.messageIds()) {
+                RagMessage message = contextMessages == null ? null : contextMessages.get(messageId);
+                if (message == null
+                        || (message.senderId() != null && optedOut.contains(message.senderId()))) {
+                    allowed = false;
+                    break;
+                }
+            }
+            if (allowed) {
+                kept.add(item);
+            }
+        }
+        return List.copyOf(kept);
     }
 }

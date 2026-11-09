@@ -134,6 +134,19 @@ public class RagEmbeddingService {
                 unique.putIfAbsent(message.id(), message);
             }
         }
+        if (unique.isEmpty()) {
+            return new VectorOutcome(Map.of(), provider.id());
+        }
+        // Re-check the opt-out state at the moment the embedding batch is built:
+        // a backfill row can be selected before a member opts out and committed
+        // afterwards, and no opted-out text may reach an external provider.
+        java.util.Set<UUID> excluded = index.optedOutMessageIds(unique.keySet());
+        if (!excluded.isEmpty()) {
+            unique.keySet().removeAll(excluded);
+            if (unique.isEmpty()) {
+                return new VectorOutcome(Map.of(), provider.id());
+            }
+        }
         List<UUID> ids = List.copyOf(unique.keySet());
         Map<UUID, String> storedHashes = index.loadContentHashes(model, ids);
         Map<UUID, float[]> storedVectors = index.loadVectors(model, ids);

@@ -17,22 +17,30 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
     private final List<RagMessage> messages = new ArrayList<>();
     private final Map<String, Map<UUID, float[]>> vectors = new HashMap<>();
     private final Map<String, Map<UUID, String>> hashes = new HashMap<>();
+    private final java.util.Set<UUID> optedOutMessages = new java.util.HashSet<>();
 
     public void add(RagMessage message) {
         messages.add(message);
+    }
+
+    /** Marks a message as authored by a member who opted out of AI processing. */
+    public void optOutMessage(UUID messageId) {
+        optedOutMessages.add(messageId);
     }
 
     public void clear() {
         messages.clear();
         vectors.clear();
         hashes.clear();
+        optedOutMessages.clear();
     }
 
     @Override
     public List<RagMessage> recentMessages(UUID conversationId, int limit) {
         List<RagMessage> matching = new ArrayList<>();
         for (RagMessage message : messages) {
-            if (message.conversationId().equals(conversationId)) {
+            if (message.conversationId().equals(conversationId)
+                    && !optedOutMessages.contains(message.id())) {
                 matching.add(message);
             }
         }
@@ -51,6 +59,9 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
         List<RagMessage> matching = new ArrayList<>();
         for (RagMessage message : messages) {
             if (!message.conversationId().equals(conversationId)) {
+                continue;
+            }
+            if (optedOutMessages.contains(message.id())) {
                 continue;
             }
             String folded = Tokenizer.foldForMatching(message.content());
@@ -109,7 +120,8 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
         Map<UUID, float[]> modelVectors = vectors.getOrDefault(model, Map.of());
         List<RagMessage> missing = new ArrayList<>();
         for (RagMessage message : messages) {
-            if (!modelVectors.containsKey(message.id())) {
+            if (!modelVectors.containsKey(message.id())
+                    && !optedOutMessages.contains(message.id())) {
                 missing.add(message);
             }
         }
@@ -121,7 +133,7 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
     public Map<UUID, String> loadMessageContentHashes(Collection<UUID> messageIds) {
         Map<UUID, String> result = new LinkedHashMap<>();
         for (RagMessage message : messages) {
-            if (messageIds.contains(message.id())) {
+            if (messageIds.contains(message.id()) && !optedOutMessages.contains(message.id())) {
                 result.put(message.id(), RagHashes.messageContentHash(
                         message.id(), message.editedAt(), message.content()));
             }
@@ -130,10 +142,22 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
     }
 
     @Override
+    public java.util.Set<UUID> optedOutMessageIds(Collection<UUID> messageIds) {
+        java.util.Set<UUID> result = new java.util.LinkedHashSet<>();
+        for (RagMessage message : messages) {
+            if (messageIds.contains(message.id()) && optedOutMessages.contains(message.id())) {
+                result.add(message.id());
+            }
+        }
+        return java.util.Set.copyOf(result);
+    }
+
+    @Override
     public RagMessage findMessage(UUID conversationId, UUID messageId) {
         return messages.stream()
                 .filter(message -> message.conversationId().equals(conversationId))
                 .filter(message -> message.id().equals(messageId))
+                .filter(message -> !optedOutMessages.contains(message.id()))
                 .findFirst()
                 .orElse(null);
     }

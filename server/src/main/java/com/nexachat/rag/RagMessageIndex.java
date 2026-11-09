@@ -3,6 +3,7 @@ package com.nexachat.rag;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -29,8 +30,11 @@ public interface RagMessageIndex {
     /** Messages that have no vector for the given model yet, newest first. */
     List<RagMessage> findUnindexed(String model, int limit);
 
-    /** Current message content hash for cache validation; absent when deleted. */
+    /** Current message content hash for cache validation; absent when deleted or opted out. */
     Map<UUID, String> loadMessageContentHashes(Collection<UUID> messageIds);
+
+    /** Ids whose author opted out in the message's own conversation. */
+    Set<UUID> optedOutMessageIds(Collection<UUID> messageIds);
 
     /** Look up a single message by id, scoped to a conversation. */
     RagMessage findMessage(UUID conversationId, UUID messageId);
