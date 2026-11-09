@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>NexaChat</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/join/join.js" defer></script>
+</head>
+<body>
+  <main class="container">
+    <div class="card">
+      <h1 class="brand">NexaChat</h1>
+      <div id="invite-valid" class="state-container" hidden>
+        <p class="tagline">Bạn nhận được lời mời tham gia nhóm trên NexaChat.</p>
+        <a id="btn-open-app" class="btn" href="#">Mở trong ứng dụng</a>
+      </div>
+      <div id="invite-invalid" class="state-container" hidden>
+        <p class="error-msg">Liên kết mời không hợp lệ hoặc đã hết hạn.</p>
+        <a class="btn btn-secondary" href="/">Về trang chủ</a>
+      </div>
+      <noscript>
+        <p class="error-msg">Trình duyệt của bạn cần bật JavaScript để mở liên kết mời.</p>
+      </noscript>
+    </div>
+  </main>
+</body>
+</html>

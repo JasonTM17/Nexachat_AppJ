@@ -20,6 +20,7 @@ import com.nexachat.data.ChatMessage;
 public final class MessageListAdapter extends ListAdapter<MessageListItem, RecyclerView.ViewHolder> {
 
     private final MessageBubbleBinder binder;
+    @Nullable private String currentUserId;
 
     public MessageListAdapter(
             @NonNull DateFormat timeFormat,
@@ -39,6 +40,13 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         super(new MessageListDiffCallback());
         this.binder = new MessageBubbleBinder(
                 timeFormat, resolveOriginal, actionListener, lifecycleOwner, storeOwner);
+    }
+
+    public void setCurrentUserId(@Nullable String userId) {
+        if (java.util.Objects.equals(currentUserId, userId)) return;
+        currentUserId = userId;
+        binder.setCurrentUserId(userId);
+        notifyDataSetChanged();
     }
 
     @Override

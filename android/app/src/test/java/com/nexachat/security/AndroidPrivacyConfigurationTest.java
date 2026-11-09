@@ -1,6 +1,7 @@
 package com.nexachat.security;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -93,7 +94,7 @@ public final class AndroidPrivacyConfigurationTest {
     }
 
     @Test
-    public void manifestComponentsAreExplicitAndNoExternalDeepLinksAreDeclared()
+    public void manifestComponentsAreExplicitAndOnlySafeInviteDeepLinkIsDeclared()
             throws Exception {
         Element application = applicationElement();
         String[] componentTags = {"activity", "service", "receiver", "provider"};
@@ -115,22 +116,79 @@ public final class AndroidPrivacyConfigurationTest {
         }
         assertEquals(1, exportedCount);
 
-        assertEquals("no VIEW deep links are declared", 0,
+        int viewFilterCount = 0;
+        NodeList filters = application.getElementsByTagName("intent-filter");
+        for (int i = 0; i < filters.getLength(); i++) {
+            Element filter = (Element) filters.item(i);
+            NodeList filterActions = filter.getElementsByTagName("action");
+            boolean handlesView = false;
+            for (int j = 0; j < filterActions.getLength(); j++) {
+                Element action = (Element) filterActions.item(j);
+                handlesView |= "android.intent.action.VIEW".equals(
+                        action.getAttributeNS(ANDROID_NS, "name"));
+            }
+            if (!handlesView) continue;
+
+            viewFilterCount++;
+            Element activity = (Element) filter.getParentNode();
+            assertEquals("invite links are handled by the exported launcher only",
+                    "activity", activity.getTagName());
+            assertEquals(".MainActivity", activity.getAttributeNS(ANDROID_NS, "name"));
+            assertEquals("true", activity.getAttributeNS(ANDROID_NS, "exported"));
+            assertEquals("only the exact VIEW action is accepted", 1, filterActions.getLength());
+
+            NodeList filterCategories = filter.getElementsByTagName("category");
+            assertEquals("only DEFAULT and BROWSABLE categories are accepted",
+                    2, filterCategories.getLength());
+            boolean hasDefault = false;
+            boolean hasBrowsable = false;
+            for (int j = 0; j < filterCategories.getLength(); j++) {
+                Element category = (Element) filterCategories.item(j);
+                String name = category.getAttributeNS(ANDROID_NS, "name");
+                hasDefault |= "android.intent.category.DEFAULT".equals(name);
+                hasBrowsable |= "android.intent.category.BROWSABLE".equals(name);
+            }
+            assertTrue(hasDefault);
+            assertTrue(hasBrowsable);
+
+            NodeList dataNodes = filter.getElementsByTagName("data");
+            assertEquals("invite filter has one constrained data entry", 1, dataNodes.getLength());
+            Element data = (Element) dataNodes.item(0);
+            assertEquals("nexachat", data.getAttributeNS(ANDROID_NS, "scheme"));
+            assertEquals("join", data.getAttributeNS(ANDROID_NS, "host"));
+            assertEquals("/", data.getAttributeNS(ANDROID_NS, "pathPrefix"));
+            assertFalse("HTTPS App Links are disabled by default",
+                    "true".equals(filter.getAttributeNS(ANDROID_NS, "autoVerify")));
+        }
+        assertEquals("only one supported invite VIEW filter is declared", 1, viewFilterCount);
+        assertEquals("no other URL data entries are declared", 1,
                 application.getElementsByTagName("data").getLength());
+
         NodeList actions = application.getElementsByTagName("action");
         for (int i = 0; i < actions.getLength(); i++) {
             Element action = (Element) actions.item(i);
-            assertTrue("no browsable external action is declared",
-                    !"android.intent.action.VIEW".equals(
-                            action.getAttributeNS(ANDROID_NS, "name")));
+            String name = action.getAttributeNS(ANDROID_NS, "name");
+            assertTrue("only the invite VIEW action is external",
+                    !"android.intent.action.VIEW".equals(name)
+                            || ".MainActivity".equals(
+                                    ((Element) action.getParentNode().getParentNode())
+                                            .getAttributeNS(ANDROID_NS, "name")));
         }
         NodeList categories = application.getElementsByTagName("category");
+        int browsableCount = 0;
         for (int i = 0; i < categories.getLength(); i++) {
             Element category = (Element) categories.item(i);
-            assertTrue("no browsable external category is declared",
-                    !"android.intent.category.BROWSABLE".equals(
-                            category.getAttributeNS(ANDROID_NS, "name")));
+            String name = category.getAttributeNS(ANDROID_NS, "name");
+            if ("android.intent.category.BROWSABLE".equals(name)) {
+                browsableCount++;
+            }
+            assertTrue("only the invite route is browsable",
+                    !"android.intent.category.BROWSABLE".equals(name)
+                            || ".MainActivity".equals(
+                                    ((Element) category.getParentNode().getParentNode())
+                                            .getAttributeNS(ANDROID_NS, "name")));
         }
+        assertEquals("only one BROWSABLE entry point is declared", 1, browsableCount);
     }
 
     private static void assertEveryPrivateDomainExcluded(Element ruleSet) {

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "464325c9e5b3d5ffba5c7e4b48e91ea7",
+    "identityHash": "ae6b308cd709df60bbbc31cc68dc38c4",
     "entities": [
       {
         "tableName": "messages",
@@ -121,7 +121,7 @@
       },
       {
         "tableName": "conversations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, `labelIdsCsv` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `mutedUntilEpochMs` INTEGER, `archived` INTEGER NOT NULL, `aiOptOut` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -220,11 +220,28 @@
             "notNull": true
           },
           {
-            "fieldPath": "labelIdsCsv",
-            "columnName": "labelIdsCsv",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "fieldPath": "muted",
+            "columnName": "muted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mutedUntilEpochMs",
+            "columnName": "mutedUntilEpochMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "archived",
+            "columnName": "archived",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aiOptOut",
+            "columnName": "aiOptOut",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -618,7 +635,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '464325c9e5b3d5ffba5c7e4b48e91ea7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ae6b308cd709df60bbbc31cc68dc38c4')"
     ]
   }
 }

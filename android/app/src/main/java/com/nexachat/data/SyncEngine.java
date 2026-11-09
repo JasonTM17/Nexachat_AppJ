@@ -358,6 +358,21 @@ public final class SyncEngine {
                 String conversationId = delta.getConversationId();
                 if (conversationId == null) continue;
 
+                // 0. Apply the caller's own per-member preferences. The server
+                //    carries them on every delta so a change made on another
+                //    device reaches Room without a separate inbox fetch.
+                if (delta.getMuted() != null) {
+                    boolean muted = Boolean.TRUE.equals(delta.getMuted());
+                    Long mutedUntil = muted
+                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil())
+                            : null;
+                    conversationDao.updateMute(conversationId, muted, mutedUntil).blockingAwait();
+                }
+                if (delta.getArchived() != null) {
+                    conversationDao.updateArchived(
+                            conversationId, Boolean.TRUE.equals(delta.getArchived())).blockingAwait();
+                }
+
                 // 1. Ingest new messages
                 if (!delta.getNewMessages().isEmpty()) {
                     List<MessageEntity> newEntities = new ArrayList<>();
@@ -453,7 +468,16 @@ public final class SyncEngine {
                     }
                 }
 
-                // 5. Peer receipt watermarks advance ONLY from the peer's own read/delivered
+                // 5. Apply caller-only member flags (pinned, pinnedAt).
+                if (delta.getPinned() != null) {
+                    boolean pinned = Boolean.TRUE.equals(delta.getPinned());
+                    Long pinnedAt = delta.getPinnedAt() != null
+                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())
+                            : null;
+                    conversationDao.updatePin(conversationId, pinned, pinnedAt).blockingAwait();
+                }
+
+                // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered
                 //    frames; a delta bundle says nothing about what the peer has read.
             }
             for (String conversationId : missing) {
@@ -490,7 +514,9 @@ public final class SyncEngine {
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()),
                 attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()),
-                TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt())
+                  TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
+                  deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
+                  !deleted && dto.isMentionAll()
         );
     }
 

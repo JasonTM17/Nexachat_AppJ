@@ -7,7 +7,8 @@ import androidx.annotation.Nullable;
 public enum InboxFilter {
     ALL,
     UNREAD,
-    GROUPS;
+    GROUPS,
+    ARCHIVED;
 
     @NonNull
     public static InboxFilter fromSavedValue(@Nullable String value) {

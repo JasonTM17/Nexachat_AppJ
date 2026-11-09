@@ -2,7 +2,11 @@ package com.nexachat.message;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.rag.RagMessageIndex;
 import com.nexachat.message.dto.SendMessageRequest;
+import com.nexachat.summary.SummaryRequest;
+import com.nexachat.summary.SummaryScope;
+import com.nexachat.summary.SummaryWindowRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -62,6 +66,8 @@ class MessageFeatureFlowIT {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private MessageService messageService;
+    @Autowired private SummaryWindowRepository summaryWindowRepository;
+    @Autowired private RagMessageIndex ragMessageIndex;
 
     private record TestUser(UUID id, String accessToken) { }
 
@@ -169,6 +175,83 @@ class MessageFeatureFlowIT {
         assertThat(entry.get("lastMessage").has("contentSnippet")).isTrue();
         assertThat(entry.get("lastMessage").get("contentSnippet").isNull()).isTrue();
         assertThat(entry.get("lastMessage").get("deletedAt").isTextual()).isTrue();
+    }
+
+    @Test
+    void authorRecallExpiresAfterTheConfiguredWindowWithStableErrorShape() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        UUID messageId = send(conversationId, alice, "too old to recall");
+        jdbcTemplate.update("UPDATE messages SET created_at = created_at - INTERVAL '25 hours' WHERE id = ?",
+                messageId);
+
+        assertError("NOT_MESSAGE_AUTHOR", 403,
+                mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                        .header("Authorization", bearer(bob))));
+        assertError("NOT_MEMBER", 403,
+                mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                        .header("Authorization", bearer(carol))));
+
+        MvcResult expired = mockMvc.perform(delete(
+                        "/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                .header("Authorization", bearer(alice)))
+                .andExpect(status().isConflict())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(expired.getResponse().getContentAsString());
+        assertThat(body.path("error").path("code").asText()).isEqualTo("RECALL_WINDOW_EXPIRED");
+        assertThat(body.path("error").path("message").asText()).isNotBlank();
+    }
+
+    @Test
+    void recalledMessageIsAbsentFromDeltaArchiveAndAiInputs() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        String marker = "recall-ai-" + UUID.randomUUID().toString().replace("-", "");
+        UUID messageId = send(conversationId, alice, marker + " https://recall.example/tombstone");
+        long seq = jdbcTemplate.queryForObject("SELECT seq FROM messages WHERE id = ?", Long.class, messageId);
+
+        assertThat(summaryWindowRepository.findWindow(conversationId,
+                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null))
+                .anyMatch(message -> message.id().equals(messageId));
+        assertThat(ragMessageIndex.lexicalCandidates(conversationId, List.of(marker), 5))
+                .anyMatch(message -> message.id().equals(messageId));
+        JsonNode archiveBefore = objectMapper.readTree(mockMvc.perform(get(
+                                "/api/v1/conversations/{id}/archive", conversationId)
+                        .header("Authorization", bearer(alice)).param("type", "LINK"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(archiveBefore.path("items")).hasSize(1);
+
+        Instant since = Instant.now().minusSeconds(10);
+        mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", conversationId, messageId)
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isNoContent());
+
+        JsonNode delta = objectMapper.readTree(mockMvc.perform(post("/api/v1/sync")
+                        .header("Authorization", bearer(alice))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "watermarks", List.of(Map.of(
+                                        "conversationId", conversationId.toString(), "lastSeq", seq)),
+                                "since", since.toString()))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(delta.path("deltas").get(0).path("deletedMessageIds").toString())
+                .contains(messageId.toString());
+
+        JsonNode archiveAfter = objectMapper.readTree(mockMvc.perform(get(
+                                "/api/v1/conversations/{id}/archive", conversationId)
+                        .header("Authorization", bearer(alice)).param("type", "LINK"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(archiveAfter.path("items")).isEmpty();
+        assertThat(summaryWindowRepository.findWindow(conversationId,
+                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null))
+                .noneMatch(message -> message.id().equals(messageId));
+        assertThat(ragMessageIndex.lexicalCandidates(conversationId, List.of(marker), 5))
+                .noneMatch(message -> message.id().equals(messageId));
+
+        JsonNode inbox = objectMapper.readTree(mockMvc.perform(get("/api/v1/conversations")
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        JsonNode lastMessage = findById(inbox, conversationId).path("lastMessage");
+        assertThat(lastMessage.path("contentSnippet").isNull()).isTrue();
+        assertThat(lastMessage.path("deletedAt").isTextual()).isTrue();
     }
 
     @Test
@@ -320,7 +403,7 @@ class MessageFeatureFlowIT {
     }
 
     @Test
-    void groupAdminCannotDeleteAnotherAuthorsMessageAndRemovedMemberLosesMessageAccess() throws Exception {
+    void groupAdminCanModerateOldMessagesAndRemovedMembersLoseMessageAccess() throws Exception {
         JsonNode group = objectMapper.readTree(mockMvc.perform(post("/api/v1/conversations/group")
                         .header("Authorization", bearer(alice))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -331,13 +414,23 @@ class MessageFeatureFlowIT {
         UUID groupId = UUID.fromString(group.get("id").asText());
         UUID aliceMessage = send(groupId, alice, "admin-authored message");
         UUID bobMessage = send(groupId, bob, "member-authored message");
+        UUID bobFormerMemberMessage = send(groupId, bob, "former-member message");
+        jdbcTemplate.update("UPDATE messages SET created_at = created_at - INTERVAL '25 hours' WHERE id IN (?, ?)",
+                bobMessage, bobFormerMemberMessage);
 
-        assertError("NOT_MESSAGE_AUTHOR", 403,
+        assertError("RECALL_WINDOW_EXPIRED", 409,
                 mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, bobMessage)
-                        .header("Authorization", bearer(alice))));
+                        .header("Authorization", bearer(bob))));
         assertError("NOT_MESSAGE_AUTHOR", 403,
                 mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, aliceMessage)
                         .header("Authorization", bearer(bob))));
+
+        mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, bobMessage)
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, bobMessage)
+                        .header("Authorization", bearer(bob)))
+                .andExpect(status().isNoContent());
 
         mockMvc.perform(delete("/api/v1/conversations/{conversationId}/members/{userId}", groupId, bob.id())
                         .header("Authorization", bearer(alice)))
@@ -346,6 +439,9 @@ class MessageFeatureFlowIT {
                 patchMessage(groupId, aliceMessage, bob, "removed edit"));
         assertError("NOT_MEMBER", 403,
                 mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, bobMessage)
+                        .header("Authorization", bearer(bob))));
+        assertError("NOT_MEMBER", 403,
+                mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", groupId, bobFormerMemberMessage)
                         .header("Authorization", bearer(bob))));
         assertError("NOT_MEMBER", 403,
                 mockMvc.perform(get("/api/v1/conversations/{id}/messages/search", groupId)

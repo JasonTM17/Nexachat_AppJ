@@ -23,6 +23,7 @@
         <libphonenumber.version>8.13.45</libphonenumber.version>
         <bucket4j.version>8.10.1</bucket4j.version>
         <testcontainers.version>1.20.4</testcontainers.version>
+        <nexachat.test.build-directory>target</nexachat.test.build-directory>
     </properties>
 
     <dependencies>
@@ -135,17 +136,26 @@
     </dependencies>
 
     <build>
+        <directory>${project.basedir}/${nexachat.test.build-directory}</directory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
             <plugin>
-                <!-- Runs *IT integration tests at verify time. Locally they hit the
-                     docker-compose DB on :5433; CI overrides via IT_DB_* env vars. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertiesFile>${project.basedir}/src/test/resources/hermetic-test.properties</systemPropertiesFile>
+                </configuration>
+            </plugin>
+            <plugin>
+                <!-- Runs *IT integration tests at verify time. IT_DB_* selects the
+                     disposable base database; application settings are pinned for tests. -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
+                    <systemPropertiesFile>${project.basedir}/src/test/resources/hermetic-test.properties</systemPropertiesFile>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>

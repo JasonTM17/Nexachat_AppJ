@@ -115,6 +115,16 @@ by the STOMP authorization interceptor before it reaches the controller.
 - `GET /api/v1/calls/ice-config` returns
   `{"iceServers":[{"urls":["stun:stun.l.google.com:19302"]}],"ttlSeconds":3600}`
   by default. The route requires authentication.
+- `GET /api/v1/calls/{callId}/offer` returns the in-memory caller SDP offer and
+  the same ICE configuration as `ice-config` for fast-path retrieval while a call
+  is still in the registry (for example after an FCM `CALL_INVITE` wake). The
+  caller and callee may call it; other users receive a domain failure.
+  Success body: `{callId, sdp: {type, description}, iceConfig}` (`CallOfferResponse`).
+  The offer is served only while the registry still holds it for that `callId`;
+  after terminal eviction or when no offer was stored, the route fails with the
+  same domain error as a missing call. `CallException` from this route is not
+  mapped in `GlobalExceptionHandler`, so those domain failures currently return
+  `500 INTERNAL_ERROR` instead of structured call codes on REST.
 - `GET /api/v1/conversations/{id}/calls?limit=20&cursor=` returns
   `{items:[...],nextCursor}` for a conversation member. Each item includes
   `callId`, `callerId`, `calleeId`, `state`, `endReason`, `startedAt`,
@@ -128,6 +138,7 @@ by the STOMP authorization interceptor before it reaches the controller.
 | Setting | Default | Behavior |
 |---|---|---|
 | `nexachat.calls.ring-timeout-ms` | `45000` | Ring duration before `MISSED` |
+| `nexachat.calls.disconnect-grace-ms` | `15000` | Delay before an `ACTIVE` call ends after the participant's last STOMP session drops |
 | `nexachat.calls.ice-servers` | `stun:stun.l.google.com:19302` | Comma-separated ICE URLs, returned as one ICE server |
 | INVITE rate | 20 per user per minute | Uses the existing `RateLimitService` |
 | SDP and ICE rate | 300 combined per user per minute | Uses the existing `RateLimitService` |

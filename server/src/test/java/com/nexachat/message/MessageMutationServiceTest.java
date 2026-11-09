@@ -17,6 +17,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.temporal.ChronoUnit;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,7 +68,7 @@ class MessageMutationServiceTest {
         ReflectionTestUtils.setField(message, "id", messageId);
         ReflectionTestUtils.setField(message, "seq", 17L);
         ReflectionTestUtils.setField(message, "clientMessageId", UUID.randomUUID());
-        ReflectionTestUtils.setField(message, "createdAt", Instant.parse("2026-11-05T10:00:00Z"));
+        ReflectionTestUtils.setField(message, "createdAt", Instant.now().minusSeconds(60));
         lenient().when(memberRepository.existsByConversation_IdAndUser_Id(any(), any())).thenReturn(true);
         lenient().when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
         lenient().when(conversationRepository.findByIdForUpdate(conversationId))
@@ -163,6 +166,19 @@ class MessageMutationServiceTest {
         verify(reactionRepository).deleteByMessageId(messageId);
         verify(eventPublisher, times(1)).publishEvent(any(MessageDeletedEvent.class));
         verify(eventPublisher, never()).publishEvent(any(MessageUpdatedEvent.class));
+    }
+
+    @Test
+    void deleteUsesInjectedClockAndAllowsRecallAtTheExactBoundary() {
+        Instant boundary = message.getCreatedAt().plus(MessageRecallProperties.DEFAULT_RECALL_WINDOW);
+        service = new MessageService(messageRepository, null, attachmentRepository, reactionRepository,
+                mock(ReactionEventRepository.class), conversationRepository, memberRepository,
+                pinnedMessageRepository, storageService, eventPublisher, new SyncProperties(),
+                Clock.fixed(boundary, ZoneOffset.UTC), new MessageRecallProperties());
+
+        service.delete(userId, conversationId, messageId);
+
+        assertThat(message.getDeletedAt()).isEqualTo(boundary.truncatedTo(ChronoUnit.MICROS));
     }
 
     @Test

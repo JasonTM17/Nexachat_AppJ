@@ -15,7 +15,7 @@ Every engineering document in the repository, grouped by domain. Start with
 
 | Doc | Contents |
 |---|---|
-| [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`), including auth, conversations, messages, attachments, calls and summary routes |
+| [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`) with a feature matrix, migration history (V1–V22) and operational notes, covering auth, conversations, messages, reminders, polls, labels, invites, attachments, calls and summary routes |
 | [docs/websocket-protocol.md](websocket-protocol.md) | STOMP over WebSocket (`/ws`) destinations, event envelope, delivery guarantees and rate limits |
 | [docs/calls.md](calls.md) | 1-to-1 WebRTC voice call signaling, call events, ICE configuration, call history and Android UI |
 | [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & OpenAI-compatible (Gemini-tested) LLM engines, citation guard and consent model |
@@ -27,6 +27,7 @@ Every engineering document in the repository, grouped by domain. Start with
 |---|---|
 | [docs/security.md](security.md) | Security architecture — authentication, authorization, storage, rate limits and hardening |
 | [docs/operations.md](operations.md) | Operator setup, Docker Compose runtime configuration, backup and recovery notes |
+| [docs/testing.md](testing.md) | Server test setup, PostgreSQL requirements, environment isolation and concurrent runs |
 | [tools/README-release.md](../tools/README-release.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and sample conversations |
 | [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | Local LAN stack bootstrap (Git Bash / PowerShell) |

@@ -13,18 +13,25 @@ public final class ConversationDto {
     @Nullable private final String avatarUrl;
     @Nullable private final List<ConversationMemberDto> members;
     @Nullable private final String createdAt;
+    /** Caller's own per-conversation AI opt-out state. */
+    @Nullable private final Boolean aiOptOut;
 
     public ConversationDto() {
-        this(null, null, null, null, List.of(), null);
+        this(null, null, null, null, List.of(), null, null);
     }
 
-    public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
+    public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt, @Nullable Boolean aiOptOut) {
         this.id = id;
         this.type = type;
         this.title = title;
         this.avatarUrl = avatarUrl;
         this.members = members == null ? List.of() : members;
         this.createdAt = createdAt;
+        this.aiOptOut = aiOptOut;
+    }
+
+    public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
+        this(id, type, title, avatarUrl, members, createdAt, null);
     }
 
     public ConversationDto(String id, String type) {
@@ -55,6 +62,11 @@ public final class ConversationDto {
         return createdAt;
     }
 
+    /** Caller's own AI opt-out state; absent in legacy payloads. */
+    @Nullable public Boolean getAiOptOut() {
+        return aiOptOut;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof ConversationDto that)) {
@@ -65,11 +77,12 @@ public final class ConversationDto {
                 && Objects.equals(title, that.title)
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(members, that.members)
-                && Objects.equals(createdAt, that.createdAt);
+                && Objects.equals(createdAt, that.createdAt)
+                && Objects.equals(aiOptOut, that.aiOptOut);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type, title, avatarUrl, members, createdAt);
+        return Objects.hash(id, type, title, avatarUrl, members, createdAt, aiOptOut);
     }
 }

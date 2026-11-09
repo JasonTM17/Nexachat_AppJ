@@ -106,6 +106,18 @@
                         app:cornerRadius="12dp"
                         app:icon="@drawable/ic_add"
                         app:iconGravity="textStart" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/inviteLinkButton"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="@dimen/space_md"
+                        android:layout_marginBottom="@dimen/space_sm"
+                        android:minHeight="@dimen/min_touch_target"
+                        android:text="@string/invite_manage_action"
+                        android:visibility="gone"
+                        app:cornerRadius="12dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

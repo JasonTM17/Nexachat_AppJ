@@ -34,7 +34,6 @@ import org.junit.runner.RunWith;
 public final class RoomMigrationTest {
     private static final String LEGACY_DB = "nexachat-migration-legacy.db";
     private static final String EXPORTED_DB = "nexachat-migration-exported.db";
-    private static final String V8_TO_V9_DB = "nexachat-migration-v8-v9.db";
 
     /** Schema as shipped in version 1 (before any migration). */
     private static final List<String> V1_SCHEMA =
@@ -79,7 +78,6 @@ public final class RoomMigrationTest {
     public void cleanUp() {
         context.deleteDatabase(LEGACY_DB);
         context.deleteDatabase(EXPORTED_DB);
-        context.deleteDatabase(V8_TO_V9_DB);
     }
 
     @Test
@@ -98,34 +96,13 @@ public final class RoomMigrationTest {
     }
 
     @Test
-    public void migrateV8ToV9PreservesConversationAndDefaultsLabels() throws Exception {
-        context.deleteDatabase(V8_TO_V9_DB);
-        SupportSQLiteDatabase oldDb = helper.createDatabase(V8_TO_V9_DB, 8);
-        try {
-            oldDb.execSQL(
-                    "INSERT INTO conversations (id, type, title, lastMessageSeq, "
-                            + "lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, "
-                            + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
-                            + "otherUserId, lastMessageDeleted, peerDeliveredSeq) "
-                            + "VALUES ('c-9', 'GROUP', 'Kept', 17, 'hello', 'Lan', 100, 2, "
-                            + "NULL, NULL, NULL, 4, 'MEMBER', NULL, 0, 8)");
-        } finally {
-            oldDb.close();
-        }
+    public void v10SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 10).close();
+    }
 
-        try (SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
-                V8_TO_V9_DB, 9, true, AppDatabase.MIGRATION_8_9)) {
-            try (Cursor cursor = db.query(
-                    "SELECT title, lastMessageSeq, peerReadSeq, peerDeliveredSeq, labelIdsCsv "
-                            + "FROM conversations WHERE id = 'c-9'")) {
-                assertTrue(cursor.moveToFirst());
-                assertEquals("Kept", cursor.getString(0));
-                assertEquals(17L, cursor.getLong(1));
-                assertEquals(4L, cursor.getLong(2));
-                assertEquals(8L, cursor.getLong(3));
-                assertEquals("", cursor.getString(4));
-            }
-        }
+    @Test
+    public void v11SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 11).close();
     }
 
     @Test
@@ -322,7 +299,10 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_5_6,
                         AppDatabase.MIGRATION_6_7,
                         AppDatabase.MIGRATION_7_8,
-                        AppDatabase.MIGRATION_8_9)
+                        AppDatabase.MIGRATION_8_9,
+                        AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11,
+                        AppDatabase.MIGRATION_11_12)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()

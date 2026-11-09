@@ -10,9 +10,11 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.ConversationRepository;
+import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.TimeAndJwt;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
@@ -34,8 +36,11 @@ public final class InboxViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<InboxUiState> mutableUiState =
             new MutableLiveData<>(new InboxUiState());
+    private final MutableLiveData<ApiError> pinError = new MutableLiveData<>(null);
+    private final InboxSingleLiveEvent<InboxEvent> events = new InboxSingleLiveEvent<>();
     private InboxUiState currentState = mutableUiState.getValue();
     private boolean refreshInFlight;
+    @Nullable private Boolean pendingVariantRefresh;
     private boolean nextPageInFlight;
     private long pageOperationGeneration;
 
@@ -79,23 +84,51 @@ public final class InboxViewModel extends ViewModel {
         return mutableUiState;
     }
 
+    /** One-shot preference failures for the inbox surface. */
+    public LiveData<InboxSingleLiveEvent.Event<InboxEvent>> getEvents() {
+        return events;
+    }
+
     public void selectFilter(@NonNull InboxFilter filter) {
         Objects.requireNonNull(filter, "filter");
+        InboxFilter previous = currentState.getSelectedFilter();
         savedStateHandle.set(KEY_SELECTED_FILTER, filter.name());
         updateState(state -> state.withSelectedFilter(filter));
+        if (filter == previous) {
+            return;
+        }
+        if (filter == InboxFilter.ARCHIVED) {
+            refreshVariant(true);
+        } else if (previous == InboxFilter.ARCHIVED) {
+            refreshVariant(false);
+        }
     }
 
     /** Pulls the authoritative inbox from REST (launch + user refresh). */
     public synchronized void refresh() {
-        if (refreshInFlight) return;
+        refreshVariant(currentState.getSelectedFilter() == InboxFilter.ARCHIVED);
+    }
+
+    private synchronized void refreshVariant(boolean archived) {
+        if (refreshInFlight) {
+            pendingVariantRefresh = archived;
+            return;
+        }
         refreshInFlight = true;
+        pendingVariantRefresh = null;
         long generation = ++pageOperationGeneration;
         updateState(InboxUiState::withRefreshStarted);
-        disposables.add(conversationRepository.refreshInboxPage()
+        disposables.add(conversationRepository.refreshInboxPage(archived)
                 .subscribeOn(Schedulers.io())
                 .doFinally(() -> {
+                    Boolean pending;
                     synchronized (InboxViewModel.this) {
                         refreshInFlight = false;
+                        pending = pendingVariantRefresh;
+                        pendingVariantRefresh = null;
+                    }
+                    if (pending != null) {
+                        refreshVariant(pending);
                     }
                 })
                 .subscribe(
@@ -157,6 +190,53 @@ public final class InboxViewModel extends ViewModel {
                         }));
     }
 
+    /** Mutes one conversation for the given preset instant. */
+    public void muteConversation(@NonNull String conversationId, @NonNull java.time.Instant until) {
+        runPreference(conversationRepository.muteConversation(conversationId, until));
+    }
+
+    /** Mutes one conversation until the caller turns notifications back on. */
+    public void muteConversationForever(@NonNull String conversationId) {
+        runPreference(conversationRepository.muteConversationForever(conversationId));
+    }
+
+    /** Clears the mute in one tap. */
+    public void unmuteConversation(@NonNull String conversationId) {
+        runPreference(conversationRepository.unmuteConversation(conversationId));
+    }
+
+    /** Archives or restores one conversation for the caller. */
+    public void setConversationArchived(@NonNull String conversationId, boolean archived) {
+        runPreference(conversationRepository.setConversationArchived(conversationId, archived));
+    }
+
+    /** Sets the caller's AI opt-out for one conversation. */
+    public void setConversationAiOptOut(@NonNull String conversationId, boolean optOut) {
+        disposables.add(conversationRepository.setAiOptOut(conversationId, optOut)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Failure<?> failure) {
+                                events.postEvent(new InboxEvent(failure.getError()));
+                            }
+                        },
+                        error -> events.postEvent(
+                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+    }
+
+    private void runPreference(Single<Result<Void>> request) {
+        disposables.add(Objects.requireNonNull(request, "request")
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Failure<?> failure) {
+                                events.postEvent(new InboxEvent(failure.getError()));
+                            }
+                        },
+                        error -> events.postEvent(
+                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+    }
+
     private synchronized boolean isPageOperationCurrent(long generation) {
         return generation == pageOperationGeneration;
     }
@@ -189,9 +269,90 @@ public final class InboxViewModel extends ViewModel {
         mutableUiState.postValue(currentState);
     }
 
+    public LiveData<ApiError> getPinError() {
+        return pinError;
+    }
+
+    public void clearPinError() {
+        pinError.postValue(null);
+    }
+
+    public void togglePin(@NonNull ConversationSummary conversation) {
+        setConversationPinned(conversation.getId(), !conversation.isPinned());
+    }
+
+    public void pinConversation(@NonNull String conversationId) {
+        setConversationPinned(conversationId, true);
+    }
+
+    public void unpinConversation(@NonNull String conversationId) {
+        setConversationPinned(conversationId, false);
+    }
+
+    private void setConversationPinned(@NonNull String conversationId, boolean pin) {
+        disposables.add(conversationRepository.setConversationPinned(conversationId, pin)
+                .subscribeOn(Schedulers.io())
+                .subscribe(result -> {
+                    if (result instanceof Result.Failure<?> failure) {
+                        pinError.postValue(failure.getError());
+                        events.postEvent(new InboxEvent(failure.getError()));
+                    }
+                }, error -> {
+                    ApiError net = new ApiError.Network(error.getMessage());
+                    pinError.postValue(net);
+                    events.postEvent(new InboxEvent(net));
+                }));
+    }
+
     @Override
     protected void onCleared() {
         disposables.clear();
         super.onCleared();
+    }
+}
+
+/** One-shot inbox preference failure; consumed once so rotation does not replay it. */
+final class InboxEvent {
+    private final ApiError error;
+
+    InboxEvent(ApiError error) {
+        this.error = Objects.requireNonNull(error, "error");
+    }
+
+    ApiError getError() {
+        return error;
+    }
+}
+
+/** LiveData event wrapper: an event is consumed once. */
+final class InboxSingleLiveEvent<T> extends MutableLiveData<InboxSingleLiveEvent.Event<T>> {
+    private long sequence;
+
+    void postEvent(T value) {
+        postValue(new Event<>(++sequence, value));
+    }
+
+    static final class Event<T> {
+        private final long sequence;
+        private final T value;
+        private boolean consumed;
+
+        Event(long sequence, T value) {
+            this.sequence = sequence;
+            this.value = value;
+        }
+
+        long getSequence() {
+            return sequence;
+        }
+
+        @Nullable
+        synchronized T consume() {
+            if (consumed) {
+                return null;
+            }
+            consumed = true;
+            return value;
+        }
     }
 }

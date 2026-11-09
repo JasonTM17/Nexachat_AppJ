@@ -150,6 +150,11 @@ the implementing source file.
   contact-add 30/min, bucket key `user:<id>` (UserSearchRateLimitInterceptor
   .java, ContactAddRateLimitInterceptor.java). The IP fallback exists only for a
   stray unauthenticated call that the security layer rejects anyway.
+- V12–V20 feature writes add per-user buckets: labels 30/min (shared),
+  polls 10/min create / 120/min vote / 30/min manage, invite resolve 60/min and
+  join 20/min (also keyed per client IP to blunt token guessing), reminders
+  30/min create, and message edit/delete 30/min plus search 60/min. Keys and
+  defaults are in [`docs/api-contract.md`](api-contract.md#operational-notes).
 - STOMP SEND is per-user as well, with independent buckets: 30 messages /
   10 s (`stomp:messages:<userId>`), 60 typing frames / 10 s
   (`stomp:typing:<userId>`), and 120 receipt acknowledgment frames / 10 s

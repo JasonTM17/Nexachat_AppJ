@@ -22,8 +22,12 @@ import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.LocalAttachment;
 import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
+import com.nexachat.data.GroupDetail;
+import com.nexachat.data.GroupMember;
+import com.nexachat.data.MessageMentionCodec;
 import com.nexachat.data.MessageSearchResult;
 import com.nexachat.data.PeerPresence;
+import com.nexachat.data.SettingsRepository;
 import com.nexachat.data.TypingEvent;
 import com.nexachat.feature.media.PendingAttachment;
 import dagger.hilt.android.lifecycle.HiltViewModel;
@@ -64,6 +68,9 @@ public final class ChatViewModel extends ViewModel {
     public static final int SEARCH_PAGE_SIZE = MessageApi.DEFAULT_SEARCH_LIMIT;
     public static final String ERROR_MESSAGE_GONE = "MESSAGE_NOT_FOUND";
     private static final String KEY_INPUT = "chat_input";
+    private static final String KEY_MENTIONS = "chat_mentions";
+    private static final String KEY_MENTION_ALL_OFFSET = "chat_mention_all_offset";
+    private static final String KEY_MENTION_ALL_LENGTH = "chat_mention_all_length";
 
     private final String conversationId;
     private final SavedStateHandle savedStateHandle;
@@ -71,9 +78,14 @@ public final class ChatViewModel extends ViewModel {
     private final ConversationRepository conversationRepository;
     private final AttachmentRepository attachmentRepository;
     private final RealtimeSession session;
+    @Nullable private final SettingsRepository settingsRepository;
     private final MutableLiveData<UiState> mutableUiState;
+    private final MutableLiveData<AiOptOutState> aiOptOutState =
+            new MutableLiveData<>(new AiOptOutState());
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
+    private final MutableLiveData<List<GroupMember>> mutableGroupMembers =
+            new MutableLiveData<>(List.of());
     private final ChatSingleLiveEvent<ChatActionEvent> actionEvents =
             new ChatSingleLiveEvent<>();
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
@@ -94,7 +106,8 @@ public final class ChatViewModel extends ViewModel {
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
             AttachmentRepository attachmentRepository,
-            RealtimeSession session) {
+            RealtimeSession session,
+            @Nullable SettingsRepository settingsRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -102,6 +115,7 @@ public final class ChatViewModel extends ViewModel {
         this.attachmentRepository = Objects.requireNonNull(
                 attachmentRepository, "attachmentRepository");
         this.session = Objects.requireNonNull(session, "session");
+        this.settingsRepository = settingsRepository;
         String savedConversationId = savedStateHandle.get("conversationId");
         this.conversationId = savedConversationId == null ? "" : savedConversationId;
         String input = savedStateHandle.get(KEY_INPUT);
@@ -112,12 +126,52 @@ public final class ChatViewModel extends ViewModel {
         initializeConversation();
     }
 
+    public ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session) {
+        this(savedStateHandle, messageRepository, conversationRepository,
+                attachmentRepository, session, null);
+    }
+
     public LiveData<UiState> getUiState() {
         return mutableUiState;
     }
 
+    /** Live per-conversation AI opt-out state used by the settings dialog. */
+    public LiveData<AiOptOutState> getAiOptOutState() {
+        return aiOptOutState;
+    }
+
     public LiveData<ChatSearchState> getSearchState() {
         return mutableSearchState;
+    }
+
+    public LiveData<List<GroupMember>> getGroupMembers() { return mutableGroupMembers; }
+
+    public MentionDraft getMentionDraft() {
+        UiState state = currentUiState();
+        String content = state.getInput();
+        String json = savedStateHandle.get(KEY_MENTIONS);
+        int allOffset = savedStateHandle.get(KEY_MENTION_ALL_OFFSET) == null
+                ? -1 : savedStateHandle.get(KEY_MENTION_ALL_OFFSET);
+        int allLength = savedStateHandle.get(KEY_MENTION_ALL_LENGTH) == null
+                ? 0 : savedStateHandle.get(KEY_MENTION_ALL_LENGTH);
+        return MentionDraft.restore(content, MessageMentionCodec.decode(json), allOffset, allLength);
+    }
+
+    public void loadGroupMembers() {
+        disposables.add(conversationRepository.groupDetail(conversationId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?> success
+                            && success.getValue() instanceof GroupDetail detail) {
+                        mutableGroupMembers.setValue(detail.getMembers());
+                    }
+                }, this::surfaceStreamFailure));
     }
 
     public ChatSingleLiveEvent<ChatActionEvent> getActionEvents() {
@@ -143,6 +197,13 @@ public final class ChatViewModel extends ViewModel {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(connected -> updateUiState(state -> state.withConnected(connected)),
                         this::surfaceStreamFailure));
+        if (settingsRepository != null) {
+            disposables.add(settingsRepository.getShowSeen()
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(show -> updateUiState(state -> state.withShowSeen(Boolean.TRUE.equals(show))),
+                            this::surfaceStreamFailure));
+        }
         disposables.add(messageRepository.pinsFlow(conversationId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -191,7 +252,109 @@ public final class ChatViewModel extends ViewModel {
         if (conversation == null) {
             return;
         }
+        AiOptOutState current = aiOptOutState.getValue();
+        if (current != null && !current.isBusy()) {
+            aiOptOutState.setValue(current.withOptOut(conversation.isAiOptOut()));
+        }
         updateUiState(state -> state.withConversation(conversation));
+    }
+
+    /** Reads the caller's own AI opt-out state; called when the settings dialog opens. */
+    public void loadAiOptOut() {
+        if (conversationId.isBlank()) return;
+        AiOptOutState current = currentAiOptOutState();
+        aiOptOutState.setValue(current.withLoading(true).withError(null));
+        disposables.add(conversationRepository.getAiOptOut(conversationId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            AiOptOutState state = currentAiOptOutState().withLoading(false);
+                            if (result instanceof Result.Success<?> success) {
+                                aiOptOutState.setValue(state.withOptOut(
+                                        Boolean.TRUE.equals(success.getValue())).withError(null));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                aiOptOutState.setValue(state.withError(failure.getError()));
+                            }
+                        },
+                        error -> aiOptOutState.setValue(currentAiOptOutState()
+                                .withLoading(false)
+                                .withError(toApiError(error)))));
+    }
+
+    /**
+     * Writes the AI opt-out through the server first. The switch moves
+     * optimistically, then reverts with a visible error if the call fails.
+     */
+    public void setAiOptOut(boolean optOut) {
+        if (conversationId.isBlank()) return;
+        AiOptOutState before = currentAiOptOutState();
+        if (before.isSaving() || before.getOptOut() == optOut) return;
+        aiOptOutState.setValue(before.withSaving(true).withOptOut(optOut).withError(null));
+        disposables.add(conversationRepository.setAiOptOut(conversationId, optOut)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            AiOptOutState state = currentAiOptOutState().withSaving(false);
+                            if (result instanceof Result.Success<?> success) {
+                                aiOptOutState.setValue(state.withOptOut(
+                                        Boolean.TRUE.equals(success.getValue())).withError(null));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                aiOptOutState.setValue(state
+                                        .withOptOut(before.getOptOut())
+                                        .withError(failure.getError()));
+                            }
+                        },
+                        error -> aiOptOutState.setValue(currentAiOptOutState()
+                                .withSaving(false)
+                                .withOptOut(before.getOptOut())
+                                .withError(toApiError(error)))));
+    }
+
+    /** Mutes this conversation until {@code until}, or forever when null. */
+    public void muteConversation(@Nullable java.time.Instant until) {
+        runPreference(
+                until == null
+                        ? conversationRepository.muteConversationForever(conversationId)
+                        : conversationRepository.muteConversation(conversationId, until),
+                ChatActionEvent.PreferenceChanged.Kind.MUTED);
+    }
+
+    /** One-tap unmute. */
+    public void unmuteConversation() {
+        runPreference(conversationRepository.unmuteConversation(conversationId),
+                ChatActionEvent.PreferenceChanged.Kind.UNMUTED);
+    }
+
+    /** Archives or restores this conversation for the caller. */
+    public void setConversationArchived(boolean archived) {
+        runPreference(conversationRepository.setConversationArchived(conversationId, archived),
+                archived
+                        ? ChatActionEvent.PreferenceChanged.Kind.ARCHIVED
+                        : ChatActionEvent.PreferenceChanged.Kind.UNARCHIVED);
+    }
+
+    private void runPreference(
+            Single<Result<Void>> request, ChatActionEvent.PreferenceChanged.Kind successKind) {
+        if (conversationId.isBlank()) return;
+        disposables.add(request
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Success<?>) {
+                                actionEvents.emit(new ChatActionEvent.PreferenceChanged(successKind));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                updateUiState(state -> state.withError(failure.getError()));
+                            }
+                        },
+                        error -> updateUiState(state -> state.withError(toApiError(error)))));
+    }
+
+    private AiOptOutState currentAiOptOutState() {
+        AiOptOutState state = aiOptOutState.getValue();
+        return state == null ? new AiOptOutState() : state;
     }
 
     private void markNewestIncomingRead(List<ChatMessage> messages) {
@@ -250,6 +413,14 @@ public final class ChatViewModel extends ViewModel {
         }
     }
 
+    public void onComposerDraftChange(MentionDraft draft) {
+        MentionDraft safe = draft == null ? MentionDraft.empty("") : draft;
+        savedStateHandle.set(KEY_MENTIONS, MessageMentionCodec.encode(safe.getMentions()));
+        savedStateHandle.set(KEY_MENTION_ALL_OFFSET, safe.getMentionAllOffset());
+        savedStateHandle.set(KEY_MENTION_ALL_LENGTH, safe.getMentionAllLength());
+        onInputChange(safe.getContent());
+    }
+
     private SavedStateHandle savedState() {
         return savedStateHandle;
     }
@@ -257,16 +428,21 @@ public final class ChatViewModel extends ViewModel {
     /** Optimistic send — the outbox row renders SENDING immediately. */
     public void send() {
         UiState state = currentUiState();
-        String text = state.getInput().trim();
+        MentionDraft draft = getMentionDraft().trimmed();
+        String text = draft.getContent();
         if (text.isEmpty()) {
             return;
         }
         ReplyTarget replyTarget = state.getReplyTarget();
         String replyToId = replyTarget == null ? null : replyTarget.getMessageId();
         savedState().set(KEY_INPUT, "");
+        clearMentionDraft();
         updateUiState(current -> current.withInput("").withReplyTarget(null));
-        disposables.add(messageRepository.send(
-                        conversationId, text, replyToId, MessageDto.TYPE_TEXT, List.of())
+        io.reactivex.rxjava3.core.Completable send = draft.getMentions().isEmpty() && !draft.isMentionAll()
+                ? messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT, List.of())
+                : messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT,
+                        List.of(), draft.getMentions(), draft.isMentionAll());
+        disposables.add(send
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> { }, this::surfaceStreamFailure));
@@ -327,6 +503,28 @@ public final class ChatViewModel extends ViewModel {
                         updateUiState(state -> state.withError(failure.getError()));
                     }
                 }, this::surfaceStreamFailure));
+    }
+
+    public void editMessage(String messageId, MentionDraft draft) {
+        MentionDraft trimmed = draft == null ? MentionDraft.empty("") : draft.trimmed();
+        if (trimmed.getContent().isEmpty()) return;
+        disposables.add(messageRepository.editMessage(conversationId, messageId,
+                        trimmed.getContent(), trimmed.getMentions(), trimmed.isMentionAll())
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?>) {
+                        actionEvents.emit(new ChatActionEvent.MessageEdited(messageId));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        updateUiState(state -> state.withError(failure.getError()));
+                    }
+                }, this::surfaceStreamFailure));
+    }
+
+    private void clearMentionDraft() {
+        savedStateHandle.set(KEY_MENTIONS, "[]");
+        savedStateHandle.set(KEY_MENTION_ALL_OFFSET, -1);
+        savedStateHandle.set(KEY_MENTION_ALL_LENGTH, 0);
     }
 
     public void deleteMessage(String messageId) {
@@ -502,6 +700,19 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(operation.subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> { }, this::surfaceStreamFailure));
+    }
+
+    public void toggleConversationPin() {
+        if (conversationId.isBlank()) return;
+        boolean currentlyPinned = currentUiState().isConversationPinned();
+        disposables.add(conversationRepository.setConversationPinned(conversationId, !currentlyPinned)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Failure<?> failure) {
+                        updateUiState(state -> state.withError(failure.getError()));
+                    }
+                }, error -> updateUiState(state -> state.withError(new ApiError.Network(error.getMessage())))));
     }
 
     // ---- attachments ----
@@ -744,6 +955,48 @@ public final class ChatViewModel extends ViewModel {
         public int hashCode() { return Objects.hash(messageId, senderName, snippet); }
     }
 
+    /** Live state of the per-conversation AI opt-out control. */
+    public static final class AiOptOutState {
+        private final boolean optOut;
+        private final boolean loading;
+        private final boolean saving;
+        @Nullable private final ApiError error;
+
+        public AiOptOutState() {
+            this(false, false, false, null);
+        }
+
+        private AiOptOutState(
+                boolean optOut, boolean loading, boolean saving, @Nullable ApiError error) {
+            this.optOut = optOut;
+            this.loading = loading;
+            this.saving = saving;
+            this.error = error;
+        }
+
+        public boolean getOptOut() { return optOut; }
+        public boolean isLoading() { return loading; }
+        public boolean isSaving() { return saving; }
+        public boolean isBusy() { return loading || saving; }
+        @Nullable public ApiError getError() { return error; }
+
+        private AiOptOutState withOptOut(boolean next) {
+            return new AiOptOutState(next, loading, saving, error);
+        }
+
+        private AiOptOutState withLoading(boolean next) {
+            return new AiOptOutState(optOut, next, saving, error);
+        }
+
+        private AiOptOutState withSaving(boolean next) {
+            return new AiOptOutState(optOut, loading, next, error);
+        }
+
+        private AiOptOutState withError(@Nullable ApiError next) {
+            return new AiOptOutState(optOut, loading, saving, next);
+        }
+    }
+
     /** Immutable chat render state. Lists are defensively copied at creation. */
     public static final class UiState {
         private final boolean loading;
@@ -764,6 +1017,8 @@ public final class ChatViewModel extends ViewModel {
         private final long peerDeliveredSeq;
         @Nullable private final PeerPresence peerPresence;
         @Nullable private final String otherUserId;
+        private final boolean showSeen;
+        private final boolean conversationPinned;
 
         public UiState() {
             this("");
@@ -771,7 +1026,7 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState(String input) {
             this(true, List.of(), List.of(), input, false, null, false, true, true,
-                    false, null, List.of(), null, List.of(), 0L, 0L, null, null);
+                    false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false);
         }
 
         private UiState(
@@ -792,7 +1047,9 @@ public final class ChatViewModel extends ViewModel {
                 long peerReadSeq,
                 long peerDeliveredSeq,
                 @Nullable PeerPresence peerPresence,
-                @Nullable String otherUserId) {
+                @Nullable String otherUserId,
+                boolean showSeen,
+                boolean conversationPinned) {
             this.loading = loading;
             this.messages = List.copyOf(messages);
             this.sending = List.copyOf(sending);
@@ -811,6 +1068,8 @@ public final class ChatViewModel extends ViewModel {
             this.peerDeliveredSeq = peerDeliveredSeq;
             this.peerPresence = peerPresence;
             this.otherUserId = otherUserId;
+            this.showSeen = showSeen;
+            this.conversationPinned = conversationPinned;
         }
 
         public boolean isLoading() { return loading; }
@@ -837,6 +1096,8 @@ public final class ChatViewModel extends ViewModel {
         public long getPeerDeliveredSeq() { return peerDeliveredSeq; }
         @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
         @Nullable public String getOtherUserId() { return otherUserId; }
+        public boolean isShowSeen() { return showSeen; }
+        public boolean isConversationPinned() { return conversationPinned; }
 
         public boolean isPinned(String messageId) {
             for (ChatMessage pin : pins) {
@@ -853,7 +1114,8 @@ public final class ChatViewModel extends ViewModel {
                     .collect(java.util.stream.Collectors.toList());
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withConversation(ConversationSummary conversation) {
@@ -865,61 +1127,79 @@ public final class ChatViewModel extends ViewModel {
                     connected, hasMore, error, pendingAttachments, replyTarget, pins,
                     conversation.getPeerReadSeq(), conversation.getPeerDeliveredSeq(),
                     conversation.getPeerPresence(),
-                    blankToNull(conversation.getOtherUserId()));
+                    blankToNull(conversation.getOtherUserId()),
+                    showSeen,
+                    conversation.isPinned());
         }
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, nextConnected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, nextHasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, nextError, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPendingAttachments(List<PendingAttachment> pending) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pending, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, target, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, nextPins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
+        }
+
+        private UiState withShowSeen(boolean nextShowSeen) {
+            return copy(loading, messages, sending, input, peerTyping, peerName, group,
+                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    nextShowSeen, conversationPinned);
         }
 
         private static UiState copy(
@@ -940,10 +1220,13 @@ public final class ChatViewModel extends ViewModel {
                 long peerReadSeq,
                 long peerDeliveredSeq,
                 @Nullable PeerPresence peerPresence,
-                @Nullable String otherUserId) {
+                @Nullable String otherUserId,
+                boolean showSeen,
+                boolean conversationPinned) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
-                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId);
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned);
         }
 
         @Nullable

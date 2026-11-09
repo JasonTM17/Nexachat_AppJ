@@ -49,6 +49,7 @@ public final class ProfileViewModelTest {
         settingsRepository = mock(SettingsRepository.class);
         showPresenceFlow = Flowable.just(true);
         when(settingsRepository.getShowPresence()).thenReturn(showPresenceFlow);
+        when(settingsRepository.getShowSeen()).thenReturn(Flowable.just(true));
     }
 
     @After
@@ -290,6 +291,29 @@ public final class ProfileViewModelTest {
         ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
 
         viewModel.setShowPresence(false);
+
+        assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getSaveError());
+    }
+
+    @Test
+    public void seenToggleDelegatesToSettingsRepository() {
+        when(settingsRepository.setShowSeen(anyBoolean()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+
+        viewModel.setShowSeen(false);
+
+        verify(settingsRepository, times(1)).setShowSeen(false);
+        assertNull(viewModel.getUiState().getValue().getSaveError());
+    }
+
+    @Test
+    public void rejectedSeenToggleSurfacesError() {
+        when(settingsRepository.setShowSeen(anyBoolean())).thenReturn(Single.just(
+                Result.failure(ApiError.RateLimited.INSTANCE)));
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+
+        viewModel.setShowSeen(false);
 
         assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getSaveError());
     }

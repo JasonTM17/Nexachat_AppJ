@@ -56,7 +56,6 @@ public final class InboxFragment extends Fragment {
     private static final int MENU_CONTACTS = 1;
     private static final int MENU_NEW_GROUP = 2;
     private static final int MENU_THEME = 3;
-    private static final int MENU_ASSIGN_LABEL = 4;
     private static final String ALL_LABEL_FILTER = "__all_labels__";
 
     private FragmentInboxBinding binding;
@@ -160,6 +159,79 @@ public final class InboxFragment extends Fragment {
                 .observe(getViewLifecycleOwner(), this::render);
         labelViewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::renderLabels);
+        viewModel.getEvents().observe(getViewLifecycleOwner(), raw -> {
+            InboxEvent event = raw == null ? null : raw.consume();
+            if (event == null || binding == null) return;
+            Snackbar.make(binding.getRoot(),
+                            ChatErrorIds.messageId(event.getError()),
+                            Snackbar.LENGTH_LONG)
+                    .show();
+        });
+        viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                viewModel.clearPinError();
+            }
+        });
+    }
+
+    private void renderLabels(@NonNull LabelUiState state) {
+        if (binding == null) return;
+        lastLabelState = state;
+        renderLabelFilters(state);
+        if (adapter != null) adapter.setLabelDefinitions(state.getLabels());
+        if (lastState != null) render(lastState);
+    }
+
+    private void renderLabelFilters(@NonNull LabelUiState state) {
+        ChipGroup group = binding.labelFilterChips;
+        if (!labelFiltersInitialized || !renderedLabels.equals(state.getLabels())) {
+            group.removeAllViews();
+            labelFiltersInitialized = true;
+            renderedLabels = List.copyOf(state.getLabels());
+            Chip all = new Chip(requireContext());
+            all.setId(View.generateViewId());
+            all.setCheckable(true);
+            all.setMinHeight(dp(48));
+            all.setText(R.string.label_filter_all);
+            all.setTag(ALL_LABEL_FILTER);
+            group.addView(all, new ChipGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            for (ConversationLabel label : state.getLabels()) {
+                Chip chip = new Chip(requireContext());
+                chip.setId(View.generateViewId());
+                chip.setCheckable(true);
+                chip.setText(label.getName());
+                chip.setTag(label.getId());
+                chip.setMinHeight(dp(48));
+                chip.setTextColor(Color.WHITE);
+                chip.setChipBackgroundColor(ColorStateList.valueOf(label.getColor().getBackgroundColor()));
+                chip.setContentDescription(getString(R.string.label_filter_description, label.getName()));
+                group.addView(chip, new ChipGroup.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            Chip manage = new Chip(requireContext());
+            manage.setId(View.generateViewId());
+            manage.setCheckable(false);
+            manage.setText(R.string.label_manage);
+            manage.setMinHeight(dp(48));
+            manage.setContentDescription(getString(R.string.label_manage_description));
+            manage.setOnClickListener(v -> LabelDialogFragment.show(requireActivity(), null));
+            group.addView(manage, new ChipGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        for (int index = 0; index < group.getChildCount(); index++) {
+            View child = group.getChildAt(index);
+            if (!(child instanceof Chip chip) || !chip.isCheckable()) continue;
+            boolean selected = state.getSelectedFilterId() == null
+                    ? ALL_LABEL_FILTER.equals(chip.getTag())
+                    : state.getSelectedFilterId().equals(chip.getTag());
+            chip.setChecked(selected);
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void showThemeDialog() {
@@ -221,84 +293,57 @@ public final class InboxFragment extends Fragment {
         }
         boundUserId = currentUserId;
         adapter = new ConversationListAdapter(
-                this::openConversation,
-                this::showConversationLabelMenu,
+                new ConversationListAdapter.Listener() {
+                    @Override
+                    public void onConversationClick(@NonNull String conversationId) {
+                        openConversation(conversationId);
+                    }
+
+                    @Override
+                    public void onConversationLongClick(@NonNull ConversationSummary conversation) {
+                        showPreferenceActions(conversation);
+                    }
+                },
                 currentUserId,
                 getString(R.string.time_just_now),
                 getString(R.string.time_yesterday));
         binding.conversationList.setAdapter(adapter);
     }
 
-    private void renderLabels(@NonNull LabelUiState state) {
-        if (binding == null) return;
-        lastLabelState = state;
-        renderLabelFilters(state);
-        if (adapter != null) adapter.setLabelDefinitions(state.getLabels());
-        if (lastState != null) render(lastState);
-    }
+    private void showPreferenceActions(@NonNull ConversationSummary conversation) {
+        ConversationPreferenceMenu.showInboxActions(
+                requireContext(),
+                conversation,
+                new ConversationPreferenceMenu.Listener() {
+                    @Override
+                    public void onTogglePin(boolean pin) {
+                        viewModel.togglePin(conversation);
+                    }
 
-    private void renderLabelFilters(@NonNull LabelUiState state) {
-        ChipGroup group = binding.labelFilterChips;
-        if (!labelFiltersInitialized || !renderedLabels.equals(state.getLabels())) {
-            group.removeAllViews();
-            labelFiltersInitialized = true;
-            renderedLabels = List.copyOf(state.getLabels());
-            Chip all = new Chip(requireContext());
-            all.setId(View.generateViewId());
-            all.setCheckable(true);
-            all.setMinHeight(dp(48));
-            all.setText(R.string.label_filter_all);
-            all.setTag(ALL_LABEL_FILTER);
-            group.addView(all, new ChipGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            for (ConversationLabel label : state.getLabels()) {
-                Chip chip = new Chip(requireContext());
-                chip.setId(View.generateViewId());
-                chip.setCheckable(true);
-                chip.setText(label.getName());
-                chip.setTag(label.getId());
-                chip.setMinHeight(dp(48));
-                chip.setTextColor(android.graphics.Color.WHITE);
-                chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
-                        label.getColor().getBackgroundColor()));
-                chip.setContentDescription(getString(R.string.label_filter_description, label.getName()));
-                group.addView(chip, new ChipGroup.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            }
-            Chip manage = new Chip(requireContext());
-            manage.setId(View.generateViewId());
-            manage.setCheckable(false);
-            manage.setText(R.string.label_manage);
-            manage.setMinHeight(dp(48));
-            manage.setContentDescription(getString(R.string.label_manage_description));
-            manage.setOnClickListener(v -> LabelDialogFragment.show(requireActivity(), null));
-            group.addView(manage, new ChipGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
+                    @Override
+                    public void onMute(@Nullable java.time.Instant until) {
+                        if (until == null) {
+                            viewModel.muteConversationForever(conversation.getId());
+                        } else {
+                            viewModel.muteConversation(conversation.getId(), until);
+                        }
+                    }
 
-        for (int index = 0; index < group.getChildCount(); index++) {
-            View child = group.getChildAt(index);
-            if (!(child instanceof Chip chip) || !chip.isCheckable()) continue;
-            boolean selected = state.getSelectedFilterId() == null
-                    ? ALL_LABEL_FILTER.equals(chip.getTag())
-                    : state.getSelectedFilterId().equals(chip.getTag());
-            chip.setChecked(selected);
-        }
-    }
+                    @Override
+                    public void onUnmute() {
+                        viewModel.unmuteConversation(conversation.getId());
+                    }
 
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
+                    @Override
+                    public void onArchive(boolean archive) {
+                        viewModel.setConversationArchived(conversation.getId(), archive);
+                    }
 
-    private void showConversationLabelMenu(@NonNull String conversationId, @NonNull View anchor) {
-        PopupMenu menu = new PopupMenu(requireContext(), anchor);
-        menu.getMenu().add(Menu.NONE, MENU_ASSIGN_LABEL, Menu.NONE, R.string.label_assign_menu);
-        menu.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() != MENU_ASSIGN_LABEL) return false;
-            LabelDialogFragment.show(requireActivity(), conversationId);
-            return true;
-        });
-        menu.show();
+                    @Override
+                    public void onSetAiOptOut(boolean optOut) {
+                        viewModel.setConversationAiOptOut(conversation.getId(), optOut);
+                    }
+                }, () -> LabelDialogFragment.show(requireActivity(), conversation.getId()));
     }
 
     private void render(@NonNull InboxUiState state) {
@@ -318,9 +363,7 @@ public final class InboxFragment extends Fragment {
                 && !lastLabelState.isFilterLoading();
         if (labelFiltering && !labelFilterLoading && !labelFilterError) {
             Set<String> filteredIds = lastLabelState.getFilteredConversationIds();
-            visibleRows = visibleRows.stream()
-                    .filter(row -> filteredIds.contains(row.getId()))
-                    .toList();
+            visibleRows = visibleRows.stream().filter(row -> filteredIds.contains(row.getId())).toList();
         } else if (labelFiltering) {
             visibleRows = List.of();
         }
@@ -330,8 +373,7 @@ public final class InboxFragment extends Fragment {
         renderActiveNowStrip(rows);
         binding.swipeRefresh.setRefreshing(state.isLoading() && !rows.isEmpty());
 
-        boolean showLoading = labelFilterLoading
-                || (state.isLoading() && rows.isEmpty())
+        boolean showLoading = labelFilterLoading || (state.isLoading() && rows.isEmpty())
                 || (state.isLoadingMore() && visibleRows.isEmpty() && state.hasMore());
         ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
         boolean showError = labelFilterError || (error != null && rows.isEmpty());
@@ -449,7 +491,8 @@ public final class InboxFragment extends Fragment {
         Chip[] chips = new Chip[] {
                 binding.filterAllChip,
                 binding.filterUnreadChip,
-                binding.filterGroupsChip
+                binding.filterGroupsChip,
+                binding.filterArchivedChip
         };
 
         for (Chip chip : chips) {
@@ -474,6 +517,7 @@ public final class InboxFragment extends Fragment {
         }
         binding.activeNowStrip.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(requireContext());
+        List<ConversationSummary> visibleRows = InboxFilterRules.apply(rows, InboxFilter.ALL);
 
         // 1. First item: "Your status" (+) item that opens R.id.profileFragment
         View yourStatusView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
@@ -490,13 +534,13 @@ public final class InboxFragment extends Fragment {
         binding.activeNowStrip.addView(yourStatusView);
 
         // 2. Next items (up to 8 peers), prioritizing direct conversations and deduplicating titles
-        List<ConversationSummary> candidates = new ArrayList<>(rows.size());
-        for (ConversationSummary row : rows) {
+        List<ConversationSummary> candidates = new ArrayList<>(visibleRows.size());
+        for (ConversationSummary row : visibleRows) {
             if (!row.isGroup()) {
                 candidates.add(row);
             }
         }
-        for (ConversationSummary row : rows) {
+        for (ConversationSummary row : visibleRows) {
             if (row.isGroup()) {
                 candidates.add(row);
             }
@@ -561,6 +605,9 @@ public final class InboxFragment extends Fragment {
         if (filter == InboxFilter.GROUPS) {
             return R.id.filterGroupsChip;
         }
+        if (filter == InboxFilter.ARCHIVED) {
+            return R.id.filterArchivedChip;
+        }
         return R.id.filterAllChip;
     }
 
@@ -572,6 +619,9 @@ public final class InboxFragment extends Fragment {
         if (chipId == R.id.filterGroupsChip) {
             return InboxFilter.GROUPS;
         }
+        if (chipId == R.id.filterArchivedChip) {
+            return InboxFilter.ARCHIVED;
+        }
         return InboxFilter.ALL;
     }
 
@@ -581,6 +631,9 @@ public final class InboxFragment extends Fragment {
         }
         if (filter == InboxFilter.GROUPS) {
             return R.string.inbox_empty_groups;
+        }
+        if (filter == InboxFilter.ARCHIVED) {
+            return R.string.inbox_empty_archived;
         }
         return R.string.inbox_empty;
     }

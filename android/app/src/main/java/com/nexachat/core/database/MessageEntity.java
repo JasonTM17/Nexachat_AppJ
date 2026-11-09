@@ -2,7 +2,9 @@ package com.nexachat.core.database;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
+import androidx.room.Ignore;
 import androidx.room.Index;
 import androidx.room.PrimaryKey;
 import java.util.Objects;
@@ -37,7 +39,11 @@ public final class MessageEntity {
     @Nullable private final Long editedAtEpochMs;
     /** Soft-delete marker; deleted rows retain seq for history continuity. */
     @Nullable private final Long deletedAtEpochMs;
+    /** Structured group mention ranges encoded as JSON; [] for legacy messages. */
+    @NonNull @ColumnInfo(defaultValue = "'[]'") private final String mentionsJson;
+    @ColumnInfo(defaultValue = "0") private final boolean mentionAll;
 
+    @Ignore
     public MessageEntity(
             @NonNull String id,
             @NonNull String conversationId,
@@ -54,6 +60,29 @@ public final class MessageEntity {
             @Nullable String attachmentsJson,
             @Nullable Long editedAtEpochMs,
             @Nullable Long deletedAtEpochMs) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, "[]", false);
+    }
+
+    public MessageEntity(
+            @NonNull String id,
+            @NonNull String conversationId,
+            long seq,
+            @NonNull String senderId,
+            @Nullable String senderDisplayName,
+            @NonNull String type,
+            @Nullable String content,
+            @Nullable String clientMessageId,
+            @Nullable String replyToId,
+            @Nullable String replyToSenderName,
+            @Nullable String replyToSnippet,
+            long createdAt,
+            @Nullable String attachmentsJson,
+            @Nullable Long editedAtEpochMs,
+            @Nullable Long deletedAtEpochMs,
+            @NonNull String mentionsJson,
+            boolean mentionAll) {
         this.id = id;
         this.conversationId = conversationId;
         this.seq = seq;
@@ -69,6 +98,8 @@ public final class MessageEntity {
         this.attachmentsJson = attachmentsJson;
         this.editedAtEpochMs = editedAtEpochMs;
         this.deletedAtEpochMs = deletedAtEpochMs;
+        this.mentionsJson = mentionsJson;
+        this.mentionAll = mentionAll;
     }
 
     @NonNull public String getId() { return id; }
@@ -86,27 +117,30 @@ public final class MessageEntity {
     @Nullable public String getAttachmentsJson() { return attachmentsJson; }
     @Nullable public Long getEditedAtEpochMs() { return editedAtEpochMs; }
     @Nullable public Long getDeletedAtEpochMs() { return deletedAtEpochMs; }
+    @NonNull public String getMentionsJson() { return mentionsJson; }
+    public boolean isMentionAll() { return mentionAll; }
 
     /** Returns this row with the edited text and edit time replaced. */
     @NonNull public MessageEntity withContentAndEditedAt(
             @Nullable String newContent, @Nullable Long newEditedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 newContent, clientMessageId, replyToId, replyToSenderName, replyToSnippet,
-                createdAt, attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs);
+                createdAt, attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs,
+                mentionsJson, mentionAll);
     }
 
     /** Returns the neutral tombstone form while retaining message identity and ordering. */
     @NonNull public MessageEntity asDeleted(@Nullable Long newDeletedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 "", clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                null, editedAtEpochMs, newDeletedAtEpochMs);
+                null, editedAtEpochMs, newDeletedAtEpochMs, "[]", false);
     }
 
     /** Returns this row with only its edit timestamp replaced. */
     @NonNull public MessageEntity withEditedAtEpochMs(@Nullable Long newEditedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs);
+                attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll);
     }
 
     @Override public boolean equals(Object other) {
@@ -126,13 +160,15 @@ public final class MessageEntity {
                 && Objects.equals(replyToSnippet, that.replyToSnippet)
                 && Objects.equals(attachmentsJson, that.attachmentsJson)
                 && Objects.equals(editedAtEpochMs, that.editedAtEpochMs)
-                && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs);
+                && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs)
+                && Objects.equals(mentionsJson, that.mentionsJson)
+                && mentionAll == that.mentionAll;
     }
 
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                attachmentsJson, editedAtEpochMs, deletedAtEpochMs);
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll);
     }
 
     @NonNull @Override public String toString() {
@@ -142,6 +178,7 @@ public final class MessageEntity {
                 + clientMessageId + ", replyToId=" + replyToId + ", replyToSenderName="
                 + replyToSenderName + ", replyToSnippet=" + replyToSnippet + ", createdAt="
                 + createdAt + ", attachmentsJson=" + attachmentsJson + ", editedAtEpochMs="
-                + editedAtEpochMs + ", deletedAtEpochMs=" + deletedAtEpochMs + ')';
+                + editedAtEpochMs + ", deletedAtEpochMs=" + deletedAtEpochMs
+                + ", mentionsJson=" + mentionsJson + ", mentionAll=" + mentionAll + ')';
     }
 }

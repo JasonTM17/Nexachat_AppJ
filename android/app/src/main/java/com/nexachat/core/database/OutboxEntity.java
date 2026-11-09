@@ -2,7 +2,9 @@ package com.nexachat.core.database;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
+import androidx.room.Ignore;
 import androidx.room.PrimaryKey;
 import java.util.Objects;
 
@@ -20,7 +22,11 @@ public final class OutboxEntity {
     private final long createdAt;
     /** Re-encoded attachments JSON, empty when no attachments exist. */
     @NonNull private final String attachmentsJson;
+    /** Structured group mention ranges encoded as JSON; [] for legacy outbox rows. */
+    @NonNull @ColumnInfo(defaultValue = "'[]'") private final String mentionsJson;
+    @ColumnInfo(defaultValue = "0") private final boolean mentionAll;
 
+    @Ignore
     public OutboxEntity(
             @NonNull String clientMessageId,
             @NonNull String conversationId,
@@ -30,6 +36,21 @@ public final class OutboxEntity {
             @NonNull String state,
             long createdAt,
             @NonNull String attachmentsJson) {
+        this(clientMessageId, conversationId, type, content, replyToId, state, createdAt,
+                attachmentsJson, "[]", false);
+    }
+
+    public OutboxEntity(
+            @NonNull String clientMessageId,
+            @NonNull String conversationId,
+            @NonNull String type,
+            @NonNull String content,
+            @Nullable String replyToId,
+            @NonNull String state,
+            long createdAt,
+            @NonNull String attachmentsJson,
+            @NonNull String mentionsJson,
+            boolean mentionAll) {
         this.clientMessageId = clientMessageId;
         this.conversationId = conversationId;
         this.type = type;
@@ -38,6 +59,8 @@ public final class OutboxEntity {
         this.state = state;
         this.createdAt = createdAt;
         this.attachmentsJson = attachmentsJson;
+        this.mentionsJson = mentionsJson;
+        this.mentionAll = mentionAll;
     }
 
     @NonNull public String getClientMessageId() { return clientMessageId; }
@@ -48,11 +71,13 @@ public final class OutboxEntity {
     @NonNull public String getState() { return state; }
     public long getCreatedAt() { return createdAt; }
     @NonNull public String getAttachmentsJson() { return attachmentsJson; }
+    @NonNull public String getMentionsJson() { return mentionsJson; }
+    public boolean isMentionAll() { return mentionAll; }
 
     /** Returns this row requeued at the supplied FIFO time. */
     @NonNull public OutboxEntity forRetry(long newCreatedAt) {
         return new OutboxEntity(clientMessageId, conversationId, type, content, replyToId,
-                OutboxState.SENDING, newCreatedAt, attachmentsJson);
+                OutboxState.SENDING, newCreatedAt, attachmentsJson, mentionsJson, mentionAll);
     }
 
     @Override public boolean equals(Object other) {
@@ -63,18 +88,21 @@ public final class OutboxEntity {
                 && Objects.equals(conversationId, that.conversationId)
                 && Objects.equals(type, that.type) && Objects.equals(content, that.content)
                 && Objects.equals(replyToId, that.replyToId) && Objects.equals(state, that.state)
-                && Objects.equals(attachmentsJson, that.attachmentsJson);
+                && Objects.equals(attachmentsJson, that.attachmentsJson)
+                && Objects.equals(mentionsJson, that.mentionsJson)
+                && mentionAll == that.mentionAll;
     }
 
     @Override public int hashCode() {
         return Objects.hash(clientMessageId, conversationId, type, content, replyToId, state,
-                createdAt, attachmentsJson);
+                createdAt, attachmentsJson, mentionsJson, mentionAll);
     }
 
     @NonNull @Override public String toString() {
         return "OutboxEntity(clientMessageId=" + clientMessageId + ", conversationId="
                 + conversationId + ", type=" + type + ", content=" + content + ", replyToId="
                 + replyToId + ", state=" + state + ", createdAt=" + createdAt
-                + ", attachmentsJson=" + attachmentsJson + ')';
+                + ", attachmentsJson=" + attachmentsJson + ", mentionsJson=" + mentionsJson
+                + ", mentionAll=" + mentionAll + ')';
     }
 }
