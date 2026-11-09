@@ -131,7 +131,9 @@ public class ConversationReminder {
     /**
      * Applies a partial edit. The anchor is reset only when the schedule
      * changes (a new {@code remindAt} or a new repeat rule), so a title-only
-     * edit cannot shift a month-end series.
+     * edit cannot shift a month-end series. A schedule change also invalidates
+     * an in-flight scheduler claim: its advance then leaves the edited row
+     * active at the new time instead of completing/moving the old occurrence.
      */
     public void edit(String title, Instant remindAt, ReminderRepeat repeat,
                      boolean resetAnchor, Instant now) {
@@ -146,6 +148,7 @@ public class ConversationReminder {
         }
         if (resetAnchor) {
             this.anchorAt = this.remindAt;
+            clearClaim();
         }
         this.updatedAt = now;
     }

@@ -216,6 +216,39 @@ class ReminderFlowIT {
                 .andExpect(jsonPath("$.canEdit").value(true));
     }
 
+    @Test
+    void changingTheScheduleInvalidatesAnInFlightClaim() throws Exception {
+        UUID conversationId = createGroup(alice, "Claim edit", bob);
+        Instant original = Instant.now().plus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.SECONDS);
+        UUID reminderId = createReminder(bob, conversationId, "Claimed", original, "NONE", null)
+                .andExpect(status().isCreated())
+                .returnId();
+
+        jdbcTemplate.update("""
+                UPDATE conversation_reminders
+                SET claimed_at = now(), claim_token = ?
+                WHERE id = ?
+                """, UUID.randomUUID(), reminderId);
+
+        Instant moved = original.plus(1, ChronoUnit.HOURS);
+        patchJson(conversationId, reminderId, bob, Map.of("remindAt", moved.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.remindAt").value(moved.toString()));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT claim_token FROM conversation_reminders WHERE id = ?",
+                UUID.class, reminderId)).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT claimed_at FROM conversation_reminders WHERE id = ?",
+                OffsetDateTime.class, reminderId)).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT remind_at FROM conversation_reminders WHERE id = ?",
+                OffsetDateTime.class, reminderId).toInstant()).isEqualTo(moved);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT anchor_at FROM conversation_reminders WHERE id = ?",
+                OffsetDateTime.class, reminderId).toInstant()).isEqualTo(moved);
+    }
+
     // ------------------------------------------------------------ validation
 
     @Test
