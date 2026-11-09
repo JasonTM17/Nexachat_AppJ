@@ -12,6 +12,7 @@
 | [Auth & Users](#auth--apiv1auth) | `/api/v1/auth`, `/api/v1/users` | Register, login, token refresh, password, profile, settings, device token |
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
 | [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
+| [Conversation archive](#conversation-archive--apiv1conversationsidarchive) | `/api/v1/conversations/{id}/archive` | Member-scoped storage browser: media, files and links, filtered and keyset-paged |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
@@ -295,6 +296,79 @@ single backend node.
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
 `SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns and re-broadcasts the stored row without inserting a second message; receivers deduplicate by message id. Reusing it in a different conversation is `VALIDATION_FAILED`.
 Inbox pagination uses query parameters `limit` and `cursor`. With no parameters, the complete list and byte-compatible response body are unchanged. A `limit` page is clamped to 1–100 items; `X-Next-Cursor` contains the next opaque keyset cursor only when another page exists. A cursor without a limit returns all remaining entries.
+
+## Conversation archive — `/api/v1/conversations/{id}/archive`
+
+The conversation storage browser ("Kho lưu trữ"): media, documents and shared
+links for one conversation. Read-only, member-only, newest first.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /conversations/{conversationId}/archive` | Bearer member | Query `type=MEDIA\|FILE\|LINK` (required), optional `senderId=<uuid>`, `from=<ISO-8601>`, `to=<ISO-8601>`, `limit=<1..50, default 30>`, `cursor=<opaque>` | `200` `ArchiveResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+
+Items are ordered by the message's global `seq` descending. `from`/`to` are
+inclusive and filter on the message creation instant; `from` later than `to`
+is `400`. `senderId` filters on the message author. `cursor` is an opaque,
+signed keyset position: a malformed, altered or cross-conversation/cross-tab
+value is `400`; it is never used for authorization, so membership is
+re-checked on every request. New messages inserted while a client is paging
+have a higher `seq` and therefore never shift, duplicate or skip an older
+page. `nextCursor` is `null` on the last page.
+
+Tab semantics:
+
+- `MEDIA` returns `IMAGE` and `VIDEO` attachments (the `kind` of each item);
+  voice notes (`messages.type = 'AUDIO'`) are excluded from both tabs.
+- `FILE` returns every other attachment. One item is emitted per attachment,
+  so a message with two files yields two items.
+- `LINK` returns http(s) URLs parsed from live `TEXT` messages only — at most
+  10 unique URLs per message, in first-occurrence order, with sentence
+  punctuation and unbalanced closing brackets trimmed. `javascript:` and
+  `data:` are never emitted. The server does not fetch URLs or build previews.
+- Messages with `deletedAt` set (tombstones) are excluded from every tab.
+
+`ArchiveResponse` = `{items: ArchiveItem[], nextCursor}`.
+
+```json
+{
+  "items": [
+    {
+      "messageId": "00000000-0000-4000-8000-000000000007",
+      "seq": 7,
+      "senderId": "11111111-1111-4111-8111-111111111111",
+      "createdAt": "2026-11-04T09:10:00Z",
+      "kind": "IMAGE",
+      "attachment": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "fileName": "photo.png",
+        "mimeType": "image/png",
+        "sizeBytes": 20480,
+        "durationMs": null,
+        "blurHash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj",
+        "width": 1080,
+        "height": 1920
+      },
+      "link": null
+    },
+    {
+      "messageId": "00000000-0000-4000-8000-000000000006",
+      "seq": 6,
+      "senderId": "22222222-2222-4222-8222-222222222222",
+      "createdAt": "2026-11-04T09:05:00Z",
+      "kind": "LINK",
+      "attachment": null,
+      "link": { "url": "https://example.com/article" }
+    }
+  ],
+  "nextCursor": "eyJ2Ijoi..."
+}
+```
+
+`ArchiveItem` carries exactly one of `attachment`/`link`; the other is an
+explicit JSON `null`. `ArchiveAttachmentView` =
+`{id, fileName, mimeType, sizeBytes, durationMs, blurHash, width, height}`;
+`durationMs`, `blurHash`, `width` and `height` are `null` when not known.
+`ArchiveLinkView` = `{url}`.
 
 ## Groups — `/api/v1/conversations` (type `GROUP`)
 
