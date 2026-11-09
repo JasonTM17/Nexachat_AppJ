@@ -75,6 +75,7 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 @AndroidEntryPoint
 public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
     private static final String ARG_CONVERSATION_ID = "conversationId";
+    private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -159,6 +160,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             attachAskListener(existingAskSheet);
         }
         inboxViewModel.refresh();
+        String archiveJumpMessageId = getArguments() == null
+                ? null
+                : getArguments().getString(ARG_ARCHIVE_JUMP_MESSAGE_ID);
+        if (archiveJumpMessageId != null && !archiveJumpMessageId.isBlank()) {
+            getArguments().remove(ARG_ARCHIVE_JUMP_MESSAGE_ID);
+            viewModel.jumpToMessage(archiveJumpMessageId);
+        }
     }
 
     private void configureList() {
@@ -588,14 +596,32 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(new CharSequence[]{
                         getString(R.string.ask_action),
-                        getString(R.string.summary_overflow_action)
+                        getString(R.string.summary_overflow_action),
+                        getString(R.string.archive_title)
                 }, (dialog, which) -> {
                     if (which == 0) {
                         showAsk();
                     } else if (which == 1) {
                         showSummary();
+                    } else if (which == 2) {
+                        openArchive();
                     }
                 }).show();
+    }
+
+    private void openArchive() {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.archiveFragment, args);
+        } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void showAsk() {

@@ -51,6 +51,20 @@
         <argument
             android:name="conversationId"
             app:argType="string" />
+        <argument
+            android:name="archiveJumpMessageId"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/archiveFragment"
+        android:name="com.nexachat.feature.archive.ArchiveFragment"
+        android:label="@string/archive_title">
+        <argument
+            android:name="conversationId"
+            app:argType="string" />
     </fragment>
 
     <fragment
