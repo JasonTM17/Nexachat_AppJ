@@ -10,10 +10,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import javax.inject.Inject;
 
 /** Owns archive filters and keyset cursors so they survive a configuration change. */
@@ -25,6 +27,11 @@ public final class ArchiveViewModel extends ViewModel {
     private static final String KEY_SENDER = "archive.sender";
     private static final String KEY_FROM = "archive.from";
     private static final String KEY_TO = "archive.to";
+    private static final String KEY_CURSOR_PREFIX = "archive.cursor.";
+    private static final String KEY_ITEMS_PREFIX = "archive.items.";
+    private static final String KEY_HAS_MORE_PREFIX = "archive.has_more.";
+    private static final String KEY_LOADED_PREFIX = "archive.loaded.";
+    private static final int MAX_EMPTY_SCAN_ROUNDS = 3;
 
     private final SavedStateHandle savedState;
     private final String conversationId;
@@ -33,6 +40,10 @@ public final class ArchiveViewModel extends ViewModel {
     private final EnumMap<ArchiveType, ArchivePageState> pages =
             new EnumMap<>(ArchiveType.class);
     private final EnumMap<ArchiveType, ArchiveRepository.Cancellable> requests =
+            new EnumMap<>(ArchiveType.class);
+    private final EnumMap<ArchiveType, Set<String>> seenCursors =
+            new EnumMap<>(ArchiveType.class);
+    private final EnumMap<ArchiveType, Integer> emptyScanRounds =
             new EnumMap<>(ArchiveType.class);
     private final MutableLiveData<ArchiveUiState> uiState =
             new MutableLiveData<>(new ArchiveUiState());
@@ -61,7 +72,24 @@ public final class ArchiveViewModel extends ViewModel {
         from = savedState.get(KEY_FROM);
         to = savedState.get(KEY_TO);
         for (ArchiveType type : ArchiveType.values()) {
-            pages.put(type, new ArchivePageState());
+            List<ArchivePage.Item> savedItems = savedState.get(KEY_ITEMS_PREFIX + type.name());
+            String savedCursor = savedState.get(KEY_CURSOR_PREFIX + type.name());
+            Boolean savedHasMore = savedState.get(KEY_HAS_MORE_PREFIX + type.name());
+            Boolean savedLoaded = savedState.get(KEY_LOADED_PREFIX + type.name());
+            if (savedItems != null && !savedItems.isEmpty()) {
+                pages.put(type, new ArchivePageState(
+                        savedItems,
+                        savedCursor,
+                        savedHasMore != null ? savedHasMore : (savedCursor != null),
+                        false,
+                        savedLoaded != null ? savedLoaded : true,
+                        null));
+            } else if (savedCursor != null) {
+                pages.put(type, new ArchivePageState(
+                        Collections.emptyList(), savedCursor, true, false, false, null));
+            } else {
+                pages.put(type, new ArchivePageState());
+            }
         }
         publish();
         loadSenders();
@@ -140,7 +168,9 @@ public final class ArchiveViewModel extends ViewModel {
 
     public void retry() {
         ArchivePageState current = pages.get(selectedType);
-        if (current.isLoading() || current.getError() == null) {
+        if (current.isLoading() || current.getError() == null
+                || current.getError() == ArchiveRepository.Failure.FORBIDDEN
+                || current.getError() == ArchiveRepository.Failure.NOT_FOUND) {
             return;
         }
         requestPage(selectedType, current.getCursor());
@@ -165,8 +195,14 @@ public final class ArchiveViewModel extends ViewModel {
             request.cancel();
         }
         requests.clear();
+        seenCursors.clear();
+        emptyScanRounds.clear();
         for (ArchiveType type : ArchiveType.values()) {
             pages.put(type, new ArchivePageState());
+            savedState.set(KEY_ITEMS_PREFIX + type.name(), null);
+            savedState.set(KEY_CURSOR_PREFIX + type.name(), null);
+            savedState.set(KEY_HAS_MORE_PREFIX + type.name(), null);
+            savedState.set(KEY_LOADED_PREFIX + type.name(), null);
         }
         publish();
         requestPage(selectedType, null);
@@ -222,15 +258,49 @@ public final class ArchiveViewModel extends ViewModel {
         }
 
         String nextCursor = normalizedCursor(response.getNextCursor());
-        ArchiveRepository.Failure failure = null;
-        if (nextCursor != null && nextCursor.equals(requestedCursor)) {
-            nextCursor = null;
-            failure = ArchiveRepository.Failure.UNKNOWN;
+        Set<String> typeSeen = seenCursors.computeIfAbsent(type, k -> new HashSet<>());
+        if (requestedCursor != null) {
+            typeSeen.add(requestedCursor);
+        }
+        boolean isLoop = nextCursor != null && (nextCursor.equals(requestedCursor) || typeSeen.contains(nextCursor));
+        if (isLoop) {
+            pages.put(type, new ArchivePageState(
+                    new ArrayList<>(merged.values()), null, false,
+                    false, true, ArchiveRepository.Failure.UNKNOWN));
+            requests.remove(type);
+            emptyScanRounds.put(type, 0);
+            savedState.set(KEY_ITEMS_PREFIX + type.name(), new ArrayList<>(merged.values()));
+            savedState.set(KEY_CURSOR_PREFIX + type.name(), null);
+            savedState.set(KEY_HAS_MORE_PREFIX + type.name(), false);
+            savedState.set(KEY_LOADED_PREFIX + type.name(), true);
+            publish();
+            return;
+        }
+
+        boolean emptyPageWithNextCursor = response.getItems().isEmpty() && nextCursor != null;
+        int currentEmptyRounds = emptyScanRounds.getOrDefault(type, 0);
+        if (emptyPageWithNextCursor && currentEmptyRounds < MAX_EMPTY_SCAN_ROUNDS) {
+            emptyScanRounds.put(type, currentEmptyRounds + 1);
+            pages.put(type, new ArchivePageState(
+                    new ArrayList<>(merged.values()), nextCursor, true,
+                    true, old.isLoaded(), null));
+            requests.remove(type);
+            publish();
+            requestPage(type, nextCursor);
+            return;
+        }
+
+        if (!response.getItems().isEmpty()) {
+            emptyScanRounds.put(type, 0);
         }
         pages.put(type, new ArchivePageState(
                 new ArrayList<>(merged.values()), nextCursor, nextCursor != null,
-                false, true, failure));
+                false, true, null));
         requests.remove(type);
+        savedState.set(KEY_ITEMS_PREFIX + type.name(), new ArrayList<>(merged.values()));
+        savedState.set(KEY_CURSOR_PREFIX + type.name(), nextCursor);
+        savedState.set(KEY_HAS_MORE_PREFIX + type.name(), nextCursor != null);
+        savedState.set(KEY_LOADED_PREFIX + type.name(), true);
         publish();
     }
 
