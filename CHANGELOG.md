@@ -77,6 +77,22 @@ after the tag.
 - New user-facing strings in paired EN/VI resources, including call-specific
   `strings_call.xml` files (time labels, content descriptions, call controls,
   and settings section titles) — resource-name parity maintained.
+- Per-member conversation mute/archive and per-conversation AI opt-out
+  (Flyway V12–V13), with Android inbox and chat controls.
+- Shared recurring reminders with durable FCM delivery and an Android board
+  (Flyway V14).
+- Group polls with voting, a versioned change feed and an Android board
+  (Flyway V15).
+- Per-member conversation pin (≤5) and the reciprocal "hidden seen" privacy
+  switch (Flyway V16).
+- Structured group mentions and admin `mentionAll` (Flyway V17).
+- Private per-user conversation labels with per-conversation assignment and
+  inbox filtering (Flyway V18).
+- Group invite links with hashed tokens, safe preview, join requests and admin
+  approval, plus Android manage/join screens (Flyway V20).
+- Author message recall window (default 24 h, `409 RECALL_WINDOW_EXPIRED`),
+  with a group-admin moderation bypass.
+- Delta-sync partial indexes for edited and deleted message scans (Flyway V19).
 
 ### Changed
 
@@ -86,6 +102,9 @@ after the tag.
 - `docs/design/stitch/screens/*` regenerated for the redesigned screens.
 - `docs/api-contract.md` and `docs/websocket-protocol.md` extended for the
   new endpoints, events and limits.
+- `docs/api-contract.md` gained a feature matrix, a V1–V22 migration history and
+  operational notes (config keys, rate limits, defaults); `README.md`,
+  `docs/architecture.md` and `docs/operations.md` now cover V12–V20.
 - Test coverage expanded: Room v7 migration, message mutation/search/rate-limit,
   presence, settings, design-system UI rules and realtime event decoding.
 
@@ -101,6 +120,10 @@ after the tag.
 - A stale offline presence seed can no longer demote an online peer.
 - Group-detail inbox refresh no longer prunes a conversation created while a
   `GET /conversations` was in flight.
+- `NEW_MESSAGE` pushes are suppressed for muted conversations, including
+  `SYSTEM` membership and title notices, except when the message mentions the
+  member or has `mentionAll: true`, when a `SYSTEM` event is about that member,
+  and for `CALL_INVITE` (a call must ring).
 
 ### Security
 

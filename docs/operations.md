@@ -58,6 +58,46 @@ The database stores its initial role/password in the named volume on first
 initialization, so changing `DATABASE_PASSWORD` alone does not rotate an
 already-initialized database role.
 
+### Feature configuration and retention
+
+The V12–V20 feature flags, rate limits and ceilings are listed in
+[`docs/api-contract.md`](api-contract.md#operational-notes). The operational
+schedulers and retention windows are:
+
+| Property | Default | Meaning |
+|---|---|---|
+| `nexachat.reminders.enabled` | `true` | Enables the reminder poll and retention sweep. |
+| `nexachat.reminders.poll-interval-ms` | `1000` | Reminder poll cadence. |
+| `nexachat.reminders.initial-delay-ms` | `5000` | First poll delay after startup. |
+| `nexachat.reminders.batch-size` | `10` | Due reminders claimed per poll. |
+| `nexachat.reminders.claim-lease-seconds` | `600` | Claim lease; a crashed claim becomes due again after this. |
+| `nexachat.reminders.retention-days` | `30` | Completed one-off reminders are purged after this many days. |
+| `nexachat.reminders.retention-sweep-interval-ms` | `3600000` | Retention sweep cadence. |
+| `nexachat.reminders.retention-initial-delay-ms` | `60000` | First retention sweep delay. |
+| `nexachat.reminders.push-timeout-ms` | `10000` | Reminder FCM fan-out timeout. |
+| `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window (`RetentionCleanupTask`). |
+| `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
+| `nexachat.group.max-members` | `100` | Group capacity enforced on invite joins and approvals. |
+
+Reminder delivery is at-least-once: a crash after FCM accepts a push but before
+the database advance can produce a duplicate. Completed one-off reminders are
+retained for `retention-days` and then purged; repeating reminders keep
+`fired_at IS NULL` and advance to their next future occurrence.
+
+Reaction events (`reaction_events`, V10) are purged after
+`nexachat.sync.reaction-retention-days` by `RetentionCleanupTask`. A delta request
+whose `since` is older than that window receives `reactionsFullRefresh=true` and
+the client must reload reactions from history.
+
+Idempotency rows (`request_idempotency`, V10) are a replay cache, not an audit
+log: `RetentionCleanupTask` also deletes rows older than
+`nexachat.idempotency.ttl-hours` (default 24), after which a replayed key simply
+runs the operation again.
+
+Broader data-retention cleanup (expired invite links, finished join requests,
+expired refresh-token/device-token rows, ended polls, old call records, orphaned
+attachments) is reserved for Flyway `V22` and is **pending, not yet in main**.
+
 ### Push notifications (FCM)
 
 The server binds `nexachat.fcm.*` in `application.yml` and `FcmProperties.java`.
@@ -260,6 +300,11 @@ request from the user row, so removing a phone takes effect immediately.
 - Credential endpoints are limited per source IP (login 10/5 min, register
   10/5 min, refresh 30/5 min) **and** per normalized phone (login and register
   20/5 min), so rotating IPs cannot brute-force one account.
+- V12–V20 feature writes use per-user token buckets: labels 30/min (shared),
+  polls 10/min create / 120/min vote / 30/min manage, invite resolve 60/min and
+  join 20/min (also per client IP), reminders 30/min create, message edit/delete
+  30/min and search 60/min. Keys and defaults are in
+  [`docs/api-contract.md`](api-contract.md#operational-notes).
 - JSON request bodies larger than `nexachat.security.max-json-body-bytes`
   (env `NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB) are rejected with
   `413 PAYLOAD_TOO_LARGE` before the dispatcher parses them. Multipart uploads
@@ -506,21 +551,34 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V17 apply
+Back up before replacing the app image. Flyway migrations V1 through V20 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
-edit one already applied to a database. Migrations V8–V11 introduce:
-- `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
-- `V9__conversation_rag.sql`: `message_embeddings` table with bytea vectors, `rag_ask_cache`, and `rag_ask_request_limits`.
-- `V10__reaction_events_idempotency_device_tokens.sql`: `reaction_events` audit table for delta sync, `request_idempotency` replay cache, and `UNIQUE(user_id, token)` device token constraint.
-- `V11__user_access_token_cutoff.sql`: `users.tokens_valid_after`, the access-token revocation cutoff.
+edit one already applied to a database. The full migration list with intent is in
+[`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
+V11 introduce:
 
-The next migrations add per-member mute/archive preferences (V12), conversation
-AI opt-outs (V13), reminders and delivery claims (V14), group polls (V15),
-seen privacy (V16), and structured group message mentions (V17). V17 preserves
-existing messages and constrains explicit mentions to a current conversation
-member. Ensure every migration file V1–V17 is present in the source tree before
-rebuilding the dev app container; the image packages the server migration
-resources used by Flyway at startup.
+- `V12__conversation_member_mute_archive.sql`: per-member `muted` /
+  `muted_until` / `archived` columns on `conversation_members`.
+- `V13__conversation_ai_opt_outs.sql`: `conversation_ai_opt_outs`.
+- `V14__conversation_reminders.sql`: `conversation_reminders` plus the due-scan,
+  active-board and fired-retention indexes.
+- `V15__group_polls.sql`: `polls`, `poll_options`, `poll_votes` and the
+  `poll_version_seq` change-feed sequence.
+- `V16__conversation_pin_seen_privacy.sql`: per-member `pinned` / `pinned_at`
+  and `users.show_seen`.
+- `V17__message_mentions.sql`: `message_mentions` and `messages.mention_all`.
+- `V18__conversation_labels.sql`: `conversation_labels` and
+  `conversation_label_assignments`.
+- `V19__query_performance_indexes.sql`: partial delta-sync indexes
+  `idx_messages_conv_edited` / `idx_messages_conv_deleted`.
+- `V20__group_invite_links.sql`: `group_invite_links`, `group_join_requests`,
+  `group_invite_bans`.
+
+`V21` is reserved for the recall-window worker; no schema change was required,
+so no V21 file exists. `V22` is reserved for data-retention cleanup jobs and is
+**pending, not yet in main**. Ensure every migration file V1–V20 is present in
+the source tree before rebuilding the dev app container; the image packages the
+server migration resources used by Flyway at startup.
 
 ```sh
 bash demo/backup.sh

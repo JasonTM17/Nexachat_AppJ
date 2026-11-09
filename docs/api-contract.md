@@ -26,6 +26,109 @@
 | [Conversation Ask (RAG)](#conversation-ask-api-rag) | `/api/v1/conversations/{id}/ask` | Hybrid retrieval-augmented chat QA with citation validation and local lexical fallback |
 | [WebSocket / STOMP](#websocket--stomp) | `/ws` | Realtime messaging, delivery/read receipts, typing, and presence |
 
+## Feature matrix
+
+Server version = Flyway migration that introduced the feature. "Android UI"
+means the shipped app has a user-facing control; "server only" means the
+Android client can consume the API but no dedicated screen is merged into
+`main` yet.
+
+| Feature | Server version | Android UI | Tests |
+|---|---|---|---|
+| Per-member conversation mute/archive | V12 | Shipped — inbox long-press and chat overflow (`ConversationPreferenceMenu`, `MutePresets`) | `ConversationMuteArchiveControllerTest`, `ConversationMuteArchiveServiceTest`, `ConversationMuteArchiveFlowIT`, Android `MutePresetsTest`, `ConversationSummaryMuteTest` |
+| Per-conversation AI opt-out | V13 | Shipped — chat `aiOptOut` switch | `ConversationAiOptOutIT`, `SummaryOptOutIT`, `SummaryCacheWinnerOptOutTest`, `AskOptOutUncitedCacheIT`, `AiOptOutContractTest` |
+| Shared recurring reminders | V14 | Shipped — `feature/reminder` board | `ReminderControllerTest`, `ReminderFlowIT`, `ReminderSchedulerIT`, `ReminderRepeatTest`, `FcmReminderPushSenderTest`, Android `ReminderViewModelTest`, `ReminderRepositoryTest`, `ReminderTimeTest` |
+| Group polls | V15 | Shipped — `feature/poll` board | `PollFlowTest`, `PollRateLimiterTest`, `PollTest`, Android `PollViewModelTest`, `PollRepositoryTest`, `PollDraftTest`, `PollTimeTest` |
+| Conversation pin + reciprocal seen privacy | V16 | Server only — Android UI branch `feature/android-pin-seen-privacy-ui` is not merged | `ConversationPinServiceTest`, `ConversationPinSeenFlowIT`, `UserSettingsFlowIT`, `UserSettingsServiceTest`, `StompSeenPrivacyOutboundInterceptorTest`, `V16MigrationTest` |
+| Group mentions and `@all` | V17 | Server only — Android UI branch `feature/android-mentions-ui` is not merged | `MessageMentionFlowIT`, `V17MigrationTest` |
+| Private conversation labels | V18 | Server only — Android UI branch `feature/android-labels-ui` has no commits on `main` | `LabelFlowIT`, `V18MigrationTest` |
+| Delta-sync partial indexes | V19 | n/a (server-side) | `V19MigrationTest`, `SyncControllerTest` |
+| Group invite links and join requests | V20 | Shipped — `feature/invite` manage and join screens | `InviteServiceTest`, `InviteTokenTest`, `InviteRateLimiterTest`, `GroupInviteFlowIT`, `InviteEventListenerTest`, Android `InviteJoinViewModelTest`, `InviteManageViewModelTest`, `InviteLinkParserTest`, `InviteLinkConfigurationTest`, `InvitePrivacyTest`, `RetrofitInviteRepositoryTest` |
+| Author message recall window | No migration (V21 reserved, unused) | Server enforces; Android recall action branch `feature/recall-window-client` is not merged | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT` |
+| Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
+
+## Migration history
+
+| Version | File | Intent |
+|---|---|---|
+| V1 | `V1__init.sql` | Core schema: users, contacts, conversations, members, messages; `pgcrypto` + `pg_trgm`. |
+| V2 | `V2__attachments.sql` | Upload-first attachments: `message_attachments.owner_id`, nullable `message_id`, bind at send. |
+| V3 | `V3__interactions.sql` | Emoji reactions and pinned messages. |
+| V4 | `V4__presence.sql` | `unaccent` extension, `users.last_seen_at`, `users.show_presence`, literal message search. |
+| V5 | `V5__calls.sql` | `call_records` for 1-to-1 voice calls. |
+| V6 | `V6__conversation_summaries.sql` | `users.ai_summary_consent`, `message_summaries` cache. |
+| V7 | `V7__p0_receipts_sync_fcm.sql` | Delivery watermark, delta-sync covering index, `user_device_tokens`. |
+| V8 | `V8__attachment_blurhash_search_trigram.sql` | `attachments.blur_hash`, composite GIN trigram message-search index. |
+| V9 | `V9__conversation_rag.sql` | RAG embeddings, ask cache and request limits. |
+| V10 | `V10__reaction_events_idempotency_device_tokens.sql` | Append-only `reaction_events`, `request_idempotency`, device-token uniqueness. |
+| V11 | `V11__user_access_token_cutoff.sql` | `users.tokens_valid_after` access-token revocation cutoff. |
+| V12 | `V12__conversation_member_mute_archive.sql` | Per-member `muted` / `muted_until` / `archived`. |
+| V13 | `V13__conversation_ai_opt_outs.sql` | Per-conversation AI opt-out rows. |
+| V14 | `V14__conversation_reminders.sql` | Shared reminders with repeat rules and delivery claims. |
+| V15 | `V15__group_polls.sql` | Group polls, options, votes and the `poll_version_seq` change feed. |
+| V16 | `V16__conversation_pin_seen_privacy.sql` | Per-member conversation pin and `users.show_seen`. |
+| V17 | `V17__message_mentions.sql` | Structured message mentions and `messages.mention_all`. |
+| V18 | `V18__conversation_labels.sql` | Private labels and per-conversation assignments. |
+| V19 | `V19__query_performance_indexes.sql` | Partial indexes for delta-sync edited/deleted scans. |
+| V20 | `V20__group_invite_links.sql` | Group invite links, join requests and invite bans. |
+| V21 | — | Reserved for the recall-window worker; no schema change was required, so no V21 file exists. |
+| V22 | — | Reserved for data-retention cleanup jobs; **pending, not yet in main**. |
+
+## Operational notes
+
+### Configuration keys and defaults
+
+| Key | Default | Meaning |
+|---|---|---|
+| `nexachat.message.recall-window` | `PT24H` | Author recall window; inclusive boundary; valid `PT1M`–`P7D`; a current group admin bypasses it. |
+| `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
+| `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window; an older `since` forces `reactionsFullRefresh`. |
+| `nexachat.reminders.enabled` | `true` | Enables the reminder poll and retention sweep. |
+| `nexachat.reminders.poll-interval-ms` | `1000` | Reminder poll cadence. |
+| `nexachat.reminders.initial-delay-ms` | `5000` | First poll delay after startup. |
+| `nexachat.reminders.batch-size` | `10` | Due reminders claimed per poll. |
+| `nexachat.reminders.claim-lease-seconds` | `600` | Claim lease; a crashed claim becomes due again after this. |
+| `nexachat.reminders.retention-days` | `30` | Completed one-off reminders are purged after this many days. |
+| `nexachat.reminders.push-timeout-ms` | `10000` | Reminder FCM fan-out timeout. |
+| `nexachat.group.max-members` | `100` | Group capacity enforced on invite joins and approvals (minimum 2). |
+| `nexachat.rate-limit.labels.writes-per-minute` | `30` | Shared label create/patch/delete/assign/unassign budget. |
+| `nexachat.rate-limit.polls.create-per-minute` | `10` | Poll creation budget. |
+| `nexachat.rate-limit.polls.votes-per-minute` | `120` | Vote/retract budget. |
+| `nexachat.rate-limit.polls.manage-per-minute` | `30` | Close/delete budget. |
+| `nexachat.rate-limit.invite.resolve-per-minute` | `60` | Invite preview budget, per user and per client IP. |
+| `nexachat.rate-limit.invite.join-per-minute` | `20` | Invite join budget, per user and per client IP. |
+| `nexachat.rate-limit.reminders.create-per-minute` | `30` | Reminder creation budget. |
+| `nexachat.rate-limit.messages.edit-delete-per-minute` | `30` | Shared message edit/delete budget. |
+| `nexachat.rate-limit.messages.search-per-minute` | `60` | Message search budget. |
+| `nexachat.rate-limit.stomp.messages-per-window` | `30` | STOMP message sends per `window-seconds` (10). |
+| `nexachat.rate-limit.stomp.typing-per-window` | `60` | STOMP typing frames per `typing-window-seconds` (10). |
+| `nexachat.rate-limit.stomp.acks-per-window` | `120` | STOMP delivery/read ack frames per `ack-window-seconds` (10). |
+
+These keys are Spring properties; override them with the matching
+`NEXACHAT_*` environment variable (relaxed binding) or a profile-specific
+`application.yml`. The full operator table — `DATABASE_*`, `JWT_SECRET`,
+`FCM_*`, summary/RAG and management settings — is in
+[`docs/operations.md`](operations.md#configuration).
+
+### Feature defaults and ceilings
+
+- **Mute:** `mutedUntil` must be in the future and at most 365 days out;
+  `forever` is the explicit escape hatch. Mute expiry is lazy.
+- **Conversation pin:** at most 5 pinned conversations per user; re-pinning an
+  already pinned conversation is idempotent.
+- **Labels:** at most 10 labels per user, 30 Unicode characters each, 3 labels
+  per conversation.
+- **Polls:** 2–10 options, question 1–200 chars, option 1–100 chars, optional
+  expiry up to 30 days.
+- **Reminders:** title 1–200 chars, `remindAt` up to 365 days ahead, at most 50
+  active reminders per conversation.
+- **Invite links:** 256-bit token, SHA-256 hashed storage, optional expiry up to
+  30 days, optional `maxUses`, one active link per group.
+- **Message pins:** at most 3 pinned messages per conversation, group-admin
+  gated.
+- **Recall:** 24-hour default window, inclusive boundary; a current group admin
+  may recall any group message regardless of age.
+
 ## Conventions
 
 - **Base URL:** `http://localhost:8080` · **Path prefix:** `/api/v1`
@@ -70,8 +173,8 @@
 | `ALREADY_CONTACT` | 409 | Contact already present |
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
 | `NOT_MEMBER` | 403 | Caller is not a member of the conversation |
-| `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin, poll close/delete) |
-| `NOT_A_GROUP` | 400 | Poll operation on a DIRECT conversation |
+| `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin, poll close/delete, `mentionAll`) |
+| `NOT_A_GROUP` | 400 | Operation requires a GROUP conversation (poll, invite link, mention) |
 | `POLL_NOT_FOUND` | 404 | Poll missing, deleted, or belongs to another conversation |
 | `POLL_CLOSED` | 409 | Vote/retract attempted after explicit close or expiry |
 | `NOT_MESSAGE_AUTHOR` | 403 | Caller is not the message author |
@@ -267,9 +370,13 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 ## Conversations — `/api/v1/conversations`
 
 Author message recall uses the server-side `nexachat.message.recall-window`
-setting, defaulting to 24 hours and bounded from 1 minute through 7 days. The
-effective setting is not exposed in API responses; clients should use the
-documented 24-hour default when deciding whether to show the recall action.
+setting, defaulting to 24 hours and bounded from 1 minute through 7 days
+(`PT1M`–`P7D`; the boundary is inclusive, so a recall exactly at
+`createdAt + recallWindow` still succeeds). The effective setting is not
+exposed in API responses; clients should use the documented 24-hour default
+when deciding whether to show the recall action. A current group admin may
+recall any group message regardless of age — the window applies to the author
+only. Recalling an already-recalled message is a `204` no-op.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
@@ -514,6 +621,15 @@ toggle whether joining requires administrator approval. Authenticated users can 
 safe previews without leaking member lists, join directly if approval is off, or
 submit a join request if approval is on.
 
+**Invite URL format.** The server returns the raw token once (on create/rotate);
+the client builds the shareable URL. The default shape is
+`nexachat://join/<token>` (Android intent filter `android:scheme="nexachat"`,
+`android:host="join"`). When the Android build sets the Gradle property
+`inviteLinkHttpsHost` to a DNS host, the URL becomes
+`https://<host>/join/<token>` and an optional verified App Links intent filter is
+injected; the custom scheme is still accepted. The token is 43 URL-safe base64
+characters (256 bits of entropy).
+
 ### Endpoints
 
 | Method & path | Auth | Request | Success | Errors |
@@ -528,6 +644,15 @@ submit a join request if approval is on.
 | `GET /conversations/{conversationId}/join-requests/me` | Bearer | — | `200` `JoinRequestResponse` (caller's own latest request) | `UNAUTHORIZED` 401 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/join-requests/{requestId}/approve` | Bearer ADMIN | — | `200` `JoinRequestResponse` (adds member, posts SYSTEM message, updates `status="APPROVED"`; idempotent) | `VALIDATION_FAILED` 400 (e.g. member cap or already rejected) · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/join-requests/{requestId}/reject` | Bearer ADMIN | — | `200` `JoinRequestResponse` (`status="REJECTED"`; idempotent) | `VALIDATION_FAILED` 400 (e.g. already approved) · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 |
+
+`InviteLinkResponse` = `{id, conversationId, token, requiresApproval, expiresAt?, maxUses?, useCount, createdAt}`.
+`token` is the raw secret and is populated only on create/rotate; every later
+read returns `token: null` because only the SHA-256 hash is stored.
+`JoinRequestResponse` = `{id, conversationId, user: {id, displayName, avatarUrl}, status, createdAt, reviewedAt?, reviewedBy?}`;
+`status` is `PENDING`, `APPROVED` or `REJECTED`.
+`JoinResponse` = `{status, conversationId, requestId?, created}`; `status` is
+`JOINED`, `ALREADY_MEMBER` or `PENDING`, and `created` distinguishes a new
+`PENDING` request (`201`) from an existing one (`200`).
 
 ### Invariants & Security Rules
 
@@ -721,7 +846,7 @@ rest); `HEAD` behaves like `GET` without a body.
 | `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
 `SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh, muted, mutedUntil?, archived, pinned, pinnedAt?}], serverTime}`. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC), omitted when the mute is forever or the conversation is not muted; `pinnedAt` is omitted when the conversation is not pinned. The flags are carried on every delta so a second device learns a mute/archive/pin change made elsewhere without a separate inbox fetch.
-Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)`.
+Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)` (Flyway V7). Flyway V19 adds the partial indexes `idx_messages_conv_edited` on `(conversation_id, edited_at) WHERE edited_at IS NOT NULL` and `idx_messages_conv_deleted` on `(conversation_id, deleted_at) WHERE deleted_at IS NOT NULL`, so the per-conversation edited/deleted scans do not fall back to a full scan of the conversation's messages.
 
 `reactionUpdates` is derived from the append-only `reaction_events` table, so a
 removal is reported even though it deletes the `message_reactions` row. The
@@ -741,14 +866,125 @@ instead of applying the (empty) partial page.
 
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
+1-to-1 voice calls use an authenticated STOMP signaling channel plus three REST
+helpers. Call state and busy reservations live in an in-memory registry on the
+current server node; PostgreSQL stores terminal history (`call_records`, Flyway
+V5). Only **DIRECT** conversations with exactly two members can place calls;
+group calls are out of scope. Signaling never carries audio bytes — WebRTC media
+is negotiated client-side after acceptance.
+
+The full lifecycle diagram, STOMP payload shapes, timeouts, limitations and E2E
+verification live in [`docs/calls.md`](calls.md). This section lists every route
+and the error surfaces verified from `CallRestController`, `CallController`,
+`CallService`, and `CallFlowIT` / `CallTimeoutSchedulerGraceTest`.
+
+### REST routes
+
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /calls/ice-config` | Bearer | — | `200` `{iceServers:[{urls:string[]}], ttlSeconds}` | `UNAUTHORIZED` 401 |
-| `GET /conversations/{id}/calls` | Bearer member of a DIRECT conversation | `limit?` (default 20, range 1–100), optional opaque `cursor?` | `200` `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
+| `GET /calls/ice-config` | Bearer | — | `200` `CallIceConfig` — `{iceServers:[{urls:string[]}], ttlSeconds}` (`ttlSeconds` is `3600`; URLs come from `nexachat.calls.ice-servers`, comma-separated) | `UNAUTHORIZED` 401 |
+| `GET /calls/{callId}/offer` | Bearer; caller or callee of the live call | Path `callId` (UUID) | `200` `CallOfferResponse` — `{callId, sdp:{type, description}, iceConfig}` | `UNAUTHORIZED` 401 · **see REST note below** |
+| `GET /conversations/{conversationId}/calls` | Bearer member of a **DIRECT** conversation | Query `limit?` (default `20`, clamped 1–100), optional opaque `cursor?` (keyset on `startedAt` + `callId`) | `200` `CallHistoryPage` — `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (non-direct conversation, bad `limit`, or malformed `cursor`) |
 
-Call signaling uses STOMP `SEND /app/calls/{conversationId}/signal` and events
-on `/user/queue/calls`; see [`docs/calls.md`](calls.md) for its frame and
-state-machine contract.
+`CallHistoryItem` =
+`{callId, callerId, calleeId, state, endReason?, startedAt, answeredAt?, endedAt?, durationSeconds?}`.
+`state` is `RINGING`, `ACTIVE`, or `ENDED`. `endReason` is one of
+`COMPLETED`, `REJECTED`, `CANCELLED`, `MISSED`, `BUSY`, or `FAILED` when the
+call has ended; otherwise it is omitted/null. Items are newest-first by
+`startedAt`; `nextCursor` is null on the last page.
+
+Each terminal call also writes one `SYSTEM` chat message
+`CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (older rows may omit the
+caller id); see [`docs/calls.md`](calls.md#design-note).
+
+**Fast-path offer (`GET /calls/{callId}/offer`).** The registry may hold one
+SDP offer per ringing/active `callId` for REST retrieval (intended for FCM wake /
+slow STOMP). The service returns the stored `sdp` plus the same
+`iceConfig` as `GET /calls/ice-config` when the authenticated user is a
+participant (`CallRegistry.find` + `peerOf`) and an offer is present
+(`CallRegistry.findOffer`). If the call or offer is missing, or the user is not a
+participant, `CallService` throws `CallException`
+(`CALL_NOT_FOUND` or `NOT_MEMBER`). **`CallException` is not registered on
+`GlobalExceptionHandler`**, so these domain failures currently become
+`500 INTERNAL_ERROR` on REST instead of structured call codes — only
+`UNAUTHORIZED` is shaped normally (`CallTimeoutSchedulerGraceTest` covers the
+happy path and non-participant rejection at the controller layer).
+As of `CallService.validateEnvelope`, STOMP `INVITE` frames must not include
+`sdp`, so the `saveOffer` branch on invite is unreachable through public
+signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
+
+### STOMP signaling
+
+| Destination | Auth | Payload | Success | Errors |
+|---|---|---|---|---|
+| `SEND /app/calls/{conversationId}/signal` | Bearer STOMP session; conversation member for DIRECT 1:1 | JSON `CallSignal` — `{type, callId, sdp?, candidate?}` (`type`: `INVITE`, `ACCEPT`, `REJECT`, `CANCEL`, `END`, `SDP`, `ICE`) | `204` implicit (no STOMP reply body); server events on `/user/queue/calls` | `/user/queue/errors` → `{code, clientMessageId?}` — see call codes below |
+| `SUBSCRIBE /user/queue/calls` | Same session | — | Server push `CallEvent` JSON | Non-members are rejected by the STOMP interceptor before the controller (`NOT_MEMBER`) |
+
+`CallSignal` rules (enforced before the state machine runs):
+
+- Every frame requires `type` and `callId`.
+- `INVITE` must not include `sdp` or `candidate` (control-only).
+- `SDP` carries `sdp` only (`type` `offer` or `answer`, `description` ≤ 16 KiB UTF-8).
+- `ICE` carries `candidate` only (`candidate` ≤ 1 KiB UTF-8; `sdpMid` ≤ 256 chars; `sdpMLineIndex` ≥ 0 when set).
+- Other control frames (`ACCEPT`, `REJECT`, `CANCEL`, `END`) must not include SDP/ICE.
+
+Server `CallEvent` envelopes and terminal `reason` / `durationSeconds` fields are
+specified in [`docs/calls.md`](calls.md#stomp-frames).
+
+### Call state machine (signaling)
+
+| Current state | Client `type` | Actor | Result |
+|---|---|---|---|
+| No call | `INVITE` | Caller (not busy) | `RINGING`; callee gets `CALL_INVITE`; record persisted |
+| No call | `INVITE` | Caller while callee busy | Terminal `ENDED(BUSY)`; caller gets `CALL_BUSY` only |
+| `RINGING` | `ACCEPT` | Callee | `ACTIVE`; both get `CALL_ACCEPTED` |
+| `RINGING` | `REJECT` | Callee | `ENDED(REJECTED)` |
+| `RINGING` | `CANCEL` | Caller | `ENDED(CANCELLED)` |
+| `RINGING` | (timeout) | Server | `ENDED(MISSED)`; `CALL_TIMEOUT` to both |
+| `RINGING` | `SDP` / `ICE` / `END` | Either | `CALL_STATE_INVALID` |
+| `ACTIVE` | `SDP` / `ICE` | Participant | Relayed as `CALL_SDP` / `CALL_ICE` to peer |
+| `ACTIVE` | `END` | Either participant | `ENDED(COMPLETED)` |
+| `ACTIVE` | Last STOMP session lost | Server (after grace) | `ENDED(FAILED)` |
+| `ENDED` / unknown `callId` | Any | — | `CALL_NOT_FOUND` |
+
+Concurrent control and registry mutations serialize on a fair per-node lock;
+SDP/ICE relay holds a read lock for the same transaction span (see limitations in
+[`docs/calls.md`](calls.md)).
+
+### STOMP error codes (`/user/queue/errors`)
+
+These strings are **not** entries in `ApiErrorCode`; they are returned as
+`WsErrorResponse.code` from `CallController` / validation:
+
+| Code | When |
+|---|---|
+| `VALIDATION_FAILED` | Malformed envelope, oversized SDP/ICE, non-direct call, or unexpected handler failure |
+| `NOT_MEMBER` | Missing STOMP principal or caller not in the DIRECT conversation |
+| `RATE_LIMITED` | Per-user call rate bucket exceeded |
+| `CALL_NOT_FOUND` | Unknown or expired `callId` |
+| `CALL_STATE_INVALID` | Frame incompatible with current call state (for example `SDP` while still ringing) |
+
+Default rate limits (`RateLimitService`, per user per minute): **20** `INVITE`,
+**300** combined `SDP`+`ICE` (`call:invite:` / `call:media:` keys).
+
+### Timeouts and configuration
+
+| Key | Default | Behavior |
+|---|---|---|
+| `nexachat.calls.ring-timeout-ms` | `45000` | Ring duration before server emits `CALL_TIMEOUT` / `MISSED` |
+| `nexachat.calls.disconnect-grace-ms` | `15000` | Grace after last STOMP disconnect on an `ACTIVE` call before `FAILED` |
+| `nexachat.calls.ice-servers` | `stun:stun.l.google.com:19302` | Comma-separated STUN/TURN URLs returned from `ice-config` and offer |
+
+Terminal registry entries are evicted from memory five minutes after `endedAt`;
+offers are removed with the session (`CallRegistry`).
+
+### Tests
+
+| Area | Tests |
+|---|---|
+| REST history + ice-config | `CallFlowIT` |
+| REST offer (unit) | `CallTimeoutSchedulerGraceTest#fastPathSdpRetrieval*` |
+| STOMP state machine + errors | `CallFlowIT`, `CallControllerTest`, `CallServiceTest`, `CallStateMachineTest` |
 
 ## Conversation summary API
 
