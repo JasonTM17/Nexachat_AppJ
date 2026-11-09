@@ -431,7 +431,7 @@ public class MessageService {
      * Batch delta sync: queries new messages, edited messages, deleted message IDs,
      * and reaction updates across multiple conversation watermarks in a single request.
      */
-    @Transactional(readOnly = true)
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public SyncResponse syncDelta(UUID userId, SyncRequest request) {
         if (request == null || request.watermarks() == null || request.watermarks().isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermarks list must not be empty");
@@ -551,6 +551,9 @@ public class MessageService {
      */
     private ReactionDelta reactionUpdates(UUID conversationId, java.time.Instant since, Long cursor) {
         int cap = Math.max(1, syncProperties.getMaxReactionUpdates());
+        // A separate statement after this lock gets a fresh READ COMMITTED
+        // snapshot if it waited for a reaction transaction to commit.
+        reactionEventRepository.lockConversationEvents(conversationId);
         List<ReactionEventId> events = reactionEventRepository.findEventIdsSince(
                 conversationId, since, cursor, cap + 1);
         boolean truncated = events.size() > cap;

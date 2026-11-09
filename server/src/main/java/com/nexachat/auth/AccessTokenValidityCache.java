@@ -47,6 +47,7 @@ public class AccessTokenValidityCache {
     private final int maxEntries;
     private final long ttlNanos;
     private final Object lock = new Object();
+    private long generation;
 
     @org.springframework.beans.factory.annotation.Autowired
     public AccessTokenValidityCache(
@@ -89,23 +90,40 @@ public class AccessTokenValidityCache {
     public void put(UUID userId, Validity validity) {
         long now = System.nanoTime();
         synchronized (lock) {
-            if (entries.size() >= maxEntries && !entries.containsKey(userId)) {
-                evictExpired(now);
-                if (entries.size() >= maxEntries) {
-                    Iterator<UUID> oldest = entries.keySet().iterator();
-                    oldest.next();
-                    oldest.remove();
-                }
+            putLocked(userId, validity, now);
+        }
+    }
+
+    /** Snapshot used to prevent a stale in-flight database read from refilling after eviction. */
+    public long generation() {
+        synchronized (lock) {
+            return generation;
+        }
+    }
+
+    /** Stores only if no revocation eviction occurred after the caller's snapshot. */
+    public boolean putIfGeneration(UUID userId, Validity validity, long expectedGeneration) {
+        synchronized (lock) {
+            if (generation != expectedGeneration) {
+                return false;
             }
-            entries.put(userId, new Entry(validity, now));
+            putLocked(userId, validity, System.nanoTime());
+            return true;
         }
     }
 
     /** Drops one user's entry so the next request reloads the authoritative value. */
     public void evict(UUID userId) {
         synchronized (lock) {
+            generation++;
             entries.remove(userId);
         }
+    }
+
+    @org.springframework.transaction.event.TransactionalEventListener(
+            phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void onAccessTokensRevoked(AccessTokensRevokedEvent event) {
+        evict(event.userId());
     }
 
     /** Visible for tests: how many users currently hold a cached entry. */
@@ -122,6 +140,18 @@ public class AccessTokenValidityCache {
                 iterator.remove();
             }
         }
+    }
+
+    private void putLocked(UUID userId, Validity validity, long now) {
+        if (entries.size() >= maxEntries && !entries.containsKey(userId)) {
+            evictExpired(now);
+            if (entries.size() >= maxEntries) {
+                Iterator<UUID> oldest = entries.keySet().iterator();
+                oldest.next();
+                oldest.remove();
+            }
+        }
+        entries.put(userId, new Entry(validity, now));
     }
 
     private static final class Entry {

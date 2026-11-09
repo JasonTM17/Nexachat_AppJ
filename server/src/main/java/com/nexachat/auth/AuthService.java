@@ -19,8 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,7 +34,7 @@ import java.util.UUID;
  *
  * <p>Transaction note: {@link #refresh} is deliberately NOT {@code @Transactional}
  * at this level — when {@link TokenService#rotate} reports reuse/expiry, the
- * family revocation must commit in its own transaction before the 401 is thrown;
+ * family and access-token revocation must commit in its own transaction before the 401 is thrown;
  * rolling it back together with the rotation would silently defeat reuse
  * detection.
  */
@@ -50,7 +48,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final TokenService tokenService;
-    private final AccessTokenValidityCache validityCache;
+    private final AccessTokenRevocationService accessTokenRevocationService;
     private final RateLimitService rateLimitService;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
@@ -65,14 +63,14 @@ public class AuthService {
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        TokenService tokenService,
-                       AccessTokenValidityCache validityCache,
+                       AccessTokenRevocationService accessTokenRevocationService,
                        RateLimitService rateLimitService) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.tokenService = tokenService;
-        this.validityCache = validityCache;
+        this.accessTokenRevocationService = accessTokenRevocationService;
         this.rateLimitService = rateLimitService;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
@@ -135,8 +133,9 @@ public class AuthService {
             rotation = tokenService.rotate(request.refreshToken(), deviceLabel);
         } catch (RefreshTokenException e) {
             if (e.userId() != null) {
-                // Separate transaction → the revocation COMMITS although we then throw.
-                tokenService.revokeAllForUser(e.userId());
+                // Separate transaction → refresh-family and access-token
+                // revocation commit although this method then throws the 401.
+                accessTokenRevocationService.revokeRefreshFamilyAndAccessTokens(e.userId());
                 log.warn("Refresh-token {} detected; revoked all sessions",
                         e.errorCode() == ApiErrorCode.TOKEN_REUSED ? "reuse" : "expiry");
             }
@@ -156,13 +155,13 @@ public class AuthService {
     @Transactional
     public void logout(UUID userId, String rawRefreshToken) {
         tokenService.revokeIfOwned(rawRefreshToken, userId);
-        invalidateAccessTokens(userId);
+        accessTokenRevocationService.revoke(userId);
     }
 
     @Transactional
     public void logoutAll(UUID userId) {
         tokenService.revokeAllForUser(userId);
-        invalidateAccessTokens(userId);
+        accessTokenRevocationService.revoke(userId);
     }
 
     @Transactional
@@ -178,8 +177,7 @@ public class AuthService {
 
         // A password change must kill every access token issued so far; the
         // client of the current session rotates with its kept refresh token.
-        // The loaded entity is managed, so the cutoff flushes with the commit.
-        invalidateAccessTokens(user);
+        accessTokenRevocationService.revoke(userId);
 
         // "Revoke all other refresh tokens": keep the supplied session token alive
         // if the client passed one, otherwise revoke every session (FR-A6).
@@ -189,25 +187,6 @@ public class AuthService {
             tokenService.revokeAllForUser(userId);
         }
         log.info("Password changed");
-    }
-
-    /**
-     * Stamps the cutoff on an already-managed entity and drops the cached
-     * validity so the next request sees it.
-     *
-     * <p>The cutoff is truncated to whole seconds because JWT {@code iat} has
-     * one-second resolution: a token minted moments after the logout would
-     * otherwise carry the same {@code iat} as the logout second and be rejected
-     * as well. Truncating means at most one second of slack, not a lockout.
-     */
-    private void invalidateAccessTokens(User user) {
-        user.invalidateAccessTokens(Instant.now().truncatedTo(ChronoUnit.SECONDS));
-        validityCache.evict(user.getId());
-    }
-
-    /** Same cutoff for a caller that only has the user id (logout, logout-all). */
-    private void invalidateAccessTokens(UUID userId) {
-        userRepository.findById(userId).ifPresent(this::invalidateAccessTokens);
     }
 
     private AuthResponse issueSession(User user, String deviceLabel) {

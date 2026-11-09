@@ -79,6 +79,18 @@ class AccessTokenValidityCacheTest {
     }
 
     @Test
+    void generationRejectsAStaleReadAfterEviction() {
+        AccessTokenValidityCache cache = new AccessTokenValidityCache(PROPERTIES, 60, 10);
+        UUID userId = UUID.randomUUID();
+        long beforeDatabaseRead = cache.generation();
+
+        cache.evict(userId);
+
+        assertThat(cache.putIfGeneration(userId, new Validity(true, null), beforeDatabaseRead)).isFalse();
+        assertThat(cache.get(userId)).isEmpty();
+    }
+
+    @Test
     void mapIsBoundedByMaxEntries() {
         AccessTokenValidityCache cache = new AccessTokenValidityCache(PROPERTIES, 60, 4);
         for (int i = 0; i < 8; i++) {

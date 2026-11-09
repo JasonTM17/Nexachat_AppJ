@@ -12,6 +12,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
@@ -45,6 +46,9 @@ class JwtServiceTest {
         assertThat(claims.get(JwtService.CLAIM_TYPE, String.class)).isEqualTo(JwtService.TYPE_ACCESS);
         assertThat(claims.getExpiration().getTime() - claims.getIssuedAt().getTime())
                 .isEqualTo(900_000); // exp = iat + 900s
+        JwtService.AccessTokenClaims verified = jwtService.parseAccessTokenClaims(token);
+        assertThat(verified.issuedAt()).isEqualTo(claims.getIssuedAt().toInstant());
+        assertThat(verified.expiresAt()).isEqualTo(claims.getExpiration().toInstant());
     }
 
     @Test
@@ -72,6 +76,20 @@ class JwtServiceTest {
                 .compact();
 
         assertThat(catchThrowableOfType(JwtException.class, () -> jwtService.parseAccessToken(foreign)))
+                .isNotNull();
+    }
+
+    @Test
+    void parse_accessTokenWithoutExpiration_isRejected() {
+        String missingExpiration = Jwts.builder()
+                .subject(UUID.randomUUID().toString())
+                .claim(JwtService.CLAIM_TYPE, JwtService.TYPE_ACCESS)
+                .issuedAt(Date.from(Instant.now()))
+                .signWith(KEY)
+                .compact();
+
+        assertThat(catchThrowableOfType(JwtException.class,
+                () -> jwtService.parseAccessTokenClaims(missingExpiration)))
                 .isNotNull();
     }
 

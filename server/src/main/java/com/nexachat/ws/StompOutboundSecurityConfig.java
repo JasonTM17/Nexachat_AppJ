@@ -4,7 +4,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-/** Registers recipient checks on server-to-client STOMP deliveries. */
+/** Registers authenticated-session and recipient checks on server-to-client deliveries. */
 @Configuration
 public class StompOutboundSecurityConfig implements WebSocketMessageBrokerConfigurer {
 

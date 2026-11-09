@@ -10,6 +10,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -18,11 +20,18 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -71,6 +80,10 @@ class ReactionDeltaIdempotencyIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+    @Autowired
+    private ReactionEventRepository reactionEventRepository;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -138,6 +151,23 @@ class ReactionDeltaIdempotencyIT {
                 .get("id").asText());
     }
 
+    /**
+     * Delta assertions need a conversation whose only reaction events are the
+     * test's own. A DIRECT room is idempotent per user pair, so every test in
+     * this class that reused alice↔bob saw the other tests' events in its
+     * window; a GROUP is always a new row, which isolates the event stream.
+     */
+    private UUID openDeltaRoom(TestUser creator, TestUser member, String label) throws Exception {
+        MvcResult result = postJson("/api/v1/conversations/group", creator.accessToken(),
+                Map.of("title", "delta-" + label + "-" + UUID.randomUUID(),
+                        "memberIds", List.of(member.id().toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return UUID.fromString(objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("id").asText());
+    }
+
     private UUID sendRest(UUID conversationId, TestUser sender, String content) throws Exception {
         MvcResult result = postJson(
                 "/api/v1/conversations/" + conversationId + "/messages", sender.accessToken(),
@@ -174,7 +204,7 @@ class ReactionDeltaIdempotencyIT {
 
     @Test
     void removalIsVisibleInTheReactionDelta() throws Exception {
-        UUID conversationId = openDirectConversation(alice, bob);
+        UUID conversationId = openDeltaRoom(alice, bob, "removal");
         UUID messageId = sendRest(conversationId, alice, "react to me");
 
         // alice adds 👍 via the idempotent verb
@@ -337,6 +367,133 @@ class ReactionDeltaIdempotencyIT {
     }
 
     @Test
+    void deltaReplaysAReactionThatCommitsAfterTheSinceSnapshot() throws Exception {
+        UUID conversationId = openDeltaRoom(alice, bob, "late-commit");
+        UUID messageId = sendRest(conversationId, alice, "late reaction event");
+        Instant since = Instant.now().minusSeconds(5);
+        CountDownLatch eventInserted = new CountDownLatch(1);
+        CountDownLatch releaseCommit = new CountDownLatch(1);
+        CountDownLatch deltaStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> uncommittedEvent = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        reactionEventRepository.lockConversationEvents(conversationId);
+                        reactionEventRepository.insert(conversationId, messageId, alice.id(), "👍", "ADD");
+                        eventInserted.countDown();
+                        awaitLatch(releaseCommit);
+                    }));
+            assertThat(eventInserted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Future<JsonNode> delta = executor.submit(() -> {
+                deltaStarted.countDown();
+                return sync(alice.accessToken(), conversationId, 0L, null, since);
+            });
+            assertThat(deltaStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            awaitConversationLockWaiter();
+
+            releaseCommit.countDown();
+            uncommittedEvent.get(10, TimeUnit.SECONDS);
+
+            JsonNode afterCommit = delta.get(10, TimeUnit.SECONDS);
+            JsonNode updates = afterCommit.path("deltas").get(0).path("reactionUpdates");
+            assertThat(updates).hasSize(1);
+            assertThat(updates.get(0).path("messageId").asText()).isEqualTo(messageId.toString());
+        } finally {
+            releaseCommit.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void reactionCursorPagesEventsAfterSerializedCommitsForEitherWriterOrder() throws Exception {
+        assertSerializedWriterScenario(alice, bob);
+        assertSerializedWriterScenario(bob, alice);
+    }
+
+    private void assertSerializedWriterScenario(TestUser firstWriter, TestUser secondWriter) throws Exception {
+        UUID conversationId = openDeltaRoom(firstWriter, secondWriter, "cursor");
+        List<UUID> messageIds = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            messageIds.add(sendRest(conversationId, secondWriter, "cursor race " + index));
+        }
+        Instant since = Instant.now().minusSeconds(5);
+        CountDownLatch firstInserted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondAttemptStarted = new CountDownLatch(1);
+        CountDownLatch secondInserted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> first = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        reactionEventRepository.lockConversationEvents(conversationId);
+                        insertReactionEvent(conversationId, messageIds.get(0), firstWriter.id());
+                        firstInserted.countDown();
+                        awaitLatch(releaseFirst);
+                    }));
+            assertThat(firstInserted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Future<?> second = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        secondAttemptStarted.countDown();
+                        reactionEventRepository.lockConversationEvents(conversationId);
+                        for (int index = 1; index < messageIds.size(); index++) {
+                            insertReactionEvent(conversationId, messageIds.get(index), secondWriter.id());
+                        }
+                        secondInserted.countDown();
+                    }));
+            assertThat(secondAttemptStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            awaitConversationLockWaiter();
+            assertThat(secondInserted.getCount()).isEqualTo(1);
+
+            releaseFirst.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            second.get(10, TimeUnit.SECONDS);
+
+            JsonNode firstPage = sync(secondWriter.accessToken(), conversationId, 0L, null, since);
+            assertThat(firstPage.path("deltas").get(0).path("hasMore").asBoolean()).isTrue();
+            long cursor = firstPage.path("deltas").get(0).path("reactionCursor").asLong();
+            JsonNode secondPage = sync(secondWriter.accessToken(), conversationId, 0L, cursor, since);
+            assertThat(secondPage.path("deltas").get(0).path("hasMore").asBoolean()).isFalse();
+
+            List<String> receivedMessageIds = new java.util.ArrayList<>();
+            collectMessageIds(firstPage, receivedMessageIds);
+            collectMessageIds(secondPage, receivedMessageIds);
+            assertThat(receivedMessageIds).containsAll(messageIds.stream().map(UUID::toString).toList());
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private void insertReactionEvent(UUID conversationId, UUID messageId, UUID userId) {
+        jdbcTemplate.update("""
+                INSERT INTO reaction_events (conversation_id, message_id, user_id, emoji, action, created_at)
+                VALUES (?, ?, ?, '👍', 'ADD', clock_timestamp())
+                """, conversationId, messageId, userId);
+    }
+
+    private void awaitConversationLockWaiter() {
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            Integer waiting = jdbcTemplate.queryForObject("""
+                    SELECT count(*)
+                    FROM pg_stat_activity
+                    WHERE pid <> pg_backend_pid()
+                      AND wait_event_type = 'Lock'
+                      AND query ILIKE '%pg_advisory_xact_lock%'
+                    """, Integer.class);
+            assertThat(waiting).isPositive();
+        });
+    }
+
+    private static void collectMessageIds(JsonNode page, List<String> messageIds) {
+        page.path("deltas").get(0).path("reactionUpdates")
+                .forEach(update -> messageIds.add(update.path("messageId").asText()));
+    }
+
+    @Test
     void sameKeyOnDifferentEndpointIsRejected() throws Exception {
         UUID conversationId = openDirectConversation(alice, bob);
         UUID messageId = sendRest(conversationId, alice, "endpoint reuse");
@@ -472,6 +629,17 @@ class ReactionDeltaIdempotencyIT {
             jdbcTemplate.update("DELETE FROM messages WHERE conversation_id = ?", conversationId);
             jdbcTemplate.update("DELETE FROM conversation_members WHERE conversation_id = ?", conversationId);
             jdbcTemplate.update("DELETE FROM conversations WHERE id = ?", conversationId);
+        }
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(15, TimeUnit.SECONDS)) {
+                throw new AssertionError("Timed out waiting for the test transaction release");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Test transaction interrupted", e);
         }
     }
 }

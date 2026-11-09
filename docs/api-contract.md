@@ -118,16 +118,18 @@
   given `(user, key)` runs the operation and caches the outcome; a repeat with
   the same key, endpoint and payload returns the original result without
   running it again. Reusing a key for a different endpoint or payload is a
-  client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Keys expire after 24
-  hours. Absent header = no replay protection (the toggle endpoint still
-  toggles on every call).
+  client bug and returns `409 IDEMPOTENCY_KEY_REUSED`. Concurrent requests
+  with the same key serialize on a database reservation, so only one request
+  runs the mutation. Keys expire after 24 hours. Absent header = no replay
+  protection (the toggle endpoint still toggles on every call).
 - `POST /conversations/{id}/reminders` uses the same header and cache: a
   replay returns `200` with the original reminder, while the first create
   returns `201`. A key reused for a different reminder payload is
   `409 IDEMPOTENCY_KEY_REUSED`.
 - `POST /auth/refresh` is **not** idempotent: each success rotates the token
   pair. Replaying an already-rotated refresh token returns
-  `401 TOKEN_REUSED` and revokes the whole session family.
+  `401 TOKEN_REUSED` and revokes the whole refresh family plus its existing
+  access tokens.
 
 ## Response wire formats
 
@@ -478,7 +480,11 @@ page is bounded by `nexachat.sync.max-reaction-updates` (default 200 events,
 therefore at most 200 message ids). When the page is full, `hasMore=true` and
 `reactionCursor` carries the last event id consumed; the client echoes it as
 the watermark's `reactionCursor` on the next request so the follow-up page
-cannot skip rows (`reaction_events` is ordered by `id`). If `since` is older
+and keeps the same `since`. The first page filters events by `created_at > since`;
+follow-up pages use the cursor alone so new events committed during pagination
+remain visible. Reaction writers and delta readers serialize on a transaction-
+scoped conversation lock, which allocates event ids in commit order and prevents
+a late commit from landing below an already-issued cursor. If `since` is older
 than `nexachat.sync.reaction-retention-days` (default 30), the events needed
 for a partial delta may have been purged, so the delta sets
 `reactionsFullRefresh=true` and the client must reload reactions from history
