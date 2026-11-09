@@ -206,6 +206,37 @@ public class GroupService {
     }
 
     /**
+     * Adds a member to a GROUP when joining via invite link or approval.
+     * Checks that the conversation is a GROUP and that the member is not already present.
+     * If already present, acts idempotently without re-posting a system message.
+     * Posts a SYSTEM message and publishes CONVERSATION_UPDATED event.
+     */
+    @Transactional
+    public void addMemberFromInvite(UUID userId, UUID conversationId, UUID approverId) {
+        Conversation conversation = requireGroup(conversationId);
+        if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+            return; // Idempotent no-op
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        memberRepository.saveAndFlush(ConversationMember.join(
+                conversation, user, ConversationMember.Role.MEMBER));
+
+        String text;
+        if (approverId != null) {
+            User approver = userRepository.findById(approverId).orElse(null);
+            String approverName = approver != null ? approver.getDisplayName() : "Admin";
+            text = approverName + " approved " + user.getDisplayName() + " to join the group";
+        } else {
+            text = user.getDisplayName() + " joined the group via invite link";
+        }
+        UUID actorId = approverId != null ? approverId : userId;
+        messageService.postSystemMessage(actorId, conversationId, text);
+        publishUpdate(conversation, "MEMBER_JOINED", List.of());
+        log.info("User {} joined group {} via invite link (approver: {})", userId, conversationId, approverId);
+    }
+
+    /**
      * Removes a member — ADMIN removing another user, OR any member removing
      * themselves (self-leave via DELETE, per plan §10.2 "ADMIN hoặc chính
      * userId"). A non-self remove requires {@code NOT_MEMBER}-checked admin.
