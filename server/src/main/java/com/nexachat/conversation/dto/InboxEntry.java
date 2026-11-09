@@ -8,7 +8,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * One row of {@code GET /conversations} — the inbox spec shape: members for
  * title/avatar derivation, denormalized {@code lastMessage} preview (no extra
- * query), and the caller's unread count + watermark.
+ * query), the caller's unread count + watermark, and the caller's own
+ * per-conversation AI opt-out state ({@code aiOptOut}).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InboxEntry(
@@ -23,7 +24,8 @@ public record InboxEntry(
         PeerPresence peerPresence,
         boolean muted,
         Instant mutedUntil,
-        boolean archived
+        boolean archived,
+        boolean aiOptOut
 ) {
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

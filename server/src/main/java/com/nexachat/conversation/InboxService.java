@@ -9,6 +9,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
+import com.nexachat.summary.ConversationAiOptOuts;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -50,22 +52,33 @@ public class InboxService {
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
     private final PresenceService presenceService;
+    private final ConversationAiOptOuts aiOptOuts;
     private final Clock clock;
 
     @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
                         MessageRepository messageRepository,
-                        PresenceService presenceService) {
-        this(memberRepository, messageRepository, presenceService, Clock.systemUTC());
+                        PresenceService presenceService,
+                        ConversationAiOptOuts aiOptOuts) {
+        this(memberRepository, messageRepository, presenceService, aiOptOuts, Clock.systemUTC());
     }
 
     InboxService(ConversationMemberRepository memberRepository,
                  MessageRepository messageRepository,
                  PresenceService presenceService,
                  Clock clock) {
+        this(memberRepository, messageRepository, presenceService, ConversationAiOptOuts.none(), clock);
+    }
+
+    InboxService(ConversationMemberRepository memberRepository,
+                 MessageRepository messageRepository,
+                 PresenceService presenceService,
+                 ConversationAiOptOuts aiOptOuts,
+                 Clock clock) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.presenceService = presenceService;
+        this.aiOptOuts = aiOptOuts;
         this.clock = clock;
     }
 
@@ -147,6 +160,7 @@ public class InboxService {
         Map<UUID, InboxEntry.PeerPresence> peerPresenceByConversation =
                 presenceService.peerPresence(userId, conversationIds);
 
+        Set<UUID> optedOutConversations = aiOptOuts.optedOutConversationIds(userId);
         Instant now = clock.instant();
         return rows.stream()
                 .map(row -> {
@@ -169,7 +183,8 @@ public class InboxService {
                                     ? peerPresenceByConversation.get(row.id()) : null,
                             muted,
                             muted ? row.mutedUntil() : null,
-                            row.archived());
+                            row.archived(),
+                            optedOutConversations.contains(row.id()));
                 })
                 .toList();
     }

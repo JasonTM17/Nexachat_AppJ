@@ -35,7 +35,7 @@ class ConversationInboxControllerTest {
     private static List<InboxEntry> entries() {
         return List.of(new InboxEntry(
                 UUID.randomUUID(), "DIRECT", null, null, List.of(), null,
-                0L, 0L, null, false, null, false));
+                0L, 0L, null, false, null, false, false));
     }
 
     @Test

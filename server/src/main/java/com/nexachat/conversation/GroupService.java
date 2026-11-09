@@ -156,7 +156,7 @@ public class GroupService {
                 memberRepository.findMemberViews(conversation.getId());
         return new ConversationResponse(
                 conversation.getId(), conversation.getType().name(), memberViews,
-                conversation.getCreatedAt());
+                conversation.getCreatedAt(), false);
     }
 
     /**
