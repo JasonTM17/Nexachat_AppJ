@@ -13,7 +13,7 @@ import com.nexachat.R;
 import com.nexachat.databinding.FragmentInviteJoinBinding;
 import dagger.hilt.android.AndroidEntryPoint;
 
-/** Safe preview and join destination for supported HTTPS invite links. */
+/** Safe preview and join destination for supported invite links. */
 @AndroidEntryPoint
 public final class InviteJoinFragment extends Fragment {
     private FragmentInviteJoinBinding binding;

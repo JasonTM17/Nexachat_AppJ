@@ -16,7 +16,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public final class InviteJoinViewModelTest {
-    private static final String URL = "https://nexachat.app/join/" + "A".repeat(43);
+    private static final String URL = "nexachat://join/" + "A".repeat(43);
 
     @Rule public final InstantTaskExecutorRule instantExecutor = new InstantTaskExecutorRule();
     private FakeInviteRepository repository;

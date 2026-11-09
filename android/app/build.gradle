@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Locale
 
 plugins {
     alias(libs.plugins.android.application)
@@ -74,6 +75,41 @@ File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePa
 
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
+// Only configure an HTTPS invite host after the app has a verified domain.
+def inviteLinkHttpsHost = providers.gradleProperty('inviteLinkHttpsHost').orElse('').get().trim()
+def inviteHostPattern = /(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*/
+if (!inviteLinkHttpsHost.isEmpty() && !(inviteLinkHttpsHost ==~ inviteHostPattern)) {
+    throw new GradleException(
+        'inviteLinkHttpsHost must be a DNS host only, without a scheme, port, path, or wildcard.'
+    )
+}
+inviteLinkHttpsHost = inviteLinkHttpsHost.toLowerCase(Locale.ROOT)
+def sourceInviteManifest = file('src/main/AndroidManifest.xml')
+def generatedInviteManifest = layout.buildDirectory
+    .file('generated/invite-link/AndroidManifest.xml').get().asFile
+def generateInviteManifest = tasks.register('generateInviteManifest') {
+    inputs.file(sourceInviteManifest)
+    inputs.property('inviteLinkHttpsHost', inviteLinkHttpsHost)
+    outputs.file(generatedInviteManifest)
+    doLast {
+        def marker = '            <!-- OPTIONAL_HTTPS_INVITE_FILTER -->'
+        def template = sourceInviteManifest.getText('UTF-8')
+        if (template.count(marker) != 1) {
+            throw new GradleException('Expected one optional HTTPS invite filter marker in the app manifest.')
+        }
+        def optionalFilter = inviteLinkHttpsHost.isEmpty() ? '' : '''            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="${inviteLinkHttpsHost}"
+                    android:pathPrefix="/join/" />
+            </intent-filter>'''
+        generatedInviteManifest.parentFile.mkdirs()
+        generatedInviteManifest.setText(template.replace(marker, optionalFilter), 'UTF-8')
+    }
+}
 // The signed release helper supplies these from its semantic version tag.
 // Direct Gradle builds keep the repository's existing defaults.
 def releaseVersionName = providers.gradleProperty('releaseVersionName').orElse('1.0.0').get()
@@ -115,6 +151,11 @@ android {
         // Backend base URL — override in local.properties (LAN demo) or via
         // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
         buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
+        buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', "\"${inviteLinkHttpsHost}\""
+        manifestPlaceholders = [inviteLinkHttpsHost: inviteLinkHttpsHost]
+        resValue 'string', 'invite_https_deep_link_pattern', inviteLinkHttpsHost.isEmpty()
+            ? ''
+            : "https://${inviteLinkHttpsHost}/join/{token}"
     }
 
     signingConfigs {
@@ -158,7 +199,14 @@ android {
     }
 
     sourceSets {
+        getByName('main').manifest.srcFile(generatedInviteManifest)
         getByName('androidTest').assets.srcDir("$projectDir/schemas")
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith('process') && task.name.contains('Manifest')) {
+        task.dependsOn(generateInviteManifest)
     }
 }
 

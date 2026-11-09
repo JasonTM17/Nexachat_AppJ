@@ -53,7 +53,7 @@ public final class InviteManageViewModelTest {
         assertEquals("2026-11-16T00:00:00Z", repository.lastCreateRequest.expiresAt);
         assertEquals(Integer.valueOf(10), repository.lastCreateRequest.maxUses);
         assertTrue(repository.lastCreateRequest.requiresApproval);
-        assertEquals("https://nexachat.app/join/" + "A".repeat(43), state().getShareUrl());
+        assertEquals("nexachat://join/" + "A".repeat(43), state().getShareUrl());
         assertTrue(state().canShare());
     }
 
