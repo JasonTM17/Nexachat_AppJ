@@ -69,6 +69,7 @@ release/
 plans/
 
 # ---- Local tooling / profiling leftovers ----
+.vercel/
 server/data/
 signing.properties
 captures/
