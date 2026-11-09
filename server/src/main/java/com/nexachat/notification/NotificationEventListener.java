@@ -4,6 +4,7 @@ import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallRingingEvent;
 import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.message.Message;
 import com.nexachat.message.MessageCreatedEvent;
 import com.nexachat.presence.PresenceSessionState;
 import com.nexachat.user.User;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -27,26 +29,40 @@ public class NotificationEventListener {
     private final CallRegistry callRegistry;
     private final UserRepository userRepository;
     private final UserDeviceTokenRepository tokenRepository;
+    private final Clock clock;
 
     public NotificationEventListener(FcmPushService fcmPushService,
                                      ConversationMemberRepository memberRepository,
                                      PresenceSessionState presenceState,
                                      CallRegistry callRegistry,
                                      UserRepository userRepository,
-                                     UserDeviceTokenRepository tokenRepository) {
+                                     UserDeviceTokenRepository tokenRepository,
+                                     Clock clock) {
         this.fcmPushService = fcmPushService;
         this.memberRepository = memberRepository;
         this.presenceState = presenceState;
         this.callRegistry = callRegistry;
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
+        this.clock = clock;
     }
 
+    /**
+     * Dispatches the {@code NEW_MESSAGE} pointer to offline members.
+     *
+     * <p>A member who muted the conversation is skipped for ordinary messages.
+     * {@code SYSTEM} messages (group membership events) keep their current
+     * behavior so a member is never silently added or removed, and
+     * {@link #onCallRinging} is never gated — a call must ring.
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onMessageCreated(MessageCreatedEvent event) {
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
+        Set<UUID> mutedMemberIds = new HashSet<>(
+                memberRepository.findMutedMemberIds(conversationId, clock.instant()));
+        boolean systemNotice = Message.Type.SYSTEM.name().equals(event.message().type());
 
         // One physical device can hold a token row per account; collect the
         // offline recipients' tokens and de-duplicate by token value so a
@@ -55,6 +71,9 @@ public class NotificationEventListener {
         Set<String> dispatched = new HashSet<>();
         for (UUID memberId : memberIds) {
             if (memberId.equals(senderId)) {
+                continue;
+            }
+            if (!systemNotice && mutedMemberIds.contains(memberId)) {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {

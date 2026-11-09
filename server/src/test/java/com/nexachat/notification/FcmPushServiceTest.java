@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -26,8 +27,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,7 +63,7 @@ class FcmPushServiceTest {
         pushService = new DefaultFcmPushService(tokenRepository, mockGateway);
         eventListener = new NotificationEventListener(
                 pushService, memberRepository, presenceState, callRegistry, userRepository,
-                tokenRepository);
+                tokenRepository, Clock.systemUTC());
     }
 
     @Test
@@ -350,5 +354,103 @@ class FcmPushServiceTest {
         List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
         assertThat(sent).hasSize(1);
         assertThat(sent.get(0).token()).isEqualTo("shared-device-token");
+    }
+
+    // ------------------------------------------------------------ mute gating
+
+    @Test
+    void notificationEventListenerSkipsNewMessagePushForMutedMember() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.TEXT.name(), "Muted message", UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null
+        );
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        assertThat(mockGateway.getSentPushes()).isEmpty();
+        verify(tokenRepository, never()).findByUserId(mutedMember);
+    }
+
+    @Test
+    void notificationEventListenerStillPushesToUnmutedMember() {
+        UUID unmutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, unmutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(presenceState.isOnline(unmutedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "unmuted-member-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(unmutedMember)).thenReturn(List.of(token));
+
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.TEXT.name(), "Loud message", UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null
+        );
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("unmuted-member-token");
+    }
+
+    @Test
+    void notificationEventListenerPushesSystemMessageToMutedMember() {
+        UUID mutedMember = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, mutedMember));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(mutedMember));
+        when(presenceState.isOnline(mutedMember)).thenReturn(false);
+
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "system-notice-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
+
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.SYSTEM.name(), "Alice added Bob", UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null
+        );
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0).token()).isEqualTo("system-notice-token");
+        assertThat(sent.get(0).data().get("type")).isEqualTo("NEW_MESSAGE");
+    }
+
+    @Test
+    void notificationEventListenerDoesNotPushToTheSender() {
+        UUID senderId = UUID.randomUUID();
+        when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(senderId));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 1L, senderId, "Sender",
+                Message.Type.TEXT.name(), "Note to self", UUID.randomUUID(), null,
+                null, List.of(), List.of(), Instant.now(), null, null
+        );
+
+        eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        assertThat(mockGateway.getSentPushes()).isEmpty();
     }
 }

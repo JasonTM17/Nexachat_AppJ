@@ -9,11 +9,13 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -27,6 +29,10 @@ import java.util.stream.Collectors;
  * member rows ordered by {@code lastMessageSeq DESC}, member views for all
  * conversations, unread counts grouped per conversation — plus one IN query
  * for the last-message rows. No N+1 (plan §9.3.7).
+ *
+ * <p>The optional {@code archived} filter selects the default (non-archived)
+ * view or the archived view; omitting it means "not archived", which keeps
+ * archived conversations out of the inbox clients already know how to page.
  */
 @Service
 public class InboxService {
@@ -44,18 +50,29 @@ public class InboxService {
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
     private final PresenceService presenceService;
+    private final Clock clock;
 
+    @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
                         MessageRepository messageRepository,
                         PresenceService presenceService) {
+        this(memberRepository, messageRepository, presenceService, Clock.systemUTC());
+    }
+
+    InboxService(ConversationMemberRepository memberRepository,
+                 MessageRepository messageRepository,
+                 PresenceService presenceService,
+                 Clock clock) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.presenceService = presenceService;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
-    public List<InboxEntry> listInbox(UUID userId) {
-        List<InboxConversationRow> rows = memberRepository.findInboxConversations(userId);
+    public List<InboxEntry> listInbox(UUID userId, Boolean archived) {
+        List<InboxConversationRow> rows =
+                memberRepository.findInboxConversations(userId, archivedFilter(archived));
         return toEntries(userId, rows);
     }
 
@@ -63,18 +80,22 @@ public class InboxService {
      * Optional keyset pagination. Omitting both parameters preserves the
      * existing unbounded inbox; a cursor without a limit returns all remaining
      * entries, while a limit returns at most 100 and supplies a next cursor.
+     * The {@code archived} filter applies to every shape so a client paging the
+     * archived view cannot fall back to the default view mid-walk.
      */
     @Transactional(readOnly = true)
-    public InboxPage listInbox(UUID userId, Integer limit, String cursorToken) {
+    public InboxPage listInbox(UUID userId, Integer limit, String cursorToken, Boolean archived) {
+        boolean includeArchived = archivedFilter(archived);
         if (limit == null && cursorToken == null) {
-            return new InboxPage(listInbox(userId), null);
+            return new InboxPage(listInbox(userId, includeArchived), null);
         }
         Cursor cursor = cursorToken == null ? null : decodeCursor(cursorToken);
         if (limit == null) {
             List<InboxConversationRow> rows = memberRepository.findInboxConversationsAfterCursor(
                     userId, cursor == null ? null : cursor.lastMessageSeq(),
                     cursor == null ? null : cursor.createdAt(),
-                    cursor == null ? null : cursor.conversationId());
+                    cursor == null ? null : cursor.conversationId(),
+                    includeArchived);
             return new InboxPage(toEntries(userId, rows), null);
         }
 
@@ -83,6 +104,7 @@ public class InboxService {
                 userId, cursor == null ? null : cursor.lastMessageSeq(),
                 cursor == null ? null : cursor.createdAt(),
                 cursor == null ? null : cursor.conversationId(),
+                includeArchived,
                 PageRequest.of(0, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         List<InboxConversationRow> page = hasMore ? rows.subList(0, pageSize) : rows;
@@ -90,6 +112,11 @@ public class InboxService {
                 ? encodeCursor(page.get(page.size() - 1))
                 : null;
         return new InboxPage(toEntries(userId, page), nextCursor);
+    }
+
+    /** An omitted filter means the default (non-archived) inbox view. */
+    private static boolean archivedFilter(Boolean archived) {
+        return Boolean.TRUE.equals(archived);
     }
 
     private List<InboxEntry> toEntries(UUID userId, List<InboxConversationRow> rows) {
@@ -120,20 +147,30 @@ public class InboxService {
         Map<UUID, InboxEntry.PeerPresence> peerPresenceByConversation =
                 presenceService.peerPresence(userId, conversationIds);
 
+        Instant now = clock.instant();
         return rows.stream()
-                .map(row -> new InboxEntry(
-                        row.id(),
-                        row.type().name(),
-                        row.title(),
-                        row.avatarUrl(),
-                        membersByConversation.getOrDefault(row.id(), List.of()),
-                        toLastMessage(row.lastMessageId() == null
-                                ? null
-                                : lastMessageById.get(row.lastMessageId())),
-                        unreadByConversation.getOrDefault(row.id(), 0L),
-                        row.lastReadSeq(),
-                        row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
-                                ? peerPresenceByConversation.get(row.id()) : null))
+                .map(row -> {
+                    // A mute whose instant has passed is not muted any more; the
+                    // expiry is lazy so no sweep job has to clear the flag.
+                    boolean muted = row.muted()
+                            && (row.mutedUntil() == null || row.mutedUntil().isAfter(now));
+                    return new InboxEntry(
+                            row.id(),
+                            row.type().name(),
+                            row.title(),
+                            row.avatarUrl(),
+                            membersByConversation.getOrDefault(row.id(), List.of()),
+                            toLastMessage(row.lastMessageId() == null
+                                    ? null
+                                    : lastMessageById.get(row.lastMessageId())),
+                            unreadByConversation.getOrDefault(row.id(), 0L),
+                            row.lastReadSeq(),
+                            row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
+                                    ? peerPresenceByConversation.get(row.id()) : null,
+                            muted,
+                            muted ? row.mutedUntil() : null,
+                            row.archived());
+                })
                 .toList();
     }
 

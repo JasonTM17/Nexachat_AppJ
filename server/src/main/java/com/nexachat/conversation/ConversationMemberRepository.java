@@ -3,6 +3,7 @@ package com.nexachat.conversation;
 import com.nexachat.conversation.dto.ConversationMemberView;
 import com.nexachat.conversation.dto.InboxConversationRow;
 import com.nexachat.conversation.dto.InboxMemberView;
+import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.conversation.dto.MemberResponse;
 import com.nexachat.conversation.dto.UnreadCountRow;
 import com.nexachat.presence.DirectPeerPresenceRow;
@@ -90,6 +91,34 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
 
+    /**
+     * Members whose mute is currently effective: {@code muted = true} and either
+     * forever ({@code mutedUntil IS NULL}) or not yet expired. Used by push
+     * dispatch so an expired mute starts notifying again without a cleanup job.
+     */
+    @Query("""
+            SELECT m.user.id
+            FROM ConversationMember m
+            WHERE m.conversation.id = :conversationId
+              AND m.muted = true
+              AND (m.mutedUntil IS NULL OR m.mutedUntil > :now)
+            """)
+    List<UUID> findMutedMemberIds(@Param("conversationId") UUID conversationId,
+                                  @Param("now") Instant now);
+
+    /**
+     * The caller's own mute/archive flags for a set of conversations, carried by
+     * delta sync so a mute or archive made on one device reaches the others.
+     */
+    @Query("""
+            SELECT new com.nexachat.conversation.dto.MemberFlagsRow(
+                       m.conversation.id, m.muted, m.mutedUntil, m.archived)
+            FROM ConversationMember m
+            WHERE m.user.id = :userId AND m.conversation.id IN :conversationIds
+            """)
+    List<MemberFlagsRow> findMemberFlags(@Param("userId") UUID userId,
+                                         @Param("conversationIds") Collection<UUID> conversationIds);
+
     @Query("""
             SELECT DISTINCT peer.user.id
             FROM ConversationMember own, ConversationMember peer
@@ -144,24 +173,29 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      * Inbox rows for {@code GET /conversations}: the caller's conversations
      * ordered by the denormalized {@code lastMessageSeq} — NULLs (no messages
      * yet) sort last, matching {@code idx_conv_inbox ... DESC NULLS LAST}.
+     * {@code archived} selects the default (non-archived) or archived view.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
-                       c.lastMessageSeq, c.createdAt, m.lastReadSeq)
+                       c.lastMessageSeq, c.createdAt, m.lastReadSeq,
+                       m.muted, m.mutedUntil, m.archived)
             FROM ConversationMember m JOIN m.conversation c
-            WHERE m.user.id = :userId
+            WHERE m.user.id = :userId AND m.archived = :archived
             ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC
             """)
-    List<InboxConversationRow> findInboxConversations(@Param("userId") UUID userId);
+    List<InboxConversationRow> findInboxConversations(@Param("userId") UUID userId,
+                                                      @Param("archived") boolean archived);
 
     /** Keyset-paged inbox query with a unique final tie-breaker for stable cursors. */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
-                       c.lastMessageSeq, c.createdAt, m.lastReadSeq)
+                       c.lastMessageSeq, c.createdAt, m.lastReadSeq,
+                       m.muted, m.mutedUntil, m.archived)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
+              AND m.archived = :archived
               AND (:cursorId IS NULL
                    OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
                    OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
@@ -174,15 +208,18 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             @Param("cursorSeq") Long cursorSeq,
             @Param("cursorCreatedAt") Instant cursorCreatedAt,
             @Param("cursorId") UUID cursorId,
+            @Param("archived") boolean archived,
             Pageable pageable);
 
     /** Cursor-only form preserves the existing unlimited default when limit is omitted. */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
-                       c.lastMessageSeq, c.createdAt, m.lastReadSeq)
+                       c.lastMessageSeq, c.createdAt, m.lastReadSeq,
+                       m.muted, m.mutedUntil, m.archived)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
+              AND m.archived = :archived
               AND (:cursorId IS NULL
                    OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
                    OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
@@ -194,7 +231,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             @Param("userId") UUID userId,
             @Param("cursorSeq") Long cursorSeq,
             @Param("cursorCreatedAt") Instant cursorCreatedAt,
-            @Param("cursorId") UUID cursorId);
+            @Param("cursorId") UUID cursorId,
+            @Param("archived") boolean archived);
 
     /** Batch member fetch for the inbox — one IN query, no N+1. */
     @Query("""

@@ -32,33 +32,62 @@ class ConversationInboxControllerTest {
         controller = new ConversationInboxController(inboxService);
     }
 
+    private static List<InboxEntry> entries() {
+        return List.of(new InboxEntry(
+                UUID.randomUUID(), "DIRECT", null, null, List.of(), null,
+                0L, 0L, null, false, null, false));
+    }
+
     @Test
     void noPaginationParamsKeepExistingListBodyAndNoCursorHeader() {
-        List<InboxEntry> entries = List.of(new InboxEntry(
-                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L, null));
-        when(inboxService.listInbox(userId)).thenReturn(entries);
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, null)).thenReturn(body);
 
         ResponseEntity<List<InboxEntry>> response = controller.inbox(
-                new JwtPrincipal(userId), null, null);
+                new JwtPrincipal(userId), null, null, null);
 
-        assertThat(response.getBody()).isSameAs(entries);
+        assertThat(response.getBody()).isSameAs(body);
         assertThat(response.getHeaders().getFirst("X-Next-Cursor")).isNull();
-        verify(inboxService).listInbox(userId);
-        verify(inboxService, never()).listInbox(userId, null, null);
+        verify(inboxService).listInbox(userId, null);
+        verify(inboxService, never()).listInbox(userId, null, null, null);
     }
 
     @Test
     void paginationReturnsSameListShapeAndCursorHeader() {
-        List<InboxEntry> entries = List.of(new InboxEntry(
-                UUID.randomUUID(), "DIRECT", null, null, List.of(), null, 0L, 0L, null));
-        when(inboxService.listInbox(userId, 20, "cursor-in"))
-                .thenReturn(new InboxService.InboxPage(entries, "cursor-out"));
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, 20, "cursor-in", null))
+                .thenReturn(new InboxService.InboxPage(body, "cursor-out"));
 
         ResponseEntity<List<InboxEntry>> response = controller.inbox(
-                new JwtPrincipal(userId), 20, "cursor-in");
+                new JwtPrincipal(userId), 20, "cursor-in", null);
 
-        assertThat(response.getBody()).isSameAs(entries);
+        assertThat(response.getBody()).isSameAs(body);
         assertThat(response.getHeaders().getFirst("X-Next-Cursor")).isEqualTo("cursor-out");
-        verify(inboxService).listInbox(userId, 20, "cursor-in");
+        verify(inboxService).listInbox(userId, 20, "cursor-in", null);
+    }
+
+    @Test
+    void archivedFilterIsForwardedWhenNoPagingParamsArePresent() {
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, true)).thenReturn(body);
+
+        ResponseEntity<List<InboxEntry>> response = controller.inbox(
+                new JwtPrincipal(userId), null, null, true);
+
+        assertThat(response.getBody()).isSameAs(body);
+        verify(inboxService).listInbox(userId, true);
+    }
+
+    @Test
+    void archivedFilterIsForwardedWithPagingParams() {
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, 20, null, false))
+                .thenReturn(new InboxService.InboxPage(body, null));
+
+        ResponseEntity<List<InboxEntry>> response = controller.inbox(
+                new JwtPrincipal(userId), 20, null, false);
+
+        assertThat(response.getBody()).isSameAs(body);
+        verify(inboxService).listInbox(userId, 20, null, false);
     }
 }

@@ -65,6 +65,21 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
     @Column(name = "last_delivered_seq", nullable = false)
     private long lastDeliveredSeq;
 
+    /**
+     * Per-member mute flag. {@code mutedUntil} is the expiry and is {@code null}
+     * for a forever mute; a past expiry is treated as not muted by readers, so
+     * no sweep job is needed.
+     */
+    @Column(name = "muted", nullable = false)
+    private boolean muted;
+
+    @Column(name = "muted_until")
+    private Instant mutedUntil;
+
+    /** Per-member inbox visibility: archived rows are excluded from the default inbox. */
+    @Column(name = "archived", nullable = false)
+    private boolean archived;
+
     /** {@code true} until the row exists in the DB — drives persist-vs-merge. */
     @Transient
     private boolean isNew = true;
@@ -126,5 +141,43 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
 
     public long getLastDeliveredSeq() {
         return lastDeliveredSeq;
+    }
+
+    public boolean isMuted() {
+        return muted;
+    }
+
+    /** Mute expiry; {@code null} means forever. */
+    public Instant getMutedUntil() {
+        return mutedUntil;
+    }
+
+    public boolean isArchived() {
+        return archived;
+    }
+
+    /**
+     * Mutes this member's view of the conversation. {@code until} {@code null}
+     * means forever; a non-null value is already validated by the service.
+     */
+    public void mute(Instant until) {
+        this.muted = true;
+        this.mutedUntil = until;
+    }
+
+    /** Clears the mute. Idempotent: clearing an unmuted row is a no-op. */
+    public void unmute() {
+        this.muted = false;
+        this.mutedUntil = null;
+    }
+
+    /** Archives this member's view. Idempotent. */
+    public void archive() {
+        this.archived = true;
+    }
+
+    /** Restores an archived row to the default inbox. Idempotent. */
+    public void unarchive() {
+        this.archived = false;
     }
 }
