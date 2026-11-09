@@ -23,7 +23,7 @@ fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$TOOLS_DIR/release-url-guard.sh"
-# shellcheck source=release-version.sh
+# shellcheck source=/dev/null
 source "$TOOLS_DIR/release-version.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=release-version.sh
+# shellcheck source=/dev/null
 source "$TOOLS_DIR/release-version.sh"
 
 fail() {
