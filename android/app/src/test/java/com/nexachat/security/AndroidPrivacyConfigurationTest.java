@@ -1,6 +1,7 @@
 package com.nexachat.security;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -153,9 +154,11 @@ public final class AndroidPrivacyConfigurationTest {
             NodeList dataNodes = filter.getElementsByTagName("data");
             assertEquals("invite filter has one constrained data entry", 1, dataNodes.getLength());
             Element data = (Element) dataNodes.item(0);
-            assertEquals("https", data.getAttributeNS(ANDROID_NS, "scheme"));
-            assertEquals("nexachat.app", data.getAttributeNS(ANDROID_NS, "host"));
-            assertEquals("/join/", data.getAttributeNS(ANDROID_NS, "pathPrefix"));
+            assertEquals("nexachat", data.getAttributeNS(ANDROID_NS, "scheme"));
+            assertEquals("join", data.getAttributeNS(ANDROID_NS, "host"));
+            assertEquals("/", data.getAttributeNS(ANDROID_NS, "pathPrefix"));
+            assertFalse("HTTPS App Links are disabled by default",
+                    "true".equals(filter.getAttributeNS(ANDROID_NS, "autoVerify")));
         }
         assertEquals("only one supported invite VIEW filter is declared", 1, viewFilterCount);
         assertEquals("no other URL data entries are declared", 1,

@@ -34,7 +34,7 @@ public final class InvitePrivacyTest {
         InviteLinkResponse link = FakeInviteRepository.link(TOKEN, true);
         InviteApiException error = new InviteApiException(InviteFailure.UNAVAILABLE);
         InviteLinkParser.ParsedInvite parsed = InviteLinkParser.parse(
-                "https://nexachat.app/join/" + TOKEN).orElseThrow();
+                "nexachat://join/" + TOKEN).orElseThrow();
 
         assertFalse(link.toString().contains(TOKEN));
         assertFalse(error.toString().contains(TOKEN));

@@ -31,6 +31,8 @@
         <!-- allowBackup=false: tokens live in Keystore-AES storage; no reason to
              back up app data to the cloud (plan §13, JWT theft row). -->
 
+        <!-- Custom URI schemes can be claimed by any app. Invite tokens are single-purpose,
+             revocable, and rate-limited server-side. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -44,10 +46,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="https"
-                    android:host="nexachat.app"
-                    android:pathPrefix="/join/" />
+                    android:scheme="nexachat"
+                    android:host="join"
+                    android:pathPrefix="/" />
             </intent-filter>
+            <!-- OPTIONAL_HTTPS_INVITE_FILTER -->
         </activity>
 
         <activity

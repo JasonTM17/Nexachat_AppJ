@@ -8,47 +8,101 @@ import static org.junit.Assert.assertTrue;
 
 public final class InviteLinkParserTest {
     private static final String TOKEN = "A".repeat(43);
+    private static final String PREVIOUS_UNOWNED_HOST = "nexachat" + ".app";
 
     @Test
-    public void acceptsOnlySupportedHttpsInviteShape() {
+    public void defaultLinksUseTheCustomSchemeAndRejectHttps() {
         Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(
-                "https://nexachat.app/join/" + TOKEN);
+                "nexachat://join/" + TOKEN);
 
         assertTrue(parsed.isPresent());
         assertEquals(TOKEN, parsed.get().getToken());
-        assertEquals("https://nexachat.app/join/" + TOKEN,
+        assertEquals("nexachat://join/" + TOKEN,
                 InviteLinkParser.shareUrl(TOKEN).orElseThrow());
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN);
+        assertRejected("https://chat.test/join/" + TOKEN);
+    }
+
+    @Test
+    public void configuredHttpsHostIsExactAndProducesHttpsShareLinks() {
+        String host = "invite.example.test";
+        Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN, host);
+
+        assertTrue(parsed.isPresent());
+        assertEquals(TOKEN, parsed.get().getToken());
+        assertEquals("https://" + host + "/join/" + TOKEN,
+                InviteLinkParser.shareUrl(TOKEN, host).orElseThrow());
+        assertTrue(InviteLinkParser.parse(
+                "HTTPS://INVITE.EXAMPLE.TEST/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ".evil.test/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://evil." + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://other.example.test/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ":443/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ":444/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://user@" + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "?next=https://evil.test", host)
+                .isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "#fragment", host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/%41" + "A".repeat(42), host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "/extra", host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/JOIN/" + TOKEN, host).isPresent());
     }
 
     @Test
     public void rejectsMalformedWrongHostAndUnexpectedUrlParts() {
         assertRejected(null);
         assertRejected("not a URL");
-        assertRejected("http://nexachat.app/join/" + TOKEN);
+        assertRejected("http://" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN);
         assertRejected("https://evil.example/join/" + TOKEN);
-        assertRejected("https://nexachat.app.evil.example/join/" + TOKEN);
-        assertRejected("https://user@nexachat.app/join/" + TOKEN);
-        assertRejected("https://nexachat.app:444/join/" + TOKEN);
-        assertRejected("https://nexachat.app/join/" + TOKEN + "?next=https://evil.example");
-        assertRejected("https://nexachat.app/join/" + TOKEN + "#fragment");
-        assertRejected("https://nexachat.app/join/" + TOKEN + "/extra");
-        assertRejected("https://nexachat.app/other/" + TOKEN);
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + ".evil.example/join/" + TOKEN);
+        assertRejected("https://user@" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN);
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + ":444/join/" + TOKEN);
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + ":443/join/" + TOKEN);
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN
+                + "?next=https://evil.example");
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN + "#fragment");
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + "/join/" + TOKEN + "/extra");
+        assertRejected("https://" + PREVIOUS_UNOWNED_HOST + "/other/" + TOKEN);
+        assertRejected("nexachat://other/" + TOKEN);
+        assertRejected("nexachat://user@join/" + TOKEN);
+        assertRejected("nexachat://join:443/" + TOKEN);
+        assertRejected("nexachat://join/" + TOKEN + "?x=1");
+        assertRejected("nexachat://join/" + TOKEN + "#fragment");
+        assertRejected("nexachat://join/" + TOKEN + "/extra");
     }
 
     @Test
     public void rejectsHugeUnicodeAndEncodedTokenInputs() {
-        assertRejected("https://nexachat.app/join/" + "A".repeat(4096));
-        assertRejected("https://nexachat.app/join/é" + TOKEN);
-        assertRejected("https://nexachat.app/join/%41" + "A".repeat(42));
-        assertRejected("https://nexachat.app/join/" + "A".repeat(42) + "é");
-        assertRejected("https://xn--nexachat-9za.app/join/" + TOKEN);
+        assertRejected("nexachat://join/" + "A".repeat(4096));
+        assertRejected("nexachat://join/é" + TOKEN);
+        assertRejected("nexachat://join/%41" + "A".repeat(42));
+        assertRejected("nexachat://join/" + "A".repeat(42) + "é");
+        assertRejected("https://chat.test/join/" + TOKEN);
         assertFalse(InviteLinkParser.shareUrl("short-token").isPresent());
+    }
+
+    @Test
+    public void customSchemeAndHostKeepTheirCaseInsensitiveUrlRules() {
+        assertTrue(InviteLinkParser.parse("NEXACHAT://JOIN/" + TOKEN).isPresent());
+        assertRejected("nexachat://join/" + TOKEN + "/extra");
     }
 
     @Test
     public void parserDiagnosticStringDoesNotRevealToken() {
         InviteLinkParser.ParsedInvite parsed = InviteLinkParser.parse(
-                "https://nexachat.app/join/" + TOKEN).orElseThrow();
+                "nexachat://join/" + TOKEN).orElseThrow();
 
         assertFalse(parsed.toString().contains(TOKEN));
     }

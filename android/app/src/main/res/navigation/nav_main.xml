@@ -110,7 +110,9 @@
         <argument
             android:name="token"
             app:argType="string" />
-        <deepLink app:uri="https://nexachat.app/join/{token}" />
+        <deepLink app:uri="nexachat://join/{token}" />
+        <!-- Gradle supplies an empty URI unless a verified HTTPS host is configured. -->
+        <deepLink app:uri="@string/invite_https_deep_link_pattern" />
     </fragment>
 
     <fragment
