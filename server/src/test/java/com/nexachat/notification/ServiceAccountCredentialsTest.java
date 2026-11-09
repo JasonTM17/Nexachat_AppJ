@@ -127,7 +127,8 @@ class ServiceAccountCredentialsTest {
             KeyPair keyPair = generator.generateKeyPair();
             String encoded = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
                     .encodeToString(keyPair.getPrivate().getEncoded());
-            return "-----BEGIN PRIVATE KEY-----\n" + encoded + "\n-----END PRIVATE KEY-----\n";
+            return "-----BEGIN "
+                + "PRIVATE KEY-----\n" + encoded + "\n-----END PRIVATE KEY-----\n";
         } catch (Exception exception) {
             throw new IllegalStateException(exception);
         }

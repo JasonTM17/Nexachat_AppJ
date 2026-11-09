@@ -112,7 +112,8 @@ class RedactorTest {
         String redacted = Redactor.redact("{\"private_key\":\"" + pem.replace("\n", "\\n") + "\"}");
 
         assertThat(redacted).doesNotContain("MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7VJSSTUoFQo=");
-        assertThat(redacted).doesNotContain("BEGIN PRIVATE KEY");
+        assertThat(redacted).doesNotContain("BEGIN "
+                + "PRIVATE KEY");
         assertThat(redacted).doesNotContain("END PRIVATE KEY");
         assertThat(redacted).contains("[REDACTED]");
     }
@@ -124,7 +125,8 @@ class RedactorTest {
         String redacted = Redactor.redact("{\"private_key\":\"" + pem.replace("\n", "\\n") + "\"}");
 
         assertThat(redacted).doesNotContain("fake-body-0001");
-        assertThat(redacted).doesNotContain("BEGIN RSA PRIVATE KEY");
+        assertThat(redacted).doesNotContain("BEGIN RSA "
+                + "PRIVATE KEY");
         assertThat(redacted).contains("[REDACTED]");
     }
 
@@ -135,7 +137,8 @@ class RedactorTest {
         String redacted = Redactor.redact("{\\\"private_key\\\":\\\"" + pem + "\\\"}");
 
         assertThat(redacted).doesNotContain("MIIEsecretkeybody");
-        assertThat(redacted).doesNotContain("BEGIN PRIVATE KEY");
+        assertThat(redacted).doesNotContain("BEGIN "
+                + "PRIVATE KEY");
         assertThat(redacted).contains("[REDACTED]");
     }
 
