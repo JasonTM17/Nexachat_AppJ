@@ -7,6 +7,9 @@ import org.springframework.lang.Nullable;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.simp.user.SimpSession;
 import org.springframework.messaging.simp.user.SimpUser;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
@@ -46,6 +49,16 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
     @Override
     @Nullable
     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+        // The broker sends CONNECTED before SessionConnectedEvent binds the
+        // authenticated session. This empty handshake frame is safe to pass;
+        // application payloads remain gated until binding is complete.
+        SimpMessageType messageType = SimpMessageHeaderAccessor.getMessageType(message.getHeaders());
+        if (StompHeaderAccessor.getCommand(message.getHeaders()) == StompCommand.CONNECTED
+                || messageType == SimpMessageType.CONNECT_ACK
+                || messageType == SimpMessageType.DISCONNECT_ACK
+                || messageType == SimpMessageType.HEARTBEAT) {
+            return message;
+        }
         String sessionId = SimpMessageHeaderAccessor.getSessionId(message.getHeaders());
         if (sessionId != null && !sessionRegistry.isAuthenticatedSession(sessionId)) {
             return null;
