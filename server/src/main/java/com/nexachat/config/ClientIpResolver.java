@@ -10,13 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Resolves the client IP for rate-limit buckets. Uses the socket peer captured
- * before {@code ForwardedHeaderFilter} rewrites {@code getRemoteAddr()}, unless
+ * Resolves the client IP for rate-limit buckets. Uses the socket peer stored by
+ * {@link ClientIpCaptureThenForwardedHeaderFilter} before forwarded headers rewrite
+ * {@code getRemoteAddr()}, unless
  * the peer matches {@code nexachat.security.trusted-proxy-cidrs} (in which case
  * the framework-rewritten address from the trusted proxy is used).
  */
 @Component
 public class ClientIpResolver {
+
+    public static final String SOCKET_REMOTE_ADDR_ATTRIBUTE = "nexachat.socketRemoteAddr";
 
     private final List<TrustedNetwork> trustedProxies;
 
@@ -31,16 +34,20 @@ public class ClientIpResolver {
         this.trustedProxies = List.copyOf(matchers);
     }
 
-  /** IP string used as the per-IP rate-limit key for this request. */
+    /** IP string used as the per-IP rate-limit key for this request. */
     public String rateLimitClientIp(HttpServletRequest request) {
-        String peer = peerAddress(request);
+        String peer = socketPeer(request);
         if (trustedProxies.stream().anyMatch(network -> network.contains(peer))) {
             return request.getRemoteAddr();
         }
         return peer;
     }
 
-    private static String peerAddress(HttpServletRequest request) {
+    private static String socketPeer(HttpServletRequest request) {
+        Object captured = request.getAttribute(SOCKET_REMOTE_ADDR_ATTRIBUTE);
+        if (captured instanceof String peer && !peer.isBlank()) {
+            return peer;
+        }
         return unwrap(request).getRemoteAddr();
     }
 

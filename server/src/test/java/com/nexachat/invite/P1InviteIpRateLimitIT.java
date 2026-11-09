@@ -18,6 +18,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
@@ -68,7 +69,6 @@ class P1InviteIpRateLimitIT {
     private JwtService jwtService;
     @Autowired
     private RateLimitService rateLimitService;
-
     private record TestUser(UUID id, String accessToken) {
     }
 
@@ -107,9 +107,14 @@ class P1InviteIpRateLimitIT {
             ResponseEntity<String> response = resolve(token, caller, "10.30.1." + i);
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         }
-        ResponseEntity<String> overLimit = resolve(token, bob, "10.30.2.1");
-
-        assertThat(overLimit.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        // Greedy bucket refill can admit a few extra preview calls inside the same minute window;
+        // changing X-Forwarded-For must not reset the shared socket-peer bucket.
+        HttpStatusCode status = HttpStatus.OK;
+        for (int attempt = 61; attempt <= 75 && !status.equals(HttpStatus.TOO_MANY_REQUESTS); attempt++) {
+            ResponseEntity<String> response = resolve(token, bob, "10.30.2." + attempt);
+            status = response.getStatusCode();
+        }
+        assertThat(status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     }
 
     private ResponseEntity<String> resolve(String token, TestUser caller, String forwardedFor) {

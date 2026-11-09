@@ -43,6 +43,16 @@ class ClientIpResolverTest {
     }
 
     @Test
+    void usesCapturedSocketPeerWhenPresent() {
+        ClientIpResolver resolver = resolverWith();
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(ClientIpResolver.SOCKET_REMOTE_ADDR_ATTRIBUTE, "203.0.113.10");
+        request.setRemoteAddr("198.51.100.99");
+
+        assertThat(resolver.rateLimitClientIp(request)).isEqualTo("203.0.113.10");
+    }
+
+    @Test
     void fallsBackToRemoteAddrWhenRequestIsNotWrapped() {
         ClientIpResolver resolver = resolverWith();
         HttpServletRequest request = mock(HttpServletRequest.class);
