@@ -106,25 +106,34 @@ public final class OutboxSyncWorker extends RxWorker {
                 new IllegalStateException("offline outbox dispatcher is unavailable"));
         long now = System.currentTimeMillis();
         long staleThreshold = now - 60_000L;
+        return drainClaimableItems(staleThreshold);
+    }
+
+    private Completable drainClaimableItems(long staleThreshold) {
         return offlineOutboxDao.getClaimableItems(staleThreshold)
                 .flatMapCompletable(items -> {
                     if (items.isEmpty()) return Completable.complete();
                     return Flowable.fromIterable(items)
-                            .concatMapCompletable(item -> processOfflineItem(item, staleThreshold));
+                            .concatMapSingle(item -> processOfflineItem(item, staleThreshold))
+                            .any(Boolean.TRUE::equals)
+                            .flatMapCompletable(claimedAny -> claimedAny
+                                    ? drainClaimableItems(staleThreshold)
+                                    : Completable.complete());
                 });
     }
 
-    private Completable processOfflineItem(OfflineOutboxEntity item, long staleThreshold) {
+    private Single<Boolean> processOfflineItem(OfflineOutboxEntity item, long staleThreshold) {
         long now = System.currentTimeMillis();
         return offlineOutboxDao.claimLease(item.getId(), now, staleThreshold)
-                .flatMapCompletable(claimed -> {
-                    if (claimed == 0) return Completable.complete();
+                .flatMap(claimed -> {
+                    if (claimed == 0) return Single.just(false);
                     return offlineOutboxDao.findById(item.getId())
                             .switchIfEmpty(Single.error(new IOException("claimed outbox row disappeared")))
-                            .flatMapCompletable(current -> messageRepository.dispatchOfflineAction(current)
+                            .flatMap(current -> messageRepository.dispatchOfflineAction(current)
                                     .onErrorReturn(error -> new ApiResult.NetworkError<>(
                                             new IOException("offline outbox dispatch failed", error)))
-                                    .flatMapCompletable(result -> handleResult(current, result)));
+                                    .flatMap(result -> handleResult(current, result)
+                                            .toSingleDefault(true)));
                 });
     }
 
@@ -171,11 +180,11 @@ public final class OutboxSyncWorker extends RxWorker {
                 .build();
     }
 
-    /** Enqueues constrained work; WorkManager resumes it when connectivity returns. */
+    /** Enqueues constrained work and preserves a follow-up requested during an active drain. */
     public static void enqueue(@NonNull Context context) {
         try {
             WorkManager.getInstance(context).enqueueUniqueWork(
-                    WORK_NAME, ExistingWorkPolicy.KEEP, newRequest());
+                    WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, newRequest());
         } catch (IllegalStateException ignored) {
             // WorkManager is unavailable in local JVM tests.
         }

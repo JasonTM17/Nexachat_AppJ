@@ -3,16 +3,21 @@ package com.nexachat.core.media;
 import androidx.annotation.NonNull;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.CRC32;
 
-/** Removes EXIF payloads that may contain location while preserving image orientation. */
+/** Removes location-bearing EXIF and XMP payloads while preserving image orientation. */
 public final class ExifMetadataScrubber {
 
     private static final byte[] JPEG_EXIF_PREFIX = {
         'E', 'x', 'i', 'f', 0, 0
     };
+    private static final byte[] JPEG_XMP_PREFIX =
+            "http://ns.adobe.com/xap/1.0/\0".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] JPEG_EXTENDED_XMP_PREFIX =
+            "http://ns.adobe.com/xmp/extension/\0".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] PNG_SIGNATURE = {
         (byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10
     };
@@ -54,7 +59,7 @@ public final class ExifMetadataScrubber {
         ByteArrayOutputStream output = new ByteArrayOutputStream(source.length);
         output.write(source, 0, 2);
         int offset = 2;
-        boolean removedExif = false;
+        boolean removedMetadata = false;
         boolean wroteOrientation = false;
         while (offset < source.length) {
             if (unsigned(source[offset]) != 0xff) {
@@ -95,7 +100,7 @@ public final class ExifMetadataScrubber {
             int payloadStart = lengthOffset + 2;
             int payloadEnd = segmentEnd;
             if (marker == 0xe1 && startsWith(source, payloadStart, payloadEnd, JPEG_EXIF_PREFIX)) {
-                removedExif = true;
+                removedMetadata = true;
                 if (!wroteOrientation) {
                     int orientation = readTiffOrientation(source, payloadStart + 6, payloadEnd);
                     if (orientation != 1) {
@@ -103,12 +108,17 @@ public final class ExifMetadataScrubber {
                     }
                     wroteOrientation = true;
                 }
+            } else if (marker == 0xe1
+                    && (startsWith(source, payloadStart, payloadEnd, JPEG_XMP_PREFIX)
+                            || startsWith(
+                                    source, payloadStart, payloadEnd, JPEG_EXTENDED_XMP_PREFIX))) {
+                removedMetadata = true;
             } else {
                 output.write(source, markerStart, segmentEnd - markerStart);
             }
             offset = segmentEnd;
         }
-        return removedExif ? output.toByteArray() : source;
+        return removedMetadata ? output.toByteArray() : source;
     }
 
     private static int jpegOrientation(byte[] source) {
