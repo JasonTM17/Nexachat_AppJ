@@ -16,9 +16,14 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.ConversationWatermark;
+import com.nexachat.core.database.MessageDao;
+import com.nexachat.core.database.OutboxDao;
+import com.nexachat.core.database.PinDao;
+import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
@@ -73,6 +78,11 @@ public final class ConversationRepositoryTest {
     private final TokenStore tokenStore = org.mockito.Mockito.mock(TokenStore.class);
     private final Context context = org.mockito.Mockito.mock(Context.class);
     private final ConversationDao conversationDao = new FakeConversationDao();
+    private final AppDatabase appDatabase = org.mockito.Mockito.mock(AppDatabase.class);
+    private final MessageDao messageDao = org.mockito.Mockito.mock(MessageDao.class);
+    private final ReactionDao reactionDao = org.mockito.Mockito.mock(ReactionDao.class);
+    private final PinDao pinDao = org.mockito.Mockito.mock(PinDao.class);
+    private final OutboxDao outboxDao = org.mockito.Mockito.mock(OutboxDao.class);
     private final PresenceRepository presenceRepository =
             org.mockito.Mockito.mock(PresenceRepository.class);
     private final BehaviorProcessor<Map<String, PeerPresence>> presenceFlow =
@@ -91,6 +101,20 @@ public final class ConversationRepositoryTest {
         when(presenceRepository.getPresences()).thenReturn(presenceFlow);
         when(tokenStore.readTokens()).thenReturn(
                 Maybe.just(new Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")));
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(appDatabase).runInTransaction(any(Runnable.class));
+        when(appDatabase.messageDao()).thenReturn(messageDao);
+        when(appDatabase.reactionDao()).thenReturn(reactionDao);
+        when(appDatabase.pinDao()).thenReturn(pinDao);
+        when(appDatabase.outboxDao()).thenReturn(outboxDao);
+        when(appDatabase.conversationDao()).thenReturn(conversationDao);
+        when(messageDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(reactionDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(pinDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(outboxDao.deleteForConversation(any())).thenReturn(Completable.complete());
     }
 
     @After
@@ -107,7 +131,8 @@ public final class ConversationRepositoryTest {
                 session,
                 tokenStore,
                 moshi,
-                context);
+                context,
+                appDatabase);
     }
 
     private <T> Call<T> asCall(Response<T> response) {
@@ -495,6 +520,33 @@ public final class ConversationRepositoryTest {
         updates.cancel();
     }
 
+    @Test
+    public void selfRemovalDeletesTheConversationAndItsLocalCache() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
+
+        assertFalse(dao().rows.containsKey("conv-a"));
+        verify(messageDao).deleteForConversation("conv-a");
+        verify(reactionDao).deleteForConversation("conv-a");
+        verify(pinDao).deleteForConversation("conv-a");
+        verify(outboxDao).deleteForConversation("conv-a");
+    }
+
+    @Test
+    public void anotherMemberLeavingKeepsTheConversation() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_LEFT", List.of(MY_ID, "other-member"))).blockingGet();
+
+        assertTrue(dao().rows.containsKey("conv-a"));
+        verify(messageDao, never()).deleteForConversation(any());
+    }
+
     private FakeConversationDao dao() {
         return (FakeConversationDao) conversationDao;
     }
@@ -682,6 +734,14 @@ public final class ConversationRepositoryTest {
         public Completable deleteAllExcept(List<String> ids) {
             return Completable.fromAction(() -> {
                 rows.keySet().retainAll(ids);
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteById(String conversationId) {
+            return Completable.fromAction(() -> {
+                rows.remove(conversationId);
                 publish();
             });
         }

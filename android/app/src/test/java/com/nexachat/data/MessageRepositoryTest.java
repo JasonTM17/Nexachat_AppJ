@@ -189,6 +189,12 @@ public class MessageRepositoryTest {
         when(outboxDao.clear()).thenAnswer(call -> {
             outbox.clear(); syncOutbox(); return Completable.complete();
         });
+        when(outboxDao.deleteForConversation(anyString())).thenAnswer(call -> {
+            String conversationId = call.getArgument(0);
+            outbox.values().removeIf(row -> conversationId.equals(row.getConversationId()));
+            syncOutbox();
+            return Completable.complete();
+        });
 
         when(conversationDao.upsert(any())).thenAnswer(call -> {
             ConversationEntity row = call.getArgument(0); conversations.put(row.getId(), row); return Completable.complete();
@@ -337,6 +343,19 @@ public class MessageRepositoryTest {
         assertEquals("hello", row.getContent());
         verify(session, times(1)).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID),
                 org.mockito.ArgumentMatchers.argThat(request -> row.getClientMessageId().equals(request.getClientMessageId())));
+    }
+
+    @Test public void sendToRemovedConversationSurfacesClearErrorAndDoesNotQueue() {
+        TestSubscriber<ApiError> errors = repository.getInteractionEvents().test();
+        events.onNext(new ChatEvent.ConversationUpdated(
+                CONVERSATION_ID, "MEMBER_REMOVED", List.of("other-user")));
+
+        await(repository.send(CONVERSATION_ID, "hello"));
+
+        assertTrue(outbox.isEmpty());
+        errors.assertValue(error -> error instanceof ApiError.Unknown unknown
+                && "NOT_MEMBER".equals(unknown.getCode()));
+        verify(session, times(0)).sendMessage(anyString(), any());
     }
 
     @Test public void newSendsFollowPersistedOutboxAfterClockSetback() {

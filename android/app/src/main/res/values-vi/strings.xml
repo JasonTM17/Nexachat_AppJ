@@ -31,6 +31,7 @@
     <string name="error_rate_limited">Thử quá nhiều lần. Vui lòng thử lại sau</string>
     <string name="error_network">Không có kết nối. Kiểm tra mạng</string>
     <string name="error_generic">Có lỗi xảy ra. Vui lòng thử lại</string>
+    <string name="error_not_member">Bạn không còn trong cuộc trò chuyện này</string>
 
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
