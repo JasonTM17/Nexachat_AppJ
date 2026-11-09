@@ -3,6 +3,7 @@ package com.nexachat.core.network;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.network.dto.AuthResponse;
+import com.nexachat.core.network.dto.ErrorResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
@@ -71,6 +72,12 @@ public final class TokenRefresher {
     /** Returns a usable rotated/current token, or empty when rotation did not succeed. */
     @NonNull
     public Single<Optional<String>> refreshIfNeeded(@Nullable String failedAccessToken) {
+        return refreshOutcomeIfNeeded(failedAccessToken).map(TokenRefresher::freshToken);
+    }
+
+    /** Preserves the distinction between a rejected refresh token and a retryable network failure. */
+    @NonNull
+    public Single<TokenRefreshOutcome> refreshOutcomeIfNeeded(@Nullable String failedAccessToken) {
         return singleFlight(() -> {
             long startedGeneration = generation.get();
             return tokenStore.readTokens().flatMapSingle(tokens -> {
@@ -85,8 +92,7 @@ public final class TokenRefresher {
                     return performRefresh(tokens.getRefreshToken(), startedGeneration);
                 })
                 .defaultIfEmpty(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
-        })
-                .map(TokenRefresher::freshToken);
+        });
     }
 
     /** Clears the stored session and drives the global logged-out navigation. */
@@ -164,7 +170,7 @@ public final class TokenRefresher {
 
     private Single<TokenRefreshOutcome> handleResponse(
             Response<AuthResponse> response,
-            long startedGeneration) {
+            long startedGeneration) throws IOException {
         if (generation.get() != startedGeneration) {
             return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
         }
@@ -176,7 +182,9 @@ public final class TokenRefresher {
                             ? new TokenRefreshOutcome.FreshToken(body.getAccessToken())
                             : TokenRefreshOutcome.NoRefreshToken.INSTANCE));
         }
-        if (TokenRefreshRules.isDefinitiveRejection(response.code())) {
+        String rawError = response.errorBody() == null ? null : response.errorBody().string();
+        String errorCode = ErrorResponse.errorCodeOf(rawError);
+        if (TokenRefreshRules.isDefinitiveRejection(response.code(), errorCode)) {
             return clear()
                     .andThen(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
         }
