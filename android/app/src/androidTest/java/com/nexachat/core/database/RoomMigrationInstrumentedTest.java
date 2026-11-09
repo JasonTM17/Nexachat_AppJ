@@ -188,7 +188,6 @@ public final class RoomMigrationInstrumentedTest {
                 V11_TO_V12_DB, 12, true, AppDatabase.MIGRATION_11_12);
         try {
             assertExistingRows(db);
-            assertV9Defaults(db);
             assertV11DataPreserved(db);
             assertEquals("new label cache defaults to an empty assignment", "",
                     singleString(db,

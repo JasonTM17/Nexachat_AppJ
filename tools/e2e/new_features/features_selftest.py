@@ -11,16 +11,22 @@ second server implementation.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 import urllib.parse
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from e2e_common import Response
 from features_helpers import iso_utc, now_utc
 
 _UUID = r"[0-9a-fA-F-]{36}"
+_LABEL_COLORS = {"INDIGO", "BLUE", "CYAN", "TEAL", "EMERALD", "AMBER", "ROSE", "PURPLE"}
+# Shorter than the live minimum (PT1M) so the self-test can close the window
+# without waiting a minute. The live script's wait is set below this only here.
+_FAKE_RECALL_WINDOW = timedelta(seconds=1)
 
 
 def _json_response(status: int, payload: Any = None) -> Response:
@@ -70,8 +76,20 @@ class FakeClient:
         self.attachments: dict[str, dict[str, Any]] = {}
         self.messages: dict[str, dict[str, Any]] = {}
         self.idempotency: dict[tuple[str, str], dict[str, Any]] = {}
+        self.labels: dict[str, dict[str, Any]] = {}
+        self.invites: dict[str, dict[str, Any]] = {}
+        self.device_tokens: dict[str, dict[str, str]] = {}
         self.seq = 0
         self.version = 0
+        log_path = os.environ.get("E2E_PUSH_LOG_FILE", "").strip()
+        if not log_path:
+            handle = tempfile.NamedTemporaryFile(
+                prefix="nexachat-e2e-push-", suffix=".log", delete=False,
+            )
+            handle.close()
+            log_path = handle.name
+            os.environ["E2E_PUSH_LOG_FILE"] = log_path
+        self.push_log_path = log_path
 
     # -- transport ----------------------------------------------------------
     def request(self, method: str, path: str, token: str | None = None, body=None,
@@ -397,6 +415,11 @@ class FakeClient:
                 return _error(403, "NOT_MEMBER")
             if method == "POST":
                 body = body or {}
+                mention_error, mentions, mention_all = self._prepare_mentions(
+                    conv, user_id, body,
+                )
+                if mention_error is not None:
+                    return mention_error
                 message_id = str(uuid.uuid4())
                 attachment_ids = body.get("attachmentIds") or []
                 for attachment_id in attachment_ids:
@@ -422,11 +445,15 @@ class FakeClient:
                     "clientMessageId": body.get("clientMessageId"),
                     "attachments": [self.attachments[aid] for aid in attachment_ids],
                     "reactions": [],
+                    "mentions": mentions,
+                    "mentionAll": mention_all,
                     "createdAt": iso_utc(now_utc()),
+                    "created_at": now_utc(),
                     "deleted": False,
                 }
                 conv["messages"].append(row)
                 self.messages[message_id] = row
+                self._record_push(conv, user_id, mentions, mention_all)
                 return _json_response(201, self._message_view(row))
             if method == "GET":
                 limit = int(params.get("limit", 30))
@@ -446,8 +473,15 @@ class FakeClient:
                 return _error(404, "MESSAGE_NOT_FOUND")
             if row["senderId"] != user_id:
                 return _error(403, "NOT_MESSAGE_AUTHOR")
+            if row.get("deleted"):
+                return _json_response(204)
+            created = row.get("created_at") or now_utc()
+            if now_utc() > created + _FAKE_RECALL_WINDOW:
+                return _error(409, "RECALL_WINDOW_EXPIRED")
             row["deleted"] = True
             row["content"] = None
+            row["mentions"] = []
+            row["mentionAll"] = False
             return _json_response(204)
 
         if route == "/api/v1/attachments" and method == "POST":
@@ -748,7 +782,255 @@ class FakeClient:
             member["last_read_seq"] = (body or {}).get("upToSeq", 0)
             return _json_response(204)
 
+        if route == "/api/v1/users/device-token" and method == "POST":
+            body = body or {}
+            if not body.get("token"):
+                return _error(400, "VALIDATION_FAILED")
+            self.device_tokens[user_id] = {
+                "platform": body.get("platform") or "ANDROID",
+                "label": body.get("deviceLabel") or "",
+            }
+            return _json_response(200, {
+                "id": str(uuid.uuid4()),
+                "platform": self.device_tokens[user_id]["platform"],
+                "deviceLabel": self.device_tokens[user_id]["label"],
+            })
+        if route == "/api/v1/users/device-token" and method == "DELETE":
+            self.device_tokens.pop(user_id, None)
+            return _json_response(204)
+
+        if route == "/api/v1/labels" and method == "GET":
+            rows = [self._label_view(label) for label in self.labels.values()
+                    if label["user_id"] == user_id]
+            rows.sort(key=lambda row: row["name"].lower())
+            return _json_response(200, rows)
+        if route == "/api/v1/labels" and method == "POST":
+            return self._create_label(user_id, body or {})
+
+        match = re.fullmatch(r"/api/v1/labels/(%s)" % _UUID, route)
+        if match:
+            label = self.labels.get(match.group(1))
+            if label is None or label["user_id"] != user_id:
+                return _error(404, "NOT_FOUND")
+            if method == "PATCH":
+                return self._patch_label(label, body or {})
+            if method == "DELETE":
+                del self.labels[label["id"]]
+                return _json_response(204)
+
+        match = re.fullmatch(
+            r"/api/v1/conversations/(%s)/labels/(%s)" % (_UUID, _UUID), route
+        )
+        if match and method in ("PUT", "DELETE"):
+            return self._assign_label(user_id, match.group(1), match.group(2), method)
+
+        match = re.fullmatch(r"/api/v1/conversations/(%s)/invite-link" % _UUID, route)
+        if match:
+            return self._invite_admin(user_id, match.group(1), method, body or {})
+
+        match = re.fullmatch(r"/api/v1/invite-links/([^/]+)(/join)?", route)
+        if match:
+            return self._invite_public(user_id, match.group(1), method, bool(match.group(2)))
+
         return _error(404, "NOT_FOUND")
+
+    def _prepare_mentions(self, conv: dict[str, Any], user_id: str, body: dict):
+        requested = body.get("mentions") or []
+        mention_all = bool(body.get("mentionAll"))
+        if not requested and not mention_all:
+            return None, [], False
+        if body.get("type", "TEXT") != "TEXT":
+            return _error(400, "VALIDATION_FAILED"), [], False
+        if conv.get("type") != "GROUP":
+            return _error(400, "VALIDATION_FAILED"), [], False
+        if mention_all and conv["members"].get(user_id, {}).get("role") != "ADMIN":
+            return _error(403, "NOT_ADMIN"), [], False
+        content = body.get("content") or ""
+        seen: set[str] = set()
+        mentions = []
+        for request in requested:
+            if not isinstance(request, dict):
+                return _error(400, "VALIDATION_FAILED"), [], False
+            target = request.get("userId")
+            offset = request.get("offset")
+            length = request.get("length")
+            if (target is None or not isinstance(offset, int) or not isinstance(length, int)
+                    or offset < 0 or length <= 0 or offset + length > len(content)):
+                return _error(400, "VALIDATION_FAILED"), [], False
+            if target in seen or target not in conv["members"]:
+                return _error(400, "VALIDATION_FAILED"), [], False
+            seen.add(target)
+            mentions.append({"userId": target, "offset": offset, "length": length})
+        mentions.sort(key=lambda item: item["offset"])
+        return None, mentions, mention_all
+
+    def _record_push(self, conv: dict[str, Any], sender_id: str,
+                     mentions: list[dict[str, Any]], mention_all: bool) -> None:
+        if not self.push_log_path:
+            return
+        mentioned_ids = {item["userId"] for item in mentions}
+        lines = []
+        for member_id, member in conv["members"].items():
+            if member_id == sender_id:
+                continue
+            device = self.device_tokens.get(member_id)
+            if not device:
+                continue
+            mentioned = mention_all or member_id in mentioned_ids
+            if member.get("muted") and not mentioned:
+                continue
+            lines.append(
+                "FCM push accepted (platform {platform}, label {label})\n".format(
+                    platform=device.get("platform") or "ANDROID",
+                    label=device.get("label") or "",
+                )
+            )
+        if not lines:
+            return
+        with open(self.push_log_path, "a", encoding="utf-8") as handle:
+            handle.writelines(lines)
+
+    def _label_view(self, label: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": label["id"], "name": label["name"], "colorId": label["color_id"],
+            "createdAt": label["created_at"], "updatedAt": label["updated_at"],
+        }
+
+    def _create_label(self, user_id: str, body: dict) -> Response:
+        name = str(body.get("name") or "").strip()
+        color = body.get("colorId")
+        if not name or len(name) > 30 or color not in _LABEL_COLORS:
+            return _error(400, "VALIDATION_FAILED")
+        owned = [label for label in self.labels.values() if label["user_id"] == user_id]
+        if len(owned) >= 10:
+            return _error(400, "VALIDATION_FAILED")
+        if any(label["name"].lower() == name.lower() for label in owned):
+            return _error(400, "VALIDATION_FAILED")
+        label_id = str(uuid.uuid4())
+        now = iso_utc(now_utc())
+        self.labels[label_id] = {
+            "id": label_id, "user_id": user_id, "name": name, "color_id": color,
+            "created_at": now, "updated_at": now, "assignments": set(),
+        }
+        return _json_response(201, self._label_view(self.labels[label_id]))
+
+    def _patch_label(self, label: dict[str, Any], body: dict) -> Response:
+        name = label["name"] if body.get("name") is None else str(body.get("name")).strip()
+        color = label["color_id"] if body.get("colorId") is None else body.get("colorId")
+        if not name or len(name) > 30 or color not in _LABEL_COLORS:
+            return _error(400, "VALIDATION_FAILED")
+        for other in self.labels.values():
+            if (other["user_id"] == label["user_id"] and other["id"] != label["id"]
+                    and other["name"].lower() == name.lower()):
+                return _error(400, "VALIDATION_FAILED")
+        label["name"] = name
+        label["color_id"] = color
+        label["updated_at"] = iso_utc(now_utc())
+        return _json_response(200, self._label_view(label))
+
+    def _assign_label(self, user_id: str, conversation_id: str, label_id: str,
+                      method: str) -> Response:
+        conv = self._conv(conversation_id)
+        if conv is None:
+            return _error(404, "CONVERSATION_NOT_FOUND")
+        if user_id not in conv["members"]:
+            return _error(403, "NOT_MEMBER")
+        label = self.labels.get(label_id)
+        if label is None or label["user_id"] != user_id:
+            return _error(404, "NOT_FOUND")
+        key = (conversation_id, user_id)
+        if method == "DELETE":
+            label["assignments"].discard(key)
+            return _json_response(204)
+        if key in label["assignments"]:
+            return _json_response(204)
+        assigned = sum(
+            1 for item in self.labels.values()
+            if item["user_id"] == user_id and key in item["assignments"]
+        )
+        if assigned >= 3:
+            return _error(400, "VALIDATION_FAILED")
+        label["assignments"].add(key)
+        return _json_response(204)
+
+    def _invite_admin(self, user_id: str, conversation_id: str, method: str,
+                      body: dict) -> Response:
+        conv = self._conv(conversation_id)
+        if conv is None:
+            return _error(404, "CONVERSATION_NOT_FOUND")
+        if conv.get("type") != "GROUP":
+            return _error(400, "NOT_A_GROUP")
+        member = conv["members"].get(user_id)
+        if member is None:
+            return _error(403, "NOT_MEMBER")
+        if member.get("role") != "ADMIN":
+            return _error(403, "NOT_ADMIN")
+        active = next(
+            (link for link in self.invites.values()
+             if link["conversation_id"] == conversation_id and not link["revoked"]),
+            None,
+        )
+        if method == "DELETE":
+            if active is not None:
+                active["revoked"] = True
+            return _json_response(204)
+        if method == "GET":
+            if active is None:
+                return _error(404, "NOT_FOUND")
+            return _json_response(200, self._invite_view(active, include_token=False))
+        if method != "POST":
+            return _error(404, "NOT_FOUND")
+        if active is not None:
+            active["revoked"] = True
+        link = {
+            "id": str(uuid.uuid4()),
+            "conversation_id": conversation_id,
+            "token": uuid.uuid4().hex,
+            "requires_approval": bool(body.get("requiresApproval")),
+            "revoked": False,
+            "created_at": iso_utc(now_utc()),
+        }
+        self.invites[link["token"]] = link
+        return _json_response(201, self._invite_view(link, include_token=True))
+
+    def _invite_public(self, user_id: str, token: str, method: str, join: bool) -> Response:
+        link = self.invites.get(token)
+        if link is None or link["revoked"]:
+            return _error(404, "NOT_FOUND")
+        conv = self._conv(link["conversation_id"])
+        if conv is None:
+            return _error(404, "NOT_FOUND")
+        if method == "GET" and not join:
+            return _json_response(200, {
+                "conversationId": conv["id"],
+                "title": conv.get("title"),
+                "avatarUrl": None,
+                "memberCount": len(conv["members"]),
+                "requiresApproval": link["requires_approval"],
+                "isMember": user_id in conv["members"],
+            })
+        if method == "POST" and join:
+            if user_id in conv["members"]:
+                status = "ALREADY_MEMBER"
+            else:
+                conv["members"][user_id] = {"role": "MEMBER", "last_read_seq": 0}
+                status = "JOINED"
+            return _json_response(200, {
+                "status": status, "conversationId": conv["id"], "requestId": None,
+            })
+        return _error(404, "NOT_FOUND")
+
+    def _invite_view(self, link: dict[str, Any], *, include_token: bool) -> dict[str, Any]:
+        return {
+            "id": link["id"],
+            "conversationId": link["conversation_id"],
+            "token": link["token"] if include_token else None,
+            "requiresApproval": link["requires_approval"],
+            "expiresAt": None,
+            "maxUses": None,
+            "useCount": 0,
+            "createdAt": link["created_at"],
+        }
 
     # -- view builders ------------------------------------------------------
     def _conversation_view(self, conv: dict[str, Any]) -> dict[str, Any]:
@@ -782,6 +1064,8 @@ class FakeClient:
                 for emoji, count in counts.items()
             ],
             "createdAt": row["createdAt"],
+            "mentions": list(row.get("mentions") or []),
+            "mentionAll": bool(row.get("mentionAll")),
         }
 
     def _reminder_view(self, row: dict[str, Any], conv: dict[str, Any],
@@ -897,6 +1181,9 @@ class FakeClient:
 def run_self_test() -> int:
     """Run all non-STOMP scenarios against the fake and verify the guard."""
     import features_live as live
+
+    os.environ["E2E_RECALL_WAIT_SECONDS"] = "2"
+    os.environ.pop("E2E_APP_CONTAINER", None)
 
     print("=" * 78)
     print("   NEXACHAT NEW-FEATURE SUITE OFFLINE SELF-TEST (mocked transport)")
