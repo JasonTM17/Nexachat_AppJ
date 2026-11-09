@@ -91,6 +91,12 @@ class MessageServiceTest {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId)).thenReturn(true);
     }
 
+    private void stubNewSendWithReadBack(MessageRow stored) {
+        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(stored));
+    }
+
     // -------------------------------------------------------------------- send
 
     @Test
@@ -99,8 +105,7 @@ class MessageServiceTest {
         MessageRow stored = row(42);
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
 
         MessageService.SendResult result = messageService.send(senderId, conversationId, request());
 
@@ -180,8 +185,6 @@ class MessageServiceTest {
     void send_duplicateInSameConversation_returnsExistingAndRebroadcasts() {
         memberOk();
         MessageRow stored = row(41);
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(0); // conflict — no row written
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
                 .thenReturn(Optional.of(stored));
 
@@ -205,8 +208,6 @@ class MessageServiceTest {
         MessageRow foreign = new MessageRow(
                 UUID.randomUUID(), UUID.randomUUID() /* other conv */, 41L, senderId,
                 "Sender", Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null, null);
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(0);
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
                 .thenReturn(Optional.of(foreign));
 
@@ -333,8 +334,7 @@ class MessageServiceTest {
         UUID attachmentId = attachment.getId();
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
         when(messageRepository.getReferenceById(stored.id())).thenReturn(newMessageWithId(stored.id()));
         when(attachmentRepository.findAllById(List.of(attachmentId))).thenReturn(List.of(attachment));
 
@@ -353,8 +353,7 @@ class MessageServiceTest {
         MessageAttachment attachment = uploadAttachment(UUID.randomUUID() /* other owner */, "image/png");
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -374,8 +373,7 @@ class MessageServiceTest {
         attachment.bindTo(newMessageWithId(UUID.randomUUID())); // bound elsewhere
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -394,8 +392,7 @@ class MessageServiceTest {
         MessageAttachment pdf = uploadAttachment(senderId, "application/pdf");
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(pdf.getId()))).thenReturn(List.of(pdf));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -413,8 +410,7 @@ class MessageServiceTest {
         UUID attachmentId = UUID.randomUUID();
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.of(stored));
+        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachmentId))).thenReturn(List.of());
 
         ApiException ex = catchThrowableOfType(ApiException.class,

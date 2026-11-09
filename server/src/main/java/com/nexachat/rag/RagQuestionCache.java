@@ -137,6 +137,15 @@ public class RagQuestionCache {
                 });
     }
 
+    /**
+     * Drops every cached ask answer for the conversation. Recall and opt-out
+     * both invalidate the full conversation cache because rows record only
+     * citations, not the full prompt message set.
+     */
+    public void deleteAllForConversation(UUID conversationId) {
+        jdbcTemplate.update("DELETE FROM rag_ask_cache WHERE conversation_id = ?", conversationId);
+    }
+
     public boolean citationsValid(List<UUID> citedIds, String citedHash) {
         if (citedIds == null || citedIds.isEmpty() || citedHash == null) {
             return false;
