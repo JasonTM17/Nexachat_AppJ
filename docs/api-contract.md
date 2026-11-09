@@ -14,6 +14,7 @@
 | [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks, per-member mute/archive/pin, seen privacy, per-conversation AI opt-out |
 | [Conversation archive](#conversation-archive--apiv1conversationsidarchive) | `/api/v1/conversations/{id}/archive` | Member-scoped storage browser: media, files and links, filtered and keyset-paged |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
+| [Group Invite Links](#group-invite-links--apiv1conversationsidinvite-link-and-apiv1invite-links) | `/api/v1/conversations/{id}/invite-link`, `/api/v1/invite-links` | High-entropy hashed invite link tokens, admin approval toggle, member preview & join, approval queue |
 | [Reminders](#reminders--apiv1conversationsidreminders) | `/api/v1/conversations/{id}/reminders` | Shared "Nhắc hẹn" board, repeat rules, durable FCM fan-out |
 | [Group polls](#group-polls--apiv1conversationsidpolls) | `/api/v1/conversations/{id}/polls` | Poll creation, voting, results, close/delete, versioned change feed |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
@@ -492,6 +493,42 @@ explicit JSON `null`. `ArchiveAttachmentView` =
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+
+## Group Invite Links — `/api/v1/conversations/{id}/invite-link` and `/api/v1/invite-links`
+
+Group invite links (Zalo "link nhóm / duyệt thành viên") allow group administrators
+to create, rotate, and revoke high-entropy invite link tokens (stored securely
+as SHA-256 hashes, raw tokens never logged or stored plaintext). Group admins can
+toggle whether joining requires administrator approval. Authenticated users can resolve
+safe previews without leaking member lists, join directly if approval is off, or
+submit a join request if approval is on.
+
+### Endpoints
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /conversations/{conversationId}/invite-link` | Bearer ADMIN | `{expiresAt?, maxUses?, requiresApproval?}` — optional `expiresAt` (ISO-8601, future ≤30 days); optional `maxUses` (≥1); optional `requiresApproval` (boolean, default `false`) | `201` `InviteLinkResponse` (includes raw `token` for initial copy; rotates any existing active link) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `CONVERSATION_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/invite-link` | Bearer ADMIN | — | `200` `InviteLinkResponse` (metadata only; `token` is `null` because it is stored hashed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 (if no active link) |
+| `PATCH /conversations/{conversationId}/invite-link` | Bearer ADMIN | `{requiresApproval}` | `200` `InviteLinkResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/invite-link` | Bearer ADMIN | — | `204` No Content (revokes active link) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 |
+| `GET /invite-links/{token}` | Bearer | — | `200` `InvitePreviewResponse` `{conversationId, title, avatarUrl, memberCount, requiresApproval, isMember}` (never member lists) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 (uniform 404 for unknown/expired/revoked/used-up links) · `RATE_LIMITED` 429 |
+| `POST /invite-links/{token}/join` | Bearer | — | `200` `{status:"JOINED"\|"ALREADY_MEMBER", conversationId}` or `201` `{status:"PENDING", conversationId, requestId}` | `VALIDATION_FAILED` 400 (e.g. member cap) · `UNAUTHORIZED` 401 · `FORBIDDEN` 403 (banned/removed user or rejected request) · `NOT_FOUND` 404 (uniform 404) · `RATE_LIMITED` 429 |
+| `GET /conversations/{conversationId}/join-requests` | Bearer ADMIN | Optional `?status=PENDING\|APPROVED\|REJECTED` | `200` `JoinRequestResponse[]` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `CONVERSATION_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/join-requests/me` | Bearer | — | `200` `JoinRequestResponse` (caller's own latest request) | `UNAUTHORIZED` 401 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/join-requests/{requestId}/approve` | Bearer ADMIN | — | `200` `JoinRequestResponse` (adds member, posts SYSTEM message, updates `status="APPROVED"`; idempotent) | `VALIDATION_FAILED` 400 (e.g. member cap or already rejected) · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/join-requests/{requestId}/reject` | Bearer ADMIN | — | `200` `JoinRequestResponse` (`status="REJECTED"`; idempotent) | `VALIDATION_FAILED` 400 (e.g. already approved) · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_A_GROUP` 400 · `NOT_FOUND` 404 |
+
+### Invariants & Security Rules
+
+- **Direct Conversations:** Direct chats cannot have invite links. Any attempt returns `400 NOT_A_GROUP`.
+- **Hashed Storage & Entropy:** Tokens contain 256 bits of entropy (URL-safe base64, 43 chars) and are stored hashed with SHA-256 (`token_hash VARCHAR(64) UNIQUE`). The raw token is returned only once when created/rotated and is never logged or exposed in later GET endpoints. Constant-time comparison (`MessageDigest.isEqual`) is used for hash verification.
+- **Uniform 404:** Non-existent, expired, revoked, and used-up links return a uniform `404 NOT_FOUND` with `"Invite link not found or inactive"` without leaking whether the link previously existed or what group it belonged to.
+- **Safe Preview:** `GET /invite-links/{token}` returns only `conversationId`, `title`, `avatarUrl`, `memberCount`, `requiresApproval`, and `isMember`. Member rosters are never exposed.
+- **Banned/Removed Users:** If a member was removed by an admin (`MEMBER_REMOVED`), they are recorded in `group_invite_bans` and cannot rejoin via the same invite link (`403 FORBIDDEN`) unless an admin explicitly re-invites them (`POST /conversations/{id}/members`).
+- **Member Cap & Concurrency:** Groups enforce a maximum member capacity (`nexachat.group.max-members`, default 100). Joins and approvals serialize on the conversation row with `SELECT ... FOR UPDATE` so racing joiners cannot exceed the cap. Exceeding the cap returns `400 VALIDATION_FAILED` with `details.limit`.
+- **Rate Limiting:** Link preview and join actions are rate limited per user (default 60 resolves/min, 20 joins/min) and per client IP bucket to prevent token brute-forcing (`429 RATE_LIMITED`).
+- **Idempotency:** Repeated join requests while already a member return `200 ALREADY_MEMBER`; repeated join requests while approval is pending return `200 PENDING` with the existing request ID without duplicating rows. Repeated approval or rejection by admin is an idempotent 200 no-op.
+
 
 ## Reminders — `/api/v1/conversations/{id}/reminders`
 

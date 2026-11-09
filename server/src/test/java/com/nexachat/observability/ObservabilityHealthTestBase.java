@@ -5,6 +5,9 @@ import com.nexachat.auth.JwtService;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.invite.GroupInviteBanRepository;
+import com.nexachat.invite.GroupInviteLinkRepository;
+import com.nexachat.invite.GroupJoinRequestRepository;
 import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageReactionRepository;
 import com.nexachat.message.MessageRepository;
@@ -82,6 +85,15 @@ abstract class ObservabilityHealthTestBase {
 
     @MockitoBean
     protected PollVoteRepository pollVoteRepository;
+
+    @MockitoBean
+    protected GroupInviteLinkRepository groupInviteLinkRepository;
+
+    @MockitoBean
+    protected GroupJoinRequestRepository groupJoinRequestRepository;
+
+    @MockitoBean
+    protected GroupInviteBanRepository groupInviteBanRepository;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
