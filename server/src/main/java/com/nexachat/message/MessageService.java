@@ -39,6 +39,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -51,8 +54,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.time.Clock;
-import java.time.temporal.ChronoUnit;
 
 /**
  * Message use cases — the single enforcement point for send authZ,
@@ -101,6 +102,7 @@ public class MessageService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final SyncProperties syncProperties;
+    private final MessageRecallProperties recallProperties;
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
@@ -113,10 +115,11 @@ public class MessageService {
                           PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher,
-                          SyncProperties syncProperties) {
+                          SyncProperties syncProperties,
+                          MessageRecallProperties recallProperties) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, Clock.systemUTC());
+                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties);
     }
 
     /** Compatibility constructor for isolated service tests that do not exercise mentions. */
@@ -132,7 +135,7 @@ public class MessageService {
                           SyncProperties syncProperties) {
         this(messageRepository, null, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, Clock.systemUTC());
+                eventPublisher, syncProperties, Clock.systemUTC(), new MessageRecallProperties());
     }
 
     MessageService(MessageRepository messageRepository,
@@ -148,7 +151,7 @@ public class MessageService {
                    Clock clock) {
         this(messageRepository, null, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, clock);
+                eventPublisher, syncProperties, clock, new MessageRecallProperties());
     }
 
     MessageService(MessageRepository messageRepository,
@@ -163,6 +166,24 @@ public class MessageService {
                    ApplicationEventPublisher eventPublisher,
                    SyncProperties syncProperties,
                    Clock clock) {
+        this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
+                conversationRepository, memberRepository, pinnedMessageRepository, storageService,
+                eventPublisher, syncProperties, clock, new MessageRecallProperties());
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageMentionRepository mentionRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
+                   Clock clock,
+                   MessageRecallProperties recallProperties) {
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
         this.attachmentRepository = attachmentRepository;
@@ -175,6 +196,7 @@ public class MessageService {
         this.eventPublisher = eventPublisher;
         this.syncProperties = syncProperties;
         this.clock = clock;
+        this.recallProperties = recallProperties;
     }
 
     /** Result of {@link #send}: the stored message plus whether this call created it. */
@@ -354,19 +376,31 @@ public class MessageService {
     @Transactional
     public void delete(UUID userId, UUID conversationId, UUID messageId) {
         requireMember(conversationId, userId);
-        conversationRepository.findByIdForUpdate(conversationId)
+        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
-        requireMessageAuthor(message, userId);
+
+        boolean groupAdmin = conversation.getType() == Conversation.Type.GROUP
+                && memberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
+                        .map(actor -> actor.getRole() == ConversationMember.Role.ADMIN)
+                        .orElse(false);
+        if (!groupAdmin) {
+            requireMessageAuthor(message, userId);
+        }
         if (message.getDeletedAt() != null) {
             return;
         }
 
+        Instant recalledAt = clock.instant();
+        if (!groupAdmin && !recallProperties.isWithinRecallWindow(message.getCreatedAt(), recalledAt)) {
+            throw ApiException.of(ApiErrorCode.RECALL_WINDOW_EXPIRED, "Message recall window has expired");
+        }
+
         boolean wasLastMessage = isLastMessage(conversationId, messageId);
-        java.time.Instant deletedAt = java.time.Instant.now();
+        Instant deletedAt = recalledAt.truncatedTo(ChronoUnit.MICROS);
         message.softDelete(deletedAt);
         if (mentionRepository != null) {
             mentionRepository.deleteByMessageId(messageId);
@@ -412,6 +446,12 @@ public class MessageService {
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
     }
 
+    /** Three-argument convenience form: a SYSTEM line with no member subject. */
+    @Transactional
+    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content) {
+        return postSystemMessage(actingUserId, conversationId, content, null);
+    }
+
     /**
      * Server-generated {@code SYSTEM} line for group membership events
      * (add/remove/leave/rename — phase-08). This is the ONLY way a SYSTEM row
@@ -430,12 +470,16 @@ public class MessageService {
      * {@link MessageCreatedEvent} fans out AFTER COMMIT as
      * {@code MESSAGE_CREATED} with {@code type=SYSTEM}.
      *
+     * @param subjectUserId the member the event is about — the removed member
+     *                      or the member whose role changed — or {@code null}
+     *                      when the event has no single member subject
      * @throws ApiException {@code NOT_MEMBER} (acting user is not a member —
      *                      system lines are always authored by a member),
      *                      {@code VALIDATION_FAILED} (blank content)
      */
     @Transactional
-    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content) {
+    public MessageResponse postSystemMessage(UUID actingUserId, UUID conversationId, String content,
+                                             UUID subjectUserId) {
         if (content == null || content.isBlank()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "System message content must not be blank");
@@ -455,7 +499,7 @@ public class MessageService {
         log.info("System message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, actingUserId);
 
         MessageResponse response = toResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response, subjectUserId));
         return response;
     }
 

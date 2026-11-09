@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "99b6e32996901fd2528a395b7bd543a1",
+    "identityHash": "ae6b308cd709df60bbbc31cc68dc38c4",
     "entities": [
       {
         "tableName": "messages",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `senderId` TEXT NOT NULL, `senderDisplayName` TEXT, `type` TEXT NOT NULL, `content` TEXT, `clientMessageId` TEXT, `replyToId` TEXT, `replyToSenderName` TEXT, `replyToSnippet` TEXT, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT, `editedAtEpochMs` INTEGER, `deletedAtEpochMs` INTEGER, `mentionsJson` TEXT NOT NULL DEFAULT '[]', `mentionAll` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `senderId` TEXT NOT NULL, `senderDisplayName` TEXT, `type` TEXT NOT NULL, `content` TEXT, `clientMessageId` TEXT, `replyToId` TEXT, `replyToSenderName` TEXT, `replyToSnippet` TEXT, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT, `editedAtEpochMs` INTEGER, `deletedAtEpochMs` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -97,20 +97,6 @@
             "columnName": "deletedAtEpochMs",
             "affinity": "INTEGER",
             "notNull": false
-          },
-          {
-            "fieldPath": "mentionsJson",
-            "columnName": "mentionsJson",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "'[]'"
-          },
-          {
-            "fieldPath": "mentionAll",
-            "columnName": "mentionAll",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -135,7 +121,7 @@
       },
       {
         "tableName": "conversations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `mutedUntilEpochMs` INTEGER, `archived` INTEGER NOT NULL, `aiOptOut` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -232,6 +218,30 @@
             "columnName": "peerDeliveredSeq",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "muted",
+            "columnName": "muted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mutedUntilEpochMs",
+            "columnName": "mutedUntilEpochMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "archived",
+            "columnName": "archived",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aiOptOut",
+            "columnName": "aiOptOut",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -245,7 +255,7 @@
       },
       {
         "tableName": "outbox",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`clientMessageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `type` TEXT NOT NULL, `content` TEXT NOT NULL, `replyToId` TEXT, `state` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT NOT NULL, `mentionsJson` TEXT NOT NULL DEFAULT '[]', `mentionAll` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`clientMessageId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`clientMessageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `type` TEXT NOT NULL, `content` TEXT NOT NULL, `replyToId` TEXT, `state` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT NOT NULL, PRIMARY KEY(`clientMessageId`))",
         "fields": [
           {
             "fieldPath": "clientMessageId",
@@ -294,20 +304,6 @@
             "columnName": "attachmentsJson",
             "affinity": "TEXT",
             "notNull": true
-          },
-          {
-            "fieldPath": "mentionsJson",
-            "columnName": "mentionsJson",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "'[]'"
-          },
-          {
-            "fieldPath": "mentionAll",
-            "columnName": "mentionAll",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -639,7 +635,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '99b6e32996901fd2528a395b7bd543a1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ae6b308cd709df60bbbc31cc68dc38c4')"
     ]
   }
 }

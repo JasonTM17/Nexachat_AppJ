@@ -32,7 +32,9 @@ public final class RoomMigrationInstrumentedTest {
     private static final String V6_TO_V7_DB = "nexachat-room-v6-v7.db";
     private static final String V7_TO_V8_DB = "nexachat-room-v7-v8.db";
     private static final String V8_TO_V9_DB = "nexachat-room-v8-v9.db";
-    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v9.db";
+    private static final String V9_TO_V10_DB = "nexachat-room-v9-v10.db";
+    private static final String V10_TO_V11_DB = "nexachat-room-v10-v11.db";
+    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v11.db";
     private static final String ATTACHMENTS_JSON =
             "[{\"fileId\":\"attachment-1\",\"url\":\"https://example.test/image.jpg\","
                     + "\"mimeType\":\"image/jpeg\"}]";
@@ -51,26 +53,9 @@ public final class RoomMigrationInstrumentedTest {
         context.deleteDatabase(V6_TO_V7_DB);
         context.deleteDatabase(V7_TO_V8_DB);
         context.deleteDatabase(V8_TO_V9_DB);
+        context.deleteDatabase(V9_TO_V10_DB);
+        context.deleteDatabase(V10_TO_V11_DB);
         context.deleteDatabase(FULL_CHAIN_DB);
-    }
-
-    @Test
-    public void migrateV8ToV9PreservesRowsAndAddsMentionDefaults() throws Exception {
-        SupportSQLiteDatabase oldDb = helper.createDatabase(V8_TO_V9_DB, 8);
-        try {
-            seedRows(oldDb, 8);
-        } finally {
-            oldDb.close();
-        }
-        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
-                V8_TO_V9_DB, 9, true, AppDatabase.MIGRATION_8_9);
-        try {
-            assertExistingRows(db);
-            assertMentionDefaults(db);
-            assertNoForeignKeyViolations(db);
-        } finally {
-            db.close();
-        }
     }
 
     @Test
@@ -120,6 +105,75 @@ public final class RoomMigrationInstrumentedTest {
     }
 
     @Test
+    public void migrateV8ToV9PreservesRowsAndAddsSafePreferenceDefaults() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(V8_TO_V9_DB, 8);
+        try {
+            seedRows(oldDb, 8);
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                V8_TO_V9_DB, 9, true, AppDatabase.MIGRATION_8_9);
+        try {
+            assertExistingRows(db);
+            assertV9Defaults(db);
+            assertNoForeignKeyViolations(db);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void migrateV9ToV10PreservesRowsAndAddsExpectedDefaults() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(V9_TO_V10_DB, 9);
+        try {
+            seedRows(oldDb, 9);
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                V9_TO_V10_DB, 10, true, AppDatabase.MIGRATION_9_10);
+        try {
+            assertExistingRows(db);
+            assertV9Defaults(db);
+            assertEquals("pinned defaults to zero", 0L,
+                    singleLong(db, "SELECT pinned FROM conversations WHERE id = 'c-1'"));
+            assertNull("pinnedAt defaults to null",
+                    singleNullableLong(db, "SELECT pinnedAt FROM conversations WHERE id = 'c-1'"));
+            assertNoForeignKeyViolations(db);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
+    public void migrateV10ToV11PreservesRowsAndAddsMentionDefaults() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(V10_TO_V11_DB, 10);
+        try {
+            seedRows(oldDb, 10);
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                V10_TO_V11_DB, 11, true, AppDatabase.MIGRATION_10_11);
+        try {
+            assertExistingRows(db);
+            assertMentionDefaults(db);
+            assertV9Defaults(db);
+            assertEquals("pinned defaults to zero", 0L,
+                    singleLong(db, "SELECT pinned FROM conversations WHERE id = 'c-1'"));
+            assertNull("pinnedAt defaults to null",
+                    singleNullableLong(db, "SELECT pinnedAt FROM conversations WHERE id = 'c-1'"));
+            assertNoForeignKeyViolations(db);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void fullChainFromOldestExportedSchemaPreservesRows() throws Exception {
         SupportSQLiteDatabase oldDb = helper.createDatabase(FULL_CHAIN_DB, 6);
         try {
@@ -134,14 +188,19 @@ public final class RoomMigrationInstrumentedTest {
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 9, db.getVersion());
+            assertEquals("full chain reaches the current schema", 11, db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
                     singleLong(db, "SELECT peerDeliveredSeq FROM conversations WHERE id = 'c-1'"));
+            assertEquals("pinned defaults to zero", 0L,
+                    singleLong(db, "SELECT pinned FROM conversations WHERE id = 'c-1'"));
+            assertNull("pinnedAt defaults to null",
+                    singleNullableLong(db, "SELECT pinnedAt FROM conversations WHERE id = 'c-1'"));
             assertV8Indexes(db);
-            assertMentionDefaults(db);
             assertNewTablesAcceptRows(db);
+            assertV9Defaults(db);
+            assertMentionDefaults(db);
             assertNoForeignKeyViolations(db);
         } finally {
             database.close();
@@ -157,14 +216,16 @@ public final class RoomMigrationInstrumentedTest {
             AppDatabase.MIGRATION_5_6,
             AppDatabase.MIGRATION_6_7,
             AppDatabase.MIGRATION_7_8,
-            AppDatabase.MIGRATION_8_9
+            AppDatabase.MIGRATION_8_9,
+            AppDatabase.MIGRATION_9_10,
+            AppDatabase.MIGRATION_10_11
         };
     }
 
     private static void assertMentionDefaults(SupportSQLiteDatabase db) {
         try (Cursor cursor = db.query(
                 "SELECT mentionsJson, mentionAll FROM messages WHERE id = 'm-1'")) {
-            assertTrue("message remains after mention migration", cursor.moveToFirst());
+            assertTrue("message row remains after mention migration", cursor.moveToFirst());
             assertEquals("[]", cursor.getString(0));
             assertEquals(0, cursor.getInt(1));
         }
@@ -197,29 +258,30 @@ public final class RoomMigrationInstrumentedTest {
                         null, null, CREATED_AT, ATTACHMENTS_JSON
                     });
         } else {
+            String conversationColumns =
+                    "INSERT INTO conversations (id, type, title, lastMessageSeq, "
+                            + "lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, "
+                            + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
+                            + "otherUserId, lastMessageDeleted";
+            String conversationValues = "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+            java.util.List<Object> argsList = new java.util.ArrayList<>(java.util.List.of(
+                    "c-1", "DIRECT", null, 23L, null, "Lan", CREATED_AT, 4, "Lan",
+                    "avatar.png", "group-avatar.png", 12L, "MEMBER", "peer-2", 1
+            ));
             if (version >= 8) {
-                db.execSQL(
-                        "INSERT INTO conversations (id, type, title, lastMessageSeq, "
-                                + "lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, "
-                                + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
-                                + "otherUserId, lastMessageDeleted, peerDeliveredSeq) "
-                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        new Object[] {
-                            "c-1", "DIRECT", null, 23L, null, "Lan", CREATED_AT, 4, "Lan",
-                            "avatar.png", "group-avatar.png", 12L, "MEMBER", "peer-2", 1, 0L
-                        });
-            } else {
-                db.execSQL(
-                        "INSERT INTO conversations (id, type, title, lastMessageSeq, "
-                                + "lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, "
-                                + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
-                                + "otherUserId, lastMessageDeleted) "
-                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        new Object[] {
-                            "c-1", "DIRECT", null, 23L, null, "Lan", CREATED_AT, 4, "Lan",
-                            "avatar.png", "group-avatar.png", 12L, "MEMBER", "peer-2", 1
-                        });
+                conversationColumns += ", peerDeliveredSeq";
+                conversationValues += ", ?";
+                argsList.add(2L);
             }
+            if (version >= 9) {
+                conversationColumns += ", muted, mutedUntilEpochMs, archived, aiOptOut";
+                conversationValues += ", ?, ?, ?, ?";
+                argsList.add(0);
+                argsList.add(null);
+                argsList.add(0);
+                argsList.add(0);
+            }
+            db.execSQL(conversationColumns + ") " + conversationValues + ")", argsList.toArray());
             db.execSQL(
                     "INSERT INTO messages (id, conversationId, seq, senderId, senderDisplayName, "
                             + "type, content, clientMessageId, replyToId, replyToSenderName, "
@@ -329,6 +391,18 @@ public final class RoomMigrationInstrumentedTest {
                 sql.toUpperCase(java.util.Locale.ROOT).contains("CREATE UNIQUE INDEX"));
     }
 
+    private static void assertV9Defaults(SupportSQLiteDatabase db) {
+        try (Cursor cursor = db.query(
+                "SELECT muted, mutedUntilEpochMs, archived, aiOptOut "
+                        + "FROM conversations WHERE id = 'c-1'")) {
+            assertTrue("conversation row remains after v8 to v9", cursor.moveToFirst());
+            assertEquals("mute defaults off", 0, cursor.getInt(0));
+            assertTrue("mute expiry defaults null", cursor.isNull(1));
+            assertEquals("archive defaults off", 0, cursor.getInt(2));
+            assertEquals("AI opt-out defaults off", 0, cursor.getInt(3));
+        }
+    }
+
     private static void assertNewTablesAcceptRows(SupportSQLiteDatabase db) {
         db.execSQL(
                 "INSERT INTO users (id, username, displayName, phoneNumber, avatarUrl, bio, "
@@ -399,6 +473,14 @@ public final class RoomMigrationInstrumentedTest {
         try (Cursor cursor = db.query(query)) {
             assertTrue("query returned no row: " + query, cursor.moveToFirst());
             return cursor.getLong(0);
+        }
+    }
+
+    @androidx.annotation.Nullable
+    private static Long singleNullableLong(SupportSQLiteDatabase db, String query) {
+        try (Cursor cursor = db.query(query)) {
+            assertTrue("query returned no row: " + query, cursor.moveToFirst());
+            return cursor.isNull(0) ? null : cursor.getLong(0);
         }
     }
 

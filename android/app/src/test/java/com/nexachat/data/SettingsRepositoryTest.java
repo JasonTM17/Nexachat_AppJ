@@ -138,6 +138,65 @@ public final class SettingsRepositoryTest {
         assertEquals(true, repository.getShowPresence().blockingFirst());
     }
 
+    @Test
+    public void setShowSeenAppliesOptimisticallyThenAcceptsServerValue() throws Exception {
+        build(new HashMap<>());
+        Call<UserSettingsDto> updateCall = mock(Call.class);
+        when(userApi.updateSettings(new UpdateUserSettingsRequest(null, false))).thenReturn(updateCall);
+        when(updateCall.execute()).thenReturn(Response.success(new UserSettingsDto(true, false)));
+
+        Result<?> result = await(repository.setShowSeen(false).test());
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals(false, repository.getShowSeen().blockingFirst());
+        verify(userApi, times(1)).updateSettings(new UpdateUserSettingsRequest(null, false));
+    }
+
+    @Test
+    public void rejectedSeenToggleRevertsToPreviousValue() throws Exception {
+        build(new HashMap<>());
+        Call<UserSettingsDto> updateCall = mock(Call.class);
+        when(userApi.updateSettings(any(UpdateUserSettingsRequest.class))).thenReturn(updateCall);
+        when(updateCall.execute()).thenReturn(Response.error(
+                429, okhttp3.ResponseBody.create(null, "")));
+
+        Result<?> result = await(repository.setShowSeen(false).test());
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(true, repository.getShowSeen().blockingFirst());
+    }
+
+    @Test
+    public void refreshShowPresenceLoadsServerSeenFlagOnceSessionExists() throws Exception {
+        build(new HashMap<>());
+        Call<UserSettingsDto> settingsCall = mock(Call.class);
+        when(userApi.getSettings()).thenReturn(settingsCall);
+        when(settingsCall.execute()).thenReturn(Response.success(new UserSettingsDto(true, false)));
+        TestObserver<Boolean> becameHidden = repository.getShowSeen()
+                .filter(value -> !value)
+                .firstOrError()
+                .test();
+
+        hasSession.onNext(true);
+
+        becameHidden.awaitDone(5, TimeUnit.SECONDS).assertNoErrors().assertValue(false);
+        verify(userApi, times(1)).getSettings();
+    }
+
+    @Test
+    public void logoutResetsSeenPrivacyFlagToPermissiveDefault() throws Exception {
+        build(new HashMap<>());
+        Call<UserSettingsDto> settingsCall = mock(Call.class);
+        when(userApi.getSettings()).thenReturn(settingsCall);
+        when(settingsCall.execute()).thenReturn(Response.success(new UserSettingsDto(true, false)));
+        await(repository.refreshShowPresence().test());
+        assertEquals(false, repository.getShowSeen().blockingFirst());
+
+        sessionSignals.onNext(SessionEvents.Event.LoggedOut.INSTANCE);
+
+        assertEquals(true, repository.getShowSeen().blockingFirst());
+    }
+
     private Context fakeContext(Map<String, String> store) {
         SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         when(editor.putString(anyString(), nullable(String.class))).thenAnswer(invocation -> {

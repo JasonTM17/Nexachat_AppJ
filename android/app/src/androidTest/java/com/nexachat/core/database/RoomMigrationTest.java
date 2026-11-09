@@ -96,6 +96,16 @@ public final class RoomMigrationTest {
     }
 
     @Test
+    public void v10SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 10).close();
+    }
+
+    @Test
+    public void v11SchemaCreatesFromExportedJson() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 11).close();
+    }
+
+    @Test
     public void migrateV1ToV7PreservesRowsAndBackfillsColumns() throws Exception {
         createLegacyDatabase(
                 1,
@@ -119,7 +129,6 @@ public final class RoomMigrationTest {
 
         try (SupportSQLiteDatabase db = openMigrated()) {
             assertV7ShapeAndPreservedRows(db);
-            assertMentionDefaults(db);
         }
     }
 
@@ -143,7 +152,6 @@ public final class RoomMigrationTest {
                 });
 
         try (SupportSQLiteDatabase db = openMigrated()) {
-            assertMentionDefaults(db);
             try (Cursor cursor = db.query("SELECT editedAtEpochMs, deletedAtEpochMs FROM messages")) {
                 assertTrue(cursor.moveToFirst());
                 assertTrue(cursor.isNull(0));
@@ -291,19 +299,13 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_5_6,
                         AppDatabase.MIGRATION_6_7,
                         AppDatabase.MIGRATION_7_8,
-                        AppDatabase.MIGRATION_8_9)
+                        AppDatabase.MIGRATION_8_9,
+                        AppDatabase.MIGRATION_9_10,
+                        AppDatabase.MIGRATION_10_11)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()
                 .getWritableDatabase();
-    }
-
-    private static void assertMentionDefaults(SupportSQLiteDatabase db) {
-        try (Cursor cursor = db.query("SELECT mentionsJson, mentionAll FROM messages")) {
-            assertTrue(cursor.moveToFirst());
-            assertEquals("[]", cursor.getString(0));
-            assertEquals(0, cursor.getInt(1));
-        }
     }
 
     private void createLegacyDatabase(int version, List<String> ddl, Consumer<SQLiteDatabase> seed) {

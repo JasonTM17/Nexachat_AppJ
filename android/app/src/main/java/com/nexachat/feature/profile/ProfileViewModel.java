@@ -32,6 +32,7 @@ public final class ProfileViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
     private final MutableLiveData<Boolean> showPresence = new MutableLiveData<>(true);
+    private final MutableLiveData<Boolean> showSeen = new MutableLiveData<>(true);
     private UiState currentState = mutableUiState.getValue();
 
     @Inject
@@ -45,6 +46,9 @@ public final class ProfileViewModel extends ViewModel {
         disposables.add(settingsRepository.getShowPresence()
                 .subscribeOn(Schedulers.io())
                 .subscribe(showPresence::postValue, error -> { }));
+        disposables.add(settingsRepository.getShowSeen()
+                .subscribeOn(Schedulers.io())
+                .subscribe(showSeen::postValue, error -> { }));
         load();
     }
 
@@ -55,6 +59,11 @@ public final class ProfileViewModel extends ViewModel {
     /** Presence privacy toggle (F3), backed by the settings repository. */
     public LiveData<Boolean> getShowPresence() {
         return showPresence;
+    }
+
+    /** Seen privacy toggle, backed by the settings repository. */
+    public LiveData<Boolean> getShowSeen() {
+        return showSeen;
     }
 
     public void load() {
@@ -216,6 +225,18 @@ public final class ProfileViewModel extends ViewModel {
     /** The repository applies the presence change optimistically and reverts on failure. */
     public void setShowPresence(boolean value) {
         disposables.add(settingsRepository.setShowPresence(value)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> updateState(state -> result instanceof Result.Success<?>
+                                ? state.withSaveError(null)
+                                : state.withSaveError(((Result.Failure<?>) result).getError())),
+                        error -> updateState(state -> state.withSaveError(
+                                new ApiError.Network(error.getMessage())))));
+    }
+
+    /** The repository applies the seen change optimistically and reverts on failure. */
+    public void setShowSeen(boolean value) {
+        disposables.add(settingsRepository.setShowSeen(value)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> updateState(state -> result instanceof Result.Success<?>

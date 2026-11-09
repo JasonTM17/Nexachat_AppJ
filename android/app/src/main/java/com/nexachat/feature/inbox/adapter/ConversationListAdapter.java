@@ -26,6 +26,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
     public interface Listener {
         void onConversationClick(@NonNull String conversationId);
+        void onConversationLongClick(@NonNull ConversationSummary conversation);
     }
 
     private final Listener listener;
@@ -88,7 +89,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView time;
         private final TextView preview;
         private final ImageView previewTypeIcon;
+        private final ImageView pinIndicator;
         private final TextView unreadBadge;
+        private final ImageView muteIcon;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -97,7 +100,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             time = itemView.findViewById(R.id.time);
             preview = itemView.findViewById(R.id.preview);
             previewTypeIcon = itemView.findViewById(R.id.previewTypeIcon);
+            pinIndicator = itemView.findViewById(R.id.pinIndicator);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
+            muteIcon = itemView.findViewById(R.id.muteIcon);
         }
 
         void bind(
@@ -168,7 +173,20 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 unreadBadge.setVisibility(View.GONE);
             }
 
+            if (pinIndicator != null) {
+                pinIndicator.setVisibility(conversation.isPinned() ? View.VISIBLE : View.GONE);
+            }
+            if (muteIcon != null) {
+                muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
+                        ? View.VISIBLE
+                        : View.GONE);
+            }
+
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));
+            itemView.setOnLongClickListener(v -> {
+                listener.onConversationLongClick(conversation);
+                return true;
+            });
         }
 
         private static int resolveThemeColor(@NonNull Context context, int attr) {

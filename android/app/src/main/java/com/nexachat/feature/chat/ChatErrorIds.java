@@ -11,6 +11,8 @@ public final class ChatErrorIds {
 
     /** Server error code for the conversation pin cap. */
     public static final String ERROR_PIN_LIMIT = "PIN_LIMIT";
+    /** Server error code for the per-user conversation pin limit. */
+    public static final String ERROR_CONVERSATION_PIN_LIMIT = "CONVERSATION_PIN_LIMIT";
 
     private ChatErrorIds() {}
 
@@ -35,6 +37,9 @@ public final class ChatErrorIds {
             }
             if (ERROR_PIN_LIMIT.equals(code)) {
                 return R.string.error_pin_limit;
+            }
+            if (ERROR_CONVERSATION_PIN_LIMIT.equals(code)) {
+                return R.string.error_conversation_pin_limit;
             }
             if (com.nexachat.data.MessageRepository.ERROR_VALIDATION_FAILED.equals(code)) {
                 return R.string.error_mention_validation;

@@ -34,6 +34,17 @@ public interface MessageApi {
             @Query("cursor") String cursor
     );
 
+    /**
+     * Archived inbox variant. The server hides archived rows unless
+     * {@code archived=true} is present, so this is a distinct endpoint shape
+     * instead of an optional query on the default call.
+     */
+    @GET("api/v1/conversations?archived=true")
+    Call<ResponseBody> getArchivedConversations(
+            @Query("limit") Integer limit,
+            @Query("cursor") String cursor
+    );
+
     @GET("api/v1/conversations/{id}/messages")
     Call<MessagePageDto> getMessages(
             @Path("id") String conversationId,
@@ -112,6 +123,12 @@ public interface MessageApi {
             @Path("messageId") String messageId,
             @Header("Idempotency-Key") String idempotencyKey
     );
+
+    @PUT("api/v1/conversations/{id}/pin")
+    Call<Void> pinConversation(@Path("id") String conversationId);
+
+    @DELETE("api/v1/conversations/{id}/pin")
+    Call<Void> unpinConversation(@Path("id") String conversationId);
 
     @POST("api/v1/sync")
     Call<SyncResponse> syncDeltas(@Body SyncRequest request);

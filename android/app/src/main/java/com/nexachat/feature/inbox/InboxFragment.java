@@ -131,6 +131,19 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
+        viewModel.getEvents().observe(getViewLifecycleOwner(), raw -> {
+            InboxEvent event = raw == null ? null : raw.consume();
+            if (event == null || binding == null) return;
+            Snackbar.make(binding.getRoot(),
+                            ChatErrorIds.messageId(event.getError()),
+                            Snackbar.LENGTH_LONG)
+                    .show();
+        });
+        viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                viewModel.clearPinError();
+            }
+        });
     }
 
     private void showThemeDialog() {
@@ -192,11 +205,52 @@ public final class InboxFragment extends Fragment {
         }
         boundUserId = currentUserId;
         adapter = new ConversationListAdapter(
-                this::openConversation,
+                new ConversationListAdapter.Listener() {
+                    @Override
+                    public void onConversationClick(@NonNull String conversationId) {
+                        openConversation(conversationId);
+                    }
+
+                    @Override
+                    public void onConversationLongClick(@NonNull ConversationSummary conversation) {
+                        showPreferenceActions(conversation);
+                    }
+                },
                 currentUserId,
                 getString(R.string.time_just_now),
                 getString(R.string.time_yesterday));
         binding.conversationList.setAdapter(adapter);
+    }
+
+    private void showPreferenceActions(@NonNull ConversationSummary conversation) {
+        ConversationPreferenceMenu.showInboxActions(
+                requireContext(),
+                conversation,
+                new ConversationPreferenceMenu.Listener() {
+                    @Override
+                    public void onTogglePin(boolean pin) {
+                        viewModel.togglePin(conversation);
+                    }
+
+                    @Override
+                    public void onMute(@Nullable java.time.Instant until) {
+                        if (until == null) {
+                            viewModel.muteConversationForever(conversation.getId());
+                        } else {
+                            viewModel.muteConversation(conversation.getId(), until);
+                        }
+                    }
+
+                    @Override
+                    public void onUnmute() {
+                        viewModel.unmuteConversation(conversation.getId());
+                    }
+
+                    @Override
+                    public void onArchive(boolean archive) {
+                        viewModel.setConversationArchived(conversation.getId(), archive);
+                    }
+                });
     }
 
     private void render(@NonNull InboxUiState state) {
@@ -319,7 +373,8 @@ public final class InboxFragment extends Fragment {
         Chip[] chips = new Chip[] {
                 binding.filterAllChip,
                 binding.filterUnreadChip,
-                binding.filterGroupsChip
+                binding.filterGroupsChip,
+                binding.filterArchivedChip
         };
 
         for (Chip chip : chips) {
@@ -344,6 +399,7 @@ public final class InboxFragment extends Fragment {
         }
         binding.activeNowStrip.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(requireContext());
+        List<ConversationSummary> visibleRows = InboxFilterRules.apply(rows, InboxFilter.ALL);
 
         // 1. First item: "Your status" (+) item that opens R.id.profileFragment
         View yourStatusView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
@@ -360,13 +416,13 @@ public final class InboxFragment extends Fragment {
         binding.activeNowStrip.addView(yourStatusView);
 
         // 2. Next items (up to 8 peers), prioritizing direct conversations and deduplicating titles
-        List<ConversationSummary> candidates = new ArrayList<>(rows.size());
-        for (ConversationSummary row : rows) {
+        List<ConversationSummary> candidates = new ArrayList<>(visibleRows.size());
+        for (ConversationSummary row : visibleRows) {
             if (!row.isGroup()) {
                 candidates.add(row);
             }
         }
-        for (ConversationSummary row : rows) {
+        for (ConversationSummary row : visibleRows) {
             if (row.isGroup()) {
                 candidates.add(row);
             }
@@ -431,6 +487,9 @@ public final class InboxFragment extends Fragment {
         if (filter == InboxFilter.GROUPS) {
             return R.id.filterGroupsChip;
         }
+        if (filter == InboxFilter.ARCHIVED) {
+            return R.id.filterArchivedChip;
+        }
         return R.id.filterAllChip;
     }
 
@@ -442,6 +501,9 @@ public final class InboxFragment extends Fragment {
         if (chipId == R.id.filterGroupsChip) {
             return InboxFilter.GROUPS;
         }
+        if (chipId == R.id.filterArchivedChip) {
+            return InboxFilter.ARCHIVED;
+        }
         return InboxFilter.ALL;
     }
 
@@ -451,6 +513,9 @@ public final class InboxFragment extends Fragment {
         }
         if (filter == InboxFilter.GROUPS) {
             return R.string.inbox_empty_groups;
+        }
+        if (filter == InboxFilter.ARCHIVED) {
+            return R.string.inbox_empty_archived;
         }
         return R.string.inbox_empty;
     }

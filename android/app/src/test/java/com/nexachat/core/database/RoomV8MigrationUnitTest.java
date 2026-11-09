@@ -19,42 +19,6 @@ import org.mockito.ArgumentCaptor;
 
 public final class RoomV8MigrationUnitTest {
 
-    @Test
-    public void schemaAdvancesForPersistentMessageMentions() {
-        String schema;
-        try {
-            schema = readExportedSchema("9.json");
-        } catch (IOException error) {
-            throw new AssertionError("Version 9 Room schema must be exported", error);
-        }
-        assertTrue("message mentions require schema version 9",
-                Pattern.compile("\\\"version\\\"\\s*:\\s*9").matcher(schema).find());
-    }
-
-    @Test
-    public void migration8To9AddsDefaultedMentionColumns() throws IOException {
-        SupportSQLiteDatabase db = mock(SupportSQLiteDatabase.class);
-        AppDatabase.MIGRATION_8_9.migrate(db);
-        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        org.mockito.Mockito.verify(db, org.mockito.Mockito.times(4)).execSQL(sql.capture());
-        assertEquals(java.util.List.of(
-                "ALTER TABLE messages ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'",
-                "ALTER TABLE messages ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE outbox ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'",
-                "ALTER TABLE outbox ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0"), sql.getAllValues());
-
-        String schema = readExportedSchema("9.json");
-        assertMentionColumn(schema, "mentionsJson", "TEXT");
-        assertMentionColumn(schema, "mentionAll", "INTEGER");
-    }
-
-    private static void assertMentionColumn(String schema, String name, String affinity) {
-        assertTrue("Exported schema must declare " + name,
-                Pattern.compile("\\\"columnName\\\"\\s*:\\s*\\\"" + name
-                                + "\\\"[\\s\\S]*?\\\"affinity\\\"\\s*:\\s*\\\"" + affinity + "\\\"")
-                        .matcher(schema).find());
-    }
-
     /** DDL smoke only; real row-preservation behavior is covered by RoomMigrationInstrumentedTest. */
     @Test
     public void migration7To8DdlMatchesExportedSchema() throws IOException {

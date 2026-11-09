@@ -3,6 +3,7 @@ package com.nexachat.poll;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.poll.dto.VoteRequest;
+import com.nexachat.testutil.PostgresTestDatabase;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -72,25 +73,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         })
 class PollFlowTest {
 
-    private static final String DATABASE = "nexachat_poll_it";
-    private static String adminUrl;
-    private static String dbUser;
-    private static String dbPassword;
+    private static final PostgresTestDatabase TEST_DATABASE =
+            PostgresTestDatabase.create("poll-flow");
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
-        String baseUrl = env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test");
-        dbUser = env("IT_DB_USER", "nexachat");
-        dbPassword = env("IT_DB_PASSWORD", "nexachat");
-        String noQuery = baseUrl.contains("?") ? baseUrl.substring(0, baseUrl.indexOf('?')) : baseUrl;
-        String server = noQuery.substring(0, noQuery.lastIndexOf('/') + 1);
-        adminUrl = server + "postgres";
-        recreateDatabase();
-        // A dedicated database keeps this suite from leaving objects in the
-        // shared test database public schema, which later suites expect empty.
-        registry.add("spring.datasource.url", () -> server + DATABASE);
-        registry.add("spring.datasource.username", () -> dbUser);
-        registry.add("spring.datasource.password", () -> dbPassword);
+        registry.add("spring.datasource.url", TEST_DATABASE::jdbcUrl);
+        registry.add("spring.datasource.username", TEST_DATABASE::username);
+        registry.add("spring.datasource.password", TEST_DATABASE::password);
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
         // The suite exercises many mutations from the same fixture users; keep
         // the production buckets but give the test run headroom.
@@ -99,34 +89,9 @@ class PollFlowTest {
         registry.add("nexachat.rate-limit.polls.manage-per-minute", () -> "1000");
     }
 
-    private static void recreateDatabase() {
-        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
-                adminUrl, dbUser, dbPassword);
-             java.sql.Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + DATABASE + " WITH (FORCE)");
-            statement.executeUpdate("CREATE DATABASE " + DATABASE);
-        } catch (java.sql.SQLException ex) {
-            throw new IllegalStateException("Could not prepare the poll test database", ex);
-        }
-    }
-
     @AfterAll
     static void dropDatabase() {
-        if (adminUrl == null) {
-            return;
-        }
-        try (java.sql.Connection connection = java.sql.DriverManager.getConnection(
-                adminUrl, dbUser, dbPassword);
-             java.sql.Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + DATABASE + " WITH (FORCE)");
-        } catch (java.sql.SQLException ex) {
-            // best-effort cleanup; the next run recreates the database
-        }
-    }
-
-    private static String env(String name, String fallback) {
-        String value = System.getenv(name);
-        return (value == null || value.isBlank()) ? fallback : value;
+        TEST_DATABASE.close();
     }
 
     @Autowired

@@ -250,10 +250,10 @@ build alone permits LAN cleartext — the release config blocks it
 ## Running tests
 
 ```bash
-# Server — unit tests plus integration tests against real PostgreSQL
-cd server && mvn verify
-#   unit loop only (faster, skips *IT):
+# Server — unit tests plus PollFlowTest against real PostgreSQL
 cd server && mvn test
+# Full server suite, including *IT integration tests:
+cd server && mvn verify
 
 # Android — JVM unit tests
 cd android && ./gradlew testDebugUnitTest
@@ -262,11 +262,10 @@ cd android && ./gradlew testDebugUnitTest
 bash tools/rag-eval/run-benchmark.sh
 ```
 
-Integration tests (`*IT`, failsafe) run against real PostgreSQL. Configure a
-dedicated test database with `IT_DB_URL`, `IT_DB_USER` and `IT_DB_PASSWORD`; see
-[the operations guide](docs/operations.md) for the local setup and FCM environment
-requirements. CI runs the server and Android suites, Android lint, and a
-committed-secret scan on every PR and push to `main`/`develop`.
+Configure a dedicated test database with `IT_DB_URL`, `IT_DB_USER` and
+`IT_DB_PASSWORD`; see [docs/testing.md](docs/testing.md) for the setup and
+concurrent-run guidance. CI runs the server and Android suites, Android lint,
+and a committed-secret scan on every PR and push to `main`/`develop`.
 
 ## Repo layout
 

@@ -2,6 +2,7 @@ package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -27,9 +28,11 @@ import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
+import com.nexachat.core.network.dto.ConversationAiOptOutDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
+import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.SyncRequest;
 import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.stomp.ChatEvent;
@@ -65,6 +68,7 @@ import okio.Timeout;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -76,6 +80,8 @@ public final class ConversationRepositoryTest {
 
     private final MessageApi messageApi = org.mockito.Mockito.mock(MessageApi.class);
     private final GroupApi groupApi = org.mockito.Mockito.mock(GroupApi.class);
+    private final com.nexachat.core.network.ConversationSettingsApi settingsApi =
+            org.mockito.Mockito.mock(com.nexachat.core.network.ConversationSettingsApi.class);
     private final RealtimeSession session = org.mockito.Mockito.mock(RealtimeSession.class);
     private final TokenStore tokenStore = org.mockito.Mockito.mock(TokenStore.class);
     private final Context context = org.mockito.Mockito.mock(Context.class);
@@ -128,6 +134,7 @@ public final class ConversationRepositoryTest {
         repository = new ConversationRepository(
                 messageApi,
                 groupApi,
+                settingsApi,
                 conversationDao,
                 presenceRepository,
                 session,
@@ -157,6 +164,21 @@ public final class ConversationRepositoryTest {
         }
     }
 
+    private void stubArchivedInbox(String body) {
+        when(messageApi.getArchivedConversations(eq(30), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), body))));
+    }
+
+    private void stubArchivedInboxPage(String requestCursor, String nextCursor, String body) {
+        Call<ResponseBody> call = asCall(inboxResponse(body, nextCursor));
+        if (requestCursor == null) {
+            when(messageApi.getArchivedConversations(eq(30), isNull())).thenReturn(call);
+        } else {
+            when(messageApi.getArchivedConversations(eq(30), eq(requestCursor))).thenReturn(call);
+        }
+    }
+
     private Response<ResponseBody> inboxResponse(String body, String nextCursor) {
         Headers.Builder headers = new Headers.Builder();
         if (nextCursor != null) headers.add("X-Next-Cursor", nextCursor);
@@ -166,6 +188,14 @@ public final class ConversationRepositoryTest {
     }
 
     private String inboxJson(Object... idAndSequences) {
+        return inboxJson(false, idAndSequences);
+    }
+
+    private String inboxJsonArchived(Object... idAndSequences) {
+        return inboxJson(true, idAndSequences);
+    }
+
+    private String inboxJson(boolean archived, Object... idAndSequences) {
         StringBuilder json = new StringBuilder("[");
         for (int i = 0; i + 1 < idAndSequences.length; i += 2) {
             if (i > 0) json.append(',');
@@ -174,7 +204,9 @@ public final class ConversationRepositoryTest {
             String createdAt = Instant.ofEpochSecond(seq).toString();
             json.append("{\"id\":\"").append(id)
                     .append("\",\"type\":\"GROUP\",\"title\":\"").append(id)
-                    .append("\",\"members\":[],\"lastMessage\":{\"seq\":")
+                    .append("\",\"members\":[]");
+            if (archived) json.append(",\"archived\":true");
+            json.append(",\"lastMessage\":{\"seq\":")
                     .append(seq)
                     .append(",\"type\":\"TEXT\",\"contentSnippet\":\"message-")
                     .append(seq)
@@ -575,6 +607,218 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void muteWritesThePresetInstantAndLocalFlag() {
+        buildRepository();
+        dao().upsert(conversation("conv-m")).blockingAwait();
+        Instant until = Instant.parse("2026-11-10T01:00:00Z");
+        when(settingsApi.mute(eq("conv-m"), eq(MuteRequest.until(until))))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.muteConversation("conv-m", until).blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-m");
+        assertTrue(row.isMuted());
+        assertEquals(Long.valueOf(until.toEpochMilli()), row.getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void muteForeverSendsTheForeverFlagWithoutAnExpiry() {
+        buildRepository();
+        dao().upsert(conversation("conv-m")).blockingAwait();
+        when(settingsApi.mute(eq("conv-m"), eq(MuteRequest.forever())))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.muteConversationForever("conv-m").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-m");
+        assertTrue(row.isMuted());
+        assertNull(row.getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void failedUnmuteLeavesTheLocalMuteStateUntouched() {
+        buildRepository();
+        ConversationEntity muted = withPreferences(
+                conversation("conv-m"), true, 2_000L, false, false);
+        dao().upsert(muted).blockingAwait();
+        when(settingsApi.unmute("conv-m")).thenReturn(asCall(Response.error(403,
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"NOT_MEMBER\"}}"))));
+
+        Result<Void> result = repository.unmuteConversation("conv-m").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertTrue(dao().rows.get("conv-m").isMuted());
+        assertEquals(Long.valueOf(2_000L), dao().rows.get("conv-m").getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void archiveAndUnarchiveWriteThroughToRoom() {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        when(settingsApi.archive("conv-a"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+        when(settingsApi.unarchive("conv-a"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        repository.setConversationArchived("conv-a", true).blockingGet();
+        assertTrue(dao().rows.get("conv-a").isArchived());
+
+        repository.setConversationArchived("conv-a", false).blockingGet();
+        assertFalse(dao().rows.get("conv-a").isArchived());
+    }
+
+    @Test
+    public void aiOptOutReadsWritesAndClearsTheCallerState() {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        when(settingsApi.getAiOptOut("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", true))));
+        when(settingsApi.optOutOfAi("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", true))));
+        when(settingsApi.clearAiOptOut("conv-a")).thenReturn(asCall(Response.success(
+                new ConversationAiOptOutDto("conv-a", false))));
+
+        Result<Boolean> read = repository.getAiOptOut("conv-a").blockingGet();
+        assertEquals(Boolean.TRUE, ((Result.Success<?>) read).getValue());
+        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+
+        Result<Boolean> cleared = repository.setAiOptOut("conv-a", false).blockingGet();
+        assertEquals(Boolean.FALSE, ((Result.Success<?>) cleared).getValue());
+        assertFalse(dao().rows.get("conv-a").isAiOptOut());
+    }
+
+    @Test
+    public void inboxPayloadWritesTheServerAiOptOutThrough() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-a")).blockingAwait();
+        stubInboxPage(null, null,
+                "[{\"id\":\"conv-a\",\"type\":\"GROUP\",\"title\":\"A\","
+                        + "\"members\":[],\"aiOptOut\":true}]");
+
+        repository.refreshInbox().blockingGet();
+        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+
+        stubInboxPage(null, null,
+                "[{\"id\":\"conv-a\",\"type\":\"GROUP\",\"title\":\"A\","
+                        + "\"members\":[],\"aiOptOut\":false}]");
+
+        repository.refreshInbox().blockingGet();
+        assertFalse(dao().rows.get("conv-a").isAiOptOut());
+    }
+
+    @Test
+    public void archivedInboxUsesTheArchivedEndpointAndPersistsTheFlag() {
+        buildRepository();
+        stubArchivedInbox("[{\"id\":\"conv-arch\",\"type\":\"GROUP\",\"title\":\"Arch\","
+                + "\"archived\":true,\"members\":[]}]");
+
+        Result<Boolean> result = repository.refreshInboxPage(true).blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertTrue(dao().rows.get("conv-arch").isArchived());
+        verify(messageApi).getArchivedConversations(eq(30), isNull());
+        verify(messageApi, never()).getConversations(any(), any());
+    }
+
+    @Test
+    public void archivedPagingContinuesOnTheArchivedEndpoint() throws Exception {
+        buildRepository();
+        stubArchivedInboxPage(null, "cursor-arch-2", inboxJsonArchived("conv-a", 10));
+        stubArchivedInboxPage("cursor-arch-2", null, inboxJsonArchived("conv-b", 5));
+
+        Result<Boolean> first = repository.refreshInboxPage(true).blockingGet();
+        assertTrue(((Result.Success<Boolean>) first).getValue());
+        Result<Boolean> second = repository.loadNextInboxPage().blockingGet();
+
+        assertFalse(((Result.Success<Boolean>) second).getValue());
+        verify(messageApi).getArchivedConversations(eq(30), eq("cursor-arch-2"));
+        verify(messageApi, never()).getConversations(any(), any());
+        assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
+    }
+
+    @Test
+    public void completedWalksPruneOnlyTheirOwnInboxVariant() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-inbox"),
+                withPreferences(conversation("conv-arch"), false, null, true, false)))
+                .blockingAwait();
+        stubInbox(List.of());
+
+        repository.refreshInboxPage(false).blockingGet();
+
+        assertFalse("default walk must not delete archived rows",
+                dao().rows.containsKey("conv-inbox"));
+        assertTrue(dao().rows.containsKey("conv-arch"));
+
+        stubArchivedInbox("[]");
+        repository.refreshInboxPage(true).blockingGet();
+
+        assertTrue(dao().rows.isEmpty());
+    }
+
+    @Test
+    public void pagedDefaultWalkPrunesOnlyConfirmedDefaultRows() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 120),
+                withPreferences(conversation("conv-arch", 110), false, null, true, false)))
+                .blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-arch"), dao().rows.keySet());
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi).syncDeltas(captor.capture());
+        List<String> confirmed = new ArrayList<>();
+        for (SyncRequest.Watermark watermark : captor.getValue().getWatermarks()) {
+            confirmed.add(watermark.getConversationId());
+        }
+        assertEquals(List.of("conv-removed"), confirmed);
+    }
+
+    @Test
+    public void pagedArchivedWalkPrunesOnlyConfirmedArchivedRows() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                withPreferences(conversation("conv-arch-a", 100), false, null, true, false),
+                withPreferences(conversation("conv-arch-removed", 120), false, null, true, false),
+                conversation("conv-inbox", 130)))
+                .blockingAwait();
+        stubArchivedInboxPage(null, "cursor-arch-2", inboxJsonArchived("conv-arch-a", 100));
+
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-arch-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInboxPage(true).blockingGet();
+
+        assertEquals(java.util.Set.of("conv-arch-a", "conv-inbox"), dao().rows.keySet());
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi).syncDeltas(captor.capture());
+        List<String> confirmed = new ArrayList<>();
+        for (SyncRequest.Watermark watermark : captor.getValue().getWatermarks()) {
+            confirmed.add(watermark.getConversationId());
+        }
+        assertEquals(List.of("conv-arch-removed"), confirmed);
+    }
+
+    @Test
     public void selfRemovalDeletesTheConversationAndItsLocalCache() {
         buildRepository();
         dao().upsert(conversation("conv-a", 200)).blockingAwait();
@@ -601,6 +845,88 @@ public final class ConversationRepositoryTest {
         verify(messageDao, never()).deleteForConversation(any());
     }
 
+    @Test
+    public void pinConversationAppliesOptimisticallyThenPersistsOnSuccess() {
+        buildRepository();
+        dao().upsert(conversation("conv-pin", 100)).blockingAwait();
+        when(messageApi.pinConversation("conv-pin")).thenReturn(asCall(Response.success(null)));
+
+        Result<?> result = repository.pinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertTrue(row.isPinned());
+        assertTrue(row.getPinnedAt() != null && row.getPinnedAt() > 0);
+        verify(messageApi, times(1)).pinConversation("conv-pin");
+    }
+
+    @Test
+    public void pinConversationRevertsOnCapError() {
+        buildRepository();
+        dao().upsert(conversation("conv-pin", 100)).blockingAwait();
+        ResponseBody errorBody = ResponseBody.create(
+                okhttp3.MediaType.parse("application/json"),
+                "{\"code\":\"CONVERSATION_PIN_LIMIT\",\"message\":\"Pin limit reached\"}");
+        when(messageApi.pinConversation("conv-pin")).thenReturn(asCall(Response.error(409, errorBody)));
+
+        Result<?> result = repository.pinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertFalse(row.isPinned());
+        assertEquals(null, row.getPinnedAt());
+    }
+
+    @Test
+    public void unpinConversationAppliesOptimisticallyThenPersistsOnSuccess() {
+        buildRepository();
+        ConversationEntity pinned = conversation("conv-pin", 100).withPinned(true, 123456L);
+        dao().upsert(pinned).blockingAwait();
+        when(messageApi.unpinConversation("conv-pin")).thenReturn(asCall(Response.success(null)));
+
+        Result<?> result = repository.unpinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertFalse(row.isPinned());
+        assertEquals(null, row.getPinnedAt());
+        verify(messageApi, times(1)).unpinConversation("conv-pin");
+    }
+
+    @Test
+    public void unpinConversationRevertsOnNetworkError() throws Exception {
+        buildRepository();
+        ConversationEntity pinned = conversation("conv-pin", 100).withPinned(true, 123456L);
+        dao().upsert(pinned).blockingAwait();
+        Call<Void> failingCall = org.mockito.Mockito.mock(Call.class);
+        when(failingCall.execute()).thenThrow(new java.io.IOException("Network down"));
+        when(messageApi.unpinConversation("conv-pin")).thenReturn(failingCall);
+
+        Result<?> result = repository.unpinConversation("conv-pin").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        ConversationEntity row = dao().rows.get("conv-pin");
+        assertTrue(row.isPinned());
+        assertEquals(Long.valueOf(123456L), row.getPinnedAt());
+    }
+
+    @Test
+    public void inboxFlowSortsPinnedConversationsFirstWithTies() {
+        buildRepository();
+        ConversationEntity c1 = conversation("c1", 100).withPinned(true, 2000L);
+        ConversationEntity c2 = conversation("c2", 50).withPinned(true, 3000L);
+        ConversationEntity c3 = conversation("c3", 200).withPinned(true, 2000L);
+        ConversationEntity u1 = conversation("u1", 500);
+        ConversationEntity u2 = conversation("u2", 600);
+
+        dao().upsertAll(List.of(u1, c1, u2, c2, c3)).blockingAwait();
+
+        List<ConversationSummary> summaries = repository.inboxFlow().blockingFirst();
+        List<String> ids = summaries.stream().map(ConversationSummary::getId).toList();
+
+        assertEquals(List.of("c2", "c3", "c1", "u2", "u1"), ids);
+    }
+
     private FakeConversationDao dao() {
         return (FakeConversationDao) conversationDao;
     }
@@ -623,7 +949,24 @@ public final class ConversationRepositoryTest {
                 row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                 row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted());
+                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted(),
+                row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
+                row.isArchived(), row.isAiOptOut());
+    }
+
+    private ConversationEntity withPreferences(
+            ConversationEntity row,
+            boolean muted,
+            Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut) {
+        return new ConversationEntity(
+                row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
+                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
+                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
+                row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
+                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), muted,
+                mutedUntilEpochMs, archived, aiOptOut);
     }
 
     private ConversationInboxDto inboxDto(String id) {
@@ -777,17 +1120,78 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
-        public Completable clear() {
+        public Completable updateMute(
+                String conversationId, boolean muted, Long mutedUntilEpochMs) {
             return Completable.fromAction(() -> {
-                rows.clear();
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, muted, mutedUntilEpochMs, row.isArchived(), row.isAiOptOut()));
+                }
                 publish();
             });
         }
 
         @Override
-        public Completable deleteAllExcept(List<String> ids) {
+        public Completable updateArchived(String conversationId, boolean archived) {
             return Completable.fromAction(() -> {
-                rows.keySet().retainAll(ids);
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, row.isMuted(), row.getMutedUntilEpochMs(), archived, row.isAiOptOut()));
+                }
+                publish();
+            });
+        }
+
+        @Override
+        public Completable updateAiOptOut(String conversationId, boolean aiOptOut) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withPreferences(
+                            row, row.isMuted(), row.getMutedUntilEpochMs(), row.isArchived(), aiOptOut));
+                }
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clearInbox() {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> !row.isArchived());
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clearArchived() {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(ConversationEntity::isArchived);
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteInboxExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> !row.isArchived() && !ids.contains(row.getId()));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteArchivedExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.values().removeIf(row -> row.isArchived() && !ids.contains(row.getId()));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable clear() {
+            return Completable.fromAction(() -> {
+                rows.clear();
                 publish();
             });
         }
@@ -801,11 +1205,30 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public Completable deleteAllExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.keySet().retainAll(ids);
+                publish();
+            });
+        }
+
+        @Override
         public Completable bumpPeerDeliveredSeq(String conversationId, long seq) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null && seq > row.getPeerDeliveredSeq()) {
                     rows.put(conversationId, row.withPeerDeliveredSeq(seq));
+                    publish();
+                }
+            });
+        }
+
+        @Override
+        public Completable updatePin(String conversationId, boolean pinned, Long pinnedAt) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, row.withPinned(pinned, pinnedAt));
                     publish();
                 }
             });
@@ -824,9 +1247,19 @@ public final class ConversationRepositoryTest {
 
         private void publish() {
             List<ConversationEntity> ordered = new ArrayList<>(rows.values());
-            ordered.sort(Comparator.comparing(
-                    ConversationEntity::getLastMessageAt,
-                    Comparator.nullsLast(Comparator.<Long>reverseOrder())));
+            ordered.sort((a, b) -> {
+                int pinCompare = Boolean.compare(b.isPinned(), a.isPinned());
+                if (pinCompare != 0) return pinCompare;
+                long aPinnedAt = a.getPinnedAt() != null ? a.getPinnedAt() : 0L;
+                long bPinnedAt = b.getPinnedAt() != null ? b.getPinnedAt() : 0L;
+                int pinnedAtCompare = Long.compare(bPinnedAt, aPinnedAt);
+                if (pinnedAtCompare != 0) return pinnedAtCompare;
+                long aMsgAt = a.getLastMessageAt() != null ? a.getLastMessageAt() : 0L;
+                long bMsgAt = b.getLastMessageAt() != null ? b.getLastMessageAt() : 0L;
+                int msgCompare = Long.compare(bMsgAt, aMsgAt);
+                if (msgCompare != 0) return msgCompare;
+                return a.getId().compareTo(b.getId());
+            });
             inbox.onNext(Collections.unmodifiableList(ordered));
         }
 
@@ -835,7 +1268,10 @@ public final class ConversationRepositoryTest {
                     row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                     row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                     unread, row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), row.getLastMessageDeleted());
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
+                    row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.isMuted(),
+                    row.getMutedUntilEpochMs(), row.isArchived(), row.isAiOptOut(),
+                    row.isPinned(), row.getPinnedAt());
         }
 
         private ConversationEntity withLastMessage(
@@ -843,7 +1279,9 @@ public final class ConversationRepositoryTest {
             return new ConversationEntity(
                     row.getId(), row.getType(), row.getTitle(), seq, content, sender, at,
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted);
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
+                    row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
+                    row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt());
         }
     }
 

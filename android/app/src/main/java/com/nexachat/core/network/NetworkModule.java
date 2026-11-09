@@ -113,4 +113,10 @@ public final class NetworkModule {
     public static AttachmentApi provideAttachmentApi(Retrofit retrofit) {
         return retrofit.create(AttachmentApi.class);
     }
+
+    @Provides
+    @Singleton
+    public static ConversationSettingsApi provideConversationSettingsApi(Retrofit retrofit) {
+        return retrofit.create(ConversationSettingsApi.class);
+    }
 }

@@ -17,14 +17,17 @@ public final class InboxFilterRules {
             @NonNull InboxFilter filter) {
         Objects.requireNonNull(conversations, "conversations");
         Objects.requireNonNull(filter, "filter");
-        if (filter == InboxFilter.ALL) {
-            return conversations;
-        }
 
         List<ConversationSummary> filtered = new ArrayList<>();
         for (ConversationSummary conversation : conversations) {
             boolean include;
-            if (filter == InboxFilter.UNREAD) {
+            if (filter == InboxFilter.ARCHIVED) {
+                include = conversation.isArchived();
+            } else if (conversation.isArchived()) {
+                // The default inbox hides archived rows; the Archived chip is
+                // the only place they appear.
+                include = false;
+            } else if (filter == InboxFilter.UNREAD) {
                 include = conversation.getUnreadCount() > 0;
             } else if (filter == InboxFilter.GROUPS) {
                 include = conversation.isGroup();

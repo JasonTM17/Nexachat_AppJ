@@ -787,4 +787,88 @@ public final class ChatViewModelTest {
         assertNull(afterRotation.get().consume());
         viewModel.getActionEvents().removeObserver(secondObserver);
     }
+
+    @Test
+    public void toggleConversationPinDelegatesToRepositoryAndSurfacesCapError() {
+        assertFalse(state().isConversationPinned());
+
+        ApiError capError = new ApiError.Unknown("CONVERSATION_PIN_LIMIT");
+        when(conversationRepository.setConversationPinned(CONVERSATION_ID, true))
+                .thenReturn(Single.just(Result.failure(capError)));
+
+        viewModel.toggleConversationPin();
+
+        verify(conversationRepository, times(1)).setConversationPinned(CONVERSATION_ID, true);
+        assertEquals(capError, state().getError());
+    }
+
+    @Test
+    public void toggleConversationPinTogglesStateWhenAlreadyPinned() {
+        conversationFlow.onNext(Optional.of(new ConversationSummary(
+                CONVERSATION_ID, "DIRECT", null, "last", "Lan", 1_700_000_000_000L,
+                42L, 0, "Lan", null, null, 0L, 0L, null, null, false, null,
+                true, 1_700_000_000_000L)));
+
+        assertTrue(state().isConversationPinned());
+
+        when(conversationRepository.setConversationPinned(CONVERSATION_ID, false))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.toggleConversationPin();
+
+        verify(conversationRepository, times(1)).setConversationPinned(CONVERSATION_ID, false);
+    }
+
+    @Test
+    public void aiOptOutLoadFailureShowsAnInlineError() {
+        ApiError failure = new ApiError.Network("down");
+        when(conversationRepository.getAiOptOut(CONVERSATION_ID))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.loadAiOptOut();
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertFalse(state.isLoading());
+        assertEquals(failure, state.getError());
+    }
+
+    @Test
+    public void aiOptOutSaveFailureRevertsTheOptimisticSwitch() {
+        ApiError failure = new ApiError.Network("down");
+        when(conversationRepository.setAiOptOut(CONVERSATION_ID, true))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.setAiOptOut(true);
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertFalse("failed save must revert the switch", state.getOptOut());
+        assertFalse(state.isSaving());
+        assertEquals(failure, state.getError());
+    }
+
+    @Test
+    public void aiOptOutSaveSuccessTakesTheServerState() {
+        when(conversationRepository.setAiOptOut(CONVERSATION_ID, true))
+                .thenReturn(Single.just(new Result.Success<>(Boolean.TRUE)));
+
+        viewModel.setAiOptOut(true);
+
+        ChatViewModel.AiOptOutState state = viewModel.getAiOptOutState().getValue();
+        assertTrue(state.getOptOut());
+        assertFalse(state.isSaving());
+        assertNull(state.getError());
+    }
+
+    @Test
+    public void successfulMuteEmitsAOneShotConfirmation() {
+        when(conversationRepository.muteConversationForever(CONVERSATION_ID))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.muteConversation(null);
+
+        ChatSingleLiveEvent.Event<ChatActionEvent> event = viewModel.getActionEvents().getValue();
+        assertEquals(new ChatActionEvent.PreferenceChanged(
+                        ChatActionEvent.PreferenceChanged.Kind.MUTED),
+                event.consume());
+    }
 }

@@ -3,6 +3,7 @@ package com.nexachat.data;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -94,6 +95,9 @@ public final class SyncEngineTest {
         when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
                 .thenReturn(Completable.complete());
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateMute(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(), anyBoolean())).thenReturn(Completable.complete());
         when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         pinDao = mock(PinDao.class);
@@ -221,6 +225,119 @@ public final class SyncEngineTest {
         verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
         verify(messageDao).upsertAll(anyList());
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncAppliesCallerMuteAndArchiveFlagsFromEveryDelta() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(conversationDao.updateMute(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(Completable.complete());
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(), 10L, false,
+                true, "2026-11-10T01:00:00Z", true);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> mockCall = mock(Call.class);
+        when(mockCall.clone()).thenReturn(mockCall);
+        try {
+            when(mockCall.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao).updateMute(
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(true),
+                org.mockito.ArgumentMatchers.eq(
+                        java.time.Instant.parse("2026-11-10T01:00:00Z").toEpochMilli()));
+        verify(conversationDao).updateArchived(
+                org.mockito.ArgumentMatchers.eq("c1"),
+                org.mockito.ArgumentMatchers.eq(true));
+    }
+
+    @Test
+    public void syncLeavesPreferenceColumnsAloneWhenDeltaOmitsThem() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(), 10L, false);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> mockCall = mock(Call.class);
+        when(mockCall.clone()).thenReturn(mockCall);
+        try {
+            when(mockCall.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException ignored) {
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao, never()).updateMute(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any());
+        verify(conversationDao, never()).updateArchived(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    public void syncDrainsEveryPageAndAppliesPreferenceFlagsPerPage() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(conversationDao.updateMute(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean()))
+                .thenReturn(Completable.complete());
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(
+                anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        SyncResponse firstPage = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "c1", List.of(message("m-11", 11L, "c1", "first")),
+                        List.of(), List.of(), List.of(),
+                        11L, true, 41L, false,
+                        true, "2026-11-10T01:00:00Z", true)), "cursor-end");
+        SyncResponse lastPage = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "c1", List.of(), List.of(), List.of(), List.of(),
+                        11L, false, null, false,
+                        false, null, false)), "cursor-end");
+        Call<SyncResponse> firstCall = responseCall(firstPage);
+        Call<SyncResponse> secondCall = responseCall(lastPage);
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(firstCall, secondCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
+        verify(conversationDao).updateMute(
+                eq("c1"), eq(true),
+                eq(java.time.Instant.parse("2026-11-10T01:00:00Z").toEpochMilli()));
+        verify(conversationDao).updateMute(eq("c1"), eq(false),
+                org.mockito.ArgumentMatchers.isNull());
+        verify(conversationDao).updateArchived("c1", true);
+        verify(conversationDao).updateArchived("c1", false);
+        verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }
 
     @Test
@@ -644,6 +761,9 @@ public final class SyncEngineTest {
                 new ConversationWatermark("c2", 20L))));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateMute(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(), anyBoolean())).thenReturn(Completable.complete());
         when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         SyncResponse response = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
@@ -682,6 +802,41 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncAppliesDeltaPinFlagsAlongsideMutedAndArchived() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                10L,
+                false,
+                null,
+                false,
+                true,
+                "2026-11-09T15:00:00Z",
+                true,
+                true,
+                "2026-11-09T14:00:00Z"
+        );
+        SyncResponse response = new SyncResponse(List.of(delta), "cursor-end");
+        Call<SyncResponse> serverCall = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(serverCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao).updateMute(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T15:00:00Z")));
+        verify(conversationDao).updateArchived(eq("c1"), eq(true));
+        verify(conversationDao).updatePin(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T14:00:00Z")));
     }
 
     private static MessageDto message(String id, long seq, String conversationId, String content) {

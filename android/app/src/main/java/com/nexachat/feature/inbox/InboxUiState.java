@@ -86,10 +86,11 @@ public final class InboxUiState {
         return nextPageError;
     }
 
-    /** Sum of per-row unread — the app-level badge count. */
+    /** Sum of per-row unread — the app-level badge count; archived rows are hidden. */
     public int getTotalUnread() {
         int sum = 0;
         for (ConversationSummary row : conversations) {
+            if (row.isArchived()) continue;
             sum += row.getUnreadCount();
         }
         return sum;

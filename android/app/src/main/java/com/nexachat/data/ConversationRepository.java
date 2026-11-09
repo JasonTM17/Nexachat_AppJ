@@ -10,15 +10,18 @@ import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.network.ApiResult;
+import com.nexachat.core.network.ConversationSettingsApi;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.AddGroupMembersRequest;
 import com.nexachat.core.network.dto.AvatarResponse;
+import com.nexachat.core.network.dto.ConversationAiOptOutDto;
 import com.nexachat.core.network.dto.ConversationDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
 import com.nexachat.core.network.dto.ConversationsPageDto;
 import com.nexachat.core.network.dto.CreateGroupRequest;
+import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.PeerPresenceDto;
 import com.nexachat.core.network.dto.SyncRequest;
 import com.nexachat.core.network.dto.SyncResponse;
@@ -78,13 +81,20 @@ import retrofit2.Response;
  * trigger refreshes: a debounce folds {@code CONVERSATION_UPDATED} and
  * {@code MESSAGE_CREATED} bursts into one page-one REST request. Inbox pages
  * contain 30 rows and merge by conversation id. Pruning is allowed only after
- * a walk started at page one reaches a response without a next cursor; then
- * absent rows are removed only when their positive {@code lastMessageSeq} is
- * lower than the oldest sequence observed in the walk. Equal/newer activity,
- * rows without a sequence, and locally-created conversations are retained
- * because Room does not store the server cursor's creation-time tie-breaker.
- * A complete empty response clears old rows except local creations awaiting
- * server visibility. Reconnect resync requests perform the same page-one pull.
+ * a walk started at page one reaches a response without a next cursor; a
+ * single-page response is authoritative, while a paged walk only deletes rows
+ * that are provably older than the walk or that the delta endpoint confirms
+ * are no longer accessible. Equal/newer activity, rows without a sequence, and
+ * locally-created conversations are retained because Room does not store the
+ * server cursor's creation-time tie-breaker. Reconnect resync requests perform
+ * the same page-one pull.
+ *
+ * <p>Mute, archive and AI opt-out are caller-scoped server preferences. Writes
+ * go through the REST endpoints first and are written through to Room only on
+ * success; inbox payloads and delta bundles carry the authoritative mute,
+ * archive and AI opt-out flags. The archived inbox is a separate keyset walk
+ * ({@code archived=true}); pruning is scoped to the walk's variant so one
+ * filter can never delete the other variant's rows.
  *
  * <p>Retrofit calls and avatar reads run on {@link Schedulers#io()}. Room
  * operations use Room's RxJava executor and are chained without blocking.
@@ -104,6 +114,7 @@ public final class ConversationRepository implements AutoCloseable {
 
     private final MessageApi messageApi;
     private final GroupApi groupApi;
+    private final ConversationSettingsApi settingsApi;
     private final ConversationDao conversationDao;
     private final AppDatabase appDatabase;
     private final PresenceRepository presenceRepository;
@@ -129,6 +140,8 @@ public final class ConversationRepository implements AutoCloseable {
     @Nullable private String nextInboxCursor;
     private boolean hasMoreInboxPages;
     private boolean inboxWalkStartedAtFirstPage;
+    /** Which inbox variant the current cursor walk belongs to. */
+    private boolean inboxArchivedMode;
     private long oldestInboxSequence = Long.MAX_VALUE;
     private final Set<String> seenInboxCursors = new HashSet<>();
     private final Set<String> inboxWalkIds = new LinkedHashSet<>();
@@ -138,6 +151,7 @@ public final class ConversationRepository implements AutoCloseable {
     public ConversationRepository(
             @NonNull MessageApi messageApi,
             @NonNull GroupApi groupApi,
+            @NonNull ConversationSettingsApi settingsApi,
             @NonNull ConversationDao conversationDao,
             @NonNull PresenceRepository presenceRepository,
             @NonNull RealtimeSession session,
@@ -147,6 +161,7 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull AppDatabase appDatabase) {
         this.messageApi = messageApi;
         this.groupApi = groupApi;
+        this.settingsApi = settingsApi;
         this.conversationDao = conversationDao;
         this.appDatabase = appDatabase;
         this.presenceRepository = presenceRepository;
@@ -203,22 +218,37 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
-     * Pulls the first inbox page, merges it into Room, and resets the paging
-     * cursor. Realtime and reconnect refreshes use the same bounded request.
+     * Pulls the first inbox page of the current filter mode, merges it into
+     * Room, and resets the paging cursor. Realtime and reconnect refreshes use
+     * the same bounded request.
      */
     @NonNull
     public Single<Result<Void>> refreshInbox() {
-        return refreshInboxPage().map(result -> result instanceof Result.Failure<?>
+        final boolean archived;
+        synchronized (inboxPagingLock) {
+            archived = inboxArchivedMode;
+        }
+        return refreshInboxPage(archived).map(result -> result instanceof Result.Failure<?>
                 ? Result.<Void>cast(result)
                 : successVoid());
     }
 
-    /** Refreshes page one and returns whether more inbox rows can be loaded. */
+    /** Refreshes the default (non-archived) inbox page one. */
     @NonNull
     public Single<Result<Boolean>> refreshInboxPage() {
+        return refreshInboxPage(false);
+    }
+
+    /**
+     * Refreshes page one of one inbox variant and returns whether more rows can
+     * be loaded. The server hides archived conversations unless asked.
+     */
+    @NonNull
+    public Single<Result<Boolean>> refreshInboxPage(boolean archived) {
         final long generation;
         synchronized (inboxPagingLock) {
             generation = ++inboxPageGeneration;
+            inboxArchivedMode = archived;
             nextInboxCursor = null;
             hasMoreInboxPages = false;
             inboxWalkStartedAtFirstPage = true;
@@ -229,13 +259,14 @@ public final class ConversationRepository implements AutoCloseable {
         }
         return currentUserIdOptional()
                 .flatMap(myId -> fetchAndPersistInboxPage(
-                        generation, INBOX_PAGE_SIZE, null, myId.orElse(null), true))
+                        generation, INBOX_PAGE_SIZE, null, myId.orElse(null), true, archived))
                 .subscribeOn(Schedulers.io());
     }
 
     /**
-     * Loads the next keyset page. Concurrent callers share one network request;
-     * a failed page leaves its cursor intact so a later call retries it.
+     * Loads the next keyset page of the current filter mode. Concurrent callers
+     * share one network request; a failed page leaves its cursor intact so a
+     * later call retries it.
      */
     @NonNull
     public Single<Result<Boolean>> loadNextInboxPage() {
@@ -246,10 +277,11 @@ public final class ConversationRepository implements AutoCloseable {
             }
             final long generation = inboxPageGeneration;
             final String cursor = nextInboxCursor;
+            final boolean archived = inboxArchivedMode;
             AtomicReference<Single<Result<Boolean>>> sharedRef = new AtomicReference<>();
             Single<Result<Boolean>> shared = currentUserIdOptional()
                     .flatMap(myId -> fetchAndPersistInboxPage(
-                            generation, INBOX_PAGE_SIZE, cursor, myId.orElse(null), false))
+                            generation, INBOX_PAGE_SIZE, cursor, myId.orElse(null), false, archived))
                     .doFinally(() -> {
                         synchronized (inboxPagingLock) {
                             if (inFlightNextInboxPage == sharedRef.get()) {
@@ -268,6 +300,97 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Maybe<String> myUserId() {
         return currentUserId();
+    }
+
+    /**
+     * Mutes the conversation for the caller until {@code until}. Only the
+     * caller's member row changes; the other members are never notified.
+     */
+    @NonNull
+    public Single<Result<Void>> muteConversation(
+            @NonNull String conversationId, @NonNull java.time.Instant until) {
+        return callVoid(settingsApi.mute(conversationId, MuteRequest.until(until)))
+                .flatMap(result -> result instanceof Result.Failure<?>
+                        ? Single.just(result)
+                        : conversationDao.updateMute(conversationId, true, until.toEpochMilli())
+                                .andThen(Single.just(successVoid())))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /** Mutes the conversation until the caller turns notifications back on. */
+    @NonNull
+    public Single<Result<Void>> muteConversationForever(@NonNull String conversationId) {
+        return callVoid(settingsApi.mute(conversationId, MuteRequest.forever()))
+                .flatMap(result -> result instanceof Result.Failure<?>
+                        ? Single.just(result)
+                        : conversationDao.updateMute(conversationId, true, null)
+                                .andThen(Single.just(successVoid())))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /** Clears the caller's mute; idempotent when already unmuted. */
+    @NonNull
+    public Single<Result<Void>> unmuteConversation(@NonNull String conversationId) {
+        return callVoid(settingsApi.unmute(conversationId))
+                .flatMap(result -> result instanceof Result.Failure<?>
+                        ? Single.just(result)
+                        : conversationDao.updateMute(conversationId, false, null)
+                                .andThen(Single.just(successVoid())))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /** Hides or restores the conversation in the caller's default inbox. */
+    @NonNull
+    public Single<Result<Void>> setConversationArchived(
+            @NonNull String conversationId, boolean archived) {
+        Call<Void> call = archived
+                ? settingsApi.archive(conversationId)
+                : settingsApi.unarchive(conversationId);
+        return callVoid(call)
+                .flatMap(result -> result instanceof Result.Failure<?>
+                        ? Single.just(result)
+                        : conversationDao.updateArchived(conversationId, archived)
+                                .andThen(Single.just(successVoid())))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /** Reads the caller's own AI opt-out state for one conversation. */
+    @NonNull
+    public Single<Result<Boolean>> getAiOptOut(@NonNull String conversationId) {
+        return call(settingsApi.getAiOptOut(conversationId))
+                .flatMap(result -> {
+                    if (result instanceof Result.Failure<?>) {
+                        return Single.<Result<Boolean>>just(Result.cast(result));
+                    }
+                    Boolean optOut = successValue(result).getAiOptOut();
+                    boolean value = Boolean.TRUE.equals(optOut);
+                    return conversationDao.updateAiOptOut(conversationId, value)
+                            .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
+                })
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Sets the caller's own AI opt-out. The server is the source of truth; the
+     * returned state is written through to Room on success.
+     */
+    @NonNull
+    public Single<Result<Boolean>> setAiOptOut(
+            @NonNull String conversationId, boolean optOut) {
+        Call<ConversationAiOptOutDto> call = optOut
+                ? settingsApi.optOutOfAi(conversationId)
+                : settingsApi.clearAiOptOut(conversationId);
+        return call(call)
+                .flatMap(result -> {
+                    if (result instanceof Result.Failure<?>) {
+                        return Single.<Result<Boolean>>just(Result.cast(result));
+                    }
+                    Boolean resolved = successValue(result).getAiOptOut();
+                    boolean value = resolved == null ? optOut : resolved;
+                    return conversationDao.updateAiOptOut(conversationId, value)
+                            .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
+                })
+                .subscribeOn(Schedulers.io());
     }
 
     /**
@@ -398,6 +521,61 @@ public final class ConversationRepository implements AutoCloseable {
                 .subscribeOn(Schedulers.io());
     }
 
+    /**
+     * Pins the conversation for the caller with optimistic Room update and rollback on failure.
+     */
+    @NonNull
+    public Single<Result<Void>> pinConversation(@NonNull String conversationId) {
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean prevPinned = existing.isPinned();
+                    Long prevPinnedAt = existing.getPinnedAt();
+                    long now = System.currentTimeMillis();
+                    return conversationDao.updatePin(conversationId, true, now)
+                            .andThen(callVoid(messageApi.pinConversation(conversationId)))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?>) {
+                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
+                                            .andThen(Single.just(result));
+                                }
+                                return Single.just(result);
+                            });
+                })
+                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Unpins the conversation for the caller with optimistic Room update and rollback on failure.
+     */
+    @NonNull
+    public Single<Result<Void>> unpinConversation(@NonNull String conversationId) {
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean prevPinned = existing.isPinned();
+                    Long prevPinnedAt = existing.getPinnedAt();
+                    return conversationDao.updatePin(conversationId, false, null)
+                            .andThen(callVoid(messageApi.unpinConversation(conversationId)))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?>) {
+                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
+                                            .andThen(Single.just(result));
+                                }
+                                return Single.just(result);
+                            });
+                })
+                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Toggles the pin state for the specified conversation.
+     */
+    @NonNull
+    public Single<Result<Void>> setConversationPinned(@NonNull String conversationId, boolean pin) {
+        return pin ? pinConversation(conversationId) : unpinConversation(conversationId);
+    }
+
     @Override
     public void close() {
         subscriptions.dispose();
@@ -481,7 +659,7 @@ public final class ConversationRepository implements AutoCloseable {
             @Nullable String myId,
             @Nullable String cursor,
             Set<String> seenCursors) {
-        return fetchInboxItems(MEMBERS_PAGE_LIMIT, cursor).flatMap(result -> {
+        return fetchInboxItems(MEMBERS_PAGE_LIMIT, cursor, false).flatMap(result -> {
             if (result instanceof Result.Failure<?>) {
                 return Single.<Result<GroupDetail>>just(Result.cast(result));
             }
@@ -513,11 +691,15 @@ public final class ConversationRepository implements AutoCloseable {
 
     private Single<Result<InboxFetch>> fetchInboxItems(
             @Nullable Integer limit,
-            @Nullable String cursor) {
+            @Nullable String cursor,
+            boolean archived) {
         AtomicReference<ResponseBody> responseBody = new AtomicReference<>();
         AtomicReference<String> headerCursor = new AtomicReference<>();
+        Call<ResponseBody> request = archived
+                ? messageApi.getArchivedConversations(limit, cursor)
+                : messageApi.getConversations(limit, cursor);
         Call<ResponseBody> capturingCall = new ResponseCapturingCall<>(
-                messageApi.getConversations(limit, cursor), response -> {
+                request, response -> {
                     responseBody.set(response.body());
                     headerCursor.set(response.headers().get(NEXT_CURSOR_HEADER));
                 });
@@ -555,8 +737,9 @@ public final class ConversationRepository implements AutoCloseable {
             Integer limit,
             @Nullable String cursor,
             @Nullable String myId,
-            boolean firstPage) {
-        return fetchInboxItems(limit, cursor).flatMap(result -> {
+            boolean firstPage,
+            boolean archived) {
+        return fetchInboxItems(limit, cursor, archived).flatMap(result -> {
             if (result instanceof Result.Failure<?>) {
                 return Single.<Result<Boolean>>just(Result.cast(result));
             }
@@ -614,7 +797,8 @@ public final class ConversationRepository implements AutoCloseable {
                         }
                     }))
                     .andThen(Completable.defer(() ->
-                            reconcileInboxRows(generation, firstPage, fullWalkComplete.get(), pageIds, oldestInboxSequence)))
+                            reconcileInboxRows(generation, firstPage, fullWalkComplete.get(),
+                                    pageIds, oldestInboxSequence, archived)))
                     .andThen(Single.fromCallable(() -> {
                         synchronized (inboxPagingLock) {
                             return new Result.Success<>(generation == inboxPageGeneration
@@ -689,31 +873,36 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
-     * Safe inbox convergence and reconciliation rule:
+     * Safe inbox convergence and reconciliation rule, scoped to one inbox
+     * variant (default or archived):
      * 1. A page alone is not a deletion oracle, because active conversations can move
      *    between pages during a paged walk when new messages arrive.
      * 2. However, a first-page refresh must converge so removed/inaccessible conversations
      *    do not stay as stale rows in Room until the next delta sync or realtime push.
      * 3. Single-page complete inbox (firstPage && isComplete):
      *    The server returned the authoritative full set in a single request without paging.
-     *    No conversation could have moved pages. Any local row omitted from this set
-     *    (and not locally created) is definitively gone and is safely removed.
+     *    No conversation could have moved pages. Any local row of this variant omitted
+     *    from this set (and not locally created) is definitively gone and is safely removed.
      * 4. Paged inboxes (firstPage && !isComplete, or completed multi-page walks):
-     *    Any local row absent from the fetched items whose sequence is equal to or newer
-     *    than the oldest sequence fetched could either be removed/inaccessible OR have
-     *    moved to another page due to concurrent message activity. To safely distinguish
-     *    between the two without deleting active rows, we confirm absence against the
-     *    authoritative delta endpoint (POST /api/v1/sync). If the delta response omits
-     *    the watermark, the server confirms access loss and the conversation is pruned
-     *    together with its local cache. If the delta response includes the watermark,
-     *    the conversation is confirmed accessible and is preserved.
+     *    Any local row of this variant absent from the fetched items whose sequence is
+     *    equal to or newer than the oldest sequence fetched could either be removed or
+     *    have moved to another page due to concurrent message activity. To safely
+     *    distinguish between the two without deleting active rows, we confirm absence
+     *    against the authoritative delta endpoint (POST /api/v1/sync). If the delta
+     *    response omits the watermark, the server confirms access loss and the
+     *    conversation is pruned together with its local cache. If the delta response
+     *    includes the watermark, the conversation is confirmed accessible.
+     *
+     * <p>Rows of the other variant are never candidates in any case: an archived
+     * row cannot be pruned by a default-inbox walk and vice versa.
      */
     private Completable reconcileInboxRows(
             long generation,
             boolean firstPage,
             boolean isComplete,
             List<String> pageIds,
-            long oldestSequenceInPage) {
+            long oldestSequenceInPage,
+            boolean archived) {
         if (!isInboxPageGenerationCurrent(generation)) {
             return Completable.complete();
         }
@@ -728,6 +917,7 @@ public final class ConversationRepository implements AutoCloseable {
             if (firstPage && isComplete) {
                 Set<String> toDelete = new LinkedHashSet<>();
                 for (ConversationEntity row : localRows) {
+                    if (row.isArchived() != archived) continue;
                     if (!pageIdSet.contains(row.getId()) && !locallyCreatedIds.contains(row.getId())) {
                         toDelete.add(row.getId());
                     }
@@ -747,6 +937,7 @@ public final class ConversationRepository implements AutoCloseable {
                 List<ConversationEntity> suspects = new ArrayList<>();
                 Set<String> definiteDeletes = new LinkedHashSet<>();
                 for (ConversationEntity row : localRows) {
+                    if (row.isArchived() != archived) continue;
                     if (walkIdSet.contains(row.getId()) || locallyCreatedIds.contains(row.getId())) {
                         continue;
                     }
@@ -776,6 +967,7 @@ public final class ConversationRepository implements AutoCloseable {
             if (firstPage) {
                 List<ConversationEntity> suspects = new ArrayList<>();
                 for (ConversationEntity row : localRows) {
+                    if (row.isArchived() != archived) continue;
                     if (!pageIdSet.contains(row.getId())
                             && !locallyCreatedIds.contains(row.getId())
                             && row.getLastMessageSeq() >= oldestSequenceInPage) {
@@ -790,6 +982,12 @@ public final class ConversationRepository implements AutoCloseable {
         });
     }
 
+    /**
+     * Confirms suspects against the authoritative delta endpoint. The server
+     * lists every conversation the caller can still access; an omitted
+     * watermark therefore proves the conversation is gone, so its local cache
+     * is pruned in the same transaction as the rows already applied.
+     */
     private Completable confirmAbsenceAndPrune(List<ConversationEntity> suspects) {
         if (suspects.isEmpty()) {
             return Completable.complete();
@@ -878,7 +1076,13 @@ public final class ConversationRepository implements AutoCloseable {
                         keepNewerLocalActivity
                                 ? old.getLastMessageDeleted()
                                 : row.getLastMessageDeleted(),
-                        old != null ? old.getPeerDeliveredSeq() : 0L));
+                        old != null ? old.getPeerDeliveredSeq() : 0L,
+                        row.isMuted(),
+                        row.getMutedUntilEpochMs(),
+                        row.isArchived(),
+                        row.isAiOptOut(),
+                        row.isPinned(),
+                        row.getPinnedAt()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -896,6 +1100,8 @@ public final class ConversationRepository implements AutoCloseable {
                 break;
             }
         }
+        boolean pinned = dto.isPinned();
+        Long pinnedAtMs = dto.getPinnedAt() != null ? TimeAndJwt.isoToEpochMsOrNull(dto.getPinnedAt()) : null;
         return new ConversationEntity(
                 dto.getId(),
                 dto.getType() != null ? dto.getType() : TYPE_DIRECT,
@@ -911,7 +1117,16 @@ public final class ConversationRepository implements AutoCloseable {
                 0L,
                 myRole,
                 dto.resolvedOtherId(myId),
-                dto.getLastMessage() != null && dto.getLastMessage().getDeletedAt() != null);
+                dto.getLastMessage() != null && dto.getLastMessage().getDeletedAt() != null,
+                0L,
+                Boolean.TRUE.equals(dto.getMuted()),
+                dto.getMutedUntil() == null
+                        ? null
+                        : TimeAndJwt.isoToEpochMsOrNull(dto.getMutedUntil()),
+                Boolean.TRUE.equals(dto.getArchived()),
+                Boolean.TRUE.equals(dto.getAiOptOut()),
+                pinned,
+                pinnedAtMs);
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -930,7 +1145,14 @@ public final class ConversationRepository implements AutoCloseable {
                 0L,
                 GroupMember.ROLE_ADMIN,
                 null,
-                false);
+                false,
+                0L,
+                false,
+                null,
+                false,
+                Boolean.TRUE.equals(dto.getAiOptOut()),
+                false,
+                null);
     }
 
     private List<GroupMember> mapMembers(List<ConversationMemberDto> members) {
@@ -970,25 +1192,21 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getMyRole(),
                 row.getOtherUserId(),
                 row.getLastMessageDeleted(),
-                peer);
+                peer,
+                row.isMuted(),
+                row.getMutedUntilEpochMs(),
+                row.isArchived(),
+                row.isAiOptOut(),
+                row.isPinned(),
+                row.getPinnedAt());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {
-        return new ConversationEntity(
-                row.getId(), row.getType(), title, row.getLastMessageSeq(),
-                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
-                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted());
+        return row.withTitle(title);
     }
 
     private ConversationEntity withAvatarUrl(ConversationEntity row, @Nullable String avatarUrl) {
-        return new ConversationEntity(
-                row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
-                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
-                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                avatarUrl, row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted());
+        return row.withAvatarUrl(avatarUrl);
     }
 
     private String resolveMime(Uri uri) {

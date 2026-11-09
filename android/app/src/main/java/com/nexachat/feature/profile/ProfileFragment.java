@@ -84,6 +84,17 @@ public final class ProfileFragment extends Fragment {
         binding.themeChipLight.setOnClickListener(onThemeChipClick);
         binding.themeChipDark.setOnClickListener(onThemeChipClick);
         binding.showPresence.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowPresence(checked); });
+        binding.showPresenceRow.setOnClickListener(v -> {
+            boolean next = !binding.showPresence.isChecked();
+            binding.showPresence.setChecked(next);
+            viewModel.setShowPresence(next);
+        });
+        binding.showSeen.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowSeen(checked); });
+        binding.showSeenRow.setOnClickListener(v -> {
+            boolean next = !binding.showSeen.isChecked();
+            binding.showSeen.setChecked(next);
+            viewModel.setShowSeen(next);
+        });
         consentRepository.refresh();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), enabled -> {
             syncingAiConsent = true;
@@ -107,6 +118,7 @@ public final class ProfileFragment extends Fragment {
         binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
+        viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> binding.showSeen.setChecked(Boolean.TRUE.equals(value)));
         settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> {
             ThemeMode active = mode != null ? mode : ThemeMode.SYSTEM;
             binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(active, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)));
