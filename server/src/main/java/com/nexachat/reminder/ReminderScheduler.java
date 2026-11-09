@@ -41,22 +41,19 @@ public class ReminderScheduler {
     private final int batchSize;
     private final long claimLeaseSeconds;
     private final boolean enabled;
-    private final int retentionDays;
 
     public ReminderScheduler(ReminderClaimService claimService,
                              ConversationMemberRepository memberRepository,
                              ReminderPushSender pushSender,
                              @Value("${nexachat.reminders.batch-size:10}") int batchSize,
                              @Value("${nexachat.reminders.claim-lease-seconds:600}") long claimLeaseSeconds,
-                             @Value("${nexachat.reminders.enabled:true}") boolean enabled,
-                             @Value("${nexachat.reminders.retention-days:30}") int retentionDays) {
+                             @Value("${nexachat.reminders.enabled:true}") boolean enabled) {
         this.claimService = claimService;
         this.memberRepository = memberRepository;
         this.pushSender = pushSender;
         this.batchSize = Math.max(1, batchSize);
         this.claimLeaseSeconds = Math.max(1L, claimLeaseSeconds);
         this.enabled = enabled;
-        this.retentionDays = Math.max(1, retentionDays);
     }
 
     /**
@@ -113,19 +110,4 @@ public class ReminderScheduler {
         }
     }
 
-    @Scheduled(fixedDelayString = "${nexachat.reminders.retention-sweep-interval-ms:3600000}",
-            initialDelayString = "${nexachat.reminders.retention-initial-delay-ms:60000}")
-    public void purgeCompleted() {
-        if (!enabled) {
-            return;
-        }
-        try {
-            int purged = claimService.purgeFired(retentionDays);
-            if (purged > 0) {
-                log.info("Purged {} completed reminder(s)", purged);
-            }
-        } catch (RuntimeException failure) {
-            log.warn("Reminder retention sweep failed ({})", failure.getClass().getSimpleName());
-        }
-    }
 }

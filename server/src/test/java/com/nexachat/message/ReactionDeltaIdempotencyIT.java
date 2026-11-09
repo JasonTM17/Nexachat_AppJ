@@ -620,10 +620,19 @@ class ReactionDeltaIdempotencyIT {
                     LIMIT 201
                     """, String.class, conversationId, java.sql.Timestamp.from(since)));
 
+            String indexCondition = plan.lines()
+                    .filter(line -> line.trim().startsWith("Index Cond:"))
+                    .findFirst()
+                    .orElse("");
             assertThat(plan)
                     .as("the reaction delta query must be index-served")
-                    .containsAnyOf("idx_reaction_events_conv_created", "idx_reaction_events_conv_id")
+                    .containsAnyOf("idx_reaction_events_conv_created", "idx_reaction_events_conv_id",
+                            "idx_reaction_events_created_retention")
                     .doesNotContain("Seq Scan on reaction_events");
+            assertThat(indexCondition)
+                    .as("conversation and creation-time filters must be index conditions")
+                    .contains("conversation_id = '" + conversationId + "'")
+                    .contains("created_at >");
         } finally {
             jdbcTemplate.update("DELETE FROM reaction_events WHERE conversation_id = ?", conversationId);
             jdbcTemplate.update("DELETE FROM messages WHERE conversation_id = ?", conversationId);

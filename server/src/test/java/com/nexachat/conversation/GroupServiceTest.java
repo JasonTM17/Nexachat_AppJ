@@ -10,6 +10,7 @@ import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.conversation.dto.CreateGroupRequest;
 import com.nexachat.conversation.dto.MemberResponse;
 import com.nexachat.conversation.dto.PatchGroupRequest;
+import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
@@ -56,6 +57,8 @@ class GroupServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private MessageAttachmentRepository attachmentRepository;
+    @Mock
     private MessageService messageService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -76,7 +79,7 @@ class GroupServiceTest {
     @BeforeEach
     void setUp() {
         groupService = new GroupService(
-                conversationRepository, memberRepository, userRepository,
+                conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService,
                 simpUserRegistry, simpleBrokerMessageHandler);
     }
@@ -604,6 +607,68 @@ class GroupServiceTest {
 
         assertThat(payload.avatarUrl()).isEqualTo("/files/av.png");
         verify(messageService, never()).postSystemMessage(any(), any(), anyString());
+    }
+
+    @Test
+    void updateGroup_rejectsMissingLocalAttachmentAvatar() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        String storageKey = "attachments/00000000-0000-0000-0000-000000000001.png";
+        when(attachmentRepository.lockStorageKeyForReference(storageKey)).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.updateGroup(adminId, conversationId,
+                        new PatchGroupRequest(null, "/api/v1/files/" + storageKey)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        verify(attachmentRepository).lockStorageKeyForReference(storageKey);
+    }
+
+    @Test
+    void updateGroup_locksAbsoluteAttachmentAvatarUrl() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+        String storageKey = "attachments/00000000-0000-0000-0000-000000000002.png";
+        when(attachmentRepository.lockStorageKeyForReference(storageKey)).thenReturn(Optional.of(storageKey));
+        when(storageService.exists(storageKey)).thenReturn(true);
+        String avatarUrl = "https://nexachat.example/api/v1/files/" + storageKey + "?v=1";
+
+        ConversationUpdatePayload payload = groupService.updateGroup(adminId, conversationId,
+                new PatchGroupRequest(null, avatarUrl));
+
+        assertThat(payload.avatarUrl()).isEqualTo(avatarUrl);
+        verify(attachmentRepository).lockStorageKeyForReference(storageKey);
+    }
+
+    @Test
+    void updateGroup_rejectsLocalAttachmentAvatarWhenFileIsMissing() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        String storageKey = "attachments/00000000-0000-0000-0000-000000000003.png";
+        when(attachmentRepository.lockStorageKeyForReference(storageKey)).thenReturn(Optional.of(storageKey));
+        when(storageService.exists(storageKey)).thenReturn(false);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.updateGroup(adminId, conversationId,
+                        new PatchGroupRequest(null, "/api/v1/files/" + storageKey)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        verify(storageService).exists(storageKey);
+    }
+
+    @Test
+    void updateGroup_canonicalizesPercentEncodedAttachmentAvatarPath() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+        String storageKey = "attachments/00000000-0000-0000-0000-00000000000a.png";
+        when(attachmentRepository.lockStorageKeyForReference(storageKey)).thenReturn(Optional.of(storageKey));
+        when(storageService.exists(storageKey)).thenReturn(true);
+        String encodedUrl = "/api/v1/files/attachments/00000000-0000-0000-0000-00000000000%61.png?v=1";
+
+        ConversationUpdatePayload payload = groupService.updateGroup(adminId, conversationId,
+                new PatchGroupRequest(null, encodedUrl));
+
+        assertThat(payload.avatarUrl()).isEqualTo(
+                "/api/v1/files/" + storageKey + "?v=1");
+        verify(attachmentRepository).lockStorageKeyForReference(storageKey);
     }
 
     @Test

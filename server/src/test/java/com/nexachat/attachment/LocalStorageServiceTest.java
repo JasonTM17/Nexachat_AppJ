@@ -185,6 +185,49 @@ class LocalStorageServiceTest {
         assertThat(ex.getHttpStatus()).isEqualTo(404);
     }
 
+    @Test
+    void deleteIfExists_isIdempotentForStoredAttachmentFiles() throws IOException {
+        String key = "attachments/00000000-0000-0000-0000-000000000001.png";
+        Path file = tempDir.resolve(key);
+        Files.createDirectories(file.getParent());
+        Files.write(file, new byte[] {1, 2, 3});
+
+        assertThat(newService().deleteIfExists(key)).isTrue();
+        assertThat(file).doesNotExist();
+        assertThat(newService().deleteIfExists(key)).isFalse();
+    }
+
+    @Test
+    void exists_checksRegularFilesAndRejectsTraversal() throws IOException {
+        String key = "attachments/00000000-0000-0000-0000-000000000002.png";
+        Path file = tempDir.resolve(key);
+        Files.createDirectories(file.getParent());
+        Files.write(file, new byte[] {1, 2, 3});
+        LocalStorageService service = newService();
+
+        assertThat(service.exists(key)).isTrue();
+        assertThat(service.exists("attachments/not-present.png")).isFalse();
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> service.exists("../outside.png"));
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+    }
+
+    @Test
+    void deleteIfExists_rejectsTraversalAndLeavesOutsideFileUntouched() throws IOException {
+        Path root = tempDir.resolve("uploads");
+        Path outside = tempDir.resolve("outside.txt");
+        Files.createDirectories(root);
+        Files.writeString(outside, "must survive");
+        LocalStorageService service = new LocalStorageService(root.toString());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> service.deleteIfExists("../outside.txt"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        assertThat(outside).hasContent("must survive");
+    }
+
     // ------------------------------------------------------------------- open
 
     @Test

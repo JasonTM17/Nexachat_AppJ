@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V15) + file volume. Conversation RAG is available through the
+> (Flyway V1–V22) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -54,7 +54,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V15 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · token_cutoff")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V22 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · token_cutoff · retention")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -132,8 +132,11 @@ sequenceDiagram
   `(conversation_id, f_unaccent(content))` (Flyway V8).
 - **Delete:** the author soft-deletes their message. The row and sequence stay
   in history as a tombstone (`content: null`); reactions and pins are removed.
-  Attachment metadata and stored bytes are retained, but the deleted message's
-  attachments cannot be downloaded through the message binding.
+  Attachment metadata and stored bytes remain by default. With the opt-in
+  retention job enabled, unbound uploads can be removed after 24 hours and
+  attachments of soft-deleted messages after 30 days, provided their storage
+  keys are not referenced elsewhere. The deleted message's attachments cannot
+  be downloaded through the message binding.
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
   from Room v8, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
