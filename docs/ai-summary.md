@@ -1,6 +1,6 @@
 # Conversation catch-up summary
 
-Status: server shipped (route, engines, consent, per-conversation opt-out V13, Flyway V6/V13); Android summary UI shipped, per-conversation opt-out UI pending.
+Status: server shipped (route, engines, consent, per-conversation opt-out V13, Flyway V6/V13); Android summary UI and per-conversation opt-out switch shipped.
 
 ## What it does
 
