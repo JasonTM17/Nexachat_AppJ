@@ -22,6 +22,7 @@ import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
@@ -94,6 +95,9 @@ abstract class ObservabilityHealthTestBase {
 
     @MockitoBean
     protected GroupInviteBanRepository groupInviteBanRepository;
+
+    @MockitoBean
+    protected EntityManager entityManager;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {

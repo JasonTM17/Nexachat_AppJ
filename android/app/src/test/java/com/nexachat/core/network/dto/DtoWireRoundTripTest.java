@@ -64,6 +64,43 @@ public final class DtoWireRoundTripTest {
     }
 
     @Test
+    public void messageMentionMetadataSurvivesDeserializationAndRoundTrip() throws Exception {
+        String json = "{\"id\":\"m-mention\",\"type\":\"TEXT\",\"content\":\"Hi @An\","
+                + "\"mentions\":[{\"userId\":\"11111111-1111-4111-8111-111111111111\",\"offset\":3,\"length\":3}],"
+                + "\"mentionAll\":true}";
+        MessageDto message = moshi.adapter(MessageDto.class).fromJson(json);
+        String encoded = moshi.adapter(MessageDto.class).toJson(message);
+
+        assertTrue("Unexpected encoded DTO: " + encoded, encoded.contains("\"userId\":\"11111111-1111-4111-8111-111111111111\""));
+        assertTrue(encoded.contains("\"offset\":3"));
+        assertTrue(encoded.contains("\"length\":3"));
+        assertTrue(encoded.contains("\"mentionAll\":true"));
+    }
+
+    @Test
+    public void sendAndEditRequestsCarryMentionRangesAndAdminAllFlag() throws Exception {
+        List<MessageMention> mentions = List.of(new MessageMention("u-1", 3, 4));
+        SendMessageRequest send = new SendMessageRequest("cm-1", MessageDto.TYPE_TEXT,
+                "Hi @Lan", null, List.of(), mentions, true);
+        String sendJson = moshi.adapter(SendMessageRequest.class).toJson(send);
+        assertTrue("Unexpected send JSON: " + sendJson, sendJson.contains("\"userId\":\"u-1\""));
+        assertTrue(sendJson.contains("\"offset\":3"));
+        assertTrue(sendJson.contains("\"length\":4"));
+        assertTrue(sendJson.contains("\"mentionAll\":true"));
+        assertEquals(send, moshi.adapter(SendMessageRequest.class).fromJson(sendJson));
+
+        EditMessageRequest edit = new EditMessageRequest("Hi @Lan", mentions, true);
+        String editJson = moshi.adapter(EditMessageRequest.class).toJson(edit);
+        assertTrue(editJson.contains("\"userId\":\"u-1\""));
+        assertTrue(editJson.contains("\"offset\":3"));
+        assertTrue(editJson.contains("\"length\":4"));
+        assertTrue(editJson.contains("\"mentionAll\":true"));
+        assertEquals(edit, moshi.adapter(EditMessageRequest.class).fromJson(editJson));
+        assertFalse(moshi.adapter(EditMessageRequest.class).toJson(
+                new EditMessageRequest("content only")).contains("mentions"));
+    }
+
+    @Test
     public void sendRequestOmitsNullsAndDefaultsMissingType() throws Exception {
         SendMessageRequest request = new SendMessageRequest(
                 "3f2b8c1e-9a4d-4e6f-8b7c-1d2e3f4a5b6c",

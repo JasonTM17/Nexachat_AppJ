@@ -18,6 +18,10 @@ import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.inbox.InboxPreviewKind;
+import com.nexachat.feature.label.ConversationLabel;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
+import java.util.List;
 
 /**
  * Inbox conversation rows with unread badge and relative timestamps.
@@ -26,11 +30,11 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
     public interface Listener {
         void onConversationClick(@NonNull String conversationId);
-
         void onConversationLongClick(@NonNull ConversationSummary conversation);
     }
 
     private final Listener listener;
+    private List<ConversationLabel> labelDefinitions = List.of();
     @Nullable
     private final String currentUserId;
     @NonNull
@@ -81,7 +85,13 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
         ConversationSummary conversation = getItem(position);
-        holder.bind(conversation, currentUserId, justNowLabel, yesterdayLabel, listener);
+        holder.bind(conversation, currentUserId, justNowLabel, yesterdayLabel, listener, labelDefinitions);
+    }
+
+    public void setLabelDefinitions(@NonNull List<ConversationLabel> labels) {
+        if (labelDefinitions.equals(labels)) return;
+        labelDefinitions = List.copyOf(labels);
+        notifyItemRangeChanged(0, getItemCount());
     }
 
     static final class Holder extends RecyclerView.ViewHolder {
@@ -90,8 +100,10 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final TextView time;
         private final TextView preview;
         private final ImageView previewTypeIcon;
+        private final ImageView pinIndicator;
         private final TextView unreadBadge;
         private final ImageView muteIcon;
+        private final ChipGroup labelChips;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -100,8 +112,10 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             time = itemView.findViewById(R.id.time);
             preview = itemView.findViewById(R.id.preview);
             previewTypeIcon = itemView.findViewById(R.id.previewTypeIcon);
+            pinIndicator = itemView.findViewById(R.id.pinIndicator);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
             muteIcon = itemView.findViewById(R.id.muteIcon);
+            labelChips = itemView.findViewById(R.id.labelChips);
         }
 
         void bind(
@@ -109,7 +123,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 @Nullable String currentUserId,
                 @NonNull String justNowLabel,
                 @NonNull String yesterdayLabel,
-                @NonNull Listener listener
+                @NonNull Listener listener,
+                @NonNull List<ConversationLabel> labelDefinitions
         ) {
             String displayTitle = ConversationPreviewHelper.displayTitle(itemView.getContext(), conversation);
             title.setText(displayTitle);
@@ -172,9 +187,38 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 unreadBadge.setVisibility(View.GONE);
             }
 
-            muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
-                    ? View.VISIBLE
-                    : View.GONE);
+            if (pinIndicator != null) {
+                pinIndicator.setVisibility(conversation.isPinned() ? View.VISIBLE : View.GONE);
+            }
+            if (muteIcon != null) {
+                muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
+                        ? View.VISIBLE
+                        : View.GONE);
+            }
+
+            if (labelChips != null) {
+                labelChips.removeAllViews();
+                for (String labelId : conversation.getLabelIds()) {
+                    ConversationLabel label = labelDefinitions.stream()
+                            .filter(item -> item.getId().equals(labelId))
+                            .findFirst()
+                            .orElse(null);
+                    if (label == null) continue;
+                    Chip chip = new Chip(itemView.getContext());
+                    chip.setText(label.getName());
+                    chip.setTextColor(android.graphics.Color.WHITE);
+                    chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
+                            label.getColor().getBackgroundColor()));
+                    chip.setClickable(false);
+                    chip.setCheckable(false);
+                    chip.setFocusable(false);
+                    chip.setContentDescription(itemView.getContext().getString(
+                            R.string.label_chip_description, label.getName()));
+                    labelChips.addView(chip, new ChipGroup.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                labelChips.setVisibility(labelChips.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+            }
 
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));
             itemView.setOnLongClickListener(v -> {

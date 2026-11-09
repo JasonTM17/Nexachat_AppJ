@@ -10,6 +10,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.ConversationRepository;
+import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.TimeAndJwt;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
@@ -35,6 +36,7 @@ public final class InboxViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<InboxUiState> mutableUiState =
             new MutableLiveData<>(new InboxUiState());
+    private final MutableLiveData<ApiError> pinError = new MutableLiveData<>(null);
     private final InboxSingleLiveEvent<InboxEvent> events = new InboxSingleLiveEvent<>();
     private InboxUiState currentState = mutableUiState.getValue();
     private boolean refreshInFlight;
@@ -208,6 +210,20 @@ public final class InboxViewModel extends ViewModel {
         runPreference(conversationRepository.setConversationArchived(conversationId, archived));
     }
 
+    /** Sets the caller's AI opt-out for one conversation. */
+    public void setConversationAiOptOut(@NonNull String conversationId, boolean optOut) {
+        disposables.add(conversationRepository.setAiOptOut(conversationId, optOut)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Failure<?> failure) {
+                                events.postEvent(new InboxEvent(failure.getError()));
+                            }
+                        },
+                        error -> events.postEvent(
+                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+    }
+
     private void runPreference(Single<Result<Void>> request) {
         disposables.add(Objects.requireNonNull(request, "request")
                 .subscribeOn(Schedulers.io())
@@ -251,6 +267,41 @@ public final class InboxViewModel extends ViewModel {
     private synchronized void updateState(UnaryOperator<InboxUiState> reducer) {
         currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
         mutableUiState.postValue(currentState);
+    }
+
+    public LiveData<ApiError> getPinError() {
+        return pinError;
+    }
+
+    public void clearPinError() {
+        pinError.postValue(null);
+    }
+
+    public void togglePin(@NonNull ConversationSummary conversation) {
+        setConversationPinned(conversation.getId(), !conversation.isPinned());
+    }
+
+    public void pinConversation(@NonNull String conversationId) {
+        setConversationPinned(conversationId, true);
+    }
+
+    public void unpinConversation(@NonNull String conversationId) {
+        setConversationPinned(conversationId, false);
+    }
+
+    private void setConversationPinned(@NonNull String conversationId, boolean pin) {
+        disposables.add(conversationRepository.setConversationPinned(conversationId, pin)
+                .subscribeOn(Schedulers.io())
+                .subscribe(result -> {
+                    if (result instanceof Result.Failure<?> failure) {
+                        pinError.postValue(failure.getError());
+                        events.postEvent(new InboxEvent(failure.getError()));
+                    }
+                }, error -> {
+                    ApiError net = new ApiError.Network(error.getMessage());
+                    pinError.postValue(net);
+                    events.postEvent(new InboxEvent(net));
+                }));
     }
 
     @Override

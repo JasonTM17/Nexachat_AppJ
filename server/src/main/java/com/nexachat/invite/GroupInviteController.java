@@ -73,8 +73,9 @@ public class GroupInviteController {
     public List<JoinRequestResponse> listJoinRequests(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestParam(required = false) GroupJoinRequest.Status status) {
-        return inviteService.listJoinRequests(requireUserId(principal), conversationId, status);
+            @RequestParam(required = false) GroupJoinRequest.Status status,
+            @RequestParam(required = false) Integer limit) {
+        return inviteService.listJoinRequests(requireUserId(principal), conversationId, status, limit);
     }
 
     @GetMapping("/join-requests/me")

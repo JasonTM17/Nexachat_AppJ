@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 9,
+        version = 12,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -172,6 +172,44 @@ public abstract class AppDatabase extends RoomDatabase {
                             "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
                     db.execSQL(
                             "ALTER TABLE conversations ADD COLUMN aiOptOut INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /** Adds conversation pin state (pinned boolean, pinnedAt epoch ms). */
+    public static final Migration MIGRATION_9_10 =
+            new Migration(9, 10) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN pinnedAt INTEGER");
+                }
+            };
+
+    /** Persists structured mention metadata for sent and pending messages. */
+    public static final Migration MIGRATION_10_11 =
+            new Migration(10, 11) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE messages ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'");
+                    db.execSQL(
+                            "ALTER TABLE messages ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE outbox ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'");
+                    db.execSQL(
+                            "ALTER TABLE outbox ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /** Caches the authenticated caller's label ids beside each inbox row. */
+    public static final Migration MIGRATION_11_12 =
+            new Migration(11, 12) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE `conversations` ADD COLUMN `labelIdsCsv` TEXT NOT NULL DEFAULT ''");
                 }
             };
 }

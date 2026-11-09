@@ -86,10 +86,4 @@ public interface ConversationReminderRepository extends JpaRepository<Conversati
     Optional<ReminderDelivery> findDelivery(@Param("id") UUID id,
                                             @Param("claimToken") UUID claimToken);
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            DELETE FROM ConversationReminder r
-            WHERE r.firedAt IS NOT NULL AND r.firedAt < :cutoff
-            """)
-    int deleteFiredBefore(@Param("cutoff") Instant cutoff);
 }

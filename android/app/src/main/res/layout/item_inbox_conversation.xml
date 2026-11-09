@@ -53,18 +53,6 @@
         app:layout_constraintTop_toTopOf="@id/preview"
         app:tint="?attr/colorOnSurfaceVariant" />
 
-    <ImageView
-        android:id="@+id/muteIcon"
-        android:layout_width="18dp"
-        android:layout_height="18dp"
-        android:contentDescription="@string/inbox_muted"
-        android:src="@drawable/ic_notifications_off"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/preview"
-        app:layout_constraintEnd_toStartOf="@id/unreadBadge"
-        app:layout_constraintTop_toTopOf="@id/preview"
-        app:tint="?attr/colorOnSurfaceVariant" />
-
     <TextView
         android:id="@+id/preview"
         android:layout_width="0dp"
@@ -74,25 +62,68 @@
         android:maxLines="1"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
-        app:layout_constraintEnd_toStartOf="@id/muteIcon"
+        app:layout_constraintEnd_toStartOf="@id/trailingBadges"
         app:layout_constraintStart_toEndOf="@id/previewTypeIcon"
         app:layout_constraintTop_toBottomOf="@id/title" />
 
-    <TextView
-        android:id="@+id/unreadBadge"
+    <LinearLayout
+        android:id="@+id/trailingBadges"
         android:layout_width="wrap_content"
-        android:layout_height="24dp"
-        android:background="@drawable/bg_unread_badge"
-        android:gravity="center"
-        android:minWidth="24dp"
-        android:minHeight="24dp"
-        android:paddingHorizontal="7dp"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
-        android:textColor="?attr/colorOnPrimary"
-        android:visibility="gone"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical|end"
+        android:orientation="horizontal"
         app:layout_constraintBottom_toBottomOf="@id/preview"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/preview" />
+        app:layout_constraintTop_toTopOf="@id/preview">
+
+        <ImageView
+            android:id="@+id/pinIndicator"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:contentDescription="@string/cd_pinned_conversation"
+            android:src="@drawable/ic_push_pin"
+            android:visibility="gone"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
+        <ImageView
+            android:id="@+id/muteIcon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/inbox_muted"
+            android:src="@drawable/ic_notifications_off"
+            android:visibility="gone"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
+        <TextView
+            android:id="@+id/unreadBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_unread_badge"
+            android:gravity="center"
+            android:minWidth="24dp"
+            android:minHeight="24dp"
+            android:paddingHorizontal="7dp"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="?attr/colorOnPrimary"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/labelChips"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:visibility="gone"
+        app:chipSpacingHorizontal="4dp"
+        app:chipSpacingVertical="2dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@id/title"
+        app:layout_constraintTop_toBottomOf="@id/preview"
+        app:singleLine="false" />
 
     <View
         android:layout_width="0dp"

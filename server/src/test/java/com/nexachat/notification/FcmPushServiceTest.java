@@ -158,9 +158,35 @@ class FcmPushServiceTest {
 
         assertThat(appender.list)
                 .anyMatch(event -> event.getFormattedMessage().contains("FCM push accepted")
-                        && event.getFormattedMessage().contains("Pixel"));
+                        && event.getFormattedMessage().contains("ANDROID"));
         assertThat(appender.list)
                 .noneMatch(event -> event.getFormattedMessage().contains("SECRET-ACCEPTED-TOKEN"));
+    }
+
+    @Test
+    void acceptedPushDoesNotLogTheUserControlledDeviceLabel() {
+        String privateLabel = "PERSONAL-DEVICE-LABEL-SENTINEL";
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "SAFE-SYNTHETIC-TOKEN", UserDeviceToken.Platform.ANDROID, privateLabel);
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DefaultFcmPushService.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            pushService.sendNewMessageNotification(
+                    userId, conversationId, UUID.randomUUID(), 1L, "Alice");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .as("device labels are user-controlled and may contain personal information")
+                .noneMatch(event -> event.getFormattedMessage().contains(privateLabel));
     }
 
     @Test

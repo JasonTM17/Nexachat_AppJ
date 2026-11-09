@@ -43,6 +43,9 @@ public final class SettingsRepository implements AutoCloseable {
     private final BehaviorProcessor<Boolean> mutableShowPresence =
             BehaviorProcessor.createDefault(Boolean.TRUE);
     private final Flowable<Boolean> showPresence = mutableShowPresence.hide().distinctUntilChanged();
+    private final BehaviorProcessor<Boolean> mutableShowSeen =
+            BehaviorProcessor.createDefault(Boolean.TRUE);
+    private final Flowable<Boolean> showSeen = mutableShowSeen.hide().distinctUntilChanged();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
 
     @Inject
@@ -69,6 +72,7 @@ public final class SettingsRepository implements AutoCloseable {
                                         ignored -> { }));
                             } else {
                                 mutableShowPresence.onNext(Boolean.TRUE);
+                                mutableShowSeen.onNext(Boolean.TRUE);
                             }
                         },
                         ignored -> { });
@@ -77,6 +81,7 @@ public final class SettingsRepository implements AutoCloseable {
                 event -> {
                     if (event instanceof SessionEvents.Event.LoggedOut) {
                         mutableShowPresence.onNext(Boolean.TRUE);
+                        mutableShowSeen.onNext(Boolean.TRUE);
                     }
                 },
                 ignored -> { }));
@@ -92,6 +97,11 @@ public final class SettingsRepository implements AutoCloseable {
         return showPresence;
     }
 
+    @NonNull
+    public Flowable<Boolean> getShowSeen() {
+        return showSeen;
+    }
+
     public void setThemeMode(@NonNull ThemeMode mode) {
         prefs.edit().putString(KEY_THEME, mode.name()).apply();
         mutableThemeMode.onNext(mode);
@@ -105,6 +115,9 @@ public final class SettingsRepository implements AutoCloseable {
                         UserSettingsDto settings = (UserSettingsDto) success.getBody();
                         if (settings.getShowPresence() != null) {
                             mutableShowPresence.onNext(settings.getShowPresence());
+                        }
+                        if (settings.getShowSeen() != null) {
+                            mutableShowSeen.onNext(settings.getShowSeen());
                         }
                         return new Result.Success<Unit>(Unit.INSTANCE);
                     }
@@ -132,6 +145,31 @@ public final class SettingsRepository implements AutoCloseable {
                             return new Result.Success<Unit>(Unit.INSTANCE);
                         }
                         mutableShowPresence.onNext(previous);
+                        return Result.<Unit>cast(settingsFailure(result));
+                    });
+        });
+    }
+
+    @NonNull
+    public Single<Result<Unit>> setShowSeen(boolean value) {
+        return Single.defer(() -> {
+            boolean previous = mutableShowSeen.getValue();
+            if (previous == value) {
+                return Single.<Result<Unit>>just(new Result.Success<>(Unit.INSTANCE));
+            }
+
+            mutableShowSeen.onNext(value);
+            return ApiResult.safeApiCall(
+                            userApi.updateSettings(new UpdateUserSettingsRequest(null, value)))
+                    .map(result -> {
+                        if (result instanceof ApiResult.Success<?> success) {
+                            UserSettingsDto settings = (UserSettingsDto) success.getBody();
+                            if (settings.getShowSeen() != null) {
+                                mutableShowSeen.onNext(settings.getShowSeen());
+                            }
+                            return new Result.Success<Unit>(Unit.INSTANCE);
+                        }
+                        mutableShowSeen.onNext(previous);
                         return Result.<Unit>cast(settingsFailure(result));
                     });
         });

@@ -2,6 +2,7 @@ package com.nexachat.data;
 
 import androidx.annotation.Nullable;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.network.dto.MessageMention;
 import java.util.List;
 import java.util.Objects;
 
@@ -34,6 +35,8 @@ public final class ChatMessage {
     @Nullable private final Long editedAtEpochMs;
     /** Soft-delete marker; deleted rows render a neutral placeholder. */
     @Nullable private final Long deletedAtEpochMs;
+    private final List<MessageMention> mentions;
+    private final boolean mentionAll;
 
     public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
             @Nullable String senderDisplayName, String type, @Nullable String content,
@@ -42,6 +45,19 @@ public final class ChatMessage {
             @Nullable String clientMessageId, DeliveryStatus status, boolean mine,
             List<AttachmentDto> attachments, List<ReactionChip> reactions,
             @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content, replyToId,
+                replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId, status,
+                mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs, List.of(), false);
+    }
+
+    public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
+            @Nullable String senderDisplayName, String type, @Nullable String content,
+            @Nullable String replyToId, @Nullable String replyToSenderName,
+            @Nullable String replyToSnippet, long createdAtEpochMs,
+            @Nullable String clientMessageId, DeliveryStatus status, boolean mine,
+            List<AttachmentDto> attachments, List<ReactionChip> reactions,
+            @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
+            List<MessageMention> mentions, boolean mentionAll) {
         this.id = Objects.requireNonNull(id, "id");
         this.conversationId = Objects.requireNonNull(conversationId, "conversationId");
         this.seq = seq;
@@ -60,6 +76,8 @@ public final class ChatMessage {
         this.reactions = List.copyOf(reactions);
         this.editedAtEpochMs = editedAtEpochMs;
         this.deletedAtEpochMs = deletedAtEpochMs;
+        this.mentions = List.copyOf(mentions);
+        this.mentionAll = mentionAll;
     }
 
     public String getId() { return id; }
@@ -80,6 +98,8 @@ public final class ChatMessage {
     public List<ReactionChip> getReactions() { return reactions; }
     @Nullable public Long getEditedAtEpochMs() { return editedAtEpochMs; }
     @Nullable public Long getDeletedAtEpochMs() { return deletedAtEpochMs; }
+    public List<MessageMention> getMentions() { return mentions; }
+    public boolean isMentionAll() { return mentionAll; }
     /** True when this message is a tombstone with content and attachments stripped. */
     public boolean isDeleted() { return deletedAtEpochMs != null; }
 
@@ -97,11 +117,14 @@ public final class ChatMessage {
                 && status == that.status && Objects.equals(attachments, that.attachments)
                 && Objects.equals(reactions, that.reactions)
                 && Objects.equals(editedAtEpochMs, that.editedAtEpochMs)
-                && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs);
+                && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs)
+                && Objects.equals(mentions, that.mentions)
+                && mentionAll == that.mentionAll;
     }
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 replyToId, replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId,
-                status, mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs);
+                status, mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs,
+                mentions, mentionAll);
     }
 }

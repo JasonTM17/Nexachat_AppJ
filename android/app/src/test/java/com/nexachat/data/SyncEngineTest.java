@@ -3,6 +3,7 @@ package com.nexachat.data;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -94,6 +95,9 @@ public final class SyncEngineTest {
         when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
                 .thenReturn(Completable.complete());
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateMute(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(), anyBoolean())).thenReturn(Completable.complete());
         when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         pinDao = mock(PinDao.class);
@@ -757,6 +761,9 @@ public final class SyncEngineTest {
                 new ConversationWatermark("c2", 20L))));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateMute(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
+        when(conversationDao.updateArchived(anyString(), anyBoolean())).thenReturn(Completable.complete());
         when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         SyncResponse response = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
@@ -795,6 +802,41 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncAppliesDeltaPinFlagsAlongsideMutedAndArchived() {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                10L,
+                false,
+                null,
+                false,
+                true,
+                "2026-11-09T15:00:00Z",
+                true,
+                true,
+                "2026-11-09T14:00:00Z"
+        );
+        SyncResponse response = new SyncResponse(List.of(delta), "cursor-end");
+        Call<SyncResponse> serverCall = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(serverCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao).updateMute(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T15:00:00Z")));
+        verify(conversationDao).updateArchived(eq("c1"), eq(true));
+        verify(conversationDao).updatePin(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T14:00:00Z")));
     }
 
     private static MessageDto message(String id, long seq, String conversationId, String content) {

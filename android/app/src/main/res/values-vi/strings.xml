@@ -61,6 +61,7 @@
     <string name="conversation_unarchived">Đã chuyển về Tin nhắn</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>
+    <string name="conversation_ai_opt_in_title">Cho phép dùng AI trong cuộc trò chuyện này</string>
     <string name="inbox_new_chat">Trò chuyện mới</string>
     <string name="inbox_more_options">Tùy chọn khác</string>
     <string name="archive_title">Kho lưu trữ</string>
@@ -160,12 +161,16 @@
     <string name="action_reply">Trả lời</string>
     <string name="action_pin">Ghim</string>
     <string name="action_unpin">Bỏ ghim</string>
+    <string name="action_pin_conversation">Ghim hội thoại</string>
+    <string name="action_unpin_conversation">Bỏ ghim</string>
     <string name="pinned_title">Đã ghim</string>
     <string name="pinned_count">%1$d/%2$d</string>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
     <string name="action_jump_to_message">Chuyển tới tin nhắn</string>
     <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
+    <string name="error_conversation_pin_limit">Chỉ có thể ghim tối đa 5 hội thoại</string>
+    <string name="cd_pinned_conversation">Hội thoại đã ghim</string>
 
     <!-- Media / attachments -->
     <string name="media_pick_visual">Ảnh hoặc video</string>
@@ -262,6 +267,8 @@
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
+    <string name="privacy_show_seen">Hiện trạng thái đã xem</string>
+    <string name="cd_show_seen">Hiện trạng thái đã xem</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Ghi âm tin nhắn thoại</string>
@@ -304,6 +311,13 @@
     <string name="ask_from_message">Trích từ một tin nhắn</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
+    <string name="mention_all_picker">@all — mọi người</string>
+    <string name="mention_person_picker">Nhắc đến %1$s</string>
+    <string name="mention_limit_exceeded">Mỗi tin nhắn chỉ được nhắc tối đa 20 người. Tin nhắn đã được xoá.</string>
+    <string name="message_mentions_you">Bạn được nhắc đến.</string>
+    <string name="message_has_mentions">Tin nhắn này có lượt nhắc.</string>
+    <string name="error_mention_validation">Lượt nhắc trong tin nhắn không còn hợp lệ. Hãy kiểm tra rồi thử lại.</string>
+    <string name="error_mention_not_admin">Chỉ quản trị viên nhóm mới có thể nhắc tất cả mọi người.</string>
 
     <!-- Group board, reminders and polls -->
     <string name="group_board_title">Bảng nhóm</string>
@@ -394,5 +408,44 @@
     <string name="poll_error_create">Không tạo được bình chọn</string>
     <string name="poll_error_manage">Không cập nhật được bình chọn</string>
     <string name="poll_error_admin">Chỉ người tạo hoặc quản trị viên nhóm mới có thể thay đổi bình chọn này.</string>
+
+    <string name="label_filter_all">Tất cả</string>
+    <string name="label_manage">Quản lý nhãn</string>
+    <string name="label_manage_description">Quản lý nhãn cuộc trò chuyện</string>
+    <string name="label_assign_menu">Phân loại cuộc trò chuyện</string>
+    <string name="label_assign_title">Nhãn cuộc trò chuyện</string>
+    <string name="label_manage_title">Quản lý nhãn</string>
+    <string name="label_empty_manage">Chưa có nhãn. Tạo nhãn để sắp xếp cuộc trò chuyện.</string>
+    <string name="label_empty_assignment">Hãy tạo nhãn trước khi gán.</string>
+    <string name="label_empty_filter">Không có cuộc trò chuyện mang nhãn “%1$s”.</string>
+    <string name="label_create">Tạo nhãn</string>
+    <string name="label_create_title">Nhãn mới</string>
+    <string name="label_edit_title">Sửa nhãn</string>
+    <string name="label_save">Lưu</string>
+    <string name="label_done">Hoàn tất</string>
+    <string name="label_retry">Thử lại</string>
+    <string name="label_back_to_assignment">Quay lại cuộc trò chuyện</string>
+    <string name="label_name_hint">Tên nhãn (1–30 ký tự)</string>
+    <string name="label_filter_description">Lọc hộp thư theo nhãn %1$s</string>
+    <string name="label_chip_description">Nhãn: %1$s</string>
+    <string name="label_assign_checkbox">Gán nhãn %1$s</string>
+    <string name="label_delete_description">Xóa nhãn %1$s</string>
+    <string name="label_delete_title">Xóa nhãn?</string>
+    <string name="label_delete_message">Nhãn “%1$s” sẽ bị gỡ khỏi mọi cuộc trò chuyện.</string>
+    <string name="label_error_validation">Tên nhãn phải có 1–30 ký tự và chưa được sử dụng.</string>
+    <string name="label_error_conflict">Đã có nhãn trùng tên.</string>
+    <string name="label_error_rate_limit">Bạn thay đổi nhãn quá nhanh. Hãy thử lại sau.</string>
+    <string name="label_error_offline">Cần có kết nối Internet để dùng nhãn. Hãy thử lại khi trực tuyến.</string>
+    <string name="label_error_label_limit">Bạn có thể tạo tối đa 10 nhãn.</string>
+    <string name="label_error_assignment_limit">Mỗi cuộc trò chuyện có thể có tối đa 3 nhãn.</string>
+    <string name="label_error_generic">Không thể cập nhật nhãn. Hãy thử lại.</string>
+    <string name="label_color_indigo">Chàm</string>
+    <string name="label_color_blue">Xanh dương</string>
+    <string name="label_color_cyan">Xanh lơ</string>
+    <string name="label_color_teal">Xanh ngọc</string>
+    <string name="label_color_emerald">Ngọc lục bảo</string>
+    <string name="label_color_amber">Hổ phách</string>
+    <string name="label_color_rose">Hồng đậm</string>
+    <string name="label_color_purple">Tím</string>
 
 </resources>

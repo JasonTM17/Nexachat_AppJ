@@ -194,6 +194,84 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void togglePinCallsPinWhenUnpinned() {
+        ConversationSummary unpinned = conversation("c-1", 0);
+        when(repository.setConversationPinned("c-1", true))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.togglePin(unpinned);
+
+        verify(repository, times(1)).setConversationPinned("c-1", true);
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    @Test
+    public void setConversationAiOptOutDelegatesToRepository() {
+        when(repository.setAiOptOut("c-1", true))
+                .thenReturn(Single.just(new Result.Success<>(Boolean.TRUE)));
+
+        viewModel.setConversationAiOptOut("c-1", true);
+
+        verify(repository).setAiOptOut("c-1", true);
+    }
+
+    @Test
+    public void togglePinCallsUnpinWhenPinned() {
+        ConversationSummary pinned = pinnedConversation("c-1");
+        when(repository.setConversationPinned("c-1", false))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.togglePin(pinned);
+
+        verify(repository, times(1)).setConversationPinned("c-1", false);
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    @Test
+    public void togglePinSurfacesCapErrorAndAllowsClearing() {
+        ConversationSummary unpinned = conversation("c-1", 0);
+        ApiError capError = new ApiError.Unknown("CONVERSATION_PIN_LIMIT");
+        when(repository.setConversationPinned("c-1", true))
+                .thenReturn(Single.just(Result.failure(capError)));
+
+        viewModel.togglePin(unpinned);
+
+        assertEquals(capError, viewModel.getPinError().getValue());
+
+        viewModel.clearPinError();
+        assertNull(viewModel.getPinError().getValue());
+    }
+
+    @Test
+    public void archivedFilterPreservesPinnedOrderingInsideArchivedVariant() {
+        ConversationSummary unpinnedArchived = new ConversationSummary(
+                "c-arch-1", "DIRECT", null, "last 1", "Peer 1", 1_700_000_000_100L,
+                42L, 0, "Peer 1", null, null, 0L, 0L, null, null, false, null,
+                false, null, true, false, false, null);
+        ConversationSummary pinnedArchived = new ConversationSummary(
+                "c-arch-2", "DIRECT", null, "last 2", "Peer 2", 1_700_000_000_050L,
+                42L, 0, "Peer 2", null, null, 0L, 0L, null, null, false, null,
+                false, null, true, false, true, 1_700_000_000_500L);
+        ConversationSummary activeUnpinned = conversation("c-active", 0);
+
+        // In Room/repository order, pinnedArchived precedes unpinnedArchived
+        inboxFlow.onNext(List.of(activeUnpinned, pinnedArchived, unpinnedArchived));
+
+        viewModel.selectFilter(InboxFilter.ARCHIVED);
+
+        List<String> visibleIds = viewModel.getUiState().getValue()
+                .getVisibleConversations().stream().map(ConversationSummary::getId).toList();
+        assertEquals(List.of("c-arch-2", "c-arch-1"), visibleIds);
+    }
+
+    private static ConversationSummary pinnedConversation(String id) {
+        return new ConversationSummary(
+                id, "DIRECT", null, "last " + id, "Peer " + id, 1_700_000_000_000L,
+                42L, 0, "Peer " + id, null, null, 0L, 0L, null, null, false, null,
+                false, null, false, false, true, 1_700_000_000_000L);
+    }
+
+    @Test
     public void filterSwitchedDuringRefreshRunsAfterTheInFlightRequest() {
         SingleSubject<Result<Boolean>> pending = SingleSubject.create();
         when(repository.refreshInboxPage(false)).thenReturn(pending);

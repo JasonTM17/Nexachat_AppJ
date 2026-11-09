@@ -80,7 +80,17 @@ polls create/vote/change/retract/close/delete, anonymous vote-id omission and
 the change feed; per-conversation AI opt-out; conversation pin (5-pin cap with
 `409 CONVERSATION_PIN_LIMIT`); `showSeen=false` in both directions over STOMP;
 `Idempotency-Key` replay on reminders and reactions; revoked-token STOMP
-connect rejection and REST 401.
+connect rejection and REST 401; group invite link create/preview/join/revoke;
+group mentions and admin `mentionAll`; label CRUD, assignment and the 3-label
+cap; author recall inside the window and `409 RECALL_WINDOW_EXPIRED` after it.
+
+The recall-after check waits `E2E_RECALL_WAIT_SECONDS` (default 70) and expects
+the server window to be shorter than that wait. A live run that proves the
+minimum window sets `NEXACHAT_MESSAGE_RECALL_WINDOW=PT1M`. Muted-conversation
+push suppression has no HTTP hook: set `E2E_APP_CONTAINER` to the app container
+(the suite counts `MockFcmGateway` / `FCM push accepted` lines for the device
+label `e2e-mute-probe`) or `E2E_PUSH_LOG_FILE` for the offline self-test. With
+neither set, that scenario is `NOT_RUN` and does not fail the process.
 
 There is no account-delete or conversation-delete endpoint, so the throwaway
 accounts, their DIRECT conversation and the test GROUP conversations remain in

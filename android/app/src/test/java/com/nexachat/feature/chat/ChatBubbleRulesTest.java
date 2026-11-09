@@ -60,6 +60,23 @@ public final class ChatBubbleRulesTest {
     }
 
     @Test
+    public void seenReceiptVisibleObeysShowSeenPrivacyRuleMatrix() {
+        // When showSeen is true: behaves identically to standard seen rules
+        assertTrue(ChatBubbleRules.isSeenReceiptVisible(false, true, 10L, 10L, true));
+        assertTrue(ChatBubbleRules.isSeenReceiptVisible(false, true, 5L, 10L, true));
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(true, true, 5L, 10L, true)); // group
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, false, 5L, 10L, true)); // peer message
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, true, 15L, 10L, true)); // unread seq
+
+        // When showSeen is false: reciprocal privacy hides blue ticks entirely
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, true, 10L, 10L, false));
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, true, 5L, 10L, false));
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(true, true, 5L, 10L, false));
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, false, 5L, 10L, false));
+        assertFalse(ChatBubbleRules.isSeenReceiptVisible(false, true, 15L, 10L, false));
+    }
+
+    @Test
     public void deliveredReceiptVisibleForOneOnOneChatsWhenMineAndDelivered() {
         // 1-1 chat: mine, seq <= peerDeliveredSeq -> true
         assertTrue(ChatBubbleRules.isDeliveredReceiptVisible(false, true, 10L, 10L));

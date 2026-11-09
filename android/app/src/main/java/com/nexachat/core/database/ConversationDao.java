@@ -19,9 +19,12 @@ public interface ConversationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     Completable upsertAll(List<ConversationEntity> conversations);
 
-    /** Inbox ordering: newest activity first, empty conversations last. */
-    @Query("SELECT * FROM conversations ORDER BY COALESCE(lastMessageAt, 0) DESC")
+    /** Inbox ordering: pinned conversations first (by pinnedAt desc), then newest activity. */
+    @Query("SELECT * FROM conversations ORDER BY pinned DESC, COALESCE(pinnedAt, 0) DESC, COALESCE(lastMessageAt, 0) DESC, id ASC")
     Flowable<List<ConversationEntity>> inboxFlow();
+
+    @Query("UPDATE conversations SET pinned = :pinned, pinnedAt = :pinnedAt WHERE id = :conversationId")
+    Completable updatePin(String conversationId, boolean pinned, Long pinnedAt);
 
     @Query("SELECT id AS conversationId, COALESCE(lastMessageSeq, 0) AS maxSeq FROM conversations")
     Single<List<ConversationWatermark>> getAllWatermarks();
@@ -35,6 +38,15 @@ public interface ConversationDao {
 
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     Maybe<ConversationEntity> byId(String conversationId);
+
+    @Query("UPDATE conversations SET labelIdsCsv = :labelIdsCsv WHERE id = :conversationId")
+    Completable updateLabelIds(String conversationId, String labelIdsCsv);
+
+    /** Removes one UUID token from every cached caller-owned assignment list. */
+    @Query("UPDATE conversations SET labelIdsCsv = "
+            + "trim(replace(',' || labelIdsCsv || ',', ',' || :labelId || ',', ','), ',') "
+            + "WHERE instr(',' || labelIdsCsv || ',', ',' || :labelId || ',') > 0")
+    Completable removeLabelIdFromAll(String labelId);
 
     /** Reads client-only columns that a REPLACE upsert would otherwise wipe. */
     @Query("SELECT * FROM conversations WHERE id IN (:ids)")

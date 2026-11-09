@@ -66,6 +66,8 @@ nexachat:
     # How long the JWT filter caches a user's access-token cutoff. Never
     # larger than the access-token lifetime.
     validity-cache-ttl-seconds: ${NEXACHAT_VALIDITY_CACHE_TTL_SECONDS:60}
+    # Reverse-proxy CIDRs that may rewrite X-Forwarded-For (empty = never trust).
+    trusted-proxy-cidrs: ${NEXACHAT_TRUSTED_PROXY_CIDRS:}
   rate-limit:
     messages:
       edit-delete-per-minute: 30
@@ -82,6 +84,65 @@ nexachat:
     disconnect-grace-ms: ${NEXACHAT_CALLS_DISCONNECT_GRACE_MS:15000}
   storage:
     root: ${STORAGE_ROOT:./data/uploads}
+  sync:
+    # Delta clients that fall behind this window receive a full reaction refresh.
+    reaction-retention-days: ${NEXACHAT_SYNC_REACTION_RETENTION_DAYS:30}
+  retention:
+    # Cleanup is globally opt-in; dry-run counts candidates until explicitly disabled.
+    enabled: ${NEXACHAT_RETENTION_ENABLED:false}
+    dry-run: ${NEXACHAT_RETENTION_DRY_RUN:true}
+    batch-size: ${NEXACHAT_RETENTION_BATCH_SIZE:100}
+    statement-timeout-ms: ${NEXACHAT_RETENTION_STATEMENT_TIMEOUT_MS:2000}
+    transaction-timeout-seconds: ${NEXACHAT_RETENTION_TRANSACTION_TIMEOUT_SECONDS:15}
+    interval-ms: ${NEXACHAT_RETENTION_INTERVAL_MS:3600000}
+    jobs:
+      join-requests:
+        enabled: ${NEXACHAT_RETENTION_JOIN_REQUESTS_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_JOIN_REQUESTS_RETENTION_DAYS:30}
+      invite-bans:
+        enabled: ${NEXACHAT_RETENTION_INVITE_BANS_ENABLED:false}
+      invite-links:
+        enabled: ${NEXACHAT_RETENTION_INVITE_LINKS_ENABLED:false}
+        grace-days: ${NEXACHAT_RETENTION_INVITE_LINKS_GRACE_DAYS:30}
+      idempotency:
+        enabled: ${NEXACHAT_RETENTION_IDEMPOTENCY_ENABLED:false}
+        ttl-hours: ${NEXACHAT_RETENTION_IDEMPOTENCY_TTL_HOURS:24}
+      refresh-tokens:
+        enabled: ${NEXACHAT_RETENTION_REFRESH_TOKENS_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_REFRESH_TOKENS_RETENTION_DAYS:30}
+      device-tokens:
+        enabled: ${NEXACHAT_RETENTION_DEVICE_TOKENS_ENABLED:false}
+        stale-days: ${NEXACHAT_RETENTION_DEVICE_TOKENS_STALE_DAYS:180}
+      reminders:
+        enabled: ${NEXACHAT_RETENTION_REMINDERS_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_REMINDERS_RETENTION_DAYS:30}
+      polls:
+        enabled: ${NEXACHAT_RETENTION_POLLS_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_POLLS_RETENTION_DAYS:365}
+      call-records:
+        enabled: ${NEXACHAT_RETENTION_CALL_RECORDS_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_CALL_RECORDS_RETENTION_DAYS:365}
+      attachments:
+        enabled: ${NEXACHAT_RETENTION_ATTACHMENTS_ENABLED:false}
+        unbound-hours: ${NEXACHAT_RETENTION_ATTACHMENTS_UNBOUND_HOURS:24}
+        deleted-message-days: ${NEXACHAT_RETENTION_ATTACHMENTS_DELETED_MESSAGE_DAYS:30}
+      message-tombstones:
+        enabled: ${NEXACHAT_RETENTION_MESSAGE_TOMBSTONES_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_MESSAGE_TOMBSTONES_RETENTION_DAYS:30}
+      reaction-events:
+        enabled: ${NEXACHAT_RETENTION_REACTION_EVENTS_ENABLED:false}
+      summaries:
+        enabled: ${NEXACHAT_RETENTION_SUMMARIES_ENABLED:false}
+      summary-limits:
+        enabled: ${NEXACHAT_RETENTION_SUMMARY_LIMITS_ENABLED:false}
+        minute-retention-days: ${NEXACHAT_RETENTION_SUMMARY_LIMITS_MINUTE_DAYS:1}
+        day-retention-days: ${NEXACHAT_RETENTION_SUMMARY_LIMITS_DAY_DAYS:2}
+      rag-cache:
+        enabled: ${NEXACHAT_RETENTION_RAG_CACHE_ENABLED:false}
+      rag-limits:
+        enabled: ${NEXACHAT_RETENTION_RAG_LIMITS_ENABLED:false}
+        minute-retention-days: ${NEXACHAT_RETENTION_RAG_LIMITS_MINUTE_DAYS:1}
+        day-retention-days: ${NEXACHAT_RETENTION_RAG_LIMITS_DAY_DAYS:2}
   presence:
     disconnect-coalesce-ms: 5000
   summary:

@@ -22,6 +22,7 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
@@ -33,6 +34,11 @@ import com.nexachat.databinding.FragmentInboxBinding;
 import com.nexachat.feature.chat.ChatErrorIds;
 import com.nexachat.feature.inbox.adapter.ConversationListAdapter;
 import com.nexachat.feature.inbox.adapter.ConversationPreviewHelper;
+import com.nexachat.feature.label.ConversationLabel;
+import com.nexachat.feature.label.LabelDialogFragment;
+import com.nexachat.feature.label.LabelText;
+import com.nexachat.feature.label.LabelUiState;
+import com.nexachat.feature.label.LabelViewModel;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.ArrayList;
@@ -50,14 +56,19 @@ public final class InboxFragment extends Fragment {
     private static final int MENU_CONTACTS = 1;
     private static final int MENU_NEW_GROUP = 2;
     private static final int MENU_THEME = 3;
+    private static final String ALL_LABEL_FILTER = "__all_labels__";
 
     private FragmentInboxBinding binding;
     private InboxViewModel viewModel;
+    private LabelViewModel labelViewModel;
     private AppSettingsViewModel settingsViewModel;
     private ConversationListAdapter adapter;
     private LinearLayoutManager layoutManager;
     @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
     @Nullable private InboxUiState lastState;
+    @Nullable private LabelUiState lastLabelState;
+    private List<ConversationLabel> renderedLabels = List.of();
+    private boolean labelFiltersInitialized;
     @Nullable private String boundUserId;
     private int lastPaginationErrorMessageId;
 
@@ -74,7 +85,9 @@ public final class InboxFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(InboxViewModel.class);
+        labelViewModel = new ViewModelProvider(requireActivity()).get(LabelViewModel.class);
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
+        labelViewModel.load();
 
         binding.inboxUserAvatar.setName("Nexa");
         binding.inboxUserAvatar.setOnlineStatus(true);
@@ -118,9 +131,22 @@ public final class InboxFragment extends Fragment {
                     }
                     viewModel.selectFilter(filterForChip(checkedIds.get(0)));
                 });
+        binding.labelFilterChips.setOnCheckedStateChangeListener((group, checkedIds) -> {
+            if (checkedIds.isEmpty()) return;
+            View checked = group.findViewById(checkedIds.get(0));
+            if (checked == null) return;
+            Object tag = checked.getTag();
+            if (ALL_LABEL_FILTER.equals(tag)) labelViewModel.selectFilter(null);
+            else if (tag instanceof String labelId) labelViewModel.selectFilter(labelId);
+        });
         binding.createGroupFab.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.errorState.setOnRetry(() -> {
+            if (lastLabelState != null && lastLabelState.getSelectedFilterId() != null
+                    && lastLabelState.getFilterError() != LabelUiState.Error.NONE) {
+                labelViewModel.retrySelectedFilter();
+                return;
+            }
             if (lastState != null && lastState.getNextPageError() != null) {
                 viewModel.loadNextPage();
             } else {
@@ -131,6 +157,8 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
+        labelViewModel.getUiState()
+                .observe(getViewLifecycleOwner(), this::renderLabels);
         viewModel.getEvents().observe(getViewLifecycleOwner(), raw -> {
             InboxEvent event = raw == null ? null : raw.consume();
             if (event == null || binding == null) return;
@@ -139,6 +167,71 @@ public final class InboxFragment extends Fragment {
                             Snackbar.LENGTH_LONG)
                     .show();
         });
+        viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                viewModel.clearPinError();
+            }
+        });
+    }
+
+    private void renderLabels(@NonNull LabelUiState state) {
+        if (binding == null) return;
+        lastLabelState = state;
+        renderLabelFilters(state);
+        if (adapter != null) adapter.setLabelDefinitions(state.getLabels());
+        if (lastState != null) render(lastState);
+    }
+
+    private void renderLabelFilters(@NonNull LabelUiState state) {
+        ChipGroup group = binding.labelFilterChips;
+        if (!labelFiltersInitialized || !renderedLabels.equals(state.getLabels())) {
+            group.removeAllViews();
+            labelFiltersInitialized = true;
+            renderedLabels = List.copyOf(state.getLabels());
+            Chip all = new Chip(requireContext());
+            all.setId(View.generateViewId());
+            all.setCheckable(true);
+            all.setMinHeight(dp(48));
+            all.setText(R.string.label_filter_all);
+            all.setTag(ALL_LABEL_FILTER);
+            group.addView(all, new ChipGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            for (ConversationLabel label : state.getLabels()) {
+                Chip chip = new Chip(requireContext());
+                chip.setId(View.generateViewId());
+                chip.setCheckable(true);
+                chip.setText(label.getName());
+                chip.setTag(label.getId());
+                chip.setMinHeight(dp(48));
+                chip.setTextColor(Color.WHITE);
+                chip.setChipBackgroundColor(ColorStateList.valueOf(label.getColor().getBackgroundColor()));
+                chip.setContentDescription(getString(R.string.label_filter_description, label.getName()));
+                group.addView(chip, new ChipGroup.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            Chip manage = new Chip(requireContext());
+            manage.setId(View.generateViewId());
+            manage.setCheckable(false);
+            manage.setText(R.string.label_manage);
+            manage.setMinHeight(dp(48));
+            manage.setContentDescription(getString(R.string.label_manage_description));
+            manage.setOnClickListener(v -> LabelDialogFragment.show(requireActivity(), null));
+            group.addView(manage, new ChipGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        for (int index = 0; index < group.getChildCount(); index++) {
+            View child = group.getChildAt(index);
+            if (!(child instanceof Chip chip) || !chip.isCheckable()) continue;
+            boolean selected = state.getSelectedFilterId() == null
+                    ? ALL_LABEL_FILTER.equals(chip.getTag())
+                    : state.getSelectedFilterId().equals(chip.getTag());
+            chip.setChecked(selected);
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void showThemeDialog() {
@@ -223,6 +316,11 @@ public final class InboxFragment extends Fragment {
                 conversation,
                 new ConversationPreferenceMenu.Listener() {
                     @Override
+                    public void onTogglePin(boolean pin) {
+                        viewModel.togglePin(conversation);
+                    }
+
+                    @Override
                     public void onMute(@Nullable java.time.Instant until) {
                         if (until == null) {
                             viewModel.muteConversationForever(conversation.getId());
@@ -240,7 +338,12 @@ public final class InboxFragment extends Fragment {
                     public void onArchive(boolean archive) {
                         viewModel.setConversationArchived(conversation.getId(), archive);
                     }
-                });
+
+                    @Override
+                    public void onSetAiOptOut(boolean optOut) {
+                        viewModel.setConversationAiOptOut(conversation.getId(), optOut);
+                    }
+                }, () -> LabelDialogFragment.show(requireActivity(), conversation.getId()));
     }
 
     private void render(@NonNull InboxUiState state) {
@@ -249,18 +352,31 @@ public final class InboxFragment extends Fragment {
         }
         lastState = state;
         ensureAdapter(state.getCurrentUserId());
+        if (lastLabelState != null) adapter.setLabelDefinitions(lastLabelState.getLabels());
         List<ConversationSummary> rows = state.getConversations();
         List<ConversationSummary> visibleRows = state.getVisibleConversations();
+        boolean labelFiltering = lastLabelState != null
+                && lastLabelState.getSelectedFilterId() != null;
+        boolean labelFilterLoading = labelFiltering && lastLabelState.isFilterLoading();
+        boolean labelFilterError = labelFiltering
+                && lastLabelState.getFilterError() != LabelUiState.Error.NONE
+                && !lastLabelState.isFilterLoading();
+        if (labelFiltering && !labelFilterLoading && !labelFilterError) {
+            Set<String> filteredIds = lastLabelState.getFilteredConversationIds();
+            visibleRows = visibleRows.stream().filter(row -> filteredIds.contains(row.getId())).toList();
+        } else if (labelFiltering) {
+            visibleRows = List.of();
+        }
         submitRowsPreservingPosition(visibleRows);
         syncFilterChip(state.getSelectedFilter());
         updateFilterChipsUi(state.getTotalUnread());
         renderActiveNowStrip(rows);
         binding.swipeRefresh.setRefreshing(state.isLoading() && !rows.isEmpty());
 
-        boolean showLoading = (state.isLoading() && rows.isEmpty())
+        boolean showLoading = labelFilterLoading || (state.isLoading() && rows.isEmpty())
                 || (state.isLoadingMore() && visibleRows.isEmpty() && state.hasMore());
         ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
-        boolean showError = error != null && rows.isEmpty();
+        boolean showError = labelFilterError || (error != null && rows.isEmpty());
         boolean showEmpty = !showLoading && !showError && visibleRows.isEmpty();
         boolean showList = !visibleRows.isEmpty();
 
@@ -270,9 +386,20 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showEmpty) {
-            binding.emptyState.setMessage(getString(emptyMessageFor(state.getSelectedFilter())));
+            if (labelFiltering) {
+                ConversationLabel selected = lastLabelState.getLabels().stream()
+                        .filter(label -> label.getId().equals(lastLabelState.getSelectedFilterId()))
+                        .findFirst().orElse(null);
+                binding.emptyState.setMessage(selected == null
+                        ? getString(R.string.label_empty_manage)
+                        : getString(R.string.label_empty_filter, selected.getName()));
+            } else {
+                binding.emptyState.setMessage(getString(emptyMessageFor(state.getSelectedFilter())));
+            }
         }
-        if (showError && error != null) {
+        if (labelFilterError) {
+            binding.errorState.setMessage(getString(LabelText.errorMessage(lastLabelState.getFilterError())));
+        } else if (showError && error != null) {
             binding.errorState.setMessage(getString(ChatErrorIds.messageId(error)));
         }
         showPaginationError(state);
@@ -308,6 +435,7 @@ public final class InboxFragment extends Fragment {
 
     private void maybeLoadMore() {
         if (binding == null || adapter == null || lastState == null
+                || (lastLabelState != null && lastLabelState.getSelectedFilterId() != null)
                 || !lastState.hasMore()
                 || lastState.isLoading()
                 || lastState.isLoadingMore()
@@ -534,6 +662,9 @@ public final class InboxFragment extends Fragment {
         adapter = null;
         boundUserId = null;
         lastState = null;
+        lastLabelState = null;
+        renderedLabels = List.of();
+        labelFiltersInitialized = false;
         lastPaginationErrorMessageId = 0;
         super.onDestroyView();
         binding = null;

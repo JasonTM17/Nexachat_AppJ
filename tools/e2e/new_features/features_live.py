@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live E2E coverage for the archive, inbox flags, reminders, polls, AI
-opt-out, conversation pin, seen-privacy, idempotency and revoked-token
-features.
+opt-out, conversation pin, seen-privacy, idempotency, revoked-token,
+invite-link, mention, label, recall-window and muted-push features.
 
 The suite creates its own synthetic accounts (random phones/passwords generated
 at runtime), exercises the merged REST/STOMP contract against a running
@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -76,13 +77,18 @@ class Fixtures:
     direct_id: str
     poll_group_id: str
     pin_groups: list[str] = field(default_factory=list)
-    message_refs: list[tuple[str, str]] = field(default_factory=list)
+    message_refs: list[tuple[str, str, str]] = field(default_factory=list)
 
-    def track(self, response: Response, token: str | None = None) -> dict[str, Any]:
+    def track(self, response: Response, token: str | None = None,
+              conversation_id: str | None = None) -> dict[str, Any]:
         data = response.json() or {}
         message_id = data.get("id")
         if message_id:
-            self.message_refs.append((message_id, token or self.user_a["token"]))
+            self.message_refs.append((
+                conversation_id or self.direct_id,
+                message_id,
+                token or self.user_a["token"],
+            ))
         return data
 
 
@@ -158,7 +164,9 @@ def create_group(client: Client, token: str, title: str,
 
 def send_message(client: Client, token: str, conversation_id: str, *,
                  message_type: str = "TEXT", content: str | None = None,
-                 attachment_ids: list[str] | None = None) -> Response:
+                 attachment_ids: list[str] | None = None,
+                 mentions: list[dict[str, Any]] | None = None,
+                 mention_all: bool | None = None) -> Response:
     body: dict[str, Any] = {
         "clientMessageId": str(uuid.uuid4()),
         "type": message_type,
@@ -166,7 +174,84 @@ def send_message(client: Client, token: str, conversation_id: str, *,
     }
     if content is not None:
         body["content"] = content
+    if mentions is not None:
+        body["mentions"] = mentions
+    if mention_all is not None:
+        body["mentionAll"] = mention_all
     return client.post(f"/api/v1/conversations/{conversation_id}/messages", token=token, body=body)
+
+
+def _mention(user_id: str, content: str, needle: str) -> dict[str, Any]:
+    offset = content.index(needle)
+    return {"userId": user_id, "offset": offset, "length": len(needle)}
+
+
+# The live server enforces a configurable author-recall window (minimum PT1M).
+# The default wait matches a server started with that minimum. The offline
+# self-test sets a shorter wait against its own one-second window.
+_DEFAULT_RECALL_WAIT_SECONDS = 70.0
+_PUSH_DEVICE_LABEL = "e2e-mute-probe"
+_PUSH_DEVICE_TOKEN = "e2e-mute-probe-device"
+_PUSH_NEEDLE = f"FCM push accepted (platform ANDROID, label {_PUSH_DEVICE_LABEL})"
+_INVITE_PREVIEW_KEYS = {
+    "conversationId", "title", "avatarUrl", "memberCount",
+    "requiresApproval", "isMember",
+}
+
+
+def _recall_wait_seconds() -> float:
+    raw = os.environ.get("E2E_RECALL_WAIT_SECONDS", "").strip()
+    if not raw:
+        return _DEFAULT_RECALL_WAIT_SECONDS
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return _DEFAULT_RECALL_WAIT_SECONDS
+
+
+def _read_push_log() -> str | None:
+    """Notification evidence from a log file or the app container stdout.
+
+    There is no HTTP test hook. ``E2E_PUSH_LOG_FILE`` (self-test) wins.
+    ``E2E_APP_CONTAINER`` reads ``docker logs`` and looks for the mock gateway
+    acceptance line, which names the device label and not the token.
+    """
+    log_file = os.environ.get("E2E_PUSH_LOG_FILE", "").strip()
+    if log_file:
+        path = Path(log_file)
+        if not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+    container = os.environ.get("E2E_APP_CONTAINER", "").strip()
+    if not container:
+        return None
+    proc = subprocess.run(
+        ["docker", "logs", container],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return (proc.stdout or "") + (proc.stderr or "")
+
+
+def _push_count() -> int | None:
+    text = _read_push_log()
+    if text is None:
+        return None
+    return text.count(_PUSH_NEEDLE)
+
+
+def _wait_push_count(minimum: int, timeout: float = 5.0) -> int | None:
+    deadline = time.time() + timeout
+    last: int | None = None
+    while True:
+        last = _push_count()
+        if last is None or last >= minimum or time.time() >= deadline:
+            return last
+        time.sleep(0.25)
 
 
 def upload_attachment(client: Client, token: str, *, filename: str,
@@ -1222,6 +1307,505 @@ def scenario_revoked_token(log: CheckLog, client: Client, fx: Fixtures, ws_url: 
             connection.close()
 
 
+# --- invite links, mentions, labels, recall, muted push -----------------------
+
+def scenario_invites(log: CheckLog, client: Client, fx: Fixtures) -> None:
+    """Create, preview, join and revoke a group invite link."""
+    if not fx.pin_groups:
+        log.expect("invite_fixture", False, "SETUP", "/conversations/group", "missing",
+                   "no group available for an invite link")
+        return
+    group_id = fx.pin_groups[0]
+    admin_path = f"/api/v1/conversations/{group_id}/invite-link"
+    direct_path = f"/api/v1/conversations/{fx.direct_id}/invite-link"
+    token_a = fx.user_a["token"]
+    token_b = fx.user_b["token"]
+    token_c = fx.user_c["token"]
+
+    not_admin = client.post(admin_path, token=token_b, body={})
+    log.expect_status("invite_non_admin", not_admin, 403, "POST", admin_path)
+    log.expect(
+        "invite_non_admin_code",
+        not_admin.status == 403 and _error_code(not_admin) == "NOT_ADMIN",
+        "POST", admin_path, _status(not_admin), f"code={_error_code(not_admin)}",
+    )
+
+    not_group = client.post(direct_path, token=token_a, body={})
+    log.expect_status("invite_direct_rejected", not_group, 400, "POST", direct_path)
+    log.expect(
+        "invite_direct_code",
+        not_group.status == 400 and _error_code(not_group) == "NOT_A_GROUP",
+        "POST", direct_path, _status(not_group), f"code={_error_code(not_group)}",
+    )
+
+    created = client.post(admin_path, token=token_a, body={"requiresApproval": False})
+    log.expect_status("invite_create", created, 201, "POST", admin_path)
+    created_body = created.json() or {}
+    raw_token = created_body.get("token") if created.status == 201 else None
+    log.expect(
+        "invite_create_token_present",
+        created.status == 201
+        and isinstance(raw_token, str) and len(raw_token) >= 20
+        and created_body.get("requiresApproval") is False
+        and created_body.get("conversationId") == group_id,
+        "POST", admin_path, _status(created), "raw token returned once to the admin",
+    )
+    if not isinstance(raw_token, str) or not raw_token:
+        log.expect("invite_preview", False, "GET", "/api/v1/invite-links/{token}",
+                   "not created", "create did not return a token; remaining checks skipped")
+        return
+
+    listed = client.get(admin_path, token=token_a)
+    listed_body = listed.json() or {}
+    log.expect_status("invite_get_metadata", listed, 200, "GET", admin_path)
+    log.expect(
+        "invite_get_hides_token",
+        listed.status == 200 and listed_body.get("token") is None,
+        "GET", admin_path, _status(listed), "stored link metadata has no raw token",
+    )
+
+    preview_path = f"/api/v1/invite-links/{raw_token}"
+    join_path = f"{preview_path}/join"
+    # Never put the raw token in a PASS/FAIL line.
+    safe_preview = "/api/v1/invite-links/{token}"
+    safe_join = "/api/v1/invite-links/{token}/join"
+
+    preview = client.get(preview_path, token=token_c)
+    preview_body = preview.json() or {}
+    log.expect_status("invite_preview", preview, 200, "GET", safe_preview)
+    log.expect(
+        "invite_preview_safe",
+        preview.status == 200
+        and set(preview_body) <= _INVITE_PREVIEW_KEYS
+        and preview_body.get("conversationId") == group_id
+        and preview_body.get("isMember") is False
+        and preview_body.get("requiresApproval") is False
+        and preview_body.get("memberCount") == 2
+        and preview_body.get("title"),
+        "GET", safe_preview, _status(preview), "title and counts only; caller is not a member",
+    )
+
+    joined = client.post(join_path, token=token_c)
+    joined_body = joined.json() or {}
+    log.expect_status("invite_join", joined, 200, "POST", safe_join)
+    log.expect(
+        "invite_join_status",
+        joined.status == 200
+        and joined_body.get("status") == "JOINED"
+        and joined_body.get("conversationId") == group_id,
+        "POST", safe_join, _status(joined), f"status={joined_body.get('status')}",
+    )
+
+    preview_after = client.get(preview_path, token=token_c)
+    after_body = preview_after.json() or {}
+    log.expect(
+        "invite_preview_member",
+        preview_after.status == 200
+        and after_body.get("isMember") is True
+        and after_body.get("memberCount") == 3
+        and set(after_body) <= _INVITE_PREVIEW_KEYS,
+        "GET", safe_preview, _status(preview_after), "joiner is now a member",
+    )
+
+    again = client.post(join_path, token=token_c)
+    again_body = again.json() or {}
+    log.expect(
+        "invite_join_already_member",
+        again.status == 200 and again_body.get("status") == "ALREADY_MEMBER",
+        "POST", safe_join, _status(again), f"status={again_body.get('status')}",
+    )
+
+    revoked = client.delete(admin_path, token=token_a)
+    log.expect_status("invite_revoke", revoked, 204, "DELETE", admin_path)
+
+    preview_revoked = client.get(preview_path, token=token_c)
+    log.expect_status("invite_preview_revoked", preview_revoked, 404, "GET", safe_preview)
+    log.expect(
+        "invite_preview_revoked_code",
+        preview_revoked.status == 404 and _error_code(preview_revoked) == "NOT_FOUND",
+        "GET", safe_preview, _status(preview_revoked), f"code={_error_code(preview_revoked)}",
+    )
+    join_revoked = client.post(join_path, token=token_c)
+    log.expect_status("invite_join_revoked", join_revoked, 404, "POST", safe_join)
+    log.expect(
+        "invite_join_revoked_code",
+        join_revoked.status == 404 and _error_code(join_revoked) == "NOT_FOUND",
+        "POST", safe_join, _status(join_revoked), f"code={_error_code(join_revoked)}",
+    )
+
+
+def scenario_mentions(log: CheckLog, client: Client, fx: Fixtures) -> None:
+    group_id = fx.poll_group_id
+    path = f"/api/v1/conversations/{group_id}/messages"
+    content = "hi Bob"
+    mention = _mention(fx.user_b["id"], content, "Bob")
+
+    sent = send_message(
+        client, fx.user_a["token"], group_id,
+        content=content, mentions=[mention], mention_all=False,
+    )
+    log.expect_status("mention_send", sent, 201, "POST", path)
+    sent_body = sent.json() or {}
+    mentions = sent_body.get("mentions") or []
+    log.expect(
+        "mention_targets_member",
+        sent.status == 201
+        and sent_body.get("mentionAll") is False
+        and any(item.get("userId") == fx.user_b["id"]
+                and item.get("offset") == mention["offset"]
+                and item.get("length") == mention["length"]
+                for item in mentions),
+        "POST", path, _status(sent), "explicit member mention echoed",
+    )
+    if sent.status in (200, 201):
+        fx.track(sent, fx.user_a["token"], group_id)
+
+    everyone = send_message(
+        client, fx.user_a["token"], group_id,
+        content="hello everyone", mention_all=True,
+    )
+    log.expect_status("mention_all_admin", everyone, 201, "POST", path)
+    everyone_body = everyone.json() or {}
+    log.expect(
+        "mention_all_flag",
+        everyone.status == 201 and everyone_body.get("mentionAll") is True,
+        "POST", path, _status(everyone), "admin mentionAll stored",
+    )
+    if everyone.status in (200, 201):
+        fx.track(everyone, fx.user_a["token"], group_id)
+
+    member_all = send_message(
+        client, fx.user_b["token"], group_id,
+        content="not allowed", mention_all=True,
+    )
+    log.expect_status("mention_all_member_forbidden", member_all, 403, "POST", path)
+    log.expect(
+        "mention_all_member_code",
+        member_all.status == 403 and _error_code(member_all) == "NOT_ADMIN",
+        "POST", path, _status(member_all), f"code={_error_code(member_all)}",
+    )
+
+    outsider = send_message(
+        client, fx.user_a["token"], group_id,
+        content="hi outsider",
+        mentions=[_mention(fx.user_d["id"], "hi outsider", "outsider")],
+    )
+    log.expect_status("mention_non_member", outsider, 400, "POST", path)
+    log.expect(
+        "mention_non_member_code",
+        outsider.status == 400 and _error_code(outsider) == "VALIDATION_FAILED",
+        "POST", path, _status(outsider), f"code={_error_code(outsider)}",
+    )
+
+    direct_path = f"/api/v1/conversations/{fx.direct_id}/messages"
+    direct = send_message(
+        client, fx.user_a["token"], fx.direct_id,
+        content="hi Bob",
+        mentions=[_mention(fx.user_b["id"], "hi Bob", "Bob")],
+    )
+    log.expect_status("mention_direct_rejected", direct, 400, "POST", direct_path)
+    log.expect(
+        "mention_direct_code",
+        direct.status == 400 and _error_code(direct) == "VALIDATION_FAILED",
+        "POST", direct_path, _status(direct), f"code={_error_code(direct)}",
+    )
+
+
+def scenario_labels(log: CheckLog, client: Client, fx: Fixtures) -> None:
+    path = "/api/v1/labels"
+    token_a = fx.user_a["token"]
+    token_b = fx.user_b["token"]
+    token_d = fx.user_d["token"]
+
+    invalid = client.post(path, token=token_a, body={"name": "E2E bad", "colorId": "NOT_A_COLOR"})
+    log.expect_status("label_invalid_color", invalid, 400, "POST", path)
+    log.expect(
+        "label_invalid_color_code",
+        invalid.status == 400 and _error_code(invalid) == "VALIDATION_FAILED",
+        "POST", path, _status(invalid), f"code={_error_code(invalid)}",
+    )
+
+    created = client.post(path, token=token_a, body={"name": "E2E label", "colorId": "INDIGO"})
+    log.expect_status("label_create", created, 201, "POST", path)
+    created_body = created.json() or {}
+    label_id = created_body.get("id")
+    log.expect(
+        "label_create_body",
+        created.status == 201
+        and label_id
+        and created_body.get("name") == "E2E label"
+        and created_body.get("colorId") == "INDIGO",
+        "POST", path, _status(created), "name and palette id stored",
+    )
+    if not label_id:
+        return
+
+    listed = client.get(path, token=token_a)
+    listed_body = listed.json() if listed.status == 200 else None
+    names = [item.get("name") for item in listed_body] if isinstance(listed_body, list) else []
+    log.expect(
+        "label_list",
+        listed.status == 200 and "E2E label" in names,
+        "GET", path, _status(listed), "caller lists the new label",
+    )
+
+    patched = client.patch(
+        f"{path}/{label_id}", token=token_a,
+        body={"name": "E2E label renamed", "colorId": "BLUE"},
+    )
+    patched_body = patched.json() or {}
+    log.expect_status("label_patch", patched, 200, "PATCH", f"{path}/{{labelId}}")
+    log.expect(
+        "label_patch_body",
+        patched.status == 200
+        and patched_body.get("name") == "E2E label renamed"
+        and patched_body.get("colorId") == "BLUE",
+        "PATCH", f"{path}/{{labelId}}", _status(patched), "name and color updated",
+    )
+
+    foreign = client.patch(
+        f"{path}/{label_id}", token=token_b, body={"name": "stolen"},
+    )
+    log.expect_status("label_patch_other_user", foreign, 404, "PATCH", f"{path}/{{labelId}}")
+    log.expect(
+        "label_patch_other_user_code",
+        foreign.status == 404 and _error_code(foreign) == "NOT_FOUND",
+        "PATCH", f"{path}/{{labelId}}", _status(foreign), f"code={_error_code(foreign)}",
+    )
+
+    assign_path = f"/api/v1/conversations/{fx.direct_id}/labels/{label_id}"
+    assigned = client.put(assign_path, token=token_a)
+    log.expect_status("label_assign", assigned, 204, "PUT",
+                      "/api/v1/conversations/{id}/labels/{labelId}")
+    assigned_again = client.put(assign_path, token=token_a)
+    log.expect_status("label_assign_idempotent", assigned_again, 204, "PUT",
+                      "/api/v1/conversations/{id}/labels/{labelId}")
+
+    outsider = client.put(
+        f"/api/v1/conversations/{fx.direct_id}/labels/{label_id}", token=token_d,
+    )
+    log.expect_status("label_assign_non_member", outsider, 403, "PUT",
+                      "/api/v1/conversations/{id}/labels/{labelId}")
+
+    extra_ids = []
+    for index, color in enumerate(("CYAN", "TEAL", "AMBER"), start=1):
+        extra = client.post(
+            path, token=token_a,
+            body={"name": f"E2E extra {index}", "colorId": color},
+        )
+        log.expect_status(f"label_extra_{index}", extra, 201, "POST", path)
+        extra_body = extra.json() or {}
+        if extra.status == 201 and extra_body.get("id"):
+            extra_ids.append(extra_body["id"])
+    # One label is already assigned. Two more fit under the cap of three;
+    # the fourth assignment is rejected.
+    for index, extra_id in enumerate(extra_ids[:2], start=1):
+        response = client.put(
+            f"/api/v1/conversations/{fx.direct_id}/labels/{extra_id}", token=token_a,
+        )
+        log.expect_status(f"label_assign_under_cap_{index}", response, 204, "PUT",
+                          "/api/v1/conversations/{id}/labels/{labelId}")
+    if len(extra_ids) >= 3:
+        overflow = client.put(
+            f"/api/v1/conversations/{fx.direct_id}/labels/{extra_ids[2]}",
+            token=token_a,
+        )
+        log.expect_status("label_assign_cap", overflow, 400, "PUT",
+                          "/api/v1/conversations/{id}/labels/{labelId}")
+        log.expect(
+            "label_assign_cap_code",
+            overflow.status == 400 and _error_code(overflow) == "VALIDATION_FAILED",
+            "PUT", "/api/v1/conversations/{id}/labels/{labelId}",
+            _status(overflow), f"code={_error_code(overflow)}",
+        )
+    else:
+        log.expect("label_assign_cap", False, "PUT",
+                   "/api/v1/conversations/{id}/labels/{labelId}", "not created",
+                   "could not create the label that should exceed the cap")
+
+    unassigned = client.delete(assign_path, token=token_a)
+    log.expect_status("label_unassign", unassigned, 204, "DELETE",
+                      "/api/v1/conversations/{id}/labels/{labelId}")
+    removed = client.delete(f"{path}/{label_id}", token=token_a)
+    log.expect_status("label_delete", removed, 204, "DELETE", f"{path}/{{labelId}}")
+    listed_after = client.get(path, token=token_a)
+    after_names = []
+    if listed_after.status == 200 and isinstance(listed_after.json(), list):
+        after_names = [item.get("name") for item in listed_after.json()]
+    log.expect(
+        "label_delete_absent",
+        removed.status == 204 and "E2E label renamed" not in after_names,
+        "GET", path, _status(listed_after), "deleted label is absent",
+    )
+
+
+def scenario_recall(log: CheckLog, client: Client, fx: Fixtures) -> None:
+    conv = fx.direct_id
+    token_a = fx.user_a["token"]
+    within = send_message(client, token_a, conv, content="recall within")
+    log.expect_status("recall_send_within", within, 201, "POST",
+                      f"/api/v1/conversations/{conv}/messages")
+    if within.status not in (200, 201):
+        return
+    message_id = within.json()["id"]
+    fx.track(within, token_a, conv)
+    path = f"/api/v1/conversations/{conv}/messages/{message_id}"
+
+    foreign = client.delete(path, token=fx.user_b["token"])
+    log.expect_status("recall_non_author", foreign, 403, "DELETE",
+                      "/api/v1/conversations/{id}/messages/{messageId}")
+    log.expect(
+        "recall_non_author_code",
+        foreign.status == 403 and _error_code(foreign) == "NOT_MESSAGE_AUTHOR",
+        "DELETE", "/api/v1/conversations/{id}/messages/{messageId}",
+        _status(foreign), f"code={_error_code(foreign)}",
+    )
+
+    deleted = client.delete(path, token=token_a)
+    log.expect_status("recall_within_window", deleted, 204, "DELETE",
+                      "/api/v1/conversations/{id}/messages/{messageId}")
+    deleted_again = client.delete(path, token=token_a)
+    log.expect_status("recall_within_idempotent", deleted_again, 204, "DELETE",
+                      "/api/v1/conversations/{id}/messages/{messageId}")
+
+    expired_send = send_message(client, token_a, conv, content="recall after")
+    log.expect_status("recall_send_after", expired_send, 201, "POST",
+                      f"/api/v1/conversations/{conv}/messages")
+    if expired_send.status not in (200, 201):
+        return
+    expired_id = expired_send.json()["id"]
+    fx.track(expired_send, token_a, conv)
+    expired_path = f"/api/v1/conversations/{conv}/messages/{expired_id}"
+    wait = _recall_wait_seconds()
+    print(f"Waiting {wait:.0f}s for the configured recall window to close...")
+    time.sleep(wait)
+    expired = client.delete(expired_path, token=token_a)
+    log.expect_status("recall_after_window", expired, 409, "DELETE",
+                      "/api/v1/conversations/{id}/messages/{messageId}")
+    log.expect(
+        "recall_after_window_code",
+        expired.status == 409 and _error_code(expired) == "RECALL_WINDOW_EXPIRED",
+        "DELETE", "/api/v1/conversations/{id}/messages/{messageId}",
+        _status(expired), f"code={_error_code(expired)}",
+    )
+
+
+def scenario_muted_push(log: CheckLog, client: Client, fx: Fixtures) -> None:
+    """Ordinary NEW_MESSAGE pushes are suppressed for a muted member.
+
+    A mention and mentionAll still produce a push. Observed from the mock
+    gateway log line (device label only). NOT_RUN when no log source is set.
+    """
+    if _push_count() is None:
+        log.skip(
+            "muted_push", "LOG", "MockFcmGateway",
+            "NOT_RUN: no notification test hook or app log source",
+            required=False,
+        )
+        return
+
+    group_id = fx.poll_group_id
+    mute_path = f"/api/v1/conversations/{group_id}/mute"
+    message_path = f"/api/v1/conversations/{group_id}/messages"
+    token_path = "/api/v1/users/device-token"
+    try:
+        registered = client.post(token_path, token=fx.user_b["token"], body={
+            "token": _PUSH_DEVICE_TOKEN,
+            "platform": "ANDROID",
+            "deviceLabel": _PUSH_DEVICE_LABEL,
+        })
+        log.expect_status("muted_push_register_token", registered, 200, "POST", token_path)
+        if registered.status != 200:
+            return
+
+        before = _wait_push_count(0, timeout=1.0)
+        if before is None:
+            log.skip("muted_push_control", "LOG", "MockFcmGateway",
+                     "NOT_RUN: push log disappeared", required=False)
+            return
+        control = send_message(
+            client, fx.user_a["token"], group_id, content="unmuted control",
+        )
+        log.expect_status("muted_push_control_send", control, 201, "POST", message_path)
+        if control.status in (200, 201):
+            fx.track(control, fx.user_a["token"], group_id)
+        control_count = _wait_push_count(before + 1)
+        log.expect(
+            "muted_push_control_delivered",
+            control.status in (200, 201) and control_count == before + 1,
+            "LOG", "MockFcmGateway", control_count,
+            "offline unmuted member with a device token receives one push",
+        )
+        if control_count is None or control_count != before + 1:
+            log.expect(
+                "muted_push_suppressed", False, "LOG", "MockFcmGateway", control_count,
+                "control push was not observed; suppression was not measured",
+            )
+            return
+
+        muted = client.put(mute_path, token=fx.user_b["token"], body={"forever": True})
+        log.expect_status("muted_push_mute", muted, 204, "PUT", mute_path)
+        if muted.status != 204:
+            return
+        ordinary = send_message(
+            client, fx.user_a["token"], group_id, content="muted ordinary",
+        )
+        log.expect_status("muted_push_ordinary_send", ordinary, 201, "POST", message_path)
+        if ordinary.status in (200, 201):
+            fx.track(ordinary, fx.user_a["token"], group_id)
+        time.sleep(1.5)
+        after_ordinary = _push_count()
+        log.expect(
+            "muted_push_suppressed",
+            ordinary.status in (200, 201) and after_ordinary == control_count,
+            "LOG", "MockFcmGateway", after_ordinary,
+            "muted member receives no ordinary NEW_MESSAGE push",
+        )
+
+        mentioned = send_message(
+            client, fx.user_a["token"], group_id,
+            content="hi Bob",
+            mentions=[_mention(fx.user_b["id"], "hi Bob", "Bob")],
+        )
+        log.expect_status("muted_push_mention_send", mentioned, 201, "POST", message_path)
+        if mentioned.status in (200, 201):
+            fx.track(mentioned, fx.user_a["token"], group_id)
+        mention_count = _wait_push_count((after_ordinary or control_count) + 1)
+        log.expect(
+            "muted_push_mention_exception",
+            mentioned.status in (200, 201) and mention_count == (after_ordinary or 0) + 1,
+            "LOG", "MockFcmGateway", mention_count,
+            "an explicit mention still pushes to the muted member",
+        )
+
+        mention_all = send_message(
+            client, fx.user_a["token"], group_id,
+            content="hello everyone", mention_all=True,
+        )
+        log.expect_status("muted_push_mention_all_send", mention_all, 201, "POST", message_path)
+        if mention_all.status in (200, 201):
+            fx.track(mention_all, fx.user_a["token"], group_id)
+        all_count = _wait_push_count((mention_count or control_count) + 1)
+        log.expect(
+            "muted_push_mention_all_exception",
+            mention_all.status in (200, 201) and all_count == (mention_count or 0) + 1,
+            "LOG", "MockFcmGateway", all_count,
+            "mentionAll still pushes to the muted member",
+        )
+    finally:
+        try:
+            client.delete(mute_path, token=fx.user_b["token"])
+        except Exception:
+            pass
+        try:
+            client.request(
+                "DELETE", token_path, token=fx.user_b["token"],
+                body={"token": _PUSH_DEVICE_TOKEN},
+            )
+        except Exception:
+            pass
+
+
 # --- cleanup ------------------------------------------------------------------
 
 def cleanup(log: CheckLog, client: Client, fx: Fixtures) -> None:
@@ -1259,14 +1843,40 @@ def cleanup(log: CheckLog, client: Client, fx: Fixtures) -> None:
         )
     except Exception:
         pass
-    for message_id, token in fx.message_refs:
+    for conversation_id, message_id, token in fx.message_refs:
         try:
             client.delete(
-                f"/api/v1/conversations/{fx.direct_id}/messages/{message_id}",
+                f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
                 token=token,
             )
         except Exception:
             pass
+    if fx.pin_groups:
+        try:
+            client.delete(
+                f"/api/v1/conversations/{fx.pin_groups[0]}/invite-link",
+                token=fx.user_a["token"],
+            )
+        except Exception:
+            pass
+    for token in (fx.user_a["token"], fx.user_b["token"], fx.user_c["token"]):
+        try:
+            listed = client.get("/api/v1/labels", token=token)
+            rows = listed.json() if listed.status == 200 else []
+            if isinstance(rows, list):
+                for row in rows:
+                    label_id = row.get("id")
+                    if label_id:
+                        client.delete(f"/api/v1/labels/{label_id}", token=token)
+        except Exception:
+            pass
+    try:
+        client.request(
+            "DELETE", "/api/v1/users/device-token", token=fx.user_b["token"],
+            body={"token": _PUSH_DEVICE_TOKEN},
+        )
+    except Exception:
+        pass
     print("CLEANUP best-effort flags/messages reverted; no account-delete endpoint exists")
 
 
@@ -1312,11 +1922,16 @@ def run_suite(client: Client, log: CheckLog, ws_url: str, *, with_stomp: bool = 
         ("5. Group polls", lambda: scenario_polls(log, client, fx)),
         ("6. AI opt-out", lambda: scenario_ai_opt_out(log, client, fx)),
         ("7. Conversation pin cap", lambda: scenario_pins(log, client, fx)),
+        ("8. Invite links", lambda: scenario_invites(log, client, fx)),
+        ("9. Mentions", lambda: scenario_mentions(log, client, fx)),
+        ("10. Labels", lambda: scenario_labels(log, client, fx)),
+        ("11. Muted push", lambda: scenario_muted_push(log, client, fx)),
+        ("12. Recall window", lambda: scenario_recall(log, client, fx)),
     ]
     if with_stomp:
-        scenarios.append(("8. Seen privacy", lambda: scenario_seen_privacy(
+        scenarios.append(("13. Seen privacy", lambda: scenario_seen_privacy(
             log, client, fx, ws_url)))
-        scenarios.append(("9. Revoked token STOMP", lambda: scenario_revoked_token(
+        scenarios.append(("14. Revoked token STOMP", lambda: scenario_revoked_token(
             log, client, fx, ws_url)))
 
     try:
@@ -1390,6 +2005,11 @@ def main(argv: list[str] | None = None) -> int:
             ("polls", "POST", "/api/v1/conversations/{id}/polls"),
             ("ai_opt_out", "PUT", "/api/v1/conversations/{id}/ai-opt-out"),
             ("pins", "PUT", "/api/v1/conversations/{id}/pin"),
+            ("invites", "POST", "/api/v1/conversations/{id}/invite-link"),
+            ("mentions", "POST", "/api/v1/conversations/{id}/messages"),
+            ("labels", "POST", "/api/v1/labels"),
+            ("muted_push", "LOG", "MockFcmGateway"),
+            ("recall", "DELETE", "/api/v1/conversations/{id}/messages/{messageId}"),
             ("seen_privacy", "STOMP", "/ws"),
             ("revoked_token", "STOMP", "/ws"),
         ):

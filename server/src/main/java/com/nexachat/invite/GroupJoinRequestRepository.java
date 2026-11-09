@@ -1,5 +1,6 @@
 package com.nexachat.invite;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +21,12 @@ public interface GroupJoinRequestRepository extends JpaRepository<GroupJoinReque
             UUID conversationId, GroupJoinRequest.Status status);
 
     List<GroupJoinRequest> findAllByConversation_IdOrderByCreatedAtDesc(UUID conversationId);
+
+    List<GroupJoinRequest> findByConversation_IdAndStatusOrderByCreatedAtDescIdDesc(
+            UUID conversationId, GroupJoinRequest.Status status, Pageable pageable);
+
+    List<GroupJoinRequest> findByConversation_IdOrderByCreatedAtDescIdDesc(
+            UUID conversationId, Pageable pageable);
 
     long countByConversation_IdAndStatus(UUID conversationId, GroupJoinRequest.Status status);
 }

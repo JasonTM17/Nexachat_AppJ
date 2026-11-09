@@ -24,6 +24,10 @@ public final class ConversationPreferenceMenu {
         void onUnmute();
 
         void onArchive(boolean archive);
+
+        default void onTogglePin(boolean pin) {}
+
+        default void onSetAiOptOut(boolean optOut) {}
     }
 
     private static final int ACTION_UNMUTE = 1;
@@ -33,28 +37,63 @@ public final class ConversationPreferenceMenu {
     private static final int ACTION_MUTE_FOREVER = 5;
     private static final int ACTION_ARCHIVE = 6;
     private static final int ACTION_UNARCHIVE = 7;
+    private static final int ACTION_PIN = 8;
+    private static final int ACTION_UNPIN = 9;
+    private static final int ACTION_AI_OPT_OUT = 10;
+    private static final int ACTION_MANAGE_LABELS = 11;
 
     private ConversationPreferenceMenu() {}
 
-    /** Inbox long-press: mute presets (or unmute) plus archive/unarchive. */
+    /** Inbox long-press: pin/unpin, mute presets (or unmute) plus archive/unarchive. */
     public static void showInboxActions(
             @NonNull Context context,
             @NonNull ConversationSummary conversation,
             @NonNull Listener listener) {
-        boolean muted = conversation.isMutedAt(System.currentTimeMillis());
+        showInboxActions(context, conversation, listener, null);
+    }
+
+    /** Inbox long-press with the optional caller-owned label assignment action. */
+    public static void showInboxActions(
+            @NonNull Context context,
+            @NonNull ConversationSummary conversation,
+            @NonNull Listener listener,
+            @androidx.annotation.Nullable Runnable manageLabels) {
+        boolean pinned = conversation.isPinned();
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
+        labels.add(context.getString(pinned
+                ? R.string.action_unpin_conversation
+                : R.string.action_pin_conversation));
+        actions.add(pinned ? ACTION_UNPIN : ACTION_PIN);
+
+        boolean muted = conversation.isMutedAt(System.currentTimeMillis());
         addMuteItems(context, muted, labels, actions);
         boolean archived = conversation.isArchived();
         labels.add(context.getString(archived
                 ? R.string.conversation_unarchive
                 : R.string.conversation_archive));
         actions.add(archived ? ACTION_UNARCHIVE : ACTION_ARCHIVE);
+        labels.add(context.getString(conversation.isAiOptOut()
+                ? R.string.conversation_ai_opt_in_title
+                : R.string.conversation_ai_opt_out_title));
+        actions.add(ACTION_AI_OPT_OUT);
+        if (manageLabels != null) {
+            labels.add(context.getString(R.string.label_assign_menu));
+            actions.add(ACTION_MANAGE_LABELS);
+        }
 
         new MaterialAlertDialogBuilder(context)
                 .setTitle(ConversationPreviewHelper.displayTitle(context, conversation))
-                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
-                        dispatch(actions.get(which), listener))
+                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {
+                    int action = actions.get(which);
+                    if (action == ACTION_MANAGE_LABELS && manageLabels != null) {
+                        manageLabels.run();
+                    } else if (action == ACTION_AI_OPT_OUT) {
+                        listener.onSetAiOptOut(!conversation.isAiOptOut());
+                    } else {
+                        dispatch(action, listener);
+                    }
+                })
                 .show();
     }
 
@@ -109,6 +148,10 @@ public final class ConversationPreferenceMenu {
             listener.onArchive(true);
         } else if (action == ACTION_UNARCHIVE) {
             listener.onArchive(false);
+        } else if (action == ACTION_PIN) {
+            listener.onTogglePin(true);
+        } else if (action == ACTION_UNPIN) {
+            listener.onTogglePin(false);
         }
     }
 }

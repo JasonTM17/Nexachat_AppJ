@@ -115,11 +115,19 @@ class V19MigrationTest {
                                 + conversation + "') AND edited_at > now() - interval '7 days'"
                                 + " AND deleted_at IS NULL ORDER BY edited_at"))
                         .contains("idx_messages_conv_edited");
-                assertThat(planOf(statement,
+                String deletedPlan = planOf(statement,
                         "SELECT id FROM messages WHERE conversation_id = '" + conversation
                                 + "' AND seq <= (SELECT max(seq) FROM messages WHERE conversation_id = '"
-                                + conversation + "') AND deleted_at > now() - interval '7 days'"))
-                        .contains("idx_messages_conv_deleted");
+                                + conversation + "') AND deleted_at > now() - interval '7 days'");
+                String deletedIndexCondition = deletedPlan.lines()
+                        .filter(line -> line.trim().startsWith("Index Cond:"))
+                        .findFirst()
+                        .orElse("");
+                assertThat(deletedPlan).containsAnyOf(
+                        "idx_messages_conv_deleted", "idx_messages_deleted_retention");
+                assertThat(deletedIndexCondition)
+                        .contains("conversation_id = '" + conversation + "'")
+                        .contains("deleted_at >");
             }
 
             Flyway.configure()

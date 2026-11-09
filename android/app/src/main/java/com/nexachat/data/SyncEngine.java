@@ -468,7 +468,16 @@ public final class SyncEngine {
                     }
                 }
 
-                // 5. Peer receipt watermarks advance ONLY from the peer's own read/delivered
+                // 5. Apply caller-only member flags (pinned, pinnedAt).
+                if (delta.getPinned() != null) {
+                    boolean pinned = Boolean.TRUE.equals(delta.getPinned());
+                    Long pinnedAt = delta.getPinnedAt() != null
+                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())
+                            : null;
+                    conversationDao.updatePin(conversationId, pinned, pinnedAt).blockingAwait();
+                }
+
+                // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered
                 //    frames; a delta bundle says nothing about what the peer has read.
             }
             for (String conversationId : missing) {
@@ -505,7 +514,9 @@ public final class SyncEngine {
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()),
                 attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()),
-                TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt())
+                  TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
+                  deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
+                  !deleted && dto.isMentionAll()
         );
     }
 

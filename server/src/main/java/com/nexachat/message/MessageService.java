@@ -220,6 +220,20 @@ public class MessageService {
     public SendResult send(UUID senderId, UUID conversationId, SendMessageRequest request) {
         requireMember(conversationId, senderId);
         validatePayload(request);
+
+        var existing = messageRepository.findRowBySenderAndClientMessageId(
+                senderId, request.clientMessageId());
+        if (existing.isPresent()) {
+            MessageRow row = existing.get();
+            if (!conversationId.equals(row.conversationId())) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "clientMessageId already used in a different conversation");
+            }
+            MessageResponse response = toResponse(row);
+            eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+            return new SendResult(response, false);
+        }
+
         Message.Type type = parseType(request.type());
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);

@@ -61,6 +61,7 @@
     <string name="conversation_unarchived">Moved to Chats</string>
     <string name="conversation_settings_title">Conversation settings</string>
     <string name="conversation_ai_opt_out_title">Keep my messages out of AI</string>
+    <string name="conversation_ai_opt_in_title">Allow AI for this conversation</string>
     <string name="inbox_new_chat">New chat</string>
     <string name="inbox_more_options">More options</string>
     <string name="archive_title">Shared media</string>
@@ -162,12 +163,16 @@
     <string name="action_reply">Reply</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
+    <string name="action_pin_conversation">Pin conversation</string>
+    <string name="action_unpin_conversation">Unpin conversation</string>
     <string name="pinned_title">Pinned</string>
     <string name="pinned_count">%1$d/%2$d</string>
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="action_jump_to_message">Go to message</string>
     <string name="error_pin_limit">Pinned-message limit reached</string>
+    <string name="error_conversation_pin_limit">You can pin at most 5 conversations</string>
+    <string name="cd_pinned_conversation">Pinned conversation</string>
 
     <!-- Media / attachments -->
     <string name="media_pick_visual">Photo or video</string>
@@ -264,6 +269,8 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="privacy_show_presence">Show activity status</string>
+    <string name="privacy_show_seen">Show seen status</string>
+    <string name="cd_show_seen">Show seen status</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Record voice message</string>
@@ -306,6 +313,13 @@
     <string name="ask_from_message">From a message</string>
     <string name="ask_citations_label">Sources</string>
     <string name="ask_citation_accessibility">Open message: %1$s</string>
+    <string name="mention_all_picker">@all — everyone</string>
+    <string name="mention_person_picker">Mention %1$s</string>
+    <string name="mention_limit_exceeded">A message can mention up to 20 people. The message was cleared.</string>
+    <string name="message_mentions_you">You were mentioned.</string>
+    <string name="message_has_mentions">This message includes mentions.</string>
+    <string name="error_mention_validation">The mentions in this message are no longer valid. Review them and try again.</string>
+    <string name="error_mention_not_admin">Only group admins can mention everyone.</string>
 
     <!-- Group board, reminders and polls -->
     <string name="group_board_title">Group board</string>
@@ -396,5 +410,44 @@
     <string name="poll_error_create">Couldn’t create the poll</string>
     <string name="poll_error_manage">Couldn’t update the poll</string>
     <string name="poll_error_admin">Only the creator or a group admin can change this poll.</string>
+
+    <string name="label_filter_all">All</string>
+    <string name="label_manage">Manage labels</string>
+    <string name="label_manage_description">Manage conversation labels</string>
+    <string name="label_assign_menu">Classify conversation</string>
+    <string name="label_assign_title">Conversation labels</string>
+    <string name="label_manage_title">Manage labels</string>
+    <string name="label_empty_manage">No labels yet. Create one to organize conversations.</string>
+    <string name="label_empty_assignment">Create a label before assigning it.</string>
+    <string name="label_empty_filter">No conversations have the “%1$s” label.</string>
+    <string name="label_create">Create label</string>
+    <string name="label_create_title">New label</string>
+    <string name="label_edit_title">Edit label</string>
+    <string name="label_save">Save</string>
+    <string name="label_done">Done</string>
+    <string name="label_retry">Retry</string>
+    <string name="label_back_to_assignment">Back to conversation</string>
+    <string name="label_name_hint">Label name (1–30 characters)</string>
+    <string name="label_filter_description">Filter inbox by %1$s</string>
+    <string name="label_chip_description">Label: %1$s</string>
+    <string name="label_assign_checkbox">Assign label %1$s</string>
+    <string name="label_delete_description">Delete label %1$s</string>
+    <string name="label_delete_title">Delete label?</string>
+    <string name="label_delete_message">“%1$s” will be removed from all conversations.</string>
+    <string name="label_error_validation">Use a unique name with 1–30 characters.</string>
+    <string name="label_error_conflict">A label with this name already exists.</string>
+    <string name="label_error_rate_limit">Too many label changes. Try again shortly.</string>
+    <string name="label_error_offline">Labels need an internet connection. Try again when online.</string>
+    <string name="label_error_label_limit">You can create up to 10 labels.</string>
+    <string name="label_error_assignment_limit">A conversation can have up to 3 labels.</string>
+    <string name="label_error_generic">Could not update labels. Try again.</string>
+    <string name="label_color_indigo">Indigo</string>
+    <string name="label_color_blue">Blue</string>
+    <string name="label_color_cyan">Cyan</string>
+    <string name="label_color_teal">Teal</string>
+    <string name="label_color_emerald">Emerald</string>
+    <string name="label_color_amber">Amber</string>
+    <string name="label_color_rose">Rose</string>
+    <string name="label_color_purple">Purple</string>
 
 </resources>
