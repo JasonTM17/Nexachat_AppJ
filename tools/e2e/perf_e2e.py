@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Cheap latency sanity for the F1/F2/F4 routes on a real backend.
 
-Creates one bulk corpus (500 prefixed TEXT messages, <= 20 req/s) in the
-DIRECT conversation between seed users An and Chi, then samples 50 edits,
-50 deletes and 50 searches and reports p50/p95. Edit and delete share the
+Creates one bulk corpus (500 prefixed TEXT messages) in the DIRECT
+conversation between seed users An and Chi, then samples 50 edits, 50 deletes
+and 50 searches and reports p50/p95. Sends stay at 25 per 10 seconds for each
+author, under the shared 30 sends / 10 s bucket. Edit and delete share the
 server's 30/min/user write budget, so the samples are spread over four seed
 authors (two per DIRECT conversation); search runs as one caller under the
 60/min read budget.
@@ -38,7 +39,12 @@ from e2e_common import (
 )
 
 USER_D = {"phone": "+84900000004", "name": "Dung"}
-RATE_LIMIT_RPS = 20.0
+# MessageRateLimitInterceptor: 30 sends / 10 s per user, shared with STOMP SEND.
+# 25/10s leaves a gap so a sliding window cannot sit on the boundary.
+SENDS_PER_WINDOW = 30
+WINDOW_SECONDS = 10.0
+SENDS_PER_AUTHOR_BUDGET = 25
+PER_AUTHOR_INTERVAL = WINDOW_SECONDS / SENDS_PER_AUTHOR_BUDGET
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -84,17 +90,16 @@ def main() -> int:
         # ------------------------------------------------------- bulk corpus
         author_ids: dict[str, list[str]] = {me_a: [], me_b: [], me_c: [], me_d: []}
         started = time.time()
-        interval = 1.0 / RATE_LIMIT_RPS
-        next_slot = time.perf_counter()
+        next_slot: dict[str, float] = {}
 
         def paced_send(token: str, author: str, conversation_id: str, content: str) -> None:
-            nonlocal next_slot
-            row = send_text(client, token, conversation_id, content)
-            author_ids[author].append(row["id"])
-            next_slot += interval
-            delay = next_slot - time.perf_counter()
+            slot = next_slot.get(author, time.perf_counter())
+            delay = slot - time.perf_counter()
             if delay > 0:
                 time.sleep(delay)
+            row = send_text(client, token, conversation_id, content)
+            author_ids[author].append(row["id"])
+            next_slot[author] = time.perf_counter() + PER_AUTHOR_INTERVAL
 
         target = max(60, args.bulk)
         for index in range(target):
