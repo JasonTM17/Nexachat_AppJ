@@ -22,8 +22,8 @@ import java.util.stream.Collectors;
  *
  * <p>The system has no role column or role claim yet; introducing full RBAC is
  * outside this hardening pass. A configured allow-list of normalized E.164
- * numbers gives the RAG stats endpoint a real admin boundary without changing
- * the token contract or the Android client. It is resolved per request from the
+ * numbers gives operator endpoints a real admin boundary without changing the
+ * token contract or the Android client. It is resolved per request from the
  * user row, so removing a phone from the configuration takes effect on the
  * next request rather than at the next login.
  */
@@ -48,7 +48,7 @@ public class RagStatsAuthorizationManager implements AuthorizationManager<Reques
                 })
                 .collect(Collectors.toUnmodifiableSet());
         if (adminPhones.isEmpty()) {
-            log.warn("No admin phones configured: /api/v1/rag/stats is denied to every caller");
+            log.warn("No admin phones configured: operator endpoints are denied to every caller");
         }
     }
 
@@ -64,7 +64,7 @@ public class RagStatsAuthorizationManager implements AuthorizationManager<Reques
                 .map(adminPhones::contains)
                 .orElse(false);
         if (!admin) {
-            log.warn("Denied operator telemetry to a non-admin caller");
+            log.warn("Denied an operator endpoint to a non-admin caller");
         }
         return new AuthorizationDecision(admin);
     }
