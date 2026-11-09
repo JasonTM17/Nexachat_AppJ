@@ -68,6 +68,19 @@
     </fragment>
 
     <fragment
+        android:id="@+id/groupBoardFragment"
+        android:name="com.nexachat.feature.groupboard.GroupBoardFragment"
+        android:label="@string/group_board_title">
+        <argument
+            android:name="conversationId"
+            app:argType="string" />
+        <argument
+            android:name="isGroup"
+            android:defaultValue="false"
+            app:argType="boolean" />
+    </fragment>
+
+    <fragment
         android:id="@+id/groupCreateFragment"
         android:name="com.nexachat.feature.group.CreateGroupFragment"
         android:label="@string/group_create_title" />

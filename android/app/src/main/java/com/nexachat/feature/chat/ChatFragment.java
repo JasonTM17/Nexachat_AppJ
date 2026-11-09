@@ -597,7 +597,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 .setItems(new CharSequence[]{
                         getString(R.string.ask_action),
                         getString(R.string.summary_overflow_action),
-                        getString(R.string.archive_title)
+                        getString(R.string.archive_title),
+                        getString(R.string.group_board_title)
                 }, (dialog, which) -> {
                     if (which == 0) {
                         showAsk();
@@ -605,8 +606,26 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         showSummary();
                     } else if (which == 2) {
                         openArchive();
+                    } else if (which == 3) {
+                        openGroupBoard();
                     }
                 }).show();
+    }
+
+    private void openGroupBoard() {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        args.putBoolean("isGroup", state.isGroup());
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.groupBoardFragment, args);
+        } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void openArchive() {

@@ -279,4 +279,94 @@
     <string name="ask_citations_label">Sources</string>
     <string name="ask_citation_accessibility">Open message: %1$s</string>
 
+    <!-- Group board, reminders and polls -->
+    <string name="group_board_title">Group board</string>
+    <string name="group_board_tab_reminders">Reminders</string>
+    <string name="meta_separator" translatable="false"> · </string>
+    <string name="group_board_tab_polls">Polls</string>
+
+    <string name="reminder_add">New reminder</string>
+    <string name="reminder_empty">No upcoming reminders</string>
+    <string name="reminder_loading">Loading reminders</string>
+    <string name="reminder_error">Couldn’t load reminders</string>
+    <string name="reminder_error_title_required">Enter a title</string>
+    <string name="reminder_error_title_too_long">Title is too long</string>
+    <string name="reminder_error_time_required">Choose a date and time</string>
+    <string name="reminder_error_time_past">Choose a future time</string>
+    <string name="reminder_error_time_too_far">Choose a time within one year</string>
+    <string name="reminder_error_not_member">You no longer have access to this conversation.</string>
+    <string name="reminder_error_not_admin">Only a group admin can change this reminder.</string>
+    <string name="reminder_error_forbidden">Only the creator or a group admin can change this reminder.</string>
+    <string name="reminder_error_not_found">This reminder no longer exists.</string>
+    <string name="reminder_error_validation">Check the reminder details and try again.</string>
+    <string name="reminder_error_limit">A conversation can have up to 50 reminders. Delete one first.</string>
+    <string name="reminder_error_conflict">This request conflicted with an earlier one. Try again.</string>
+    <string name="reminder_options">Reminder options</string>
+    <string name="reminder_delete_confirm">Delete this reminder?</string>
+    <string name="reminder_repeat_none">No repeat</string>
+    <string name="reminder_repeat_daily">Daily</string>
+    <string name="reminder_repeat_weekly">Weekly</string>
+    <string name="reminder_repeat_monthly">Monthly</string>
+    <string name="reminder_repeat_value">Repeats %1$s</string>
+    <string name="reminder_created_by">Created by %1$s</string>
+    <string name="reminder_editor_new">New reminder</string>
+    <string name="reminder_editor_edit">Edit reminder</string>
+    <string name="reminder_editor_title">Title</string>
+    <string name="reminder_editor_repeat">Repeat</string>
+    <string name="reminder_repeat_field">Repeat: %1$s</string>
+    <string name="reminder_editor_save">Save reminder</string>
+    <string name="reminder_date_picker">Select reminder date</string>
+    <string name="reminder_time_picker">Select reminder time</string>
+    <string name="reminder_date_field">Date: %1$s</string>
+    <string name="reminder_time_field">Time: %1$s</string>
+    <string name="cd_close">Close</string>
+
+    <string name="poll_add">New poll</string>
+    <string name="poll_empty">No polls yet</string>
+    <string name="poll_loading">Loading polls</string>
+    <string name="poll_error">Couldn’t load polls</string>
+    <string name="poll_not_group">Polls are only available in group chats.</string>
+    <string name="poll_not_member">You no longer have access to this conversation.</string>
+    <string name="poll_closed_vote">This poll is closed.</string>
+    <string name="poll_closed">Closed</string>
+    <string name="poll_open">Open</string>
+    <string name="poll_multiple">Multiple answers</string>
+    <string name="poll_anonymous">Anonymous</string>
+    <string name="poll_closes">Closes %1$s</string>
+    <string name="poll_closed_on">Closed %1$s</string>
+    <string name="poll_vote">Vote</string>
+    <string name="poll_retract">Retract vote</string>
+    <string name="poll_voter_count">%1$d voters</string>
+    <string name="poll_option_count">%1$d votes</string>
+    <string name="poll_option_count_named" translatable="false">%1$s · %2$s</string>
+    <string name="poll_manage">Poll options</string>
+    <string name="poll_close">Close poll</string>
+    <string name="poll_close_confirm">Close this poll? Votes can no longer change.</string>
+    <string name="poll_delete">Delete poll</string>
+    <string name="poll_delete_confirm">Delete this poll?</string>
+    <string name="poll_create_title">New poll</string>
+    <string name="poll_question">Question</string>
+    <string name="poll_option_hint">Option %1$d</string>
+    <string name="poll_add_option">Add option</string>
+    <string name="poll_remove_option">Remove option</string>
+    <string name="poll_multiple_label">Allow multiple answers</string>
+    <string name="poll_anonymous_label">Hide who voted</string>
+    <string name="poll_expiry_add">Add expiry</string>
+    <string name="poll_expiry_value">Closes %1$s</string>
+    <string name="poll_expiry_clear">Remove expiry</string>
+    <string name="poll_expiry_picker">Select closing date</string>
+    <string name="poll_create">Create poll</string>
+    <string name="poll_error_question">Enter a question</string>
+    <string name="poll_error_question_long">Question is too long</string>
+    <string name="poll_error_options_min">Add at least two options</string>
+    <string name="poll_error_options_max">Use at most ten options</string>
+    <string name="poll_error_option_blank">Fill in every option</string>
+    <string name="poll_error_option_long">Option is too long</string>
+    <string name="poll_error_option_duplicate">Options must be different</string>
+    <string name="poll_error_expiry_past">Choose a future closing date</string>
+    <string name="poll_error_expiry_far">Choose a date within 30 days</string>
+    <string name="poll_error_create">Couldn’t create the poll</string>
+    <string name="poll_error_manage">Couldn’t update the poll</string>
+    <string name="poll_error_admin">Only the creator or a group admin can change this poll.</string>
+
 </resources>
