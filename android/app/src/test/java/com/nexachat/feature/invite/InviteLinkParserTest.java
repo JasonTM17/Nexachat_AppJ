@@ -24,6 +24,80 @@ public final class InviteLinkParserTest {
     }
 
     @Test
+    public void releaseOwnedDomainProducesHttpsShareLinksAndRejectsLookAlikes() {
+        String host = "nexachat.io.vn";
+        Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN, host);
+
+        assertTrue(parsed.isPresent());
+        assertEquals(TOKEN, parsed.get().getToken());
+        assertEquals("https://" + host + "/join/" + TOKEN,
+                InviteLinkParser.shareUrl(TOKEN, host).orElseThrow());
+        assertTrue(InviteLinkParser.parse(
+                "HTTPS://NEXACHAT.IO.VN/join/" + TOKEN, host).isPresent());
+
+        // Custom scheme must still be supported when HTTPS host is configured
+        Optional<InviteLinkParser.ParsedInvite> customParsed = InviteLinkParser.parse(
+                "nexachat://join/" + TOKEN, host);
+        assertTrue(customParsed.isPresent());
+        assertEquals(TOKEN, customParsed.get().getToken());
+
+        // Look-alikes and malformed variants must be rejected
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ".evil.example/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ".evil.test/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://evil." + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ".attacker.com/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://other.domain.com/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "http://" + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ":443/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + ":444/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://user@" + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://user:pass@" + host + "/join/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "?next=https://evil.example", host)
+                .isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "#fragment", host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/%41" + "A".repeat(42), host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "/extra", host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/join/" + TOKEN + "/extra/segment", host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/JOIN/" + TOKEN, host).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://" + host + "/invite/" + TOKEN, host).isPresent());
+    }
+
+    @Test
+    public void debugEmptyHostConfigurationUsesCustomSchemeAndRejectsHttps() {
+        String emptyHost = "";
+        Optional<InviteLinkParser.ParsedInvite> customParsed = InviteLinkParser.parse(
+                "nexachat://join/" + TOKEN, emptyHost);
+        assertTrue(customParsed.isPresent());
+        assertEquals(TOKEN, customParsed.get().getToken());
+        assertEquals("nexachat://join/" + TOKEN,
+                InviteLinkParser.shareUrl(TOKEN, emptyHost).orElseThrow());
+
+        // Any https link is rejected when no host is configured
+        assertFalse(InviteLinkParser.parse(
+                "https://nexachat.io.vn/join/" + TOKEN, emptyHost).isPresent());
+        assertFalse(InviteLinkParser.parse(
+                "https://example.com/join/" + TOKEN, emptyHost).isPresent());
+    }
+
+    @Test
     public void configuredHttpsHostIsExactAndProducesHttpsShareLinks() {
         String host = "invite.example.test";
         Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(
