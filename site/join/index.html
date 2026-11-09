@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>NexaChat</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <script src="/join/join.js" defer></script>
 </head>
@@ -13,15 +14,20 @@
     <div class="card">
       <h1 class="brand">NexaChat</h1>
       <div id="invite-valid" class="state-container" hidden>
-        <p class="tagline">Bạn nhận được lời mời tham gia nhóm trên NexaChat.</p>
-        <a id="btn-open-app" class="btn" href="#">Mở trong ứng dụng</a>
+        <p class="tagline" lang="vi">Bạn nhận được lời mời tham gia nhóm trên NexaChat.</p>
+        <p class="tagline" lang="en">You have been invited to a NexaChat group.</p>
+        <a id="btn-open-app" class="btn" href="#">Mở trong ứng dụng / Open app</a>
+        <p class="install-hint" lang="vi">Nếu ứng dụng không mở, cài đặt NexaChat (<code>com.nexachat</code>) từ Google Play hoặc App Store, rồi mở lại liên kết này.</p>
+        <p class="install-hint" lang="en">If the app does not open, install NexaChat (<code>com.nexachat</code>) from Google Play or the App Store, then open this link again.</p>
       </div>
       <div id="invite-invalid" class="state-container" hidden>
-        <p class="error-msg">Liên kết mời không hợp lệ hoặc đã hết hạn.</p>
-        <a class="btn btn-secondary" href="/">Về trang chủ</a>
+        <p class="error-msg" lang="vi">Liên kết mời không hợp lệ hoặc đã hết hạn.</p>
+        <p class="error-msg" lang="en">This invite link is invalid or has expired.</p>
+        <a class="btn btn-secondary" href="/">Về trang chủ / Home</a>
       </div>
       <noscript>
-        <p class="error-msg">Trình duyệt của bạn cần bật JavaScript để mở liên kết mời.</p>
+        <p class="error-msg" lang="vi">Trình duyệt cần bật JavaScript để mở liên kết mời.</p>
+        <p class="error-msg" lang="en">Enable JavaScript to open this invite link.</p>
       </noscript>
     </div>
   </main>

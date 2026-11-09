@@ -1,3 +1,5 @@
 User-agent: *
 Allow: /
 Disallow: /join/
+
+Sitemap: https://nexachat.io.vn/sitemap.xml

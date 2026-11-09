@@ -554,6 +554,140 @@ def test_no_inline_scripts_and_styles():
     return failures
 
 
+REQUIRED_HTML_PAGES = ("index.html", "404.html", os.path.join("join", "index.html"))
+
+
+def test_site_pages_and_assets():
+    """HTML structure, viewport, favicon link, sitemap, robots."""
+    failures = []
+
+    favicon_path = os.path.join(SITE_DIR, "favicon.svg")
+    if not os.path.isfile(favicon_path):
+        failures.append("Missing site/favicon.svg")
+    else:
+        with open(favicon_path, "r", encoding="utf-8") as f:
+            favicon_body = f.read()
+        if "<svg" not in favicon_body:
+            failures.append("favicon.svg does not look like SVG")
+        else:
+            log_pass("favicon.svg present")
+
+    sitemap_path = os.path.join(SITE_DIR, "sitemap.xml")
+    if not os.path.isfile(sitemap_path):
+        failures.append("Missing site/sitemap.xml")
+    else:
+        with open(sitemap_path, "r", encoding="utf-8") as f:
+            sitemap_body = f.read()
+        if "https://nexachat.io.vn/" not in sitemap_body:
+            failures.append("sitemap.xml must list apex home URL https://nexachat.io.vn/")
+        else:
+            log_pass("sitemap.xml lists home URL")
+
+    robots_path = os.path.join(SITE_DIR, "robots.txt")
+    if not os.path.isfile(robots_path):
+        failures.append("Missing site/robots.txt")
+    else:
+        with open(robots_path, "r", encoding="utf-8") as f:
+            robots_body = f.read()
+        if "Sitemap:" not in robots_body or "sitemap.xml" not in robots_body:
+            failures.append("robots.txt must reference sitemap.xml")
+        if "Disallow: /join/" not in robots_body:
+            failures.append("robots.txt must disallow /join/")
+        else:
+            log_pass("robots.txt references sitemap and disallows /join/")
+
+    for rel_page in REQUIRED_HTML_PAGES:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            failures.append(f"Missing HTML page {rel_page}")
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+        if not html.lstrip().startswith("<!DOCTYPE html>"):
+            failures.append(f"{rel_page} must start with <!DOCTYPE html>")
+        if "<html" not in html or "<head>" not in html or "<body>" not in html:
+            failures.append(f"{rel_page} missing basic html/head/body structure")
+        if 'name="viewport"' not in html and "name='viewport'" not in html:
+            failures.append(f"{rel_page} missing mobile viewport meta tag")
+        if 'href="/favicon.svg"' not in html:
+            failures.append(f"{rel_page} missing favicon link to /favicon.svg")
+        if 'charset="utf-8"' not in html.lower():
+            failures.append(f"{rel_page} missing utf-8 charset meta")
+
+    if not failures:
+        log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, and charset")
+    return failures
+
+
+def test_bilingual_user_visible_text():
+    """Each public HTML page includes both lang=\"vi\" and lang=\"en\" user-visible copy."""
+    failures = []
+    for rel_page in REQUIRED_HTML_PAGES:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+        if 'lang="vi"' not in html:
+            failures.append(f"{rel_page} missing Vietnamese copy (lang=\"vi\")")
+        if 'lang="en"' not in html:
+            failures.append(f"{rel_page} missing English copy (lang=\"en\")")
+
+    join_path = os.path.join(SITE_DIR, "join", "index.html")
+    if os.path.isfile(join_path):
+        with open(join_path, "r", encoding="utf-8") as f:
+            join_html = f.read()
+        if "com.nexachat" not in join_html:
+            failures.append("join/index.html must mention package id com.nexachat in install instructions")
+        if "Google Play" not in join_html or "App Store" not in join_html:
+            failures.append("join/index.html must mention store install paths (Google Play / App Store)")
+
+    if not failures:
+        log_pass("Public HTML pages include vi/en text and join install fallback copy")
+    return failures
+
+
+def test_internal_static_links():
+    """Root-absolute href/src in HTML point to files under site/ or known Vercel routes."""
+    failures = []
+    known_routes = {"/", "/join/index.html", "/style.css", "/favicon.svg", "/join/join.js", "/sitemap.xml", "/robots.txt"}
+
+    for rel_page in REQUIRED_HTML_PAGES:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+        for attr, pattern in (("href", r'href="(/[^"#?]*)"'), ("src", r'src="(/[^"#?]*)"')):
+            for match in re.finditer(pattern, html):
+                target = match.group(1)
+                if target in known_routes or target.startswith("/join/"):
+                    continue
+                disk = os.path.join(SITE_DIR, target.lstrip("/").replace("/", os.sep))
+                if not os.path.isfile(disk):
+                    failures.append(f"{rel_page}: {attr} {target} does not resolve to a file under site/")
+
+    if not failures:
+        log_pass("Internal href/src links resolve to site files or known routes")
+    return failures
+
+
+def test_vercel_ignore_command(vercel_data):
+    failures = []
+    if not vercel_data:
+        return failures
+    cmd = vercel_data.get("ignoreCommand", "")
+    if not cmd:
+        failures.append("vercel.json missing ignoreCommand (Vercel dashboard ignore must be cleared)")
+    elif "VERCEL_GIT_PREVIOUS_SHA" not in cmd:
+        failures.append("ignoreCommand must reference VERCEL_GIT_PREVIOUS_SHA")
+    elif "VERCEL_GIT_COMMIT_SHA" not in cmd:
+        failures.append("ignoreCommand must compare against VERCEL_GIT_COMMIT_SHA")
+    else:
+        log_pass("vercel.json defines repo-owned ignoreCommand using VERCEL_GIT_PREVIOUS_SHA")
+    return failures
+
+
 def test_token_validator():
     failures = []
     join_js_path = os.path.join(SITE_DIR, "join", "join.js")
@@ -671,6 +805,18 @@ def main():
     # 5. Security headers and rewrites in vercel.json
     f5 = test_vercel_headers(vercel_data)
     all_failures.extend(f5)
+
+    f5b = test_vercel_ignore_command(vercel_data)
+    all_failures.extend(f5b)
+
+    f_pages = test_site_pages_and_assets()
+    all_failures.extend(f_pages)
+
+    f_i18n = test_bilingual_user_visible_text()
+    all_failures.extend(f_i18n)
+
+    f_links = test_internal_static_links()
+    all_failures.extend(f_links)
 
     # 6. External URLs
     f6 = test_no_external_urls()
