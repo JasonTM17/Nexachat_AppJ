@@ -7,7 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -115,9 +117,44 @@ public final class InviteLinkConfigurationTest {
                 "<string\\s+name=\"invite_https_deep_link_pattern\"[^>]*>(.*?)</string>")
                 .matcher(valuesXml);
         assertTrue("Gradle must define the optional navigation pattern", uriPattern.find());
-        String expectedUri = host.isEmpty() ? "" : "https://" + host + "/join/{token}";
-        assertTrue("optional navigation pattern must match the BuildConfig host",
+        String expectedUri = host.isEmpty()
+                ? "nexachat://join/{token}"
+                : "https://" + host + "/join/{token}";
+        assertTrue("navigation pattern must match the BuildConfig host",
                 expectedUri.equals(uriPattern.group(1).trim()));
+    }
+
+    @Test
+    public void deepLinkUrisResolveNonEmptyForDebugLocalSmokeAndRelease() throws IOException {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("debug", "nexachat://join/{token}");
+        expected.put("localSmoke", "nexachat://join/{token}");
+        expected.put("release", "https://" + OWNED_RELEASE_HOST + "/join/{token}");
+
+        for (Map.Entry<String, String> variant : expected.entrySet()) {
+            String generated = generatedInvitePattern(variant.getKey());
+            assertFalse(variant.getKey() + " deep link pattern must not be empty",
+                    generated.isEmpty());
+            assertEquals(variant.getKey() + " deep link pattern", variant.getValue(), generated);
+            if (!"release".equals(variant.getKey())) {
+                assertFalse(variant.getKey() + " must not register an https invite pattern",
+                        generated.startsWith("https:"));
+            }
+            for (String nav : navigationDocuments(variant.getKey())) {
+                for (String uri : deepLinkUris(nav)) {
+                    String resolved = resolveDeepLinkUri(uri, generated);
+                    assertFalse(variant.getKey() + " deepLink app:uri resolves empty: " + uri,
+                            resolved.trim().isEmpty());
+                }
+            }
+        }
+
+        File resValuesRoot = new File(appRoot(), "build/generated/res/resValues");
+        assertTrue(resValuesRoot.isDirectory());
+        try (Stream<Path> files = Files.walk(resValuesRoot.toPath())) {
+            files.filter(path -> path.getFileName().toString().equals("gradleResValues.xml"))
+                    .forEach(path -> assertGeneratedInvitePatternNonEmpty(path));
+        }
     }
 
     @Test
@@ -195,6 +232,86 @@ public final class InviteLinkConfigurationTest {
             assertFalse("debug manifest must have no https scheme",
                     "https".equals(d.getAttributeNS(ANDROID_NS, "scheme")));
         }
+    }
+
+    private static void assertGeneratedInvitePatternNonEmpty(Path path) {
+        try {
+            String valuesXml = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+            Matcher uriPattern = Pattern.compile(
+                    "<string\\s+name=\"invite_https_deep_link_pattern\"[^>]*>(.*?)</string>",
+                    Pattern.DOTALL).matcher(valuesXml);
+            if (!uriPattern.find()) {
+                return;
+            }
+            assertFalse(path + " invite deep link pattern must not be empty",
+                    uriPattern.group(1).trim().isEmpty());
+        } catch (IOException error) {
+            throw new IllegalStateException("Could not read " + path, error);
+        }
+    }
+
+    private static String generatedInvitePattern(String variant) throws IOException {
+        File generatedValues = new File(appRoot(),
+                "build/generated/res/resValues/" + variant + "/values/gradleResValues.xml");
+        assertTrue(variant + " gradleResValues.xml must exist", generatedValues.isFile());
+        String valuesXml = new String(Files.readAllBytes(generatedValues.toPath()),
+                StandardCharsets.UTF_8);
+        Matcher uriPattern = Pattern.compile(
+                "<string\\s+name=\"invite_https_deep_link_pattern\"[^>]*>(.*?)</string>",
+                Pattern.DOTALL).matcher(valuesXml);
+        assertTrue(variant + " must define invite_https_deep_link_pattern", uriPattern.find());
+        return uriPattern.group(1).trim();
+    }
+
+    private static List<String> navigationDocuments(String variant) throws IOException {
+        List<String> documents = new ArrayList<>();
+        File mainDir = new File(appRoot(), "src/main/res/navigation");
+        File variantDir = new File(appRoot(), "src/" + variant + "/res/navigation");
+        List<String> overridden = new ArrayList<>();
+        if (variantDir.isDirectory()) {
+            File[] files = variantDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.getName().endsWith(".xml")) {
+                        overridden.add(file.getName());
+                        documents.add(new String(Files.readAllBytes(file.toPath()),
+                                StandardCharsets.UTF_8));
+                    }
+                }
+            }
+        }
+        File[] mainFiles = mainDir.listFiles();
+        if (mainFiles != null) {
+            for (File file : mainFiles) {
+                if (file.getName().endsWith(".xml") && !overridden.contains(file.getName())) {
+                    documents.add(new String(Files.readAllBytes(file.toPath()),
+                            StandardCharsets.UTF_8));
+                }
+            }
+        }
+        assertFalse(variant + " must have a navigation graph", documents.isEmpty());
+        return documents;
+    }
+
+    private static List<String> deepLinkUris(String nav) {
+        List<String> uris = new ArrayList<>();
+        Matcher matcher = Pattern.compile("<deepLink\\b[^>]*\\bapp:uri=\"([^\"]*)\"")
+                .matcher(nav);
+        while (matcher.find()) {
+            uris.add(matcher.group(1));
+        }
+        assertFalse("navigation graph must declare a deep link", uris.isEmpty());
+        return uris;
+    }
+
+    private static String resolveDeepLinkUri(String raw, String generatedPattern) {
+        if ("@string/invite_https_deep_link_pattern".equals(raw)) {
+            return generatedPattern;
+        }
+        if (raw.startsWith("@string/")) {
+            throw new AssertionError("Deep link resource is not a generated invite pattern: " + raw);
+        }
+        return raw;
     }
 
     private static Document parseXml(File file) throws Exception {
