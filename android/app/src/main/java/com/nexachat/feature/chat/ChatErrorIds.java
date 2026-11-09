@@ -36,6 +36,12 @@ public final class ChatErrorIds {
             if (ERROR_PIN_LIMIT.equals(code)) {
                 return R.string.error_pin_limit;
             }
+            if (com.nexachat.data.MessageRepository.ERROR_VALIDATION_FAILED.equals(code)) {
+                return R.string.error_mention_validation;
+            }
+            if (com.nexachat.data.MessageRepository.ERROR_NOT_ADMIN.equals(code)) {
+                return R.string.error_mention_not_admin;
+            }
             if (ChatViewModel.ERROR_MESSAGE_GONE.equals(code)) {
                 return R.string.reply_unavailable;
             }

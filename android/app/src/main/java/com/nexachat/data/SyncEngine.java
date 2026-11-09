@@ -490,7 +490,9 @@ public final class SyncEngine {
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()),
                 attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()),
-                TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt())
+                  TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
+                  deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
+                  !deleted && dto.isMentionAll()
         );
     }
 

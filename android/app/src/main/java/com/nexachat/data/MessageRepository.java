@@ -24,6 +24,7 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
+import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.network.dto.PinRequest;
 import com.nexachat.core.network.dto.ReactionRequest;
 import com.nexachat.core.network.dto.ReactionSummaryDto;
@@ -96,6 +97,7 @@ public final class MessageRepository {
     public static final String ERROR_MESSAGE_DELETED = "MESSAGE_DELETED";
     public static final String ERROR_NOT_MESSAGE_AUTHOR = "NOT_MESSAGE_AUTHOR";
     public static final String ERROR_VALIDATION_FAILED = "VALIDATION_FAILED";
+    public static final String ERROR_NOT_ADMIN = "NOT_ADMIN";
     public static final String ERROR_RATE_LIMITED = "RATE_LIMITED";
     public static final String ERROR_NOT_MEMBER = "NOT_MEMBER";
     public static final String ERROR_CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND";
@@ -423,6 +425,12 @@ public final class MessageRepository {
      * Blank and identical content are no-ops and never reach the network.
      */
     public Single<Result<Unit>> editMessage(String conversationId, String messageId, String newContent) {
+        return editMessage(conversationId, messageId, newContent, null, null);
+    }
+
+    public Single<Result<Unit>> editMessage(String conversationId, String messageId,
+            String newContent, @Nullable List<MessageMention> mentions,
+            @Nullable Boolean mentionAll) {
         String trimmed = newContent.trim();
         if (trimmed.isEmpty()) return Single.just(Result.failure(new ApiError.Unknown(ERROR_VALIDATION_FAILED)));
         AtomicReference<MessageEntity> optimisticRef = new AtomicReference<>();
@@ -439,12 +447,20 @@ public final class MessageRepository {
                 if (before.getDeletedAtEpochMs() != null) {
                     return Single.just(Result.failure(new ApiError.Unknown(ERROR_MESSAGE_DELETED)));
                 }
-                if (Objects.equals(before.getContent(), trimmed)) return Single.just(new Result.Success<>(Unit.INSTANCE));
+                String nextMentionsJson = mentions == null
+                        ? before.getMentionsJson() : MessageMentionCodec.encode(mentions);
+                boolean nextMentionAll = mentionAll == null ? before.isMentionAll() : mentionAll;
+                if (Objects.equals(before.getContent(), trimmed)
+                        && Objects.equals(before.getMentionsJson(), nextMentionsJson)
+                        && before.isMentionAll() == nextMentionAll) {
+                    return Single.just(new Result.Success<>(Unit.INSTANCE));
+                }
                 MessageEntity optimistic = copyMessage(before, trimmed, before.getAttachmentsJson(),
-                        System.currentTimeMillis(), before.getDeletedAtEpochMs(), before.getReplyToSnippet());
+                        System.currentTimeMillis(), before.getDeletedAtEpochMs(), before.getReplyToSnippet(),
+                        nextMentionsJson, nextMentionAll);
                 optimisticRef.set(optimistic);
                 return messageDao.update(optimistic).andThen(call(messageApi.editMessage(conversationId,
-                                messageId, new EditMessageRequest(trimmed))))
+                                messageId, new EditMessageRequest(trimmed, mentions, mentionAll))))
                         .<Result<Unit>>flatMap(result -> {
                             if (result instanceof Result.Success<?> success) {
                                 MessageDto dto = (MessageDto) success.getValue();
@@ -455,7 +471,8 @@ public final class MessageRepository {
                                 MessageEntity authoritative = copyMessage(server, server.getContent(),
                                         server.getAttachmentsJson(), server.getEditedAtEpochMs() != null
                                                 ? server.getEditedAtEpochMs() : optimistic.getEditedAtEpochMs(),
-                                        server.getDeletedAtEpochMs(), server.getReplyToSnippet());
+                                        server.getDeletedAtEpochMs(), server.getReplyToSnippet(),
+                                        server.getMentionsJson(), server.isMentionAll());
                                 return messageDao.byId(messageId).map(Optional::of).defaultIfEmpty(Optional.empty())
                                         .<Result<Unit>>flatMap(current -> {
                                             if (current.isEmpty() || !sameMessage(current.get(), optimistic)) {
@@ -666,6 +683,12 @@ public final class MessageRepository {
 
     public Completable send(String conversationId, String content, @Nullable String replyToId,
             String type, List<AttachmentDto> attachments) {
+        return send(conversationId, content, replyToId, type, attachments, List.of(), false);
+    }
+
+    public Completable send(String conversationId, String content, @Nullable String replyToId,
+            String type, List<AttachmentDto> attachments, List<MessageMention> mentions,
+            boolean mentionAll) {
         if (removedConversations.contains(conversationId)) {
             return Completable.fromAction(this::emitNotMember);
         }
@@ -676,7 +699,8 @@ public final class MessageRepository {
                 catch (RuntimeException ignored) { attachmentsJson = ""; }
             }
             OutboxEntity entry = new OutboxEntity(UUID.randomUUID().toString(), conversationId, type,
-                    content, replyToId, OutboxState.SENDING, createdAt, attachmentsJson);
+                    content, replyToId, OutboxState.SENDING, createdAt, attachmentsJson,
+                    MessageMentionCodec.encode(mentions), mentionAll);
             return outboxDao.insert(entry).andThen(dispatchOutbox(entry));
         }).subscribeOn(Schedulers.io());
     }
@@ -710,7 +734,8 @@ public final class MessageRepository {
                     return nextOutboxCreatedAt().flatMapCompletable(createdAt -> {
                         OutboxEntity queued = new OutboxEntity(old.getClientMessageId(), old.getConversationId(),
                                 old.getType(), old.getContent(), old.getReplyToId(), OutboxState.SENDING,
-                                createdAt, old.getAttachmentsJson());
+                                createdAt, old.getAttachmentsJson(), old.getMentionsJson(),
+                                old.isMentionAll());
                         return outboxDao.insert(queued).andThen(flushOutbox());
                     });
                 }).subscribeOn(Schedulers.io());
@@ -730,7 +755,8 @@ public final class MessageRepository {
         }
         return Completable.fromAction(session::ensureConnected).andThen(Completable.defer(() -> {
             SendMessageRequest request = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
-                    entry.getContent(), entry.getReplyToId(), attachmentIds(entry));
+                    entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
+                    MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
             if (session.sendMessage(entry.getConversationId(), request)) return Completable.complete();
             if (session.isCurrentlyOpen()) return Completable.complete();
             return call(messageApi.sendMessage(entry.getConversationId(), request)).flatMapCompletable(result -> {
@@ -748,6 +774,10 @@ public final class MessageRepository {
                         || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()))) {
                     removedConversations.add(entry.getConversationId());
                     interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
+                } else if (error instanceof ApiError.Unknown unknown
+                        && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
+                        || ERROR_NOT_ADMIN.equals(unknown.getCode()))) {
+                    interactionEvents.onNext(unknown);
                 }
                 return outboxDao.updateState(entry.getClientMessageId(), OutboxState.FAILED);
             });
@@ -851,6 +881,9 @@ public final class MessageRepository {
             if (ERROR_NOT_MEMBER.equals(rejected.getCode())
                     || ERROR_CONVERSATION_NOT_FOUND.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
+            } else if (ERROR_VALIDATION_FAILED.equals(rejected.getCode())
+                    || ERROR_NOT_ADMIN.equals(rejected.getCode())) {
+                interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
             return outboxDao.updateState(clientId, OutboxState.FAILED);
         }
@@ -940,7 +973,8 @@ public final class MessageRepository {
                     long editedAt = server.getEditedAtEpochMs() != null
                             ? server.getEditedAtEpochMs() : System.currentTimeMillis();
                     MessageEntity updated = copyMessage(row, server.getContent(), row.getAttachmentsJson(),
-                            editedAt, row.getDeletedAtEpochMs(), row.getReplyToSnippet());
+                            editedAt, row.getDeletedAtEpochMs(), row.getReplyToSnippet(),
+                            server.getMentionsJson(), server.isMentionAll());
                     Completable write = sameMessage(updated, row) ? Completable.complete() : messageDao.update(updated);
                     return write.andThen(refreshLastMessagePreview(updated));
                 });
@@ -1421,7 +1455,9 @@ public final class MessageRepository {
                 row.getSenderDisplayName(), row.getType(), row.getContent(), row.getReplyToId(),
                 row.getReplyToSenderName(), row.getReplyToSnippet(), row.getCreatedAt(),
                 row.getClientMessageId(), DeliveryStatus.SENT, Objects.equals(row.getSenderId(), myId),
-                attachments(row.getAttachmentsJson()), reactions, row.getEditedAtEpochMs(), row.getDeletedAtEpochMs());
+                attachments(row.getAttachmentsJson()), reactions, row.getEditedAtEpochMs(),
+                row.getDeletedAtEpochMs(), MessageMentionCodec.decode(row.getMentionsJson()),
+                row.isMentionAll());
     }
 
     private ChatMessage toChatMessage(OutboxEntity row) {
@@ -1429,7 +1465,8 @@ public final class MessageRepository {
                 row.getType(), row.getContent(), row.getReplyToId(), null, null, row.getCreatedAt(),
                 row.getClientMessageId(), OutboxState.FAILED.equals(row.getState())
                         ? DeliveryStatus.FAILED : DeliveryStatus.SENDING,
-                true, attachments(row.getAttachmentsJson()), Collections.emptyList(), null, null);
+                true, attachments(row.getAttachmentsJson()), Collections.emptyList(), null, null,
+                MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll());
     }
 
     private ChatMessage pinStub(PinnedMessageEntity pin) {
@@ -1454,7 +1491,9 @@ public final class MessageRepository {
                 dto.getResolvedReplyToId(), dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSenderName(),
                 dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSnippet(),
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()), attachmentsJson,
-                TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()));
+                TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
+                deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
+                !deleted && dto.isMentionAll());
     }
 
     /** Parses attachmentsJson; missing, blank, or malformed data becomes an empty list. */
@@ -1612,16 +1651,28 @@ public final class MessageRepository {
                 && left.getCreatedAt() == right.getCreatedAt()
                 && Objects.equals(left.getAttachmentsJson(), right.getAttachmentsJson())
                 && Objects.equals(left.getEditedAtEpochMs(), right.getEditedAtEpochMs())
-                && Objects.equals(left.getDeletedAtEpochMs(), right.getDeletedAtEpochMs());
+                && Objects.equals(left.getDeletedAtEpochMs(), right.getDeletedAtEpochMs())
+                && Objects.equals(left.getMentionsJson(), right.getMentionsJson())
+                && left.isMentionAll() == right.isMentionAll();
     }
 
     private static MessageEntity copyMessage(MessageEntity source, @Nullable String content,
             @Nullable String attachmentsJson, @Nullable Long editedAtEpochMs,
             @Nullable Long deletedAtEpochMs, @Nullable String replyToSnippet) {
+        return copyMessage(source, content, attachmentsJson, editedAtEpochMs, deletedAtEpochMs,
+                replyToSnippet, deletedAtEpochMs == null ? source.getMentionsJson() : "[]",
+                deletedAtEpochMs == null && source.isMentionAll());
+    }
+
+    private static MessageEntity copyMessage(MessageEntity source, @Nullable String content,
+            @Nullable String attachmentsJson, @Nullable Long editedAtEpochMs,
+            @Nullable Long deletedAtEpochMs, @Nullable String replyToSnippet,
+            String mentionsJson, boolean mentionAll) {
         return new MessageEntity(source.getId(), source.getConversationId(), source.getSeq(),
                 source.getSenderId(), source.getSenderDisplayName(), source.getType(), content,
                 source.getClientMessageId(), source.getReplyToId(), source.getReplyToSenderName(),
-                replyToSnippet, source.getCreatedAt(), attachmentsJson, editedAtEpochMs, deletedAtEpochMs);
+                replyToSnippet, source.getCreatedAt(), attachmentsJson, editedAtEpochMs, deletedAtEpochMs,
+                mentionsJson, mentionAll);
     }
 
     private List<MessageEntity> mapEntities(List<MessageDto> dtos, String conversationId) {

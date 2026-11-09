@@ -5,6 +5,12 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Typeface;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
@@ -15,6 +21,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.TextViewCompat;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.ViewModelStoreOwner;
@@ -34,6 +41,7 @@ import com.nexachat.core.media.BlurHashDecoder;
 import com.nexachat.core.media.BlurHashPlaceholderCache;
 import com.nexachat.core.media.ImageAttachmentBinding;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.MessageUiRules;
 import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.data.ChatMessage;
@@ -68,6 +76,7 @@ public final class MessageBubbleBinder {
     };
 
     private final DateFormat timeFormat;
+    @Nullable private String currentUserId;
     @Nullable
     private final Function<String, ChatMessage> resolveOriginal;
     @Nullable
@@ -99,6 +108,8 @@ public final class MessageBubbleBinder {
         this.voiceStoreOwner = voiceStoreOwner;
     }
 
+    public void setCurrentUserId(@Nullable String userId) { currentUserId = userId; }
+
     public void bindMessageRow(@NonNull View root, @NonNull MessageListItem item) {
         ChatMessage message = item.getMessage();
         if (message == null || item.getGroupPosition() == null) {
@@ -111,6 +122,15 @@ public final class MessageBubbleBinder {
         applyRowSpacing(root, item.getGroupPosition());
         applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
         applyBubbleColors(root.getContext(), bubble, message, item.isPulsing());
+        boolean mentionedMe = isMentionedUser(message, currentUserId);
+        if (mentionedMe) {
+            int rowHighlight = resolveThemeColor(root.getContext(),
+                    com.google.android.material.R.attr.colorSecondaryContainer);
+            root.setBackgroundColor(ColorUtils.setAlphaComponent(rowHighlight, 42));
+            bubble.setBackgroundTintList(ColorStateList.valueOf(rowHighlight));
+        } else {
+            root.setBackground(null);
+        }
 
         wireGestures(root, message);
 
@@ -141,6 +161,7 @@ public final class MessageBubbleBinder {
         bindReplyQuote(root, message);
         bindPrimaryContent(root, message);
         applyMessageTextColors(root, message, item.isPulsing());
+        applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
     }
@@ -323,6 +344,7 @@ public final class MessageBubbleBinder {
         if (tombstone) {
             if (body != null) {
                 body.setVisibility(View.VISIBLE);
+                body.setContentDescription(null);
                 body.setText(R.string.message_deleted);
             }
             return;
@@ -409,9 +431,70 @@ public final class MessageBubbleBinder {
                         root.getContext().getString(resolved.getResourceId(), resolved.getArguments())
                 );
             } else {
+                body.setContentDescription(null);
                 body.setText(raw != null ? raw : "");
             }
         }
+    }
+
+    private void applyMentionHighlights(View root, ChatMessage message, boolean mentionedMe) {
+        TextView body = root.findViewById(R.id.messageBody);
+        String content = message.getContent();
+        if (body == null || content == null || body.getVisibility() != View.VISIBLE
+                || MessageViewTypeMapper.isSystemMessage(message) || message.isDeleted()
+                || !body.getText().toString().contentEquals(content)) return;
+        SpannableString styled = new SpannableString(body.getText());
+        int otherBackground = resolveThemeColor(root.getContext(),
+                com.google.android.material.R.attr.colorTertiaryContainer);
+        int otherForeground = resolveThemeColor(root.getContext(),
+                com.google.android.material.R.attr.colorOnTertiaryContainer);
+        int ownBackground = resolveThemeColor(root.getContext(),
+                com.google.android.material.R.attr.colorPrimaryContainer);
+        int ownForeground = resolveThemeColor(root.getContext(),
+                com.google.android.material.R.attr.colorOnPrimaryContainer);
+        for (MessageMention mention : message.getMentions()) {
+            int start = mention.getOffset();
+            int end = start + mention.getLength();
+            if (!com.nexachat.feature.chat.MentionDraft.isValidRange(content, start, mention.getLength())
+                    || end > styled.length()) continue;
+            boolean own = currentUserId != null && currentUserId.equals(mention.getUserId());
+            addBubbleSpan(styled, start, end, own ? ownBackground : otherBackground,
+                    own ? ownForeground : otherForeground);
+        }
+        if (message.isMentionAll()) {
+            int start = content.indexOf(com.nexachat.feature.chat.MentionDraft.ALL_TOKEN);
+            if (start >= 0 && start + com.nexachat.feature.chat.MentionDraft.ALL_TOKEN.length() <= styled.length()) {
+                addBubbleSpan(styled, start, start + com.nexachat.feature.chat.MentionDraft.ALL_TOKEN.length(),
+                        mentionedMe ? ownBackground : otherBackground,
+                        mentionedMe ? ownForeground : otherForeground);
+            }
+        }
+        body.setTextColor(mentionedMe ? resolveThemeColor(root.getContext(),
+                com.google.android.material.R.attr.colorOnSecondaryContainer)
+                : body.getCurrentTextColor());
+        body.setText(styled);
+        if (!message.getMentions().isEmpty() || message.isMentionAll()) {
+            int label = mentionedMe ? R.string.message_mentions_you : R.string.message_has_mentions;
+            body.setContentDescription(content + ". " + root.getContext().getString(label));
+        } else {
+            body.setContentDescription(null);
+        }
+    }
+
+    private static void addBubbleSpan(SpannableString text, int start, int end,
+            int background, int foreground) {
+        text.setSpan(new BackgroundColorSpan(background), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new ForegroundColorSpan(foreground), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private static boolean isMentionedUser(ChatMessage message, @Nullable String userId) {
+        if (message.isMentionAll()) return true;
+        if (userId == null) return false;
+        for (MessageMention mention : message.getMentions()) {
+            if (userId.equals(mention.getUserId())) return true;
+        }
+        return false;
     }
 
     private void applyMessageTextColors(View root, ChatMessage message, boolean pulsing) {

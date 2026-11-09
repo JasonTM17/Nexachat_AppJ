@@ -12,17 +12,28 @@ public final class SendMessageRequest {
     @Nullable private final String content;
     @Nullable private final String replyToId;
     @Nullable private final List<String> attachmentIds;
+    @Nullable private final List<MessageMention> mentions;
+    private final boolean mentionAll;
 
     public SendMessageRequest() {
-        this(null, MessageDto.TYPE_TEXT, null, null, List.of());
+        this(null, MessageDto.TYPE_TEXT, null, null, List.of(), List.of(), false);
     }
 
     public SendMessageRequest(@NonNull String clientMessageId, @NonNull String type, @Nullable String content, @Nullable String replyToId, @Nullable List<String> attachmentIds) {
+        this(clientMessageId, type, content, replyToId, attachmentIds, List.of(), false);
+    }
+
+    public SendMessageRequest(@NonNull String clientMessageId, @NonNull String type,
+            @Nullable String content, @Nullable String replyToId,
+            @Nullable List<String> attachmentIds, @Nullable List<MessageMention> mentions,
+            boolean mentionAll) {
         this.clientMessageId = clientMessageId;
         this.type = type;
         this.content = content;
         this.replyToId = replyToId;
         this.attachmentIds = attachmentIds == null ? List.of() : attachmentIds;
+        this.mentions = mentions == null ? List.of() : List.copyOf(mentions);
+        this.mentionAll = mentionAll;
     }
 
     @NonNull public String getClientMessageId() {
@@ -45,6 +56,13 @@ public final class SendMessageRequest {
         return attachmentIds;
     }
 
+    @NonNull public List<MessageMention> getMentions() {
+        return mentions == null ? List.of() : mentions;
+    }
+
+    public boolean isMentionAll() { return mentionAll; }
+    public boolean getMentionAll() { return mentionAll; }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof SendMessageRequest that)) {
@@ -54,11 +72,14 @@ public final class SendMessageRequest {
                 && Objects.equals(type, that.type)
                 && Objects.equals(content, that.content)
                 && Objects.equals(replyToId, that.replyToId)
-                && Objects.equals(attachmentIds, that.attachmentIds);
+                && Objects.equals(attachmentIds, that.attachmentIds)
+                && Objects.equals(mentions, that.mentions)
+                && mentionAll == that.mentionAll;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(clientMessageId, type, content, replyToId, attachmentIds);
+        return Objects.hash(clientMessageId, type, content, replyToId, attachmentIds,
+                mentions, mentionAll);
     }
 }

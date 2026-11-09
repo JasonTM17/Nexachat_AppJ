@@ -278,5 +278,12 @@
     <string name="ask_from_message">From a message</string>
     <string name="ask_citations_label">Sources</string>
     <string name="ask_citation_accessibility">Open message: %1$s</string>
+    <string name="mention_all_picker">@all — everyone</string>
+    <string name="mention_person_picker">Mention %1$s</string>
+    <string name="mention_limit_exceeded">A message can mention up to 20 people. The message was cleared.</string>
+    <string name="message_mentions_you">You were mentioned.</string>
+    <string name="message_has_mentions">This message includes mentions.</string>
+    <string name="error_mention_validation">The mentions in this message are no longer valid. Review them and try again.</string>
+    <string name="error_mention_not_admin">Only group admins can mention everyone.</string>
 
 </resources>

@@ -22,6 +22,9 @@ import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.LocalAttachment;
 import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
+import com.nexachat.data.GroupDetail;
+import com.nexachat.data.GroupMember;
+import com.nexachat.data.MessageMentionCodec;
 import com.nexachat.data.MessageSearchResult;
 import com.nexachat.data.PeerPresence;
 import com.nexachat.data.TypingEvent;
@@ -64,6 +67,9 @@ public final class ChatViewModel extends ViewModel {
     public static final int SEARCH_PAGE_SIZE = MessageApi.DEFAULT_SEARCH_LIMIT;
     public static final String ERROR_MESSAGE_GONE = "MESSAGE_NOT_FOUND";
     private static final String KEY_INPUT = "chat_input";
+    private static final String KEY_MENTIONS = "chat_mentions";
+    private static final String KEY_MENTION_ALL_OFFSET = "chat_mention_all_offset";
+    private static final String KEY_MENTION_ALL_LENGTH = "chat_mention_all_length";
 
     private final String conversationId;
     private final SavedStateHandle savedStateHandle;
@@ -74,6 +80,8 @@ public final class ChatViewModel extends ViewModel {
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
+    private final MutableLiveData<List<GroupMember>> mutableGroupMembers =
+            new MutableLiveData<>(List.of());
     private final ChatSingleLiveEvent<ChatActionEvent> actionEvents =
             new ChatSingleLiveEvent<>();
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
@@ -118,6 +126,31 @@ public final class ChatViewModel extends ViewModel {
 
     public LiveData<ChatSearchState> getSearchState() {
         return mutableSearchState;
+    }
+
+    public LiveData<List<GroupMember>> getGroupMembers() { return mutableGroupMembers; }
+
+    public MentionDraft getMentionDraft() {
+        UiState state = currentUiState();
+        String content = state.getInput();
+        String json = savedStateHandle.get(KEY_MENTIONS);
+        int allOffset = savedStateHandle.get(KEY_MENTION_ALL_OFFSET) == null
+                ? -1 : savedStateHandle.get(KEY_MENTION_ALL_OFFSET);
+        int allLength = savedStateHandle.get(KEY_MENTION_ALL_LENGTH) == null
+                ? 0 : savedStateHandle.get(KEY_MENTION_ALL_LENGTH);
+        return MentionDraft.restore(content, MessageMentionCodec.decode(json), allOffset, allLength);
+    }
+
+    public void loadGroupMembers() {
+        disposables.add(conversationRepository.groupDetail(conversationId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?> success
+                            && success.getValue() instanceof GroupDetail detail) {
+                        mutableGroupMembers.setValue(detail.getMembers());
+                    }
+                }, this::surfaceStreamFailure));
     }
 
     public ChatSingleLiveEvent<ChatActionEvent> getActionEvents() {
@@ -250,6 +283,14 @@ public final class ChatViewModel extends ViewModel {
         }
     }
 
+    public void onComposerDraftChange(MentionDraft draft) {
+        MentionDraft safe = draft == null ? MentionDraft.empty("") : draft;
+        savedStateHandle.set(KEY_MENTIONS, MessageMentionCodec.encode(safe.getMentions()));
+        savedStateHandle.set(KEY_MENTION_ALL_OFFSET, safe.getMentionAllOffset());
+        savedStateHandle.set(KEY_MENTION_ALL_LENGTH, safe.getMentionAllLength());
+        onInputChange(safe.getContent());
+    }
+
     private SavedStateHandle savedState() {
         return savedStateHandle;
     }
@@ -257,16 +298,21 @@ public final class ChatViewModel extends ViewModel {
     /** Optimistic send — the outbox row renders SENDING immediately. */
     public void send() {
         UiState state = currentUiState();
-        String text = state.getInput().trim();
+        MentionDraft draft = getMentionDraft().trimmed();
+        String text = draft.getContent();
         if (text.isEmpty()) {
             return;
         }
         ReplyTarget replyTarget = state.getReplyTarget();
         String replyToId = replyTarget == null ? null : replyTarget.getMessageId();
         savedState().set(KEY_INPUT, "");
+        clearMentionDraft();
         updateUiState(current -> current.withInput("").withReplyTarget(null));
-        disposables.add(messageRepository.send(
-                        conversationId, text, replyToId, MessageDto.TYPE_TEXT, List.of())
+        io.reactivex.rxjava3.core.Completable send = draft.getMentions().isEmpty() && !draft.isMentionAll()
+                ? messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT, List.of())
+                : messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT,
+                        List.of(), draft.getMentions(), draft.isMentionAll());
+        disposables.add(send
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(() -> { }, this::surfaceStreamFailure));
@@ -327,6 +373,28 @@ public final class ChatViewModel extends ViewModel {
                         updateUiState(state -> state.withError(failure.getError()));
                     }
                 }, this::surfaceStreamFailure));
+    }
+
+    public void editMessage(String messageId, MentionDraft draft) {
+        MentionDraft trimmed = draft == null ? MentionDraft.empty("") : draft.trimmed();
+        if (trimmed.getContent().isEmpty()) return;
+        disposables.add(messageRepository.editMessage(conversationId, messageId,
+                        trimmed.getContent(), trimmed.getMentions(), trimmed.isMentionAll())
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?>) {
+                        actionEvents.emit(new ChatActionEvent.MessageEdited(messageId));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        updateUiState(state -> state.withError(failure.getError()));
+                    }
+                }, this::surfaceStreamFailure));
+    }
+
+    private void clearMentionDraft() {
+        savedStateHandle.set(KEY_MENTIONS, "[]");
+        savedStateHandle.set(KEY_MENTION_ALL_OFFSET, -1);
+        savedStateHandle.set(KEY_MENTION_ALL_LENGTH, 0);
     }
 
     public void deleteMessage(String messageId) {

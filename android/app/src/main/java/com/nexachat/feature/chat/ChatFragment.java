@@ -8,9 +8,14 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.graphics.Typeface;
 import android.text.Editable;
+import android.text.Spannable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
@@ -42,10 +47,12 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
+import com.nexachat.data.GroupMember;
 import com.nexachat.databinding.FragmentChatBinding;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import com.nexachat.feature.chat.voice.VoiceRecorder;
@@ -88,6 +95,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private String pulsingMessageId;
     private ChatMessage editingMessage;
     private String editInput = "";
+    private MentionDraft composerMentionDraft = MentionDraft.empty("");
+    private MentionDraft editingMentionDraft = MentionDraft.empty("");
+    private MentionDraft.Query mentionQuery;
+    private MentionSuggestionAdapter mentionAdapter;
+    private List<GroupMember> groupMembers = List.of();
+    private boolean groupMembersRequested;
     private int pinIndex;
     private boolean settingDraft;
     private boolean searchOpen;
@@ -148,8 +161,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         inboxViewModel = new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
         summaryViewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
         configureList();
+        configureMentionPicker();
         configureToolbar();
         configureComposer();
+        composerMentionDraft = viewModel.getMentionDraft();
         observeViewModel();
         if (getChildFragmentManager().findFragmentByTag("summary_sheet")
                 instanceof com.nexachat.feature.summary.SummaryBottomSheetFragment existingSheet) {
@@ -245,10 +260,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 () -> documentPicker.launch(new String[]{"*/*"})));
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (editingMessage == null) viewModel.send();
-            else if (!editInput.isBlank()) { viewModel.editMessage(editingMessage.getId(), editInput.trim()); editingMessage = null; editInput = ""; render(); }
+            else if (!editInput.isBlank()) { viewModel.editMessage(editingMessage.getId(), editingMentionDraft); editingMessage = null; editInput = ""; editingMentionDraft = MentionDraft.empty(""); mentionQuery = null; render(); }
         });
         binding.composerBar.messageInput.setOnEditorActionListener((text, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND) { binding.composerBar.sendButton.performClick(); return true; }
+            return false;
+        });
+        binding.composerBar.messageInput.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN
+                    && event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                    && binding.mentionPicker.getVisibility() == View.VISIBLE
+                    && mentionAdapter != null) {
+                return mentionAdapter.focusFirst();
+            }
             return false;
         });
         binding.composerBar.messageInput.addTextChangedListener(new TextWatcher() {
@@ -257,12 +281,140 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 if (settingDraft) return;
                 boolean hasText = s != null && !s.toString().isBlank();
                 updateComposerButtons(hasText || editingMessage != null);
-                if (editingMessage == null) viewModel.onInputChange(s.toString());
-                else { editInput = s.toString(); binding.composerBar.sendButton.setEnabled(!editInput.isBlank()); }
+                String value = s == null ? "" : s.toString();
+                if (editingMessage == null) {
+                    composerMentionDraft = composerMentionDraft.afterEdit(start, before, count, value);
+                    viewModel.onComposerDraftChange(composerMentionDraft);
+                    applyMentionSpans(binding.composerBar.messageInput, composerMentionDraft);
+                } else {
+                    editInput = value;
+                    editingMentionDraft = editingMentionDraft.afterEdit(start, before, count, value);
+                    binding.composerBar.sendButton.setEnabled(!editInput.isBlank());
+                    applyMentionSpans(binding.composerBar.messageInput, editingMentionDraft);
+                }
+                updateMentionPicker(value, binding.composerBar.messageInput.getSelectionStart());
             }
             @Override public void afterTextChanged(Editable s) {}
         });
         configureVoiceRecording();
+    }
+
+    private void configureMentionPicker() {
+        binding.mentionPicker.setLayoutManager(new LinearLayoutManager(requireContext()));
+        mentionAdapter = new MentionSuggestionAdapter(this::insertMention);
+        binding.mentionPicker.setAdapter(mentionAdapter);
+        binding.mentionPicker.setNestedScrollingEnabled(false);
+        binding.mentionPicker.setFocusable(false);
+        binding.mentionPicker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+    }
+
+    private MentionDraft currentMentionDraft() {
+        return editingMessage == null ? composerMentionDraft : editingMentionDraft;
+    }
+
+    private void updateMentionPicker(String text, int selectionStart) {
+        if (binding == null || mentionAdapter == null || !state.isGroup()) {
+            mentionQuery = null;
+            if (binding != null) binding.mentionPicker.setVisibility(View.GONE);
+            return;
+        }
+        mentionQuery = MentionDraft.findActiveQuery(text, selectionStart);
+        if (mentionQuery == null) {
+            mentionAdapter.submit(List.of());
+            binding.mentionPicker.setVisibility(View.GONE);
+            return;
+        }
+        InboxUiState inbox = inboxViewModel == null ? null : inboxViewModel.getUiState().getValue();
+        List<MentionPickerRules.Suggestion> suggestions = MentionPickerRules.suggestions(
+                true, groupMembers, inbox == null ? null : inbox.getCurrentUserId(),
+                mentionQuery.getValue(), currentMentionDraft().getMentions(),
+                currentMentionDraft().isMentionAll());
+        mentionAdapter.submit(suggestions);
+        binding.mentionPicker.setVisibility(suggestions.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void insertMention(MentionPickerRules.Suggestion suggestion) {
+        if (binding == null || mentionQuery == null || suggestion == null) return;
+        MentionDraft draft = currentMentionDraft();
+        int total = draft.getMentions().size() + (draft.isMentionAll() ? 1 : 0);
+        if (total >= MentionDraft.MAX_MENTIONS) {
+            clearComposerAfterMentionLimit();
+            return;
+        }
+        String text = binding.composerBar.messageInput.getText().toString();
+        String token = suggestion.isAll() ? MentionDraft.ALL_TOKEN : "@" + suggestion.getDisplayName();
+        String insertion = token + " ";
+        String nextText = text.substring(0, mentionQuery.getStart()) + insertion
+                + text.substring(mentionQuery.getEnd());
+        MentionDraft next = draft.afterEdit(mentionQuery.getStart(),
+                mentionQuery.getEnd() - mentionQuery.getStart(), insertion.length(), nextText);
+        if (suggestion.isAll()) {
+            next = next.withMentionAll(nextText, mentionQuery.getStart());
+        } else {
+            next = next.withMention(nextText, suggestion.getUserId(), mentionQuery.getStart(), token.length());
+        }
+        int cursor = mentionQuery.getStart() + insertion.length();
+        mentionQuery = null;
+        settingDraft = true;
+        binding.composerBar.messageInput.setText(nextText);
+        binding.composerBar.messageInput.setSelection(Math.min(cursor, nextText.length()));
+        settingDraft = false;
+        binding.composerBar.messageInput.requestFocus();
+        if (editingMessage == null) {
+            composerMentionDraft = next;
+            viewModel.onComposerDraftChange(next);
+        } else {
+            editingMentionDraft = next;
+            editInput = nextText;
+        }
+        applyMentionSpans(binding.composerBar.messageInput, next);
+        updateComposerButtons(true);
+        updateMentionPicker(nextText, cursor);
+    }
+
+    private void clearComposerAfterMentionLimit() {
+        mentionQuery = null;
+        settingDraft = true;
+        binding.composerBar.messageInput.setText("");
+        settingDraft = false;
+        composerMentionDraft = MentionDraft.empty("");
+        editingMentionDraft = MentionDraft.empty("");
+        editInput = "";
+        if (editingMessage == null) viewModel.onComposerDraftChange(composerMentionDraft);
+        binding.mentionPicker.setVisibility(View.GONE);
+        updateComposerButtons(false);
+        Snackbar.make(binding.getRoot(), R.string.mention_limit_exceeded, Snackbar.LENGTH_LONG).show();
+    }
+
+    private void applyMentionSpans(EditText input, MentionDraft draft) {
+        Editable editable = input.getText();
+        for (BackgroundColorSpan span : editable.getSpans(0, editable.length(), BackgroundColorSpan.class)) editable.removeSpan(span);
+        for (ForegroundColorSpan span : editable.getSpans(0, editable.length(), ForegroundColorSpan.class)) editable.removeSpan(span);
+        for (StyleSpan span : editable.getSpans(0, editable.length(), StyleSpan.class)) editable.removeSpan(span);
+        int background = themeColor(com.google.android.material.R.attr.colorSecondaryContainer);
+        int foreground = themeColor(com.google.android.material.R.attr.colorOnSecondaryContainer);
+        for (MessageMention mention : draft.getMentions()) {
+            addMentionSpan(editable, mention.getOffset(), mention.getLength(), background, foreground);
+        }
+        if (draft.isMentionAll()) {
+            addMentionSpan(editable, draft.getMentionAllOffset(), draft.getMentionAllLength(), background, foreground);
+        }
+    }
+
+    private void addMentionSpan(Editable editable, int start, int length, int background, int foreground) {
+        if (!MentionDraft.isValidRange(editable.toString(), start, length)) return;
+        editable.setSpan(new BackgroundColorSpan(background), start, start + length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        editable.setSpan(new ForegroundColorSpan(foreground), start, start + length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        editable.setSpan(new StyleSpan(Typeface.BOLD), start, start + length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private int themeColor(int attribute) {
+        android.util.TypedValue value = new android.util.TypedValue();
+        if (requireContext().getTheme().resolveAttribute(attribute, value, true)) {
+            if (value.resourceId != 0) return ContextCompat.getColor(requireContext(), value.resourceId);
+            return value.data;
+        }
+        return ContextCompat.getColor(requireContext(), R.color.colorPrimary);
     }
 
     private void updateComposerButtons(boolean showSend) {
@@ -406,6 +558,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 renderSearchResults();
             }
         });
+        viewModel.getGroupMembers().observe(getViewLifecycleOwner(), next -> {
+            groupMembers = next == null ? List.of() : next;
+            if (binding != null) updateMentionPicker(
+                    binding.composerBar.messageInput.getText().toString(),
+                    binding.composerBar.messageInput.getSelectionStart());
+        });
         viewModel.getJumpTargets().observe(getViewLifecycleOwner(), raw -> {
             String id = raw == null ? null : raw.consume();
             if (id != null) {
@@ -423,7 +581,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         });
         inboxViewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
             if (next != null) {
+                if (adapter != null) adapter.setCurrentUserId(next.getCurrentUserId());
                 renderUnread(next);
+                if (binding != null) updateMentionPicker(
+                        binding.composerBar.messageInput.getText().toString(),
+                        binding.composerBar.messageInput.getSelectionStart());
             }
         });
         summaryViewModel.state().observe(getViewLifecycleOwner(), this::renderSummaryState);
@@ -431,6 +593,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void render() {
         if (binding == null) return;
+        if (state.isGroup() && !groupMembersRequested) {
+            groupMembersRequested = true;
+            viewModel.loadGroupMembers();
+        }
         String peerTitle = state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName();
         binding.chatToolbar.setTitle(peerTitle);
         applyChatTitleWrapping();
@@ -461,6 +627,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         String input = editingMessage == null ? state.getInput() : editInput;
         if (!String.valueOf(binding.composerBar.messageInput.getText()).contentEquals(input)) binding.composerBar.messageInput.setText(input);
         settingDraft = false;
+        MentionDraft visibleDraft = editingMessage == null
+                ? viewModel.getMentionDraft() : editingMentionDraft;
+        if (editingMessage == null && visibleDraft.getContent().equals(input)) composerMentionDraft = visibleDraft;
+        applyMentionSpans(binding.composerBar.messageInput, editingMessage == null
+                ? composerMentionDraft : editingMentionDraft);
+        updateMentionPicker(input, binding.composerBar.messageInput.getSelectionStart());
         binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
         boolean hasText = input != null && !input.isBlank();
         updateComposerButtons(hasText || editingMessage != null);
@@ -477,7 +649,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private void renderReplyEditBanner() {
         View root = binding.replyEditBanner.getRoot();
         if (editingMessage != null) {
-            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editingMessage.getContent(), () -> { editingMessage = null; editInput = ""; render(); });
+            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editingMessage.getContent(), () -> { editingMessage = null; editInput = ""; editingMentionDraft = MentionDraft.empty(""); mentionQuery = null; render(); });
             return;
         }
         ChatViewModel.ReplyTarget target = state.getReplyTarget();
@@ -730,6 +902,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private void showEdit(ChatMessage message) {
         editingMessage = message;
         editInput = message.getContent() == null ? "" : message.getContent();
+        editingMentionDraft = MentionDraft.fromMessage(editInput, message.getMentions(), message.isMentionAll());
+        mentionQuery = null;
         render();
         binding.composerBar.messageInput.requestFocus();
     }
