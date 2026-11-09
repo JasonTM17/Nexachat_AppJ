@@ -1,5 +1,6 @@
 package com.nexachat.core.database;
 
+import androidx.annotation.Nullable;
 import androidx.room.Dao;
 import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
@@ -78,12 +79,42 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);
 
+    /** Caller-scoped mute preference; {@code mutedUntil} is null for a forever mute. */
+    @Query(
+            "UPDATE conversations SET muted = :muted, mutedUntilEpochMs = :mutedUntilEpochMs "
+                    + "WHERE id = :conversationId")
+    Completable updateMute(String conversationId, boolean muted, @Nullable Long mutedUntilEpochMs);
+
+    /** Caller-scoped archive preference. */
+    @Query("UPDATE conversations SET archived = :archived WHERE id = :conversationId")
+    Completable updateArchived(String conversationId, boolean archived);
+
+    /** Caller-scoped per-conversation AI opt-out preference. */
+    @Query("UPDATE conversations SET aiOptOut = :aiOptOut WHERE id = :conversationId")
+    Completable updateAiOptOut(String conversationId, boolean aiOptOut);
+
     @Query("DELETE FROM conversations")
     Completable clear();
 
     /** Removes one conversation after the server proves it is no longer accessible. */
     @Query("DELETE FROM conversations WHERE id = :conversationId")
     Completable deleteById(String conversationId);
+
+    /** Clears only the default inbox rows, leaving archived rows intact. */
+    @Query("DELETE FROM conversations WHERE archived = 0")
+    Completable clearInbox();
+
+    /** Clears only archived rows, leaving the default inbox intact. */
+    @Query("DELETE FROM conversations WHERE archived = 1")
+    Completable clearArchived();
+
+    /** Reconciles the default inbox; archived rows are not part of this walk. */
+    @Query("DELETE FROM conversations WHERE archived = 0 AND id NOT IN (:ids)")
+    Completable deleteInboxExcept(List<String> ids);
+
+    /** Reconciles archived rows; default-inbox rows are not part of this walk. */
+    @Query("DELETE FROM conversations WHERE archived = 1 AND id NOT IN (:ids)")
+    Completable deleteArchivedExcept(List<String> ids);
 
     /** Reconciles to the authoritative full inbox set; empty ids use clear(). */
     @Query("DELETE FROM conversations WHERE id NOT IN (:ids)")

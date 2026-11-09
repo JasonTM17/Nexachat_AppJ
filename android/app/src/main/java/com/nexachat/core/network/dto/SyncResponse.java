@@ -36,11 +36,20 @@ public final class SyncResponse {
         @Nullable private final List<ReactionUpdateDto> reactionUpdates;
         @Nullable private final Long maxSeq;
         private final boolean hasMore;
+        /** Last reaction event id consumed for this conversation. */
         @Nullable private final Long reactionCursor;
+        /** The reaction event log was purged; local reaction state needs a reload. */
         private final boolean reactionsFullRefresh;
+        /** Caller's own mute flag; absent payloads leave local state unchanged. */
+        @Nullable private final Boolean muted;
+        /** Caller's mute expiry as ISO-8601; omitted when forever or unmuted. */
+        @Nullable private final String mutedUntil;
+        /** Caller's own archive flag; absent payloads leave local state unchanged. */
+        @Nullable private final Boolean archived;
 
         public ConversationDeltaDto() {
-            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false, null, false);
+            this(null, List.of(), List.of(), List.of(), List.of(), 0L, false,
+                    null, false, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -52,7 +61,7 @@ public final class SyncResponse {
                 @Nullable Long maxSeq,
                 boolean hasMore) {
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
-                    reactionUpdates, maxSeq, hasMore, null, false);
+                    reactionUpdates, maxSeq, hasMore, null, false, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -65,6 +74,39 @@ public final class SyncResponse {
                 boolean hasMore,
                 @Nullable Long reactionCursor,
                 boolean reactionsFullRefresh) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
+                    null, null, null);
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Boolean muted,
+                @Nullable String mutedUntil,
+                @Nullable Boolean archived) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, null, false, muted, mutedUntil, archived);
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Long reactionCursor,
+                boolean reactionsFullRefresh,
+                @Nullable Boolean muted,
+                @Nullable String mutedUntil,
+                @Nullable Boolean archived) {
             this.conversationId = conversationId;
             this.newMessages = newMessages == null ? List.of() : newMessages;
             this.editedMessages = editedMessages == null ? List.of() : editedMessages;
@@ -74,6 +116,9 @@ public final class SyncResponse {
             this.hasMore = hasMore;
             this.reactionCursor = reactionCursor;
             this.reactionsFullRefresh = reactionsFullRefresh;
+            this.muted = muted;
+            this.mutedUntil = mutedUntil;
+            this.archived = archived;
         }
 
         @Nullable public String getConversationId() { return conversationId; }
@@ -85,5 +130,8 @@ public final class SyncResponse {
         public boolean isHasMore() { return hasMore; }
         @Nullable public Long getReactionCursor() { return reactionCursor; }
         public boolean isReactionsFullRefresh() { return reactionsFullRefresh; }
+        @Nullable public Boolean getMuted() { return muted; }
+        @Nullable public String getMutedUntil() { return mutedUntil; }
+        @Nullable public Boolean getArchived() { return archived; }
     }
 }

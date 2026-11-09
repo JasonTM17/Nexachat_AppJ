@@ -72,6 +72,8 @@ public final class ChatViewModel extends ViewModel {
     private final AttachmentRepository attachmentRepository;
     private final RealtimeSession session;
     private final MutableLiveData<UiState> mutableUiState;
+    private final MutableLiveData<AiOptOutState> aiOptOutState =
+            new MutableLiveData<>(new AiOptOutState());
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
     private final ChatSingleLiveEvent<ChatActionEvent> actionEvents =
@@ -114,6 +116,11 @@ public final class ChatViewModel extends ViewModel {
 
     public LiveData<UiState> getUiState() {
         return mutableUiState;
+    }
+
+    /** Live per-conversation AI opt-out state used by the settings dialog. */
+    public LiveData<AiOptOutState> getAiOptOutState() {
+        return aiOptOutState;
     }
 
     public LiveData<ChatSearchState> getSearchState() {
@@ -191,7 +198,109 @@ public final class ChatViewModel extends ViewModel {
         if (conversation == null) {
             return;
         }
+        AiOptOutState current = aiOptOutState.getValue();
+        if (current != null && !current.isBusy()) {
+            aiOptOutState.setValue(current.withOptOut(conversation.isAiOptOut()));
+        }
         updateUiState(state -> state.withConversation(conversation));
+    }
+
+    /** Reads the caller's own AI opt-out state; called when the settings dialog opens. */
+    public void loadAiOptOut() {
+        if (conversationId.isBlank()) return;
+        AiOptOutState current = currentAiOptOutState();
+        aiOptOutState.setValue(current.withLoading(true).withError(null));
+        disposables.add(conversationRepository.getAiOptOut(conversationId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            AiOptOutState state = currentAiOptOutState().withLoading(false);
+                            if (result instanceof Result.Success<?> success) {
+                                aiOptOutState.setValue(state.withOptOut(
+                                        Boolean.TRUE.equals(success.getValue())).withError(null));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                aiOptOutState.setValue(state.withError(failure.getError()));
+                            }
+                        },
+                        error -> aiOptOutState.setValue(currentAiOptOutState()
+                                .withLoading(false)
+                                .withError(toApiError(error)))));
+    }
+
+    /**
+     * Writes the AI opt-out through the server first. The switch moves
+     * optimistically, then reverts with a visible error if the call fails.
+     */
+    public void setAiOptOut(boolean optOut) {
+        if (conversationId.isBlank()) return;
+        AiOptOutState before = currentAiOptOutState();
+        if (before.isSaving() || before.getOptOut() == optOut) return;
+        aiOptOutState.setValue(before.withSaving(true).withOptOut(optOut).withError(null));
+        disposables.add(conversationRepository.setAiOptOut(conversationId, optOut)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            AiOptOutState state = currentAiOptOutState().withSaving(false);
+                            if (result instanceof Result.Success<?> success) {
+                                aiOptOutState.setValue(state.withOptOut(
+                                        Boolean.TRUE.equals(success.getValue())).withError(null));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                aiOptOutState.setValue(state
+                                        .withOptOut(before.getOptOut())
+                                        .withError(failure.getError()));
+                            }
+                        },
+                        error -> aiOptOutState.setValue(currentAiOptOutState()
+                                .withSaving(false)
+                                .withOptOut(before.getOptOut())
+                                .withError(toApiError(error)))));
+    }
+
+    /** Mutes this conversation until {@code until}, or forever when null. */
+    public void muteConversation(@Nullable java.time.Instant until) {
+        runPreference(
+                until == null
+                        ? conversationRepository.muteConversationForever(conversationId)
+                        : conversationRepository.muteConversation(conversationId, until),
+                ChatActionEvent.PreferenceChanged.Kind.MUTED);
+    }
+
+    /** One-tap unmute. */
+    public void unmuteConversation() {
+        runPreference(conversationRepository.unmuteConversation(conversationId),
+                ChatActionEvent.PreferenceChanged.Kind.UNMUTED);
+    }
+
+    /** Archives or restores this conversation for the caller. */
+    public void setConversationArchived(boolean archived) {
+        runPreference(conversationRepository.setConversationArchived(conversationId, archived),
+                archived
+                        ? ChatActionEvent.PreferenceChanged.Kind.ARCHIVED
+                        : ChatActionEvent.PreferenceChanged.Kind.UNARCHIVED);
+    }
+
+    private void runPreference(
+            Single<Result<Void>> request, ChatActionEvent.PreferenceChanged.Kind successKind) {
+        if (conversationId.isBlank()) return;
+        disposables.add(request
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Success<?>) {
+                                actionEvents.emit(new ChatActionEvent.PreferenceChanged(successKind));
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                updateUiState(state -> state.withError(failure.getError()));
+                            }
+                        },
+                        error -> updateUiState(state -> state.withError(toApiError(error)))));
+    }
+
+    private AiOptOutState currentAiOptOutState() {
+        AiOptOutState state = aiOptOutState.getValue();
+        return state == null ? new AiOptOutState() : state;
     }
 
     private void markNewestIncomingRead(List<ChatMessage> messages) {
@@ -742,6 +851,48 @@ public final class ChatViewModel extends ViewModel {
 
         @Override
         public int hashCode() { return Objects.hash(messageId, senderName, snippet); }
+    }
+
+    /** Live state of the per-conversation AI opt-out control. */
+    public static final class AiOptOutState {
+        private final boolean optOut;
+        private final boolean loading;
+        private final boolean saving;
+        @Nullable private final ApiError error;
+
+        public AiOptOutState() {
+            this(false, false, false, null);
+        }
+
+        private AiOptOutState(
+                boolean optOut, boolean loading, boolean saving, @Nullable ApiError error) {
+            this.optOut = optOut;
+            this.loading = loading;
+            this.saving = saving;
+            this.error = error;
+        }
+
+        public boolean getOptOut() { return optOut; }
+        public boolean isLoading() { return loading; }
+        public boolean isSaving() { return saving; }
+        public boolean isBusy() { return loading || saving; }
+        @Nullable public ApiError getError() { return error; }
+
+        private AiOptOutState withOptOut(boolean next) {
+            return new AiOptOutState(next, loading, saving, error);
+        }
+
+        private AiOptOutState withLoading(boolean next) {
+            return new AiOptOutState(optOut, next, saving, error);
+        }
+
+        private AiOptOutState withSaving(boolean next) {
+            return new AiOptOutState(optOut, loading, next, error);
+        }
+
+        private AiOptOutState withError(@Nullable ApiError next) {
+            return new AiOptOutState(optOut, loading, saving, next);
+        }
     }
 
     /** Immutable chat render state. Lists are defensively copied at creation. */

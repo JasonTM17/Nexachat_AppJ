@@ -53,6 +53,18 @@
         app:layout_constraintTop_toTopOf="@id/preview"
         app:tint="?attr/colorOnSurfaceVariant" />
 
+    <ImageView
+        android:id="@+id/muteIcon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:contentDescription="@string/inbox_muted"
+        android:src="@drawable/ic_notifications_off"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/preview"
+        app:layout_constraintEnd_toStartOf="@id/unreadBadge"
+        app:layout_constraintTop_toTopOf="@id/preview"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
     <TextView
         android:id="@+id/preview"
         android:layout_width="0dp"
@@ -62,7 +74,7 @@
         android:maxLines="1"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
-        app:layout_constraintEnd_toStartOf="@id/unreadBadge"
+        app:layout_constraintEnd_toStartOf="@id/muteIcon"
         app:layout_constraintStart_toEndOf="@id/previewTypeIcon"
         app:layout_constraintTop_toBottomOf="@id/title" />
 

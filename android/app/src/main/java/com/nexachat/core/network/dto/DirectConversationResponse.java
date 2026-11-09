@@ -11,16 +11,23 @@ public final class DirectConversationResponse {
     @Nullable private final String type;
     @Nullable private final List<ConversationMemberDto> members;
     @Nullable private final String createdAt;
+    /** Caller's own per-conversation AI opt-out state. */
+    @Nullable private final Boolean aiOptOut;
 
     public DirectConversationResponse() {
-        this(null, null, List.of(), null);
+        this(null, null, List.of(), null, null);
     }
 
-    public DirectConversationResponse(@NonNull String id, @Nullable String type, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
+    public DirectConversationResponse(@NonNull String id, @Nullable String type, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt, @Nullable Boolean aiOptOut) {
         this.id = id;
         this.type = type;
         this.members = members == null ? List.of() : members;
         this.createdAt = createdAt;
+        this.aiOptOut = aiOptOut;
+    }
+
+    public DirectConversationResponse(@NonNull String id, @Nullable String type, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
+        this(id, type, members, createdAt, null);
     }
 
     @NonNull public String getId() {
@@ -39,6 +46,11 @@ public final class DirectConversationResponse {
         return createdAt;
     }
 
+    /** Caller's own AI opt-out state; absent in legacy payloads. */
+    @Nullable public Boolean getAiOptOut() {
+        return aiOptOut;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof DirectConversationResponse that)) {
@@ -47,11 +59,12 @@ public final class DirectConversationResponse {
         return Objects.equals(id, that.id)
                 && Objects.equals(type, that.type)
                 && Objects.equals(members, that.members)
-                && Objects.equals(createdAt, that.createdAt);
+                && Objects.equals(createdAt, that.createdAt)
+                && Objects.equals(aiOptOut, that.aiOptOut);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type, members, createdAt);
+        return Objects.hash(id, type, members, createdAt, aiOptOut);
     }
 }
