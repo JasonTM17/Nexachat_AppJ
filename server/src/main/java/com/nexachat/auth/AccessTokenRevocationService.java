@@ -14,21 +14,17 @@ import java.util.UUID;
 public class AccessTokenRevocationService {
 
     private final UserRepository userRepository;
-    private final AccessTokenValidityCache validityCache;
     private final ApplicationEventPublisher eventPublisher;
 
     public AccessTokenRevocationService(UserRepository userRepository,
-                                        AccessTokenValidityCache validityCache,
                                         ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
-        this.validityCache = validityCache;
         this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public void revoke(UUID userId) {
         stampAccessTokenCutoff(userId);
-        validityCache.evict(userId);
         eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
     }
 

@@ -21,6 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Parses {@code Authorization: Bearer <jwt>} once per request.
@@ -93,13 +94,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      * a token minted right after the logout.
      */
     private boolean isRevoked(JwtService.AccessTokenClaims claims) {
-        Validity validity = validityCache.get(claims.userId()).orElseGet(() -> {
+        Optional<Validity> cached = validityCache.get(claims.userId());
+        Validity validity;
+        if (cached.isPresent()) {
+            validity = cached.get();
+        } else {
+            long generation = validityCache.generation();
             Validity loaded = userRepository.findAuthValidityById(claims.userId())
                     .map(found -> new Validity(true, found.tokensValidAfter()))
                     .orElseGet(Validity::missing);
-            validityCache.put(claims.userId(), loaded);
-            return loaded;
-        });
+            validityCache.putIfGeneration(claims.userId(), loaded, generation);
+            validity = loaded;
+        }
         if (!validity.present()) {
             return true;
         }
