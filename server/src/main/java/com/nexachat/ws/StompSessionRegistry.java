@@ -110,6 +110,11 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         return userBySession.containsKey(sessionId);
     }
 
+    /** The user bound to a session, or {@code null} for an unknown/unbound session. */
+    public java.util.UUID userIdForSession(String sessionId) {
+        return sessionId == null ? null : userBySession.get(sessionId);
+    }
+
     private boolean isRevoked(StompUserPrincipal principal) {
         return userRepository.findAuthValidityById(principal.userId())
                 .map(validity -> {

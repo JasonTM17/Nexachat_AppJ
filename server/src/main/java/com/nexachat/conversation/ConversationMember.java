@@ -80,6 +80,17 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
     @Column(name = "archived", nullable = false)
     private boolean archived;
 
+    /**
+     * Per-member inbox priority: pinned conversations sort ahead of the
+     * activity order. {@code pinnedAt} is the start of the current pin and is
+     * {@code null} exactly while the row is not pinned (V16 check constraint).
+     */
+    @Column(name = "pinned", nullable = false)
+    private boolean pinned;
+
+    @Column(name = "pinned_at")
+    private Instant pinnedAt;
+
     /** {@code true} until the row exists in the DB — drives persist-vs-merge. */
     @Transient
     private boolean isNew = true;
@@ -156,6 +167,15 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
         return archived;
     }
 
+    public boolean isPinned() {
+        return pinned;
+    }
+
+    /** Start of the current pin; {@code null} when the row is not pinned. */
+    public Instant getPinnedAt() {
+        return pinnedAt;
+    }
+
     /**
      * Mutes this member's view of the conversation. {@code until} {@code null}
      * means forever; a non-null value is already validated by the service.
@@ -179,5 +199,17 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
     /** Restores an archived row to the default inbox. Idempotent. */
     public void unarchive() {
         this.archived = false;
+    }
+
+    /** Pins this member's view; {@code at} is the start of the current pin. */
+    public void pin(Instant at) {
+        this.pinned = true;
+        this.pinnedAt = at;
+    }
+
+    /** Clears the pin. Idempotent: clearing a never-pinned row is a no-op. */
+    public void unpin() {
+        this.pinned = false;
+        this.pinnedAt = null;
     }
 }

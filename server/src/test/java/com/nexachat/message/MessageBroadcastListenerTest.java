@@ -2,6 +2,7 @@ package com.nexachat.message;
 
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.user.UserRepository;
 import com.nexachat.ws.EventEnvelope;
 import com.nexachat.ws.WsEventType;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,8 @@ class MessageBroadcastListenerTest {
     private SimpMessagingTemplate messaging;
     @Mock
     private ConversationMemberRepository memberRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private MessageBroadcastListener listener;
 
@@ -44,7 +47,7 @@ class MessageBroadcastListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new MessageBroadcastListener(messaging, memberRepository);
+        listener = new MessageBroadcastListener(messaging, memberRepository, userRepository);
     }
 
     @Test
@@ -76,6 +79,8 @@ class MessageBroadcastListenerTest {
 
     @Test
     void messageRead_broadcastsReceiptToTopic() {
+        when(userRepository.findShowSeenById(memberA)).thenReturn(java.util.Optional.of(true));
+
         listener.onMessageRead(new MessageReadEvent(conversationId, memberA, 88L));
 
         ArgumentCaptor<EventEnvelope> event = ArgumentCaptor.forClass(EventEnvelope.class);
@@ -83,6 +88,15 @@ class MessageBroadcastListenerTest {
                 eq("/topic/conversations." + conversationId), event.capture());
         assertThat(event.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_READ);
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
+    }
+
+    @Test
+    void messageRead_isNotBroadcastWhenTheReaderHidesSeen() {
+        when(userRepository.findShowSeenById(memberA)).thenReturn(java.util.Optional.of(false));
+
+        listener.onMessageRead(new MessageReadEvent(conversationId, memberA, 88L));
+
+        verifyNoMoreInteractions(messaging);
     }
 
     @Test

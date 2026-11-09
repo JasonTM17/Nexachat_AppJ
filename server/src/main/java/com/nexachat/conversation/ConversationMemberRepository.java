@@ -107,17 +107,27 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                                   @Param("now") Instant now);
 
     /**
-     * The caller's own mute/archive flags for a set of conversations, carried by
-     * delta sync so a mute or archive made on one device reaches the others.
+     * The caller's own mute/archive/pin flags for a set of conversations,
+     * carried by delta sync so a preference changed on one device reaches the
+     * others.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.MemberFlagsRow(
-                       m.conversation.id, m.muted, m.mutedUntil, m.archived)
+                       m.conversation.id, m.muted, m.mutedUntil, m.archived,
+                       m.pinned, m.pinnedAt)
             FROM ConversationMember m
             WHERE m.user.id = :userId AND m.conversation.id IN :conversationIds
             """)
     List<MemberFlagsRow> findMemberFlags(@Param("userId") UUID userId,
                                          @Param("conversationIds") Collection<UUID> conversationIds);
+
+    /**
+     * The caller's current pin count — the per-user ceiling check. Serialized
+     * by the user-row lock taken in {@code ConversationPinService}.
+     */
+    @Query("SELECT COUNT(m) FROM ConversationMember m "
+            + "WHERE m.user.id = :userId AND m.pinned = true")
+    long countPinnedByUserId(@Param("userId") UUID userId);
 
     @Query("""
             SELECT DISTINCT peer.user.id
@@ -170,41 +180,54 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
 
     /**
-     * Inbox rows for {@code GET /conversations}: the caller's conversations
-     * ordered by the denormalized {@code lastMessageSeq} — NULLs (no messages
-     * yet) sort last, matching {@code idx_conv_inbox ... DESC NULLS LAST}.
-     * {@code archived} selects the default (non-archived) or archived view.
+     * Inbox rows for {@code GET /conversations}: the caller's pinned rows
+     * first, then everything by the denormalized {@code lastMessageSeq} —
+     * NULLs (no messages yet) sort last, matching
+     * {@code idx_conv_inbox ... DESC NULLS LAST}. {@code archived} selects the
+     * default (non-archived) or archived view.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
-            ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC
+            ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
+                     c.createdAt DESC, c.id ASC
             """)
     List<InboxConversationRow> findInboxConversations(@Param("userId") UUID userId,
                                                       @Param("archived") boolean archived);
 
-    /** Keyset-paged inbox query with a unique final tie-breaker for stable cursors. */
+    /**
+     * Keyset-paged inbox query with a unique final tie-breaker for stable
+     * cursors. The cursor carries the pinned rank: when the cursor row was
+     * pinned, every unpinned row follows it; when it was unpinned, only lower
+     * activity rows follow. A unique id keeps the page boundary stable.
+     */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
               AND (:cursorId IS NULL
-                   OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
-                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
-                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
-                       AND c.createdAt = :cursorCreatedAt AND c.id > :cursorId))
-            ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC, c.id ASC
+                   OR (:cursorPinned = true AND m.pinned = false)
+                   OR (m.pinned = :cursorPinned
+                       AND (COALESCE(c.lastMessageSeq, 0) < :cursorSeq
+                            OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                                AND c.createdAt < :cursorCreatedAt)
+                            OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                                AND c.createdAt = :cursorCreatedAt
+                                AND c.id > :cursorId))))
+            ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
+                     c.createdAt DESC, c.id ASC
             """)
     List<InboxConversationRow> findInboxConversationsPage(
             @Param("userId") UUID userId,
+            @Param("cursorPinned") Boolean cursorPinned,
             @Param("cursorSeq") Long cursorSeq,
             @Param("cursorCreatedAt") Instant cursorCreatedAt,
             @Param("cursorId") UUID cursorId,
@@ -216,19 +239,25 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
               AND (:cursorId IS NULL
-                   OR COALESCE(c.lastMessageSeq, 0) < :cursorSeq
-                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq AND c.createdAt < :cursorCreatedAt)
-                   OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
-                       AND c.createdAt = :cursorCreatedAt AND c.id > :cursorId))
-            ORDER BY COALESCE(c.lastMessageSeq, 0) DESC, c.createdAt DESC, c.id ASC
+                   OR (:cursorPinned = true AND m.pinned = false)
+                   OR (m.pinned = :cursorPinned
+                       AND (COALESCE(c.lastMessageSeq, 0) < :cursorSeq
+                            OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                                AND c.createdAt < :cursorCreatedAt)
+                            OR (COALESCE(c.lastMessageSeq, 0) = :cursorSeq
+                                AND c.createdAt = :cursorCreatedAt
+                                AND c.id > :cursorId))))
+            ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
+                     c.createdAt DESC, c.id ASC
             """)
     List<InboxConversationRow> findInboxConversationsAfterCursor(
             @Param("userId") UUID userId,
+            @Param("cursorPinned") Boolean cursorPinned,
             @Param("cursorSeq") Long cursorSeq,
             @Param("cursorCreatedAt") Instant cursorCreatedAt,
             @Param("cursorId") UUID cursorId,

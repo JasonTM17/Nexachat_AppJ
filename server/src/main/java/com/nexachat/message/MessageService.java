@@ -517,12 +517,14 @@ public class MessageService {
             // 5. Max seq
             long maxSeq = messageRepository.findMaxSeqByConversationId(conversationId);
 
-            // 6. The caller's own mute/archive flags; a mute whose instant has
-            //    passed is reported as not muted (lazy expiry, no sweep job).
+            // 6. The caller's own mute/archive/pin flags; a mute whose instant
+            //    has passed is reported as not muted (lazy expiry, no sweep job).
             MemberFlagsRow flags = flagsByConversation.get(conversationId);
             boolean muted = flags != null && flags.isMutedAt(requestTime);
             java.time.Instant mutedUntil = flags == null ? null : flags.effectiveMutedUntil(requestTime);
             boolean archived = flags != null && flags.archived();
+            boolean pinned = flags != null && flags.pinned();
+            java.time.Instant pinnedAt = pinned ? flags.pinnedAt() : null;
 
             deltas.add(new SyncResponse.ConversationDelta(
                     conversationId,
@@ -536,7 +538,9 @@ public class MessageService {
                     reactionsFullRefresh,
                     muted,
                     mutedUntil,
-                    archived
+                    archived,
+                    pinned,
+                    pinnedAt
             ));
         }
 

@@ -327,13 +327,15 @@ class SyncControllerTest {
         ObjectMapper mapper = mapper();
         SyncResponse.ConversationDelta delta = new SyncResponse.ConversationDelta(
                 conversationId, List.of(), List.of(), List.of(), List.of(),
-                0L, false, null, false, false, null, false);
+                0L, false, null, false, false, null, false, false, null);
 
         JsonNode json = mapper.valueToTree(delta);
 
         assertThat(json.has("mutedUntil")).isFalse();
         assertThat(json.get("muted").asBoolean()).isFalse();
         assertThat(json.get("archived").asBoolean()).isFalse();
+        assertThat(json.get("pinned").asBoolean()).isFalse();
+        assertThat(json.has("pinnedAt")).isFalse();
     }
 
     @Test
@@ -342,13 +344,15 @@ class SyncControllerTest {
         Instant until = Instant.parse("2026-12-09T10:00:00Z");
         SyncResponse.ConversationDelta delta = new SyncResponse.ConversationDelta(
                 conversationId, List.of(), List.of(), List.of(), List.of(),
-                0L, false, null, false, true, until, true);
+                0L, false, null, false, true, until, true, true, until);
 
         JsonNode json = mapper.valueToTree(delta);
 
         assertThat(json.get("mutedUntil").asText()).isEqualTo("2026-12-09T10:00:00Z");
         assertThat(json.get("muted").asBoolean()).isTrue();
         assertThat(json.get("archived").asBoolean()).isTrue();
+        assertThat(json.get("pinned").asBoolean()).isTrue();
+        assertThat(json.get("pinnedAt").asText()).isEqualTo("2026-12-09T10:00:00Z");
     }
 
     /**

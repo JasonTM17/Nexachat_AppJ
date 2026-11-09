@@ -11,7 +11,7 @@
 |---|---|---|
 | [Auth & Users](#auth--apiv1auth) | `/api/v1/auth`, `/api/v1/users` | Register, login, token refresh, password, profile, settings, device token |
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
-| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks, per-member mute/archive, per-conversation AI opt-out |
+| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks, per-member mute/archive/pin, seen privacy, per-conversation AI opt-out |
 | [Conversation archive](#conversation-archive--apiv1conversationsidarchive) | `/api/v1/conversations/{id}/archive` | Member-scoped storage browser: media, files and links, filtered and keyset-paged |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
 | [Reminders](#reminders--apiv1conversationsidreminders) | `/api/v1/conversations/{id}/reminders` | Shared "Nhắc hẹn" board, repeat rules, durable FCM fan-out |
@@ -79,6 +79,7 @@
 | `FILE_NOT_FOUND` | 404 | Stored file / attachment key missing |
 | `ATTACHMENT_NOT_FOUND` | 404 | Attachment record does not exist |
 | `PIN_LIMIT` | 409 | Conversation already has the maximum 3 pinned messages |
+| `CONVERSATION_PIN_LIMIT` | 409 | User already pinned the maximum 5 conversations |
 | `IDEMPOTENCY_KEY_REUSED` | 409 | Same `Idempotency-Key` reused for a different endpoint or payload |
 | `MIME_NOT_ALLOWED` | 415 | Uploaded bytes failed the magic-byte sniff |
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
@@ -193,7 +194,8 @@ JSON `null` values.
   "unreadCount": 2,
   "lastReadSeq": 4,
   "muted": false,
-  "archived": false
+  "archived": false,
+  "pinned": false
 }
 ```
 
@@ -263,23 +265,29 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /conversations/direct` | Bearer | `{phone}` **or** `{userId}` — exactly one (XOR) | `201` created / `200` existing — same `ConversationResponse` either way (idempotent) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
-| `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100), stable opaque `cursor?`, and `archived?` (`true` = archived only, `false` = non-archived only; **default when omitted is `false`**, so archived conversations are hidden from the default inbox). Omit `limit`/`cursor` for the full filtered list | `200` `InboxEntry[]`, ordered `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100), stable opaque `cursor?`, and `archived?` (`true` = archived only, `false` = non-archived only; **default when omitted is `false`**, so archived conversations are hidden from the default inbox). Omit `limit`/`cursor` for the full filtered list | `200` `InboxEntry[]`, pinned conversations first, then `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — `beforeSeq` newest-first; `afterSeq` oldest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters; at most 10 attachment IDs | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 | `PATCH /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | `{content}` — trimmed, non-blank, ≤10,000 chars; TEXT only | `200` current `MessageResponse`; identical content is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `RATE_LIMITED` 429 (30/min per user, shared with delete) |
 | `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
 | `GET /conversations/{conversationId}/messages/search` | Bearer member | `q` (trimmed, 2–100 chars), optional `limit` (1–50, default 20), `beforeSeq?` | `200` `MessagePageResponse`, newest-first; literal, case- and accent-insensitive TEXT substring match | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `RATE_LIMITED` 429 (60/min per user) |
-| `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark unless the caller has `showSeen=false`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/mute` | Bearer member | `{mutedUntil?, forever?}` — exactly one of `mutedUntil` (ISO-8601 UTC instant, strictly in the future, at most 365 days from now) or `forever: true` | `204` empty (idempotent; the mute is stored for the caller only) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/mute` | Bearer member | — | `204` empty (idempotent no-op when already unmuted) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent; hidden from the default inbox) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent no-op when not archived) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/pin` | Bearer member | — | `204` empty (idempotent; pinned conversations sort first in the caller's inbox; ≤5 pinned conversations per user) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `CONVERSATION_PIN_LIMIT` 409 |
+| `DELETE /conversations/{conversationId}/pin` | Bearer member | — | `204` empty (idempotent no-op when not pinned) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: true}` (idempotent; sets the caller's own opt-out for this conversation) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: false}` (idempotent) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `GET /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: <bool>}` — the caller's own state only | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
-Mute and archive are **per-member preferences**: they are stored on the caller's
-`conversation_members` row and are never visible to, or affect, any other member.
+Mute, archive and pin are **per-member preferences**: they are stored on the
+caller's `conversation_members` row and are never visible to, or affect, any
+other member. Pinned conversations sort ahead of the activity order (pinned
+rows first, then `lastMessageSeq DESC` within each group); the pin ceiling is
+five conversations per user and applies only to NEW pins, so re-pinning an
+already pinned conversation is an idempotent `204` even at the ceiling.
 A muted conversation suppresses the recipient's `NEW_MESSAGE` data push (see
 [Push notifications](operations.md#push-notifications-fcm)); the conversation
 still receives messages, read/delivery receipts and live WebSocket events, and
@@ -322,10 +330,19 @@ newest-first pagination are scoped and ordered for the existing
 on large conversations; PostgreSQL's cost planner may still prefer a table
 scan on small datasets.
 
-`GET /users/me/settings` returns `{showPresence: boolean, aiSummaryConsent: boolean}`;
-`aiSummaryConsent` defaults to `false`. `PATCH /users/me/settings` accepts either
-field independently; an omitted field remains unchanged, and an empty object is
-rejected. Provider selection uses persisted `users.ai_summary_consent`, and the LLM
+`GET /users/me/settings` returns `{showPresence: boolean, showSeen: boolean, aiSummaryConsent: boolean}`;
+`showSeen` and `showPresence` default to `true`, `aiSummaryConsent` defaults to
+`false`. `PATCH /users/me/settings` accepts any of the three fields
+independently; an omitted field remains unchanged, and an empty object is
+rejected.
+
+`showSeen=false` is the Zalo-style reciprocal "hidden seen" state: the caller's
+`MESSAGE_READ` receipts are not broadcast and the caller does not receive other
+members' `MESSAGE_READ` receipts. The caller's own `lastReadSeq` and
+`unreadCount` still advance exactly as before, and `MESSAGE_DELIVERED` receipts
+are unaffected. This is enforced server-side in both directions; see
+[`docs/websocket-protocol.md`](websocket-protocol.md#6-delivery-guarantees).
+Provider selection uses persisted `users.ai_summary_consent`, and the LLM
 adapter rechecks consent immediately before an outbound request, so revoking
 consent after selection prevents that request. The account-level consent is
 combined with the per-conversation opt-out (`PUT/DELETE
@@ -337,7 +354,7 @@ Presence changes are described in the WebSocket section and are in-memory on a
 single backend node.
 
 `ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt, aiOptOut}`.
-`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, aiOptOut, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted. Null optional values may be omitted.
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, pinned, pinnedAt?, aiOptOut, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted; `pinnedAt` is the start of the caller's current pin (ISO-8601 UTC) and is omitted when the conversation is not pinned. Null optional values may be omitted.
 `aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
@@ -608,7 +625,7 @@ rest); `HEAD` behaves like `GET` without a body.
 |---|---|---|---|---|
 | `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
-`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh, muted, mutedUntil?, archived}], serverTime}`. `muted`/`archived` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC), omitted when the mute is forever or the conversation is not muted. The flags are carried on every delta so a second device learns a mute/archive change made elsewhere without a separate inbox fetch.
+`SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh, muted, mutedUntil?, archived, pinned, pinnedAt?}], serverTime}`. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC), omitted when the mute is forever or the conversation is not muted; `pinnedAt` is omitted when the conversation is not pinned. The flags are carried on every delta so a second device learns a mute/archive/pin change made elsewhere without a separate inbox fetch.
 Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)`.
 
 `reactionUpdates` is derived from the append-only `reaction_events` table, so a
@@ -717,7 +734,7 @@ above apply unchanged:
 - Send message: `SEND /app/conversations/{id}/messages`
 - Typing signal: `SEND /app/conversations/{id}/typing`
 - Delivery receipt: `SEND /app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`)
-- Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`)
+- Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`) — broadcast as `MESSAGE_READ` only when the reader shares seen; hidden recipients do not receive peers' receipts (see the settings section)
 - Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/calls.md`](calls.md))
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.
