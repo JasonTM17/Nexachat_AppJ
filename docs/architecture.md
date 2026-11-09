@@ -3,8 +3,9 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V11) + file volume. Conversation RAG server API is available
-> (`POST /api/v1/conversations/{id}/ask`, [docs/rag.md](rag.md)); Android entry in progress.
+> (Flyway V1–V15) + file volume. Conversation RAG is available through the
+> server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
+> ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
 > `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
 > (`CallActivity`, `IncomingCallActivity`) and WebRTC audio (`WebRtcMediaEngine`);
@@ -53,7 +54,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V11 migrations<br/>seq · watermarks · idempotency · calls · rag · reaction_events · token_cutoff")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V15 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · token_cutoff")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -170,7 +171,7 @@ sequenceDiagram
   validation against retrieved context, a 3,000-character context budget, and deterministic
   256-d local lexical embedding fallback. Aggregate telemetry (`GET /api/v1/rag/stats`) is
   restricted to authorized admin phone numbers (`NEXACHAT_ADMIN_PHONES`).
-  Note: Server API is fully available; Android UI entry is in progress (not yet merged into the app).
+  The Android Ask screen is available in `android/app/src/main/java/com/nexachat/feature/ask/`.
 - **AI Conversation Summary:** summary service (`server/summary/**`, Flyway V6) uses an
   extractive local MMR engine or an optional external OpenAI-compatible LLM (tested with
   Gemini `gemini-3.1-flash-lite` via Gemini's OpenAI-compatible base URL) gated by account-level

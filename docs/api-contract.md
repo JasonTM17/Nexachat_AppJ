@@ -3,7 +3,7 @@
 > Endpoint catalog for the current REST contract. Routes below are derived from
 > controllers under `server/src/main/java/com/nexachat/`.
 > The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
-> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API available, Android entry in progress).
+> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API and Android Ask screen available).
 
 ## Domain index
 
@@ -670,8 +670,8 @@ conversation; the local engine may still use those messages.
 
 `POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
 answers a question about the caller's own conversation. The design, privacy
-rules and cost controls are specified in [`docs/rag.md`](rag.md). Note that the
-server API is available, while the Android entry point is currently in progress.
+rules and cost controls are specified in [`docs/rag.md`](rag.md). The server API
+and Android Ask screen are available.
 
 Request:
 
