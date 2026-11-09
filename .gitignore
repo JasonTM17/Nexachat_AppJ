@@ -25,6 +25,9 @@ __pycache__/
 # ---- Signing / Secrets (NEVER commit) ----
 *.keystore
 *.jks
+*.p12
+*.pkcs12
+*.bks
 keystore.properties
 .env
 .env.*
@@ -69,6 +72,7 @@ plans/
 server/data/
 signing.properties
 captures/
+tools/fcm-live-check/.out/
 *.hprof
 .tmp_*
 desktop.ini

@@ -45,10 +45,11 @@ python tools/fcm-live-check/fcm_live_check.py server-e2e --base-url http://local
 ```
 
 `server-e2e` writes `p1-longcat-fcmlive-fixtures.json` into the fixture
-directory (`--fixture-dir`, default `plans/261105-1303-nexachat-final-audit/reports/device-e2e`,
-run from the workspace root that contains `plans/`). The fixture users are
-throwaway accounts on the local server in the reserved `+84908` test range; they
-are not deleted because the public API has no account-deletion endpoint.
+directory (`--fixture-dir`, default `tools/fcm-live-check/.out/`, created on
+demand). That directory is git-ignored because the fixture holds throwaway
+account credentials. The fixture users are throwaway accounts on the local
+server in the reserved `+84908` test range; they are not deleted because the
+public API has no account-deletion endpoint.
 
 ## Interpreting failures
 

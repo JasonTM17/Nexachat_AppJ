@@ -53,7 +53,10 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 DEFAULT_BASE_URL = "http://localhost:8080"
-DEFAULT_FIXTURE_DIR = "plans/261105-1303-nexachat-final-audit/reports/device-e2e"
+# Synthetic fixtures hold throwaway account credentials, so they go to a local
+# directory that is git-ignored. Anchoring to this file keeps the default
+# portable: it works in a fresh checkout from any working directory.
+DEFAULT_FIXTURE_DIR = Path(__file__).resolve().parent / ".out"
 APP_CONTAINER = "nexachat-app-1"
 DB_CONTAINER = "nexachat-db-1"
 USER_AGENT = "fcm-live-check/1.0"
@@ -538,7 +541,8 @@ def build_parser() -> argparse.ArgumentParser:
     e2e = sub.add_parser("server-e2e",
                          help="end-to-end check through the running server API")
     e2e.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    e2e.add_argument("--fixture-dir", default=DEFAULT_FIXTURE_DIR)
+    e2e.add_argument("--fixture-dir", default=DEFAULT_FIXTURE_DIR,
+                     help="directory for the fixture JSON, created on demand")
     e2e.add_argument("--settle-seconds", type=int, default=4)
 
     return parser
