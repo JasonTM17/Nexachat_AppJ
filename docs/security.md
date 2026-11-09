@@ -143,8 +143,11 @@ the implementing source file.
 - Pre-auth credential endpoints are IP-keyed (login 10/5 min, register 10/5 min,
   refresh 30/5 min; RateLimitInterceptor.java) **and** phone-keyed (login and
   register 20/5 min per normalized E.164 phone; AuthService.java), preventing
-  distributed IP rotation from brute-forcing an account; `X-Forwarded-For` is
-  ignored as client-spoofable without a trusted reverse proxy.
+  distributed IP rotation from brute-forcing an account. Without
+  `NEXACHAT_TRUSTED_PROXY_CIDRS`, rate limits key off the socket peer and
+  `X-Forwarded-For` is treated as client-spoofable; when the immediate peer
+  matches a configured CIDR, `ClientIpResolver` uses the forwarded client IP for
+  invite and other IP-keyed buckets (`ClientIpCaptureThenForwardedHeaderFilter`).
 - Body bounds: JSON request bodies are bounded by `nexachat.security.max-json-body-bytes`
   (`NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB); oversized payloads are rejected
   with `413 PAYLOAD_TOO_LARGE` before Jackson deserialization (RequestBodySizeLimitFilter.java).
