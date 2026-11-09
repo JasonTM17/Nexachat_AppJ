@@ -240,6 +240,8 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="privacy_show_presence">Show activity status</string>
+    <string name="privacy_show_seen">Show seen status</string>
+    <string name="cd_show_seen">Show seen status</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Record voice message</string>

@@ -24,6 +24,7 @@ import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
 import com.nexachat.data.MessageSearchResult;
 import com.nexachat.data.PeerPresence;
+import com.nexachat.data.SettingsRepository;
 import com.nexachat.data.TypingEvent;
 import com.nexachat.feature.media.PendingAttachment;
 import dagger.hilt.android.lifecycle.HiltViewModel;
@@ -71,6 +72,7 @@ public final class ChatViewModel extends ViewModel {
     private final ConversationRepository conversationRepository;
     private final AttachmentRepository attachmentRepository;
     private final RealtimeSession session;
+    @Nullable private final SettingsRepository settingsRepository;
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
@@ -94,7 +96,8 @@ public final class ChatViewModel extends ViewModel {
             MessageRepository messageRepository,
             ConversationRepository conversationRepository,
             AttachmentRepository attachmentRepository,
-            RealtimeSession session) {
+            RealtimeSession session,
+            @Nullable SettingsRepository settingsRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -102,6 +105,7 @@ public final class ChatViewModel extends ViewModel {
         this.attachmentRepository = Objects.requireNonNull(
                 attachmentRepository, "attachmentRepository");
         this.session = Objects.requireNonNull(session, "session");
+        this.settingsRepository = settingsRepository;
         String savedConversationId = savedStateHandle.get("conversationId");
         this.conversationId = savedConversationId == null ? "" : savedConversationId;
         String input = savedStateHandle.get(KEY_INPUT);
@@ -110,6 +114,16 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(searchDisposable);
         observeRepositoryState();
         initializeConversation();
+    }
+
+    public ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session) {
+        this(savedStateHandle, messageRepository, conversationRepository,
+                attachmentRepository, session, null);
     }
 
     public LiveData<UiState> getUiState() {
@@ -143,6 +157,13 @@ public final class ChatViewModel extends ViewModel {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(connected -> updateUiState(state -> state.withConnected(connected)),
                         this::surfaceStreamFailure));
+        if (settingsRepository != null) {
+            disposables.add(settingsRepository.getShowSeen()
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(show -> updateUiState(state -> state.withShowSeen(Boolean.TRUE.equals(show))),
+                            this::surfaceStreamFailure));
+        }
         disposables.add(messageRepository.pinsFlow(conversationId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())

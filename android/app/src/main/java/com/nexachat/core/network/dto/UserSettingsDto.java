@@ -11,17 +11,28 @@ import androidx.annotation.Nullable;
  */
 public final class UserSettingsDto {
     @Nullable private final Boolean showPresence;
+    @Nullable private final Boolean showSeen;
 
     public UserSettingsDto() {
-        this(null);
+        this(null, null);
     }
 
     public UserSettingsDto(@Nullable Boolean showPresence) {
+        this(showPresence, null);
+    }
+
+    public UserSettingsDto(@Nullable Boolean showPresence, @Nullable Boolean showSeen) {
         this.showPresence = showPresence;
+        this.showSeen = showSeen;
     }
 
     @Nullable
     public Boolean getShowPresence() {
         return showPresence;
+    }
+
+    @Nullable
+    public Boolean getShowSeen() {
+        return showSeen;
     }
 }

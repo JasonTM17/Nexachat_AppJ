@@ -46,9 +46,19 @@ public final class ChatBubbleRules {
             boolean isGroup,
             boolean mine,
             Long messageSeq,
+            long peerReadSeq,
+            boolean showSeen
+    ) {
+        return showSeen && !isGroup && mine && messageSeq != null && messageSeq > 0 && messageSeq <= peerReadSeq;
+    }
+
+    public static boolean isSeenReceiptVisible(
+            boolean isGroup,
+            boolean mine,
+            Long messageSeq,
             long peerReadSeq
     ) {
-        return !isGroup && mine && messageSeq != null && messageSeq > 0 && messageSeq <= peerReadSeq;
+        return isSeenReceiptVisible(isGroup, mine, messageSeq, peerReadSeq, true);
     }
 
     public static boolean isDeliveredReceiptVisible(

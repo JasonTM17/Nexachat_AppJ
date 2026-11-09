@@ -238,6 +238,8 @@
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
+    <string name="privacy_show_seen">Hiện trạng thái đã xem</string>
+    <string name="cd_show_seen">Hiện trạng thái đã xem</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Ghi âm tin nhắn thoại</string>
