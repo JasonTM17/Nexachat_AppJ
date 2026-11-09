@@ -82,6 +82,25 @@
     </fragment>
 
     <fragment
+        android:id="@+id/inviteManageFragment"
+        android:name="com.nexachat.feature.invite.InviteManageFragment"
+        android:label="@string/invite_manage_title">
+        <argument
+            android:name="conversationId"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/inviteJoinFragment"
+        android:name="com.nexachat.feature.invite.InviteJoinFragment"
+        android:label="@string/invite_join_title">
+        <argument
+            android:name="token"
+            app:argType="string" />
+        <deepLink app:uri="https://nexachat.app/join/{token}" />
+    </fragment>
+
+    <fragment
         android:id="@+id/mediaViewerFragment"
         android:name="com.nexachat.feature.media.MediaViewerFragment"
         android:label="@string/media_attachment">

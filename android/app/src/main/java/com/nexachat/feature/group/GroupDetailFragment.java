@@ -108,6 +108,7 @@ public final class GroupDetailFragment extends Fragment {
         binding.toolbar.setOnMenuItemClickListener(this::onMenuItem);
         binding.membersHeader.setTitle(getString(R.string.group_detail_title));
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
+        binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
         binding.leaveGroupButton.setOnClickListener(v -> viewModel.requestLeave());
         binding.groupAvatar.setOnClickListener(v -> {
             if (viewModel.getUiState().getValue().isIAmAdmin()) {
@@ -128,6 +129,15 @@ public final class GroupDetailFragment extends Fragment {
                         NavHostFragment.findNavController(this).popBackStack(R.id.inboxFragment, false);
                     }
                 });
+    }
+
+    private void openInviteManager() {
+        Bundle args = getArguments();
+        String conversationId = args == null ? null : args.getString("conversationId");
+        if (conversationId == null || conversationId.isBlank()) return;
+        Bundle inviteArgs = new Bundle();
+        inviteArgs.putString("conversationId", conversationId);
+        NavHostFragment.findNavController(this).navigate(R.id.inviteManageFragment, inviteArgs);
     }
 
     private boolean onMenuItem(@NonNull MenuItem item) {
@@ -152,6 +162,7 @@ public final class GroupDetailFragment extends Fragment {
         memberAdapter.setShowRemove(state.isIAmAdmin());
         memberAdapter.submitList(state.getMembers());
         binding.addMemberButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
+        binding.inviteLinkButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());
         binding.leaveGroupButton.setEnabled(!state.isBusy());
 
