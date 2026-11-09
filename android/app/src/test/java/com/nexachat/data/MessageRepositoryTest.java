@@ -439,6 +439,19 @@ public class MessageRepositoryTest {
                 .filter(row -> "later".equals(row.getContent())).findFirst().orElseThrow().getCreatedAt());
     }
 
+    @Test public void duplicateMessageCreatedFromRestAndStompKeepsSingleRow() {
+        MessageDto fromRest = dto("m-shared", null, "peer-1", 3L);
+        await(messageDao.upsert(stored("m-shared", 3L)));
+        assertEquals(1, messages.size());
+
+        events.onNext(new ChatEvent.MessageCreated(fromRest, CONVERSATION_ID, null));
+        events.onNext(new ChatEvent.MessageCreated(fromRest, CONVERSATION_ID, null));
+
+        assertEquals(1, messages.size());
+        assertEquals("m-shared", messages.keySet().iterator().next());
+        verify(messageDao, times(3)).upsert(any(MessageEntity.class));
+    }
+
     @Test public void messageCreatedWithClientIdCompletesSentDedup() {
         await(repository.send(CONVERSATION_ID, "hello"));
         String clientId = outbox.keySet().iterator().next();
