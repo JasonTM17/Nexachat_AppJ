@@ -232,6 +232,9 @@ check_dns_records() {
     if [ -z "$apex_raw" ] && command -v nslookup >/dev/null 2>&1; then
         apex_raw=$(nslookup -type=A "$DOMAIN" 2>&1)
     fi
+    if [ "$VERBOSE" -eq 1 ]; then
+        log_info "Apex DNS raw: $apex_raw"
+    fi
 
     local apex_res
     apex_res=$(eval_dns_a "$apex_raw" "$EXPECTED_IP")

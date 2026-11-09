@@ -19,9 +19,10 @@ export PGPASSWORD
 psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres \
     -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB;"
 
-for file in $(ls "$MIGRATIONS"/V*.sql | sort -V); do
+while IFS= read -r file; do
+    [ -n "$file" ] || continue
     psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -f "$file"
-done
+done < <(find "$MIGRATIONS" -maxdepth 1 -type f -name 'V*.sql' | sort -V)
 
 psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB" \
     -f "$ROOT/tools/perf/seed_nexachat_perf.sql"
