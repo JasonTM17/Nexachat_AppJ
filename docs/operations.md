@@ -89,13 +89,15 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
 
-**Mute gating.** `NEW_MESSAGE` pushes for non-`SYSTEM` messages are skipped for
-members who muted the conversation (per-member `muted` / `muted_until` on
-`conversation_members`; a past `muted_until` no longer mutes). `CALL_INVITE`
-pushes are never gated, and `SYSTEM` messages keep their current behavior, so a
-member is never silently added to or removed from a conversation. A muted
-conversation still receives messages, receipts and live WebSocket events, and
-its `unreadCount` keeps advancing — only the push is suppressed.
+**Mute gating.** Ordinary `NEW_MESSAGE` pushes for non-`SYSTEM` messages are
+skipped for members who muted the conversation (per-member `muted` /
+`muted_until` on `conversation_members`; a past `muted_until` no longer mutes).
+A directly mentioned muted member and every muted member on `mentionAll` still
+receive a data-only push pointer with `mentioned="true"`; the payload contains
+no message content. `CALL_INVITE` pushes are never gated, and `SYSTEM` messages
+keep their current behavior, so a member is never silently added to or removed
+from a conversation. A muted conversation still receives messages, receipts
+and live WebSocket events, and its `unreadCount` keeps advancing.
 
 #### Reminder delivery
 
@@ -499,7 +501,7 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V15 apply
+Back up before replacing the app image. Flyway migrations V1 through V17 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
 edit one already applied to a database. Migrations V8–V11 introduce:
 - `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
@@ -508,8 +510,10 @@ edit one already applied to a database. Migrations V8–V11 introduce:
 - `V11__user_access_token_cutoff.sql`: `users.tokens_valid_after`, the access-token revocation cutoff.
 
 The next migrations add per-member mute/archive preferences (V12), conversation
-AI opt-outs (V13), reminders and delivery claims (V14), and group polls (V15).
-Ensure every migration file V1–V15 is present in the source tree before
+AI opt-outs (V13), reminders and delivery claims (V14), group polls (V15),
+seen privacy (V16), and structured group message mentions (V17). V17 preserves
+existing messages and constrains explicit mentions to a current conversation
+member. Ensure every migration file V1–V17 is present in the source tree before
 rebuilding the dev app container; the image packages the server migration
 resources used by Flyway at startup.
 

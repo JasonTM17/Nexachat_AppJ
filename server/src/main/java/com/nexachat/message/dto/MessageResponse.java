@@ -32,6 +32,18 @@ public record MessageResponse(
         List<ReactionView> reactions,
         Instant createdAt,
         Instant editedAt,
-        Instant deletedAt
+        Instant deletedAt,
+        List<MessageMentionResponse> mentions,
+        boolean mentionAll
 ) {
+
+    public MessageResponse(UUID id, UUID conversationId, Long seq, UUID senderId,
+                           String senderDisplayName, String type, String content,
+                           UUID clientMessageId, UUID replyToId, ReplyRefResponse replyTo,
+                           List<AttachmentResponse> attachments, List<ReactionView> reactions,
+                           Instant createdAt, Instant editedAt, Instant deletedAt) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, replyTo, attachments, reactions,
+                createdAt, editedAt, deletedAt, List.of(), false);
+    }
 }

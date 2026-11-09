@@ -1,5 +1,6 @@
 package com.nexachat.message.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -25,6 +26,13 @@ public record SendMessageRequest(
         @NotNull String type,
         @Size(max = 10_000) String content,
         UUID replyToId,
-        List<UUID> attachmentIds
+        List<UUID> attachmentIds,
+        @Valid @Size(max = 20) List<MessageMentionRequest> mentions,
+        Boolean mentionAll
 ) {
+
+    public SendMessageRequest(UUID clientMessageId, String type, String content,
+                              UUID replyToId, List<UUID> attachmentIds) {
+        this(clientMessageId, type, content, replyToId, attachmentIds, null, null);
+    }
 }

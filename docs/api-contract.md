@@ -213,7 +213,9 @@ JSON `null` values.
   "content": "Hello from REST",
   "clientMessageId": "3f2b8c1e-9a4d-4e6f-8b7c-1d2e3f4a5b6c",
   "attachments": [],
-  "createdAt": "2026-11-04T09:10:00Z"
+  "createdAt": "2026-11-04T09:10:00Z",
+  "mentions": [],
+  "mentionAll": false
 }
 ```
 
@@ -267,9 +269,9 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 | `POST /conversations/direct` | Bearer | `{phone}` **or** `{userId}` — exactly one (XOR) | `201` created / `200` existing — same `ConversationResponse` either way (idempotent) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
 | `GET /conversations` | Bearer | Optional `limit?` (clamped to 1–100), stable opaque `cursor?`, and `archived?` (`true` = archived only, `false` = non-archived only; **default when omitted is `false`**, so archived conversations are hidden from the default inbox). Omit `limit`/`cursor` for the full filtered list | `200` `InboxEntry[]`, pinned conversations first, then `lastMessageSeq DESC` (no-message chats last) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `GET /conversations/{conversationId}/messages` | Bearer | Query `beforeSeq?`, `afterSeq?` (mutually exclusive), `limit?` (default 30, max 100) | `200` `MessagePageResponse` — `beforeSeq` newest-first; `afterSeq` oldest-first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
-| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?}` — content ≤10,000 characters; at most 10 attachment IDs | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
-| `PATCH /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | `{content}` — trimmed, non-blank, ≤10,000 chars; TEXT only | `200` current `MessageResponse`; identical content is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `RATE_LIMITED` 429 (30/min per user, shared with delete) |
-| `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
+| `POST /conversations/{conversationId}/messages` | Bearer | `{clientMessageId, type, content?, replyToId?, attachmentIds?, mentions?, mentionAll?}` — content ≤10,000 characters; at most 10 attachment IDs and 20 mentions | `201` created / `200` dedup hit — `MessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
+| `PATCH /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | `{content, mentions?, mentionAll?}` — trimmed, non-blank, ≤10,000 chars; TEXT only | `200` current `MessageResponse`; unchanged content and mention state is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `RATE_LIMITED` 429 (30/min per user, shared with delete) |
+| `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, mention metadata, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
 | `GET /conversations/{conversationId}/messages/search` | Bearer member | `q` (trimmed, 2–100 chars), optional `limit` (1–50, default 20), `beforeSeq?` | `200` `MessagePageResponse`, newest-first; literal, case- and accent-insensitive TEXT substring match | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `RATE_LIMITED` 429 (60/min per user) |
 | `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark unless the caller has `showSeen=false`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/mute` | Bearer member | `{mutedUntil?, forever?}` — exactly one of `mutedUntil` (ISO-8601 UTC instant, strictly in the future, at most 365 days from now) or `forever: true` | `204` empty (idempotent; the mute is stored for the caller only) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
@@ -282,17 +284,42 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 | `DELETE /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: false}` (idempotent) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `GET /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: <bool>}` — the caller's own state only | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
+Message `mentions` are optional request objects `{userId, offset, length}`.
+They are accepted only on `TEXT` messages in a `GROUP`; each target must be a
+current member, target IDs must be unique, and at most 20 mentions are allowed.
+`offset` and `length` count UTF-16 code units in the stored content (send keeps
+the submitted text; edit trims leading and trailing whitespace before storing);
+the range must be non-empty, in bounds, non-overlapping, and cannot split a
+Unicode surrogate pair. Mention metadata is structured only: the server does
+not infer mentions from `@` text. `mentionAll: true` is a separate group-message
+flag, permitted only for current admins (`NOT_ADMIN` 403); it does not expand
+into a `mentions` array. The existing per-user message send limit also covers
+`mentionAll` (30 sends per 10 seconds by default); it has no separate quota.
+`MessageResponse` always includes `mentions` (empty when absent) and
+`mentionAll` (false when absent).
+
+On edit, omitted `mentions` and `mentionAll` fields preserve their stored state;
+`mentions: []` clears explicit targets and `mentionAll: false` clears the group
+flag. Preserved ranges are validated against the new normalized content, so an
+edit that makes a stored range invalid must send updated mention data or fail
+with `VALIDATION_FAILED`. Deleting a message clears both forms of mention data.
+History, search, delta sync and STOMP message frames expose these fields only to
+current conversation members. Archive items and AI opt-out state responses do
+not include structured mention metadata.
+
 Mute, archive and pin are **per-member preferences**: they are stored on the
 caller's `conversation_members` row and are never visible to, or affect, any
 other member. Pinned conversations sort ahead of the activity order (pinned
 rows first, then `lastMessageSeq DESC` within each group); the pin ceiling is
 five conversations per user and applies only to NEW pins, so re-pinning an
 already pinned conversation is an idempotent `204` even at the ceiling.
-A muted conversation suppresses the recipient's `NEW_MESSAGE` data push (see
+A muted conversation suppresses the recipient's ordinary `NEW_MESSAGE` data push (see
 [Push notifications](operations.md#push-notifications-fcm)); the conversation
 still receives messages, read/delivery receipts and live WebSocket events, and
 `unreadCount` keeps advancing. **Push rule:** only `NEW_MESSAGE` pushes for
-non-`SYSTEM` messages are gated by mute. `CALL_INVITE` pushes always go out (a
+non-`SYSTEM` messages are gated by mute unless that member is explicitly
+mentioned or the message has `mentionAll: true`; those push pointers carry
+`mentioned: "true"`. `CALL_INVITE` pushes always go out (a
 call must ring), and `SYSTEM` messages (group membership events) keep their
 current behavior so a member is never silently removed or added. Mute expiry is
 lazy: a `mutedUntil` instant in the past is treated as not muted, so no cleanup
@@ -309,16 +336,18 @@ resulting instant or flag — it never interprets preset labels — and the same
 365-day bound and future-instant validation apply. `DELETE /mute` is the client's
 "turn back on" action.
 
-`PATCH` broadcasts `MESSAGE_UPDATED` after commit only when content changes.
-Identical normalized content is a successful no-op and produces no update event.
+`PATCH` broadcasts `MESSAGE_UPDATED` after commit when normalized content or
+mention metadata changes. An identical content and mention state is a successful
+no-op and produces no update event.
 If the changed message is the conversation's last message, the existing
 `CONVERSATION_UPDATED` inbox push also asks clients to refresh the snippet.
-`DELETE` retains the row and sequence,
-sets `deletedAt`, clears content, and removes reaction rows and any pin. It does
+`DELETE` retains the row and sequence, sets `deletedAt`, clears content, and
+removes mention rows, reaction rows and any pin. It does
 not purge attachment metadata or stored file bytes; deleted-message attachment
 URLs are no longer readable. History returns a tombstone with `content: null`,
-`attachments: []`, and `reactions: []`. A deleted last message remains the
-inbox `lastMessage`, with `deletedAt` and `contentSnippet: null`; clients render
+`attachments: []`, `reactions: []`, `mentions: []`, and `mentionAll: false`. A
+deleted last message remains the inbox `lastMessage`, with `deletedAt` and
+`contentSnippet: null`; clients render
 their localized deleted-message label. Reply previews keep their id/sender,
 with `content: null` and `deleted: true`.
 
@@ -357,7 +386,7 @@ single backend node.
 `InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, pinned, pinnedAt?, aiOptOut, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted; `pinnedAt` is the start of the caller's current pin (ISO-8601 UTC) and is omitted when the conversation is not pinned. Null optional values may be omitted.
 `aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
-`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
+`MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], mentions[], mentionAll, createdAt, editedAt, deletedAt}` (`mentions` is empty and `mentionAll` false when unused; optional null fields are omitted; deleted `content` is explicit `null`).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
 `SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content`. Re-sending the same `clientMessageId` in the same conversation returns and re-broadcasts the stored row without inserting a second message; receivers deduplicate by message id. Reusing it in a different conversation is `VALIDATION_FAILED`.
 Inbox pagination uses query parameters `limit` and `cursor`. With no parameters, the complete list and byte-compatible response body are unchanged. A `limit` page is clamped to 1–100 items; `X-Next-Cursor` contains the next opaque keyset cursor only when another page exists. A cursor without a limit returns all remaining entries.

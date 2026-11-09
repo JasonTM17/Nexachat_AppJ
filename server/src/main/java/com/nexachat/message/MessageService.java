@@ -3,15 +3,20 @@ package com.nexachat.message;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
+import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.conversation.ConversationUpdatedEvent;
 import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.dto.AttachmentResponse;
+import com.nexachat.message.dto.EditMessageRequest;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.MessageDeletedPayload;
+import com.nexachat.message.dto.MessageMentionRequest;
+import com.nexachat.message.dto.MessageMentionResponse;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.PinUpdatedPayload;
@@ -36,10 +41,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -82,6 +90,7 @@ public class MessageService {
     static final int MAX_CONTENT_LENGTH = 10_000;
 
     private final MessageRepository messageRepository;
+    private final MessageMentionRepository mentionRepository;
     private final MessageAttachmentRepository attachmentRepository;
     private final MessageReactionRepository reactionRepository;
     private final ReactionEventRepository reactionEventRepository;
@@ -95,6 +104,7 @@ public class MessageService {
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
+                          MessageMentionRepository mentionRepository,
                           MessageAttachmentRepository attachmentRepository,
                           MessageReactionRepository reactionRepository,
                           ReactionEventRepository reactionEventRepository,
@@ -104,7 +114,23 @@ public class MessageService {
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher,
                           SyncProperties syncProperties) {
-        this(messageRepository, attachmentRepository, reactionRepository, reactionEventRepository,
+        this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
+                conversationRepository, memberRepository, pinnedMessageRepository, storageService,
+                eventPublisher, syncProperties, Clock.systemUTC());
+    }
+
+    /** Compatibility constructor for isolated service tests that do not exercise mentions. */
+    public MessageService(MessageRepository messageRepository,
+                          MessageAttachmentRepository attachmentRepository,
+                          MessageReactionRepository reactionRepository,
+                          ReactionEventRepository reactionEventRepository,
+                          ConversationRepository conversationRepository,
+                          ConversationMemberRepository memberRepository,
+                          PinnedMessageRepository pinnedMessageRepository,
+                          StorageService storageService,
+                          ApplicationEventPublisher eventPublisher,
+                          SyncProperties syncProperties) {
+        this(messageRepository, null, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
                 eventPublisher, syncProperties, Clock.systemUTC());
     }
@@ -120,7 +146,25 @@ public class MessageService {
                    ApplicationEventPublisher eventPublisher,
                    SyncProperties syncProperties,
                    Clock clock) {
+        this(messageRepository, null, attachmentRepository, reactionRepository, reactionEventRepository,
+                conversationRepository, memberRepository, pinnedMessageRepository, storageService,
+                eventPublisher, syncProperties, clock);
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageMentionRepository mentionRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
+                   Clock clock) {
         this.messageRepository = messageRepository;
+        this.mentionRepository = mentionRepository;
         this.attachmentRepository = attachmentRepository;
         this.reactionRepository = reactionRepository;
         this.reactionEventRepository = reactionEventRepository;
@@ -158,10 +202,16 @@ public class MessageService {
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);
         String content = normalizedContent(type, request.content());
+        MentionState mentionState = validateMentions(conversationId, senderId, type, content,
+                request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
         UUID replyToId = resolveReplyTo(conversationId, request.replyToId());
 
-        int inserted = messageRepository.insertIgnoringDuplicateKey(
-                conversationId, senderId, request.clientMessageId(), type.name(), content, replyToId);
+        int inserted = mentionState.mentionAll()
+                ? messageRepository.insertIgnoringDuplicateKeyWithMentionAll(
+                        conversationId, senderId, request.clientMessageId(), type.name(), content,
+                        replyToId, true)
+                : messageRepository.insertIgnoringDuplicateKey(
+                        conversationId, senderId, request.clientMessageId(), type.name(), content, replyToId);
         boolean created = inserted == 1;
 
         // The row is guaranteed to exist now: ours if inserted, the winner's if deduped.
@@ -178,6 +228,9 @@ public class MessageService {
         }
 
         if (created) {
+            if (!mentionState.mentions().isEmpty()) {
+                requireMentionRepository().replace(row.id(), conversationId, mentionState.mentions());
+            }
             conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
             // You have trivially "read" what you sent — keep your own unread at 0.
             memberRepository.advanceReadWatermark(conversationId, senderId, row.seq());
@@ -225,6 +278,12 @@ public class MessageService {
 
     @Transactional
     public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId, String content) {
+        return edit(userId, conversationId, messageId, new EditMessageRequest(content));
+    }
+
+    @Transactional
+    public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId,
+                                EditMessageRequest request) {
         requireMember(conversationId, userId);
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
@@ -236,18 +295,34 @@ public class MessageService {
         if (message.getType() != Message.Type.TEXT) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Only TEXT messages can be edited");
         }
-        if (content == null) {
+        if (request == null || request.content() == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "content is required");
         }
-        String normalized = content.strip();
+        String normalized = request.content().strip();
         if (normalized.isEmpty() || normalized.length() > MAX_CONTENT_LENGTH
                 || normalized.indexOf('\0') >= 0) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "content must contain 1 to " + MAX_CONTENT_LENGTH + " characters");
         }
 
+        List<MessageMentionResponse> existingMentions = mentionRepository == null
+                ? List.of() : mentionRepository.findByMessageId(messageId);
+        List<MessageMentionRequest> requestedMentions = request.mentions() == null
+                ? existingMentions.stream()
+                        .map(mention -> new MessageMentionRequest(
+                                mention.userId(), mention.offset(), mention.length()))
+                        .toList()
+                : request.mentions();
+        boolean mentionAll = request.mentionAll() == null
+                ? message.isMentionAll() : request.mentionAll();
+        MentionState mentionState = validateMentions(conversationId, userId, message.getType(),
+                normalized, requestedMentions, mentionAll);
+        boolean contentChanged = !normalized.equals(message.getContent());
+        boolean mentionsChanged = !mentionState.mentions().equals(existingMentions)
+                || mentionState.mentionAll() != message.isMentionAll();
+
         MessageRow row;
-        if (normalized.equals(message.getContent())) {
+        if (!contentChanged && !mentionsChanged) {
             row = messageRepository.findRowById(messageId)
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
             return toResponse(row, userId);
@@ -257,7 +332,15 @@ public class MessageService {
         if (message.getEditedAt() != null && !editedAt.isAfter(message.getEditedAt())) {
             editedAt = message.getEditedAt().plus(1, ChronoUnit.MICROS);
         }
-        message.editContent(normalized, editedAt);
+        if (contentChanged) {
+            message.editContent(normalized, editedAt);
+        } else {
+            message.editContent(message.getContent(), editedAt);
+        }
+        message.setMentionAll(mentionState.mentionAll());
+        if (mentionsChanged) {
+            requireMentionRepository().replace(messageId, conversationId, mentionState.mentions());
+        }
         row = messageRepository.findRowById(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         MessageResponse response = toResponse(row, userId);
@@ -285,6 +368,9 @@ public class MessageService {
         boolean wasLastMessage = isLastMessage(conversationId, messageId);
         java.time.Instant deletedAt = java.time.Instant.now();
         message.softDelete(deletedAt);
+        if (mentionRepository != null) {
+            mentionRepository.deleteByMessageId(messageId);
+        }
         reactionRepository.deleteByMessageId(messageId);
         if (pinnedMessageRepository.deleteOne(conversationId, messageId) > 0) {
             eventPublisher.publishEvent(new PinUpdatedEvent(
@@ -645,7 +731,93 @@ public class MessageService {
         return new MessageRow(row.getId(), row.getConversationId(), row.getSeq(), row.getSenderId(),
                 row.getSenderDisplayName(), Message.Type.valueOf(row.getType()), row.getContent(),
                 row.getClientMessageId(), row.getReplyToId(), row.getCreatedAt(),
-                row.getEditedAt(), row.getDeletedAt());
+                row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()));
+    }
+
+    private record MentionRange(int start, int end, MessageMentionResponse mention) {
+    }
+
+    private record MentionState(List<MessageMentionResponse> mentions, boolean mentionAll) {
+    }
+
+    private MentionState validateMentions(UUID conversationId, UUID actorId, Message.Type type,
+                                          String content, List<MessageMentionRequest> rawMentions,
+                                          boolean mentionAll) {
+        List<MessageMentionRequest> requested = rawMentions == null ? List.of() : rawMentions;
+        if (requested.size() > 20) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "At most 20 members can be mentioned");
+        }
+        if (requested.isEmpty() && !mentionAll) {
+            return new MentionState(List.of(), false);
+        }
+        if (type != Message.Type.TEXT) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Mentions are supported on TEXT messages only");
+        }
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
+                        "Conversation not found"));
+        if (conversation.getType() != Conversation.Type.GROUP) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Mentions are supported in groups only");
+        }
+        if (mentionAll) {
+            ConversationMember actor = memberRepository.findByConversation_IdAndUser_Id(conversationId, actorId)
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a conversation member"));
+            if (actor.getRole() != ConversationMember.Role.ADMIN) {
+                throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Only group admins can mention all members");
+            }
+        }
+
+        Set<UUID> currentMemberIds = requested.isEmpty()
+                ? Set.of() : new HashSet<>(memberRepository.findMemberUserIds(conversationId));
+        Set<UUID> targetIds = new HashSet<>();
+        List<MentionRange> ranges = new ArrayList<>();
+        for (MessageMentionRequest request : requested) {
+            if (request == null || request.userId() == null || request.offset() == null
+                    || request.length() == null || request.offset() < 0 || request.length() <= 0) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Mention range is invalid");
+            }
+            long endLong = (long) request.offset() + request.length();
+            if (content == null || endLong > content.length()) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Mention range is outside message content");
+            }
+            int end = (int) endLong;
+            if (!isCodePointBoundary(content, request.offset()) || !isCodePointBoundary(content, end)) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Mention range cannot split a Unicode surrogate pair");
+            }
+            if (!targetIds.add(request.userId())) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "A member can be mentioned only once");
+            }
+            if (!currentMemberIds.contains(request.userId())) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Mention target must be a current group member");
+            }
+            ranges.add(new MentionRange(request.offset(), end,
+                    new MessageMentionResponse(request.userId(), request.offset(), request.length())));
+        }
+
+        ranges.sort(Comparator.comparingInt(MentionRange::start));
+        for (int index = 1; index < ranges.size(); index++) {
+            if (ranges.get(index).start() < ranges.get(index - 1).end()) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Mention ranges cannot overlap");
+            }
+        }
+        List<MessageMentionResponse> mentions = ranges.stream().map(MentionRange::mention).toList();
+        return new MentionState(mentions, mentionAll);
+    }
+
+    private static boolean isCodePointBoundary(String content, int index) {
+        return index == 0 || index == content.length()
+                || !(Character.isHighSurrogate(content.charAt(index - 1))
+                && Character.isLowSurrogate(content.charAt(index)));
+    }
+
+    private MessageMentionRepository requireMentionRepository() {
+        if (mentionRepository == null) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Mention storage is unavailable");
+        }
+        return mentionRepository;
     }
 
     private static void validatePayload(SendMessageRequest request) {
@@ -828,6 +1000,8 @@ public class MessageService {
                                 attachment -> attachment.getMessage().getId(),
                                 Collectors.mapping(this::toAttachmentResponse, Collectors.toList())));
         Map<UUID, List<ReactionView>> reactionsByMessage = reactionsByMessage(messageIds, viewerId);
+        Map<UUID, List<MessageMentionResponse>> mentionsByMessage = mentionRepository == null
+                ? Map.of() : mentionRepository.findByMessageIds(messageIds);
         Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(rows.stream()
                 .map(MessageRow::replyToId)
                 .filter(Objects::nonNull)
@@ -837,20 +1011,23 @@ public class MessageService {
                 .map(row -> toResponse(row,
                         attachmentsByMessage.getOrDefault(row.id(), List.of()),
                         reactionsByMessage.getOrDefault(row.id(), List.of()),
-                        row.replyToId() == null ? null : replyRefsById.get(row.replyToId())))
+                        row.replyToId() == null ? null : replyRefsById.get(row.replyToId()),
+                        mentionsByMessage.getOrDefault(row.id(), List.of())))
                 .toList();
     }
 
     private static MessageResponse toResponse(MessageRow row,
                                               List<AttachmentResponse> attachments,
                                               List<ReactionView> reactions,
-                                              ReplyRefResponse replyTo) {
+                                              ReplyRefResponse replyTo,
+                                              List<MessageMentionResponse> mentions) {
         boolean deleted = row.deletedAt() != null;
         return new MessageResponse(
                 row.id(), row.conversationId(), row.seq(), row.senderId(), row.senderDisplayName(),
                 row.type().name(), deleted ? null : row.content(), row.clientMessageId(), row.replyToId(),
                 replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
-                row.createdAt(), row.editedAt(), row.deletedAt());
+                row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
+                !deleted && row.mentionAll());
     }
 
     /**
