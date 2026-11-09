@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 11,
+        version = 12,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -200,6 +200,16 @@ public abstract class AppDatabase extends RoomDatabase {
                             "ALTER TABLE outbox ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'");
                     db.execSQL(
                             "ALTER TABLE outbox ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /** Caches the authenticated caller's label ids beside each inbox row. */
+    public static final Migration MIGRATION_11_12 =
+            new Migration(11, 12) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE `conversations` ADD COLUMN `labelIdsCsv` TEXT NOT NULL DEFAULT ''");
                 }
             };
 }

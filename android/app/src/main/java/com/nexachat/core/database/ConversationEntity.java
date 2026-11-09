@@ -2,8 +2,11 @@ package com.nexachat.core.database;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.room.ColumnInfo;
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 /** Inbox row; direct conversations carry a resolved peer and groups use title. */
@@ -44,7 +47,10 @@ public final class ConversationEntity {
     private final boolean pinned;
     /** Epoch milliseconds when pinned; null while not pinned. */
     @Nullable private final Long pinnedAt;
+    /** Caller-owned label ids cached with the Room-backed inbox row. */
+    @NonNull @ColumnInfo(defaultValue = "''") private final String labelIdsCsv;
 
+    @androidx.room.Ignore
     public ConversationEntity(
             @NonNull String id,
             @NonNull String type,
@@ -68,6 +74,36 @@ public final class ConversationEntity {
             boolean aiOptOut,
             boolean pinned,
             @Nullable Long pinnedAt) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq,
+                muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt, "");
+    }
+
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAt,
+            @NonNull String labelIdsCsv) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -90,6 +126,32 @@ public final class ConversationEntity {
         this.aiOptOut = aiOptOut;
         this.pinned = pinned;
         this.pinnedAt = pinnedAt;
+        this.labelIdsCsv = Objects.requireNonNull(labelIdsCsv, "labelIdsCsv");
+    }
+
+    @androidx.room.Ignore
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq,
+            @NonNull String labelIdsCsv) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq,
+                false, null, false, false, false, null, labelIdsCsv);
     }
 
     @androidx.room.Ignore
@@ -215,13 +277,22 @@ public final class ConversationEntity {
     public boolean isAiOptOut() { return aiOptOut; }
     public boolean isPinned() { return pinned; }
     @Nullable public Long getPinnedAt() { return pinnedAt; }
+    @NonNull public String getLabelIdsCsv() { return labelIdsCsv; }
+    @NonNull public List<String> getLabelIds() {
+        if (labelIdsCsv.isBlank()) return List.of();
+        return Arrays.stream(labelIdsCsv.split(","))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+    }
 
     /** Returns this row with a locally renamed title. */
     @NonNull public ConversationEntity withTitle(@Nullable String newTitle) {
         return new ConversationEntity(id, type, newTitle, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
-                peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt);
+                peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
+                labelIdsCsv);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -229,7 +300,8 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt);
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -238,7 +310,8 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
-                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt);
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv);
     }
 
     /** Returns this row with updated peerDeliveredSeq. */
@@ -246,7 +319,8 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, newPeerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt);
+                lastMessageDeleted, newPeerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv);
     }
 
     /** Returns this row with updated pinned state. */
@@ -254,7 +328,17 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, newPinned, newPinnedAt);
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                newPinned, newPinnedAt, labelIdsCsv);
+    }
+
+    /** Returns this row with a replaced caller-owned label assignment cache. */
+    @NonNull public ConversationEntity withLabelIdsCsv(@NonNull String newLabelIdsCsv) {
+        return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
+                peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
+                newLabelIdsCsv);
     }
 
     @Override public boolean equals(Object other) {
@@ -276,14 +360,16 @@ public final class ConversationEntity {
                 && Objects.equals(otherUserAvatar, that.otherUserAvatar)
                 && Objects.equals(avatarUrl, that.avatarUrl) && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
-                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs);
+                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
+                && Objects.equals(labelIdsCsv, that.labelIdsCsv);
     }
 
     @Override public int hashCode() {
         return Objects.hash(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt);
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv);
     }
 
     @NonNull @Override public String toString() {
@@ -297,6 +383,7 @@ public final class ConversationEntity {
                 + lastMessageDeleted + ", peerDeliveredSeq=" + peerDeliveredSeq
                 + ", muted=" + muted + ", mutedUntilEpochMs=" + mutedUntilEpochMs
                 + ", archived=" + archived + ", aiOptOut=" + aiOptOut
-                + ", pinned=" + pinned + ", pinnedAt=" + pinnedAt + ')';
+                + ", pinned=" + pinned + ", pinnedAt=" + pinnedAt
+                + ", labelIdsCsv=" + labelIdsCsv + ')';
     }
 }

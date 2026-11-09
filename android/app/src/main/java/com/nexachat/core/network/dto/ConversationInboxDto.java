@@ -29,6 +29,7 @@ public final class ConversationInboxDto {
     @Nullable private final Boolean aiOptOut;
     @Nullable private final Boolean pinned;
     @Nullable private final String pinnedAt;
+    @Nullable private final List<String> labels;
 
     public ConversationInboxDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
@@ -58,6 +59,36 @@ public final class ConversationInboxDto {
             @Nullable Boolean aiOptOut,
             @Nullable Boolean pinned,
             @Nullable String pinnedAt) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser,
+                otherUserName, otherUserAvatar, avatarUrl, members, peerPresence, muted,
+                mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of());
+    }
+
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable Boolean muted,
+            @Nullable String mutedUntil,
+            @Nullable Boolean archived,
+            @Nullable Boolean aiOptOut,
+            @Nullable Boolean pinned,
+            @Nullable String pinnedAt,
+            @Nullable List<String> labels) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -80,6 +111,31 @@ public final class ConversationInboxDto {
         this.aiOptOut = aiOptOut;
         this.pinned = pinned;
         this.pinnedAt = pinnedAt;
+        this.labels = labels == null ? List.of() : List.copyOf(labels);
+    }
+
+    /** Inbox variant that carries caller-owned labels without preference fields. */
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable List<String> labels) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, null, null, null, null, null, null, labels);
     }
 
     public ConversationInboxDto(
@@ -256,6 +312,10 @@ public final class ConversationInboxDto {
         return pinnedAt;
     }
 
+    @NonNull public List<String> getLabels() {
+        return labels == null ? List.of() : labels;
+    }
+
     @Nullable
     public String resolvedLastContent() {
         if (lastMessage != null && lastMessage.getDeletedAt() != null) {
@@ -373,7 +433,8 @@ public final class ConversationInboxDto {
                 && Objects.equals(archived, that.archived)
                 && Objects.equals(aiOptOut, that.aiOptOut)
                 && Objects.equals(pinned, that.pinned)
-                && Objects.equals(pinnedAt, that.pinnedAt);
+                && Objects.equals(pinnedAt, that.pinnedAt)
+                && Objects.equals(labels, that.labels);
     }
 
     @Override
@@ -381,6 +442,6 @@ public final class ConversationInboxDto {
         return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser,
                 otherUserName, otherUserAvatar, avatarUrl, members, peerPresence,
-                muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt);
+                muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, labels);
     }
 }

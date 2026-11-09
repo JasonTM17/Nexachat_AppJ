@@ -210,6 +210,20 @@ public final class InboxViewModel extends ViewModel {
         runPreference(conversationRepository.setConversationArchived(conversationId, archived));
     }
 
+    /** Sets the caller's AI opt-out for one conversation. */
+    public void setConversationAiOptOut(@NonNull String conversationId, boolean optOut) {
+        disposables.add(conversationRepository.setAiOptOut(conversationId, optOut)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Failure<?> failure) {
+                                events.postEvent(new InboxEvent(failure.getError()));
+                            }
+                        },
+                        error -> events.postEvent(
+                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+    }
+
     private void runPreference(Single<Result<Void>> request) {
         disposables.add(Objects.requireNonNull(request, "request")
                 .subscribeOn(Schedulers.io())

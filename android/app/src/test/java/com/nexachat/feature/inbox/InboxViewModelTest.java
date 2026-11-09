@@ -206,6 +206,16 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void setConversationAiOptOutDelegatesToRepository() {
+        when(repository.setAiOptOut("c-1", true))
+                .thenReturn(Single.just(new Result.Success<>(Boolean.TRUE)));
+
+        viewModel.setConversationAiOptOut("c-1", true);
+
+        verify(repository).setAiOptOut("c-1", true);
+    }
+
+    @Test
     public void togglePinCallsUnpinWhenPinned() {
         ConversationSummary pinned = pinnedConversation("c-1");
         when(repository.setConversationPinned("c-1", false))

@@ -264,6 +264,28 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
+     * Fetches the server-filtered label set without pruning unrelated cached
+     * conversations, then writes the returned rows through to Room.
+     */
+    @NonNull
+    public Single<Result<Set<String>>> refreshInboxByLabel(@NonNull String labelId) {
+        return currentUserIdOptional()
+                .flatMap(myId -> fetchInboxItems(null, null, false, labelId).flatMap(result -> {
+                    if (result instanceof Result.Failure<?>) {
+                        return Single.<Result<Set<String>>>just(Result.cast(result));
+                    }
+                    InboxFetch fetch = successValue(result);
+                    List<ConversationEntity> rows = mapInboxRows(fetch.items, myId.orElse(null));
+                    Set<String> ids = new LinkedHashSet<>();
+                    for (ConversationEntity row : rows) ids.add(row.getId());
+                    return upsertPreservingClientColumns(rows)
+                            .andThen(Single.fromCallable(() ->
+                                    new Result.Success<Set<String>>(Set.copyOf(ids))));
+                }))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
      * Loads the next keyset page of the current filter mode. Concurrent callers
      * share one network request; a failed page leaves its cursor intact so a
      * later call retries it.
@@ -693,11 +715,21 @@ public final class ConversationRepository implements AutoCloseable {
             @Nullable Integer limit,
             @Nullable String cursor,
             boolean archived) {
+        return fetchInboxItems(limit, cursor, archived, null);
+    }
+
+    private Single<Result<InboxFetch>> fetchInboxItems(
+            @Nullable Integer limit,
+            @Nullable String cursor,
+            boolean archived,
+            @Nullable String labelId) {
         AtomicReference<ResponseBody> responseBody = new AtomicReference<>();
         AtomicReference<String> headerCursor = new AtomicReference<>();
         Call<ResponseBody> request = archived
                 ? messageApi.getArchivedConversations(limit, cursor)
-                : messageApi.getConversations(limit, cursor);
+                : labelId == null
+                        ? messageApi.getConversations(limit, cursor)
+                        : messageApi.getConversations(limit, cursor, labelId);
         Call<ResponseBody> capturingCall = new ResponseCapturingCall<>(
                 request, response -> {
                     responseBody.set(response.body());
@@ -1082,7 +1114,8 @@ public final class ConversationRepository implements AutoCloseable {
                         row.isArchived(),
                         row.isAiOptOut(),
                         row.isPinned(),
-                        row.getPinnedAt()));
+                        row.getPinnedAt(),
+                        row.getLabelIdsCsv()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -1126,7 +1159,8 @@ public final class ConversationRepository implements AutoCloseable {
                 Boolean.TRUE.equals(dto.getArchived()),
                 Boolean.TRUE.equals(dto.getAiOptOut()),
                 pinned,
-                pinnedAtMs);
+                pinnedAtMs,
+                String.join(",", dto.getLabels()));
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -1198,7 +1232,8 @@ public final class ConversationRepository implements AutoCloseable {
                 row.isArchived(),
                 row.isAiOptOut(),
                 row.isPinned(),
-                row.getPinnedAt());
+                row.getPinnedAt(),
+                row.getLabelIds());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {

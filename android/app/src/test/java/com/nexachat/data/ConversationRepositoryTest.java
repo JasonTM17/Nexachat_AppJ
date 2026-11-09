@@ -366,6 +366,26 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void labelFilterUsesUnpagedServerQueryAndPreservesUnrelatedRoomRows() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("cached-unrelated", 40)).blockingAwait();
+        when(messageApi.getConversations(isNull(), isNull(), eq("label-1")))
+                .thenReturn(asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"),
+                        "[{\"id\":\"labeled\",\"type\":\"GROUP\","
+                                + "\"title\":\"Labeled\",\"members\":[],"
+                                + "\"labels\":[\"label-1\"]}]"))));
+
+        Result<java.util.Set<String>> result = repository.refreshInboxByLabel("label-1").blockingGet();
+
+        assertEquals(java.util.Set.of("labeled"),
+                ((Result.Success<java.util.Set<String>>) result).getValue());
+        assertEquals(java.util.Set.of("cached-unrelated", "labeled"), dao().rows.keySet());
+        assertEquals(List.of("label-1"), dao().rows.get("labeled").getLabelIds());
+        verify(messageApi, times(1)).getConversations(isNull(), isNull(), eq("label-1"));
+    }
+
+    @Test
     public void partialInboxPageIsNeverUsedToPrune() throws Exception {
         buildRepository();
         dao().upsertAll(List.of(conversation("conv-a", 1), conversation("conv-b", 2)))
@@ -951,7 +971,8 @@ public final class ConversationRepositoryTest {
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
                 row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted(),
                 row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
-                row.isArchived(), row.isAiOptOut());
+                row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt(),
+                row.getLabelIdsCsv());
     }
 
     private ConversationEntity withPreferences(
@@ -966,7 +987,8 @@ public final class ConversationRepositoryTest {
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
                 row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
                 row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), muted,
-                mutedUntilEpochMs, archived, aiOptOut);
+                mutedUntilEpochMs, archived, aiOptOut, row.isPinned(), row.getPinnedAt(),
+                row.getLabelIdsCsv());
     }
 
     private ConversationInboxDto inboxDto(String id) {
@@ -1235,6 +1257,30 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public Completable updateLabelIds(String conversationId, String labelIdsCsv) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) rows.put(conversationId, row.withLabelIdsCsv(labelIdsCsv));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable removeLabelIdFromAll(String labelId) {
+            return Completable.fromAction(() -> {
+                for (Map.Entry<String, ConversationEntity> entry : rows.entrySet()) {
+                    ConversationEntity row = entry.getValue();
+                    List<String> labels = row.getLabelIds().stream()
+                            .filter(id -> !labelId.equals(id)).toList();
+                    if (labels.size() != row.getLabelIds().size()) {
+                        entry.setValue(row.withLabelIdsCsv(String.join(",", labels)));
+                    }
+                }
+                publish();
+            });
+        }
+
+        @Override
         public Single<List<ConversationWatermark>> getAllWatermarks() {
             return Single.fromCallable(() -> {
                 List<ConversationWatermark> list = new ArrayList<>();
@@ -1271,7 +1317,7 @@ public final class ConversationRepositoryTest {
                     row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
                     row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.isMuted(),
                     row.getMutedUntilEpochMs(), row.isArchived(), row.isAiOptOut(),
-                    row.isPinned(), row.getPinnedAt());
+                    row.isPinned(), row.getPinnedAt(), row.getLabelIdsCsv());
         }
 
         private ConversationEntity withLastMessage(
@@ -1281,7 +1327,8 @@ public final class ConversationRepositoryTest {
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
                     row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
                     row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
-                    row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt());
+                    row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt(),
+                    row.getLabelIdsCsv());
         }
     }
 

@@ -1,6 +1,7 @@
 package com.nexachat.data;
 
 import androidx.annotation.Nullable;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -48,6 +49,8 @@ public final class ConversationSummary {
     private final boolean pinned;
     /** Epoch milliseconds when pinned; null while not pinned. */
     @Nullable private final Long pinnedAtEpochMs;
+    /** Caller-owned labels assigned to this conversation. */
+    private final List<String> labelIds;
 
     public ConversationSummary(
             String id,
@@ -73,6 +76,38 @@ public final class ConversationSummary {
             boolean aiOptOut,
             boolean pinned,
             @Nullable Long pinnedAtEpochMs) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
+                pinnedAtEpochMs, List.of());
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs,
+            List<String> labelIds) {
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -96,6 +131,7 @@ public final class ConversationSummary {
         this.aiOptOut = aiOptOut;
         this.pinned = pinned;
         this.pinnedAtEpochMs = pinnedAtEpochMs;
+        this.labelIds = List.copyOf(Objects.requireNonNull(labelIds, "labelIds"));
     }
 
     public ConversationSummary(
@@ -199,6 +235,31 @@ public final class ConversationSummary {
                 false, null, false, false, false, null);
     }
 
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            List<String> labelIds) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, false, null, false, false, false, null, labelIds);
+    }
+
     public String getId() { return id; }
     public String getType() { return type; }
     @Nullable public String getTitle() { return title; }
@@ -222,6 +283,7 @@ public final class ConversationSummary {
     public boolean isAiOptOut() { return aiOptOut; }
     public boolean isPinned() { return pinned; }
     @Nullable public Long getPinnedAtEpochMs() { return pinnedAtEpochMs; }
+    public List<String> getLabelIds() { return labelIds; }
 
     /**
      * A timed mute expires lazily: the stored flag stays true while the expiry
@@ -284,6 +346,7 @@ public final class ConversationSummary {
                 && aiOptOut == that.aiOptOut
                 && pinned == that.pinned
                 && Objects.equals(pinnedAtEpochMs, that.pinnedAtEpochMs)
+                && Objects.equals(labelIds, that.labelIds)
                 && id.equals(that.id)
                 && type.equals(that.type)
                 && Objects.equals(title, that.title)
@@ -305,6 +368,6 @@ public final class ConversationSummary {
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAtEpochMs);
+                pinned, pinnedAtEpochMs, labelIds);
     }
 }

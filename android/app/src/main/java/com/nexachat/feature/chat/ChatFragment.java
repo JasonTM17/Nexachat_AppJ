@@ -65,6 +65,7 @@ import com.nexachat.feature.ask.AskCitationJump;
 import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
+import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
@@ -92,6 +93,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private static final int MENU_SHARED_MEDIA = 6;
     private static final int MENU_GROUP_BOARD = 7;
     private static final int MENU_PIN = 8;
+    private static final int MENU_ASSIGN_LABEL = 9;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -798,6 +800,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         actions.add(MENU_PIN);
         labels.add(getString(R.string.conversation_settings_title));
         actions.add(MENU_SETTINGS);
+        labels.add(getString(R.string.label_assign_menu));
+        actions.add(MENU_ASSIGN_LABEL);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
         if (state != null && state.isGroup()) {
@@ -829,6 +833,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             viewModel.toggleConversationPin();
         } else if (action == MENU_SETTINGS) {
             showConversationSettings();
+        } else if (action == MENU_ASSIGN_LABEL && !conversationId.isBlank()) {
+            LabelDialogFragment.show(requireActivity(), conversationId);
         } else if (action == MENU_SHARED_MEDIA) {
             openArchive();
         } else if (action == MENU_GROUP_BOARD) {
