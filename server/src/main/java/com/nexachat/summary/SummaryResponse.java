@@ -16,6 +16,7 @@ public record SummaryResponse(
         String provider,
         String fallbackReason,
         boolean cached,
+        boolean contextOmitted,
         Instant createdAt,
         String overview,
         List<SummaryItem> keyPoints,
@@ -39,6 +40,7 @@ public record SummaryResponse(
             SummaryWindow window,
             SummaryGeneration generated,
             boolean cached,
+            boolean contextOmitted,
             Instant createdAt) {
         SummaryContent content = generated.content();
         return new SummaryResponse(
@@ -53,6 +55,7 @@ public record SummaryResponse(
                 generated.provider(),
                 generated.fallbackReason() == null ? null : generated.fallbackReason().name(),
                 cached,
+                contextOmitted,
                 createdAt,
                 content.overview(),
                 content.keyPoints(),
@@ -65,8 +68,8 @@ public record SummaryResponse(
 
     public SummaryResponse asCached() {
         return new SummaryResponse(summaryId, conversationId, fromSeq, toSeq, messageCount,
-                language, generatedBy, model, provider, fallbackReason, true, createdAt, overview,
-                keyPoints, decisions, actionItems, questions, topics, participants);
+                language, generatedBy, model, provider, fallbackReason, true, contextOmitted, createdAt,
+                overview, keyPoints, decisions, actionItems, questions, topics, participants);
     }
 
     private static <T> List<T> immutable(List<T> values) {

@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -32,6 +33,11 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
               AND m.deleted_at IS NULL
               AND m.content IS NOT NULL
               AND btrim(m.content) <> ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM conversation_ai_opt_outs o
+                  WHERE o.conversation_id = m.conversation_id
+                    AND o.user_id = m.sender_id
+              )
             """;
 
     private static final RowMapper<RagMessage> MESSAGE_MAPPER = (rs, rowNum) -> {
@@ -168,6 +174,11 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                   AND m.content IS NOT NULL
                   AND btrim(m.content) <> ''
                   AND e.message_id IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_ai_opt_outs o
+                      WHERE o.conversation_id = m.conversation_id
+                        AND o.user_id = m.sender_id
+                  )
                 ORDER BY m.seq DESC
                 LIMIT ?
                 """;
@@ -180,8 +191,13 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
             return Map.of();
         }
         String sql = """
-                SELECT id, content, edited_at FROM messages
-                WHERE deleted_at IS NULL AND content IS NOT NULL AND id = ANY(?)
+                SELECT m.id, m.content, m.edited_at FROM messages m
+                WHERE m.deleted_at IS NULL AND m.content IS NOT NULL AND m.id = ANY(?)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_ai_opt_outs o
+                      WHERE o.conversation_id = m.conversation_id
+                        AND o.user_id = m.sender_id
+                  )
                 """;
         Map<UUID, String> hashes = new HashMap<>();
         jdbcTemplate.query(sql, statement -> statement.setArray(1, uuidArray(statement, messageIds)),
@@ -192,6 +208,24 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                                         rs.getTimestamp("edited_at"),
                                         rs.getString("content"))));
         return hashes;
+    }
+
+    @Override
+    public Set<UUID> optedOutMessageIds(Collection<UUID> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return Set.of();
+        }
+        String sql = """
+                SELECT m.id FROM messages m
+                JOIN conversation_ai_opt_outs o
+                  ON o.conversation_id = m.conversation_id
+                 AND o.user_id = m.sender_id
+                WHERE m.id = ANY(?)
+                """;
+        List<UUID> ids = jdbcTemplate.query(sql,
+                statement -> statement.setArray(1, uuidArray(statement, messageIds)),
+                (rs, rowNum) -> rs.getObject("id", UUID.class));
+        return Set.copyOf(ids);
     }
 
     @Override

@@ -35,6 +35,7 @@ class RagLlmAnswerServiceFallbackTest {
     private CircuitBreaker circuitBreaker;
     private UUID userId;
     private UUID messageId;
+    private UUID conversationId;
 
     @AfterEach
     void closeResources() {
@@ -56,7 +57,7 @@ class RagLlmAnswerServiceFallbackTest {
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNotNull();
         assertThat(answer.answer()).contains("March 14");
@@ -71,7 +72,7 @@ class RagLlmAnswerServiceFallbackTest {
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNotNull();
         assertThat(answer.provider()).isEqualTo("primary");
@@ -83,7 +84,7 @@ class RagLlmAnswerServiceFallbackTest {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 401, "bad key"));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNull();
         assertThat(fallback.requestCount()).isZero();
@@ -105,7 +106,7 @@ class RagLlmAnswerServiceFallbackTest {
                     FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
             for (int index = 0; index < 5; index++) {
-                RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+                RagLlmAnswer answer = answer("When is the migration?");
                 assertThat(answer).isNotNull();
                 assertThat(answer.provider()).isNull();
             }
@@ -113,7 +114,7 @@ class RagLlmAnswerServiceFallbackTest {
             assertThat(circuitBreaker.allowRequest()).isFalse();
 
             int primaryCallsBefore = primary.requestCount();
-            RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+            RagLlmAnswer answer = answer("When is the migration?");
 
             assertThat(answer).isNotNull();
             assertThat(answer.provider()).isNull();
@@ -142,7 +143,7 @@ class RagLlmAnswerServiceFallbackTest {
             local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                     FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-            RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+            RagLlmAnswer answer = answer("When is the migration?");
 
             assertThat(answer).isNotNull();
             assertThat(answer.provider()).isNull();
@@ -164,7 +165,7 @@ class RagLlmAnswerServiceFallbackTest {
         primary.handle((exchange, body, authorization) ->
                 FakeOpenAiServer.respond(exchange, 500, "primary down"));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNull();
         assertThat(primary.requestCount()).isZero();
@@ -176,7 +177,7 @@ class RagLlmAnswerServiceFallbackTest {
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 503, "fallback down"));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNull();
         assertThat(fallback.requestCount()).isPositive();
@@ -189,7 +190,7 @@ class RagLlmAnswerServiceFallbackTest {
         rebuildService();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNull();
         assertThat(fallback.requestCount()).isZero();
@@ -205,7 +206,7 @@ class RagLlmAnswerServiceFallbackTest {
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNotNull();
         assertThat(answer.provider()).isEqualTo("fallback");
@@ -226,7 +227,7 @@ class RagLlmAnswerServiceFallbackTest {
             local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                     FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-            RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+            RagLlmAnswer answer = answer("When is the migration?");
 
             assertThat(answer).isNotNull();
             assertThat(answer.provider()).isNull();
@@ -247,7 +248,7 @@ class RagLlmAnswerServiceFallbackTest {
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNotNull();
         assertThat(answer.provider()).isNull();
@@ -261,7 +262,7 @@ class RagLlmAnswerServiceFallbackTest {
         service = new RagLlmAnswerService(client, new RagPromptBuilder(new ObjectMapper(), new com.nexachat.summary.llm.Redactor()),
                 new RagOutputValidator(new ObjectMapper()), circuitBreaker, consentRepository, stats);
 
-        RagLlmAnswer answer = service.answer(userId, "When is the migration?", SummaryLanguage.EN, context());
+        RagLlmAnswer answer = answer("When is the migration?");
 
         assertThat(answer).isNull();
         assertThat(primary.requestCount()).isZero();
@@ -275,7 +276,7 @@ class RagLlmAnswerServiceFallbackTest {
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
-        service.answer(userId, "When is the migration? Call 0912 345 678.", SummaryLanguage.EN, context());
+        answer("When is the migration? Call 0912 345 678.");
 
         String primaryBody = primary.requests().get(0).body();
         String fallbackBody = fallback.requests().get(0).body();
@@ -299,7 +300,7 @@ class RagLlmAnswerServiceFallbackTest {
             List<Future<RagLlmAnswer>> results = new java.util.ArrayList<>();
             for (int index = 0; index < calls; index++) {
                 results.add(executor.submit(() ->
-                        service.answer(userId, "When is the migration?", SummaryLanguage.EN, context())));
+                        answer("When is the migration?")));
             }
             for (Future<RagLlmAnswer> result : results) {
                 RagLlmAnswer answer = result.get(15, TimeUnit.SECONDS);
@@ -331,6 +332,7 @@ class RagLlmAnswerServiceFallbackTest {
         circuitBreaker = new CircuitBreaker(Clock.systemUTC());
         userId = UUID.randomUUID();
         messageId = UUID.randomUUID();
+        conversationId = UUID.randomUUID();
         rebuildService();
     }
 
@@ -352,5 +354,15 @@ class RagLlmAnswerServiceFallbackTest {
     private List<RagContextItem> context() {
         return List.of(new RagContextItem(1, List.of(messageId), 1, "U1",
                 "The server migration is scheduled for March 14 at 02:00. Call 0912 345 678."));
+    }
+
+    private RagLlmAnswer answer(String question) {
+        return service.answer(userId, conversationId, question, SummaryLanguage.EN, context(), contextMessages());
+    }
+
+    private java.util.Map<UUID, RagMessage> contextMessages() {
+        return java.util.Map.of(messageId, new RagMessage(messageId, conversationId, 1, UUID.randomUUID(),
+                "User", "The server migration is scheduled for March 14 at 02:00. Call 0912 345 678.",
+                java.time.Instant.EPOCH, null, null));
     }
 }

@@ -89,7 +89,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(response.answer()).isNull();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -103,7 +103,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
         assertThat(response.citations()).extracting(RagCitation::messageId).contains(fact.id());
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -112,7 +112,7 @@ class AskServiceTest {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         when(consentRepository.isConsented(userId)).thenReturn(true);
-        when(llmAnswerService.answer(any(), any(), any(), any()))
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -122,7 +122,7 @@ class AskServiceTest {
         assertThat(response.answer()).contains("March 14");
         assertThat(response.usage().llmCalls()).isEqualTo(1);
         assertThat(response.usage().inputChars()).isPositive();
-        verify(llmAnswerService).answer(eq(userId), any(), any(), any());
+        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any());
     }
 
     @Test
@@ -134,7 +134,7 @@ class AskServiceTest {
                 new AskRequest("Summarize everything we decided about the migration plan?", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -171,7 +171,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.CACHE);
         assertThat(response.usage().cached()).isTrue();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -9,10 +9,16 @@ import com.nexachat.summary.SummaryProviderException;
 import com.nexachat.summary.SummaryWindow;
 import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.SummaryComplexityAssessor;
+import com.nexachat.summary.ConversationAiOptOuts;
+import com.nexachat.summary.SummaryMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Component
 public final class LlmSummaryProvider implements SummaryProvider {
@@ -26,6 +32,7 @@ public final class LlmSummaryProvider implements SummaryProvider {
     private final CircuitBreaker circuitBreaker;
     private final SummaryConsentRepository consentRepository;
     private final SummaryComplexityAssessor complexityAssessor;
+    private final ConversationAiOptOuts aiOptOuts;
 
     public LlmSummaryProvider(
             LlmProperties properties,
@@ -35,7 +42,19 @@ public final class LlmSummaryProvider implements SummaryProvider {
             CircuitBreaker circuitBreaker,
             SummaryConsentRepository consentRepository) {
         this(properties, client, promptBuilder, outputValidator, circuitBreaker, consentRepository,
-                new SummaryComplexityAssessor(12, 1500, 4));
+                new SummaryComplexityAssessor(12, 1500, 4), ConversationAiOptOuts.none());
+    }
+
+    public LlmSummaryProvider(
+            LlmProperties properties,
+            LlmClient client,
+            PromptBuilder promptBuilder,
+            LlmOutputValidator outputValidator,
+            CircuitBreaker circuitBreaker,
+            SummaryConsentRepository consentRepository,
+            SummaryComplexityAssessor complexityAssessor) {
+        this(properties, client, promptBuilder, outputValidator, circuitBreaker, consentRepository,
+                complexityAssessor, ConversationAiOptOuts.none());
     }
 
     @Autowired
@@ -46,7 +65,8 @@ public final class LlmSummaryProvider implements SummaryProvider {
             LlmOutputValidator outputValidator,
             CircuitBreaker circuitBreaker,
             SummaryConsentRepository consentRepository,
-            SummaryComplexityAssessor complexityAssessor) {
+            SummaryComplexityAssessor complexityAssessor,
+            ConversationAiOptOuts aiOptOuts) {
         this.properties = properties;
         this.client = client;
         this.promptBuilder = promptBuilder;
@@ -54,6 +74,7 @@ public final class LlmSummaryProvider implements SummaryProvider {
         this.circuitBreaker = circuitBreaker;
         this.consentRepository = consentRepository;
         this.complexityAssessor = complexityAssessor;
+        this.aiOptOuts = aiOptOuts;
     }
 
     @Override
@@ -63,6 +84,10 @@ public final class LlmSummaryProvider implements SummaryProvider {
         }
         if (!isConsentedCaller()) {
             throw new SummaryProviderException(SummaryFallbackReason.NO_CONSENT);
+        }
+        SummaryWindow externalWindow = externalWindow(window);
+        if (externalWindow.messages().isEmpty()) {
+            throw new SummaryProviderException(SummaryFallbackReason.NO_EXTERNAL_CONTEXT);
         }
 
         boolean isComplex = complexityAssessor.isComplex(window, false);
@@ -102,7 +127,12 @@ public final class LlmSummaryProvider implements SummaryProvider {
         boolean primaryAttempted = false;
         boolean breakerRecorded = false;
         try {
-            Prompt prompt = promptBuilder.build(window, language, properties.getMaxInputChars());
+            // Re-check at the moment the external prompt is built: consent and
+            // opt-out changes committed after request start must win the race.
+            if (!isConsentedCaller()) {
+                throw new SummaryProviderException(SummaryFallbackReason.NO_CONSENT);
+            }
+            Prompt prompt = promptBuilder.build(externalWindow, language, properties.getMaxInputChars());
             LlmClient.LlmCallResult completion;
             LlmClient.TargetConfig usedTarget;
             boolean primaryFailed = false;
@@ -155,6 +185,23 @@ public final class LlmSummaryProvider implements SummaryProvider {
     @Override
     public String id() {
         return PROVIDER_ID;
+    }
+
+    /**
+     * Removes messages authored by members who opted out in this conversation.
+     * The provider re-reads the persisted rows so a change committed after the
+     * caller loaded the window still applies to the external prompt.
+     */
+    private SummaryWindow externalWindow(SummaryWindow window) {
+        Set<UUID> optedOut = aiOptOuts.optedOutUserIds(window.conversationId());
+        if (optedOut.isEmpty()) {
+            return window;
+        }
+        List<SummaryMessage> kept = window.messages().stream()
+                .filter(message -> message.senderId() == null
+                        || !optedOut.contains(message.senderId()))
+                .toList();
+        return new SummaryWindow(window.conversationId(), 0, 0, kept);
     }
 
     private boolean isConsentedCaller() {

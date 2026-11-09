@@ -166,8 +166,8 @@ class RagBenchmarkEvaluationTest {
         when(memberRepository.existsByConversation_IdAndUser_Id(any(), any())).thenReturn(true);
         when(consentRepository.isConsented(any())).thenReturn(true);
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
-        when(llmAnswerService.answer(any(), any(), any(), any())).thenAnswer(invocation -> {
-            List<RagContextItem> context = invocation.getArgument(3);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            List<RagContextItem> context = invocation.getArgument(4);
             if (context.isEmpty()) {
                 return null;
             }

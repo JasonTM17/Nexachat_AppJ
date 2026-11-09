@@ -5,5 +5,6 @@ public enum SummaryFallbackReason {
     LLM_DISABLED,
     LLM_TIMEOUT,
     LLM_BAD_OUTPUT,
-    LLM_HTTP_ERROR
+    LLM_HTTP_ERROR,
+    NO_EXTERNAL_CONTEXT
 }
