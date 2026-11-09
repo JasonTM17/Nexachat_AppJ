@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -196,6 +197,27 @@ class LocalStorageServiceTest {
             assertThat(handle.sizeBytes()).isEqualTo(png.length);
             assertThat(handle.content().readAllBytes()).containsExactly(png);
         }
+    }
+
+    @Test
+    void open_rejectsCaseVariantWhenTheFilesystemResolvesIt() {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+        String caseVariant = stored.storageKey().toUpperCase(Locale.ROOT);
+        Path variantPath = tempDir.resolve(caseVariant);
+
+        if (!Files.exists(variantPath)) {
+            // On case-sensitive filesystems the altered path cannot reach this file.
+            assertThat(variantPath).doesNotExist();
+            return;
+        }
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> newService().open(caseVariant));
+
+        assertThat(ex).as("case-varied paths must not resolve to the stored file").isNotNull();
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
     }
 
     @Test

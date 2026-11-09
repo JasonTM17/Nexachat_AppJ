@@ -43,6 +43,8 @@ class AttachmentServiceTest {
     @Mock
     private MessageAttachmentRepository attachmentRepository;
     @Mock
+    private AttachmentStorageKeyLookupRepository storageKeyLookupRepository;
+    @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
     private StorageService storageService;
@@ -57,7 +59,8 @@ class AttachmentServiceTest {
     @BeforeEach
     void setUp() {
         attachmentService = new AttachmentService(
-                attachmentRepository, memberRepository, storageService, userRepository);
+                attachmentRepository, storageKeyLookupRepository,
+                memberRepository, storageService, userRepository);
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
@@ -348,6 +351,34 @@ class AttachmentServiceTest {
 
         // Avatars have no membership concept — any authenticated user passes.
         attachmentService.assertStorageKeyReadable("avatars/me.jpg", requesterId);
+    }
+
+    @Test
+    void assertStorageKeyReadable_rejectsCaseVariantOfCanonicalAttachmentKey() {
+        MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
+        when(attachmentRepository.findByStorageKey("ATTACHMENTS/X.PNG"))
+                .thenReturn(Optional.of(attachment));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.assertStorageKeyReadable("ATTACHMENTS/X.PNG", requesterId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+    }
+
+    @Test
+    void assertStorageKeyReadable_caseInsensitiveLookupRejectsWhenExactLookupMisses() {
+        when(attachmentRepository.findByStorageKey("ATTACHMENTS/X.PNG")).thenReturn(Optional.empty());
+        when(storageKeyLookupRepository.existsByStorageKeyIgnoreCase("ATTACHMENTS/X.PNG"))
+                .thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.assertStorageKeyReadable("ATTACHMENTS/X.PNG", requesterId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
     }
 
     @Test

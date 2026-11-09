@@ -103,14 +103,7 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public byte[] read(String storageKey) {
-        if (storageKey == null || storageKey.isBlank()
-                || storageKey.contains("..") || storageKey.contains("\\")) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        }
-        Path target = root.resolve(storageKey).normalize();
-        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        }
+        Path target = resolveExactPath(storageKey);
         try {
             return Files.readAllBytes(target);
         } catch (NoSuchFileException ex) {
@@ -122,14 +115,7 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public StreamHandle open(String storageKey) {
-        if (storageKey == null || storageKey.isBlank()
-                || storageKey.contains("..") || storageKey.contains("\\")) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        }
-        Path target = root.resolve(storageKey).normalize();
-        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
-            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
-        }
+        Path target = resolveExactPath(storageKey);
         final long size;
         try {
             size = Files.size(target);
@@ -140,6 +126,33 @@ public class LocalStorageService implements StorageService {
         }
         try {
             return new StreamHandle(Files.newInputStream(target), size);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    private Path resolveExactPath(String storageKey) {
+        if (storageKey == null || storageKey.isBlank()
+                || storageKey.contains("..") || storageKey.contains("\\")) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        Path target = root.resolve(storageKey).normalize();
+        if (!target.startsWith(root) || !Files.isRegularFile(target)) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        }
+        try {
+            Path realRoot = root.toRealPath();
+            Path realTarget = target.toRealPath();
+            if (!realTarget.startsWith(realRoot)) {
+                throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+            }
+            String actualKey = realRoot.relativize(realTarget).toString().replace('\\', '/');
+            if (!actualKey.equals(storageKey)) {
+                throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+            }
+            return target;
         } catch (NoSuchFileException ex) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         } catch (IOException ex) {
