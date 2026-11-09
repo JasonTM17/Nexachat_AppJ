@@ -7,5 +7,5 @@ public final class UnreadBannerView extends FrameLayout {
     private IncludeUnreadBannerBinding binding;
     public UnreadBannerView(@NonNull Context context,@Nullable AttributeSet attrs){super(context,attrs);}
     @Override protected void onFinishInflate(){super.onFinishInflate(); binding=IncludeUnreadBannerBinding.bind(this);}
-    public void bind(int count,@NonNull Runnable onSummarize,@NonNull Runnable onDismiss){if(binding==null)binding=IncludeUnreadBannerBinding.inflate(LayoutInflater.from(getContext()),this,true);binding.unreadBannerText.setText(getResources().getString(R.string.unread_banner_format,count));setOnClickListener(v->onSummarize.run());binding.dismissUnreadBanner.setOnClickListener(v->onDismiss.run());}
+    public void bind(int count,@NonNull Runnable onSummarize,@NonNull Runnable onDismiss){if(binding==null)binding=IncludeUnreadBannerBinding.inflate(LayoutInflater.from(getContext()),this,true);binding.unreadBannerText.setText(com.nexachat.res.QuantityStrings.unreadBanner(getResources(),count));setOnClickListener(v->onSummarize.run());binding.dismissUnreadBanner.setOnClickListener(v->onDismiss.run());}
 }

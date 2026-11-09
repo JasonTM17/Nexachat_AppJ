@@ -138,7 +138,8 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
                 addOption(context, poll, option, row, closed, maxCount, listener);
             }
             binding.pollVoterCount.setText(
-                    context.getString(R.string.poll_voter_count, poll.getVoterCount()));
+                    com.nexachat.res.QuantityStrings.pollVoterCount(
+                            context.getResources(), poll.getVoterCount()));
             boolean open = !closed;
             boolean dirty = !sameSelection(row.selection, poll.getMyOptionIds());
             binding.pollVote.setVisibility(open ? View.VISIBLE : View.GONE);
@@ -159,7 +160,8 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
                 int maxCount,
                 Listener listener) {
             boolean checked = row.selection.contains(option.getId());
-            String count = context.getString(R.string.poll_option_count, option.getVoteCount());
+            String count = com.nexachat.res.QuantityStrings.pollOptionVoteCount(
+                    context.getResources(), option.getVoteCount());
             String names = voterNames(poll, option, row.voterNames);
             String result = names.isEmpty()
                     ? count

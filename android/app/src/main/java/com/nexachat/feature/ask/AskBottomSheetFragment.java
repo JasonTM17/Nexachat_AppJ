@@ -188,7 +188,8 @@ public final class AskBottomSheetFragment extends com.google.android.material.bo
             Long retryAfter = state.getRetryAfterSeconds();
             return retryAfter == null
                     ? getString(R.string.ask_rate_limited)
-                    : getString(R.string.ask_rate_limited_retry, retryAfter);
+                    : com.nexachat.res.QuantityStrings.askRateLimitedRetry(
+                            getResources(), retryAfter.intValue());
         }
         AskError error = state.getError();
         if (error == AskError.CHAT_UNAVAILABLE) {

@@ -105,10 +105,13 @@ public final class InviteManageFragment extends Fragment {
 
         if (hasLink) {
             if (link.maxUses == null) {
-                binding.linkUsage.setText(getString(R.string.invite_usage_unlimited, link.useCount));
+                binding.linkUsage.setText(
+                        com.nexachat.res.QuantityStrings.inviteUsageUnlimited(
+                                getResources(), link.useCount));
             } else {
-                binding.linkUsage.setText(getString(
-                        R.string.invite_usage_limited, link.useCount, link.maxUses));
+                binding.linkUsage.setText(
+                        com.nexachat.res.QuantityStrings.inviteUsageLimited(
+                                getResources(), link.useCount, link.maxUses));
             }
             binding.linkUsage.setVisibility(View.VISIBLE);
             binding.linkExpiry.setVisibility(View.VISIBLE);

@@ -1,6 +1,8 @@
 <resources>
     <string name="summary_overflow_action">Tóm tắt cuộc trò chuyện</string>
-    <string name="unread_banner_format">%1$d tin chưa đọc · Tóm tắt</string>
+    <plurals name="unread_banner_format">
+        <item quantity="other">%d tin chưa đọc · Tóm tắt</item>
+    </plurals>
     <string name="unread_banner_dismiss">Đóng thông báo</string>
     <string name="summary_title">Tóm tắt cuộc trò chuyện</string>
     <string name="summary_badge_local">Cục bộ</string>

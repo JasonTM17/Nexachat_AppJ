@@ -51,6 +51,24 @@ ICON_TAGS = frozenset(
     }
 )
 
+# Translatable strings with a count placeholder followed by a word should use <plurals>.
+COUNT_NOUN_BODY_RE = re.compile(r"%(?:\d+\$)?d\s+[^\s<%.]+")
+# Additional count copy that is not caught by the generic pattern above.
+COUNT_NOUN_STRING_NAMES = frozenset(
+    {
+        "ask_rate_limited_retry",
+        "unread_banner_format",
+    }
+)
+COUNT_NOUN_STRING_ALLOWLIST = frozenset(
+    {
+        "presence_minutes_ago",
+        "presence_hours_ago",
+    }
+)
+
+VI_PLURAL_LOCALE_SUFFIX = "-vi"
+
 
 @dataclass
 class Finding:
@@ -205,7 +223,18 @@ def compare_locales(base: LocaleBundle, locale: LocaleBundle) -> list[Finding]:
     for key in sorted(base_pl & loc_pl):
         en_items = base.plurals[key]
         vi_items = locale.plurals[key]
-        if set(en_items) != set(vi_items):
+        if locale.folder.name.endswith(VI_PLURAL_LOCALE_SUFFIX):
+            if set(vi_items) != {"other"}:
+                continue
+            if "other" not in en_items:
+                findings.append(
+                    Finding(
+                        "plural_quantity_mismatch",
+                        locale.folder.name,
+                        f"{key}: EN must define other when VI does",
+                    )
+                )
+        elif set(en_items) != set(vi_items):
             findings.append(
                 Finding(
                     "plural_quantity_mismatch",
@@ -245,7 +274,82 @@ def check_values_rules(base: LocaleBundle) -> list[Finding]:
     for key, items in base.plurals.items():
         if "other" not in items:
             findings.append(Finding("plural_missing_other", "values", key))
+        if base.folder.name == "values" and "one" not in items:
+            findings.append(
+                Finding(
+                    "plural_missing_one",
+                    "values",
+                    f"{key}: English plurals should define one and other",
+                )
+            )
     return findings
+
+
+def check_locale_plural_rules(locale: LocaleBundle) -> list[Finding]:
+    findings: list[Finding] = []
+    if not locale.folder.name.endswith(VI_PLURAL_LOCALE_SUFFIX):
+        return findings
+    for key, items in locale.plurals.items():
+        extras = set(items) - {"other"}
+        if extras:
+            findings.append(
+                Finding(
+                    "vi_plural_extra_quantity",
+                    locale.folder.name,
+                    f"{key}: Vietnamese plurals must only define other, not {sorted(extras)}",
+                )
+            )
+    return findings
+
+
+def scan_count_noun_strings(res: Path) -> list[Finding]:
+    findings: list[Finding] = []
+    plural_names = base_plurals_names(res)
+    values = res / "values"
+    for path in sorted(values.glob(STRING_FILE_GLOB)):
+        try:
+            tree = ET.parse(path)
+        except ET.ParseError as exc:
+            findings.append(
+                Finding("duplicate_key", f"values/{path.name}", f"XML parse error: {exc}")
+            )
+            continue
+        for node in tree.getroot().findall("string"):
+            name = node.attrib.get("name", "").strip()
+            if not name:
+                continue
+            translatable = node.attrib.get("translatable", "true").lower() != "false"
+            if not translatable:
+                continue
+            body = "".join(node.itertext()).strip()
+            if name in COUNT_NOUN_STRING_ALLOWLIST or name in plural_names:
+                continue
+            if COUNT_NOUN_BODY_RE.search(body) or name in COUNT_NOUN_STRING_NAMES:
+                findings.append(
+                    Finding(
+                        "count_should_be_plural",
+                        f"values/{path.name}",
+                        f"{name} should be a <plurals> resource",
+                    )
+                )
+    return findings
+
+
+def base_plurals_names(res: Path) -> set[str]:
+    names: set[str] = set()
+    values = res / "values"
+    if not values.is_dir():
+        return names
+    for path in values.glob(STRING_FILE_GLOB):
+        try:
+            tree = ET.parse(path)
+        except ET.ParseError:
+            continue
+        for node in tree.getroot().findall("plurals"):
+            plural_name = node.attrib.get("name", "").strip()
+            if plural_name:
+                names.add(plural_name)
+    return names
 
 
 def scan_layouts(res: Path) -> list[Finding]:
@@ -305,9 +409,11 @@ def discover_locales(res: Path) -> list[str]:
 def audit(res: Path) -> list[Finding]:
     base = parse_string_files(res / "values")
     findings = check_values_rules(base)
+    findings.extend(scan_count_noun_strings(res))
     for loc_name in discover_locales(res):
         locale = parse_string_files(res / loc_name)
         findings.extend(compare_locales(base, locale))
+        findings.extend(check_locale_plural_rules(locale))
         for dup in locale.duplicates:
             findings.append(Finding("duplicate_key", loc_name, dup))
     findings.extend(scan_layouts(res))
@@ -331,6 +437,11 @@ def run_self_test() -> int:
                     <string name="ok_key">Hello %1$s</string>
                     <string name="tech_only" translatable="false">%1$s · %2$s</string>
                     <string name="needs_false">https://example.test/join</string>
+                    <string name="legacy_count">%1$d widgets</string>
+                    <plurals name="good_count">
+                        <item quantity="one">%d widget</item>
+                        <item quantity="other">%d widgets</item>
+                    </plurals>
                 </resources>
                 """
             ),
@@ -343,6 +454,10 @@ def run_self_test() -> int:
                     <string name="ok_key">Xin chào %1$s</string>
                     <string name="tech_only" translatable="false">%1$s · %2$s</string>
                     <string name="missing_in_vi_target">only en</string>
+                    <plurals name="good_count">
+                        <item quantity="one">%d bad</item>
+                        <item quantity="other">%d widget</item>
+                    </plurals>
                 </resources>
                 """
             ),
@@ -361,6 +476,8 @@ def run_self_test() -> int:
             "technical_not_false",
             "hardcoded_layout_text",
             "missing_content_description",
+            "count_should_be_plural",
+            "vi_plural_extra_quantity",
         }
         if not expected.issubset(rules):
             errors.append(f"self-test missing rules: {sorted(expected - rules)}")
