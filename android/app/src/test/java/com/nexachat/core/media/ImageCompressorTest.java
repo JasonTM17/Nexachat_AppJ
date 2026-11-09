@@ -86,6 +86,28 @@ public final class ImageCompressorTest {
         result.deleteTemporaryFile();
     }
 
+    @Test
+    public void oomFallbackRemovesGpsFromStandardAndExtendedXmpJpeg() throws Exception {
+        byte[] original = JpegMetadataFixtures.jpegWithStandardAndExtendedXmpGps();
+        FakeBackend backend = new FakeBackend(100, 80);
+        backend.throwOutOfMemory = true;
+
+        ImageCompressor.Result result = new ImageCompressor(
+                backend, Files.createTempDirectory("nexa-image-xmp-oom").toFile())
+                .compress(original, "image/jpeg", "xmp-location.jpg");
+
+        assertNotNull(result);
+        assertFalse(result.recompressed());
+        assertNull(result.blurHash());
+        byte[] uploadedBytes = readResultBytes(result);
+        assertFalse(JpegMetadataFixtures.contains(uploadedBytes, JpegMetadataFixtures.GPS_TAGS));
+        assertFalse(JpegMetadataFixtures.contains(
+                uploadedBytes, JpegMetadataFixtures.STANDARD_XMP_PREFIX));
+        assertFalse(JpegMetadataFixtures.contains(
+                uploadedBytes, JpegMetadataFixtures.EXTENDED_XMP_PREFIX));
+        result.deleteTemporaryFile();
+    }
+
     @Test(expected = ImageCompressor.PrivacyException.class)
     public void refusesToReturnImageBytesWhenLocationScrubbingFails() throws Exception {
         FakeBackend backend = new FakeBackend(100, 80);
