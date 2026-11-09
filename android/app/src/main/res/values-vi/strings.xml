@@ -62,12 +62,14 @@
     <string name="archive_error">Không tải được nội dung đã chia sẻ</string>
     <string name="archive_offline">Bạn đang ngoại tuyến. Hãy kiểm tra kết nối rồi thử lại.</string>
     <string name="archive_forbidden">Bạn không còn quyền truy cập cuộc trò chuyện này.</string>
+    <string name="archive_not_found">Không tìm thấy cuộc trò chuyện</string>
     <string name="archive_unknown_sender">Người gửi không xác định</string>
     <string name="archive_action_open">Mở</string>
     <string name="archive_action_original">Xem tin nhắn gốc</string>
     <string name="archive_action_share">Chia sẻ</string>
     <string name="archive_share_chooser">Chia sẻ nội dung</string>
     <string name="archive_item_options">Tùy chọn nội dung</string>
+    <string name="archive_item_options_for">Tùy chọn cho %1$s</string>
     <string name="archive_kind_video">Đoạn video</string>
     <string name="archive_media_description">%1$s, từ %2$s, %3$s</string>
     <string name="archive_link_unsafe">Chỉ có thể mở liên kết HTTPS an toàn</string>

@@ -62,12 +62,14 @@
     <string name="archive_error">Couldn’t load shared items</string>
     <string name="archive_offline">You’re offline. Check your connection and try again.</string>
     <string name="archive_forbidden">You no longer have access to this conversation.</string>
+    <string name="archive_not_found">Conversation not found</string>
     <string name="archive_unknown_sender">Unknown sender</string>
     <string name="archive_action_open">Open</string>
     <string name="archive_action_original">View original message</string>
     <string name="archive_action_share">Share</string>
     <string name="archive_share_chooser">Share item</string>
     <string name="archive_item_options">Item options</string>
+    <string name="archive_item_options_for">Options for %1$s</string>
     <string name="archive_kind_video">Video</string>
     <string name="archive_media_description">%1$s, from %2$s, %3$s</string>
     <string name="archive_link_unsafe">Only secure HTTPS links can be opened</string>

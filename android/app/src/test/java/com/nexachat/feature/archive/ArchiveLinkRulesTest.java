@@ -19,5 +19,6 @@ public final class ArchiveLinkRulesTest {
         assertNull(ArchiveLinkRules.safeHttpsUrl("https://user@example.test/path"));
         assertNull(ArchiveLinkRules.safeHttpsUrl("https://bad host.test"));
         assertNull(ArchiveLinkRules.safeHttpsUrl(null));
+        assertNull(ArchiveLinkRules.safeHttpsUrl("https://example.test/" + "a".repeat(5000)));
     }
 }
