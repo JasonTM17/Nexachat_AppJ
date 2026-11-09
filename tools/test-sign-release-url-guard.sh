@@ -9,7 +9,7 @@ if ! grep -q 'guard_release_api_base_url' "$SIGNER"; then
     exit 1
 fi
 
-# shellcheck source=release-url-guard.sh
+# shellcheck source=/dev/null
 source "$TOOLS_DIR/release-url-guard.sh"
 
 fail() {
