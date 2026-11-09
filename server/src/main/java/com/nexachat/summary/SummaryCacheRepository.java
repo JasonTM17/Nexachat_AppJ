@@ -81,6 +81,25 @@ public class SummaryCacheRepository {
         return queryValid(conversationId, fromSeq, toSeq, contentHash, provider, language, clock.instant());
     }
 
+    /**
+     * Removes a cache row that can no longer be replayed because a cited
+     * message belongs to a member who opted out after the row was written.
+     */
+    @Transactional
+    public void delete(
+            UUID conversationId,
+            long fromSeq,
+            long toSeq,
+            String contentHash,
+            String provider,
+            SummaryLanguage language) {
+        jdbcTemplate.update("""
+                DELETE FROM message_summaries
+                WHERE conversation_id = ? AND from_seq = ? AND to_seq = ?
+                  AND content_hash = ? AND provider = ? AND language = ?
+                """, conversationId, fromSeq, toSeq, contentHash, provider, language.name());
+    }
+
     @Transactional
     public SavedSummary saveIfAbsent(
             UUID conversationId,

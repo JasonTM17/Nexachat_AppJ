@@ -1,12 +1,17 @@
 package com.nexachat.summary;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -19,16 +24,28 @@ public class SummaryService {
     private final SummaryWindowService windowService;
     private final SummaryProviderSelector providerSelector;
     private final SummaryCacheRepository cacheRepository;
+    private final ConversationAiOptOuts aiOptOuts;
 
     public SummaryService(
             SummaryRateLimiter rateLimiter,
             SummaryWindowService windowService,
             SummaryProviderSelector providerSelector,
             SummaryCacheRepository cacheRepository) {
+        this(rateLimiter, windowService, providerSelector, cacheRepository, ConversationAiOptOuts.none());
+    }
+
+    @Autowired
+    public SummaryService(
+            SummaryRateLimiter rateLimiter,
+            SummaryWindowService windowService,
+            SummaryProviderSelector providerSelector,
+            SummaryCacheRepository cacheRepository,
+            ConversationAiOptOuts aiOptOuts) {
         this.rateLimiter = rateLimiter;
         this.windowService = windowService;
         this.providerSelector = providerSelector;
         this.cacheRepository = cacheRepository;
+        this.aiOptOuts = aiOptOuts;
     }
 
     public SummaryResponse summarize(UUID conversationId, UUID userId, SummaryRequest request) {
@@ -39,6 +56,7 @@ public class SummaryService {
             throw new SummaryTooFewMessagesException();
         }
 
+        Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
         String contentHash = contentHash(window);
         PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
         if (!request.refresh()) {
@@ -46,9 +64,16 @@ public class SummaryService {
                     contentHash, prepared.cacheProvider(), request.language());
             if (cached.isPresent()) {
                 SummaryCacheEntry entry = cached.get();
-                SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
-                return SummaryResponse.create(entry.id(), window, generation,
-                        true, entry.createdAt());
+                if (replayAllowed(entry, window, optedOut)) {
+                    SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
+                    return SummaryResponse.create(entry.id(), window, generation,
+                            true, contextOmitted(generation, window, optedOut), entry.createdAt());
+                }
+                // A previous external summary cites a message whose author has
+                // since opted out. It must never be replayed; remove it and
+                // regenerate the cache entry below.
+                cacheRepository.delete(conversationId, window.fromSeq(), window.toSeq(),
+                        contentHash, prepared.cacheProvider(), request.language());
             }
         }
 
@@ -67,7 +92,8 @@ public class SummaryService {
         }
         SummaryGeneration responseGeneration = forRequest(
                 entry.payload().toGeneration(), prepared, generated);
-        return SummaryResponse.create(entry.id(), window, responseGeneration, cached, entry.createdAt());
+        return SummaryResponse.create(entry.id(), window, responseGeneration, cached,
+                contextOmitted(responseGeneration, window, optedOut), entry.createdAt());
     }
 
     private static SummaryGeneration forRequest(
@@ -83,6 +109,79 @@ public class SummaryService {
                     generatedThisRequest.fallbackReason(), null);
         }
         return cachedGeneration;
+    }
+
+    /**
+     * A cached external summary is replayed only when none of its cited
+     * messages (or listed participants) belong to a member who opted out.
+     * Local summaries may quote opted-out messages because they never leave
+     * the server.
+     */
+    static boolean replayAllowed(
+            SummaryCacheEntry entry,
+            SummaryWindow window,
+            Set<UUID> optedOut) {
+        if (optedOut.isEmpty() || !"LLM".equals(entry.payload().generatedBy())) {
+            return true;
+        }
+        SummaryContent content = entry.payload().content();
+        Map<UUID, UUID> senderByMessage = new HashMap<>();
+        for (SummaryMessage message : window.messages()) {
+            if (message.id() != null) {
+                senderByMessage.putIfAbsent(message.id(), message.senderId());
+            }
+        }
+        for (List<UUID> messageIds : citations(content)) {
+            for (UUID messageId : messageIds) {
+                UUID sender = senderByMessage.get(messageId);
+                if (sender == null || optedOut.contains(sender)) {
+                    return false;
+                }
+            }
+        }
+        for (SummaryParticipant participant : content.participants()) {
+            if (participant.userId() != null && optedOut.contains(participant.userId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * True when the returned summary was produced by the external LLM and at
+     * least one message in the window now belongs to an opted-out member. The
+     * local engine returns false because it may still use those messages.
+     */
+    static boolean contextOmitted(
+            SummaryGeneration generation,
+            SummaryWindow window,
+            Set<UUID> optedOut) {
+        if (!"LLM".equals(generation.generatedBy()) || optedOut.isEmpty()) {
+            return false;
+        }
+        for (SummaryMessage message : window.messages()) {
+            if (message.senderId() != null && optedOut.contains(message.senderId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<List<UUID>> citations(SummaryContent content) {
+        List<List<UUID>> citations = new java.util.ArrayList<>();
+        for (SummaryItem item : content.keyPoints()) {
+            citations.add(item.messageIds());
+        }
+        for (SummaryItem item : content.decisions()) {
+            citations.add(item.messageIds());
+        }
+        for (SummaryActionItem item : content.actionItems()) {
+            citations.add(item.messageIds());
+        }
+        for (SummaryItem item : content.questions()) {
+            citations.add(item.messageIds());
+        }
+        return citations;
     }
 
     static String contentHash(SummaryWindow window) {
