@@ -89,13 +89,20 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
 
-**Mute gating.** `NEW_MESSAGE` pushes for non-`SYSTEM` messages are skipped for
-members who muted the conversation (per-member `muted` / `muted_until` on
-`conversation_members`; a past `muted_until` no longer mutes). `CALL_INVITE`
-pushes are never gated, and `SYSTEM` messages keep their current behavior, so a
-member is never silently added to or removed from a conversation. A muted
-conversation still receives messages, receipts and live WebSocket events, and
-its `unreadCount` keeps advancing — only the push is suppressed.
+**Mute gating.** `NEW_MESSAGE` pushes are skipped for members who muted the
+conversation (per-member `muted` / `muted_until` on `conversation_members`; a
+past `muted_until` no longer mutes), including `SYSTEM` membership and title
+notices. A muted member still receives a data-only push pointer when the
+message explicitly mentions them or has `mentionAll: true`
+(`mentioned="true"`), and when a `SYSTEM` event is about that member — they
+were removed from the group or their role changed — so nobody is removed or
+demoted silently. A removed member's mute row is deleted with their membership,
+so the removal notice still reaches them. Avatar-only changes broadcast
+`CONVERSATION_UPDATED` and post no SYSTEM message, so they produce no
+`NEW_MESSAGE` push to gate. The payload contains no message content.
+`CALL_INVITE` pushes are never gated. A muted conversation still receives
+messages, receipts and live WebSocket events, and its `unreadCount` keeps
+advancing.
 
 #### Reminder delivery
 
@@ -499,7 +506,7 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V15 apply
+Back up before replacing the app image. Flyway migrations V1 through V17 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
 edit one already applied to a database. Migrations V8–V11 introduce:
 - `V8__attachment_blurhash_search_trigram.sql`: `attachments.blur_hash` column and composite GIN trigram index `idx_msg_conv_content_trgm` on `(conversation_id, f_unaccent(content))`.
@@ -508,8 +515,10 @@ edit one already applied to a database. Migrations V8–V11 introduce:
 - `V11__user_access_token_cutoff.sql`: `users.tokens_valid_after`, the access-token revocation cutoff.
 
 The next migrations add per-member mute/archive preferences (V12), conversation
-AI opt-outs (V13), reminders and delivery claims (V14), and group polls (V15).
-Ensure every migration file V1–V15 is present in the source tree before
+AI opt-outs (V13), reminders and delivery claims (V14), group polls (V15),
+seen privacy (V16), and structured group message mentions (V17). V17 preserves
+existing messages and constrains explicit mentions to a current conversation
+member. Ensure every migration file V1–V17 is present in the source tree before
 rebuilding the dev app container; the image packages the server migration
 resources used by Flyway at startup.
 
@@ -554,10 +563,17 @@ cd android
 
 The resulting unsigned APK is located at `android/app/build/outputs/apk/release/app-release-unsigned.apk`.
 
+`tools/sign-release.sh` accepts `MAJOR.MINOR.PATCH` tags, optionally with a
+leading `v`; it sets Android `versionName` to the normalized tag and derives
+`versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH`. Minor and patch
+components are limited to 0–999 and Android's version-code ceiling is enforced.
+Direct Gradle builds can set `-PreleaseVersionName` and
+`-PreleaseVersionCode`; without them, project defaults remain `1.0.0` and `1`.
+
 ### Hardening and security boundaries
 
 1. **R8 full mode and resource shrinking**: Enabled via `android.enableR8.fullMode=true` in `gradle.properties`, and `minifyEnabled true`, `shrinkResources true` in `build.gradle`. Dead code, unused resources, and unneeded metadata are stripped.
-2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging.
+2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
 3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds (`android/app/src/debug/res/xml/network_security_config.xml`).
 4. **App backup disabled (`android:allowBackup="false"`)**: Backups are disabled to prevent extraction of sensitive local data via `adb backup` or cloud sync. Allowing backup would expose:
    - Decrypted SQLite database containing cached messages, contact lists, conversation watermarks, and drafts.

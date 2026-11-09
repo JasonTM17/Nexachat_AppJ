@@ -358,6 +358,21 @@ public final class SyncEngine {
                 String conversationId = delta.getConversationId();
                 if (conversationId == null) continue;
 
+                // 0. Apply the caller's own per-member preferences. The server
+                //    carries them on every delta so a change made on another
+                //    device reaches Room without a separate inbox fetch.
+                if (delta.getMuted() != null) {
+                    boolean muted = Boolean.TRUE.equals(delta.getMuted());
+                    Long mutedUntil = muted
+                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil())
+                            : null;
+                    conversationDao.updateMute(conversationId, muted, mutedUntil).blockingAwait();
+                }
+                if (delta.getArchived() != null) {
+                    conversationDao.updateArchived(
+                            conversationId, Boolean.TRUE.equals(delta.getArchived())).blockingAwait();
+                }
+
                 // 1. Ingest new messages
                 if (!delta.getNewMessages().isEmpty()) {
                     List<MessageEntity> newEntities = new ArrayList<>();

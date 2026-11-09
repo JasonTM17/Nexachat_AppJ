@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 9,
+        version = 10,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -157,15 +157,33 @@ public abstract class AppDatabase extends RoomDatabase {
                 }
             };
 
-    /** Adds conversation pin state (pinned boolean, pinnedAt epoch ms). */
+    /**
+     * Adds the caller-scoped conversation preferences: mute (with optional
+     * expiry), archive and per-conversation AI opt-out.
+     */
     public static final Migration MIGRATION_8_9 =
             new Migration(8, 9) {
                 @Override
                 public void migrate(SupportSQLiteDatabase db) {
                     db.execSQL(
-                            "ALTER TABLE `conversations` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0");
+                            "ALTER TABLE conversations ADD COLUMN muted INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL("ALTER TABLE conversations ADD COLUMN mutedUntilEpochMs INTEGER");
                     db.execSQL(
-                            "ALTER TABLE `conversations` ADD COLUMN `pinnedAt` INTEGER");
+                            "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN aiOptOut INTEGER NOT NULL DEFAULT 0");
+                }
+            };
+
+    /** Adds conversation pin state (pinned boolean, pinnedAt epoch ms). */
+    public static final Migration MIGRATION_9_10 =
+            new Migration(9, 10) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE conversations ADD COLUMN pinnedAt INTEGER");
                 }
             };
 }

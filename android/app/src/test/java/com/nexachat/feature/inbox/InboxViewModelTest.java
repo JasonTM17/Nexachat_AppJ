@@ -11,9 +11,9 @@ import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.subjects.SingleSubject;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
-import com.nexachat.core.common.Unit;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -22,6 +22,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -43,7 +46,9 @@ public final class InboxViewModelTest {
         repository = mock(ConversationRepository.class);
         inboxFlow = BehaviorProcessor.createDefault(Collections.emptyList());
         when(repository.inboxFlow()).thenReturn(inboxFlow);
-        when(repository.refreshInboxPage()).thenReturn(Single.just(
+        when(repository.refreshInboxPage(false)).thenReturn(Single.just(
+                new Result.Success<Boolean>(Boolean.TRUE)));
+        when(repository.refreshInboxPage(true)).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.TRUE)));
         when(repository.loadNextInboxPage()).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.FALSE)));
@@ -95,7 +100,7 @@ public final class InboxViewModelTest {
     @Test
     public void refreshFailureSurfacesErrorButKeepsList() {
         inboxFlow.onNext(List.of(conversation("c-1", 1)));
-        when(repository.refreshInboxPage()).thenReturn(Single.just(
+        when(repository.refreshInboxPage(false)).thenReturn(Single.just(
                 Result.failure(new ApiError.Network("down"))));
 
         viewModel.refresh();
@@ -107,12 +112,12 @@ public final class InboxViewModelTest {
 
     @Test
     public void successfulRefreshClearsPreviousError() {
-        when(repository.refreshInboxPage()).thenReturn(Single.just(
+        when(repository.refreshInboxPage(false)).thenReturn(Single.just(
                 Result.failure(ApiError.RateLimited.INSTANCE)));
         viewModel.refresh();
         assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getError());
 
-        when(repository.refreshInboxPage()).thenReturn(Single.just(
+        when(repository.refreshInboxPage(false)).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.TRUE)));
         viewModel.refresh();
 
@@ -154,7 +159,7 @@ public final class InboxViewModelTest {
 
     @Test
     public void exhaustedInboxDoesNotRequestAnotherPage() {
-        when(repository.refreshInboxPage()).thenReturn(Single.just(
+        when(repository.refreshInboxPage(false)).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.FALSE)));
 
         viewModel.refresh();
@@ -227,15 +232,139 @@ public final class InboxViewModelTest {
         assertNull(viewModel.getPinError().getValue());
     }
 
+    @Test
+    public void archivedFilterPreservesPinnedOrderingInsideArchivedVariant() {
+        ConversationSummary unpinnedArchived = new ConversationSummary(
+                "c-arch-1", "DIRECT", null, "last 1", "Peer 1", 1_700_000_000_100L,
+                42L, 0, "Peer 1", null, null, 0L, 0L, null, null, false, null,
+                false, null, true, false, false, null);
+        ConversationSummary pinnedArchived = new ConversationSummary(
+                "c-arch-2", "DIRECT", null, "last 2", "Peer 2", 1_700_000_000_050L,
+                42L, 0, "Peer 2", null, null, 0L, 0L, null, null, false, null,
+                false, null, true, false, true, 1_700_000_000_500L);
+        ConversationSummary activeUnpinned = conversation("c-active", 0);
+
+        // In Room/repository order, pinnedArchived precedes unpinnedArchived
+        inboxFlow.onNext(List.of(activeUnpinned, pinnedArchived, unpinnedArchived));
+
+        viewModel.selectFilter(InboxFilter.ARCHIVED);
+
+        List<String> visibleIds = viewModel.getUiState().getValue()
+                .getVisibleConversations().stream().map(ConversationSummary::getId).toList();
+        assertEquals(List.of("c-arch-2", "c-arch-1"), visibleIds);
+    }
+
     private static ConversationSummary pinnedConversation(String id) {
         return new ConversationSummary(
                 id, "DIRECT", null, "last " + id, "Peer " + id, 1_700_000_000_000L,
                 42L, 0, "Peer " + id, null, null, 0L, 0L, null, null, false, null,
-                true, 1_700_000_000_000L);
+                false, null, false, false, true, 1_700_000_000_000L);
+    }
+
+    @Test
+    public void filterSwitchedDuringRefreshRunsAfterTheInFlightRequest() {
+        SingleSubject<Result<Boolean>> pending = SingleSubject.create();
+        when(repository.refreshInboxPage(false)).thenReturn(pending);
+        InboxViewModel switching = new InboxViewModel(repository, new SavedStateHandle());
+
+        switching.selectFilter(InboxFilter.ARCHIVED);
+
+        verify(repository, never()).refreshInboxPage(true);
+        pending.onSuccess(new Result.Success<>(Boolean.TRUE));
+        verify(repository).refreshInboxPage(true);
+    }
+
+    @Test
+    public void archivedFilterRequestsArchivedPageAndShowsOnlyArchivedRows() {
+        inboxFlow.onNext(List.of(
+                conversation("active", 1),
+                archived("c-arch", 3)));
+
+        viewModel.selectFilter(InboxFilter.ARCHIVED);
+
+        verify(repository).refreshInboxPage(true);
+        assertEquals(List.of("c-arch"), viewModel.getUiState().getValue()
+                .getVisibleConversations().stream().map(ConversationSummary::getId).toList());
+    }
+
+    @Test
+    public void leavingArchivedFilterRefreshesTheDefaultInbox() {
+        viewModel.selectFilter(InboxFilter.ARCHIVED);
+        clearInvocations(repository);
+
+        viewModel.selectFilter(InboxFilter.ALL);
+
+        verify(repository).refreshInboxPage(false);
+    }
+
+    @Test
+    public void archivedUnreadRowsDoNotCountTowardTheBadge() {
+        inboxFlow.onNext(List.of(
+                conversation("active", 2),
+                archived("c-arch", 5)));
+
+        assertEquals(2, viewModel.getUiState().getValue().getTotalUnread());
+    }
+
+    @Test
+    public void muteFailureSurfacesThroughTheOneShotEvent() {
+        ApiError failure = new ApiError.Network("down");
+        when(repository.muteConversation(eq("c-1"), any(Instant.class)))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.muteConversation("c-1", Instant.parse("2026-11-09T01:00:00Z"));
+
+        InboxEvent event = viewModel.getEvents().getValue().consume();
+        assertEquals(failure, event.getError());
+    }
+
+    @Test
+    public void successfulMuteDoesNotRaiseAnErrorEvent() {
+        when(repository.muteConversation(eq("c-1"), any(Instant.class)))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.muteConversation("c-1", Instant.parse("2026-11-09T01:00:00Z"));
+
+        assertNull(viewModel.getEvents().getValue());
+    }
+
+    @Test
+    public void archiveActionDelegatesTheRequestedFlag() {
+        when(repository.setConversationArchived("c-1", true))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.setConversationArchived("c-1", true);
+
+        verify(repository).setConversationArchived("c-1", true);
     }
 
     private static ConversationSummary conversation(String id, int unread) {
         return conversation(id, unread, "Peer " + id, null);
+    }
+
+    private static ConversationSummary archived(String id, int unread) {
+        return new ConversationSummary(
+                id,
+                "DIRECT",
+                null,
+                "last " + id,
+                "Peer " + id,
+                1_700_000_000_000L,
+                42L,
+                unread,
+                "Peer " + id,
+                null,
+                null,
+                0L,
+                0L,
+                null,
+                null,
+                false,
+                null,
+                false,
+                null,
+                true,
+                false);
     }
 
     private static ConversationSummary conversation(

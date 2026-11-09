@@ -74,6 +74,20 @@ File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePa
 
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
+// The signed release helper supplies these from its semantic version tag.
+// Direct Gradle builds keep the repository's existing defaults.
+def releaseVersionName = providers.gradleProperty('releaseVersionName').orElse('1.0.0').get()
+def releaseVersionCodeText = providers.gradleProperty('releaseVersionCode').orElse('1').get()
+if (releaseVersionName.trim().isEmpty()) {
+    throw new GradleException('Release version name must not be blank.')
+}
+if (!(releaseVersionCodeText ==~ /\d+/)) {
+    throw new GradleException('Release version code must be a positive integer no greater than 2100000000.')
+}
+def releaseVersionCode = releaseVersionCodeText.toBigInteger()
+if (releaseVersionCode < 1 || releaseVersionCode > 2100000000) {
+    throw new GradleException('Release version code must be a positive integer no greater than 2100000000.')
+}
 
 android {
     namespace 'com.nexachat'
@@ -83,8 +97,8 @@ android {
         applicationId 'com.nexachat'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode releaseVersionCode.intValue()
+        versionName releaseVersionName
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
@@ -164,9 +178,7 @@ gradle.taskGraph.whenReady { graph ->
             )
         }
         if (resolvedStoreFile == null || !resolvedStoreFile.isFile()) {
-            throw new GradleException(
-                "Configured release keystore file does not exist: ${resolvedStoreFile ? resolvedStoreFile.absolutePath : releaseStoreFilePath}"
-            )
+            throw new GradleException('Configured release keystore file does not exist.')
         }
     }
 }

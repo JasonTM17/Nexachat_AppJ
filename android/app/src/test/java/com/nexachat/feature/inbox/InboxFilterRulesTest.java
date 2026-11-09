@@ -40,6 +40,65 @@ public final class InboxFilterRulesTest {
                 List.of(conversation("direct-read", 0, false)), InboxFilter.UNREAD).isEmpty());
     }
 
+    @Test
+    public void defaultFiltersHideArchivedRows() {
+        List<ConversationSummary> rows = List.of(
+                conversation("active", 1, false),
+                archived("archived", 1, false));
+
+        assertEquals(List.of("active"), ids(InboxFilterRules.apply(rows, InboxFilter.ALL)));
+        assertEquals(List.of("active"), ids(InboxFilterRules.apply(rows, InboxFilter.UNREAD)));
+    }
+
+    @Test
+    public void archivedFilterKeepsOnlyArchivedRows() {
+        List<ConversationSummary> rows = List.of(
+                conversation("active", 0, false),
+                archived("archived", 0, false),
+                archived("archived-group", 0, true));
+
+        assertEquals(List.of("archived", "archived-group"),
+                ids(InboxFilterRules.apply(rows, InboxFilter.ARCHIVED)));
+    }
+
+    @Test
+    public void groupsFilterIgnoresArchivedGroups() {
+        List<ConversationSummary> rows = List.of(
+                conversation("group", 0, true),
+                archived("archived-group", 0, true));
+
+        assertEquals(List.of("group"), ids(InboxFilterRules.apply(rows, InboxFilter.GROUPS)));
+    }
+
+    private static List<String> ids(List<ConversationSummary> rows) {
+        return rows.stream().map(ConversationSummary::getId).toList();
+    }
+
+    private static ConversationSummary archived(String id, int unread, boolean group) {
+        return new ConversationSummary(
+                id,
+                group ? "GROUP" : "DIRECT",
+                group ? "Group " + id : null,
+                "last " + id,
+                "Peer " + id,
+                1_700_000_000_000L,
+                42L,
+                unread,
+                "Peer " + id,
+                null,
+                null,
+                0L,
+                0L,
+                null,
+                null,
+                false,
+                null,
+                false,
+                null,
+                true,
+                false);
+    }
+
     private static List<ConversationSummary> sampleRows() {
         return List.of(
                 conversation("direct-unread", 2, false),

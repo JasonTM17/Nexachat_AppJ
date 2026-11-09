@@ -48,6 +48,7 @@
 -keep interface com.nexachat.core.network.*Api { *; }
 -keep interface com.nexachat.call.core.CallRepository$Api { *; }
 -keep interface com.nexachat.summary.*Api { *; }
+-keep interface com.nexachat.feature.archive.ArchiveApi { *; }
 -keep interface com.nexachat.feature.ask.AskApi { *; }
 -keep interface com.nexachat..*Api { *; }
 -keepclassmembers,allowobfuscation interface * {
@@ -59,6 +60,7 @@
 # Room relies on reflective instantiation and schema type matching.
 # ------------------------------------------------------------------------------
 -keep class * extends androidx.room.RoomDatabase
+-keep class * extends androidx.room.migration.Migration { *; }
 -keep @androidx.room.Entity class * { *; }
 -keep @androidx.room.Dao interface * { *; }
 -keep class com.nexachat.core.database.** { *; }
@@ -136,8 +138,9 @@
     public static ** valueOf(java.lang.String);
 }
 
-# Android Parcelable CREATOR members
--keepclassmembers class * implements android.os.Parcelable {
+# Android stores Parcelable class names in parcel data, so keep class identity
+# along with the CREATOR used to reconstruct each value.
+-keep class * implements android.os.Parcelable {
     public static final ** CREATOR;
 }
 

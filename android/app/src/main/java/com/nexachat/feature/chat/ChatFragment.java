@@ -57,6 +57,7 @@ import com.nexachat.feature.ask.AskBottomSheetFragment;
 import com.nexachat.feature.ask.AskCitationJump;
 import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
+import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
@@ -76,6 +77,14 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
     private static final String ARG_CONVERSATION_ID = "conversationId";
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
+    private static final int MENU_ASK = 1;
+    private static final int MENU_SUMMARY = 2;
+    private static final int MENU_MUTE = 3;
+    private static final int MENU_ARCHIVE = 4;
+    private static final int MENU_SETTINGS = 5;
+    private static final int MENU_SHARED_MEDIA = 6;
+    private static final int MENU_GROUP_BOARD = 7;
+    private static final int MENU_PIN = 8;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -420,6 +429,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         .setAction(R.string.action_view, v -> openConversation(forwarded.getTargetConversationId()))
                         .show();
             }
+            if (event instanceof ChatActionEvent.PreferenceChanged changed) {
+                Snackbar.make(binding.getRoot(), preferenceMessage(changed.getKind()),
+                        Snackbar.LENGTH_SHORT).show();
+            }
         });
         inboxViewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
             if (next != null) {
@@ -594,26 +607,156 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showMoreOptions() {
-        String pinAction = state != null && state.isConversationPinned()
-                ? getString(R.string.action_unpin_conversation)
-                : getString(R.string.action_pin_conversation);
+        ConversationSummary conversation = currentConversation();
+        boolean muted = conversation != null
+                && conversation.isMutedAt(System.currentTimeMillis());
+        boolean archived = conversation != null && conversation.isArchived();
+        boolean pinned = state != null && state.isConversationPinned();
+        List<CharSequence> labels = new ArrayList<>();
+        List<Integer> actions = new ArrayList<>();
+        labels.add(getString(R.string.ask_action));
+        actions.add(MENU_ASK);
+        labels.add(getString(R.string.summary_overflow_action));
+        actions.add(MENU_SUMMARY);
+        labels.add(getString(muted ? R.string.unmute : R.string.mute_menu_title));
+        actions.add(MENU_MUTE);
+        labels.add(getString(archived ? R.string.conversation_unarchive : R.string.conversation_archive));
+        actions.add(MENU_ARCHIVE);
+        labels.add(getString(pinned ? R.string.action_unpin_conversation : R.string.action_pin_conversation));
+        actions.add(MENU_PIN);
+        labels.add(getString(R.string.conversation_settings_title));
+        actions.add(MENU_SETTINGS);
+        labels.add(getString(R.string.archive_title));
+        actions.add(MENU_SHARED_MEDIA);
+        if (state != null && state.isGroup()) {
+            labels.add(getString(R.string.group_board_title));
+            actions.add(MENU_GROUP_BOARD);
+        }
+
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setItems(new CharSequence[]{
-                        getString(R.string.ask_action),
-                        getString(R.string.summary_overflow_action),
-                        getString(R.string.archive_title),
-                        pinAction
-                }, (dialog, which) -> {
-                    if (which == 0) {
-                        showAsk();
-                    } else if (which == 1) {
-                        showSummary();
-                    } else if (which == 2) {
-                        openArchive();
-                    } else if (which == 3) {
-                        viewModel.toggleConversationPin();
-                    }
-                }).show();
+                .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
+                        onChatMenuItemSelected(actions.get(which), muted, archived))
+                .show();
+    }
+
+    private void onChatMenuItemSelected(int action, boolean muted, boolean archived) {
+        if (action == MENU_ASK) {
+            showAsk();
+        } else if (action == MENU_SUMMARY) {
+            showSummary();
+        } else if (action == MENU_MUTE) {
+            if (muted) {
+                viewModel.unmuteConversation();
+            } else {
+                ConversationPreferenceMenu.showMutePresets(
+                        requireContext(), false, preferenceListener());
+            }
+        } else if (action == MENU_ARCHIVE) {
+            viewModel.setConversationArchived(!archived);
+        } else if (action == MENU_PIN) {
+            viewModel.toggleConversationPin();
+        } else if (action == MENU_SETTINGS) {
+            showConversationSettings();
+        } else if (action == MENU_SHARED_MEDIA) {
+            openArchive();
+        } else if (action == MENU_GROUP_BOARD) {
+            openGroupBoard();
+        }
+    }
+
+    private ConversationPreferenceMenu.Listener preferenceListener() {
+        return new ConversationPreferenceMenu.Listener() {
+            @Override
+            public void onMute(@Nullable java.time.Instant until) {
+                viewModel.muteConversation(until);
+            }
+
+            @Override
+            public void onUnmute() {
+                viewModel.unmuteConversation();
+            }
+
+            @Override
+            public void onArchive(boolean archive) {
+                viewModel.setConversationArchived(archive);
+            }
+        };
+    }
+
+    @Nullable
+    private ConversationSummary currentConversation() {
+        InboxUiState inbox = inboxViewModel == null ? null : inboxViewModel.getUiState().getValue();
+        if (inbox == null) return null;
+        for (ConversationSummary row : inbox.getConversations()) {
+            if (conversationId.equals(row.getId())) return row;
+        }
+        return null;
+    }
+
+    private void showConversationSettings() {
+        View content = getLayoutInflater().inflate(R.layout.dialog_conversation_settings, null);
+        com.google.android.material.switchmaterial.SwitchMaterial toggle =
+                content.findViewById(R.id.aiOptOutSwitch);
+        TextView status = content.findViewById(R.id.aiOptOutStatus);
+        View row = content.findViewById(R.id.aiOptOutRow);
+
+        androidx.appcompat.app.AlertDialog dialog =
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.conversation_settings_title)
+                        .setView(content)
+                        .setNegativeButton(R.string.action_close, null)
+                        .create();
+
+        androidx.lifecycle.Observer<ChatViewModel.AiOptOutState> observer = state -> {
+            toggle.setOnCheckedChangeListener(null);
+            toggle.setChecked(state.getOptOut());
+            toggle.setEnabled(!state.isBusy());
+            status.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
+            if (state.getError() != null) {
+                status.setText(ChatErrorText.messageId(state.getError()));
+            }
+            toggle.setOnCheckedChangeListener((button, checked) -> {
+                if (button.isPressed()) viewModel.setAiOptOut(checked);
+            });
+        };
+        viewModel.getAiOptOutState().observe(getViewLifecycleOwner(), observer);
+        dialog.setOnDismissListener(ignored ->
+                viewModel.getAiOptOutState().removeObserver(observer));
+        row.setOnClickListener(v -> {
+            if (toggle.isEnabled()) viewModel.setAiOptOut(!toggle.isChecked());
+        });
+        dialog.show();
+        viewModel.loadAiOptOut();
+    }
+
+    private static int preferenceMessage(@NonNull ChatActionEvent.PreferenceChanged.Kind kind) {
+        switch (kind) {
+            case MUTED:
+                return R.string.conversation_muted;
+            case UNMUTED:
+                return R.string.conversation_unmuted;
+            case ARCHIVED:
+                return R.string.conversation_archived;
+            case UNARCHIVED:
+            default:
+                return R.string.conversation_unarchived;
+        }
+    }
+
+    private void openGroupBoard() {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        args.putBoolean("isGroup", state.isGroup());
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.groupBoardFragment, args);
+        } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void openArchive() {

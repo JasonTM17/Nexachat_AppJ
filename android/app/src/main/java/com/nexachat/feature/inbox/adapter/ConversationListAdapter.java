@@ -26,7 +26,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
     public interface Listener {
         void onConversationClick(@NonNull String conversationId);
-        default void onConversationLongClick(@NonNull ConversationSummary conversation) {}
+        void onConversationLongClick(@NonNull ConversationSummary conversation);
     }
 
     private final Listener listener;
@@ -91,6 +91,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final ImageView previewTypeIcon;
         private final ImageView pinIndicator;
         private final TextView unreadBadge;
+        private final ImageView muteIcon;
 
         Holder(@NonNull View itemView) {
             super(itemView);
@@ -101,6 +102,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             previewTypeIcon = itemView.findViewById(R.id.previewTypeIcon);
             pinIndicator = itemView.findViewById(R.id.pinIndicator);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
+            muteIcon = itemView.findViewById(R.id.muteIcon);
         }
 
         void bind(
@@ -173,6 +175,11 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
             if (pinIndicator != null) {
                 pinIndicator.setVisibility(conversation.isPinned() ? View.VISIBLE : View.GONE);
+            }
+            if (muteIcon != null) {
+                muteIcon.setVisibility(conversation.isMutedAt(System.currentTimeMillis())
+                        ? View.VISIBLE
+                        : View.GONE);
             }
 
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));

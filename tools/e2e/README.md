@@ -49,6 +49,44 @@ and exits non-zero.
 | `stomp_e2e.py` | `MESSAGE_CREATED` to peer and sender; `MESSAGE_UPDATED` payload equals the REST row; `MESSAGE_DELETED {messageId, deletedAt}`; duplicate `clientMessageId` re-broadcast with one row; `USER_ONLINE`/`USER_OFFLINE` with the 5 s coalescing window and flap suppression; `showPresence=false` silence plus hidden `peerPresence`; `RATE_LIMITED` on `/user/queue/errors` past 30 SENDs / 10 s. |
 | `perf_e2e.py` | 500-message corpus at 20 req/s, then 50 samples each of edit/delete/search with p50/p95. |
 
+## New-feature live suite
+
+`tools/e2e/new_features/features_live.py` is one self-contained command for the
+merged archive/inbox/reminder/poll/AI/privacy features. It creates its own
+throwaway accounts (never the seed accounts), runs the checks, and cleans up
+every flag, reminder, poll, reaction and message an endpoint allows it to
+remove.
+
+```bash
+python tools/e2e/new_features/features_live.py                 # API_BASE_URL or localhost:8080
+python tools/e2e/new_features/features_live.py --allow-skip    # offline machine: required skips exit 0
+python tools/e2e/new_features/features_live.py --self-test     # mocked transport, no backend
+python -m unittest tools/e2e/new_features/test_features_live.py
+```
+
+- Every check prints `PASS`/`FAIL` with the HTTP method, endpoint and status;
+  any `FAIL` or required `SKIP` exits non-zero (`--allow-skip` only excuses
+  skips).
+- A non-loopback `--base-url` is refused unless
+  `--i-know-this-is-not-prod` is passed.
+- `--self-test` runs the non-STOMP scenarios against an in-memory transport, so
+  the script's own request/assertion logic is verified without a server.
+- Tokens, passwords and phone numbers are never printed; ids are masked.
+
+Coverage: archive browser (`MEDIA`/`FILE`/`LINK`, sender/date filters, keyset
+cursor, tombstone exclusion, non-member 403); inbox mute/unmute and
+archive/unarchive flags (per-member); reminders CRUD plus creator/admin authz;
+polls create/vote/change/retract/close/delete, anonymous vote-id omission and
+the change feed; per-conversation AI opt-out; conversation pin (5-pin cap with
+`409 CONVERSATION_PIN_LIMIT`); `showSeen=false` in both directions over STOMP;
+`Idempotency-Key` replay on reminders and reactions; revoked-token STOMP
+connect rejection and REST 401.
+
+There is no account-delete or conversation-delete endpoint, so the throwaway
+accounts, their DIRECT conversation and the test GROUP conversations remain in
+the database; all mutable state is reverted. Run it against a disposable local
+database.
+
 ## Cleanup / side effects
 
 - `smoke_api.py` and `stomp_e2e.py` soft-delete every message they created (run

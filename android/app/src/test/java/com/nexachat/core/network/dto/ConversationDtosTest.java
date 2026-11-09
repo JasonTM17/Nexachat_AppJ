@@ -42,6 +42,44 @@ public final class ConversationDtosTest {
     }
 
     @Test
+    public void muteRequestSerializesExactlyOneOfInstantOrForever() throws IOException {
+        JsonAdapter<MuteRequest> adapter = moshi.adapter(MuteRequest.class);
+
+        assertEquals("{\"mutedUntil\":\"2026-11-10T01:00:00Z\"}",
+                adapter.toJson(MuteRequest.until(
+                        java.time.Instant.parse("2026-11-10T01:00:00Z"))));
+        assertEquals("{\"forever\":true}", adapter.toJson(MuteRequest.forever()));
+    }
+
+    @Test
+    public void decodesCallerScopedMuteArchiveAndAiOptOutFlags() throws IOException {
+        JsonAdapter<ConversationInboxDto> adapter = moshi.adapter(ConversationInboxDto.class);
+        ConversationInboxDto row = adapter.fromJson(
+                "{\"id\":\"conv-flags\",\"type\":\"DIRECT\",\"muted\":true,"
+                        + "\"mutedUntil\":\"2026-11-10T01:00:00Z\",\"archived\":true,"
+                        + "\"aiOptOut\":true}"
+        );
+
+        assertNotNull(row);
+        assertEquals(Boolean.TRUE, row.getMuted());
+        assertEquals("2026-11-10T01:00:00Z", row.getMutedUntil());
+        assertEquals(Boolean.TRUE, row.getArchived());
+        assertEquals(Boolean.TRUE, row.getAiOptOut());
+    }
+
+    @Test
+    public void legacyRowsLeavePreferenceFlagsAbsent() throws IOException {
+        ConversationInboxDto row = moshi.adapter(ConversationInboxDto.class)
+                .fromJson("{\"id\":\"conv-legacy\"}");
+
+        assertNotNull(row);
+        assertNull(row.getMuted());
+        assertNull(row.getMutedUntil());
+        assertNull(row.getArchived());
+        assertNull(row.getAiOptOut());
+    }
+
+    @Test
     public void decodesOpaqueCursorInLegacyPageEnvelope() throws IOException {
         ConversationsPageDto page = moshi.adapter(ConversationsPageDto.class).fromJson(
                 "{\"items\":[{\"id\":\"conv-1\"}],\"nextCursor\":\"cursor-2\","

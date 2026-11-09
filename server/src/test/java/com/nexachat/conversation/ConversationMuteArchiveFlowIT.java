@@ -21,7 +21,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,6 +33,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -387,31 +391,167 @@ class ConversationMuteArchiveFlowIT {
     }
 
     @Test
-    void pushIsSkippedForMutedConversationButKeptForSystemMessage() throws Exception {
-        UUID conversationId = conversationWithMessage(alice, dave, "push gating");
-        String daveToken = "it-mute-token-" + UUID.randomUUID();
-        postJson("/api/v1/users/device-token", dave.accessToken(),
-                Map.of("token", daveToken, "platform", "ANDROID", "deviceLabel", "IT phone"))
-                .andExpect(status().isOk());
-
-        mockFcmGateway.clear();
+    void pushIsSkippedForMutedConversationAndSystemNotices() throws Exception {
+        UUID conversationId = createGroup(alice, bob, dave);
+        String bobToken = "it-sys-bob-" + UUID.randomUUID();
+        String daveToken = "it-sys-dave-" + UUID.randomUUID();
+        registerDeviceToken(bob, bobToken);
+        registerDeviceToken(dave, daveToken);
 
         putJson("/api/v1/conversations/" + conversationId + "/mute", dave.accessToken(),
                 Map.of("forever", true))
                 .andExpect(status().isNoContent());
-        sendRest(conversationId, alice, "muted push");
-        assertThat(mockFcmGateway.getSentPushes()).isEmpty();
 
-        // A SYSTEM message keeps its current behavior for a muted member.
-        messageService.postSystemMessage(alice.id(), conversationId, "Alice added Carol");
-        assertThat(mockFcmGateway.getSentPushes())
-                .anySatisfy(push -> assertThat(push.token()).isEqualTo(daveToken));
+        mockFcmGateway.clear();
+        sendRest(conversationId, alice, "ordinary");
+        assertThat(sentTokens()).contains(bobToken).doesNotContain(daveToken);
 
+        // A title change posts a SYSTEM message; the muted member is skipped.
+        mockFcmGateway.clear();
+        patchGroupTitle(alice, conversationId, "Renamed " + UUID.randomUUID())
+                .andExpect(status().isOk());
+        assertThat(sentTokens()).contains(bobToken).doesNotContain(daveToken);
+
+        // A member-add SYSTEM message is skipped for the muted member too.
+        mockFcmGateway.clear();
+        addMember(alice, conversationId, erin).andExpect(status().isNoContent());
+        assertThat(sentTokens()).contains(bobToken).doesNotContain(daveToken);
+
+        // Unmuting restores the ordinary push; the SYSTEM notices stay consistent.
         mockFcmGateway.clear();
         deleteJson("/api/v1/conversations/" + conversationId + "/mute", dave.accessToken())
                 .andExpect(status().isNoContent());
-        sendRest(conversationId, alice, "unmuted push");
-        assertThat(mockFcmGateway.getSentPushes())
-                .anySatisfy(push -> assertThat(push.token()).isEqualTo(daveToken));
+        sendRest(conversationId, alice, "after unmute");
+        assertThat(sentTokens()).contains(bobToken, daveToken);
+    }
+
+    @Test
+    void removedMutedMemberStillReceivesRemovalNotice() throws Exception {
+        UUID conversationId = createGroup(alice, bob, carol);
+        String bobToken = "it-removed-bob-" + UUID.randomUUID();
+        String carolToken = "it-removed-carol-" + UUID.randomUUID();
+        registerDeviceToken(bob, bobToken);
+        registerDeviceToken(carol, carolToken);
+
+        putJson("/api/v1/conversations/" + conversationId + "/mute", bob.accessToken(),
+                Map.of("forever", true))
+                .andExpect(status().isNoContent());
+        putJson("/api/v1/conversations/" + conversationId + "/mute", carol.accessToken(),
+                Map.of("forever", true))
+                .andExpect(status().isNoContent());
+
+        mockFcmGateway.clear();
+        deleteJson("/api/v1/conversations/" + conversationId + "/members/" + bob.id(),
+                alice.accessToken())
+                .andExpect(status().isNoContent());
+
+        // Bob is the subject of the removal, so he is told even though he muted
+        // and is no longer a member. Carol is muted and not the subject.
+        assertThat(sentTokens()).contains(bobToken).doesNotContain(carolToken);
+    }
+
+    @Test
+    void muteExpiryBoundaryStillPushesSystemNotice() throws Exception {
+        UUID conversationId = createGroup(alice, bob);
+        String bobToken = "it-expiry-bob-" + UUID.randomUUID();
+        registerDeviceToken(bob, bobToken);
+
+        // A past muted_until is not an active mute (lazy expiry, no cleanup).
+        jdbcTemplate.update("UPDATE conversation_members SET muted = true, muted_until = ? "
+                        + "WHERE conversation_id = ? AND user_id = ?",
+                Timestamp.from(Instant.now().minusSeconds(3600)), conversationId, bob.id());
+
+        mockFcmGateway.clear();
+        patchGroupTitle(alice, conversationId, "Expiry " + UUID.randomUUID())
+                .andExpect(status().isOk());
+        assertThat(sentTokens()).contains(bobToken);
+
+        // A future muted_until mutes again and suppresses the SYSTEM notice.
+        putJson("/api/v1/conversations/" + conversationId + "/mute", bob.accessToken(),
+                Map.of("mutedUntil", Instant.now().plusSeconds(3600).toString()))
+                .andExpect(status().isNoContent());
+
+        mockFcmGateway.clear();
+        patchGroupTitle(alice, conversationId, "Expiry two " + UUID.randomUUID())
+                .andExpect(status().isOk());
+        assertThat(sentTokens()).doesNotContain(bobToken);
+    }
+
+    @Test
+    void memberLeftSystemNoticeRespectsMute() throws Exception {
+        UUID conversationId = createGroup(alice, bob, carol);
+        String aliceToken = "it-left-alice-" + UUID.randomUUID();
+        String carolToken = "it-left-carol-" + UUID.randomUUID();
+        registerDeviceToken(alice, aliceToken);
+        registerDeviceToken(carol, carolToken);
+
+        putJson("/api/v1/conversations/" + conversationId + "/mute", carol.accessToken(),
+                Map.of("forever", true))
+                .andExpect(status().isNoContent());
+
+        mockFcmGateway.clear();
+        postJson("/api/v1/conversations/" + conversationId + "/leave", bob.accessToken(), Map.of())
+                .andExpect(status().isNoContent());
+
+        assertThat(sentTokens()).contains(aliceToken).doesNotContain(carolToken);
+    }
+
+    @Test
+    void roleChangeSubjectBypassForMutedMember() throws Exception {
+        UUID conversationId = createGroup(alice, bob);
+        String bobToken = "it-role-bob-" + UUID.randomUUID();
+        registerDeviceToken(bob, bobToken);
+
+        putJson("/api/v1/conversations/" + conversationId + "/mute", bob.accessToken(),
+                Map.of("forever", true))
+                .andExpect(status().isNoContent());
+
+        mockFcmGateway.clear();
+        // No REST role-change endpoint exists yet; post the SYSTEM event with its
+        // subject directly to exercise the push gate for a demotion notice.
+        messageService.postSystemMessage(alice.id(), conversationId,
+                "Alice changed Bob's role", bob.id());
+
+        assertThat(sentTokens()).contains(bobToken);
+    }
+
+    // ------------------------------------------------------------ push helpers
+
+    private UUID createGroup(TestUser admin, TestUser... members) throws Exception {
+        List<String> memberIds = Arrays.stream(members)
+                .map(member -> member.id().toString()).toList();
+        MvcResult result = postJson("/api/v1/conversations/group", admin.accessToken(),
+                Map.of("title", "IT group " + UUID.randomUUID(), "memberIds", memberIds))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return UUID.fromString(objectMapper
+                .readTree(result.getResponse().getContentAsString())
+                .get("id").asText());
+    }
+
+    private void registerDeviceToken(TestUser user, String token) throws Exception {
+        postJson("/api/v1/users/device-token", user.accessToken(),
+                Map.of("token", token, "platform", "ANDROID", "deviceLabel", "IT phone"))
+                .andExpect(status().isOk());
+    }
+
+    private ResultActions patchGroupTitle(TestUser admin, UUID conversationId, String title)
+            throws Exception {
+        return mockMvc.perform(patch("/api/v1/conversations/" + conversationId)
+                .header("Authorization", "Bearer " + admin.accessToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("title", title))));
+    }
+
+    private ResultActions addMember(TestUser admin, UUID conversationId, TestUser member)
+            throws Exception {
+        return postJson("/api/v1/conversations/" + conversationId + "/members",
+                admin.accessToken(), Map.of("userIds", List.of(member.id().toString())));
+    }
+
+    private List<String> sentTokens() {
+        return mockFcmGateway.getSentPushes().stream()
+                .map(MockFcmGateway.SentPush::token)
+                .toList();
     }
 }

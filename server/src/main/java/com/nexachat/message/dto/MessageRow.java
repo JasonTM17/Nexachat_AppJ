@@ -22,6 +22,15 @@ public record MessageRow(
         UUID replyToId,
         Instant createdAt,
         Instant editedAt,
-        Instant deletedAt
+        Instant deletedAt,
+        boolean mentionAll
 ) {
+
+    public MessageRow(UUID id, UUID conversationId, Long seq, UUID senderId,
+                      String senderDisplayName, Message.Type type, String content,
+                      UUID clientMessageId, UUID replyToId, Instant createdAt,
+                      Instant editedAt, Instant deletedAt) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, createdAt, editedAt, deletedAt, false);
+    }
 }

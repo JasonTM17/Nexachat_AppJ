@@ -85,6 +85,16 @@
             android:visibility="gone"
             app:tint="?attr/colorOnSurfaceVariant" />
 
+        <ImageView
+            android:id="@+id/muteIcon"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/inbox_muted"
+            android:src="@drawable/ic_notifications_off"
+            android:visibility="gone"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
         <TextView
             android:id="@+id/unreadBadge"
             android:layout_width="wrap_content"

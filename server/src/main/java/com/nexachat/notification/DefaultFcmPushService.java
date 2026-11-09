@@ -50,6 +50,14 @@ public class DefaultFcmPushService implements FcmPushService {
     @Transactional
     public void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
                                           UUID messageId, long seq, String senderName) {
+        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName, false);
+    }
+
+    @Override
+    @Transactional
+    public void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
+                                          UUID messageId, long seq, String senderName,
+                                          boolean mentioned) {
         if (tokens == null || tokens.isEmpty()) {
             return;
         }
@@ -62,6 +70,9 @@ public class DefaultFcmPushService implements FcmPushService {
         data.put("messageId", messageId.toString());
         data.put("seq", String.valueOf(seq));
         data.put("senderName", senderName != null ? senderName : "");
+        if (mentioned) {
+            data.put("mentioned", "true");
+        }
 
         dispatchToTokens(tokens, data, "HIGH", 86400L);
     }

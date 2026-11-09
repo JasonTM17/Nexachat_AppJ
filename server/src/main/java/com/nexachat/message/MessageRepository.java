@@ -52,6 +52,22 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                    @Param("content") String content,
                                    @Param("replyToId") UUID replyToId);
 
+    @Modifying
+    @Query(value = """
+            INSERT INTO messages
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all)
+            VALUES (:conversationId, :senderId, :clientMessageId, :type,
+                    CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll)
+            ON CONFLICT (sender_id, client_message_id) DO NOTHING
+            """, nativeQuery = true)
+    int insertIgnoringDuplicateKeyWithMentionAll(@Param("conversationId") UUID conversationId,
+                                                 @Param("senderId") UUID senderId,
+                                                 @Param("clientMessageId") UUID clientMessageId,
+                                                 @Param("type") String type,
+                                                 @Param("content") String content,
+                                                 @Param("replyToId") UUID replyToId,
+                                                 @Param("mentionAll") boolean mentionAll);
+
     /**
      * Projection read-back after insert-or-skip: fetches the stored row plus
      * the sender's display name in one query (no lazy loading).
@@ -59,7 +75,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.sender.id = :senderId AND m.clientMessageId = :clientMessageId
             """)
@@ -69,7 +86,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id = :messageId
             """)
@@ -84,7 +102,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
@@ -102,7 +121,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq > :afterSeq
@@ -115,7 +135,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq <= :lastSeq
@@ -149,7 +170,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                    m.type AS type, m.content AS content,
                    m.client_message_id AS "clientMessageId", reply.id AS "replyToId",
                    m.created_at AS "createdAt", m.edited_at AS "editedAt",
-                   m.deleted_at AS "deletedAt"
+                   m.deleted_at AS "deletedAt", m.mention_all AS "mentionAll"
             FROM messages m
             JOIN users u ON u.id = m.sender_id
             LEFT JOIN messages reply ON reply.id = m.reply_to_id
@@ -169,7 +190,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt)
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
             """)

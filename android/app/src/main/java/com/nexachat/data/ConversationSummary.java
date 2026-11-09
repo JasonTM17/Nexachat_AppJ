@@ -36,6 +36,14 @@ public final class ConversationSummary {
     private final boolean lastMessageDeleted;
     /** Live or seeded direct-peer presence; null for groups or hidden peers. */
     @Nullable private final PeerPresence peerPresence;
+    /** Caller's own mute flag as returned by the server. */
+    private final boolean muted;
+    /** Timed-mute expiry; null when the mute is forever or absent. */
+    @Nullable private final Long mutedUntilEpochMs;
+    /** Caller's own archive flag. */
+    private final boolean archived;
+    /** Caller's own per-conversation AI opt-out flag. */
+    private final boolean aiOptOut;
     /** True if the conversation is pinned by the caller. */
     private final boolean pinned;
     /** Epoch milliseconds when pinned; null while not pinned. */
@@ -54,14 +62,40 @@ public final class ConversationSummary {
             @Nullable String otherUserAvatar,
             @Nullable String avatarUrl,
             long peerReadSeq,
+            long peerDeliveredSeq,
             @Nullable String myRole,
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
-            @Nullable PeerPresence peerPresence) {
-        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
-                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence,
-                false, null);
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs) {
+        this.id = Objects.requireNonNull(id, "id");
+        this.type = Objects.requireNonNull(type, "type");
+        this.title = title;
+        this.lastMessageContent = lastMessageContent;
+        this.lastMessageSenderName = lastMessageSenderName;
+        this.lastMessageAtEpochMs = lastMessageAtEpochMs;
+        this.lastMessageSeq = lastMessageSeq;
+        this.unreadCount = unreadCount;
+        this.otherUserName = otherUserName;
+        this.otherUserAvatar = otherUserAvatar;
+        this.avatarUrl = avatarUrl;
+        this.peerReadSeq = peerReadSeq;
+        this.peerDeliveredSeq = peerDeliveredSeq;
+        this.myRole = myRole;
+        this.otherUserId = otherUserId;
+        this.lastMessageDeleted = lastMessageDeleted;
+        this.peerPresence = peerPresence;
+        this.muted = muted;
+        this.mutedUntilEpochMs = mutedUntilEpochMs;
+        this.archived = archived;
+        this.aiOptOut = aiOptOut;
+        this.pinned = pinned;
+        this.pinnedAtEpochMs = pinnedAtEpochMs;
     }
 
     public ConversationSummary(
@@ -81,11 +115,15 @@ public final class ConversationSummary {
             @Nullable String myRole,
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
-            @Nullable PeerPresence peerPresence) {
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut) {
         this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
                 lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted, peerPresence,
-                false, null);
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, false, null);
     }
 
     public ConversationSummary(
@@ -108,25 +146,57 @@ public final class ConversationSummary {
             @Nullable PeerPresence peerPresence,
             boolean pinned,
             @Nullable Long pinnedAtEpochMs) {
-        this.id = Objects.requireNonNull(id, "id");
-        this.type = Objects.requireNonNull(type, "type");
-        this.title = title;
-        this.lastMessageContent = lastMessageContent;
-        this.lastMessageSenderName = lastMessageSenderName;
-        this.lastMessageAtEpochMs = lastMessageAtEpochMs;
-        this.lastMessageSeq = lastMessageSeq;
-        this.unreadCount = unreadCount;
-        this.otherUserName = otherUserName;
-        this.otherUserAvatar = otherUserAvatar;
-        this.avatarUrl = avatarUrl;
-        this.peerReadSeq = peerReadSeq;
-        this.peerDeliveredSeq = peerDeliveredSeq;
-        this.myRole = myRole;
-        this.otherUserId = otherUserId;
-        this.lastMessageDeleted = lastMessageDeleted;
-        this.peerPresence = peerPresence;
-        this.pinned = pinned;
-        this.pinnedAtEpochMs = pinnedAtEpochMs;
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, false, null, false, false, pinned, pinnedAtEpochMs);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, false, null, false, false, false, null);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence,
+                false, null, false, false, false, null);
     }
 
     public String getId() { return id; }
@@ -146,8 +216,20 @@ public final class ConversationSummary {
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
     @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
+    public boolean isMuted() { return muted; }
+    @Nullable public Long getMutedUntilEpochMs() { return mutedUntilEpochMs; }
+    public boolean isArchived() { return archived; }
+    public boolean isAiOptOut() { return aiOptOut; }
     public boolean isPinned() { return pinned; }
     @Nullable public Long getPinnedAtEpochMs() { return pinnedAtEpochMs; }
+
+    /**
+     * A timed mute expires lazily: the stored flag stays true while the expiry
+     * is in the past, so UI reads must combine both values with the clock.
+     */
+    public boolean isMutedAt(long nowEpochMs) {
+        return muted && (mutedUntilEpochMs == null || mutedUntilEpochMs > nowEpochMs);
+    }
 
     /**
      * Deterministic inbox ordering: pinned conversations first (by pinnedAt desc).
@@ -197,6 +279,9 @@ public final class ConversationSummary {
                 && peerReadSeq == that.peerReadSeq
                 && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
+                && muted == that.muted
+                && archived == that.archived
+                && aiOptOut == that.aiOptOut
                 && pinned == that.pinned
                 && Objects.equals(pinnedAtEpochMs, that.pinnedAtEpochMs)
                 && id.equals(that.id)
@@ -210,7 +295,8 @@ public final class ConversationSummary {
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
-                && Objects.equals(peerPresence, that.peerPresence);
+                && Objects.equals(peerPresence, that.peerPresence)
+                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs);
     }
 
     @Override
@@ -218,6 +304,7 @@ public final class ConversationSummary {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
-                lastMessageDeleted, peerPresence, pinned, pinnedAtEpochMs);
+                lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAtEpochMs);
     }
 }
