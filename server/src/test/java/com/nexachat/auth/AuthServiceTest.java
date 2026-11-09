@@ -50,7 +50,7 @@ class AuthServiceTest {
     @Mock
     private RateLimitService rateLimitService;
     @Mock
-    private AccessTokenValidityCache validityCache;
+    private AccessTokenRevocationService accessTokenRevocationService;
 
     private AuthService authService;
 
@@ -67,7 +67,7 @@ class AuthServiceTest {
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         authService = new AuthService(userRepository, phoneService, passwordEncoder, jwtService,
-                tokenService, validityCache, rateLimitService);
+                tokenService, accessTokenRevocationService, rateLimitService);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
@@ -266,6 +266,7 @@ class AuthServiceTest {
         assertThat(user.getPasswordHash()).isEqualTo("hashed:newpass123");
         verify(userRepository).save(user);
         verify(tokenService).revokeAllForUser(user.getId());
+        verify(accessTokenRevocationService).revoke(user.getId());
     }
 
     @Test
@@ -278,6 +279,7 @@ class AuthServiceTest {
 
         verify(tokenService).revokeAllForUserExcept(user.getId(), "rt-current");
         verify(tokenService, never()).revokeAllForUser(any());
+        verify(accessTokenRevocationService).revoke(user.getId());
     }
 
     @Test
@@ -306,6 +308,7 @@ class AuthServiceTest {
         authService.logout(userId, "rt-claimed-by-caller");
 
         verify(tokenService).revokeIfOwned("rt-claimed-by-caller", userId);
+        verify(accessTokenRevocationService).revoke(userId);
     }
 
     @Test
@@ -315,5 +318,6 @@ class AuthServiceTest {
         authService.logoutAll(userId);
 
         verify(tokenService).revokeAllForUser(userId);
+        verify(accessTokenRevocationService).revoke(userId);
     }
 }

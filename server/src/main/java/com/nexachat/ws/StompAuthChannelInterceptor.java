@@ -171,11 +171,13 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         }
         final JwtPrincipal principal;
         final Instant issuedAt;
+        final Instant expiresAt;
         try {
             JwtService.AccessTokenClaims claims =
                     jwtService.parseAccessTokenClaims(header.substring(BEARER_PREFIX.length()));
             principal = new JwtPrincipal(claims.userId());
             issuedAt = claims.issuedAt();
+            expiresAt = claims.expiresAt();
         } catch (JwtException | IllegalArgumentException e) {
             log.warn("STOMP CONNECT rejected: invalid access token");
             return false;
@@ -191,7 +193,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             log.warn("STOMP CONNECT rejected: access token was revoked");
             return false;
         }
-        accessor.setUser(new StompUserPrincipal(principal.userId()));
+        accessor.setUser(new StompUserPrincipal(principal.userId(), issuedAt, expiresAt));
         return true;
     }
 
@@ -209,6 +211,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     // ---------------------------------------------------------- SUBSCRIBE authZ
 
     private boolean onSubscribe(StompHeaderAccessor accessor) {
+        if (!isCurrentSession(accessor)) {
+            return false;
+        }
         UUID userId = sessionUser(accessor);
         if (userId == null) {
             return false;
@@ -237,6 +242,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     // --------------------------------------------------------------- SEND authZ
 
     private boolean onSend(StompHeaderAccessor accessor, Message<?> message) {
+        if (!isCurrentSession(accessor)) {
+            return false;
+        }
         UUID userId = sessionUser(accessor);
         if (userId == null) {
             return false;
@@ -309,6 +317,22 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return principal.userId();
         }
         return null;
+    }
+
+    /** Re-checks token expiry and the authoritative cutoff on every client action. */
+    private boolean isCurrentSession(StompHeaderAccessor accessor) {
+        if (!(accessor.getUser() instanceof StompUserPrincipal principal)) {
+            return false;
+        }
+        // Unit fixtures and internal call-site tests use a bare principal. A
+        // principal created by CONNECT always carries verified JWT timestamps.
+        if (principal.issuedAt() == null) {
+            return true;
+        }
+        if (principal.expiresAt() == null || !Instant.now().isBefore(principal.expiresAt())) {
+            return false;
+        }
+        return !isAccessTokenRevoked(principal.userId(), principal.issuedAt());
     }
 
     @Nullable

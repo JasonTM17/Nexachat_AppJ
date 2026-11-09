@@ -47,6 +47,12 @@ stored access-token expiry and calls the shared, mutex-protected
 `TokenRefresher.refreshIfNeeded()` when it has expired. The authenticated user
 is bound to the session so `/user/**` destinations resolve.
 
+After logout, logout-all, or password change commits, the server closes that
+user's existing STOMP sessions. Presence follows the socket disconnect and
+goes offline when the last session closes. The server also checks expiry and
+the revocation cutoff on every later SEND and SUBSCRIBE, so a session cannot
+continue using a token revoked after CONNECT.
+
 **Header whitespace quirk:** the interceptor reads the native
 `Authorization` value without trimming it, then requires the value to start
 with `Bearer `. Send the STOMP header as `Authorization:Bearer <access-token>`

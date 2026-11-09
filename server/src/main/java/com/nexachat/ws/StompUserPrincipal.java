@@ -1,6 +1,7 @@
 package com.nexachat.ws;
 
 import java.security.Principal;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -10,7 +11,12 @@ import java.util.UUID;
  * .convertAndSendToUser} match for {@code /user/queue/*} routing, so it MUST be
  * the plain user id, not a {@code toString()} of a richer record.
  */
-public record StompUserPrincipal(UUID userId) implements Principal {
+public record StompUserPrincipal(UUID userId, Instant issuedAt, Instant expiresAt) implements Principal {
+
+    /** Convenience identity for unit fixtures that do not model JWT claims. */
+    public StompUserPrincipal(UUID userId) {
+        this(userId, null, null);
+    }
 
     @Override
     public String getName() {

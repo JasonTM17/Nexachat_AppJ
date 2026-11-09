@@ -32,17 +32,24 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
 
     private final ConversationMemberRepository memberRepository;
     private final SimpUserRegistry userRegistry;
+    private final StompSessionRegistry sessionRegistry;
 
     public StompConversationMembershipOutboundInterceptor(
             ConversationMemberRepository memberRepository,
-            @Lazy SimpUserRegistry userRegistry) {
+            @Lazy SimpUserRegistry userRegistry,
+            StompSessionRegistry sessionRegistry) {
         this.memberRepository = memberRepository;
         this.userRegistry = userRegistry;
+        this.sessionRegistry = sessionRegistry;
     }
 
     @Override
     @Nullable
     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+        String sessionId = SimpMessageHeaderAccessor.getSessionId(message.getHeaders());
+        if (sessionId != null && !sessionRegistry.isAuthenticatedSession(sessionId)) {
+            return null;
+        }
         String destination = SimpMessageHeaderAccessor.getDestination(message.getHeaders());
         Matcher topic = destination == null ? null : CONVERSATION_TOPIC.matcher(destination);
         if (topic == null || !topic.matches()) {
@@ -50,7 +57,7 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         }
 
         UUID conversationId = UUID.fromString(topic.group(1));
-        UUID userId = userIdForSession(SimpMessageHeaderAccessor.getSessionId(message.getHeaders()));
+        UUID userId = userIdForSession(sessionId);
         return userId != null
                 && memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)
                 ? message

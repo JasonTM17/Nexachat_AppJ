@@ -178,6 +178,41 @@ class StompAuthChannelInterceptorTest {
     }
 
     @Test
+    void connectedSession_cannotSendAfterItsTokenIsRevoked() {
+        Instant issuedAt = Instant.now().minusSeconds(60);
+        StompHeaderAccessor connectAccessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        connectAccessor.setNativeHeader("Authorization", "Bearer session-token");
+        when(jwtService.parseAccessTokenClaims("session-token"))
+                .thenReturn(new JwtService.AccessTokenClaims(userId, issuedAt));
+        when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, issuedAt.plusSeconds(1))));
+
+        Message<?> connected = interceptor.preSend(message(connectAccessor), channel);
+        assertThat(connected).isNotNull();
+        StompHeaderAccessor connectedAccessor =
+                MessageHeaderAccessor.getAccessor(connected, StompHeaderAccessor.class);
+
+        StompHeaderAccessor sendAccessor = StompHeaderAccessor.create(StompCommand.SEND);
+        sendAccessor.setUser(connectedAccessor.getUser());
+        sendAccessor.setDestination("/app/conversations/" + conversationId + "/typing");
+
+        assertThat(interceptor.preSend(message(sendAccessor), channel)).isNull();
+    }
+
+    @Test
+    void expiredConnectedSession_cannotSubscribe() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setUser(new StompUserPrincipal(
+                userId, Instant.now().minusSeconds(120), Instant.now().minusSeconds(1)));
+        accessor.setDestination("/user/queue/inbox");
+        accessor.setSubscriptionId("sub-expired");
+
+        assertThat(interceptor.preSend(message(accessor), channel)).isNull();
+    }
+
+    @Test
     void connect_nonexistentUser_rejected() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setNativeHeader("Authorization", "Bearer good-token");

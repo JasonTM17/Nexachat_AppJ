@@ -239,6 +239,23 @@ class PresenceFlowIT {
     }
 
     @Test
+    void logoutAllClosesExistingStompSessionAndMarksUserOffline() throws Exception {
+        TestUser victim = registerUser("Revocation " + UUID.randomUUID());
+        StompSession session = connect(victim);
+        await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() ->
+                assertThat(presenceSessionState.isOnline(victim.id())).isTrue());
+
+        mockMvc.perform(post("/api/v1/auth/logout-all")
+                        .header("Authorization", "Bearer " + victim.accessToken()))
+                .andExpect(status().isNoContent());
+
+        await().atMost(Duration.ofSeconds(WS_TIMEOUT_SECONDS)).untilAsserted(() -> {
+            assertThat(session.isConnected()).isFalse();
+            assertThat(presenceSessionState.isOnline(victim.id())).isFalse();
+        });
+    }
+
+    @Test
     void concurrentLastDisconnectAndQuickReconnectCoalesceThePresenceFlap() throws Exception {
         mockMvc.perform(patch("/api/v1/users/me/settings")
                         .header("Authorization", "Bearer " + alice.accessToken())

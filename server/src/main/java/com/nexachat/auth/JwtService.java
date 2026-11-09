@@ -63,7 +63,11 @@ public class JwtService {
      * Verified access-token material: the caller id plus the second-precision
      * issue instant the revocation cutoff is compared against.
      */
-    public record AccessTokenClaims(UUID userId, Instant issuedAt) {
+    public record AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt) {
+        /** Compatibility for callers that provide an already-verified test claim. */
+        public AccessTokenClaims(UUID userId, Instant issuedAt) {
+            this(userId, issuedAt, Instant.MAX);
+        }
     }
 
     /**
@@ -88,9 +92,14 @@ public class JwtService {
         }
         try {
             Date issuedAt = claims.getIssuedAt();
+            Date expiresAt = claims.getExpiration();
+            if (expiresAt == null) {
+                throw new JwtException("Token has no expiration");
+            }
             return new AccessTokenClaims(
                     UUID.fromString(subject),
-                    issuedAt == null ? Instant.EPOCH : issuedAt.toInstant());
+                    issuedAt == null ? Instant.EPOCH : issuedAt.toInstant(),
+                    expiresAt.toInstant());
         } catch (IllegalArgumentException e) {
             throw new JwtException("Token subject is not a user id", e);
         }
