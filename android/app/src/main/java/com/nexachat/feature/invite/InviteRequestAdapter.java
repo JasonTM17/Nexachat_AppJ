@@ -40,11 +40,25 @@ final class InviteRequestAdapter
             public boolean areContentsTheSame(
                     @NonNull JoinRequestResponse oldItem,
                     @NonNull JoinRequestResponse newItem) {
-                return Objects.equals(oldItem.status, newItem.status)
-                        && Objects.equals(oldItem.createdAt, newItem.createdAt);
+                return areSameContent(oldItem, newItem);
             }
         });
         this.listener = listener;
+    }
+
+    static boolean areSameContent(JoinRequestResponse left, JoinRequestResponse right) {
+        return Objects.equals(left.status, right.status)
+                && Objects.equals(left.createdAt, right.createdAt)
+                && sameUser(left.user, right.user);
+    }
+
+    private static boolean sameUser(
+            @androidx.annotation.Nullable JoinRequestResponse.UserSummary left,
+            @androidx.annotation.Nullable JoinRequestResponse.UserSummary right) {
+        return left == right || (left != null && right != null
+                && Objects.equals(left.id, right.id)
+                && Objects.equals(left.displayName, right.displayName)
+                && Objects.equals(left.avatarUrl, right.avatarUrl));
     }
 
     void setActionsEnabled(boolean enabled) {
