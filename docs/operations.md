@@ -554,10 +554,17 @@ cd android
 
 The resulting unsigned APK is located at `android/app/build/outputs/apk/release/app-release-unsigned.apk`.
 
+`tools/sign-release.sh` accepts `MAJOR.MINOR.PATCH` tags, optionally with a
+leading `v`; it sets Android `versionName` to the normalized tag and derives
+`versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH`. Minor and patch
+components are limited to 0–999 and Android's version-code ceiling is enforced.
+Direct Gradle builds can set `-PreleaseVersionName` and
+`-PreleaseVersionCode`; without them, project defaults remain `1.0.0` and `1`.
+
 ### Hardening and security boundaries
 
 1. **R8 full mode and resource shrinking**: Enabled via `android.enableR8.fullMode=true` in `gradle.properties`, and `minifyEnabled true`, `shrinkResources true` in `build.gradle`. Dead code, unused resources, and unneeded metadata are stripped.
-2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging.
+2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
 3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds (`android/app/src/debug/res/xml/network_security_config.xml`).
 4. **App backup disabled (`android:allowBackup="false"`)**: Backups are disabled to prevent extraction of sensitive local data via `adb backup` or cloud sync. Allowing backup would expose:
    - Decrypted SQLite database containing cached messages, contact lists, conversation watermarks, and drafts.
