@@ -67,37 +67,29 @@ schedulers and retention windows are:
 
 | Property | Default | Meaning |
 |---|---|---|
-| `nexachat.reminders.enabled` | `true` | Enables the reminder poll and retention sweep. |
+| `nexachat.reminders.enabled` | `true` | Enables the reminder due-time poll (`ReminderScheduler`). |
 | `nexachat.reminders.poll-interval-ms` | `1000` | Reminder poll cadence. |
 | `nexachat.reminders.initial-delay-ms` | `5000` | First poll delay after startup. |
 | `nexachat.reminders.batch-size` | `10` | Due reminders claimed per poll. |
 | `nexachat.reminders.claim-lease-seconds` | `600` | Claim lease; a crashed claim becomes due again after this. |
-| `nexachat.reminders.retention-days` | `30` | Completed one-off reminders are purged after this many days. |
-| `nexachat.reminders.retention-sweep-interval-ms` | `3600000` | Retention sweep cadence. |
-| `nexachat.reminders.retention-initial-delay-ms` | `60000` | First retention sweep delay. |
 | `nexachat.reminders.push-timeout-ms` | `10000` | Reminder FCM fan-out timeout. |
-| `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window (`RetentionCleanupTask`). |
+| `nexachat.sync.reaction-retention-days` | `30` | Reaction-event retention horizon for delta sync; purged only when `NEXACHAT_RETENTION_REACTION_EVENTS_ENABLED=true` (see [Data retention and cleanup](#data-retention-and-cleanup)). |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
 | `nexachat.group.max-members` | `100` | Group capacity enforced on invite joins and approvals. |
 
 Reminder delivery is at-least-once: a crash after FCM accepts a push but before
-the database advance can produce a duplicate. Completed one-off reminders are
-retained for `retention-days` and then purged; repeating reminders keep
+the database advance can produce a duplicate. Completed one-off reminders stay in
+the database until an operator enables the corresponding retention job (see
+[Data retention and cleanup](#data-retention-and-cleanup)); repeating reminders keep
 `fired_at IS NULL` and advance to their next future occurrence.
 
-Reaction events (`reaction_events`, V10) are purged after
-`nexachat.sync.reaction-retention-days` by `RetentionCleanupTask`. A delta request
-whose `since` is older than that window receives `reactionsFullRefresh=true` and
-the client must reload reactions from history.
+Reaction events (`reaction_events`, V10) and idempotency rows (`request_idempotency`,
+V10) are purged by `RetentionJobRunner` only when their job switches are enabled.
+A delta request whose `since` is older than `nexachat.sync.reaction-retention-days`
+receives `reactionsFullRefresh=true` even when no purge has run yet.
 
-Idempotency rows (`request_idempotency`, V10) are a replay cache, not an audit
-log: `RetentionCleanupTask` also deletes rows older than
-`nexachat.idempotency.ttl-hours` (default 24), after which a replayed key simply
-runs the operation again.
-
-Broader data-retention cleanup (expired invite links, finished join requests,
-expired refresh-token/device-token rows, ended polls, old call records, orphaned
-attachments) is reserved for Flyway `V22` and is **pending, not yet in main**.
+Flyway `V22` adds retention-oriented indexes; bounded cleanup jobs live in
+`RetentionJobRunner` and are disabled by default (`NEXACHAT_RETENTION_ENABLED=false`).
 
 ### Push notifications (FCM)
 
@@ -592,8 +584,9 @@ V11 introduce:
   `group_invite_bans`.
 
 `V21` is reserved for the recall-window worker; no schema change was required,
-so no V21 file exists. `V22` is reserved for data-retention cleanup jobs and is
-**pending, not yet in main**. Ensure every migration file V1–V20 is present in
+so no V21 file exists. `V22__retention_cleanup_indexes.sql` is present on
+`main` and must ship with the app image. Ensure every migration file V1–V20 and
+`V22` is present in
 the source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 

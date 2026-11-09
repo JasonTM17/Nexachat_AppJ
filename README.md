@@ -9,7 +9,7 @@ message sending available offline.
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v13`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20`, **WebRTC** 1-to-1 voice calls, consent-gated
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22`, **WebRTC** 1-to-1 voice calls, consent-gated
 > **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
 > Every architectural claim below links directly to its executable source and verification suite.
 
@@ -85,13 +85,13 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
 | Conversation Archive | Member-scoped browser for conversation media, files and links, with filters and keyset paging | `server/archive`, `app/feature/archive` |
 | Conversation Preferences | Per-member mute/archive and per-conversation AI opt-out (V12/V13), with Android inbox and chat controls | `server/conversation`, `server/summary`, `app/feature/inbox`, `app/feature/chat` |
-| Conversation Pin & Seen Privacy | Per-member conversation pin (≤5) and the reciprocal "hidden seen" switch (V16); Android UI pending | `server/conversation`, `server/user`, `docs/api-contract.md` |
+| Conversation Pin & Seen Privacy | Per-member conversation pin (≤5) and the reciprocal "hidden seen" switch (V16); inbox pin long-press and profile `showSeen` toggle | `server/conversation`, `server/user`, `app/feature/inbox`, `app/feature/profile` |
 | Shared Reminders | Shared recurring reminders with durable FCM delivery (V14) and an Android board | `server/reminder`, `app/feature/reminder` |
 | Group Polls | Group polls with voting and a versioned change feed (V15) and an Android board | `server/poll`, `app/feature/poll` |
-| Group Mentions & @all | Structured group mentions and admin `mentionAll` (V17); Android picker pending | `server/message`, `docs/api-contract.md` |
-| Conversation Labels | Private per-user labels with per-conversation assignment (V18); Android UI pending | `server/label`, `docs/api-contract.md` |
+| Group Mentions & @all | Structured group mentions and admin `mentionAll` (V17); Android composer picker and highlight spans | `server/message`, `app/feature/chat` |
+| Conversation Labels | Private per-user labels with per-conversation assignment (V18); Android label dialog | `server/label`, `app/feature/label` |
 | Group Invite Links | Hashed invite links, safe preview, join requests and admin approval (V20), with Android manage/join screens | `server/invite`, `app/feature/invite` |
-| Message Recall Window | Server-enforced 24 h author recall window with `409 RECALL_WINDOW_EXPIRED`; Android recall action pending | `server/message`, `docs/api-contract.md` |
+| Message Recall Window | Server-enforced 24 h author recall window with `409 RECALL_WINDOW_EXPIRED`; Android recall action in chat overflow | `server/message`, `app/feature/chat` |
 | Muted Push Policy | `NEW_MESSAGE` pushes are muted, with exceptions for mentions/@all, events about the recipient and `CALL_INVITE` | `server/notification`, `docs/operations.md` |
 | Group Chat & Admin | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | Theme & Privacy Preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
@@ -156,7 +156,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V22, `ddl-auto: validate` | Room 2.6.1 (v8, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V22, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |

@@ -39,12 +39,12 @@ Android client can consume the API but no dedicated screen is merged into
 | Per-conversation AI opt-out | V13 | Shipped — chat `aiOptOut` switch | `ConversationAiOptOutIT`, `SummaryOptOutIT`, `SummaryCacheWinnerOptOutTest`, `AskOptOutUncitedCacheIT`, `AiOptOutContractTest` |
 | Shared recurring reminders | V14 | Shipped — `feature/reminder` board | `ReminderControllerTest`, `ReminderFlowIT`, `ReminderSchedulerIT`, `ReminderRepeatTest`, `FcmReminderPushSenderTest`, Android `ReminderViewModelTest`, `ReminderRepositoryTest`, `ReminderTimeTest` |
 | Group polls | V15 | Shipped — `feature/poll` board | `PollFlowTest`, `PollRateLimiterTest`, `PollTest`, Android `PollViewModelTest`, `PollRepositoryTest`, `PollDraftTest`, `PollTimeTest` |
-| Conversation pin + reciprocal seen privacy | V16 | Server only — Android UI branch `feature/android-pin-seen-privacy-ui` is not merged | `ConversationPinServiceTest`, `ConversationPinSeenFlowIT`, `UserSettingsFlowIT`, `UserSettingsServiceTest`, `StompSeenPrivacyOutboundInterceptorTest`, `V16MigrationTest` |
-| Group mentions and `@all` | V17 | Server only — Android UI branch `feature/android-mentions-ui` is not merged | `MessageMentionFlowIT`, `V17MigrationTest` |
-| Private conversation labels | V18 | Server only — Android UI branch `feature/android-labels-ui` has no commits on `main` | `LabelFlowIT`, `V18MigrationTest` |
+| Conversation pin + reciprocal seen privacy | V16 | Shipped — inbox pin/unpin (`ConversationPreferenceMenu`) and profile `showSeen` toggle | `ConversationPinServiceTest`, `ConversationPinSeenFlowIT`, `UserSettingsFlowIT`, `UserSettingsServiceTest`, `StompSeenPrivacyOutboundInterceptorTest`, `V16MigrationTest`, Android `InboxViewModelTest`, `ChatBubbleRulesTest` |
+| Group mentions and `@all` | V17 | Shipped — mention picker, highlight spans, `@all` for admins | `MessageMentionFlowIT`, `V17MigrationTest`, Android `MentionPickerRulesTest`, `MentionDraftTest` |
+| Private conversation labels | V18 | Shipped — `feature/label` dialog and assignment | `LabelFlowIT`, `V18MigrationTest`, Android `LabelViewModelTest`, `LabelRulesTest` |
 | Delta-sync partial indexes | V19 | n/a (server-side) | `V19MigrationTest`, `SyncControllerTest` |
 | Group invite links and join requests | V20 | Shipped — `feature/invite` manage and join screens | `InviteServiceTest`, `InviteTokenTest`, `InviteRateLimiterTest`, `GroupInviteFlowIT`, `InviteEventListenerTest`, Android `InviteJoinViewModelTest`, `InviteManageViewModelTest`, `InviteLinkParserTest`, `InviteLinkConfigurationTest`, `InvitePrivacyTest`, `RetrofitInviteRepositoryTest` |
-| Author message recall window | No migration (V21 reserved, unused) | Server enforces; Android recall action branch `feature/recall-window-client` is not merged | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT` |
+| Author message recall window | No migration (V21 reserved, unused) | Shipped — chat overflow recall with `RECALL_WINDOW_EXPIRED` handling | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT`, Android `ChatInteractionsViews` / `ChatViewModel` recall flow |
 | Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
 
 ## Migration history
@@ -72,7 +72,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V19 | `V19__query_performance_indexes.sql` | Partial indexes for delta-sync edited/deleted scans. |
 | V20 | `V20__group_invite_links.sql` | Group invite links, join requests and invite bans. |
 | V21 | — | Reserved for the recall-window worker; no schema change was required, so no V21 file exists. |
-| V22 | — | Reserved for data-retention cleanup jobs; **pending, not yet in main**. |
+| V22 | `V22__retention_cleanup_indexes.sql` | Partial indexes to keep `RetentionJobRunner` batch discovery bounded (tokens, invite links, polls, attachments, tombstones, reaction events). |
 
 ## Operational notes
 
