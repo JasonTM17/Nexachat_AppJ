@@ -37,7 +37,10 @@ class V14MigrationTest {
         createDatabase(database);
         try {
             DataSource dataSource = dataSource(database);
-            migrate(dataSource, "13");
+            // V11 is the latest pre-V14 version on this base; Flyway's target
+            // must name an existing migration (V12/V13 are reserved but not
+            // present here, so they would apply during the final migrate).
+            migrate(dataSource, "11");
             seed(dataSource);
 
             migrate(dataSource, null);
