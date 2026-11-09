@@ -323,17 +323,21 @@ public final class ConversationRepository implements AutoCloseable {
             Single<Result<Boolean>> shared = operationTracker.track(currentUserIdOptional()
                     .flatMap(myId -> fetchAndPersistInboxPage(
                             generation, INBOX_PAGE_SIZE, cursor, myId.orElse(null), false, archived))
-                    .doFinally(() -> {
-                        synchronized (inboxPagingLock) {
-                            if (inFlightNextInboxPage == sharedRef.get()) {
-                                inFlightNextInboxPage = null;
-                            }
-                        }
-                    })
+                    // Clear before the terminal event reaches waiters so a failed page can retry
+                    // without receiving the cached in-flight Single.
+                    .doOnSuccess(ignored -> clearInFlightNextInboxPageIfCurrent(sharedRef.get()))
+                    .doOnError(ignored -> clearInFlightNextInboxPageIfCurrent(sharedRef.get()))
+                    .doFinally(() -> clearInFlightNextInboxPageIfCurrent(sharedRef.get()))
                     .cache());
             sharedRef.set(shared);
             inFlightNextInboxPage = shared;
             return shared;
+        }
+    }
+
+    private void clearInFlightNextInboxPageIfCurrent(@Nullable Single<Result<Boolean>> shared) {
+        synchronized (inboxPagingLock) {
+            if (inFlightNextInboxPage == shared) inFlightNextInboxPage = null;
         }
     }
 
