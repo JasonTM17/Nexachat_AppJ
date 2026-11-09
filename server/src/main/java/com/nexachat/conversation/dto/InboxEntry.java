@@ -28,8 +28,18 @@ public record InboxEntry(
         Instant mutedUntil,
         boolean archived,
         boolean pinned,
-        Instant pinnedAt
+        Instant pinnedAt,
+        List<UUID> labels
 ) {
+
+    /** Backward-compatible constructor for code that builds the pre-label inbox shape. */
+    public InboxEntry(UUID id, String type, String title, String avatarUrl,
+                      List<Member> members, LastMessage lastMessage, long unreadCount,
+                      long lastReadSeq, PeerPresence peerPresence, boolean muted,
+                      Instant mutedUntil, boolean archived, boolean pinned, Instant pinnedAt) {
+        this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
+                peerPresence, muted, mutedUntil, archived, pinned, pinnedAt, List.of());
+    }
 
     /** Member as the client needs it for headers/avatars plus admin gating. */
     public record Member(

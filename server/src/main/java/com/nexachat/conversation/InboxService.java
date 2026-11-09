@@ -9,6 +9,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
+import com.nexachat.label.InboxLabelReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -54,22 +55,34 @@ public class InboxService {
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
     private final PresenceService presenceService;
+    private final InboxLabelReader labelReader;
     private final Clock clock;
 
     @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
                         MessageRepository messageRepository,
-                        PresenceService presenceService) {
-        this(memberRepository, messageRepository, presenceService, Clock.systemUTC());
+                        PresenceService presenceService,
+                        InboxLabelReader labelReader) {
+        this(memberRepository, messageRepository, presenceService, labelReader, Clock.systemUTC());
     }
 
     InboxService(ConversationMemberRepository memberRepository,
                  MessageRepository messageRepository,
                  PresenceService presenceService,
                  Clock clock) {
+        this(memberRepository, messageRepository, presenceService,
+                (userId, conversationIds) -> Map.of(), clock);
+    }
+
+    InboxService(ConversationMemberRepository memberRepository,
+                 MessageRepository messageRepository,
+                 PresenceService presenceService,
+                 InboxLabelReader labelReader,
+                 Clock clock) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.presenceService = presenceService;
+        this.labelReader = labelReader;
         this.clock = clock;
     }
 
@@ -77,6 +90,16 @@ public class InboxService {
     public List<InboxEntry> listInbox(UUID userId, Boolean archived) {
         List<InboxConversationRow> rows =
                 memberRepository.findInboxConversations(userId, archivedFilter(archived));
+        return toEntries(userId, rows);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InboxEntry> listInbox(UUID userId, Boolean archived, UUID labelId) {
+        if (labelId == null) {
+            return listInbox(userId, archived);
+        }
+        List<InboxConversationRow> rows = memberRepository.findInboxConversationsByLabel(
+                userId, archivedFilter(archived), labelId);
         return toEntries(userId, rows);
     }
 
@@ -89,29 +112,46 @@ public class InboxService {
      */
     @Transactional(readOnly = true)
     public InboxPage listInbox(UUID userId, Integer limit, String cursorToken, Boolean archived) {
+        return listInbox(userId, limit, cursorToken, archived, null);
+    }
+
+    @Transactional(readOnly = true)
+    public InboxPage listInbox(UUID userId, Integer limit, String cursorToken,
+                               Boolean archived, UUID labelId) {
         boolean includeArchived = archivedFilter(archived);
         if (limit == null && cursorToken == null) {
-            return new InboxPage(listInbox(userId, includeArchived), null);
+            return new InboxPage(listInbox(userId, includeArchived, labelId), null);
         }
         Cursor cursor = cursorToken == null ? null : decodeCursor(cursorToken);
         if (limit == null) {
-            List<InboxConversationRow> rows = memberRepository.findInboxConversationsAfterCursor(
-                    userId, cursor == null ? null : cursor.pinned(),
-                    cursor == null ? null : cursor.lastMessageSeq(),
-                    cursor == null ? null : cursor.createdAt(),
-                    cursor == null ? null : cursor.conversationId(),
-                    includeArchived);
+            List<InboxConversationRow> rows = labelId == null
+                    ? memberRepository.findInboxConversationsAfterCursor(
+                            userId, cursor == null ? null : cursor.pinned(),
+                            cursor == null ? null : cursor.lastMessageSeq(),
+                            cursor == null ? null : cursor.createdAt(),
+                            cursor == null ? null : cursor.conversationId(), includeArchived)
+                    : memberRepository.findInboxConversationsAfterCursorByLabel(
+                            userId, cursor == null ? null : cursor.pinned(),
+                            cursor == null ? null : cursor.lastMessageSeq(),
+                            cursor == null ? null : cursor.createdAt(),
+                            cursor == null ? null : cursor.conversationId(), includeArchived, labelId);
             return new InboxPage(toEntries(userId, rows), null);
         }
 
         int pageSize = normalizeLimit(limit);
-        List<InboxConversationRow> rows = memberRepository.findInboxConversationsPage(
-                userId, cursor == null ? null : cursor.pinned(),
-                cursor == null ? null : cursor.lastMessageSeq(),
-                cursor == null ? null : cursor.createdAt(),
-                cursor == null ? null : cursor.conversationId(),
-                includeArchived,
-                PageRequest.of(0, pageSize + 1));
+        List<InboxConversationRow> rows = labelId == null
+                ? memberRepository.findInboxConversationsPage(
+                        userId, cursor == null ? null : cursor.pinned(),
+                        cursor == null ? null : cursor.lastMessageSeq(),
+                        cursor == null ? null : cursor.createdAt(),
+                        cursor == null ? null : cursor.conversationId(),
+                        includeArchived, PageRequest.of(0, pageSize + 1))
+                : memberRepository.findInboxConversationsPageByLabel(
+                        userId, cursor == null ? null : cursor.pinned(),
+                        cursor == null ? null : cursor.lastMessageSeq(),
+                        cursor == null ? null : cursor.createdAt(),
+                        cursor == null ? null : cursor.conversationId(),
+                        includeArchived, labelId, PageRequest.of(0, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         List<InboxConversationRow> page = hasMore ? rows.subList(0, pageSize) : rows;
         String nextCursor = hasMore && !page.isEmpty()
@@ -152,6 +192,8 @@ public class InboxService {
                                 UnreadCountRow::conversationId, UnreadCountRow::unreadCount));
         Map<UUID, InboxEntry.PeerPresence> peerPresenceByConversation =
                 presenceService.peerPresence(userId, conversationIds);
+        Map<UUID, List<UUID>> labelsByConversation =
+                labelReader.findInboxLabelIds(userId, conversationIds);
 
         Instant now = clock.instant();
         return rows.stream()
@@ -177,7 +219,8 @@ public class InboxService {
                             muted ? row.mutedUntil() : null,
                             row.archived(),
                             row.pinned(),
-                            row.pinned() ? row.pinnedAt() : null);
+                            row.pinned() ? row.pinnedAt() : null,
+                            labelsByConversation.getOrDefault(row.id(), List.of()));
                 })
                 .toList();
     }
