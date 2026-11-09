@@ -82,6 +82,9 @@ public class Message {
     @Column(name = "content")
     private String content;
 
+    @Column(name = "mention_all", nullable = false)
+    private boolean mentionAll;
+
     /** Nullable self-reference: the message this one replies to (creative feature). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reply_to_id")
@@ -128,6 +131,10 @@ public class Message {
         return content;
     }
 
+    public boolean isMentionAll() {
+        return mentionAll;
+    }
+
     public Message getReplyTo() {
         return replyTo;
     }
@@ -149,8 +156,13 @@ public class Message {
         this.editedAt = editedAt;
     }
 
+    public void setMentionAll(boolean mentionAll) {
+        this.mentionAll = mentionAll;
+    }
+
     public void softDelete(Instant deletedAt) {
         this.content = null;
         this.deletedAt = deletedAt;
+        this.mentionAll = false;
     }
 }

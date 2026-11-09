@@ -16,7 +16,9 @@ import org.springframework.transaction.event.TransactionPhase;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -62,37 +64,50 @@ public class NotificationEventListener {
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
         Set<UUID> mutedMemberIds = new HashSet<>(
                 memberRepository.findMutedMemberIds(conversationId, clock.instant()));
+        Set<UUID> mentionedMemberIds = new HashSet<>();
+        event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
+        boolean mentionAll = event.message().mentionAll();
         boolean systemNotice = Message.Type.SYSTEM.name().equals(event.message().type());
 
         // One physical device can hold a token row per account; collect the
         // offline recipients' tokens and de-duplicate by token value so a
         // shared device receives the message exactly once.
-        List<UserDeviceToken> tokens = new ArrayList<>();
-        Set<String> dispatched = new HashSet<>();
+        Map<String, UserDeviceToken> tokensByValue = new LinkedHashMap<>();
+        Set<String> mentionedTokenValues = new HashSet<>();
         for (UUID memberId : memberIds) {
             if (memberId.equals(senderId)) {
                 continue;
             }
-            if (!systemNotice && mutedMemberIds.contains(memberId)) {
+            boolean mentioned = mentionAll || mentionedMemberIds.contains(memberId);
+            if (!systemNotice && mutedMemberIds.contains(memberId) && !mentioned) {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
                 for (UserDeviceToken token : tokenRepository.findByUserId(memberId)) {
-                    if (dispatched.add(token.getToken())) {
-                        tokens.add(token);
+                    tokensByValue.putIfAbsent(token.getToken(), token);
+                    if (mentioned) {
+                        mentionedTokenValues.add(token.getToken());
                     }
                 }
             }
         }
 
-        if (!tokens.isEmpty()) {
-            fcmPushService.sendNewMessageNotification(
-                    tokens,
-                    conversationId,
-                    event.message().id(),
-                    event.message().seq(),
-                    event.message().senderDisplayName()
-            );
+        List<UserDeviceToken> mentionedTokens = new ArrayList<>();
+        List<UserDeviceToken> ordinaryTokens = new ArrayList<>();
+        tokensByValue.forEach((tokenValue, token) -> {
+            if (mentionedTokenValues.contains(tokenValue)) {
+                mentionedTokens.add(token);
+            } else {
+                ordinaryTokens.add(token);
+            }
+        });
+        if (!ordinaryTokens.isEmpty()) {
+            fcmPushService.sendNewMessageNotification(ordinaryTokens, conversationId,
+                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), false);
+        }
+        if (!mentionedTokens.isEmpty()) {
+            fcmPushService.sendNewMessageNotification(mentionedTokens, conversationId,
+                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), true);
         }
     }
 
