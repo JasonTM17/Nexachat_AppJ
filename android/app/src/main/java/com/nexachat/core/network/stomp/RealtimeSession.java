@@ -322,7 +322,7 @@ public final class RealtimeSession {
         failures = 0;
         parkedRounds++;
         state.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
-        long delay = Math.min(PARKED_RETRY_BASE_MS << Math.min(parkedRounds - 1, 4), PARKED_RETRY_MAX_MS);
+        long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
         Flowable<Object> wakeSignals = Flowable.merge(
                 networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
                 rearmRequests);
