@@ -234,9 +234,10 @@ request from the user row, so removing a phone takes effect immediately.
 - JSON request bodies larger than `nexachat.security.max-json-body-bytes`
   (env `NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB) are rejected with
   `413 PAYLOAD_TOO_LARGE` before the dispatcher parses them. Multipart uploads
-  keep their own 25 MB ceiling. A chunked/streamed body is bounded at the
-  reverse proxy (`client_max_body_size`), which terminates every public
-  deployment in front of this service.
+  keep their own 25 MB ceiling. A chunked/streamed body without a
+  `Content-Length` is counted on the request input stream against the same
+  limit, so the bound does not depend on a reverse proxy; a proxy
+  (`client_max_body_size`) remains useful as defence in depth.
 - `/api/v1/files/**` normalizes the storage key and rejects any key containing
   `..` or `\`; the storage layer re-checks that the resolved path stays inside
   the configured root before opening it.
