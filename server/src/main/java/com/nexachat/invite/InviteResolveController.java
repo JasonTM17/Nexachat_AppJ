@@ -1,5 +1,6 @@
 package com.nexachat.invite;
 
+import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -26,9 +27,11 @@ import java.util.UUID;
 public class InviteResolveController {
 
     private final InviteService inviteService;
+    private final ClientIpResolver clientIpResolver;
 
-    public InviteResolveController(InviteService inviteService) {
+    public InviteResolveController(InviteService inviteService, ClientIpResolver clientIpResolver) {
         this.inviteService = inviteService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @GetMapping
@@ -37,7 +40,7 @@ public class InviteResolveController {
             @PathVariable String token,
             HttpServletRequest request) {
         UUID userId = requireUserId(principal);
-        String clientIp = request.getRemoteAddr();
+        String clientIp = clientIpResolver.rateLimitClientIp(request);
         return inviteService.resolvePreview(userId, token, clientIp);
     }
 
@@ -47,7 +50,7 @@ public class InviteResolveController {
             @PathVariable String token,
             HttpServletRequest request) {
         UUID userId = requireUserId(principal);
-        String clientIp = request.getRemoteAddr();
+        String clientIp = clientIpResolver.rateLimitClientIp(request);
         JoinResponse response = inviteService.join(userId, token, clientIp);
         HttpStatus status = response.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(response);

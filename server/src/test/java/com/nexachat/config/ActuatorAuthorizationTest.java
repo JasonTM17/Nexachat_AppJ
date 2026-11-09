@@ -47,6 +47,8 @@ class ActuatorAuthorizationTest {
     private AuthSecurityErrorHandler securityErrorHandler;
     @MockBean
     private RateLimitService rateLimitService;
+    @MockBean
+    private ClientIpResolver clientIpResolver;
 
     @BeforeEach
     void configureTestDoubles() throws Exception {

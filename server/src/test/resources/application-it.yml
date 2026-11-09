@@ -6,6 +6,11 @@
 # (IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD, defaulting to the local docker-compose
 # instance on :5433) — do not hardcode a datasource URL in this file.
 spring:
+  security:
+    # Suppress Spring Boot's generated default-user password log line during IT boot.
+    user:
+      name: it-integration
+      password: it-integration-not-for-production
   datasource:
     hikari:
       # Many cached Spring contexts share one PostgreSQL (max_connections=100);
@@ -56,6 +61,7 @@ nexachat:
     admin-phones: ""
     max-json-body-bytes: 1048576
     validity-cache-ttl-seconds: 60
+    trusted-proxy-cidrs: []
   rate-limit:
     messages:
       edit-delete-per-minute: 30

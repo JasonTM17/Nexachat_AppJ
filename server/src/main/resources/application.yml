@@ -66,6 +66,8 @@ nexachat:
     # How long the JWT filter caches a user's access-token cutoff. Never
     # larger than the access-token lifetime.
     validity-cache-ttl-seconds: ${NEXACHAT_VALIDITY_CACHE_TTL_SECONDS:60}
+    # Reverse-proxy CIDRs that may rewrite X-Forwarded-For (empty = never trust).
+    trusted-proxy-cidrs: ${NEXACHAT_TRUSTED_PROXY_CIDRS:}
   rate-limit:
     messages:
       edit-delete-per-minute: 30

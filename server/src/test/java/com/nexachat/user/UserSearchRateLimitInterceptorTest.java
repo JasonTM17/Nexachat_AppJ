@@ -1,6 +1,7 @@
 package com.nexachat.user;
 
 import com.nexachat.auth.RateLimitService;
+import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -33,6 +34,8 @@ class UserSearchRateLimitInterceptorTest {
 
     @Mock
     private RateLimitService rateLimitService;
+    @Mock
+    private ClientIpResolver clientIpResolver;
 
     private UserSearchRateLimitInterceptor interceptor;
 
@@ -40,7 +43,7 @@ class UserSearchRateLimitInterceptorTest {
 
     @BeforeEach
     void setUp() {
-        interceptor = new UserSearchRateLimitInterceptor(rateLimitService);
+        interceptor = new UserSearchRateLimitInterceptor(rateLimitService, clientIpResolver);
     }
 
     @AfterEach
@@ -96,6 +99,7 @@ class UserSearchRateLimitInterceptorTest {
     void get_withoutPrincipal_fallsBackToIpKeyedBucket() {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/users/search");
         request.setRemoteAddr("203.0.113.7");
+        when(clientIpResolver.rateLimitClientIp(request)).thenReturn("203.0.113.7");
         when(rateLimitService.tryConsume(anyString(), anyLong(), any(Duration.class)))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
 

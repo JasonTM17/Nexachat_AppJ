@@ -1,6 +1,7 @@
 package com.nexachat.contact;
 
 import com.nexachat.auth.RateLimitService;
+import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -31,9 +32,12 @@ public class ContactAddRateLimitInterceptor implements HandlerInterceptor {
     static final String BUCKET_PREFIX = "contact-add|";
 
     private final RateLimitService rateLimitService;
+    private final ClientIpResolver clientIpResolver;
 
-    public ContactAddRateLimitInterceptor(RateLimitService rateLimitService) {
+    public ContactAddRateLimitInterceptor(RateLimitService rateLimitService,
+                                            ClientIpResolver clientIpResolver) {
         this.rateLimitService = rateLimitService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Override
@@ -43,7 +47,7 @@ public class ContactAddRateLimitInterceptor implements HandlerInterceptor {
         if (!HttpMethod.POST.matches(request.getMethod())) {
             return true;
         }
-        String key = BUCKET_PREFIX + principalKey(request);
+        String key = BUCKET_PREFIX + principalKey(request, clientIpResolver);
         RateLimitService.Consumption consumption =
                 rateLimitService.tryConsume(key, ADD_CAPACITY, ADD_PERIOD);
         if (!consumption.allowed()) {
@@ -55,11 +59,11 @@ public class ContactAddRateLimitInterceptor implements HandlerInterceptor {
         return true;
     }
 
-    private static String principalKey(HttpServletRequest request) {
+    private static String principalKey(HttpServletRequest request, ClientIpResolver clientIpResolver) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof JwtPrincipal principal) {
             return "user:" + principal.userId();
         }
-        return "ip:" + request.getRemoteAddr();
+        return "ip:" + clientIpResolver.rateLimitClientIp(request);
     }
 }

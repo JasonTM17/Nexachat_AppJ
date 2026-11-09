@@ -126,8 +126,8 @@ public class RateLimitService {
         }
     }
 
-    /** Visible for tests: drops every bucket so a case starts from an empty cache. */
-    void reset() {
+    /** Drops every bucket so a case starts from an empty cache (tests and ITs). */
+    public void reset() {
         synchronized (bucketLock) {
             buckets.clear();
         }
