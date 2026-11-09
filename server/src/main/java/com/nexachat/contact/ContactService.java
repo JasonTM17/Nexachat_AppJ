@@ -9,6 +9,7 @@ import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,9 @@ import java.util.UUID;
  */
 @Service
 public class ContactService {
+
+    /** Hard cap on GET /contacts rows returned per caller (defense in depth). */
+    static final int LIST_LIMIT = 500;
 
     private static final Logger log = LoggerFactory.getLogger(ContactService.class);
 
@@ -75,7 +79,7 @@ public class ContactService {
 
     @Transactional(readOnly = true)
     public List<ContactResponse> list(UUID ownerId) {
-        return contactRepository.findAllByOwnerId(ownerId);
+        return contactRepository.findAllByOwnerId(ownerId, PageRequest.of(0, LIST_LIMIT));
     }
 
     /**
