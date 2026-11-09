@@ -313,6 +313,19 @@ class CallFlowIT {
         send(caller, conversationId, new CallSignal(CallSignal.Type.END, callId, null, null));
         awaitEvent(caller, "CALL_ENDED");
         awaitEvent(callee, "CALL_ENDED");
+
+        JsonNode memberHistory = getJson("/api/v1/conversations/" + conversationId + "/calls", alice);
+        assertThat(callHistoryItem(memberHistory, callId).get("callId").asText())
+                .isEqualTo(callId.toString());
+        MvcResult outsiderResult = mockMvc.perform(get(
+                        "/api/v1/conversations/" + conversationId + "/calls")
+                        .header("Authorization", bearer(carol)))
+                .andExpect(status().isForbidden())
+                .andReturn();
+        JsonNode outsiderBody = objectMapper.readTree(outsiderResult.getResponse().getContentAsString());
+        assertThat(outsiderBody.path("error").path("code").asText()).isEqualTo("NOT_MEMBER");
+        assertThat(outsiderBody.has("items")).isFalse();
+        assertThat(outsiderBody.has("callId")).isFalse();
     }
 
     private Connection connect(TestUser user) throws Exception {
