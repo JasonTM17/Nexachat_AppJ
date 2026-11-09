@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,10 +42,13 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
@@ -104,6 +108,12 @@ public final class ConversationRepositoryTest {
 
     @Before
     public void setUp() throws Exception {
+        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+        RxJavaPlugins.setComputationSchedulerHandler(ignored -> Schedulers.trampoline());
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
+        reset(messageApi, groupApi, settingsApi, session, tokenStore, context, appDatabase,
+                messageDao, reactionDao, pinDao, outboxDao, presenceRepository);
+        conversationDao.clear().blockingAwait();
         when(session.getEvents()).thenReturn(chatEvents);
         when(session.getResyncRequests()).thenReturn(Flowable.empty());
         when(presenceRepository.getPresences()).thenReturn(presenceFlow);
@@ -128,6 +138,8 @@ public final class ConversationRepositoryTest {
     @After
     public void tearDown() {
         if (repository != null) repository.close();
+        RxJavaPlugins.reset();
+        RxAndroidPlugins.reset();
     }
 
     private void buildRepository() {
