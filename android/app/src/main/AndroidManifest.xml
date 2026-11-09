@@ -50,7 +50,7 @@
                     android:host="join"
                     android:pathPrefix="/" />
             </intent-filter>
-            <!-- OPTIONAL_HTTPS_INVITE_FILTER -->
+            <!-- Verified HTTPS App Links filter is supplied by src/release/AndroidManifest.xml for release builds only -->
         </activity>
 
         <activity
