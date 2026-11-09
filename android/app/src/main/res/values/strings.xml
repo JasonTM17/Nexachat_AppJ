@@ -308,7 +308,10 @@
     <string name="ask_consent_title">Use AI to answer?</string>
     <string name="ask_consent_required">AI consent is needed to answer this question.</string>
     <string name="ask_rate_limited">Too many questions. Please try again later.</string>
-    <string name="ask_rate_limited_retry">Try again in %1$d seconds.</string>
+    <plurals name="ask_rate_limited_retry">
+        <item quantity="one">Try again in %d second.</item>
+        <item quantity="other">Try again in %d seconds.</item>
+    </plurals>
     <string name="ask_question_counter">Question: %1$d/500</string>
     <string name="ask_from_message">From a message</string>
     <string name="ask_citations_label">Sources</string>
@@ -378,8 +381,14 @@
     <string name="poll_closed_on">Closed %1$s</string>
     <string name="poll_vote">Vote</string>
     <string name="poll_retract">Retract vote</string>
-    <string name="poll_voter_count">%1$d voters</string>
-    <string name="poll_option_count">%1$d votes</string>
+    <plurals name="poll_voter_count">
+        <item quantity="one">%d voter</item>
+        <item quantity="other">%d voters</item>
+    </plurals>
+    <plurals name="poll_option_count">
+        <item quantity="one">%d vote</item>
+        <item quantity="other">%d votes</item>
+    </plurals>
     <string name="poll_option_count_named" translatable="false">%1$s · %2$s</string>
     <string name="poll_manage">Poll options</string>
     <string name="poll_close">Close poll</string>

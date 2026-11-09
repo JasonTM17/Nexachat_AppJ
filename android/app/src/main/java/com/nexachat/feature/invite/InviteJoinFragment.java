@@ -65,7 +65,9 @@ public final class InviteJoinFragment extends Fragment {
             binding.groupAvatar.setName(preview.title);
             binding.groupAvatar.setAvatarUrl(preview.avatarUrl);
             binding.groupTitle.setText(preview.title);
-            binding.memberCount.setText(getString(R.string.invite_member_count, preview.memberCount));
+            binding.memberCount.setText(
+                    com.nexachat.res.QuantityStrings.inviteMemberCount(
+                            getResources(), preview.memberCount));
         }
 
         InviteJoinUiState.Status status = state.getStatus();

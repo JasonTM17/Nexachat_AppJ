@@ -1,6 +1,9 @@
 <resources>
     <string name="summary_overflow_action">Summarize conversation</string>
-    <string name="unread_banner_format">%1$d unread · Summary</string>
+    <plurals name="unread_banner_format">
+        <item quantity="one">%d unread · Summary</item>
+        <item quantity="other">%d unread · Summary</item>
+    </plurals>
     <string name="unread_banner_dismiss">Dismiss banner</string>
     <string name="summary_title">Conversation summary</string>
     <string name="summary_badge_local">Local</string>

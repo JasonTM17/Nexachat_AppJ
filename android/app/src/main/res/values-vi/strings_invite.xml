@@ -27,8 +27,12 @@
     <string name="invite_active_link">Liên kết mời đang hoạt động</string>
     <string name="invite_no_link">Chưa có liên kết đang hoạt động.</string>
     <string name="invite_link_needs_rotation">Chỉ có thể sao chép liên kết ngay sau khi tạo. Hãy đổi liên kết để chia sẻ liên kết mới.</string>
-    <string name="invite_usage_unlimited">Đã dùng %1$d lượt · không giới hạn lượt dùng</string>
-    <string name="invite_usage_limited">Đã dùng %1$d/%2$d lượt</string>
+    <plurals name="invite_usage_unlimited">
+        <item quantity="other">Đã dùng %d lượt · không giới hạn lượt dùng</item>
+    </plurals>
+    <plurals name="invite_usage_limited">
+        <item quantity="other">Đã dùng %1$d/%2$d lượt</item>
+    </plurals>
     <string name="invite_expiry_line">Hết hạn %1$s</string>
     <string name="invite_requests_title">Yêu cầu tham gia đang chờ</string>
     <string name="invite_refresh_requests">Tải lại yêu cầu</string>
@@ -42,7 +46,9 @@
     <string name="invite_requester_avatar_cd">Ảnh đại diện người gửi yêu cầu</string>
     <string name="invite_join_button">Tham gia</string>
     <string name="invite_request_button">Gửi yêu cầu tham gia</string>
-    <string name="invite_member_count">%1$d thành viên</string>
+    <plurals name="invite_member_count">
+        <item quantity="other">%d thành viên</item>
+    </plurals>
     <string name="invite_approval_note">Quản trị viên cần duyệt yêu cầu của bạn.</string>
     <string name="invite_status_pending">Đã gửi yêu cầu. Đang chờ quản trị viên duyệt.</string>
     <string name="invite_status_approved">Yêu cầu của bạn đã được duyệt.</string>

@@ -306,7 +306,9 @@
     <string name="ask_consent_title">Dùng AI để trả lời?</string>
     <string name="ask_consent_required">Cần đồng ý dùng AI để trả lời câu hỏi này.</string>
     <string name="ask_rate_limited">Bạn gửi quá nhiều câu hỏi. Hãy thử lại sau.</string>
-    <string name="ask_rate_limited_retry">Thử lại sau %1$d giây.</string>
+    <plurals name="ask_rate_limited_retry">
+        <item quantity="other">Thử lại sau %d giây.</item>
+    </plurals>
     <string name="ask_question_counter">Câu hỏi: %1$d/500</string>
     <string name="ask_from_message">Trích từ một tin nhắn</string>
     <string name="ask_citations_label">Nguồn</string>
@@ -376,8 +378,12 @@
     <string name="poll_closed_on">Đã kết thúc %1$s</string>
     <string name="poll_vote">Bình chọn</string>
     <string name="poll_retract">Thu hồi phiếu</string>
-    <string name="poll_voter_count">%1$d người bình chọn</string>
-    <string name="poll_option_count">%1$d phiếu</string>
+    <plurals name="poll_voter_count">
+        <item quantity="other">%d người bình chọn</item>
+    </plurals>
+    <plurals name="poll_option_count">
+        <item quantity="other">%d phiếu</item>
+    </plurals>
     <string name="poll_option_count_named" translatable="false">%1$s · %2$s</string>
     <string name="poll_manage">Tùy chọn bình chọn</string>
     <string name="poll_close">Kết thúc bình chọn</string>
