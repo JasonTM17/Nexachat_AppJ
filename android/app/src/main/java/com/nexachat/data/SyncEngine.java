@@ -48,6 +48,8 @@ public final class SyncEngine {
     private static final int DELTA_LIMIT_PER_CONVERSATION = 50;
     /** Upper bound on continuation requests per watermark batch; prevents a stuck server page. */
     static final int MAX_DRAIN_PAGES = 20;
+    /** Maximum consecutive bounded retries when deltas continue past the page bound. */
+    static final int MAX_BOUNDED_RETRIES = 2;
 
     private final AppDatabase appDatabase;
     private final MessageApi messageApi;
@@ -57,6 +59,7 @@ public final class SyncEngine {
     private final TokenStore tokenStore;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
+    private final AtomicBoolean hasPendingContinuation = new AtomicBoolean();
     /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
     @Nullable
     private volatile String lastServerTime;
@@ -80,11 +83,21 @@ public final class SyncEngine {
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
     }
 
+    /** Whether the sync stopped at the hard page bound with deltas still pending on the server. */
+    public boolean hasPendingContinuation() {
+        return hasPendingContinuation.get();
+    }
+
     /**
      * Gathers all conversation watermarks from Room, requests delta bundle from server,
      * and atomically ingests new, edited, deleted messages and reaction updates in a Room transaction.
+     * Continues past the hard 20-page bound via bounded retries without stalling cursors or looping indefinitely.
      */
     public Completable sync() {
+        return syncAttempt(0).subscribeOn(Schedulers.io());
+    }
+
+    private Completable syncAttempt(int retryCount) {
         return loadCursorState().flatMapCompletable(cursor ->
                 Single.zip(
                                 messageDao.getAllMaxSeqs(),
@@ -93,6 +106,7 @@ public final class SyncEngine {
                         .flatMapCompletable(watermarks -> {
                             lastServerTime = cursor.serverTime;
                             if (watermarks.isEmpty()) {
+                                hasPendingContinuation.set(false);
                                 return Completable.complete();
                             }
                             List<SyncRequest.Watermark> reqWatermarks =
@@ -105,31 +119,46 @@ public final class SyncEngine {
                                     reqWatermarks, cursor.serverTime);
                             AtomicReference<SyncResponse> lastResponse = new AtomicReference<>();
                             AtomicBoolean missingServerTime = new AtomicBoolean();
+                            AtomicBoolean batchHasMore = new AtomicBoolean();
                             return Flowable.fromIterable(requests)
                                     .concatMapCompletable(request -> drainDeltaRequest(
-                                            request, lastResponse, missingServerTime))
-                                    .andThen(Completable.defer(() -> missingServerTime.get()
-                                            ? Completable.complete()
-                                            : persistServerTime(cursor, lastResponse.get())));
-                        }))
-                .subscribeOn(Schedulers.io());
+                                            request, lastResponse, missingServerTime, batchHasMore))
+                                    .andThen(Completable.defer(() -> {
+                                        Completable persist = (missingServerTime.get() || lastResponse.get() == null)
+                                                ? Completable.complete()
+                                                : persistServerTime(cursor, lastResponse.get());
+                                        return persist.andThen(Completable.defer(() -> {
+                                            if (batchHasMore.get()) {
+                                                hasPendingContinuation.set(true);
+                                                if (retryCount < MAX_BOUNDED_RETRIES) {
+                                                    return syncAttempt(retryCount + 1);
+                                                }
+                                            } else {
+                                                hasPendingContinuation.set(false);
+                                            }
+                                            return Completable.complete();
+                                        }));
+                                    }));
+                        }));
     }
 
     /**
-     * Applies one watermark batch and follows every {@code hasMore} page before
-     * returning. The caller persists the server-time cursor only after all
-     * batches succeed, so a truncated page can never be skipped by a later sync.
+     * Applies one watermark batch and follows every {@code hasMore} page up to
+     * {@link #MAX_DRAIN_PAGES}. The caller persists what was drained per watermark
+     * and advances the server-time cursor so work is never stalled.
      */
     private Completable drainDeltaRequest(
             SyncRequest request,
             AtomicReference<SyncResponse> lastResponse,
-            AtomicBoolean missingServerTime) {
+            AtomicBoolean missingServerTime,
+            AtomicBoolean batchHasMore) {
         return drainDeltaPage(
                 request.getSince(),
                 new ArrayList<>(request.getWatermarks()),
                 0,
                 lastResponse,
-                missingServerTime);
+                missingServerTime,
+                batchHasMore);
     }
 
     private Completable drainDeltaPage(
@@ -137,12 +166,14 @@ public final class SyncEngine {
             List<SyncRequest.Watermark> watermarks,
             int page,
             AtomicReference<SyncResponse> lastResponse,
-            AtomicBoolean missingServerTime) {
+            AtomicBoolean missingServerTime,
+            AtomicBoolean batchHasMore) {
         if (watermarks.isEmpty()) {
             return Completable.complete();
         }
         if (page >= MAX_DRAIN_PAGES) {
-            return Completable.error(new IOException("delta sync page limit reached"));
+            batchHasMore.set(true);
+            return Completable.complete();
         }
         SyncRequest request = new SyncRequest(
                 watermarks, DELTA_LIMIT_PER_CONVERSATION, since);
@@ -156,7 +187,7 @@ public final class SyncEngine {
             if (next == null) {
                 return Completable.error(new IOException("delta sync page made no progress"));
             }
-            return drainDeltaPage(since, next, page + 1, lastResponse, missingServerTime);
+            return drainDeltaPage(since, next, page + 1, lastResponse, missingServerTime, batchHasMore);
         });
     }
 

@@ -30,6 +30,8 @@ import com.nexachat.core.network.dto.ConversationDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
+import com.nexachat.core.network.dto.SyncRequest;
+import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.storage.TokenStore;
@@ -202,6 +204,58 @@ public final class ConversationRepositoryTest {
         repository.refreshInbox().blockingGet();
 
         assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxSinglePageConvergesWhenRemovedRowHadHigherSequence() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(conversation("conv-a", 20), conversation("conv-removed", 25)))
+                .blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxFirstPageOnlyConvergesViaDeltaEndpointConfirmation() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 110),
+                conversation("conv-page2", 10))).blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // Delta sync confirms absence of conv-removed (returns only conv-a)
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto("conv-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-page2"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxFirstPageDoesNotDeleteConversationThatMovedPages() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-moved", 110),
+                conversation("conv-page2", 10))).blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // Delta sync confirms conv-moved is still accessible by returning its delta
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto("conv-moved", List.of(), List.of(), List.of(), List.of(), 110L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-moved", "conv-page2"), dao().rows.keySet());
     }
 
     @Test

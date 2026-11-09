@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
@@ -589,11 +591,47 @@ public final class SyncEngineTest {
 
         TestObserver<Void> observer = syncEngine.sync().test();
         observer.awaitDone(5, java.util.concurrent.TimeUnit.SECONDS);
-        observer.assertError(java.io.IOException.class);
+        observer.assertComplete();
 
-        verify(messageApi, times(SyncEngine.MAX_DRAIN_PAGES))
+        int expectedCalls = SyncEngine.MAX_DRAIN_PAGES * (1 + SyncEngine.MAX_BOUNDED_RETRIES);
+        verify(messageApi, times(expectedCalls))
                 .syncDeltas(any(SyncRequest.class));
-        verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+        verify(tokenStore, atLeastOnce()).saveSyncServerTime(eq("user-1"), anyString());
+        assertTrue(syncEngine.hasPendingContinuation());
+    }
+
+    @Test
+    public void syncWhenPageLimitExceededPersistsDrainedProgressAndResumesOnNextRun() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        AtomicInteger pageCounter = new AtomicInteger();
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+            int p = pageCounter.incrementAndGet();
+            long maxSeq = 10L + (p * 5L);
+            boolean hasMore = p < 25;
+            MessageDto msg = message("msg-" + p, maxSeq, "c1", "content-" + p);
+            SyncResponse response = new SyncResponse(List.of(
+                    new SyncResponse.ConversationDeltaDto(
+                            "c1", List.of(msg), List.of(), List.of(), List.of(),
+                            maxSeq, hasMore, null, false)), "cursor-p" + p);
+            return responseCall(response);
+        });
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        observer.awaitDone(5, java.util.concurrent.TimeUnit.SECONDS);
+        observer.assertComplete();
+
+        // Must persist server time and not stall the cursor
+        verify(tokenStore, atLeastOnce()).saveSyncServerTime(eq("user-1"), anyString());
+        org.junit.Assert.assertFalse(syncEngine.hasPendingContinuation());
     }
 
     @Test

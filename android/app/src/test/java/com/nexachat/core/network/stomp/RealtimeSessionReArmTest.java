@@ -94,6 +94,27 @@ public final class RealtimeSessionReArmTest {
     }
 
     @Test
+    public void parkedRetryTimerUsesJitteredDelayFromPolicy() {
+        TestScheduler scheduler = new TestScheduler();
+        BehaviorProcessor<Boolean> foreground = BehaviorProcessor.createDefault(false);
+        AtomicInteger connects = new AtomicInteger();
+        ReconnectPolicy policyWithTenPercentJitter = new ReconnectPolicy(() -> 0.10);
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), failedClient(connects),
+                BehaviorProcessor.createDefault(false), foreground, mock(TokenRefresher.class),
+                policyWithTenPercentJitter, scheduler);
+        scheduler.advanceTimeBy(2, TimeUnit.MINUTES);
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        foreground.onNext(true);
+        scheduler.triggerActions();
+
+        // 5000ms + 10% jitter = 5500ms delay.
+        scheduler.advanceTimeBy(5_400L, TimeUnit.MILLISECONDS);
+        assertEquals("must not trigger before jittered delay", ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        scheduler.advanceTimeBy(200L, TimeUnit.MILLISECONDS);
+        assertEquals("must trigger after jittered delay", ReconnectPolicy.MAX_ATTEMPTS + 1, connects.get());
+    }
+
+    @Test
     public void expiredAccessRefreshesBeforeConnecting() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
@@ -225,11 +246,23 @@ public final class RealtimeSessionReArmTest {
             Flowable<Boolean> foreground,
             TokenRefresher refresher,
             TestScheduler scheduler) {
+        return session(store, stomp, online, foreground, refresher,
+                new ReconnectPolicy(() -> 0.0), scheduler);
+    }
+
+    private static RealtimeSession session(
+            TokenStore store,
+            StompClient stomp,
+            Flowable<Boolean> online,
+            Flowable<Boolean> foreground,
+            TokenRefresher refresher,
+            ReconnectPolicy reconnectPolicy,
+            TestScheduler scheduler) {
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(online);
         AppForegroundState foregroundState = () -> foreground;
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
-                new ReconnectPolicy(), monitor, foregroundState, scheduler);
+                reconnectPolicy, monitor, foregroundState, scheduler);
     }
 
     private static StompClient failedClient(AtomicInteger count) {
