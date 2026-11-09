@@ -54,15 +54,20 @@ final class ArchiveText {
                 date(context, item.getCreatedAt()));
     }
 
+    private static final int MAX_ACCESSIBILITY_TITLE_LENGTH = 160;
+
     @NonNull
     static String accessibilityDescription(
             @NonNull Context context,
             @NonNull ArchiveUiState state,
             @NonNull String title,
             @NonNull ArchivePage.Item item) {
+        String safeTitle = title.length() <= MAX_ACCESSIBILITY_TITLE_LENGTH
+                ? title
+                : title.substring(0, MAX_ACCESSIBILITY_TITLE_LENGTH - 1) + "…";
         return context.getString(
                 R.string.archive_media_description,
-                title,
+                safeTitle,
                 senderName(context, state, item.getSenderId()),
                 date(context, item.getCreatedAt()));
     }

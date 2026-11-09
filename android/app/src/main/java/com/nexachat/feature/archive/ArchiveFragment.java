@@ -240,8 +240,9 @@ public final class ArchiveFragment extends Fragment {
         }
 
         boolean hasItems = !items.isEmpty();
-        boolean blockedByError = page.getError() != null
-                && (!hasItems || page.getError() == ArchiveRepository.Failure.FORBIDDEN);
+        boolean isTerminalError = page.getError() == ArchiveRepository.Failure.FORBIDDEN
+                || page.getError() == ArchiveRepository.Failure.NOT_FOUND;
+        boolean blockedByError = page.getError() != null && (!hasItems || isTerminalError);
         ui.archiveList.setVisibility(hasItems && !blockedByError ? View.VISIBLE : View.GONE);
         ui.archiveLoading.setVisibility(page.isLoading() && !hasItems ? View.VISIBLE : View.GONE);
         ui.archiveLoading.setLabel(getString(R.string.archive_loading));
@@ -252,7 +253,7 @@ public final class ArchiveFragment extends Fragment {
                 : View.GONE);
         if (blockedByError) {
             ui.archiveError.setMessage(errorMessage(page.getError()));
-            ui.archiveError.setOnRetry(page.getError() == ArchiveRepository.Failure.FORBIDDEN
+            ui.archiveError.setOnRetry(isTerminalError
                     ? null
                     : () -> {
                         if (viewModel != null) viewModel.retry();
@@ -270,18 +271,22 @@ public final class ArchiveFragment extends Fragment {
     private void renderFilters(FragmentArchiveBinding ui, ArchiveUiState current) {
         if (current.getSenderId() == null) {
             ui.archiveSenderFilter.setText(R.string.archive_filter_all_senders);
+            ui.archiveSenderFilter.setContentDescription(getString(R.string.archive_filter_sender));
         } else {
-            ui.archiveSenderFilter.setText(getString(
-                    R.string.archive_filter_sender_value,
-                    ArchiveText.senderName(requireContext(), current, current.getSenderId())));
+            String senderName = ArchiveText.senderName(requireContext(), current, current.getSenderId());
+            ui.archiveSenderFilter.setText(getString(R.string.archive_filter_sender_value, senderName));
+            ui.archiveSenderFilter.setContentDescription(getString(R.string.archive_filter_sender_value, senderName));
         }
         ui.archiveSenderFilter.setEnabled(current.areSendersLoaded());
         if (current.getFrom() == null || current.getTo() == null) {
             ui.archiveDateFilter.setText(R.string.archive_filter_date);
+            ui.archiveDateFilter.setContentDescription(getString(R.string.archive_filter_date));
         } else {
-            ui.archiveDateFilter.setText(getString(
+            String dateRange = getString(
                     R.string.archive_filter_date_value,
-                    dateLabel(current.getFrom()), dateLabel(current.getTo())));
+                    dateLabel(current.getFrom()), dateLabel(current.getTo()));
+            ui.archiveDateFilter.setText(dateRange);
+            ui.archiveDateFilter.setContentDescription(dateRange);
         }
         ui.archiveClearFilters.setVisibility(current.hasFilters() ? View.VISIBLE : View.GONE);
     }
@@ -458,6 +463,9 @@ public final class ArchiveFragment extends Fragment {
     private String errorMessage(@Nullable ArchiveRepository.Failure failure) {
         if (failure == ArchiveRepository.Failure.FORBIDDEN) {
             return getString(R.string.archive_forbidden);
+        }
+        if (failure == ArchiveRepository.Failure.NOT_FOUND) {
+            return getString(R.string.archive_not_found);
         }
         if (failure == ArchiveRepository.Failure.OFFLINE) {
             return getString(R.string.archive_offline);

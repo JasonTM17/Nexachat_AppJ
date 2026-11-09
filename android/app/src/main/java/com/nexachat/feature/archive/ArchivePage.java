@@ -1,13 +1,16 @@
 package com.nexachat.feature.archive;
 
 import androidx.annotation.Nullable;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
 /** Reflective Moshi response for one keyset page of conversation archive items. */
-public final class ArchivePage {
+public final class ArchivePage implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     @Nullable private final List<Item> items;
     @Nullable private final String nextCursor;
@@ -33,7 +36,9 @@ public final class ArchivePage {
     }
 
     /** One media/file message or one extracted URL from a text message. */
-    public static final class Item {
+    public static final class Item implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         @Nullable private final String messageId;
         @Nullable private final Long seq;
         @Nullable private final String senderId;
@@ -71,11 +76,14 @@ public final class ArchivePage {
         @Nullable public Attachment getAttachment() { return attachment; }
         @Nullable public Link getLink() { return link; }
 
-        /** Links can share a message id, so their URL is part of the stable UI key. */
+        /** Disambiguates multiple attachments or links belonging to the same message. */
         public String stableKey() {
             String id = messageId == null ? "" : messageId;
-            String url = link == null || link.getUrl() == null ? "" : link.getUrl();
-            return id + "\n" + url;
+            String attId = (attachment != null && attachment.getId() != null) ? attachment.getId() : "";
+            String url = (link != null && link.getUrl() != null) ? link.getUrl() : "";
+            String k = kind == null ? "" : kind;
+            String s = seq == null ? "" : String.valueOf(seq);
+            return id + "\n" + attId + "\n" + url + "\n" + k + "\n" + s;
         }
 
         @Override
@@ -97,7 +105,9 @@ public final class ArchivePage {
     }
 
     /** Attachment fields from the frozen archive wire contract. */
-    public static final class Attachment {
+    public static final class Attachment implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         @Nullable private final String id;
         @Nullable private final String fileName;
         @Nullable private final String mimeType;
@@ -158,7 +168,9 @@ public final class ArchivePage {
         }
     }
 
-    public static final class Link {
+    public static final class Link implements Serializable {
+        private static final long serialVersionUID = 1L;
+
         @Nullable private final String url;
 
         public Link() {

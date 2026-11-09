@@ -48,6 +48,8 @@ public final class RetrofitArchiveRepository implements ArchiveRepository {
                 }
                 if (response.code() == 403) {
                     callback.onFailure(Failure.FORBIDDEN);
+                } else if (response.code() == 404) {
+                    callback.onFailure(Failure.NOT_FOUND);
                 } else if (!response.isSuccessful() || response.body() == null) {
                     callback.onFailure(Failure.UNKNOWN);
                 } else {

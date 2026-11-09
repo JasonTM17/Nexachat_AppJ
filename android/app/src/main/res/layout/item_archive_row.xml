@@ -49,6 +49,7 @@
                 android:layout_height="wrap_content"
                 android:maxLines="3"
                 android:ellipsize="end"
+                android:importantForAccessibility="no"
                 android:textAppearance="?attr/textAppearanceBodyLarge"
                 android:textColor="?attr/colorOnSurface" />
 
@@ -57,6 +58,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:importantForAccessibility="no"
                 android:lineSpacingExtra="2dp"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
