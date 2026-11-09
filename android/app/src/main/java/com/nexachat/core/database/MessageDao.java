@@ -56,4 +56,8 @@ public interface MessageDao {
 
     @Query("DELETE FROM messages")
     Completable deleteAll();
+
+    /** Drops cached history when the conversation is no longer accessible. */
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    Completable deleteForConversation(String conversationId);
 }

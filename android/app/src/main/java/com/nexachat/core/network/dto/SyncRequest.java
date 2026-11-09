@@ -33,13 +33,25 @@ public final class SyncRequest {
     public static final class Watermark {
         @NonNull private final String conversationId;
         private final long lastSeq;
+        /**
+         * Last reaction event id consumed for this conversation; echoed only
+         * while the server reports a truncated reaction page.
+         */
+        @Nullable private final Long reactionCursor;
 
         public Watermark(@NonNull String conversationId, long lastSeq) {
+            this(conversationId, lastSeq, null);
+        }
+
+        public Watermark(
+                @NonNull String conversationId, long lastSeq, @Nullable Long reactionCursor) {
             this.conversationId = Objects.requireNonNull(conversationId, "conversationId");
             this.lastSeq = lastSeq;
+            this.reactionCursor = reactionCursor;
         }
 
         @NonNull public String getConversationId() { return conversationId; }
         public long getLastSeq() { return lastSeq; }
+        @Nullable public Long getReactionCursor() { return reactionCursor; }
     }
 }

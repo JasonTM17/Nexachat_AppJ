@@ -19,6 +19,8 @@ import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationWatermark;
 import com.nexachat.core.database.MessageDao;
 import com.nexachat.core.database.MessageEntity;
+import com.nexachat.core.database.OutboxDao;
+import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.MessageDto;
@@ -57,6 +59,8 @@ public final class SyncEngineTest {
     private MessageDao messageDao;
     private ConversationDao conversationDao;
     private ReactionDao reactionDao;
+    private PinDao pinDao;
+    private OutboxDao outboxDao;
     private TokenStore tokenStore;
     private Moshi moshi;
     private SyncEngine syncEngine;
@@ -85,6 +89,20 @@ public final class SyncEngineTest {
         when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets(anyString())).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
+                .thenReturn(Completable.complete());
+        when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        pinDao = mock(PinDao.class);
+        outboxDao = mock(OutboxDao.class);
+        when(pinDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        when(outboxDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        when(appDatabase.pinDao()).thenReturn(pinDao);
+        when(appDatabase.outboxDao()).thenReturn(outboxDao);
+        when(appDatabase.messageDao()).thenReturn(messageDao);
+        when(appDatabase.reactionDao()).thenReturn(reactionDao);
+        when(appDatabase.conversationDao()).thenReturn(conversationDao);
 
         syncEngine = new SyncEngine(
                 appDatabase,
@@ -449,6 +467,164 @@ public final class SyncEngineTest {
     }
 
     @Test
+    public void syncPagesEveryHasMoreDeltaAndEchoesTheReactionCursor() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                .thenReturn(Completable.complete());
+
+        MessageDto created = message("m-11", 11L, "c1", "hello");
+        MessageDto edited = message("m-5", 5L, "c1", "edited");
+        ReactionUpdateDto reaction = new ReactionUpdateDto(
+                "m-10", List.of(new ReactionSummaryDto("\ud83d\udc4d", 1, true)));
+        SyncResponse firstPage = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(created), List.of(), List.of(), List.of(reaction),
+                11L, true, 41L, false)), "cursor-end");
+        SyncResponse lastPage = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(edited), List.of(), List.of(),
+                11L, false, null, false)), "cursor-end");
+        Call<SyncResponse> firstCall = responseCall(firstPage);
+        Call<SyncResponse> secondCall = responseCall(lastPage);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(firstCall, secondCall);
+
+        syncEngine.sync().blockingAwait();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, times(2)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        assertEquals("cursor-start", requests.get(0).getSince());
+        assertEquals("all pages share one stable since cursor",
+                "cursor-start", requests.get(1).getSince());
+        assertEquals(10L, requests.get(0).getWatermarks().get(0).getLastSeq());
+        assertEquals(11L, requests.get(1).getWatermarks().get(0).getLastSeq());
+        assertEquals(Long.valueOf(41L),
+                requests.get(1).getWatermarks().get(0).getReactionCursor());
+        verify(messageDao).upsertAll(anyList());
+        verify(messageDao).update(any(MessageEntity.class));
+        verify(reactionDao).replaceForMessageInTransaction(
+                org.mockito.ArgumentMatchers.eq("m-10"), anyList());
+        verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
+    }
+
+    @Test
+    public void syncPagesEditOnlyDeltasUntilHasMoreIsFalse() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
+                .thenReturn(Completable.complete());
+
+        SyncResponse firstPage = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(message("m-5", 5L, "c1", "first edit")),
+                List.of(), List.of(), 20L, true, null, false)), "cursor-end");
+        SyncResponse lastPage = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(message("m-6", 6L, "c1", "second edit")),
+                List.of(), List.of(), 20L, false, null, false)), "cursor-end");
+        Call<SyncResponse> firstCall = responseCall(firstPage);
+        Call<SyncResponse> secondCall = responseCall(lastPage);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(firstCall, secondCall);
+
+        syncEngine.sync().blockingAwait();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, times(2)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        assertEquals(20L, requests.get(1).getWatermarks().get(0).getLastSeq());
+        assertEquals("cursor-start", requests.get(1).getSince());
+        verify(messageDao, times(2)).update(any(MessageEntity.class));
+        verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
+    }
+
+    @Test
+    public void syncStopsWhenHasMoreMakesNoProgressAndDoesNotAdvanceTheCursor() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse stuck = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(),
+                20L, true, null, false)), "cursor-end");
+        Call<SyncResponse> stuckCall = responseCall(stuck);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(stuckCall);
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        observer.awaitDone(5, java.util.concurrent.TimeUnit.SECONDS);
+        observer.assertError(java.io.IOException.class);
+
+        verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
+        verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncStopsAtThePageLimitWhenTheServerKeepsClaimingMore() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        AtomicInteger page = new AtomicInteger(10);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+            long maxSeq = page.incrementAndGet();
+            SyncResponse response = new SyncResponse(List.of(
+                    new SyncResponse.ConversationDeltaDto(
+                            "c1", List.of(), List.of(), List.of(), List.of(),
+                            maxSeq, true, null, false)), "cursor-end");
+            return responseCall(response);
+        });
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        observer.awaitDone(5, java.util.concurrent.TimeUnit.SECONDS);
+        observer.assertError(java.io.IOException.class);
+
+        verify(messageApi, times(SyncEngine.MAX_DRAIN_PAGES))
+                .syncDeltas(any(SyncRequest.class));
+        verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncRemovesConversationOmittedFromASuccessfulDeltaResponse() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(List.of(
+                new ConversationWatermark("c1", 10L),
+                new ConversationWatermark("c2", 20L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
+        when(messageDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        when(reactionDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        SyncResponse response = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of(), List.of(), 10L, false)), "cursor-end");
+        Call<SyncResponse> serverCall = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(serverCall);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(conversationDao).deleteById("c2");
+        verify(messageDao).deleteForConversation("c2");
+        verify(reactionDao).deleteForConversation("c2");
+        verify(pinDao).deleteForConversation("c2");
+        verify(outboxDao).deleteForConversation("c2");
+        verify(conversationDao, never()).deleteById("c1");
+        verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
+    }
+
+    @Test
     public void syncDoesNotPersistMissingServerTime() {
         when(messageDao.getAllMaxSeqs()).thenReturn(
                 Single.just(List.of(new ConversationWatermark("c1", 10L))));
@@ -468,6 +644,12 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    private static MessageDto message(String id, long seq, String conversationId, String content) {
+        return new MessageDto(
+                id, seq, conversationId, "user-2", "Bob", null, null, "TEXT", content,
+                null, null, List.of(), List.of(), "2026-11-08T10:00:00Z", null, null);
     }
 
     private static List<ConversationWatermark> watermarks(int count) {

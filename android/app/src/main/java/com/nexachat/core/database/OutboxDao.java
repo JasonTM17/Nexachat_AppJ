@@ -35,4 +35,8 @@ public interface OutboxDao {
 
     @Query("DELETE FROM outbox")
     Completable clear();
+
+    /** Drops queued sends that can never be accepted after membership loss. */
+    @Query("DELETE FROM outbox WHERE conversationId = :conversationId")
+    Completable deleteForConversation(String conversationId);
 }

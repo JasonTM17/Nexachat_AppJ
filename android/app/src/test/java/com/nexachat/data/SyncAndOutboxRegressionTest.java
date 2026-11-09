@@ -427,7 +427,14 @@ public final class SyncAndOutboxRegressionTest {
         when(mockCall.clone()).thenReturn(mockCall);
         when(api.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
         try {
-            when(mockCall.execute()).thenReturn(Response.success(new SyncResponse(List.of(), "2026-11-08T10:00:00Z")));
+            when(mockCall.execute()).thenReturn(Response.success(new SyncResponse(List.of(
+                    new SyncResponse.ConversationDeltaDto(
+                            "c1", List.of(), List.of(), List.of(), List.of(), 10L, false),
+                    new SyncResponse.ConversationDeltaDto(
+                            "c2", List.of(), List.of(), List.of(), List.of(), 8L, false),
+                    new SyncResponse.ConversationDeltaDto(
+                            "c3", List.of(), List.of(), List.of(), List.of(), 12L, false)),
+                    "2026-11-08T10:00:00Z")));
         } catch (Exception ignored) {
         }
 
