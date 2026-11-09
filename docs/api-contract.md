@@ -13,6 +13,7 @@
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
 | [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
+| [Group polls](#group-polls--apiv1conversationsidpolls) | `/api/v1/conversations/{id}/polls` | Poll creation, voting, results, close/delete, versioned change feed |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
 | [Files](#files--apiv1files) | `/api/v1/files` | Streaming media download with HTTP Range support (`bytes=a-b`) |
@@ -66,7 +67,10 @@
 | `ALREADY_CONTACT` | 409 | Contact already present |
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
 | `NOT_MEMBER` | 403 | Caller is not a member of the conversation |
-| `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin) |
+| `NOT_ADMIN` | 403 | Group role check failed (member ops, group pin, poll close/delete) |
+| `NOT_A_GROUP` | 400 | Poll operation on a DIRECT conversation |
+| `POLL_NOT_FOUND` | 404 | Poll missing, deleted, or belongs to another conversation |
+| `POLL_CLOSED` | 409 | Vote/retract attempted after explicit close or expiry |
 | `NOT_MESSAGE_AUTHOR` | 403 | Caller is not the message author |
 | `MESSAGE_NOT_FOUND` | 404 | Message missing or belongs to another conversation |
 | `MESSAGE_DELETED` | 409 | Deleted message cannot be edited, reacted to, or pinned |
@@ -306,6 +310,64 @@ Inbox pagination uses query parameters `limit` and `cursor`. With no parameters,
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+
+## Group polls — `/api/v1/conversations/{id}/polls`
+
+Polls exist only in GROUP conversations. Any current member may create and
+vote; the poll creator or a group ADMIN may close or delete. A former member's
+votes stay counted but that user cannot vote again, because membership is
+rechecked on every request. A DIRECT conversation returns `400 NOT_A_GROUP`;
+a non-member of any conversation returns `403 NOT_MEMBER` before the type is
+checked.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /conversations/{id}/polls` | Bearer member | `{question, options[], multipleChoice?, anonymous?, closesAt?}` — question 1–200 chars; 2–10 unique options, each 1–100 chars; optional expiry in the future and at most 30 days out | `201` `PollResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `RATE_LIMITED` 429 (10/min per user) |
+| `GET /conversations/{id}/polls` | Bearer member | `limit?` (1–100, default 50), `before?` (id of the previous page's last item) | `200` `PollPageResponse`, newest first | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `NOT_A_GROUP` 400 |
+| `GET /conversations/{id}/polls/changes` | Bearer member | `since?` (last applied `version`, default 0), `limit?` (1–200, default 100) | `200` `PollChangesResponse`, ascending `version` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `NOT_A_GROUP` 400 |
+| `GET /conversations/{id}/polls/{pollId}` | Bearer member | — | `200` `PollResponse` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `POLL_NOT_FOUND` 404 |
+| `PUT /conversations/{id}/polls/{pollId}/vote` | Bearer member | `{optionIds[]}` — the complete selection: exactly 1 for single-choice, 1–10 for multiple-choice; duplicates ignored | `200` `PollResponse` (idempotent replacement) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `POLL_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `POLL_CLOSED` 409 · `RATE_LIMITED` 429 (120/min per user) |
+| `DELETE /conversations/{id}/polls/{pollId}/vote` | Bearer member | — | `200` `PollResponse` (idempotent retract) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `POLL_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `POLL_CLOSED` 409 · `RATE_LIMITED` 429 (120/min per user, shared with vote) |
+| `POST /conversations/{id}/polls/{pollId}/close` | Bearer creator or group ADMIN | — | `200` `PollResponse`; repeat close is a no-op | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 · `POLL_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `RATE_LIMITED` 429 (30/min per user) |
+| `DELETE /conversations/{id}/polls/{pollId}` | Bearer creator or group ADMIN | — | `204` empty; repeat delete is a no-op | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 · `POLL_NOT_FOUND` 404 · `NOT_A_GROUP` 400 · `RATE_LIMITED` 429 (30/min per user, shared with close) |
+
+`PollResponse` = `{id, conversationId, createdBy, question, multipleChoice, anonymous, status, closesAt?, closedAt?, closedBy?, createdAt, version, voterCount, options[], myOptionIds[]}`.
+
+- `status` is `OPEN` or `CLOSED`. It is `CLOSED` when `closedAt` is set or
+  `closesAt` has been reached; the expiry boundary is inclusive (a poll whose
+  `closesAt` equals the current instant is already closed).
+- `options[]` = `{id, position, label, voteCount, voterIds?}`. `voterIds` is
+  present only on a non-anonymous poll, sorted by UUID string; on an anonymous
+  poll it is omitted for everyone, including the creator. `voteCount` always
+  equals `voterIds.size()` when the list is present.
+- `myOptionIds` is always the caller's own current selection (empty when none)
+  and never exposes another member's identity.
+- `voterCount` is the number of distinct users who voted; in a multiple-choice
+  poll it can be smaller than the sum of option `voteCount`s.
+- `version` is a server-assigned monotonic revision. It changes on create,
+  a real vote/retract change, the first close, and the first delete. A no-op
+  replay keeps the same version, which makes retries safe. Poll writes are
+  serialized per conversation, so revision order matches commit order; the
+  change feed is a compacted current-state feed, meaning several changes to
+  one poll between two reads are collapsed into its latest revision.
+- `PollPageResponse` = `{items: PollResponse[], nextBefore?}`; `nextBefore` is
+  the id to echo as `before` for the next older page and is omitted on the
+  last page.
+- `PollChangesResponse` = `{items: [{pollId, version, deleted, poll?}], nextSince, hasMore}`.
+  The feed includes deleted polls as `{pollId, version, deleted:true}` with no
+  `poll` body. Echo `nextSince` on the next call. This endpoint is the
+  realtime substitute for polls: the frozen `ws/WsEventType` enum has no poll
+  event, so a client that wants a live board polls this feed and merges by
+  `pollId`/`version`.
+- Deletion is a tombstone: the poll disappears from `GET /polls`, detail
+  returns `404 POLL_NOT_FOUND`, and the change feed still reports it once.
+- Votes are concurrency-safe: every write locks the poll row and replaces the
+  caller's selection atomically; the `(poll_id, option_id, user_id)` primary
+  key makes a duplicate vote impossible. A vote that exactly matches the
+  stored selection succeeds without changing `version`, even after close, so
+  an offline outbox replay cannot fail on a state it already applied.
+- `Idempotency-Key` is not needed for vote/retract/close/delete: their verbs
+  are already idempotent. Poll creation has no dedup key.
 
 ## Attachments — `/api/v1/attachments`
 
