@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class
         },
-        version = 10,
+        version = 11,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -184,6 +184,22 @@ public abstract class AppDatabase extends RoomDatabase {
                             "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
                     db.execSQL(
                             "ALTER TABLE conversations ADD COLUMN pinnedAt INTEGER");
+                }
+            };
+
+    /** Persists structured mention metadata for sent and pending messages. */
+    public static final Migration MIGRATION_10_11 =
+            new Migration(10, 11) {
+                @Override
+                public void migrate(SupportSQLiteDatabase db) {
+                    db.execSQL(
+                            "ALTER TABLE messages ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'");
+                    db.execSQL(
+                            "ALTER TABLE messages ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0");
+                    db.execSQL(
+                            "ALTER TABLE outbox ADD COLUMN mentionsJson TEXT NOT NULL DEFAULT '[]'");
+                    db.execSQL(
+                            "ALTER TABLE outbox ADD COLUMN mentionAll INTEGER NOT NULL DEFAULT 0");
                 }
             };
 }

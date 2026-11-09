@@ -300,6 +300,13 @@
     <string name="ask_from_message">Trích từ một tin nhắn</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
+    <string name="mention_all_picker">@all — mọi người</string>
+    <string name="mention_person_picker">Nhắc đến %1$s</string>
+    <string name="mention_limit_exceeded">Mỗi tin nhắn chỉ được nhắc tối đa 20 người. Tin nhắn đã được xoá.</string>
+    <string name="message_mentions_you">Bạn được nhắc đến.</string>
+    <string name="message_has_mentions">Tin nhắn này có lượt nhắc.</string>
+    <string name="error_mention_validation">Lượt nhắc trong tin nhắn không còn hợp lệ. Hãy kiểm tra rồi thử lại.</string>
+    <string name="error_mention_not_admin">Chỉ quản trị viên nhóm mới có thể nhắc tất cả mọi người.</string>
 
     <!-- Group board, reminders and polls -->
     <string name="group_board_title">Bảng nhóm</string>

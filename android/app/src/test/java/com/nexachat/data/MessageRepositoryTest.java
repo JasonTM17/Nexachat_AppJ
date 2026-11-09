@@ -35,6 +35,7 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
+import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.network.dto.PinRequest;
 import com.nexachat.core.network.dto.ReactionSummaryDto;
 import com.nexachat.core.network.dto.ReplyRefDto;
@@ -175,7 +176,7 @@ public class MessageRepositoryTest {
             String id = call.getArgument(0); OutboxEntity row = outbox.get(id);
             if (row != null) outbox.put(id, new OutboxEntity(row.getClientMessageId(), row.getConversationId(),
                     row.getType(), row.getContent(), row.getReplyToId(), call.getArgument(1),
-                    row.getCreatedAt(), row.getAttachmentsJson()));
+                    row.getCreatedAt(), row.getAttachmentsJson(), row.getMentionsJson(), row.isMentionAll()));
             syncOutbox(); return Completable.complete();
         });
         when(outboxDao.pendingOrdered()).thenReturn(outboxChanges);
@@ -343,6 +344,53 @@ public class MessageRepositoryTest {
         assertEquals("hello", row.getContent());
         verify(session, times(1)).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID),
                 org.mockito.ArgumentMatchers.argThat(request -> row.getClientMessageId().equals(request.getClientMessageId())));
+    }
+
+    @Test public void mentionMetadataPersistsInOutboxAndSurvivesRetry() {
+        List<MessageMention> mentions = List.of(new MessageMention("u-lan", 3, 4));
+        List<SendMessageRequest> captured = new ArrayList<>();
+        when(session.sendMessage(anyString(), any())).thenAnswer(call -> {
+            captured.add(call.getArgument(1));
+            return true;
+        });
+        await(repository.send(CONVERSATION_ID, "Hi @Lan", null, MessageDto.TYPE_TEXT,
+                List.of(), mentions, true));
+
+        OutboxEntity queued = outbox.values().iterator().next();
+        assertEquals(mentions, com.nexachat.data.MessageMentionCodec.decode(queued.getMentionsJson()));
+        assertTrue(queued.isMentionAll());
+        assertEquals(mentions, captured.get(0).getMentions());
+        assertTrue(captured.get(0).isMentionAll());
+        TestSubscriber<List<ChatMessage>> subscriber = repository.messagesFlow(CONVERSATION_ID).test();
+        ChatMessage pending = subscriber.values().get(0).get(0);
+        assertEquals(mentions, pending.getMentions());
+        assertTrue(pending.isMentionAll());
+        subscriber.cancel();
+
+        await(outboxDao.updateState(queued.getClientMessageId(), OutboxState.FAILED));
+        await(repository.retry(queued.getClientMessageId()));
+        assertEquals(2, captured.size());
+        assertEquals(mentions, captured.get(1).getMentions());
+        assertTrue(captured.get(1).isMentionAll());
+    }
+
+    @Test public void serverMentionErrorsSurfaceForRealtimeAndRestRejections() {
+        TestSubscriber<ApiError> errors = repository.getInteractionEvents().test();
+        await(repository.send(CONVERSATION_ID, "bad @mention"));
+        String clientId = outbox.keySet().iterator().next();
+        events.onNext(new ChatEvent.SendRejected("VALIDATION_FAILED", clientId));
+        assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+        errors.assertValue(error -> error instanceof ApiError.Unknown unknown
+                && "VALIDATION_FAILED".equals(unknown.getCode()));
+
+        errors = repository.getInteractionEvents().test();
+        isOpen.onNext(false);
+        when(session.sendMessage(anyString(), any())).thenReturn(false);
+        when(messageApi.sendMessage(anyString(), any())).thenReturn(responseCall(
+                Response.error(400, body("{\"error\":{\"code\":\"NOT_ADMIN\"}}"))));
+        await(repository.send(CONVERSATION_ID, "@all"));
+        errors.assertValue(error -> error instanceof ApiError.Unknown unknown
+                && "NOT_ADMIN".equals(unknown.getCode()));
     }
 
     @Test public void sendToRemovedConversationSurfacesClearErrorAndDoesNotQueue() {
@@ -710,6 +758,27 @@ public class MessageRepositoryTest {
         assertEquals(TimeAndJwt.isoToEpochMsOrNull("2026-11-03T10:00:00Z"), messages.get("m-1").getEditedAtEpochMs());
     }
 
+    @Test public void editSendsAndStoresRevalidatedMentionMetadata() {
+        await(messageDao.upsert(own("m-mention", 1L, "Hi @Lan")));
+        List<MessageMention> mentions = List.of(new MessageMention("u-lan", 3, 4));
+        List<EditMessageRequest> captured = new ArrayList<>();
+        when(messageApi.editMessage(anyString(), anyString(), any())).thenAnswer(call -> {
+            EditMessageRequest request = call.getArgument(2);
+            captured.add(request);
+            return responseCall(Response.success(dto("m-mention", null, "me-1", 1L)
+                    .withContent(request.getContent(), "2026-11-03T10:00:00Z")
+                    .withMentionMetadata(mentions, true)));
+        });
+        Result<Unit> result = await(repository.editMessage(CONVERSATION_ID, "m-mention",
+                "Hi @Lan", mentions, true));
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals(mentions, captured.get(0).getMentions());
+        assertEquals(Boolean.TRUE, captured.get(0).getMentionAll());
+        assertEquals(mentions, com.nexachat.data.MessageMentionCodec.decode(
+                messages.get("m-mention").getMentionsJson()));
+        assertTrue(messages.get("m-mention").isMentionAll());
+    }
+
     @Test public void failedEditRestoresPriorContentAndTimestamp() {
         await(messageDao.upsert(own("m-1", 1L, "old")));
         when(messageApi.editMessage(anyString(), anyString(), any())).thenReturn(responseCall(Response.error(403, body(""))));
@@ -1046,7 +1115,9 @@ public class MessageRepositoryTest {
         return new MessageEntity(source.getId(), source.getConversationId(), source.getSeq(), source.getSenderId(),
                 source.getSenderDisplayName(), source.getType(), source.getContent(), source.getClientMessageId(),
                 replyToId != null ? replyToId : source.getReplyToId(), source.getReplyToSenderName(), replySnippet,
-                source.getCreatedAt(), attachmentsJson, editedAt, deletedAt);
+                source.getCreatedAt(), attachmentsJson, editedAt, deletedAt,
+                deletedAt == null ? source.getMentionsJson() : "[]",
+                deletedAt == null && source.isMentionAll());
     }
     private static ConversationEntity conversation(long seq, String content) {
         return new ConversationEntity(CONVERSATION_ID, "DIRECT", null, seq, content, "Me", seq, 0,

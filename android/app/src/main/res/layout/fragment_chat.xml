@@ -118,10 +118,21 @@
         android:clipToPadding="false"
         android:paddingHorizontal="@dimen/space_sm"
         android:paddingBottom="@dimen/space_sm"
-        app:layout_constraintBottom_toTopOf="@id/composerBar"
+        app:layout_constraintBottom_toTopOf="@id/mentionPicker"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/chatSearchBar" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/mentionPicker"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface"
+        android:elevation="4dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/pendingAttachments"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/scrollDownFab"
@@ -130,7 +141,7 @@
         android:layout_margin="@dimen/space_md"
         android:contentDescription="@string/cd_scroll_to_bottom"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/composerBar"
+        app:layout_constraintBottom_toTopOf="@id/mentionPicker"
         app:layout_constraintEnd_toEndOf="parent"
         app:srcCompat="@drawable/ic_keyboard_arrow_down" />
 

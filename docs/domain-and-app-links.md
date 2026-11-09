@@ -166,8 +166,6 @@ To rotate an expiring or compromised Vercel token:
    vercel whoami
    ```
 5. Return to the Vercel Tokens dashboard and **Delete / Revoke** the old token.
-||||||| 581c289
-
 ## Android build configuration for App Links
 
 ## Overview

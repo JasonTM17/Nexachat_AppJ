@@ -30,12 +30,28 @@ public final class MessageDto {
     @Nullable private final String createdAt;
     @Nullable private final String editedAt;
     @Nullable private final String deletedAt;
+    @Nullable private final List<MessageMention> mentions;
+    private final boolean mentionAll;
 
     public MessageDto() {
-        this(null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null, null, null);
+        this(null, null, null, null, null, null, null, null, null, null, null, null,
+                List.of(), null, null, null, List.of(), false);
     }
 
     public MessageDto(@NonNull String id, @Nullable Long seq, @Nullable String conversationId, @Nullable String senderId, @Nullable String senderDisplayName, @Nullable SenderRefDto sender, @Nullable String clientMessageId, @Nullable String type, @Nullable String content, @Nullable ReplyRefDto replyTo, @Nullable String replyToId, @Nullable List<ReactionSummaryDto> reactions, @Nullable List<AttachmentDto> attachments, @Nullable String createdAt, @Nullable String editedAt, @Nullable String deletedAt) {
+        this(id, seq, conversationId, senderId, senderDisplayName, sender, clientMessageId,
+                type, content, replyTo, replyToId, reactions, attachments, createdAt, editedAt,
+                deletedAt, List.of(), false);
+    }
+
+    public MessageDto(@NonNull String id, @Nullable Long seq, @Nullable String conversationId,
+            @Nullable String senderId, @Nullable String senderDisplayName,
+            @Nullable SenderRefDto sender, @Nullable String clientMessageId,
+            @Nullable String type, @Nullable String content, @Nullable ReplyRefDto replyTo,
+            @Nullable String replyToId, @Nullable List<ReactionSummaryDto> reactions,
+            @Nullable List<AttachmentDto> attachments, @Nullable String createdAt,
+            @Nullable String editedAt, @Nullable String deletedAt,
+            @Nullable List<MessageMention> mentions, boolean mentionAll) {
         this.id = id;
         this.seq = seq;
         this.conversationId = conversationId;
@@ -52,6 +68,8 @@ public final class MessageDto {
         this.createdAt = createdAt;
         this.editedAt = editedAt;
         this.deletedAt = deletedAt;
+        this.mentions = mentions == null ? List.of() : List.copyOf(mentions);
+        this.mentionAll = mentionAll;
     }
 
     public MessageDto(String id, Long seq, String conversationId, String senderId, String clientMessageId, String type, String content, String createdAt) {
@@ -130,6 +148,13 @@ public final class MessageDto {
         return deletedAt;
     }
 
+    @NonNull public List<MessageMention> getMentions() {
+        return mentions == null ? List.of() : mentions;
+    }
+
+    public boolean isMentionAll() { return mentionAll; }
+    public boolean getMentionAll() { return mentionAll; }
+
 
     @Nullable
     public String getResolvedSenderId() {
@@ -163,25 +188,31 @@ public final class MessageDto {
     public MessageDto withContent(String content) {
         return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt);
+                createdAt, editedAt, deletedAt, mentions, mentionAll);
     }
 
     public MessageDto withContent(String content, String editedAt) {
         return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt);
+                createdAt, editedAt, deletedAt, mentions, mentionAll);
     }
 
     public MessageDto withReactions(java.util.List<ReactionSummaryDto> reactions) {
         return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt);
+                createdAt, editedAt, deletedAt, mentions, mentionAll);
+    }
+
+    public MessageDto withMentionMetadata(List<MessageMention> nextMentions, boolean nextMentionAll) {
+        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+                clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
+                createdAt, editedAt, deletedAt, nextMentions, nextMentionAll);
     }
 
     public MessageDto withDeletedAt(String deletedAt, java.util.List<ReactionSummaryDto> reactions) {
         return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt);
+                createdAt, editedAt, deletedAt, List.of(), false);
     }
 
     @Override
@@ -204,11 +235,15 @@ public final class MessageDto {
                 && Objects.equals(attachments, that.attachments)
                 && Objects.equals(createdAt, that.createdAt)
                 && Objects.equals(editedAt, that.editedAt)
-                && Objects.equals(deletedAt, that.deletedAt);
+                && Objects.equals(deletedAt, that.deletedAt)
+                && Objects.equals(mentions, that.mentions)
+                && mentionAll == that.mentionAll;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, seq, conversationId, senderId, senderDisplayName, sender, clientMessageId, type, content, replyTo, replyToId, reactions, attachments, createdAt, editedAt, deletedAt);
+        return Objects.hash(id, seq, conversationId, senderId, senderDisplayName, sender,
+                clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
+                createdAt, editedAt, deletedAt, mentions, mentionAll);
     }
 }

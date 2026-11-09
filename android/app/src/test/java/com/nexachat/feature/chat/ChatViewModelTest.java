@@ -17,6 +17,8 @@ import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
+import com.nexachat.data.GroupDetail;
+import com.nexachat.data.GroupMember;
 import com.nexachat.data.LocalAttachment;
 import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
@@ -37,6 +39,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import com.nexachat.core.network.dto.MessageMention;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -125,6 +128,8 @@ public final class ChatViewModelTest {
         when(messageRepository.sendRead(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageRepository.send(anyString(), any(), any(), anyString(), any()))
                 .thenReturn(Completable.complete());
+        when(messageRepository.send(anyString(), any(), any(), anyString(), any(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(Completable.complete());
         when(messageRepository.retry(anyString())).thenReturn(Completable.complete());
         when(messageRepository.toggleReaction(anyString(), anyString(), anyString()))
                 .thenReturn(Completable.complete());
@@ -136,11 +141,17 @@ public final class ChatViewModelTest {
                 .thenReturn(Single.just(MessageJump.NotFound.INSTANCE));
         when(messageRepository.editMessage(anyString(), anyString(), anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(messageRepository.editMessage(anyString(), anyString(), anyString(), any(), any()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(messageRepository.deleteMessage(anyString(), anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(messageRepository.searchMessages(anyString(), anyString(), nullable(Long.class), anyInt()))
                 .thenReturn(Single.just(new Result.Success<>(
                         new MessageSearchResult(List.of(), false, null))));
+        when(conversationRepository.groupDetail(anyString())).thenReturn(Single.just(
+                new Result.Success<>(new GroupDetail("Group", List.of(
+                        new GroupMember("me-1", "Me", null, null, GroupMember.ROLE_ADMIN),
+                        new GroupMember("u-2", "Lan", null, null, "MEMBER"))))));
 
         when(attachmentRepository.describe(any(Uri.class))).thenAnswer(invocation -> {
             Uri picked = invocation.getArgument(0);
@@ -261,6 +272,31 @@ public final class ChatViewModelTest {
         assertEquals("", state().getInput());
         verifySend(messageRepository, CONVERSATION_ID, "xin chào", null,
                 MessageDto.TYPE_TEXT, List.of(), 1);
+    }
+
+    @Test
+    public void mentionDraftPersistsAndSendUsesFinalTrimmedOffsets() {
+        String text = "Hi @Lan  ";
+        MentionDraft draft = MentionDraft.empty(text).withMention(text, "u-2", 3, 4);
+        viewModel.onComposerDraftChange(draft);
+        assertEquals(draft.getMentions(), viewModel.getMentionDraft().getMentions());
+
+        viewModel.send();
+
+        verify(messageRepository).send(eq(CONVERSATION_ID), eq("Hi @Lan"), isNull(),
+                eq(MessageDto.TYPE_TEXT), org.mockito.ArgumentMatchers.<List<AttachmentDto>>eq(List.of()),
+                eq(List.of(new MessageMention("u-2", 3, 4))), eq(false));
+        assertEquals(List.of(), viewModel.getMentionDraft().getMentions());
+    }
+
+    @Test
+    public void groupMentionMembersAndMentionEditMetadataUseRepositoryPaths() {
+        viewModel.loadGroupMembers();
+        assertEquals(2, viewModel.getGroupMembers().getValue().size());
+        MentionDraft draft = MentionDraft.empty("Hi @Lan").withMention("Hi @Lan", "u-2", 3, 4);
+        viewModel.editMessage("m-mention", draft);
+        verify(messageRepository).editMessage(CONVERSATION_ID, "m-mention", "Hi @Lan",
+                List.of(new MessageMention("u-2", 3, 4)), false);
     }
 
     @Test
