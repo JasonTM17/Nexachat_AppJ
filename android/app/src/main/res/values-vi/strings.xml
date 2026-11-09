@@ -160,12 +160,16 @@
     <string name="action_reply">Trả lời</string>
     <string name="action_pin">Ghim</string>
     <string name="action_unpin">Bỏ ghim</string>
+    <string name="action_pin_conversation">Ghim hội thoại</string>
+    <string name="action_unpin_conversation">Bỏ ghim</string>
     <string name="pinned_title">Đã ghim</string>
     <string name="pinned_count">%1$d/%2$d</string>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
     <string name="action_jump_to_message">Chuyển tới tin nhắn</string>
     <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
+    <string name="error_conversation_pin_limit">Chỉ có thể ghim tối đa 5 hội thoại</string>
+    <string name="cd_pinned_conversation">Hội thoại đã ghim</string>
 
     <!-- Media / attachments -->
     <string name="media_pick_visual">Ảnh hoặc video</string>
@@ -252,6 +256,8 @@
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
+    <string name="privacy_show_seen">Hiện trạng thái đã xem</string>
+    <string name="cd_show_seen">Hiện trạng thái đã xem</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Ghi âm tin nhắn thoại</string>

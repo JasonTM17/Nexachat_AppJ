@@ -162,12 +162,16 @@
     <string name="action_reply">Reply</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
+    <string name="action_pin_conversation">Pin conversation</string>
+    <string name="action_unpin_conversation">Unpin conversation</string>
     <string name="pinned_title">Pinned</string>
     <string name="pinned_count">%1$d/%2$d</string>
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="action_jump_to_message">Go to message</string>
     <string name="error_pin_limit">Pinned-message limit reached</string>
+    <string name="error_conversation_pin_limit">You can pin at most 5 conversations</string>
+    <string name="cd_pinned_conversation">Pinned conversation</string>
 
     <!-- Media / attachments -->
     <string name="media_pick_visual">Photo or video</string>
@@ -254,6 +258,8 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="privacy_show_presence">Show activity status</string>
+    <string name="privacy_show_seen">Show seen status</string>
+    <string name="cd_show_seen">Show seen status</string>
 
     <!-- Voice Recording -->
     <string name="cd_record_voice">Record voice message</string>

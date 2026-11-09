@@ -27,13 +27,37 @@ public final class ConversationInboxDto {
     @Nullable private final String mutedUntil;
     @Nullable private final Boolean archived;
     @Nullable private final Boolean aiOptOut;
+    @Nullable private final Boolean pinned;
+    @Nullable private final String pinnedAt;
 
     public ConversationInboxDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
-                null, null, null, null);
+                null, null, null, null, null, null);
     }
 
-    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence, @Nullable Boolean muted, @Nullable String mutedUntil, @Nullable Boolean archived, @Nullable Boolean aiOptOut) {
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable Boolean muted,
+            @Nullable String mutedUntil,
+            @Nullable Boolean archived,
+            @Nullable Boolean aiOptOut,
+            @Nullable Boolean pinned,
+            @Nullable String pinnedAt) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -54,18 +78,86 @@ public final class ConversationInboxDto {
         this.mutedUntil = mutedUntil;
         this.archived = archived;
         this.aiOptOut = aiOptOut;
+        this.pinned = pinned;
+        this.pinnedAt = pinnedAt;
+    }
+
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable Boolean muted,
+            @Nullable String mutedUntil,
+            @Nullable Boolean archived,
+            @Nullable Boolean aiOptOut) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, muted, mutedUntil, archived, aiOptOut, null, null);
+    }
+
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable Boolean pinned,
+            @Nullable String pinnedAt) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, null, null, null, null, pinned, pinnedAt);
     }
 
     public ConversationInboxDto(String id, String type, String title, java.util.List<ConversationMemberDto> members) {
         this(id, type, title, null, null, null, null, null, null, null, null, null, null, null, members, null,
-                null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     /** Legacy fixture shape without the caller-scoped preference flags. */
-    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence) {
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence) {
         this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
                 lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
-                avatarUrl, members, peerPresence, null, null, null, null);
+                avatarUrl, members, peerPresence, null, null, null, null, null, null);
     }
 
     @NonNull public String getId() {
@@ -152,6 +244,17 @@ public final class ConversationInboxDto {
         return aiOptOut;
     }
 
+    @Nullable public Boolean getPinned() {
+        return pinned;
+    }
+
+    public boolean isPinned() {
+        return Boolean.TRUE.equals(pinned);
+    }
+
+    @Nullable public String getPinnedAt() {
+        return pinnedAt;
+    }
 
     @Nullable
     public String resolvedLastContent() {
@@ -268,11 +371,16 @@ public final class ConversationInboxDto {
                 && Objects.equals(muted, that.muted)
                 && Objects.equals(mutedUntil, that.mutedUntil)
                 && Objects.equals(archived, that.archived)
-                && Objects.equals(aiOptOut, that.aiOptOut);
+                && Objects.equals(aiOptOut, that.aiOptOut)
+                && Objects.equals(pinned, that.pinned)
+                && Objects.equals(pinnedAt, that.pinnedAt);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar, avatarUrl, members, peerPresence, muted, mutedUntil, archived, aiOptOut);
+        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser,
+                otherUserName, otherUserAvatar, avatarUrl, members, peerPresence,
+                muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt);
     }
 }

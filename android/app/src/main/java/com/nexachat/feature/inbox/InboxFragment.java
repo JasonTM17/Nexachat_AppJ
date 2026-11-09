@@ -139,6 +139,11 @@ public final class InboxFragment extends Fragment {
                             Snackbar.LENGTH_LONG)
                     .show();
         });
+        viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
+            if (error != null) {
+                viewModel.clearPinError();
+            }
+        });
     }
 
     private void showThemeDialog() {
@@ -222,6 +227,11 @@ public final class InboxFragment extends Fragment {
                 requireContext(),
                 conversation,
                 new ConversationPreferenceMenu.Listener() {
+                    @Override
+                    public void onTogglePin(boolean pin) {
+                        viewModel.togglePin(conversation);
+                    }
+
                     @Override
                     public void onMute(@Nullable java.time.Instant until) {
                         if (until == null) {

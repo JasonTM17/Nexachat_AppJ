@@ -46,10 +46,12 @@ public final class SyncResponse {
         @Nullable private final String mutedUntil;
         /** Caller's own archive flag; absent payloads leave local state unchanged. */
         @Nullable private final Boolean archived;
+        @Nullable private final Boolean pinned;
+        @Nullable private final String pinnedAt;
 
         public ConversationDeltaDto() {
             this(null, List.of(), List.of(), List.of(), List.of(), 0L, false,
-                    null, false, null, null, null);
+                    null, false, null, null, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -61,7 +63,7 @@ public final class SyncResponse {
                 @Nullable Long maxSeq,
                 boolean hasMore) {
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
-                    reactionUpdates, maxSeq, hasMore, null, false, null, null, null);
+                    reactionUpdates, maxSeq, hasMore, null, false, null, null, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -76,7 +78,7 @@ public final class SyncResponse {
                 boolean reactionsFullRefresh) {
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
                     reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
-                    null, null, null);
+                    null, null, null, null, null);
         }
 
         public ConversationDeltaDto(
@@ -91,7 +93,7 @@ public final class SyncResponse {
                 @Nullable String mutedUntil,
                 @Nullable Boolean archived) {
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
-                    reactionUpdates, maxSeq, hasMore, null, false, muted, mutedUntil, archived);
+                    reactionUpdates, maxSeq, hasMore, null, false, muted, mutedUntil, archived, null, null);
         }
 
         public ConversationDeltaDto(
@@ -107,6 +109,26 @@ public final class SyncResponse {
                 @Nullable Boolean muted,
                 @Nullable String mutedUntil,
                 @Nullable Boolean archived) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
+                    muted, mutedUntil, archived, null, null);
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Long reactionCursor,
+                boolean reactionsFullRefresh,
+                @Nullable Boolean muted,
+                @Nullable String mutedUntil,
+                @Nullable Boolean archived,
+                @Nullable Boolean pinned,
+                @Nullable String pinnedAt) {
             this.conversationId = conversationId;
             this.newMessages = newMessages == null ? List.of() : newMessages;
             this.editedMessages = editedMessages == null ? List.of() : editedMessages;
@@ -119,6 +141,25 @@ public final class SyncResponse {
             this.muted = muted;
             this.mutedUntil = mutedUntil;
             this.archived = archived;
+            this.pinned = pinned;
+            this.pinnedAt = pinnedAt;
+        }
+
+        public ConversationDeltaDto(
+                @Nullable String conversationId,
+                @Nullable List<MessageDto> newMessages,
+                @Nullable List<MessageDto> editedMessages,
+                @Nullable List<String> deletedMessageIds,
+                @Nullable List<ReactionUpdateDto> reactionUpdates,
+                @Nullable Long maxSeq,
+                boolean hasMore,
+                @Nullable Long reactionCursor,
+                boolean reactionsFullRefresh,
+                @Nullable Boolean pinned,
+                @Nullable String pinnedAt) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
+                    null, null, null, pinned, pinnedAt);
         }
 
         @Nullable public String getConversationId() { return conversationId; }
@@ -133,5 +174,8 @@ public final class SyncResponse {
         @Nullable public Boolean getMuted() { return muted; }
         @Nullable public String getMutedUntil() { return mutedUntil; }
         @Nullable public Boolean getArchived() { return archived; }
+        @Nullable public Boolean getPinned() { return pinned; }
+        public boolean isPinned() { return Boolean.TRUE.equals(pinned); }
+        @Nullable public String getPinnedAt() { return pinnedAt; }
     }
 }

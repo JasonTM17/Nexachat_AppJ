@@ -521,6 +521,61 @@ public final class ConversationRepository implements AutoCloseable {
                 .subscribeOn(Schedulers.io());
     }
 
+    /**
+     * Pins the conversation for the caller with optimistic Room update and rollback on failure.
+     */
+    @NonNull
+    public Single<Result<Void>> pinConversation(@NonNull String conversationId) {
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean prevPinned = existing.isPinned();
+                    Long prevPinnedAt = existing.getPinnedAt();
+                    long now = System.currentTimeMillis();
+                    return conversationDao.updatePin(conversationId, true, now)
+                            .andThen(callVoid(messageApi.pinConversation(conversationId)))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?>) {
+                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
+                                            .andThen(Single.just(result));
+                                }
+                                return Single.just(result);
+                            });
+                })
+                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Unpins the conversation for the caller with optimistic Room update and rollback on failure.
+     */
+    @NonNull
+    public Single<Result<Void>> unpinConversation(@NonNull String conversationId) {
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean prevPinned = existing.isPinned();
+                    Long prevPinnedAt = existing.getPinnedAt();
+                    return conversationDao.updatePin(conversationId, false, null)
+                            .andThen(callVoid(messageApi.unpinConversation(conversationId)))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?>) {
+                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
+                                            .andThen(Single.just(result));
+                                }
+                                return Single.just(result);
+                            });
+                })
+                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Toggles the pin state for the specified conversation.
+     */
+    @NonNull
+    public Single<Result<Void>> setConversationPinned(@NonNull String conversationId, boolean pin) {
+        return pin ? pinConversation(conversationId) : unpinConversation(conversationId);
+    }
+
     @Override
     public void close() {
         subscriptions.dispose();
@@ -1025,7 +1080,9 @@ public final class ConversationRepository implements AutoCloseable {
                         row.isMuted(),
                         row.getMutedUntilEpochMs(),
                         row.isArchived(),
-                        row.isAiOptOut()));
+                        row.isAiOptOut(),
+                        row.isPinned(),
+                        row.getPinnedAt()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -1043,6 +1100,8 @@ public final class ConversationRepository implements AutoCloseable {
                 break;
             }
         }
+        boolean pinned = dto.isPinned();
+        Long pinnedAtMs = dto.getPinnedAt() != null ? TimeAndJwt.isoToEpochMsOrNull(dto.getPinnedAt()) : null;
         return new ConversationEntity(
                 dto.getId(),
                 dto.getType() != null ? dto.getType() : TYPE_DIRECT,
@@ -1065,7 +1124,9 @@ public final class ConversationRepository implements AutoCloseable {
                         ? null
                         : TimeAndJwt.isoToEpochMsOrNull(dto.getMutedUntil()),
                 Boolean.TRUE.equals(dto.getArchived()),
-                Boolean.TRUE.equals(dto.getAiOptOut()));
+                Boolean.TRUE.equals(dto.getAiOptOut()),
+                pinned,
+                pinnedAtMs);
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -1089,7 +1150,9 @@ public final class ConversationRepository implements AutoCloseable {
                 false,
                 null,
                 false,
-                Boolean.TRUE.equals(dto.getAiOptOut()));
+                Boolean.TRUE.equals(dto.getAiOptOut()),
+                false,
+                null);
     }
 
     private List<GroupMember> mapMembers(List<ConversationMemberDto> members) {
@@ -1133,27 +1196,17 @@ public final class ConversationRepository implements AutoCloseable {
                 row.isMuted(),
                 row.getMutedUntilEpochMs(),
                 row.isArchived(),
-                row.isAiOptOut());
+                row.isAiOptOut(),
+                row.isPinned(),
+                row.getPinnedAt());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {
-        return new ConversationEntity(
-                row.getId(), row.getType(), title, row.getLastMessageSeq(),
-                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
-                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.isMuted(),
-                row.getMutedUntilEpochMs(), row.isArchived(), row.isAiOptOut());
+        return row.withTitle(title);
     }
 
     private ConversationEntity withAvatarUrl(ConversationEntity row, @Nullable String avatarUrl) {
-        return new ConversationEntity(
-                row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
-                row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
-                row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                avatarUrl, row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.isMuted(),
-                row.getMutedUntilEpochMs(), row.isArchived(), row.isAiOptOut());
+        return row.withAvatarUrl(avatarUrl);
     }
 
     private String resolveMime(Uri uri) {

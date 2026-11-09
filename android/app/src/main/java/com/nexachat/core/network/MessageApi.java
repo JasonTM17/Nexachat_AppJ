@@ -124,6 +124,12 @@ public interface MessageApi {
             @Header("Idempotency-Key") String idempotencyKey
     );
 
+    @PUT("api/v1/conversations/{id}/pin")
+    Call<Void> pinConversation(@Path("id") String conversationId);
+
+    @DELETE("api/v1/conversations/{id}/pin")
+    Call<Void> unpinConversation(@Path("id") String conversationId);
+
     @POST("api/v1/sync")
     Call<SyncResponse> syncDeltas(@Body SyncRequest request);
 }

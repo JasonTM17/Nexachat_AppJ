@@ -84,6 +84,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private static final int MENU_SETTINGS = 5;
     private static final int MENU_SHARED_MEDIA = 6;
     private static final int MENU_GROUP_BOARD = 7;
+    private static final int MENU_PIN = 8;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -541,7 +542,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             int anchor = manager.findFirstVisibleItemPosition();
             if (anchor >= 0 && anchor < oldCount) anchorId = adapter.getCurrentList().get(anchor).getStableId();
         }
-        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), state.getPeerReadSeq(), state.getPeerDeliveredSeq(), pulsingMessageId,
+        long effectivePeerReadSeq = state != null && state.isShowSeen() ? state.getPeerReadSeq() : 0L;
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), effectivePeerReadSeq, state.getPeerDeliveredSeq(), pulsingMessageId,
                 new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)), System.currentTimeMillis());
         String stableAnchor = anchorId;
         adapter.submitList(rows, () -> {
@@ -609,6 +611,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         boolean muted = conversation != null
                 && conversation.isMutedAt(System.currentTimeMillis());
         boolean archived = conversation != null && conversation.isArchived();
+        boolean pinned = state != null && state.isConversationPinned();
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
         labels.add(getString(R.string.ask_action));
@@ -619,12 +622,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         actions.add(MENU_MUTE);
         labels.add(getString(archived ? R.string.conversation_unarchive : R.string.conversation_archive));
         actions.add(MENU_ARCHIVE);
+        labels.add(getString(pinned ? R.string.action_unpin_conversation : R.string.action_pin_conversation));
+        actions.add(MENU_PIN);
         labels.add(getString(R.string.conversation_settings_title));
         actions.add(MENU_SETTINGS);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
-        labels.add(getString(R.string.group_board_title));
-        actions.add(MENU_GROUP_BOARD);
+        if (state != null && state.isGroup()) {
+            labels.add(getString(R.string.group_board_title));
+            actions.add(MENU_GROUP_BOARD);
+        }
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
@@ -646,6 +653,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
         } else if (action == MENU_ARCHIVE) {
             viewModel.setConversationArchived(!archived);
+        } else if (action == MENU_PIN) {
+            viewModel.toggleConversationPin();
         } else if (action == MENU_SETTINGS) {
             showConversationSettings();
         } else if (action == MENU_SHARED_MEDIA) {

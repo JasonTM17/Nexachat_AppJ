@@ -24,6 +24,8 @@ public final class ConversationPreferenceMenu {
         void onUnmute();
 
         void onArchive(boolean archive);
+
+        default void onTogglePin(boolean pin) {}
     }
 
     private static final int ACTION_UNMUTE = 1;
@@ -33,17 +35,25 @@ public final class ConversationPreferenceMenu {
     private static final int ACTION_MUTE_FOREVER = 5;
     private static final int ACTION_ARCHIVE = 6;
     private static final int ACTION_UNARCHIVE = 7;
+    private static final int ACTION_PIN = 8;
+    private static final int ACTION_UNPIN = 9;
 
     private ConversationPreferenceMenu() {}
 
-    /** Inbox long-press: mute presets (or unmute) plus archive/unarchive. */
+    /** Inbox long-press: pin/unpin, mute presets (or unmute) plus archive/unarchive. */
     public static void showInboxActions(
             @NonNull Context context,
             @NonNull ConversationSummary conversation,
             @NonNull Listener listener) {
-        boolean muted = conversation.isMutedAt(System.currentTimeMillis());
+        boolean pinned = conversation.isPinned();
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
+        labels.add(context.getString(pinned
+                ? R.string.action_unpin_conversation
+                : R.string.action_pin_conversation));
+        actions.add(pinned ? ACTION_UNPIN : ACTION_PIN);
+
+        boolean muted = conversation.isMutedAt(System.currentTimeMillis());
         addMuteItems(context, muted, labels, actions);
         boolean archived = conversation.isArchived();
         labels.add(context.getString(archived
@@ -109,6 +119,10 @@ public final class ConversationPreferenceMenu {
             listener.onArchive(true);
         } else if (action == ACTION_UNARCHIVE) {
             listener.onArchive(false);
+        } else if (action == ACTION_PIN) {
+            listener.onTogglePin(true);
+        } else if (action == ACTION_UNPIN) {
+            listener.onTogglePin(false);
         }
     }
 }
