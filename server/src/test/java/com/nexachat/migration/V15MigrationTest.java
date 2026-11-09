@@ -2,7 +2,7 @@ package com.nexachat.migration;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.datasource.SimpleDriverDataSource;
+import com.nexachat.testutil.PostgresTestDatabase;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -22,22 +22,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class V15MigrationTest {
 
-    private static final String JDBC_URL =
-            env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test");
-    private static final String DB_USER = env("IT_DB_USER", "nexachat");
-    private static final String DB_PASSWORD = env("IT_DB_PASSWORD", "nexachat");
-
-    private static String env(String name, String fallback) {
-        String value = System.getenv(name);
-        return value == null || value.isBlank() ? fallback : value;
-    }
-
     @Test
     void v15AppliesOnPopulatedV11DatabaseAndCascadesPollRows() throws Exception {
-        String database = "nexachat_mig_v15_" + System.nanoTime();
-        createDatabase(database);
-        try {
-            DataSource dataSource = dataSource(database);
+        try (PostgresTestDatabase testDatabase = PostgresTestDatabase.create("v15-polls")) {
+            DataSource dataSource = testDatabase.dataSource();
             Flyway.configure()
                     .dataSource(dataSource)
                     .locations("classpath:db/migration")
@@ -131,8 +119,6 @@ class V15MigrationTest {
                     .locations("classpath:db/migration")
                     .load()
                     .validate();
-        } finally {
-            dropDatabase(database);
         }
     }
 
@@ -175,39 +161,4 @@ class V15MigrationTest {
         return UUID.fromString(result.getString(1));
     }
 
-    private static DataSource dataSource(String database) {
-        SimpleDriverDataSource dataSource = new SimpleDriverDataSource();
-        dataSource.setDriver(new org.postgresql.Driver());
-        dataSource.setUrl(serverUrl() + database);
-        dataSource.setUsername(DB_USER);
-        dataSource.setPassword(DB_PASSWORD);
-        return dataSource;
-    }
-
-    private static String serverUrl() {
-        return JDBC_URL.substring(0, JDBC_URL.lastIndexOf('/') + 1);
-    }
-
-    private static void createDatabase(String database) throws SQLException {
-        try (Connection connection = adminConnection();
-             Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + database);
-            statement.executeUpdate("CREATE DATABASE " + database);
-        }
-    }
-
-    private static void dropDatabase(String database) throws SQLException {
-        try (Connection connection = adminConnection();
-             Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + database);
-        }
-    }
-
-    private static Connection adminConnection() throws SQLException {
-        java.sql.Driver driver = new org.postgresql.Driver();
-        java.util.Properties properties = new java.util.Properties();
-        properties.setProperty("user", DB_USER);
-        properties.setProperty("password", DB_PASSWORD);
-        return driver.connect(serverUrl() + "postgres", properties);
-    }
 }
