@@ -83,21 +83,24 @@ class Client:
         body=None,
         params: dict | None = None,
         raw_body: tuple[bytes, str] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Response:
         url = self.base_url + path
         if params:
             url += "?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
         data = None
-        headers = {"Accept": "application/json"}
+        request_headers = {"Accept": "application/json"}
         if raw_body is not None:
             data, content_type = raw_body
-            headers["Content-Type"] = content_type
+            request_headers["Content-Type"] = content_type
         elif body is not None:
             data = json.dumps(body).encode("utf-8")
-            headers["Content-Type"] = "application/json"
+            request_headers["Content-Type"] = "application/json"
         if token:
-            headers["Authorization"] = "Bearer " + token
-        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+            request_headers["Authorization"] = "Bearer " + token
+        if headers:
+            request_headers.update(headers)
+        request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return Response(response.status, dict(response.headers), response.read())
@@ -106,17 +109,20 @@ class Client:
         except urllib.error.URLError as error:
             raise E2EFailure(f"{method} {url} failed: {error.reason}") from error
 
-    def get(self, path, token=None, params=None) -> Response:
-        return self.request("GET", path, token=token, params=params)
+    def get(self, path, token=None, params=None, headers=None) -> Response:
+        return self.request("GET", path, token=token, params=params, headers=headers)
 
-    def post(self, path, token=None, body=None) -> Response:
-        return self.request("POST", path, token=token, body=body)
+    def post(self, path, token=None, body=None, headers=None) -> Response:
+        return self.request("POST", path, token=token, body=body, headers=headers)
 
-    def patch(self, path, token=None, body=None) -> Response:
-        return self.request("PATCH", path, token=token, body=body)
+    def put(self, path, token=None, body=None, headers=None) -> Response:
+        return self.request("PUT", path, token=token, body=body, headers=headers)
 
-    def delete(self, path, token=None) -> Response:
-        return self.request("DELETE", path, token=token)
+    def patch(self, path, token=None, body=None, headers=None) -> Response:
+        return self.request("PATCH", path, token=token, body=body, headers=headers)
+
+    def delete(self, path, token=None, params=None, headers=None) -> Response:
+        return self.request("DELETE", path, token=token, params=params, headers=headers)
 
 
 def login(client: Client, phone: str) -> dict:

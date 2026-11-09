@@ -162,6 +162,121 @@ public final class ArchiveViewModelTest {
     }
 
     @Test
+    public void pagingCursorAndItemsPersistAcrossProcessDeath() {
+        FakeRepository repository = new FakeRepository();
+        SavedStateHandle savedState = new SavedStateHandle(
+                Map.of(ArchiveViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+        ArchiveViewModel initialViewModel = createViewModel(repository, savedState);
+        initialViewModel.loadCurrentPage();
+        repository.request(0).succeed(new ArchivePage(
+                List.of(item("message-1", "sender-1")), "cursor-after-p1"));
+
+        // Simulate process death: recreation of ViewModel with the same SavedStateHandle
+        ArchiveViewModel restoredViewModel = createViewModel(repository, savedState);
+        ArchivePageState restoredPage = restoredViewModel.getUiState().getValue().getPage(ArchiveType.MEDIA);
+
+        assertTrue(restoredPage.isLoaded());
+        assertFalse(restoredPage.isLoading());
+        assertTrue(restoredPage.hasMore());
+        assertEquals("cursor-after-p1", restoredPage.getCursor());
+        assertEquals(List.of("message-1"), messageIds(restoredPage.getItems()));
+
+        // Paging continues seamlessly from the restored cursor
+        restoredViewModel.loadNextPage();
+        assertEquals(2, repository.requests.size());
+        assertEquals("cursor-after-p1", repository.request(1).query.getCursor());
+    }
+
+    @Test
+    public void deduplicatesOverlappingPagesAndRetainsMultipleAttachmentsPerMessage() {
+        FakeRepository repository = new FakeRepository();
+        ArchiveViewModel viewModel = createViewModel(repository, new SavedStateHandle());
+        viewModel.loadCurrentPage();
+
+        ArchivePage.Item att1 = itemWithAttachment("msg-1", "att-1", "file1.png");
+        ArchivePage.Item att2 = itemWithAttachment("msg-1", "att-2", "file2.png");
+        repository.request(0).succeed(new ArchivePage(List.of(att1, att2), "cursor-p1"));
+
+        viewModel.loadNextPage();
+        ArchivePage.Item att3 = itemWithAttachment("msg-1", "att-3", "file3.png");
+        // Page 2 overlaps on att2, and adds att3
+        repository.request(1).succeed(new ArchivePage(List.of(att2, att3), null));
+
+        ArchivePageState page = viewModel.getUiState().getValue().getPage(ArchiveType.MEDIA);
+        assertEquals(3, page.getItems().size());
+        assertEquals("att-1", page.getItems().get(0).getAttachment().getId());
+        assertEquals("att-2", page.getItems().get(1).getAttachment().getId());
+        assertEquals("att-3", page.getItems().get(2).getAttachment().getId());
+    }
+
+    @Test
+    public void emptyPageWithNextCursorAutoAdvancesBoundedScanWithoutEndlessLoop() {
+        FakeRepository repository = new FakeRepository();
+        ArchiveViewModel viewModel = createViewModel(repository, new SavedStateHandle());
+        viewModel.selectType(ArchiveType.LINK);
+
+        // Page 1: server bounded scan returns empty list with nextCursor
+        repository.request(0).succeed(new ArchivePage(Collections.emptyList(), "scan-cursor-1"));
+        // Auto-advance round 1
+        assertEquals(2, repository.requests.size());
+        assertEquals("scan-cursor-1", repository.request(1).query.getCursor());
+        repository.request(1).succeed(new ArchivePage(Collections.emptyList(), "scan-cursor-2"));
+
+        // Auto-advance round 2
+        assertEquals(3, repository.requests.size());
+        assertEquals("scan-cursor-2", repository.request(2).query.getCursor());
+        repository.request(2).succeed(new ArchivePage(Collections.emptyList(), "scan-cursor-3"));
+
+        // Auto-advance round 3 (reaches MAX_EMPTY_SCAN_ROUNDS = 3)
+        assertEquals(4, repository.requests.size());
+        assertEquals("scan-cursor-3", repository.request(3).query.getCursor());
+        repository.request(3).succeed(new ArchivePage(Collections.emptyList(), "scan-cursor-4"));
+
+        // Must stop auto-advancing: no more background requests, loading = false, cursor preserved
+        assertEquals(4, repository.requests.size());
+        ArchivePageState page = viewModel.getUiState().getValue().getPage(ArchiveType.LINK);
+        assertFalse(page.isLoading());
+        assertTrue(page.hasMore());
+        assertEquals("scan-cursor-4", page.getCursor());
+        assertTrue(page.getItems().isEmpty());
+    }
+
+    @Test
+    public void cyclicCursorBreaksLoopImmediately() {
+        FakeRepository repository = new FakeRepository();
+        ArchiveViewModel viewModel = createViewModel(repository, new SavedStateHandle());
+        viewModel.loadCurrentPage();
+        repository.request(0).succeed(new ArchivePage(List.of(item("m-1", "s-1")), "cursor-A"));
+
+        viewModel.loadNextPage();
+        repository.request(1).succeed(new ArchivePage(List.of(item("m-2", "s-1")), "cursor-B"));
+
+        viewModel.loadNextPage();
+        // Server returns cursor-A again, causing a cycle
+        repository.request(2).succeed(new ArchivePage(List.of(item("m-3", "s-1")), "cursor-A"));
+
+        ArchivePageState page = viewModel.getUiState().getValue().getPage(ArchiveType.MEDIA);
+        assertNull(page.getCursor());
+        assertFalse(page.hasMore());
+        assertEquals(ArchiveRepository.Failure.UNKNOWN, page.getError());
+    }
+
+    @Test
+    public void handlesNotFound404StateAsTerminalErrorWithoutRetrying() {
+        FakeRepository repository = new FakeRepository();
+        ArchiveViewModel viewModel = createViewModel(repository, new SavedStateHandle());
+        viewModel.loadCurrentPage();
+        repository.request(0).fail(ArchiveRepository.Failure.NOT_FOUND);
+
+        ArchivePageState page = viewModel.getUiState().getValue().getPage(ArchiveType.MEDIA);
+        assertEquals(ArchiveRepository.Failure.NOT_FOUND, page.getError());
+
+        // 404 is a terminal permission/not-found error, retry should not request again
+        viewModel.retry();
+        assertEquals(1, repository.requests.size());
+    }
+
+    @Test
     public void clearFiltersResetsFilterStateAndReloads() {
         FakeRepository repository = new FakeRepository();
         ArchiveViewModel viewModel = createViewModel(repository, new SavedStateHandle());
@@ -209,6 +324,13 @@ public final class ArchiveViewModelTest {
     private static ArchivePage.Item item(String messageId, String senderId) {
         return new ArchivePage.Item(
                 messageId, 1L, senderId, "2026-11-09T10:00:00Z", "IMAGE", null, null);
+    }
+
+    private static ArchivePage.Item itemWithAttachment(String messageId, String attachmentId, String fileName) {
+        return new ArchivePage.Item(
+                messageId, 1L, "sender-1", "2026-11-09T10:00:00Z", "IMAGE",
+                new ArchivePage.Attachment(attachmentId, fileName, "image/png", 1024L, null, null, 100, 100),
+                null);
     }
 
     private static List<String> messageIds(List<ArchivePage.Item> items) {

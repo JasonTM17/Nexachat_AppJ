@@ -78,7 +78,7 @@ public class MessageController {
                                 @PathVariable UUID conversationId,
                                 @PathVariable UUID messageId,
                                 @Valid @RequestBody EditMessageRequest request) {
-        return messageService.edit(requireUserId(principal), conversationId, messageId, request.content());
+        return messageService.edit(requireUserId(principal), conversationId, messageId, request);
     }
 
     @DeleteMapping("/messages/{messageId}")

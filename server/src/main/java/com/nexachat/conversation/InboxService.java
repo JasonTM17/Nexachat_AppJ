@@ -9,6 +9,8 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
+import com.nexachat.summary.ConversationAiOptOuts;
+import com.nexachat.label.InboxLabelReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -21,18 +23,22 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Inbox read model for {@code GET /conversations}: three batched queries —
- * member rows ordered by {@code lastMessageSeq DESC}, member views for all
- * conversations, unread counts grouped per conversation — plus one IN query
- * for the last-message rows. No N+1 (plan §9.3.7).
+ * member rows ordered by the caller's {@code pinned} flag and then
+ * {@code lastMessageSeq DESC}, member views for all conversations, unread
+ * counts grouped per conversation — plus one IN query for the last-message
+ * rows. No N+1 (plan §9.3.7).
  *
  * <p>The optional {@code archived} filter selects the default (non-archived)
  * view or the archived view; omitting it means "not archived", which keeps
  * archived conversations out of the inbox clients already know how to page.
+ * The keyset cursor carries the pinned rank so a page boundary inside the
+ * pinned group stays stable.
  */
 @Service
 public class InboxService {
@@ -44,28 +50,45 @@ public class InboxService {
     public record InboxPage(List<InboxEntry> items, String nextCursor) {
     }
 
-    private record Cursor(long lastMessageSeq, Instant createdAt, UUID conversationId) {
+    private record Cursor(boolean pinned, long lastMessageSeq, Instant createdAt,
+                          UUID conversationId) {
     }
 
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
     private final PresenceService presenceService;
+    private final ConversationAiOptOuts aiOptOuts;
+    private final InboxLabelReader labelReader;
     private final Clock clock;
 
     @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
                         MessageRepository messageRepository,
-                        PresenceService presenceService) {
-        this(memberRepository, messageRepository, presenceService, Clock.systemUTC());
+                        PresenceService presenceService,
+                        ConversationAiOptOuts aiOptOuts,
+                        InboxLabelReader labelReader) {
+        this(memberRepository, messageRepository, presenceService, aiOptOuts, labelReader, Clock.systemUTC());
     }
 
     InboxService(ConversationMemberRepository memberRepository,
                  MessageRepository messageRepository,
                  PresenceService presenceService,
                  Clock clock) {
+        this(memberRepository, messageRepository, presenceService, ConversationAiOptOuts.none(),
+                (userId, conversationIds) -> Map.of(), clock);
+    }
+
+    InboxService(ConversationMemberRepository memberRepository,
+                 MessageRepository messageRepository,
+                 PresenceService presenceService,
+                 ConversationAiOptOuts aiOptOuts,
+                 InboxLabelReader labelReader,
+                 Clock clock) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.presenceService = presenceService;
+        this.aiOptOuts = aiOptOuts;
+        this.labelReader = labelReader;
         this.clock = clock;
     }
 
@@ -73,6 +96,16 @@ public class InboxService {
     public List<InboxEntry> listInbox(UUID userId, Boolean archived) {
         List<InboxConversationRow> rows =
                 memberRepository.findInboxConversations(userId, archivedFilter(archived));
+        return toEntries(userId, rows);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InboxEntry> listInbox(UUID userId, Boolean archived, UUID labelId) {
+        if (labelId == null) {
+            return listInbox(userId, archived);
+        }
+        List<InboxConversationRow> rows = memberRepository.findInboxConversationsByLabel(
+                userId, archivedFilter(archived), labelId);
         return toEntries(userId, rows);
     }
 
@@ -85,27 +118,46 @@ public class InboxService {
      */
     @Transactional(readOnly = true)
     public InboxPage listInbox(UUID userId, Integer limit, String cursorToken, Boolean archived) {
+        return listInbox(userId, limit, cursorToken, archived, null);
+    }
+
+    @Transactional(readOnly = true)
+    public InboxPage listInbox(UUID userId, Integer limit, String cursorToken,
+                               Boolean archived, UUID labelId) {
         boolean includeArchived = archivedFilter(archived);
         if (limit == null && cursorToken == null) {
-            return new InboxPage(listInbox(userId, includeArchived), null);
+            return new InboxPage(listInbox(userId, includeArchived, labelId), null);
         }
         Cursor cursor = cursorToken == null ? null : decodeCursor(cursorToken);
         if (limit == null) {
-            List<InboxConversationRow> rows = memberRepository.findInboxConversationsAfterCursor(
-                    userId, cursor == null ? null : cursor.lastMessageSeq(),
-                    cursor == null ? null : cursor.createdAt(),
-                    cursor == null ? null : cursor.conversationId(),
-                    includeArchived);
+            List<InboxConversationRow> rows = labelId == null
+                    ? memberRepository.findInboxConversationsAfterCursor(
+                            userId, cursor == null ? null : cursor.pinned(),
+                            cursor == null ? null : cursor.lastMessageSeq(),
+                            cursor == null ? null : cursor.createdAt(),
+                            cursor == null ? null : cursor.conversationId(), includeArchived)
+                    : memberRepository.findInboxConversationsAfterCursorByLabel(
+                            userId, cursor == null ? null : cursor.pinned(),
+                            cursor == null ? null : cursor.lastMessageSeq(),
+                            cursor == null ? null : cursor.createdAt(),
+                            cursor == null ? null : cursor.conversationId(), includeArchived, labelId);
             return new InboxPage(toEntries(userId, rows), null);
         }
 
         int pageSize = normalizeLimit(limit);
-        List<InboxConversationRow> rows = memberRepository.findInboxConversationsPage(
-                userId, cursor == null ? null : cursor.lastMessageSeq(),
-                cursor == null ? null : cursor.createdAt(),
-                cursor == null ? null : cursor.conversationId(),
-                includeArchived,
-                PageRequest.of(0, pageSize + 1));
+        List<InboxConversationRow> rows = labelId == null
+                ? memberRepository.findInboxConversationsPage(
+                        userId, cursor == null ? null : cursor.pinned(),
+                        cursor == null ? null : cursor.lastMessageSeq(),
+                        cursor == null ? null : cursor.createdAt(),
+                        cursor == null ? null : cursor.conversationId(),
+                        includeArchived, PageRequest.of(0, pageSize + 1))
+                : memberRepository.findInboxConversationsPageByLabel(
+                        userId, cursor == null ? null : cursor.pinned(),
+                        cursor == null ? null : cursor.lastMessageSeq(),
+                        cursor == null ? null : cursor.createdAt(),
+                        cursor == null ? null : cursor.conversationId(),
+                        includeArchived, labelId, PageRequest.of(0, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         List<InboxConversationRow> page = hasMore ? rows.subList(0, pageSize) : rows;
         String nextCursor = hasMore && !page.isEmpty()
@@ -146,7 +198,10 @@ public class InboxService {
                                 UnreadCountRow::conversationId, UnreadCountRow::unreadCount));
         Map<UUID, InboxEntry.PeerPresence> peerPresenceByConversation =
                 presenceService.peerPresence(userId, conversationIds);
+        Map<UUID, List<UUID>> labelsByConversation =
+                labelReader.findInboxLabelIds(userId, conversationIds);
 
+        Set<UUID> optedOutConversations = aiOptOuts.optedOutConversationIds(userId);
         Instant now = clock.instant();
         return rows.stream()
                 .map(row -> {
@@ -169,7 +224,11 @@ public class InboxService {
                                     ? peerPresenceByConversation.get(row.id()) : null,
                             muted,
                             muted ? row.mutedUntil() : null,
-                            row.archived());
+                            row.archived(),
+                            optedOutConversations.contains(row.id()),
+                            row.pinned(),
+                            row.pinned() ? row.pinnedAt() : null,
+                            labelsByConversation.getOrDefault(row.id(), List.of()));
                 })
                 .toList();
     }
@@ -180,7 +239,8 @@ public class InboxService {
 
     private static String encodeCursor(InboxConversationRow row) {
         long sortSeq = Objects.requireNonNullElse(row.lastMessageSeq(), 0L);
-        String value = "v1|" + sortSeq + "|" + row.createdAt() + "|" + row.id();
+        String value = "v2|" + (row.pinned() ? "1" : "0") + "|" + sortSeq + "|"
+                + row.createdAt() + "|" + row.id();
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
@@ -189,16 +249,29 @@ public class InboxService {
         try {
             String value = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
             String[] fields = value.split("\\|", -1);
-            if (fields.length != 4 || !"v1".equals(fields[0])) {
+            if (fields.length == 4 && "v1".equals(fields[0])) {
+                // Legacy cursor from before pins existed: it can only have
+                // pointed into the unpinned part of the activity order.
+                long seq = Long.parseLong(fields[1]);
+                Instant createdAt = Instant.parse(fields[2]);
+                UUID conversationId = UUID.fromString(fields[3]);
+                if (seq < 0) {
+                    throw new IllegalArgumentException("invalid cursor sequence");
+                }
+                return new Cursor(false, seq, createdAt, conversationId);
+            }
+            if (fields.length != 5 || !"v2".equals(fields[0])
+                    || !("0".equals(fields[1]) || "1".equals(fields[1]))) {
                 throw new IllegalArgumentException("invalid cursor version");
             }
-            long seq = Long.parseLong(fields[1]);
-            Instant createdAt = Instant.parse(fields[2]);
-            UUID conversationId = UUID.fromString(fields[3]);
+            boolean pinned = "1".equals(fields[1]);
+            long seq = Long.parseLong(fields[2]);
+            Instant createdAt = Instant.parse(fields[3]);
+            UUID conversationId = UUID.fromString(fields[4]);
             if (seq < 0) {
                 throw new IllegalArgumentException("invalid cursor sequence");
             }
-            return new Cursor(seq, createdAt, conversationId);
+            return new Cursor(pinned, seq, createdAt, conversationId);
         } catch (RuntimeException ex) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Invalid inbox cursor");
         }

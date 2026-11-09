@@ -83,6 +83,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private static final int MENU_ARCHIVE = 4;
     private static final int MENU_SETTINGS = 5;
     private static final int MENU_SHARED_MEDIA = 6;
+    private static final int MENU_GROUP_BOARD = 7;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -622,6 +623,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         actions.add(MENU_SETTINGS);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
+        labels.add(getString(R.string.group_board_title));
+        actions.add(MENU_GROUP_BOARD);
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
@@ -647,6 +650,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             showConversationSettings();
         } else if (action == MENU_SHARED_MEDIA) {
             openArchive();
+        } else if (action == MENU_GROUP_BOARD) {
+            openGroupBoard();
         }
     }
 
@@ -726,6 +731,22 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             case UNARCHIVED:
             default:
                 return R.string.conversation_unarchived;
+        }
+    }
+
+    private void openGroupBoard() {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        args.putBoolean("isGroup", state.isGroup());
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.groupBoardFragment, args);
+        } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
         }
     }
 

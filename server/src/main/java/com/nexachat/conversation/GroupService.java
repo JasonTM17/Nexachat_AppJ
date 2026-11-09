@@ -156,7 +156,7 @@ public class GroupService {
                 memberRepository.findMemberViews(conversation.getId());
         return new ConversationResponse(
                 conversation.getId(), conversation.getType().name(), memberViews,
-                conversation.getCreatedAt());
+                conversation.getCreatedAt(), false);
     }
 
     /**
@@ -203,6 +203,37 @@ public class GroupService {
         }
         publishUpdate(conversation, "MEMBERS_ADDED", List.of());
         log.info("{} added {} member(s) to group {}", callerId, toAdd.size(), conversationId);
+    }
+
+    /**
+     * Adds a member to a GROUP when joining via invite link or approval.
+     * Checks that the conversation is a GROUP and that the member is not already present.
+     * If already present, acts idempotently without re-posting a system message.
+     * Posts a SYSTEM message and publishes CONVERSATION_UPDATED event.
+     */
+    @Transactional
+    public void addMemberFromInvite(UUID userId, UUID conversationId, UUID approverId) {
+        Conversation conversation = requireGroup(conversationId);
+        if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+            return; // Idempotent no-op
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        memberRepository.saveAndFlush(ConversationMember.join(
+                conversation, user, ConversationMember.Role.MEMBER));
+
+        String text;
+        if (approverId != null) {
+            User approver = userRepository.findById(approverId).orElse(null);
+            String approverName = approver != null ? approver.getDisplayName() : "Admin";
+            text = approverName + " approved " + user.getDisplayName() + " to join the group";
+        } else {
+            text = user.getDisplayName() + " joined the group via invite link";
+        }
+        UUID actorId = approverId != null ? approverId : userId;
+        messageService.postSystemMessage(actorId, conversationId, text);
+        publishUpdate(conversation, "MEMBER_JOINED", List.of());
+        log.info("User {} joined group {} via invite link (approver: {})", userId, conversationId, approverId);
     }
 
     /**
@@ -256,10 +287,13 @@ public class GroupService {
 
         String actorName = caller.getUser().getDisplayName();
         // The system line is posted BEFORE the member row is deleted so the
-        // acting user is still a member when postSystemMessage checks.
+        // acting user is still a member when postSystemMessage checks. A
+        // removed member is the event subject so push gating can still reach
+        // them (a self-leave is not a removal and carries no subject).
         messageService.postSystemMessage(callerId, conversationId, selfRemoval
                 ? actorName + " left the group"
-                : actorName + " removed " + target.getUser().getDisplayName());
+                : actorName + " removed " + target.getUser().getDisplayName(),
+                selfRemoval ? null : targetUserId);
         memberRepository.delete(target);
         revokeTopicSubscriptionsAfterCommit(targetUserId, conversationId);
         publishUpdate(conversation,

@@ -72,6 +72,8 @@ public final class ArchiveMediaAdapter
         binding.archiveMediaKind.setVisibility(video ? View.VISIBLE : View.GONE);
         binding.getRoot().setContentDescription(ArchiveText.accessibilityDescription(
                 binding.getRoot().getContext(), currentState, title, item));
+        binding.archiveMediaOptions.setContentDescription(
+                binding.getRoot().getContext().getString(R.string.archive_item_options_for, title));
         bindThumbnail(binding, attachment);
         binding.getRoot().setOnClickListener(view -> listener.onOpen(item));
         binding.archiveMediaOptions.setOnClickListener(view -> listener.onOptions(item, view));

@@ -134,6 +134,7 @@ class UserSettingsFlowIT {
         mockMvc.perform(get(SETTINGS_URI).header("Authorization", bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.showPresence").value(true))
+                .andExpect(jsonPath("$.showSeen").value(true))
                 .andExpect(jsonPath("$.aiSummaryConsent").value(false));
         assertThat(summaryConsentRepository.isConsented(user.getId())).isFalse();
 
@@ -143,6 +144,7 @@ class UserSettingsFlowIT {
                         .content("{\"aiSummaryConsent\":true}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.showPresence").value(true))
+                .andExpect(jsonPath("$.showSeen").value(true))
                 .andExpect(jsonPath("$.aiSummaryConsent").value(true));
         assertThat(summaryConsentRepository.isConsented(user.getId())).isTrue();
         PreparedSummaryProvider consentedSelection = summaryProviderSelector.prepare(
@@ -159,6 +161,7 @@ class UserSettingsFlowIT {
                         .content("{\"showPresence\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.showPresence").value(false))
+                .andExpect(jsonPath("$.showSeen").value(true))
                 .andExpect(jsonPath("$.aiSummaryConsent").value(true));
 
         mockMvc.perform(patch(SETTINGS_URI)
@@ -167,6 +170,7 @@ class UserSettingsFlowIT {
                         .content("{\"aiSummaryConsent\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.showPresence").value(false))
+                .andExpect(jsonPath("$.showSeen").value(true))
                 .andExpect(jsonPath("$.aiSummaryConsent").value(false));
         assertThat(summaryConsentRepository.isConsented(user.getId())).isFalse();
         PreparedSummaryProvider revokedSelection = summaryProviderSelector.prepare(
@@ -183,7 +187,20 @@ class UserSettingsFlowIT {
         mockMvc.perform(get(SETTINGS_URI).header("Authorization", bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.showPresence").value(false))
+                .andExpect(jsonPath("$.showSeen").value(true))
                 .andExpect(jsonPath("$.aiSummaryConsent").value(false));
+
+        mockMvc.perform(patch(SETTINGS_URI)
+                        .header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"showSeen\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.showPresence").value(false))
+                .andExpect(jsonPath("$.showSeen").value(false))
+                .andExpect(jsonPath("$.aiSummaryConsent").value(false));
+        mockMvc.perform(get(SETTINGS_URI).header("Authorization", bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.showSeen").value(false));
 
         mockMvc.perform(patch(SETTINGS_URI)
                         .header("Authorization", bearer())

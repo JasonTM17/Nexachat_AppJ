@@ -1,11 +1,17 @@
 package com.nexachat.presence;
 
+import com.nexachat.ws.StompUserPrincipal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.web.socket.messaging.SessionConnectedEvent;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -16,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
@@ -38,8 +45,27 @@ class PresenceSessionRegistryTest {
     @BeforeEach
     void setUp() {
         registry = new PresenceSessionRegistry(presenceService, sessionState, 5_000, scheduler);
-        doReturn(offlineFuture).when(scheduler)
+        lenient().doReturn(offlineFuture).when(scheduler)
                 .schedule(any(Runnable.class), eq(5_000L), eq(TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void expiredTokenNeverMarksTheUserOnline() {
+        StompUserPrincipal principal = new StompUserPrincipal(userId,
+                Instant.now().minusSeconds(120), Instant.now().minusSeconds(60));
+        registry.onSessionConnected(connectedEvent(principal));
+
+        assertThat(sessionState.isOnline(userId)).isFalse();
+        verify(presenceService, never()).connected(userId);
+    }
+
+    private static SessionConnectedEvent connectedEvent(StompUserPrincipal principal) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECTED);
+        accessor.setSessionId("expired-session");
+        accessor.setUser(principal);
+        Message<byte[]> message = MessageBuilder.createMessage(
+                new byte[0], accessor.getMessageHeaders());
+        return new SessionConnectedEvent(new Object(), message, principal);
     }
 
     @Test

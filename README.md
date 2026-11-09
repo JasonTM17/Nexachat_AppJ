@@ -9,8 +9,8 @@ message sending available offline.
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v8`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V11`, **WebRTC** 1-to-1 voice calls, consent-gated
-> **AI conversation summaries**, and server **conversation RAG**; Android entry in progress).
+> **PostgreSQL 16** with Flyway `V1–V15`, **WebRTC** 1-to-1 voice calls, consent-gated
+> **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
 > Every architectural claim below links directly to its executable source and verification suite.
 
 ## Demo & UI Showcase (Dark & Light Mode)
@@ -83,16 +83,20 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
 | Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, durable offline outbox (Room v8) with WorkManager drain, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
+| Conversation Archive | Member-scoped browser for conversation media, files and links, with filters and keyset paging | `server/archive`, `app/feature/archive` |
+| Conversation Preferences | Server APIs for per-member mute/archive and per-conversation AI opt-out; Android controls are pending in this checkout | `server/conversation`, `server/summary` |
+| Shared Reminders | Server-side shared reminders with repeat rules and FCM delivery; Android board is pending in this checkout | `server/reminder`, `docs/api-contract.md` |
+| Group Polls | Server-side group polls with voting and a versioned change feed; Android board is pending in this checkout | `server/poll`, `docs/api-contract.md` |
 | Group Chat & Admin | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | Theme & Privacy Preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
 | Multimedia & File Sharing | Image compression (1920px bound, GPS scrub), BlurHash placeholders (V8), authenticated Glide + 2GB cache, Range downloads (206/416), ISO-BMFF track sniffing (`audio/mp4` voice notes), inline voice player with waveform, 25MB cap | `server/attachment`, `app/feature/media`, `app/feature/chat/voice` |
 | Keyset Inbox Paging | 30 conversations per page with keyset cursors, full-walk pruning, retry, and scroll-position anchoring | `server/conversation`, `app/data/ConversationRepository`, `app/feature/inbox` |
-| Bilingual Localization (Vi/En) | Vi/En resource parity: 221 string entries per locale (219 translatable; base, call and summary files), per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
+| Bilingual Localization (Vi/En) | English/Vietnamese resource parity and per-app locale (API 33+ native, <33 config-context) | `res/values*`, `core/common/AppLocaleManager` |
 | State & Lifecycle Resilience | Room-as-SSOT, `SavedStateHandle` drafts, rotation-safe; chat draft/scroll survive process death (transient forms reset — see known-limitations) | `core/database`, `feature/*/ViewModel` |
 | Rich Interactions (Reply, Reactions, Pins, Forward) | Reply/quote + emoji reactions with server idempotency (`PUT`/`DELETE`, V10) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
 | 1-to-1 Voice Calls (WebRTC) | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens with dark gradient and pulse ring, localized call log | `server/call`, `app/call` |
 | AI Conversation Summary | Extractive local engine + optional OpenAI-compatible LLM (Gemini primary `gemini-3.1-flash-lite`, DeepSeek `deepseek-flash` fallback) behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
-| Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` (server API available, Android entry in progress) | `server/rag`, `docs/rag.md`, `tools/rag-eval` |
+| Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), Android Ask screen, hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` | `server/rag`, `app/feature/ask`, `docs/rag.md`, `tools/rag-eval` |
 | Push Notifications | FCM HTTP v1 OAuth2 service-account authentication (server), Android device token registration and persisted sync cursor | `server/notification`, `app/notification` |
 | Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, and automated server/client test suites | `core/ui`, `server/src/test`, `app/src/test` |
 
@@ -117,7 +121,7 @@ flowchart LR
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V11<br/>seq · watermarks · idempotency · calls · rag · reaction_events · token_cutoff")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V15<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · token_cutoff")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -146,7 +150,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V11, `ddl-auto: validate` | Room 2.6.1 (v8, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V15, `ddl-auto: validate` | Room 2.6.1 (v8, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -246,10 +250,10 @@ build alone permits LAN cleartext — the release config blocks it
 ## Running tests
 
 ```bash
-# Server — unit tests plus integration tests against real PostgreSQL
-cd server && mvn verify
-#   unit loop only (faster, skips *IT):
+# Server — unit tests plus PollFlowTest against real PostgreSQL
 cd server && mvn test
+# Full server suite, including *IT integration tests:
+cd server && mvn verify
 
 # Android — JVM unit tests
 cd android && ./gradlew testDebugUnitTest
@@ -258,15 +262,10 @@ cd android && ./gradlew testDebugUnitTest
 bash tools/rag-eval/run-benchmark.sh
 ```
 
-Integration tests (`*IT`, failsafe) run against real PostgreSQL — locally the
-compose DB on `:5433` via `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD` env vars, in CI
-the workflow's postgres service on `:5432` (`.github/workflows/ci.yml`).
-The verified test suites cover **947 server tests** under `mvn verify` (824 Surefire
-unit tests across 140 classes + 123 Failsafe integration tests across 24 classes,
-0 failures, 0 errors, 0 skipped against PostgreSQL V1–V11) and **806 Android unit tests**
-under `./gradlew testDebugUnitTest` across 128 test classes (0 failures, 0 errors, 0 skipped).
-CI is configured to run the server and Android suites, Android lint, and a committed-secret
-scan on every PR and push to `main`/`develop`.
+Configure a dedicated test database with `IT_DB_URL`, `IT_DB_USER` and
+`IT_DB_PASSWORD`; see [docs/testing.md](docs/testing.md) for the setup and
+concurrent-run guidance. CI runs the server and Android suites, Android lint,
+and a committed-secret scan on every PR and push to `main`/`develop`.
 
 ## Repo layout
 
@@ -285,7 +284,7 @@ nexachat/
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,presence,call,summary,notification,rag,observability,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V11   # Flyway migrations
+│  ├─ src/main/resources/db/migration/V1–V15   # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
 │  ├─ design/       design tokens + design-system references

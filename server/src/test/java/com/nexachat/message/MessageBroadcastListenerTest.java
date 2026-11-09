@@ -1,7 +1,10 @@
 package com.nexachat.message;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.dto.MessageResponse;
+import com.nexachat.user.UserRepository;
 import com.nexachat.ws.EventEnvelope;
 import com.nexachat.ws.WsEventType;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +38,8 @@ class MessageBroadcastListenerTest {
     private SimpMessagingTemplate messaging;
     @Mock
     private ConversationMemberRepository memberRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private MessageBroadcastListener listener;
 
@@ -44,7 +49,7 @@ class MessageBroadcastListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new MessageBroadcastListener(messaging, memberRepository);
+        listener = new MessageBroadcastListener(messaging, memberRepository, userRepository);
     }
 
     @Test
@@ -52,7 +57,8 @@ class MessageBroadcastListenerTest {
         MessageResponse message = new MessageResponse(
                 UUID.randomUUID(), conversationId, 7L, memberA, "A", "TEXT",
                 "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
-                Instant.now(), null, null);
+                Instant.now(), null, null,
+                List.of(new com.nexachat.message.dto.MessageMentionResponse(memberB, 0, 2)), false);
         when(memberRepository.findMemberUserIds(conversationId))
                 .thenReturn(List.of(memberA, memberB));
 
@@ -65,6 +71,12 @@ class MessageBroadcastListenerTest {
         assertThat(topicEvent.getValue().conversationId()).isEqualTo(conversationId);
         assertThat(topicEvent.getValue().payload()).isSameAs(message);
         assertThat(topicEvent.getValue().serverTs()).isNotNull();
+        JsonNode wire = new ObjectMapper().findAndRegisterModules().valueToTree(topicEvent.getValue());
+        assertThat(wire.at("/payload/mentions").isArray()).isTrue();
+        assertThat(wire.at("/payload/mentions/0/userId").asText()).isEqualTo(memberB.toString());
+        assertThat(wire.at("/payload/mentions/0/offset").asInt()).isZero();
+        assertThat(wire.at("/payload/mentions/0/length").asInt()).isEqualTo(2);
+        assertThat(wire.at("/payload/mentionAll").asBoolean()).isFalse();
 
         ArgumentCaptor<EventEnvelope> inboxEvent = ArgumentCaptor.forClass(EventEnvelope.class);
         verify(messaging).convertAndSendToUser(
@@ -76,6 +88,8 @@ class MessageBroadcastListenerTest {
 
     @Test
     void messageRead_broadcastsReceiptToTopic() {
+        when(userRepository.findShowSeenById(memberA)).thenReturn(java.util.Optional.of(true));
+
         listener.onMessageRead(new MessageReadEvent(conversationId, memberA, 88L));
 
         ArgumentCaptor<EventEnvelope> event = ArgumentCaptor.forClass(EventEnvelope.class);
@@ -83,6 +97,15 @@ class MessageBroadcastListenerTest {
                 eq("/topic/conversations." + conversationId), event.capture());
         assertThat(event.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_READ);
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
+    }
+
+    @Test
+    void messageRead_isNotBroadcastWhenTheReaderHidesSeen() {
+        when(userRepository.findShowSeenById(memberA)).thenReturn(java.util.Optional.of(false));
+
+        listener.onMessageRead(new MessageReadEvent(conversationId, memberA, 88L));
+
+        verifyNoMoreInteractions(messaging);
     }
 
     @Test

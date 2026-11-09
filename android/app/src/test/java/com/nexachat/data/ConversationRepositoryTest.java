@@ -17,9 +17,14 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.ConversationWatermark;
+import com.nexachat.core.database.MessageDao;
+import com.nexachat.core.database.OutboxDao;
+import com.nexachat.core.database.PinDao;
+import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.GroupApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.ConversationDto;
@@ -28,6 +33,8 @@ import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
 import com.nexachat.core.network.dto.MuteRequest;
+import com.nexachat.core.network.dto.SyncRequest;
+import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.storage.TokenStore;
@@ -61,6 +68,7 @@ import okio.Timeout;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -78,6 +86,11 @@ public final class ConversationRepositoryTest {
     private final TokenStore tokenStore = org.mockito.Mockito.mock(TokenStore.class);
     private final Context context = org.mockito.Mockito.mock(Context.class);
     private final ConversationDao conversationDao = new FakeConversationDao();
+    private final AppDatabase appDatabase = org.mockito.Mockito.mock(AppDatabase.class);
+    private final MessageDao messageDao = org.mockito.Mockito.mock(MessageDao.class);
+    private final ReactionDao reactionDao = org.mockito.Mockito.mock(ReactionDao.class);
+    private final PinDao pinDao = org.mockito.Mockito.mock(PinDao.class);
+    private final OutboxDao outboxDao = org.mockito.Mockito.mock(OutboxDao.class);
     private final PresenceRepository presenceRepository =
             org.mockito.Mockito.mock(PresenceRepository.class);
     private final BehaviorProcessor<Map<String, PeerPresence>> presenceFlow =
@@ -96,6 +109,20 @@ public final class ConversationRepositoryTest {
         when(presenceRepository.getPresences()).thenReturn(presenceFlow);
         when(tokenStore.readTokens()).thenReturn(
                 Maybe.just(new Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")));
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(appDatabase).runInTransaction(any(Runnable.class));
+        when(appDatabase.messageDao()).thenReturn(messageDao);
+        when(appDatabase.reactionDao()).thenReturn(reactionDao);
+        when(appDatabase.pinDao()).thenReturn(pinDao);
+        when(appDatabase.outboxDao()).thenReturn(outboxDao);
+        when(appDatabase.conversationDao()).thenReturn(conversationDao);
+        when(messageDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(reactionDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(pinDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        when(outboxDao.deleteForConversation(any())).thenReturn(Completable.complete());
     }
 
     @After
@@ -113,7 +140,8 @@ public final class ConversationRepositoryTest {
                 session,
                 tokenStore,
                 moshi,
-                context);
+                context,
+                appDatabase);
     }
 
     private <T> Call<T> asCall(Response<T> response) {
@@ -208,6 +236,58 @@ public final class ConversationRepositoryTest {
         repository.refreshInbox().blockingGet();
 
         assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxSinglePageConvergesWhenRemovedRowHadHigherSequence() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(conversation("conv-a", 20), conversation("conv-removed", 25)))
+                .blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxFirstPageOnlyConvergesViaDeltaEndpointConfirmation() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 110),
+                conversation("conv-page2", 10))).blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // Delta sync confirms absence of conv-removed (returns only conv-a)
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto("conv-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-page2"), dao().rows.keySet());
+    }
+
+    @Test
+    public void refreshInboxFirstPageDoesNotDeleteConversationThatMovedPages() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-moved", 110),
+                conversation("conv-page2", 10))).blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // Delta sync confirms conv-moved is still accessible by returning its delta
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto("conv-moved", List.of(), List.of(), List.of(), List.of(), 110L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-moved", "conv-page2"), dao().rows.keySet());
     }
 
     @Test
@@ -611,30 +691,22 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
-    public void inboxPayloadWithoutAiOptOutKeepsTheLastKnownCallerState() throws Exception {
+    public void inboxPayloadWritesTheServerAiOptOutThrough() throws Exception {
         buildRepository();
         dao().upsert(conversation("conv-a")).blockingAwait();
-        when(settingsApi.optOutOfAi("conv-a")).thenReturn(asCall(Response.success(
-                new ConversationAiOptOutDto("conv-a", true))));
+        stubInboxPage(null, null,
+                "[{\"id\":\"conv-a\",\"type\":\"GROUP\",\"title\":\"A\","
+                        + "\"members\":[],\"aiOptOut\":true}]");
 
-        repository.setAiOptOut("conv-a", true).blockingGet();
-        stubInbox(List.of(inboxDto("conv-a")));
         repository.refreshInbox().blockingGet();
-
         assertTrue(dao().rows.get("conv-a").isAiOptOut());
-    }
 
-    @Test
-    public void persistedAiOptOutSurvivesAColdStartRefreshWithOmittedPayload() throws Exception {
-        buildRepository();
-        dao().upsert(withPreferences(conversation("conv-a"), false, null, false, true))
-                .blockingAwait();
-        repository.inboxFlow().blockingFirst();
+        stubInboxPage(null, null,
+                "[{\"id\":\"conv-a\",\"type\":\"GROUP\",\"title\":\"A\","
+                        + "\"members\":[],\"aiOptOut\":false}]");
 
-        stubInbox(List.of(inboxDto("conv-a")));
         repository.refreshInbox().blockingGet();
-
-        assertTrue(dao().rows.get("conv-a").isAiOptOut());
+        assertFalse(dao().rows.get("conv-a").isAiOptOut());
     }
 
     @Test
@@ -686,6 +758,91 @@ public final class ConversationRepositoryTest {
         repository.refreshInboxPage(true).blockingGet();
 
         assertTrue(dao().rows.isEmpty());
+    }
+
+    @Test
+    public void pagedDefaultWalkPrunesOnlyConfirmedDefaultRows() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 120),
+                withPreferences(conversation("conv-arch", 110), false, null, true, false)))
+                .blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a", "conv-arch"), dao().rows.keySet());
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi).syncDeltas(captor.capture());
+        List<String> confirmed = new ArrayList<>();
+        for (SyncRequest.Watermark watermark : captor.getValue().getWatermarks()) {
+            confirmed.add(watermark.getConversationId());
+        }
+        assertEquals(List.of("conv-removed"), confirmed);
+    }
+
+    @Test
+    public void pagedArchivedWalkPrunesOnlyConfirmedArchivedRows() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                withPreferences(conversation("conv-arch-a", 100), false, null, true, false),
+                withPreferences(conversation("conv-arch-removed", 120), false, null, true, false),
+                conversation("conv-inbox", 130)))
+                .blockingAwait();
+        stubArchivedInboxPage(null, "cursor-arch-2", inboxJsonArchived("conv-arch-a", 100));
+
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-arch-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInboxPage(true).blockingGet();
+
+        assertEquals(java.util.Set.of("conv-arch-a", "conv-inbox"), dao().rows.keySet());
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi).syncDeltas(captor.capture());
+        List<String> confirmed = new ArrayList<>();
+        for (SyncRequest.Watermark watermark : captor.getValue().getWatermarks()) {
+            confirmed.add(watermark.getConversationId());
+        }
+        assertEquals(List.of("conv-arch-removed"), confirmed);
+    }
+
+    @Test
+    public void selfRemovalDeletesTheConversationAndItsLocalCache() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
+
+        assertFalse(dao().rows.containsKey("conv-a"));
+        verify(messageDao).deleteForConversation("conv-a");
+        verify(reactionDao).deleteForConversation("conv-a");
+        verify(pinDao).deleteForConversation("conv-a");
+        verify(outboxDao).deleteForConversation("conv-a");
+    }
+
+    @Test
+    public void anotherMemberLeavingKeepsTheConversation() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_LEFT", List.of(MY_ID, "other-member"))).blockingGet();
+
+        assertTrue(dao().rows.containsKey("conv-a"));
+        verify(messageDao, never()).deleteForConversation(any());
     }
 
     private FakeConversationDao dao() {
@@ -953,6 +1110,22 @@ public final class ConversationRepositoryTest {
         public Completable clear() {
             return Completable.fromAction(() -> {
                 rows.clear();
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteById(String conversationId) {
+            return Completable.fromAction(() -> {
+                rows.remove(conversationId);
+                publish();
+            });
+        }
+
+        @Override
+        public Completable deleteAllExcept(List<String> ids) {
+            return Completable.fromAction(() -> {
+                rows.keySet().retainAll(ids);
                 publish();
             });
         }

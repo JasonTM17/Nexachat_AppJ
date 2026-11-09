@@ -34,56 +34,65 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/archiveToolbar" />
 
-    <LinearLayout
-        android:id="@+id/archiveFilters"
+    <HorizontalScrollView
+        android:id="@+id/archiveFiltersScroll"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="@dimen/space_sm"
-        android:paddingEnd="@dimen/space_sm"
-        android:paddingTop="@dimen/space_xs"
-        android:paddingBottom="@dimen/space_xs"
+        android:clipToPadding="false"
+        android:scrollbars="none"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/archiveTabs">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/archiveSenderFilter"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minHeight="@dimen/min_touch_target"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:text="@string/archive_filter_all_senders"
-            app:icon="@drawable/ic_people"
-            app:iconGravity="textStart" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/archiveDateFilter"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="@dimen/space_xs"
-            android:minHeight="@dimen/min_touch_target"
-            android:maxLines="2"
-            android:ellipsize="end"
-            android:text="@string/archive_filter_date" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/archiveClearFilters"
-            style="@style/Widget.Material3.Button.TextButton"
+        <LinearLayout
+            android:id="@+id/archiveFilters"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_xs"
-            android:minHeight="@dimen/min_touch_target"
-            android:maxLines="2"
-            android:text="@string/archive_clear_filters"
-            android:visibility="gone" />
-    </LinearLayout>
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="@dimen/space_sm"
+            android:paddingEnd="@dimen/space_sm"
+            android:paddingTop="@dimen/space_xs"
+            android:paddingBottom="@dimen/space_xs">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/archiveSenderFilter"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/min_touch_target"
+                android:minWidth="@dimen/min_touch_target"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:text="@string/archive_filter_all_senders"
+                app:icon="@drawable/ic_people"
+                app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/archiveDateFilter"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:minHeight="@dimen/min_touch_target"
+                android:minWidth="@dimen/min_touch_target"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:text="@string/archive_filter_date" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/archiveClearFilters"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_xs"
+                android:minHeight="@dimen/min_touch_target"
+                android:minWidth="@dimen/min_touch_target"
+                android:maxLines="2"
+                android:text="@string/archive_clear_filters"
+                android:visibility="gone" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <FrameLayout
         android:id="@+id/archiveContent"
@@ -92,7 +101,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/archiveFilters">
+        app:layout_constraintTop_toBottomOf="@id/archiveFiltersScroll">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/archiveList"

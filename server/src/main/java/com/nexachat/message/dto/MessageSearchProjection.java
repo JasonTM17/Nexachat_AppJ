@@ -16,4 +16,5 @@ public interface MessageSearchProjection {
     Instant getCreatedAt();
     Instant getEditedAt();
     Instant getDeletedAt();
+    Boolean getMentionAll();
 }

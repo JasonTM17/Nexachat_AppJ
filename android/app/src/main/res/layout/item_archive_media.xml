@@ -44,7 +44,7 @@
                 android:paddingEnd="@dimen/space_sm"
                 android:paddingBottom="@dimen/space_xs"
                 android:textAppearance="?attr/textAppearanceLabelMedium"
-                android:textColor="@android:color/white"
+                android:textColor="?attr/colorOnSurface"
                 android:visibility="gone" />
         </FrameLayout>
 
@@ -63,6 +63,7 @@
                 android:layout_weight="1"
                 android:maxLines="2"
                 android:ellipsize="end"
+                android:importantForAccessibility="no"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurface" />
 
@@ -84,6 +85,9 @@
             android:paddingStart="@dimen/space_sm"
             android:paddingEnd="@dimen/space_sm"
             android:paddingBottom="@dimen/space_sm"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:importantForAccessibility="no"
             android:lineSpacingExtra="2dp"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant" />

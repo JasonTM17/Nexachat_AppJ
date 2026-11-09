@@ -103,6 +103,28 @@ class SystemMessageTest {
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
         assertThat(event.getValue().message().type()).isEqualTo("SYSTEM");
+        assertThat(event.getValue().subjectUserId()).isNull();
+    }
+
+    @Test
+    void postSystemMessage_withSubject_carriesSubjectInEvent() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, actorId))
+                .thenReturn(true);
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);
+        UUID subjectId = UUID.randomUUID();
+        MessageRow stored = new MessageRow(
+                UUID.randomUUID(), conversationId, 78L, actorId, "Admin",
+                Message.Type.SYSTEM, "Admin removed Bob", UUID.randomUUID(),
+                null, Instant.now(), null, null);
+        when(messageRepository.findRowBySenderAndClientMessageId(eq(actorId), any()))
+                .thenReturn(Optional.of(stored));
+
+        messageService.postSystemMessage(actorId, conversationId, "Admin removed Bob", subjectId);
+
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().subjectUserId()).isEqualTo(subjectId);
     }
 
     @Test

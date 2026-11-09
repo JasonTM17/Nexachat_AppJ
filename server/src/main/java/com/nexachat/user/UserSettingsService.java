@@ -37,13 +37,14 @@ public class UserSettingsService {
 
     @Transactional
     public UserSettingsResponse setShowPresence(UUID userId, boolean showPresence) {
-        return updateSettings(userId, showPresence, null);
+        return updateSettings(userId, showPresence, null, null);
     }
 
     @Transactional
     public UserSettingsResponse updateSettings(
             UUID userId,
             Boolean showPresence,
+            Boolean showSeen,
             Boolean aiSummaryConsent) {
         User user = findUser(userId);
         if (showPresence != null) {
@@ -53,6 +54,9 @@ public class UserSettingsService {
                 eventPublisher.publishEvent(new UserPresenceChangedEvent(
                         userId, showPresence, null, memberRepository.findDirectPeerUserIds(userId)));
             }
+        }
+        if (showSeen != null) {
+            user.changeShowSeen(showSeen);
         }
         if (aiSummaryConsent != null) {
             user.changeAiSummaryConsent(aiSummaryConsent);
@@ -66,6 +70,7 @@ public class UserSettingsService {
     }
 
     private static UserSettingsResponse toResponse(User user) {
-        return new UserSettingsResponse(user.isShowPresence(), user.isAiSummaryConsent());
+        return new UserSettingsResponse(user.isShowPresence(), user.isShowSeen(),
+                user.isAiSummaryConsent());
     }
 }

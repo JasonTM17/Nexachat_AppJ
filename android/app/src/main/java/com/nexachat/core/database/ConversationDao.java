@@ -96,6 +96,10 @@ public interface ConversationDao {
     @Query("DELETE FROM conversations")
     Completable clear();
 
+    /** Removes one conversation after the server proves it is no longer accessible. */
+    @Query("DELETE FROM conversations WHERE id = :conversationId")
+    Completable deleteById(String conversationId);
+
     /** Clears only the default inbox rows, leaving archived rows intact. */
     @Query("DELETE FROM conversations WHERE archived = 0")
     Completable clearInbox();
@@ -111,4 +115,8 @@ public interface ConversationDao {
     /** Reconciles archived rows; default-inbox rows are not part of this walk. */
     @Query("DELETE FROM conversations WHERE archived = 1 AND id NOT IN (:ids)")
     Completable deleteArchivedExcept(List<String> ids);
+
+    /** Reconciles to the authoritative full inbox set; empty ids use clear(). */
+    @Query("DELETE FROM conversations WHERE id NOT IN (:ids)")
+    Completable deleteAllExcept(List<String> ids);
 }

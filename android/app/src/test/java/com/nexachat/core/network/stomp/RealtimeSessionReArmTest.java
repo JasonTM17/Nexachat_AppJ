@@ -94,6 +94,27 @@ public final class RealtimeSessionReArmTest {
     }
 
     @Test
+    public void parkedRetryTimerUsesJitteredDelayFromPolicy() {
+        TestScheduler scheduler = new TestScheduler();
+        BehaviorProcessor<Boolean> foreground = BehaviorProcessor.createDefault(false);
+        AtomicInteger connects = new AtomicInteger();
+        ReconnectPolicy policyWithTenPercentJitter = new ReconnectPolicy(() -> 0.10);
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), failedClient(connects),
+                BehaviorProcessor.createDefault(false), foreground, mock(TokenRefresher.class),
+                policyWithTenPercentJitter, scheduler);
+        scheduler.advanceTimeBy(2, TimeUnit.MINUTES);
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        foreground.onNext(true);
+        scheduler.triggerActions();
+
+        // 5000ms + 10% jitter = 5500ms delay.
+        scheduler.advanceTimeBy(5_400L, TimeUnit.MILLISECONDS);
+        assertEquals("must not trigger before jittered delay", ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        scheduler.advanceTimeBy(200L, TimeUnit.MILLISECONDS);
+        assertEquals("must trigger after jittered delay", ReconnectPolicy.MAX_ATTEMPTS + 1, connects.get());
+    }
+
+    @Test
     public void expiredAccessRefreshesBeforeConnecting() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
@@ -141,6 +162,83 @@ public final class RealtimeSessionReArmTest {
         assertEquals(0, connects.get());
     }
 
+    @Test
+    public void authFailureRefreshesOnceAndLogsOutWhenNoFreshTokenArrives() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals("a rejected refresh must stop the reconnect loop", 1, connects.get());
+    }
+
+    @Test
+    public void authFailureRetriesOnceWithARefreshedTokenThenStopsOnASecondRejection() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access"))
+                .thenReturn(Single.just(Optional.of("fresh-access")));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+        scheduler.triggerActions();
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals("refresh is attempted once per auth failure streak", 2, connects.get());
+    }
+
+    @Test
+    public void connectTimeoutTreatedAsAuthSuspectRefreshesAndStopsWhenRefreshFails() {
+        TestScheduler scheduler = new TestScheduler();
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
+        when(refresher.logOut()).thenReturn(Completable.complete());
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect()).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed(StompClient.REASON_CONNECT_TIMEOUT));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                refresher, scheduler);
+
+        scheduler.triggerActions();
+        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
+
+        verify(refresher, times(1)).refreshIfNeeded("access");
+        verify(refresher, times(1)).logOut();
+        assertEquals(1, connects.get());
+    }
+
     private static RealtimeSession session(
             TokenStore store,
             StompClient stomp,
@@ -148,11 +246,23 @@ public final class RealtimeSessionReArmTest {
             Flowable<Boolean> foreground,
             TokenRefresher refresher,
             TestScheduler scheduler) {
+        return session(store, stomp, online, foreground, refresher,
+                new ReconnectPolicy(() -> 0.0), scheduler);
+    }
+
+    private static RealtimeSession session(
+            TokenStore store,
+            StompClient stomp,
+            Flowable<Boolean> online,
+            Flowable<Boolean> foreground,
+            TokenRefresher refresher,
+            ReconnectPolicy reconnectPolicy,
+            TestScheduler scheduler) {
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(online);
         AppForegroundState foregroundState = () -> foreground;
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
-                new ReconnectPolicy(), monitor, foregroundState, scheduler);
+                reconnectPolicy, monitor, foregroundState, scheduler);
     }
 
     private static StompClient failedClient(AtomicInteger count) {

@@ -27,7 +27,7 @@ public final class ReconnectPolicy {
     }
 
     /** Deterministic-jitter constructor for tests. Dagger never sees it. */
-    ReconnectPolicy(DoubleSupplier jitterSource) {
+    public ReconnectPolicy(DoubleSupplier jitterSource) {
         this.jitterSource = jitterSource;
     }
 
@@ -45,6 +45,26 @@ public final class ReconnectPolicy {
         }
         if (value > MAX_DELAY_MS) {
             return MAX_DELAY_MS;
+        }
+        return value;
+    }
+
+    /**
+     * Delay before parked retry round {@code parkedRounds} (1-based):
+     * 5000ms base, doubling up to a 60000ms cap, ±20% jitter consistent with {@link #delayMillis(int)},
+     * bounded by {@link RealtimeSession#PARKED_RETRY_MAX_MS}.
+     */
+    public long parkedDelayMillis(int parkedRounds) {
+        int shift = Math.max(0, Math.min(parkedRounds - 1, MAX_SHIFT));
+        long base = RealtimeSession.PARKED_RETRY_BASE_MS << shift;
+        long cappedBase = Math.min(base, RealtimeSession.PARKED_RETRY_MAX_MS);
+        double jittered = cappedBase * (1.0 + jitterSource.getAsDouble());
+        long value = (long) jittered;
+        if (value < MIN_DELAY_MS) {
+            return MIN_DELAY_MS;
+        }
+        if (value > RealtimeSession.PARKED_RETRY_MAX_MS) {
+            return RealtimeSession.PARKED_RETRY_MAX_MS;
         }
         return value;
     }

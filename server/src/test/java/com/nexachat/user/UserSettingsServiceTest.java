@@ -31,10 +31,12 @@ class UserSettingsServiceTest {
         when(repository.findById(userId)).thenReturn(Optional.of(user));
 
         assertThat(service.get(userId).showPresence()).isTrue();
+        assertThat(service.get(userId).showSeen()).isTrue();
         assertThat(service.get(userId).aiSummaryConsent()).isFalse();
         assertThat(service.setShowPresence(userId, false).showPresence()).isFalse();
         assertThat(service.get(userId).aiSummaryConsent()).isFalse();
-        verify(repository, org.mockito.Mockito.times(4)).findById(userId);
+        assertThat(service.updateSettings(userId, null, false, null).showSeen()).isFalse();
+        verify(repository, org.mockito.Mockito.times(6)).findById(userId);
     }
 
     @Test
@@ -46,19 +48,26 @@ class UserSettingsServiceTest {
         User user = User.create("+84901112234", "hash", "User");
         when(repository.findById(userId)).thenReturn(Optional.of(user));
 
-        assertThat(service.updateSettings(userId, null, true))
+        assertThat(service.updateSettings(userId, null, null, true))
                 .satisfies(settings -> {
                     assertThat(settings.showPresence()).isTrue();
                     assertThat(settings.aiSummaryConsent()).isTrue();
                 });
-        assertThat(service.updateSettings(userId, false, null))
+        assertThat(service.updateSettings(userId, false, null, null))
                 .satisfies(settings -> {
                     assertThat(settings.showPresence()).isFalse();
                     assertThat(settings.aiSummaryConsent()).isTrue();
                 });
-        assertThat(service.updateSettings(userId, null, false))
+        assertThat(service.updateSettings(userId, null, null, false))
                 .satisfies(settings -> {
                     assertThat(settings.showPresence()).isFalse();
+                    assertThat(settings.showSeen()).isTrue();
+                    assertThat(settings.aiSummaryConsent()).isFalse();
+                });
+        assertThat(service.updateSettings(userId, null, false, null))
+                .satisfies(settings -> {
+                    assertThat(settings.showPresence()).isFalse();
+                    assertThat(settings.showSeen()).isFalse();
                     assertThat(settings.aiSummaryConsent()).isFalse();
                 });
     }
@@ -90,7 +99,7 @@ class UserSettingsServiceTest {
         when(sessionState.isOnline(userId)).thenReturn(true);
         when(memberRepository.findDirectPeerUserIds(userId)).thenReturn(List.of(peerId));
 
-        service.updateSettings(userId, false, null);
+        service.updateSettings(userId, false, null, null);
 
         verify(eventPublisher).publishEvent(
                 new UserPresenceChangedEvent(userId, false, null, List.of(peerId)));
@@ -111,7 +120,7 @@ class UserSettingsServiceTest {
         when(sessionState.isOnline(userId)).thenReturn(true);
         when(memberRepository.findDirectPeerUserIds(userId)).thenReturn(List.of(peerId));
 
-        service.updateSettings(userId, true, null);
+        service.updateSettings(userId, true, null, null);
 
         verify(eventPublisher).publishEvent(
                 new UserPresenceChangedEvent(userId, true, null, List.of(peerId)));
@@ -129,10 +138,10 @@ class UserSettingsServiceTest {
         when(repository.findById(userId)).thenReturn(Optional.of(user));
         when(sessionState.isOnline(userId)).thenReturn(true);
 
-        service.updateSettings(userId, true, null);
+        service.updateSettings(userId, true, null, null);
 
         when(sessionState.isOnline(userId)).thenReturn(false);
-        service.updateSettings(userId, false, null);
+        service.updateSettings(userId, false, null, null);
 
         verifyNoInteractions(eventPublisher, memberRepository);
     }

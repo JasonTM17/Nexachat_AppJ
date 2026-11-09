@@ -25,16 +25,132 @@ spring:
 management:
   server:
     port: ${server.port}
+  endpoints:
+    web:
+      exposure:
+        include: health
   endpoint:
     health:
       validate-group-membership: false
+      show-details: never
+      show-components: always
+      group:
+        liveness:
+          include: ping
+        readiness:
+          include: db,flyway,diskSpace
+  health:
+    diskspace:
+      path: ./target/it-uploads
+      threshold: 1GB
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
 nexachat:
+  observability:
+    slow-query-threshold-ms: 500
+  security:
+    cors-allowed-origins: ""
+    admin-phones: ""
+    max-json-body-bytes: 1048576
+    validity-cache-ttl-seconds: 60
+  rate-limit:
+    messages:
+      edit-delete-per-minute: 30
+      search-per-minute: 60
+    stomp:
+      messages-per-window: 30
+      window-seconds: 10
+      typing-per-window: 60
+      typing-window-seconds: 10
+      acks-per-window: 120
+      ack-window-seconds: 10
+    reminders:
+      create-per-minute: 30
+    polls:
+      create-per-minute: 10
+      votes-per-minute: 120
+      manage-per-minute: 30
+  calls:
+    ring-timeout-ms: 45000
+    disconnect-grace-ms: 100
+  storage:
+    root: ./target/it-uploads
+  summary:
+    provider: auto
+    complexity:
+      min-messages: 12
+      min-chars: 1500
+      min-participants: 4
+    llm:
+      enabled: false
+      base-url: https://generativelanguage.googleapis.com/v1beta/openai
+      model: gemini-3.1-flash-lite
+      api-key: ""
+      timeout-ms: 30000
+      max-input-chars: 24000
+      max-output-tokens: 4000
+      local-enabled: false
+      local-base-url: http://127.0.0.1:11434/v1
+      local-model: qwen2.5:3b
+      local-api-key: local-ollama
+      local-timeout-ms: 60000
+    llm-fallback:
+      enabled: false
+      base-url: https://api.deepseek.com
+      model: deepseek-flash
+      api-key: ""
+      timeout-ms: 30000
+  rag:
+    enabled: true
+    embedding:
+      provider: lexical
+      mode: openai-compatible
+      base-url: ""
+      model: gemini-embedding-001
+      api-key: ""
+      dim: 256
+      timeout-ms: 20000
+      batch-size: 32
+    retrieval:
+      max-candidate-messages: 5000
+      lexical-candidate-limit: 300
+      lexical-term-limit: 8
+      vector-candidate-limit: 200
+      neighbor-radius: 2
+      max-context-chars: 3000
+      mmr-limit: 12
+      mmr-lambda: 0.72
+      rrf-k: 60
+      not-found-threshold: 0.18
+      extractive-threshold: 0.62
+      semantic-cache-threshold: 0.92
+      max-snippet-chars: 280
+    index:
+      lazy-limit: 500
+      backfill-rate-per-minute: 200
+      cache-max-vectors: 4096
+      backfill-enabled: true
+      backfill-interval-ms: 60000
+    ask:
+      rate-limit-per-minute: 20
+      rate-limit-per-day: 200
+      cache-ttl-hours: 24
+  fcm:
+    enabled: false
+    project-id: ""
+    service-account-json: ""
+    token-uri: ""
+    api-url: ""
+    connect-timeout-seconds: 5
+    read-timeout-seconds: 10
+    max-retries: 2
+    retry-base-delay-ms: 200
   presence:
     # PresenceFlowIT verifies the real STOMP lifecycle without waiting five seconds.
     disconnect-coalesce-ms: 0
-  calls:
-    disconnect-grace-ms: 100
   reminders:
     # Integration tests drive the scheduler explicitly for determinism.
     enabled: false

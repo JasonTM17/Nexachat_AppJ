@@ -5,11 +5,13 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.ConversationMemberView;
 import com.nexachat.conversation.dto.ConversationResponse;
 import com.nexachat.conversation.dto.OpenDirectRequest;
+import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -39,17 +41,30 @@ public class ConversationService {
     private final UserRepository userRepository;
     private final PhoneService phoneService;
     private final DirectConversationCreator directConversationCreator;
+    private final ConversationAiOptOuts aiOptOuts;
 
     public ConversationService(ConversationRepository conversationRepository,
                                ConversationMemberRepository memberRepository,
                                UserRepository userRepository,
                                PhoneService phoneService,
                                DirectConversationCreator directConversationCreator) {
+        this(conversationRepository, memberRepository, userRepository, phoneService,
+                directConversationCreator, ConversationAiOptOuts.none());
+    }
+
+    @Autowired
+    public ConversationService(ConversationRepository conversationRepository,
+                               ConversationMemberRepository memberRepository,
+                               UserRepository userRepository,
+                               PhoneService phoneService,
+                               DirectConversationCreator directConversationCreator,
+                               ConversationAiOptOuts aiOptOuts) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.directConversationCreator = directConversationCreator;
+        this.aiOptOuts = aiOptOuts;
     }
 
     /** Service-internal result: response body plus whether this call created the row. */
@@ -106,7 +121,8 @@ public class ConversationService {
         return new OpenDirectResult(
                 new ConversationResponse(
                         conversation.getId(), conversation.getType().name(), members,
-                        conversation.getCreatedAt()),
+                        conversation.getCreatedAt(),
+                        aiOptOuts.isOptedOut(conversation.getId(), callerId)),
                 created);
     }
 

@@ -34,7 +34,8 @@ public final class Redactor {
 
     /** PKCS#8/PKCS#1/OPENSSH private-key PEM blocks, including escaped newlines. */
     private static final Pattern PEM_PRIVATE_KEY = Pattern.compile(
-            "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\\s\\S]*?"
+            "-----BEGIN (?:[A-Z0-9]+ )?"
+            + "PRIVATE KEY-----[\\s\\S]*?"
                     + "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----");
 
     /** FCM registration tokens, which are long and carry no distinguishing shape. */

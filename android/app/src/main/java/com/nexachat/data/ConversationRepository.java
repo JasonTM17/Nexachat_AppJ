@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.network.ApiResult;
@@ -22,6 +23,8 @@ import com.nexachat.core.network.dto.ConversationsPageDto;
 import com.nexachat.core.network.dto.CreateGroupRequest;
 import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.PeerPresenceDto;
+import com.nexachat.core.network.dto.SyncRequest;
+import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.dto.UpdateConversationRequest;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
@@ -53,6 +56,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -77,20 +81,20 @@ import retrofit2.Response;
  * trigger refreshes: a debounce folds {@code CONVERSATION_UPDATED} and
  * {@code MESSAGE_CREATED} bursts into one page-one REST request. Inbox pages
  * contain 30 rows and merge by conversation id. Pruning is allowed only after
- * a walk started at page one reaches a response without a next cursor; then
- * absent rows are removed only when their positive {@code lastMessageSeq} is
- * lower than the oldest sequence observed in the walk. Equal/newer activity,
- * rows without a sequence, and locally-created conversations are retained
- * because Room does not store the server cursor's creation-time tie-breaker.
- * A complete empty response clears old rows except local creations awaiting
- * server visibility. Reconnect resync requests perform the same page-one pull.
+ * a walk started at page one reaches a response without a next cursor; a
+ * single-page response is authoritative, while a paged walk only deletes rows
+ * that are provably older than the walk or that the delta endpoint confirms
+ * are no longer accessible. Equal/newer activity, rows without a sequence, and
+ * locally-created conversations are retained because Room does not store the
+ * server cursor's creation-time tie-breaker. Reconnect resync requests perform
+ * the same page-one pull.
  *
  * <p>Mute, archive and AI opt-out are caller-scoped server preferences. Writes
  * go through the REST endpoints first and are written through to Room only on
- * success; inbox payloads and delta bundles carry the authoritative mute and
- * archive flags. The archived inbox is a separate keyset walk ({@code
- * archived=true}); pruning is scoped to the walk's variant so one filter can
- * never delete the other variant's rows.
+ * success; inbox payloads and delta bundles carry the authoritative mute,
+ * archive and AI opt-out flags. The archived inbox is a separate keyset walk
+ * ({@code archived=true}); pruning is scoped to the walk's variant so one
+ * filter can never delete the other variant's rows.
  *
  * <p>Retrofit calls and avatar reads run on {@link Schedulers#io()}. Room
  * operations use Room's RxJava executor and are chained without blocking.
@@ -112,6 +116,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final GroupApi groupApi;
     private final ConversationSettingsApi settingsApi;
     private final ConversationDao conversationDao;
+    private final AppDatabase appDatabase;
     private final PresenceRepository presenceRepository;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
@@ -129,12 +134,6 @@ public final class ConversationRepository implements AutoCloseable {
      * them, preventing refresh pruning from deleting a freshly-created row.
      */
     private final Set<String> locallyCreatedIds = ConcurrentHashMap.newKeySet();
-    /**
-     * Last caller-known AI opt-out per conversation. Additive inbox payloads can
-     * omit the field during a rolling deploy; preserving the last known value
-     * avoids silently flipping the switch back off.
-     */
-    private final Map<String, Boolean> knownAiOptOut = new ConcurrentHashMap<>();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private final Object inboxPagingLock = new Object();
     private long inboxPageGeneration;
@@ -158,11 +157,13 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull RealtimeSession session,
             @NonNull TokenStore tokenStore,
             @NonNull Moshi moshi,
-            @ApplicationContext @NonNull Context context) {
+            @ApplicationContext @NonNull Context context,
+            @NonNull AppDatabase appDatabase) {
         this.messageApi = messageApi;
         this.groupApi = groupApi;
         this.settingsApi = settingsApi;
         this.conversationDao = conversationDao;
+        this.appDatabase = appDatabase;
         this.presenceRepository = presenceRepository;
         this.session = session;
         this.tokenStore = tokenStore;
@@ -363,7 +364,6 @@ public final class ConversationRepository implements AutoCloseable {
                     }
                     Boolean optOut = successValue(result).getAiOptOut();
                     boolean value = Boolean.TRUE.equals(optOut);
-                    knownAiOptOut.put(conversationId, value);
                     return conversationDao.updateAiOptOut(conversationId, value)
                             .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
                 })
@@ -387,7 +387,6 @@ public final class ConversationRepository implements AutoCloseable {
                     }
                     Boolean resolved = successValue(result).getAiOptOut();
                     boolean value = resolved == null ? optOut : resolved;
-                    knownAiOptOut.put(conversationId, value);
                     return conversationDao.updateAiOptOut(conversationId, value)
                             .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
                 })
@@ -550,10 +549,41 @@ public final class ConversationRepository implements AutoCloseable {
             if (updated.getConversationId() != null) {
                 groupUpdateIds.onNext(updated.getConversationId());
             }
+            if (updated.isRemovalEvent()) {
+                handleConversationUpdate(updated).subscribe(
+                        removed -> {
+                            if (!removed) refreshRequests.onNext(Boolean.TRUE);
+                        }, RxJavaPlugins::onError);
+                return;
+            }
             refreshRequests.onNext(Boolean.TRUE);
         } else if (event instanceof ChatEvent.MessageCreated) {
             refreshRequests.onNext(Boolean.TRUE);
         }
+    }
+
+    /**
+     * Applies a membership snapshot. A removal frame is authoritative for the
+     * caller: when the snapshot no longer contains this user, the inbox row and
+     * its cached history are deleted instead of triggering a refresh that the
+     * conservative prune could keep. Removal of another member only refreshes.
+     */
+    Single<Boolean> handleConversationUpdate(ChatEvent.ConversationUpdated update) {
+        String conversationId = update.getConversationId();
+        if (conversationId == null) return Single.just(Boolean.FALSE);
+        return currentUserIdOptional().flatMap(myId -> {
+            if (!update.isSelfRemoval(myId.orElse(null))) {
+                return Single.just(Boolean.FALSE);
+            }
+            return Completable.fromAction(() -> {
+                synchronized (inboxPagingLock) {
+                    locallyCreatedIds.remove(conversationId);
+                    inboxWalkIds.remove(conversationId);
+                }
+                appDatabase.runInTransaction(() ->
+                        LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId));
+            }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
+        });
     }
 
     /** Decodes the JWT subject without copying token material into logs or fields. */
@@ -680,7 +710,7 @@ public final class ConversationRepository implements AutoCloseable {
             List<String> pageIds = new ArrayList<>(rows.size());
             for (ConversationEntity row : rows) pageIds.add(row.getId());
             Map<String, PeerPresence> presenceSeeds = presenceSeeds(fetch.items, myId);
-            AtomicReference<PruneSnapshot> pruneSnapshot = new AtomicReference<>();
+            AtomicBoolean fullWalkComplete = new AtomicBoolean();
             return upsertPreservingClientColumns(rows)
                     .andThen(Completable.fromAction(() -> {
                         synchronized (inboxPagingLock) {
@@ -700,9 +730,7 @@ public final class ConversationRepository implements AutoCloseable {
                             nextInboxCursor = fetch.nextCursor;
                             hasMoreInboxPages = fetch.nextCursor != null;
                             if (fetch.complete && inboxWalkStartedAtFirstPage) {
-                                pruneSnapshot.set(new PruneSnapshot(
-                                        new LinkedHashSet<>(inboxWalkIds), oldestInboxSequence,
-                                        archived));
+                                fullWalkComplete.set(true);
                                 inboxWalkStartedAtFirstPage = false;
                             }
                         }
@@ -713,12 +741,9 @@ public final class ConversationRepository implements AutoCloseable {
                             clearHiddenDirectPeers(fetch.items, presenceSeeds, myId);
                         }
                     }))
-                    .andThen(Completable.defer(() -> {
-                        PruneSnapshot completedWalk = pruneSnapshot.get();
-                        return completedWalk == null
-                                ? Completable.complete()
-                                : pruneAfterCompleteWalk(completedWalk);
-                    }))
+                    .andThen(Completable.defer(() ->
+                            reconcileInboxRows(generation, firstPage, fullWalkComplete.get(),
+                                    pageIds, oldestInboxSequence, archived)))
                     .andThen(Single.fromCallable(() -> {
                         synchronized (inboxPagingLock) {
                             return new Result.Success<>(generation == inboxPageGeneration
@@ -793,42 +818,171 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
-     * A page is never a deletion oracle. Only a walk that began at page one
-     * and reached a response with no next cursor may prune. The walk owns one
-     * inbox variant: pruning never deletes rows from the other variant. For a
-     * non-empty walk, compare the sequence (the only activity key Room stores)
-     * and delete absent local rows strictly older than the oldest fetched row;
-     * retain equal/newer rows and local creations because they may have moved
-     * while pages were being read. If the server proves the variant is empty,
-     * clear only that variant, except creations still waiting to be observed.
+     * Safe inbox convergence and reconciliation rule, scoped to one inbox
+     * variant (default or archived):
+     * 1. A page alone is not a deletion oracle, because active conversations can move
+     *    between pages during a paged walk when new messages arrive.
+     * 2. However, a first-page refresh must converge so removed/inaccessible conversations
+     *    do not stay as stale rows in Room until the next delta sync or realtime push.
+     * 3. Single-page complete inbox (firstPage && isComplete):
+     *    The server returned the authoritative full set in a single request without paging.
+     *    No conversation could have moved pages. Any local row of this variant omitted
+     *    from this set (and not locally created) is definitively gone and is safely removed.
+     * 4. Paged inboxes (firstPage && !isComplete, or completed multi-page walks):
+     *    Any local row of this variant absent from the fetched items whose sequence is
+     *    equal to or newer than the oldest sequence fetched could either be removed or
+     *    have moved to another page due to concurrent message activity. To safely
+     *    distinguish between the two without deleting active rows, we confirm absence
+     *    against the authoritative delta endpoint (POST /api/v1/sync). If the delta
+     *    response omits the watermark, the server confirms access loss and the
+     *    conversation is pruned together with its local cache. If the delta response
+     *    includes the watermark, the conversation is confirmed accessible.
+     *
+     * <p>Rows of the other variant are never candidates in any case: an archived
+     * row cannot be pruned by a default-inbox walk and vice versa.
      */
-    private Completable pruneAfterCompleteWalk(PruneSnapshot walk) {
+    private Completable reconcileInboxRows(
+            long generation,
+            boolean firstPage,
+            boolean isComplete,
+            List<String> pageIds,
+            long oldestSequenceInPage,
+            boolean archived) {
+        if (!isInboxPageGenerationCurrent(generation)) {
+            return Completable.complete();
+        }
         return conversationDao.inboxFlow().firstOrError().flatMapCompletable(localRows -> {
-            Set<String> keep = new LinkedHashSet<>(walk.fetchedIds);
-            if (walk.fetchedIds.isEmpty()) {
-                if (!walk.archived) keep.addAll(locallyCreatedIds);
-            } else {
+            Set<String> pageIdSet = new HashSet<>(pageIds);
+            Set<String> walkIdSet;
+            synchronized (inboxPagingLock) {
+                walkIdSet = new HashSet<>(inboxWalkIds);
+            }
+
+            // Case 1: First page and complete (single-page full inbox)
+            if (firstPage && isComplete) {
+                Set<String> toDelete = new LinkedHashSet<>();
                 for (ConversationEntity row : localRows) {
-                    if (row.isArchived() != walk.archived) continue;
-                    if (row.getLastMessageSeq() == 0
-                            || row.getLastMessageSeq() >= walk.oldestSequence) {
-                        keep.add(row.getId());
+                    if (row.isArchived() != archived) continue;
+                    if (!pageIdSet.contains(row.getId()) && !locallyCreatedIds.contains(row.getId())) {
+                        toDelete.add(row.getId());
                     }
                 }
-                if (!walk.archived) keep.addAll(locallyCreatedIds);
+                if (toDelete.isEmpty()) return Completable.complete();
+                return Completable.fromAction(() -> {
+                    appDatabase.runInTransaction(() -> {
+                        for (String id : toDelete) {
+                            LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                        }
+                    });
+                }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)));
             }
-            Completable prune;
-            if (keep.isEmpty()) {
-                prune = walk.archived
-                        ? conversationDao.clearArchived()
-                        : conversationDao.clearInbox();
-            } else {
-                prune = walk.archived
-                        ? conversationDao.deleteArchivedExcept(new ArrayList<>(keep))
-                        : conversationDao.deleteInboxExcept(new ArrayList<>(keep));
+
+            // Case 2: Multi-page walk completion
+            if (isComplete) {
+                List<ConversationEntity> suspects = new ArrayList<>();
+                Set<String> definiteDeletes = new LinkedHashSet<>();
+                for (ConversationEntity row : localRows) {
+                    if (row.isArchived() != archived) continue;
+                    if (walkIdSet.contains(row.getId()) || locallyCreatedIds.contains(row.getId())) {
+                        continue;
+                    }
+                    if (row.getLastMessageSeq() > 0 && row.getLastMessageSeq() < oldestSequenceInPage) {
+                        // Older than the oldest row in a walk that reached the end: definitely absent.
+                        definiteDeletes.add(row.getId());
+                    } else {
+                        // Newer or equal, or no-message chat (seq 0): could have moved during the walk; verify via delta endpoint.
+                        suspects.add(row);
+                    }
+                }
+                Completable deleteDefinite = definiteDeletes.isEmpty()
+                        ? Completable.complete()
+                        : Completable.fromAction(() -> {
+                            appDatabase.runInTransaction(() -> {
+                                for (String id : definiteDeletes) {
+                                    LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                                }
+                            });
+                        });
+                return deleteDefinite
+                        .andThen(confirmAbsenceAndPrune(suspects))
+                        .andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walkIdSet)));
             }
-            return prune;
-        }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walk.fetchedIds)));
+
+            // Case 3: First page of a paged inbox (firstPage && !isComplete)
+            if (firstPage) {
+                List<ConversationEntity> suspects = new ArrayList<>();
+                for (ConversationEntity row : localRows) {
+                    if (row.isArchived() != archived) continue;
+                    if (!pageIdSet.contains(row.getId())
+                            && !locallyCreatedIds.contains(row.getId())
+                            && row.getLastMessageSeq() >= oldestSequenceInPage) {
+                        // Expected to be on page 1 by sequence, but missing: suspect.
+                        suspects.add(row);
+                    }
+                }
+                return confirmAbsenceAndPrune(suspects);
+            }
+
+            return Completable.complete();
+        });
+    }
+
+    /**
+     * Confirms suspects against the authoritative delta endpoint. The server
+     * lists every conversation the caller can still access; an omitted
+     * watermark therefore proves the conversation is gone, so its local cache
+     * is pruned in the same transaction as the rows already applied.
+     */
+    private Completable confirmAbsenceAndPrune(List<ConversationEntity> suspects) {
+        if (suspects.isEmpty()) {
+            return Completable.complete();
+        }
+        List<SyncRequest.Watermark> watermarks = new ArrayList<>(suspects.size());
+        for (ConversationEntity suspect : suspects) {
+            watermarks.add(new SyncRequest.Watermark(
+                    suspect.getId(), suspect.getLastMessageSeq()));
+        }
+        SyncRequest request = new SyncRequest(watermarks, 1, null);
+        Call<SyncResponse> call;
+        try {
+            call = messageApi.syncDeltas(request);
+        } catch (RuntimeException e) {
+            return Completable.complete();
+        }
+        if (call == null) {
+            return Completable.complete();
+        }
+        return safeApiCall(call).flatMapCompletable(result -> {
+            if (!(result instanceof ApiResult.Success<?> success)) {
+                return Completable.complete();
+            }
+            SyncResponse response = (SyncResponse) success.getBody();
+            if (response == null) {
+                return Completable.complete();
+            }
+            Set<String> accessible = new HashSet<>();
+            for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
+                if (delta.getConversationId() != null) {
+                    accessible.add(delta.getConversationId());
+                }
+            }
+            List<String> toPrune = new ArrayList<>();
+            for (ConversationEntity suspect : suspects) {
+                if (!accessible.contains(suspect.getId())) {
+                    toPrune.add(suspect.getId());
+                }
+            }
+            if (toPrune.isEmpty()) {
+                return Completable.complete();
+            }
+            return Completable.fromAction(() -> {
+                appDatabase.runInTransaction(() -> {
+                    for (String id : toPrune) {
+                        LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                    }
+                });
+            });
+        });
     }
 
     /**
@@ -881,10 +1035,6 @@ public final class ConversationRepository implements AutoCloseable {
     private ConversationEntity toEntity(ConversationInboxDto dto, @Nullable String myId) {
         Long lastSeq = dto.resolvedLastSeq();
         String lastAt = dto.resolvedLastAt();
-        Boolean aiOptOut = dto.getAiOptOut();
-        if (aiOptOut != null) {
-            knownAiOptOut.put(dto.getId(), aiOptOut);
-        }
         List<ConversationMemberDto> members = dto.getMembers();
         String myRole = null;
         for (ConversationMemberDto member : members) {
@@ -915,16 +1065,10 @@ public final class ConversationRepository implements AutoCloseable {
                         ? null
                         : TimeAndJwt.isoToEpochMsOrNull(dto.getMutedUntil()),
                 Boolean.TRUE.equals(dto.getArchived()),
-                aiOptOut != null
-                        ? aiOptOut
-                        : Boolean.TRUE.equals(knownAiOptOut.get(dto.getId())));
+                Boolean.TRUE.equals(dto.getAiOptOut()));
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
-        Boolean aiOptOut = dto.getAiOptOut();
-        if (aiOptOut != null) {
-            knownAiOptOut.put(dto.getId(), aiOptOut);
-        }
         return new ConversationEntity(
                 dto.getId(),
                 dto.getType() != null ? dto.getType() : TYPE_GROUP,
@@ -945,9 +1089,7 @@ public final class ConversationRepository implements AutoCloseable {
                 false,
                 null,
                 false,
-                aiOptOut != null
-                        ? aiOptOut
-                        : Boolean.TRUE.equals(knownAiOptOut.get(dto.getId())));
+                Boolean.TRUE.equals(dto.getAiOptOut()));
     }
 
     private List<GroupMember> mapMembers(List<ConversationMemberDto> members) {
@@ -967,9 +1109,6 @@ public final class ConversationRepository implements AutoCloseable {
     private ConversationSummary toSummary(
             ConversationEntity row,
             Map<String, PeerPresence> presence) {
-        // Seed the last-known AI state from persisted Room rows before a refresh
-        // can see an inbox payload that omits the additive field.
-        knownAiOptOut.putIfAbsent(row.getId(), row.isAiOptOut());
         PeerPresence peer = TYPE_DIRECT.equals(row.getType()) && row.getOtherUserId() != null
                 ? presence.get(row.getOtherUserId())
                 : null;
@@ -1134,18 +1273,6 @@ public final class ConversationRepository implements AutoCloseable {
             this.items = items;
             this.nextCursor = nextCursor;
             this.complete = complete;
-        }
-    }
-
-    private static final class PruneSnapshot {
-        private final Set<String> fetchedIds;
-        private final long oldestSequence;
-        private final boolean archived;
-
-        private PruneSnapshot(Set<String> fetchedIds, long oldestSequence, boolean archived) {
-            this.fetchedIds = fetchedIds;
-            this.oldestSequence = oldestSequence;
-            this.archived = archived;
         }
     }
 

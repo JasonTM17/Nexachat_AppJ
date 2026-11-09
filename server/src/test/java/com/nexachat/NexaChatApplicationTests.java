@@ -5,6 +5,9 @@ import com.nexachat.auth.RefreshTokenRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.invite.GroupInviteBanRepository;
+import com.nexachat.invite.GroupInviteLinkRepository;
+import com.nexachat.invite.GroupJoinRequestRepository;
 import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageReactionRepository;
 import com.nexachat.message.MessageRepository;
@@ -77,6 +80,15 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private PollVoteRepository pollVoteRepository;
+
+    @MockitoBean
+    private GroupInviteLinkRepository groupInviteLinkRepository;
+
+    @MockitoBean
+    private GroupJoinRequestRepository groupJoinRequestRepository;
+
+    @MockitoBean
+    private GroupInviteBanRepository groupInviteBanRepository;
 
     @Test
     void contextLoads() {

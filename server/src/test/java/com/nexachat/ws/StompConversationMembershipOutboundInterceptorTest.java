@@ -4,6 +4,8 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
@@ -40,6 +42,18 @@ class StompConversationMembershipOutboundInterceptorTest {
     }
 
     @Test
+    void connectAckAndHeartbeatPassWithoutAnAuthenticatedSession() {
+        Message<byte[]> connectAck = message(StompCommand.CONNECTED);
+        Message<byte[]> heartbeat = heartbeat();
+
+        assertThat(interceptor.preSend(connectAck, channel)).isSameAs(connectAck);
+        assertThat(interceptor.preSend(heartbeat, channel)).isSameAs(heartbeat);
+
+        verify(sessionRegistry, never()).isAuthenticatedSession(SESSION_ID);
+        verifyNoInteractions(memberRepository, userRegistry);
+    }
+
+    @Test
     void unboundApplicationMessageIsDropped() {
         when(sessionRegistry.isAuthenticatedSession(SESSION_ID)).thenReturn(false);
         Message<byte[]> event = message(StompCommand.MESSAGE);
@@ -52,6 +66,14 @@ class StompConversationMembershipOutboundInterceptorTest {
 
     private static Message<byte[]> message(StompCommand command) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(command);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setLeaveMutable(true);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private static Message<byte[]> heartbeat() {
+        SimpMessageHeaderAccessor accessor =
+                SimpMessageHeaderAccessor.create(SimpMessageType.HEARTBEAT);
         accessor.setSessionId(SESSION_ID);
         accessor.setLeaveMutable(true);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());

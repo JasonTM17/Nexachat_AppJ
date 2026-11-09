@@ -73,6 +73,8 @@ public final class ArchiveListAdapter
         binding.archiveRowDetails.setText(details);
         binding.getRoot().setContentDescription(ArchiveText.accessibilityDescription(
                 binding.getRoot().getContext(), currentState, title, item));
+        binding.archiveRowOptions.setContentDescription(
+                binding.getRoot().getContext().getString(R.string.archive_item_options_for, title));
         binding.getRoot().setOnClickListener(view -> listener.onOpen(item));
         binding.archiveRowOptions.setOnClickListener(view -> listener.onOptions(item, view));
     }
