@@ -263,7 +263,7 @@ compose DB on `:5433` via `IT_DB_URL/IT_DB_USER/IT_DB_PASSWORD` env vars, in CI
 the workflow's postgres service on `:5432` (`.github/workflows/ci.yml`).
 The verified test suites cover **947 server tests** under `mvn verify` (824 Surefire
 unit tests across 140 classes + 123 Failsafe integration tests across 24 classes,
-0 failures, 0 errors, 0 skipped against PostgreSQL V1–V11) and **784 Android unit tests**
+0 failures, 0 errors, 0 skipped against PostgreSQL V1–V11) and **806 Android unit tests**
 under `./gradlew testDebugUnitTest` across 128 test classes (0 failures, 0 errors, 0 skipped).
 CI is configured to run the server and Android suites, Android lint, and a committed-secret
 scan on every PR and push to `main`/`develop`.

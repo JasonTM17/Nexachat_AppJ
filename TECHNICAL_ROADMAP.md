@@ -2,7 +2,7 @@
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT
 
 - **Dự án**: NexaChat (App & Server)
-- **Kho lưu trữ mã nguồn**: `D:\ChatFaceHappy\nexachat`
+- **Kho lưu trữ mã nguồn**: NexaChat monorepo
 - **Ràng buộc công nghệ cốt lõi**: 100% Pure Java 21 LTS trên cả Backend Spring Boot 3.4.1 và Android App (0 file Kotlin `.kt`/`.kts`).
 - **Mã hiệu tài liệu**: `NEXA-TR-2026-V1`
 - **Ngày ban hành**: 08/11/2026
@@ -45,7 +45,7 @@ Báo cáo kỹ thuật này đối chiếu trực tiếp với hệ thống tài
 
 ## 2. KHẢO SÁT HIỆN TRẠNG KIẾN TRÚC CODEBASE (CODEBASE SURVEY & ARCHITECTURAL BASELINE)
 
-Qua khảo sát toàn diện cây mã nguồn tại `D:\ChatFaceHappy\nexachat`, hệ thống NexaChat hiện tại được cấu trúc theo mô hình phân lớp rõ ràng, bao gồm hai phân hệ chính: `server` (Backend Spring Boot 3.4.1) và `android` (Client Native Java 21).
+Qua khảo sát toàn diện cây mã nguồn tại NexaChat monorepo, hệ thống NexaChat hiện tại được cấu trúc theo mô hình phân lớp rõ ràng, bao gồm hai phân hệ chính: `server` (Backend Spring Boot 3.4.1) và `android` (Client Native Java 21).
 
 ### 2.1 Kiến trúc Phân hệ Máy chủ (Backend Spring Boot 3.4.1)
 Phân hệ máy chủ đặt tại thư mục `server/`, quản lý bởi Apache Maven, sử dụng Java 21 LTS làm nền tảng thực thi:
@@ -1102,8 +1102,8 @@ Bất kỳ kỹ sư, quản trị viên dự án hay kiểm toán viên độc l
 ### 8.1 Lệnh Kiểm tra Ràng buộc 100% Pure Java & 0 File Kotlin
 Xác thực rằng dự án không chứa bất kỳ tệp mã nguồn Kotlin `.kt` hoặc script cấu hình `.kts` nào:
 ```powershell
-# Chạy từ thư mục gốc dự án D:\ChatFaceHappy\nexachat
-Get-ChildItem -Path "D:\ChatFaceHappy\nexachat" -Recurse -Include *.kt, *.kts | Measure-Object
+# Chạy từ thư mục gốc dự án
+Get-ChildItem -Path "." -Recurse -Include *.kt, *.kts | Measure-Object
 ```
 *Kết quả kỳ vọng*: `Count = 0` (Khẳng định tính thuần nhất 100% Java 21 LTS).
 
@@ -1128,13 +1128,13 @@ grep -rIlE 'BEGIN.*PRIVATE KEY|api[_-]?key.*=.*[A-Za-z0-9]{20,}' \
 ### 8.4 Kiểm chứng Biên dịch & Kiểm thử Tự động Backend và Android
 - **Kiểm thử Backend Spring Boot 3.4.1 (Java 21 LTS)**:
   ```powershell
-  cd D:\ChatFaceHappy\nexachat\server
+  cd server
   mvn clean test-compile
   ```
   *Kết quả kỳ vọng*: `BUILD SUCCESS` trên JDK 21.
 - **Kiểm thử Android Client (SDK 35, Java 21 LTS)**:
   ```powershell
-  cd D:\ChatFaceHappy\nexachat\android
+  cd android
   .\gradlew testDebugUnitTest --no-daemon
   ```
   *Kết quả kỳ vọng*: Toàn bộ các bài kiểm thử đơn vị cục bộ vượt qua thành công 100%.
