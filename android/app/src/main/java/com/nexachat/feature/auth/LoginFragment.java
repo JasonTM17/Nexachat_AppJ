@@ -21,6 +21,7 @@ public final class LoginFragment extends Fragment {
     private FragmentLoginBinding binding;
     private AuthViewModel viewModel;
     private boolean rendering;
+    @Nullable private String returnInviteToken;
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
         binding = FragmentLoginBinding.inflate(inflater, container, false);
@@ -29,17 +30,30 @@ public final class LoginFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
+        returnInviteToken = getArguments() == null
+                ? null : getArguments().getString("returnInviteToken");
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
         binding.passwordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.primaryAction.setText(R.string.action_sign_in);
         binding.primaryAction.setOnClickListener(v -> submit());
         binding.secondaryAction.setText(R.string.action_create_account);
-        binding.secondaryAction.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.registerFragment));
+        binding.secondaryAction.setOnClickListener(v -> {
+            Bundle args = inviteReturnArgs();
+            NavHostFragment.findNavController(this).navigate(
+                    R.id.registerFragment, args.isEmpty() ? null : args);
+        });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
-            if (e == AuthViewModel.Event.LoggedIn) NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
-                    new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.loginFragment, true).build());
+            if (e == AuthViewModel.Event.LoggedIn) {
+                int destination = returnInviteToken == null
+                        ? R.id.inboxFragment : R.id.inviteJoinFragment;
+                Bundle args = returnInviteToken == null ? null : new Bundle();
+                if (args != null) args.putString("token", returnInviteToken);
+                NavHostFragment.findNavController(this).navigate(destination, args,
+                        new androidx.navigation.NavOptions.Builder()
+                                .setPopUpTo(R.id.loginFragment, true).build());
+            }
         });
     }
 
@@ -55,6 +69,12 @@ public final class LoginFragment extends Fragment {
         if (!AuthFieldValidators.isE164(phone)) return;
         viewModel.onPhoneChange(phone);
         viewModel.login();
+    }
+
+    private Bundle inviteReturnArgs() {
+        Bundle args = new Bundle();
+        if (returnInviteToken != null) args.putString("returnInviteToken", returnInviteToken);
+        return args;
     }
 
     private void render(AuthViewModel.UiState state) {

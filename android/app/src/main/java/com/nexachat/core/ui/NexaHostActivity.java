@@ -144,7 +144,17 @@ public class NexaHostActivity extends AppCompatActivity {
         }
         NavController nav = host.getNavController();
         try {
-            nav.navigate(R.id.action_global_login);
+            Bundle loginArgs = null;
+            androidx.navigation.NavBackStackEntry current = nav.getCurrentBackStackEntry();
+            if (current != null && current.getDestination().getId() == R.id.inviteJoinFragment) {
+                String token = current.getArguments() == null
+                        ? null : current.getArguments().getString("token");
+                if (token != null) {
+                    loginArgs = new Bundle();
+                    loginArgs.putString("returnInviteToken", token);
+                }
+            }
+            nav.navigate(R.id.action_global_login, loginArgs);
             pendingLogoutNavigation = false;
         } catch (IllegalStateException ignored) {
             pendingLogoutNavigation = true;

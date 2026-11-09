@@ -46,6 +46,13 @@ public final class InviteJoinViewModelTest {
     }
 
     @Test
+    public void validatedInviteTokenRemainsAvailableForSignInReturn() {
+        viewModel.open(URL);
+
+        assertEquals("A".repeat(43), viewModel.inviteTokenForSignIn());
+    }
+
+    @Test
     public void previewShowsOnlySafeGroupFieldsAndAlreadyMemberState() {
         repository.preview = Single.just(FakeInviteRepository.preview(true, false));
 
