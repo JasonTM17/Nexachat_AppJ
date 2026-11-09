@@ -76,10 +76,14 @@ File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePa
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
 // Host for verified App Links (Phase 1 owned domain).
-// Configured for the release build type only (debug and local-smoke builds remain
-// empty so local developers are not tied to the owned domain).
+// Configured for the release build type only. Debug and localSmoke keep the host
+// empty so local developers are not tied to the owned domain.
 def inviteLinkHttpsHostProp = providers.gradleProperty('inviteLinkHttpsHost').orElse('').get().trim()
 def releaseInviteLinkHttpsHost = inviteLinkHttpsHostProp.isEmpty() ? 'nexachat.io.vn' : inviteLinkHttpsHostProp
+// NavInflater rejects an empty deepLink uri. Non-release builds have no HTTPS
+// host, so they repeat the custom-scheme pattern already declared on the invite
+// destination. That second link is a duplicate, not an HTTPS registration.
+def nonReleaseInviteDeepLinkPattern = 'nexachat://join/{token}'
 def inviteHostPattern = /(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*/
 if (!releaseInviteLinkHttpsHost.isEmpty() && !(releaseInviteLinkHttpsHost ==~ inviteHostPattern)) {
     throw new GradleException(
@@ -159,7 +163,7 @@ android {
         buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
         buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
         manifestPlaceholders = [inviteLinkHttpsHost: '']
-        resValue 'string', 'invite_https_deep_link_pattern', ''
+        resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern
     }
 
     signingConfigs {
@@ -186,10 +190,21 @@ android {
         }
         debug {
             applicationIdSuffix '.debug'
-            // Debug and local-smoke leave INVITE_LINK_HTTPS_HOST empty so developers are not tied to the domain
+            // Debug and localSmoke leave INVITE_LINK_HTTPS_HOST empty so developers are not tied to the domain.
+            // The nav pattern stays the custom scheme so the graph can inflate without an HTTPS filter.
             buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
             manifestPlaceholders = [inviteLinkHttpsHost: '']
-            resValue 'string', 'invite_https_deep_link_pattern', ''
+            resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern
+        }
+        // local-smoke build. The Gradle name has no hyphen; build type names are identifiers.
+        // Same invite contract as debug: empty HTTPS host, custom-scheme nav pattern, no App Link filter.
+        localSmoke {
+            initWith debug
+            applicationIdSuffix '.localsmoke'
+            matchingFallbacks = ['debug']
+            buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
+            manifestPlaceholders = [inviteLinkHttpsHost: '']
+            resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern
         }
     }
 
@@ -223,7 +238,12 @@ tasks.configureEach { task ->
 }
 
 tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
-    dependsOn('processReleaseManifest')
+    dependsOn(
+            'processReleaseManifest',
+            'generateDebugResValues',
+            'generateDebugAndroidTestResValues',
+            'generateLocalSmokeResValues',
+            'generateReleaseResValues')
 }
 
 gradle.taskGraph.whenReady { graph ->

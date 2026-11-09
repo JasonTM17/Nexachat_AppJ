@@ -123,7 +123,7 @@
             android:name="token"
             app:argType="string" />
         <deepLink app:uri="nexachat://join/{token}" />
-        <!-- Gradle supplies an empty URI unless a verified HTTPS host is configured. -->
+        <!-- Release resolves the verified HTTPS pattern. Debug and localSmoke resolve the same custom scheme, a harmless duplicate. -->
         <deepLink app:uri="@string/invite_https_deep_link_pattern" />
     </fragment>
 

@@ -183,9 +183,9 @@ NexaChat uses the verified project domain **`nexachat.io.vn`** for production An
   - Deep link resource `invite_https_deep_link_pattern` resolves to `https://nexachat.io.vn/join/{token}` for Jetpack Navigation.
 - **Debug / Local-Smoke builds:**
   - `BuildConfig.INVITE_LINK_HTTPS_HOST` is empty (`""`).
-  - Debug manifest has no HTTPS intent filter so local developers are not tied to the owned domain.
+  - Debug and `localSmoke` manifests have no HTTPS intent filter so local developers are not tied to the owned domain. `localSmoke` is the local-smoke build type.
   - Share and copy actions default to `nexachat://join/<token>`.
-  - Deep link resource `invite_https_deep_link_pattern` remains empty.
+  - Deep link resource `invite_https_deep_link_pattern` resolves to `nexachat://join/{token}`. The invite destination already declares that custom-scheme pattern, so the resource is a second identical navigation deep link. It is not an HTTPS registration, and `InviteLinkParser` still rejects `https` links while the host is empty.
 
 ## Procedure to Change the Host
 

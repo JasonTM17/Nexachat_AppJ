@@ -321,7 +321,8 @@ public final class RoomMigrationInstrumentedTest {
                             + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
                             + "otherUserId, lastMessageDeleted";
             String conversationValues = "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
-            java.util.List<Object> argsList = new java.util.ArrayList<>(java.util.List.of(
+            // Arrays.asList accepts the null title and preview that List.of rejects.
+            java.util.List<Object> argsList = new java.util.ArrayList<>(java.util.Arrays.asList(
                     "c-1", "DIRECT", null, 23L, null, "Lan", CREATED_AT, 4, "Lan",
                     "avatar.png", "group-avatar.png", 12L, "MEMBER", "peer-2", 1
             ));
