@@ -18,6 +18,7 @@ public interface ArchiveRepository {
     enum Failure {
         OFFLINE,
         FORBIDDEN,
+        NOT_FOUND,
         UNKNOWN
     }
 }

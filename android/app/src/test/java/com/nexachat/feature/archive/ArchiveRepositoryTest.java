@@ -53,6 +53,15 @@ public final class ArchiveRepositoryTest {
         });
         assertEquals(ArchiveRepository.Failure.FORBIDDEN, failure.get());
 
+        FakeApi notFoundApi = new FakeApi(Response.error(
+                404, ResponseBody.create(MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"CONVERSATION_NOT_FOUND\"}}")));
+        new RetrofitArchiveRepository(notFoundApi).load(query(), new ArchiveRepository.Callback() {
+            @Override public void onSuccess(ArchivePage page) { }
+            @Override public void onFailure(ArchiveRepository.Failure value) { failure.set(value); }
+        });
+        assertEquals(ArchiveRepository.Failure.NOT_FOUND, failure.get());
+
         FakeApi offlineApi = new FakeApi(new IOException("private transport detail"));
         new RetrofitArchiveRepository(offlineApi).load(query(), new ArchiveRepository.Callback() {
             @Override public void onSuccess(ArchivePage page) { }
