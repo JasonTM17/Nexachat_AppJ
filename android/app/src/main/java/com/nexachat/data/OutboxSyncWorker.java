@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 
-/** WorkManager worker that dispatches durable reaction and pin actions. */
+/** WorkManager worker that retries queued message sends and offline actions. */
 public final class OutboxSyncWorker extends RxWorker {
     public static final String WORK_NAME = "com.nexachat.outbox.sync";
     public static final int MAX_ATTEMPTS = 5;
@@ -120,7 +120,7 @@ public final class OutboxSyncWorker extends RxWorker {
     public Single<Result> createWork() {
         if (offlineOutboxDao == null) return Single.just(Result.retry());
         Completable flushMessages = messageRepository == null
-                ? Completable.complete() : messageRepository.flushOutbox();
+                ? Completable.complete() : messageRepository.flushOutboxForWorker();
         return operationTracker.track(flushMessages.andThen(drainOfflineOutbox())
                 .toSingleDefault(Result.success())
                 .onErrorReturnItem(Result.retry()))

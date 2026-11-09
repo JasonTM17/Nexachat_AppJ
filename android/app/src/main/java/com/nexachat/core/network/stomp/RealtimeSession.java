@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.network.AppForegroundState;
 import com.nexachat.core.network.NetworkMonitor;
+import com.nexachat.core.network.TokenRefreshOutcome;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.PinUpdateDto;
@@ -115,7 +116,6 @@ public final class RealtimeSession {
     private int failures;
     private int parkedRounds;
     /** Consecutive auth-suspect failures since the last successful CONNECT. */
-    private volatile int authRecoveryAttempts;
     /** Set by the attempt's state listener so finishAttempt resolves auth before retrying. */
     private volatile boolean authFailurePending;
     @Nullable private volatile String attemptAccessToken;
@@ -208,7 +208,6 @@ public final class RealtimeSession {
         hasSession = hasToken;
         if (hasToken) {
             if (!wasLoggedIn) {
-                authRecoveryAttempts = 0;
                 failures = 0;
                 parkedRounds = 0;
             }
@@ -217,7 +216,6 @@ public final class RealtimeSession {
         }
         synchronized (this) { attemptActive = false; }
         wantedSubscriptions.clear();
-        authRecoveryAttempts = 0;
         connection.set(Disposable.empty());
         parkedWake.set(Disposable.empty());
         stompClient.close();
@@ -262,12 +260,19 @@ public final class RealtimeSession {
         Flowable<StompClient.State> prepared = tokenStore.readTokens()
                 .flatMapPublisher(tokens -> {
                     attemptAccessToken = tokens.getAccessToken();
-                    Single<Boolean> valid = tokens.isAccessExpired()
-                            ? tokenRefresher.refreshIfNeeded(tokens.getAccessToken()).map(Optional::isPresent)
-                            : Single.just(true);
-                    return valid.flatMapPublisher(canConnect -> canConnect
-                            ? stompClient.connect()
-                            : Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
+                    if (!tokens.isAccessExpired()) return stompClient.connect();
+                    return tokenRefresher.refreshOutcomeIfNeeded(tokens.getAccessToken())
+                            .flatMapPublisher(outcome -> {
+                                if (outcome instanceof TokenRefreshOutcome.FreshToken) {
+                                    return stompClient.connect();
+                                }
+                                if (outcome instanceof TokenRefreshOutcome.Rejected) {
+                                    onTokenPresence(false);
+                                    return Flowable.empty();
+                                }
+                                return Flowable.just(new StompClient.State.Failed(
+                                        StompClient.REASON_OFFLINE));
+                            });
                 })
                 .switchIfEmpty(Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
         Disposable attempt = prepared.subscribe(
@@ -276,7 +281,6 @@ public final class RealtimeSession {
                     if (connectionState instanceof StompClient.State.Open) {
                         failures = 0;
                         parkedRounds = 0;
-                        authRecoveryAttempts = 0;
                         isOpen.onNext(true);
                         resubscribeWanted();
                         resyncRequests.onNext(new Object());
@@ -290,18 +294,12 @@ public final class RealtimeSession {
         attemptHolder.set(attempt);
     }
 
-    /**
-     * A rejected CONNECT may be dropped without an ERROR frame, so a connect
-     * timeout is treated as auth-suspect as well. Both cases must resolve the
-     * token before another socket attempt.
-     */
+    /** Only explicit STOMP authentication failures trigger token recovery. */
     private static boolean isAuthSuspectFailure(StompClient.State state) {
         if (!(state instanceof StompClient.State.Failed failed)) {
             return false;
         }
-        return failed.isAuth()
-                || StompClient.REASON_NO_TOKEN.equals(failed.getReason())
-                || StompClient.REASON_CONNECT_TIMEOUT.equals(failed.getReason());
+        return failed.isAuth();
     }
 
     private void finishAttempt() {
@@ -338,52 +336,18 @@ public final class RealtimeSession {
         parkedWake.set(wake);
     }
 
-    /**
-     * Refreshes a rejected access token exactly once per failure streak. A
-     * fresh token re-arms one bounded retry; a failed refresh clears the
-     * session instead of letting the reconnect loop spin forever.
-     */
+    /** A transient refresh failure follows the same bounded backoff as socket failures. */
     private void recoverFromAuthFailure() {
         if (!hasSession) return;
-        if (authRecoveryAttempts >= 1) {
-            forceLogout();
-            return;
-        }
-        authRecoveryAttempts++;
-        tokenRefresher.refreshIfNeeded(attemptAccessToken)
-                .subscribe(fresh -> {
+        tokenRefresher.refreshOutcomeIfNeeded(attemptAccessToken)
+                .subscribe(outcome -> {
                     if (!hasSession) return;
-                    if (fresh.isPresent()) {
-                        scheduleSingleRetry();
-                    } else {
-                        forceLogout();
+                    if (outcome instanceof TokenRefreshOutcome.Rejected) {
+                        onTokenPresence(false);
+                        return;
                     }
-                }, ignored -> forceLogout());
-    }
-
-    private void scheduleSingleRetry() {
-        synchronized (this) {
-            if (!hasSession || isCurrentlyOpen() || attemptActive) return;
-        }
-        failures = 0;
-        Disposable timer = reconnectScheduler.scheduleDirect(
-                this::launchConnectionLoop,
-                reconnectPolicy.delayMillis(1),
-                TimeUnit.MILLISECONDS);
-        connection.set(timer);
-    }
-
-    private void forceLogout() {
-        authRecoveryAttempts = 0;
-        failures = 0;
-        parkedRounds = 0;
-        synchronized (this) { hasSession = false; attemptActive = false; }
-        connection.set(Disposable.empty());
-        parkedWake.set(Disposable.empty());
-        tokenRefresher.logOut().subscribe(() -> { }, ignored -> { });
-        stompClient.close();
-        isOpen.onNext(false);
-        state.onNext(new StompClient.State.Closed(NORMAL_CODE, "auth failed"));
+                    finishAttempt();
+                }, ignored -> finishAttempt());
     }
 
     private void resubscribeWanted() {

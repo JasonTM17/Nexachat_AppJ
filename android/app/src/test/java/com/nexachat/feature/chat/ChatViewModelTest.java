@@ -97,6 +97,7 @@ public final class ChatViewModelTest {
     private PublishProcessor<Optional<ConversationSummary>> conversationFlow;
     private PublishProcessor<TypingEvent> typingFlow;
     private BehaviorProcessor<Boolean> isOpenFlow;
+    private BehaviorProcessor<Boolean> restReachabilityFlow;
     private BehaviorProcessor<List<ChatMessage>> pinsFlow;
     private PublishProcessor<ApiError> interactionFlow;
     private ChatViewModel viewModel;
@@ -117,6 +118,7 @@ public final class ChatViewModelTest {
         conversationFlow = PublishProcessor.create();
         typingFlow = PublishProcessor.create();
         isOpenFlow = BehaviorProcessor.createDefault(true);
+        restReachabilityFlow = BehaviorProcessor.createDefault(false);
         pinsFlow = BehaviorProcessor.createDefault(List.of());
         interactionFlow = PublishProcessor.create();
         uri = Mockito.mock(Uri.class);
@@ -125,6 +127,7 @@ public final class ChatViewModelTest {
         when(messageRepository.getTypingEvents()).thenReturn(typingFlow);
         when(messageRepository.pinsFlow(anyString())).thenReturn(pinsFlow);
         when(messageRepository.getInteractionEvents()).thenReturn(interactionFlow);
+        when(messageRepository.getRestReachability()).thenReturn(restReachabilityFlow);
         doNothing().when(messageRepository).closeConversation(anyString());
         when(messageRepository.openConversation(anyString())).thenReturn(Completable.complete());
         when(messageRepository.refreshHistory(anyString(), nullable(Long.class)))
@@ -198,6 +201,38 @@ public final class ChatViewModelTest {
 
     private ChatSearchState searchState() {
         return viewModel.getSearchState().getValue();
+    }
+
+    @Test
+    public void restSuccessHidesDisconnectedBannerWhileWebSocketIsDown() {
+        isOpenFlow.onNext(false);
+        assertFalse(state().isConnected());
+
+        restReachabilityFlow.onNext(true);
+
+        assertTrue(state().isConnected());
+    }
+
+    @Test
+    public void networkFailureShowsDisconnectedBannerAfterRestWasReachable() {
+        isOpenFlow.onNext(false);
+        restReachabilityFlow.onNext(true);
+        assertTrue(state().isConnected());
+
+        restReachabilityFlow.onNext(false);
+
+        assertFalse(state().isConnected());
+    }
+
+    @Test
+    public void websocketReconnectHidesDisconnectedBannerEvenAfterRestFailure() {
+        isOpenFlow.onNext(false);
+        restReachabilityFlow.onNext(false);
+        assertFalse(state().isConnected());
+
+        isOpenFlow.onNext(true);
+
+        assertTrue(state().isConnected());
     }
 
     private static ChatMessage message(

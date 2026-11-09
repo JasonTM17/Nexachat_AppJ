@@ -13,9 +13,10 @@ final class LocalConversationCleaner {
     private LocalConversationCleaner() {
     }
 
-    static void deleteInTransaction(AppDatabase database, String conversationId) {
+    static void deleteInTransaction(
+            AppDatabase database, String conversationId, String ownerUserId) {
         database.pinDao().deleteForConversation(conversationId).blockingAwait();
-        database.outboxDao().deleteForConversation(conversationId).blockingAwait();
+        database.outboxDao().deleteForConversation(conversationId, ownerUserId).blockingAwait();
         database.reactionDao().deleteForConversation(conversationId).blockingAwait();
         database.messageDao().deleteForConversation(conversationId).blockingAwait();
         database.conversationDao().deleteById(conversationId).blockingAwait();

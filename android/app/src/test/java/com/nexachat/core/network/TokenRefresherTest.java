@@ -21,6 +21,10 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Provider;
@@ -48,12 +52,41 @@ public final class TokenRefresherTest {
         harness.events.getEvents().test().assertNoValues();
     }
 
-    @Test public void reusedRefreshTokenClearsSession() { assertRejected(401); }
+    @Test
+    public void socketTimeoutDnsAndNoRoutePreserveTokens() {
+        for (IOException failure : List.of(
+                new SocketTimeoutException("timeout"),
+                new UnknownHostException("dns"),
+                new ConnectException("no route"))) {
+            Harness harness = new Harness();
+            Call<AuthResponse> call = mock(Call.class);
+            when(harness.api.refresh(any())).thenReturn(call);
+            try {
+                when(call.execute()).thenThrow(failure);
+            } catch (IOException impossible) {
+                throw new AssertionError(impossible);
+            }
+            assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE,
+                    harness.refresher.refreshBlocking());
+            assertEquals("rt-live", harness.current().getRefreshToken());
+            harness.events.getEvents().test().assertNoValues();
+        }
+    }
 
     @Test
-    public void validationAndForbiddenClearSession() {
-        assertRejected(400);
-        assertRejected(403);
+    public void refreshTokenAuthCodesClearSession() {
+        assertRejected(401, "TOKEN_INVALID");
+        assertRejected(401, "TOKEN_REUSED");
+        assertRejected(403, "FORBIDDEN");
+    }
+
+    @Test
+    public void genericAndNonAuthRejectionsPreserveTokens() {
+        assertTransient(400, "VALIDATION_FAILED");
+        assertTransient(400, "TOKEN_INVALID");
+        assertTransient(401, "INVALID_CREDENTIALS");
+        assertTransient(401, "REFRESH_REJECTED");
+        assertTransient(403, "NOT_MEMBER");
     }
 
     @Test
@@ -83,17 +116,29 @@ public final class TokenRefresherTest {
         harness.events.getEvents().test().assertNoValues();
     }
 
-    private static void assertRejected(int status) {
+    private static void assertRejected(int status, String code) {
         Harness harness = new Harness();
-        when(harness.api.refresh(any())).thenReturn(responseCall(status));
+        when(harness.api.refresh(any())).thenReturn(responseCall(status, code));
         assertSame(TokenRefreshOutcome.Rejected.INSTANCE, harness.refresher.refreshBlocking());
         assertNull(harness.current());
         harness.events.getEvents().test().assertValue(SessionEvents.Event.LoggedOut.INSTANCE);
     }
 
+    private static void assertTransient(int status, String code) {
+        Harness harness = new Harness();
+        when(harness.api.refresh(any())).thenReturn(responseCall(status, code));
+        assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
+        assertEquals("rt-live", harness.current().getRefreshToken());
+        harness.events.getEvents().test().assertNoValues();
+    }
+
     private static Call<AuthResponse> responseCall(int status) {
+        return responseCall(status, "REFRESH_REJECTED");
+    }
+
+    private static Call<AuthResponse> responseCall(int status, String code) {
         ResponseBody error = ResponseBody.create(MediaType.parse("application/json"),
-                "{\"error\":{\"code\":\"REFRESH_REJECTED\"}}");
+                "{\"error\":{\"code\":\"" + code + "\"}}");
         Response<AuthResponse> response = Response.error(status, error);
         return new Call<>() {
             @Override public Response<AuthResponse> execute() { return response; }

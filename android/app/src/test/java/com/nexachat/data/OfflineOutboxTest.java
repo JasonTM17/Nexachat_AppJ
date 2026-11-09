@@ -501,7 +501,7 @@ public final class OfflineOutboxTest {
         doAnswer(invocation -> {
             dao.clearBlocking();
             return null;
-        }).when(appDatabase).clearAllTables();
+        }).when(appDatabase).clearAccountDataPreservingOutbox();
         AccountDataCleaner cleaner = new AccountDataCleaner(
                 appDatabase, new SessionOperationTracker(), Completable::complete);
         await(cleaner.clearForSessionBoundary());

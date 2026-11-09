@@ -122,7 +122,8 @@ public final class SyncEngine {
                             AtomicBoolean batchHasMore = new AtomicBoolean();
                             return Flowable.fromIterable(requests)
                                     .concatMapCompletable(request -> drainDeltaRequest(
-                                            request, lastResponse, missingServerTime, batchHasMore))
+                                            request, lastResponse, missingServerTime,
+                                            batchHasMore, cursor.userId))
                                     .andThen(Completable.defer(() -> {
                                         Completable persist = (missingServerTime.get() || lastResponse.get() == null)
                                                 ? Completable.complete()
@@ -151,14 +152,16 @@ public final class SyncEngine {
             SyncRequest request,
             AtomicReference<SyncResponse> lastResponse,
             AtomicBoolean missingServerTime,
-            AtomicBoolean batchHasMore) {
+            AtomicBoolean batchHasMore,
+            @Nullable String ownerUserId) {
         return drainDeltaPage(
                 request.getSince(),
                 new ArrayList<>(request.getWatermarks()),
                 0,
                 lastResponse,
                 missingServerTime,
-                batchHasMore);
+                batchHasMore,
+                ownerUserId);
     }
 
     private Completable drainDeltaPage(
@@ -167,7 +170,8 @@ public final class SyncEngine {
             int page,
             AtomicReference<SyncResponse> lastResponse,
             AtomicBoolean missingServerTime,
-            AtomicBoolean batchHasMore) {
+            AtomicBoolean batchHasMore,
+            @Nullable String ownerUserId) {
         if (watermarks.isEmpty()) {
             return Completable.complete();
         }
@@ -178,7 +182,7 @@ public final class SyncEngine {
         SyncRequest request = new SyncRequest(
                 watermarks, DELTA_LIMIT_PER_CONVERSATION, since);
         return fetchDeltaResponse(request).flatMapCompletable(response -> {
-            applyDeltaBundle(response, watermarks);
+            applyDeltaBundle(response, watermarks, ownerUserId);
             lastResponse.set(response);
             if (response.getServerTime() == null) {
                 missingServerTime.set(true);
@@ -187,7 +191,8 @@ public final class SyncEngine {
             if (next == null) {
                 return Completable.error(new IOException("delta sync page made no progress"));
             }
-            return drainDeltaPage(since, next, page + 1, lastResponse, missingServerTime, batchHasMore);
+            return drainDeltaPage(since, next, page + 1, lastResponse,
+                    missingServerTime, batchHasMore, ownerUserId);
         });
     }
 
@@ -337,7 +342,10 @@ public final class SyncEngine {
         return merged;
     }
 
-    private void applyDeltaBundle(SyncResponse response, List<SyncRequest.Watermark> requested) {
+    private void applyDeltaBundle(
+            SyncResponse response,
+            List<SyncRequest.Watermark> requested,
+            @Nullable String ownerUserId) {
         if (response == null) {
             return;
         }
@@ -346,12 +354,7 @@ public final class SyncEngine {
             return;
         }
 
-        com.nexachat.core.storage.Tokens tokens = response.getDeltas().isEmpty()
-                ? null
-                : tokenStore.readTokens().blockingGet();
-        final String myUserId = (tokens != null && tokens.getAccessToken() != null)
-                ? Optional.ofNullable(TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi)).orElse("")
-                : "";
+        final String myUserId = ownerUserId == null ? "" : ownerUserId;
 
         appDatabase.runInTransaction(() -> {
             for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
@@ -481,7 +484,7 @@ public final class SyncEngine {
                 //    frames; a delta bundle says nothing about what the peer has read.
             }
             for (String conversationId : missing) {
-                LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId);
+                LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId, myUserId);
             }
         });
     }

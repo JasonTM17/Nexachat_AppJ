@@ -118,13 +118,13 @@ public final class RealtimeSessionReArmTest {
     public void expiredAccessRefreshesBeforeConnecting() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
-        when(refresher.refreshIfNeeded("expired-access"))
-                .thenReturn(Single.just(Optional.of("fresh-access")));
+        when(refresher.refreshOutcomeIfNeeded("expired-access"))
+                .thenReturn(Single.just(new TokenRefreshOutcome.FreshToken("fresh-access")));
         AtomicInteger connects = new AtomicInteger();
         RealtimeSession session = session(loggedInStore(0L), failedClient(connects),
                 BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false), refresher, scheduler);
         scheduler.triggerActions();
-        verify(refresher, times(1)).refreshIfNeeded("expired-access");
+        verify(refresher, times(1)).refreshOutcomeIfNeeded("expired-access");
         assertEquals(1, connects.get());
     }
 
@@ -163,11 +163,11 @@ public final class RealtimeSessionReArmTest {
     }
 
     @Test
-    public void authFailureRefreshesOnceAndLogsOutWhenNoFreshTokenArrives() {
+    public void definitiveRefreshRejectionStopsTheSessionWithoutAnotherLogout() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
-        when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
-        when(refresher.logOut()).thenReturn(Completable.complete());
+        when(refresher.refreshOutcomeIfNeeded("access"))
+                .thenReturn(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
@@ -182,18 +182,17 @@ public final class RealtimeSessionReArmTest {
         scheduler.triggerActions();
         scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
 
-        verify(refresher, times(1)).refreshIfNeeded("access");
-        verify(refresher, times(1)).logOut();
+        verify(refresher, times(1)).refreshOutcomeIfNeeded("access");
+        verify(refresher, never()).logOut();
         assertEquals("a rejected refresh must stop the reconnect loop", 1, connects.get());
     }
 
     @Test
-    public void authFailureRetriesOnceWithARefreshedTokenThenStopsOnASecondRejection() {
+    public void authFailureRefreshNetworkErrorKeepsSessionAndUsesBackoff() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
-        when(refresher.refreshIfNeeded("access"))
-                .thenReturn(Single.just(Optional.of("fresh-access")));
-        when(refresher.logOut()).thenReturn(Completable.complete());
+        when(refresher.refreshOutcomeIfNeeded("access"))
+                .thenReturn(Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE));
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
@@ -206,16 +205,16 @@ public final class RealtimeSessionReArmTest {
                 refresher, scheduler);
 
         scheduler.triggerActions();
-        scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
-        scheduler.triggerActions();
+        scheduler.advanceTimeBy(2, TimeUnit.MINUTES);
 
-        verify(refresher, times(1)).refreshIfNeeded("access");
-        verify(refresher, times(1)).logOut();
-        assertEquals("refresh is attempted once per auth failure streak", 2, connects.get());
+        verify(refresher, times(ReconnectPolicy.MAX_ATTEMPTS)).refreshOutcomeIfNeeded("access");
+        verify(refresher, never()).logOut();
+        assertEquals("transient auth recovery must follow the bounded backoff budget",
+                ReconnectPolicy.MAX_ATTEMPTS, connects.get());
     }
 
     @Test
-    public void connectTimeoutTreatedAsAuthSuspectRefreshesAndStopsWhenRefreshFails() {
+    public void connectTimeoutUsesBackoffWithoutRefreshingOrLoggingOut() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.refreshIfNeeded("access")).thenReturn(Single.just(Optional.empty()));
@@ -234,9 +233,10 @@ public final class RealtimeSessionReArmTest {
         scheduler.triggerActions();
         scheduler.advanceTimeBy(5, TimeUnit.MINUTES);
 
-        verify(refresher, times(1)).refreshIfNeeded("access");
-        verify(refresher, times(1)).logOut();
-        assertEquals(1, connects.get());
+        verify(refresher, never()).refreshIfNeeded(any());
+        verify(refresher, never()).logOut();
+        assertEquals("connection failures must use the bounded reconnect budget",
+                ReconnectPolicy.MAX_ATTEMPTS, connects.get());
     }
 
     private static RealtimeSession session(

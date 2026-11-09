@@ -104,6 +104,8 @@ public final class ChatViewModel extends ViewModel {
     private long lastTypingSentMs;
     private long lastReadSeq;
     private boolean loadingOlder;
+    private boolean webSocketOpen;
+    private boolean restReachable;
 
     @Inject
     public ChatViewModel(
@@ -222,7 +224,18 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(session.getIsOpen()
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(connected -> updateUiState(state -> state.withConnected(connected)),
+                .subscribe(connected -> {
+                    webSocketOpen = Boolean.TRUE.equals(connected);
+                    updateConnectivityState();
+                },
+                        this::surfaceStreamFailure));
+        disposables.add(messageRepository.getRestReachability()
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(reachable -> {
+                    restReachable = Boolean.TRUE.equals(reachable);
+                    updateConnectivityState();
+                },
                         this::surfaceStreamFailure));
         if (settingsRepository != null) {
             disposables.add(settingsRepository.getShowSeen()
@@ -249,6 +262,11 @@ public final class ChatViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(this::markNewestIncomingRead, this::surfaceStreamFailure));
+    }
+
+    private void updateConnectivityState() {
+        boolean connected = webSocketOpen || restReachable;
+        updateUiState(state -> state.withConnected(connected));
     }
 
     private void initializeConversation() {

@@ -672,7 +672,8 @@ public final class ConversationRepository implements AutoCloseable {
         String conversationId = update.getConversationId();
         if (conversationId == null) return Single.just(Boolean.FALSE);
         return operationTracker.track(currentUserIdOptional().flatMap(myId -> {
-            if (!update.isSelfRemoval(myId.orElse(null))) {
+            String ownerUserId = myId.orElse(null);
+            if (ownerUserId == null || !update.isSelfRemoval(ownerUserId)) {
                 return Single.just(Boolean.FALSE);
             }
             return Completable.fromAction(() -> {
@@ -681,7 +682,8 @@ public final class ConversationRepository implements AutoCloseable {
                     inboxWalkIds.remove(conversationId);
                 }
                 appDatabase.runInTransaction(() ->
-                        LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId));
+                        LocalConversationCleaner.deleteInTransaction(
+                                appDatabase, conversationId, ownerUserId));
             }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
         }));
     }
@@ -853,7 +855,7 @@ public final class ConversationRepository implements AutoCloseable {
                     }))
                     .andThen(Completable.defer(() ->
                             reconcileInboxRows(generation, firstPage, fullWalkComplete.get(),
-                                    pageIds, oldestInboxSequence, archived)))
+                                    pageIds, oldestInboxSequence, archived, myId)))
                     .andThen(Single.fromCallable(() -> {
                         synchronized (inboxPagingLock) {
                             return new Result.Success<>(generation == inboxPageGeneration
@@ -957,7 +959,8 @@ public final class ConversationRepository implements AutoCloseable {
             boolean isComplete,
             List<String> pageIds,
             long oldestSequenceInPage,
-            boolean archived) {
+            boolean archived,
+            @Nullable String ownerUserId) {
         if (!isInboxPageGenerationCurrent(generation)) {
             return Completable.complete();
         }
@@ -981,7 +984,7 @@ public final class ConversationRepository implements AutoCloseable {
                 return Completable.fromAction(() -> {
                     appDatabase.runInTransaction(() -> {
                         for (String id : toDelete) {
-                            LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                            LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
                         }
                     });
                 }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)));
@@ -1009,12 +1012,12 @@ public final class ConversationRepository implements AutoCloseable {
                         : Completable.fromAction(() -> {
                             appDatabase.runInTransaction(() -> {
                                 for (String id : definiteDeletes) {
-                                    LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                                    LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
                                 }
                             });
                         });
                 return deleteDefinite
-                        .andThen(confirmAbsenceAndPrune(suspects))
+                        .andThen(confirmAbsenceAndPrune(suspects, ownerUserId))
                         .andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walkIdSet)));
             }
 
@@ -1030,7 +1033,7 @@ public final class ConversationRepository implements AutoCloseable {
                         suspects.add(row);
                     }
                 }
-                return confirmAbsenceAndPrune(suspects);
+                return confirmAbsenceAndPrune(suspects, ownerUserId);
             }
 
             return Completable.complete();
@@ -1043,7 +1046,8 @@ public final class ConversationRepository implements AutoCloseable {
      * watermark therefore proves the conversation is gone, so its local cache
      * is pruned in the same transaction as the rows already applied.
      */
-    private Completable confirmAbsenceAndPrune(List<ConversationEntity> suspects) {
+    private Completable confirmAbsenceAndPrune(
+            List<ConversationEntity> suspects, @Nullable String ownerUserId) {
         if (suspects.isEmpty()) {
             return Completable.complete();
         }
@@ -1088,7 +1092,7 @@ public final class ConversationRepository implements AutoCloseable {
             return Completable.fromAction(() -> {
                 appDatabase.runInTransaction(() -> {
                     for (String id : toPrune) {
-                        LocalConversationCleaner.deleteInTransaction(appDatabase, id);
+                        LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
                     }
                 });
             });

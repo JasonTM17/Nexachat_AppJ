@@ -30,6 +30,7 @@ import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.PinnedMessageEntity;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.MessageApi;
+import com.nexachat.core.network.NetworkMonitor;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
@@ -174,27 +175,42 @@ public class MessageRepositoryTest {
             OutboxEntity row = call.getArgument(0); outbox.put(row.getClientMessageId(), row); syncOutbox();
             return Completable.complete();
         });
-        when(outboxDao.updateState(anyString(), anyString())).thenAnswer(call -> {
-            String id = call.getArgument(0); OutboxEntity row = outbox.get(id);
+        when(outboxDao.updateState(anyString(), anyString(), anyString())).thenAnswer(call -> {
+            String id = call.getArgument(0); String owner = call.getArgument(1);
+            OutboxEntity row = outbox.get(id);
+            if (row != null && !owner.equals(row.getOwnerUserId())) row = null;
             if (row != null) outbox.put(id, new OutboxEntity(row.getClientMessageId(), row.getConversationId(),
-                    row.getType(), row.getContent(), row.getReplyToId(), call.getArgument(1),
-                    row.getCreatedAt(), row.getAttachmentsJson(), row.getMentionsJson(), row.isMentionAll()));
+                    row.getType(), row.getContent(), row.getReplyToId(), call.getArgument(2),
+                    row.getCreatedAt(), row.getAttachmentsJson(), row.getMentionsJson(),
+                    row.isMentionAll(), row.getOwnerUserId()));
             syncOutbox(); return Completable.complete();
         });
-        when(outboxDao.pendingOrdered()).thenReturn(outboxChanges);
-        when(outboxDao.pendingList()).thenAnswer(call -> Single.fromCallable(() -> outbox.values().stream()
+        when(outboxDao.pendingOrdered(anyString())).thenAnswer(call -> outboxChanges.map(ignored ->
+                outbox.values().stream().filter(row -> call.getArgument(0).equals(row.getOwnerUserId()))
+                        .sorted(java.util.Comparator.comparingLong(OutboxEntity::getCreatedAt)).toList()));
+        when(outboxDao.pendingList(anyString())).thenAnswer(call -> Single.fromCallable(() -> outbox.values().stream()
+                .filter(row -> call.getArgument(0).equals(row.getOwnerUserId()))
                 .filter(row -> OutboxState.SENDING.equals(row.getState()))
                 .sorted(java.util.Comparator.comparingLong(OutboxEntity::getCreatedAt)).toList()));
-        when(outboxDao.byId(anyString())).thenAnswer(call -> Maybe.fromCallable(() -> outbox.get(call.getArgument(0))));
-        when(outboxDao.delete(anyString())).thenAnswer(call -> {
-            outbox.remove(call.getArgument(0)); syncOutbox(); return Completable.complete();
+        when(outboxDao.byId(anyString(), anyString())).thenAnswer(call -> Maybe.fromCallable(() -> {
+            OutboxEntity row = outbox.get(call.getArgument(0));
+            return row != null && call.getArgument(1).equals(row.getOwnerUserId()) ? row : null;
+        }));
+        when(outboxDao.delete(anyString(), anyString())).thenAnswer(call -> {
+            OutboxEntity row = outbox.get(call.getArgument(0));
+            if (row != null && call.getArgument(1).equals(row.getOwnerUserId())) {
+                outbox.remove(call.getArgument(0));
+            }
+            syncOutbox(); return Completable.complete();
         });
         when(outboxDao.clear()).thenAnswer(call -> {
             outbox.clear(); syncOutbox(); return Completable.complete();
         });
-        when(outboxDao.deleteForConversation(anyString())).thenAnswer(call -> {
+        when(outboxDao.deleteForConversation(anyString(), anyString())).thenAnswer(call -> {
             String conversationId = call.getArgument(0);
-            outbox.values().removeIf(row -> conversationId.equals(row.getConversationId()));
+            String owner = call.getArgument(1);
+            outbox.values().removeIf(row -> conversationId.equals(row.getConversationId())
+                    && owner.equals(row.getOwnerUserId()));
             syncOutbox();
             return Completable.complete();
         });
@@ -375,7 +391,7 @@ public class MessageRepositoryTest {
         assertTrue(pending.isMentionAll());
         subscriber.cancel();
 
-        await(outboxDao.updateState(queued.getClientMessageId(), OutboxState.FAILED));
+        await(outboxDao.updateState(queued.getClientMessageId(), queued.getOwnerUserId(), OutboxState.FAILED));
         await(repository.retry(queued.getClientMessageId()));
         assertEquals(2, captured.size());
         assertEquals(mentions, captured.get(1).getMentions());
@@ -417,7 +433,7 @@ public class MessageRepositoryTest {
     @Test public void newSendsFollowPersistedOutboxAfterClockSetback() {
         long persisted = System.currentTimeMillis() + 60_000L;
         await(outboxDao.insert(new OutboxEntity("cm-persisted", CONVERSATION_ID, "TEXT", "earlier", null,
-                OutboxState.FAILED, persisted, "")));
+                OutboxState.FAILED, persisted, "", "[]", false, "me-1")));
         await(repository.send(CONVERSATION_ID, "later"));
         assertTrue(outbox.get("cm-persisted").getCreatedAt() < outbox.values().stream()
                 .filter(row -> "later".equals(row.getContent())).findFirst().orElseThrow().getCreatedAt());
@@ -460,6 +476,116 @@ public class MessageRepositoryTest {
         when(messageApi.sendMessage(anyString(), any())).thenReturn(failedCall(new IOException("offline")));
         await(repository.send(CONVERSATION_ID, "queued"));
         assertEquals(OutboxState.SENDING, outbox.values().iterator().next().getState());
+    }
+
+    @Test public void workerKeepsOutboxOnServerFailureForWorkManagerRetry() {
+        await(outboxDao.insert(outbox("cm-503", "queued", OutboxState.SENDING, 10L)));
+        when(messageApi.sendMessage(anyString(), any()))
+                .thenReturn(responseCall(Response.error(503, body(""))));
+
+        TestObserver<Void> observer = repository.flushOutboxForWorker().test();
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(IOException.class);
+
+        assertEquals(OutboxState.SENDING, outbox.get("cm-503").getState());
+    }
+
+    @Test public void retryReusesTheSameClientIdAfterUncertainNetworkFailure() {
+        isOpen.onNext(false);
+        when(session.sendMessage(anyString(), any())).thenReturn(false);
+        List<String> submittedIds = new ArrayList<>();
+        Map<String, MessageDto> acceptedByClientId = new LinkedHashMap<>();
+        when(messageApi.sendMessage(anyString(), any())).thenAnswer(call -> {
+            SendMessageRequest request = call.getArgument(1);
+            String clientId = request.getClientMessageId();
+            submittedIds.add(clientId);
+            if (submittedIds.size() == 1) return failedCall(new IOException("offline"));
+            MessageDto existing = acceptedByClientId.get(clientId);
+            if (existing == null) {
+                existing = dto("server-1", clientId, "me-1", 1L);
+                acceptedByClientId.put(clientId, existing);
+            }
+            return responseCall(Response.success(existing));
+        });
+
+        await(repository.send(CONVERSATION_ID, "retry me"));
+        String clientId = outbox.keySet().iterator().next();
+        await(repository.flushOutboxForWorker());
+
+        assertEquals(List.of(clientId, clientId), submittedIds);
+        assertEquals("the API was sent once before the retry and once by the worker", 1,
+                acceptedByClientId.size());
+        assertTrue(outbox.isEmpty());
+        assertEquals(List.of("server-1"), new ArrayList<>(messages.keySet()));
+    }
+
+    @Test public void anotherAccountCannotRenderRetryOrFlushThisOwnersRow() {
+        await(outboxDao.insert(outbox("cm-a", "account A", OutboxState.SENDING, 10L)));
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwtFor("user-b"), Long.MAX_VALUE, "refresh-b")));
+
+        TestSubscriber<List<ChatMessage>> messagesSubscriber = repository.messagesFlow(CONVERSATION_ID).test();
+        await(repository.flushOutbox());
+        await(repository.retry("cm-a"));
+
+        messagesSubscriber.assertValue(List::isEmpty);
+        assertEquals("account A's queued row is retained", "me-1",
+                outbox.get("cm-a").getOwnerUserId());
+        verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+        verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+        messagesSubscriber.cancel();
+    }
+
+    @Test public void emptyJwtSubjectCannotReadOrDispatchSealedMigratedOutboxRow() {
+        await(outboxDao.insert(new OutboxEntity("cm-sealed", CONVERSATION_ID, MessageDto.TYPE_TEXT,
+                "sealed legacy", null, OutboxState.SENDING, 10L, "", "[]", false, "", true)));
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwtFor(""), Long.MAX_VALUE, "refresh-empty-sub")));
+
+        repository.currentUserId().test().assertNoValues().assertComplete();
+        TestSubscriber<List<ChatMessage>> messagesSubscriber = repository.messagesFlow(CONVERSATION_ID).test();
+        await(repository.flushOutbox());
+
+        messagesSubscriber.assertNoValues();
+        assertTrue("sealed legacy row remains retained", outbox.containsKey("cm-sealed"));
+        verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+        verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+        messagesSubscriber.cancel();
+    }
+
+    @Test public void sameAccountRestoresAndDispatchesItsPersistedPendingRow() {
+        await(outboxDao.insert(outbox("cm-a", "restored", OutboxState.SENDING, 10L)));
+        TestSubscriber<List<ChatMessage>> messagesSubscriber = repository.messagesFlow(CONVERSATION_ID).test();
+
+        messagesSubscriber.assertValue(rows -> rows.size() == 1
+                && "restored".equals(rows.get(0).getContent()));
+        await(repository.flushOutbox());
+
+        verify(session).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID),
+                org.mockito.ArgumentMatchers.argThat(request -> "cm-a".equals(request.getClientMessageId())));
+        messagesSubscriber.cancel();
+    }
+
+    @Test public void restReachabilityReplaysSuccessAndClearsOnValidatedNetworkLoss() {
+        NetworkMonitor networkMonitor = mock(NetworkMonitor.class);
+        io.reactivex.rxjava3.processors.BehaviorProcessor<Boolean> online =
+                io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(true);
+        when(networkMonitor.getIsOnline()).thenReturn(online);
+        MessageRepository monitoredRepository = new MessageRepository(messageApi, messageDao,
+                conversationDao, outboxDao, reactionDao, pinDao, session, tokenStore,
+                sessionEvents, new Moshi.Builder().build(), timer, null, null, null, null,
+                new SessionOperationTracker(), networkMonitor);
+        try {
+            await(monitoredRepository.refreshHistory(CONVERSATION_ID, null));
+            TestSubscriber<Boolean> reachability = monitoredRepository.getRestReachability().test();
+            reachability.assertValue(true);
+
+            online.onNext(false);
+
+            reachability.assertValues(true, false);
+            reachability.cancel();
+        } finally {
+            monitoredRepository.dispose();
+        }
     }
 
     @Test public void permanentServerRejectionMarksOutboxFailed() {
@@ -512,7 +638,7 @@ public class MessageRepositoryTest {
     @Test public void retryRequeuesFailedRowAndDispatchesAgain() {
         await(repository.send(CONVERSATION_ID, "hello"));
         String clientId = outbox.keySet().iterator().next();
-        await(outboxDao.updateState(clientId, OutboxState.FAILED));
+        await(outboxDao.updateState(clientId, outbox.get(clientId).getOwnerUserId(), OutboxState.FAILED));
         await(repository.retry(clientId));
         assertEquals(OutboxState.SENDING, outbox.values().iterator().next().getState());
         verify(session, times(2)).sendMessage(org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
@@ -1122,7 +1248,8 @@ public class MessageRepositoryTest {
         return "header." + payload + ".signature";
     }
     private static OutboxEntity outbox(String id, String content, String state, long createdAt) {
-        return new OutboxEntity(id, CONVERSATION_ID, "TEXT", content, null, state, createdAt, "");
+        return new OutboxEntity(id, CONVERSATION_ID, "TEXT", content, null, state, createdAt,
+                "", "[]", false, "me-1");
     }
     private static MessageDto dto(String id, String clientId, String senderId, long seq) {
         return new MessageDto(id, seq, CONVERSATION_ID, senderId, clientId, "TEXT", "hi", "2026-11-03T09:12:04Z");
