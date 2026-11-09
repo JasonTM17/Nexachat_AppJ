@@ -91,8 +91,9 @@ class CorsAndHeadersIT extends SecurityITBase {
                 .andExpect(status().isUnauthorized());
 
         Registered user = register("+84905551503");
+        // A non-admin user is refused; only operator phones may reach management endpoints.
         mockMvc.perform(get("/actuator/beans")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
     }
 }
