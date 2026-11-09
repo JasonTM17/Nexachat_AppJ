@@ -11,7 +11,7 @@
 |---|---|---|
 | [Auth & Users](#auth--apiv1auth) | `/api/v1/auth`, `/api/v1/users` | Register, login, token refresh, password, profile, settings, device token |
 | [Contacts](#contacts--apiv1contacts) | `/api/v1/contacts` | Contact directory, search by phone, contact alias names |
-| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks |
+| [Conversations & Messages](#conversations--apiv1conversations) | `/api/v1/conversations` | 1-1 chat, message sending, editing, soft-deletion, trigram search, read marks, per-conversation AI opt-out |
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
@@ -256,6 +256,9 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 | `DELETE /conversations/{conversationId}/messages/{messageId}` | Bearer, message author | — | `204` (idempotent soft delete; retains seq, clears content, reactions and pin) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_MESSAGE_AUTHOR` 403 · `MESSAGE_NOT_FOUND` 404 · `RATE_LIMITED` 429 (30/min per user, shared with edit) |
 | `GET /conversations/{conversationId}/messages/search` | Bearer member | `q` (trimmed, 2–100 chars), optional `limit` (1–50, default 20), `beforeSeq?` | `200` `MessagePageResponse`, newest-first; literal, case- and accent-insensitive TEXT substring match | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `RATE_LIMITED` 429 (60/min per user) |
 | `POST /conversations/{conversationId}/read` | Bearer | `{upToSeq}` — non-negative seq no greater than that conversation's latest; watermark is monotonic | `204` empty (broadcasts the persisted `MESSAGE_READ` watermark) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: true}` (idempotent; sets the caller's own opt-out for this conversation) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `DELETE /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: false}` (idempotent) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: <bool>}` — the caller's own state only | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
 `PATCH` broadcasts `MESSAGE_UPDATED` after commit only when content changes.
 Identical normalized content is a successful no-op and produces no update event.
@@ -283,13 +286,18 @@ scan on small datasets.
 field independently; an omitted field remains unchanged, and an empty object is
 rejected. Provider selection uses persisted `users.ai_summary_consent`, and the LLM
 adapter rechecks consent immediately before an outbound request, so revoking
-consent after selection prevents that request. Inbox entries for DIRECT conversations may include
+consent after selection prevents that request. The account-level consent is
+combined with the per-conversation opt-out (`PUT/DELETE
+/conversations/{id}/ai-opt-out`): an opted-out member's messages are excluded
+from external AI input in that conversation even when another member consented.
+Inbox entries for DIRECT conversations may include
 `peerPresence: {online, lastSeenAt}`; group and hidden-peer values are omitted.
 Presence changes are described in the WebSocket section and are in-memory on a
 single backend node.
 
-`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt}`.
-`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. Null optional values may be omitted.
+`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt, aiOptOut}`.
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, aiOptOut, peerPresence?{online, lastSeenAt}}`; null `contentSnippet` marks a deleted last message. Null optional values may be omitted.
+`aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], createdAt, editedAt, deletedAt}` (optional null fields omitted; deleted `content` is explicit `null`).
 `replyTo` preview = `{id, senderId, senderDisplayName, type, content, deleted}`; `reactions[]` = `{emoji, count, byMe}`.
@@ -390,7 +398,10 @@ The current worktree also contains `POST /api/v1/conversations/{conversationId}/
 The route is implemented in `SummaryController` and is shipped. The request and
 response shapes, consent rules and provider behavior are specified in
 [`docs/ai-summary.md`](ai-summary.md). The server requires conversation membership
-and at least five usable messages.
+and at least five usable messages. The response includes `contextOmitted`, a
+neutral flag that is `true` only when the external LLM produced the summary and
+some messages were excluded because their authors opted out in that
+conversation; the local engine may still use those messages.
 
 ## Conversation ask API (RAG)
 
@@ -417,6 +428,7 @@ Response `200`:
     { "messageId": "uuid", "seq": 12, "snippet": "The server migration is ..." }
   ],
   "mode": "EXTRACTIVE",
+  "contextOmitted": false,
   "usage": { "llmCalls": 0, "inputChars": 0, "cached": false, "provider": null }
 }
 ```
@@ -427,7 +439,9 @@ call), `EXTRACTIVE` (one cited message answers a lookup-like question) or `LLM`
 is never null and every cited message belongs to the conversation. `usage`
 reports the number of LLM calls, the message characters sent to the LLM,
 whether the answer came from the cache, and `provider` (`primary` or `fallback`
-for an `LLM` answer, otherwise null).
+for an `LLM` answer, otherwise null). `contextOmitted` is a neutral flag: `true`
+when at least one eligible message in the conversation is currently excluded
+from retrieval because its author opted out; it never identifies the member.
 
 Errors use the standard envelope: `400 VALIDATION_FAILED`, `403 NOT_MEMBER`,
 `404 CONVERSATION_NOT_FOUND`, `429 RATE_LIMITED` (ask bucket: 20/minute and

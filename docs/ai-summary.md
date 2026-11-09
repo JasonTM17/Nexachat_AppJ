@@ -1,6 +1,6 @@
 # Conversation catch-up summary
 
-Status: shipped (route, engines, consent, Flyway V6 and Android UI).
+Status: server shipped (route, engines, consent, per-conversation opt-out V13, Flyway V6/V13); Android summary UI shipped, per-conversation opt-out UI pending.
 
 ## What it does
 
@@ -34,7 +34,8 @@ Response `200`:
   "summaryId": "uuid", "conversationId": "uuid",
   "fromSeq": 120, "toSeq": 187, "messageCount": 64,
   "language": "VI", "generatedBy": "LOCAL", "model": null,
-  "provider": null, "fallbackReason": null, "cached": false, "createdAt": "2026-11-05T12:00:00Z",
+  "provider": null, "fallbackReason": null, "cached": false, "contextOmitted": false,
+  "createdAt": "2026-11-05T12:00:00Z",
   "overview": "string, at most 400 chars",
   "keyPoints":   [{ "text": "...", "messageIds": ["uuid"] }],
   "decisions":   [{ "text": "...", "messageIds": ["uuid"] }],
@@ -47,9 +48,13 @@ Response `200`:
 
 Arrays are never null. Every `messageIds` is non-empty and a subset of the input window.
 `provider` is `primary` or `fallback` when an LLM produced the summary, and `null` when
-the local engine produced it.
+the local engine produced it. `contextOmitted` is `true` only when the returned
+summary was produced by the external LLM and at least one message in the window
+was excluded because its author opted out in this conversation; it never
+identifies the member. Local summaries report `false` because the local engine
+may still use those messages.
 
-Errors use the standard envelope: `400 VALIDATION_FAILED`, `400 TOO_FEW_MESSAGES` (fewer than 5 usable messages), `403 NOT_MEMBER`, `404` unknown conversation, `429 RATE_LIMITED`. The endpoint never answers `503`: provider trouble degrades to the local engine (`fallbackReason`: `NO_CONSENT | LLM_DISABLED | LLM_TIMEOUT | LLM_BAD_OUTPUT | LLM_HTTP_ERROR`).
+Errors use the standard envelope: `400 VALIDATION_FAILED`, `400 TOO_FEW_MESSAGES` (fewer than 5 usable messages), `403 NOT_MEMBER`, `404` unknown conversation, `429 RATE_LIMITED`. The endpoint never answers `503`: provider trouble degrades to the local engine (`fallbackReason`: `NO_CONSENT | LLM_DISABLED | LLM_TIMEOUT | LLM_BAD_OUTPUT | LLM_HTTP_ERROR | NO_EXTERNAL_CONTEXT`).
 
 Scopes: `UNREAD` = messages after the caller's `last_read_seq`; `LAST_N` = latest N; `TODAY` = since 00:00 UTC of the current day.
 
@@ -61,12 +66,33 @@ Limits: 10 requests/min and 60/day per user.
 
 Provider selection uses the persisted `users.ai_summary_consent` value. The LLM adapter checks that value again immediately before its outbound request, so consent revoked after provider selection still prevents the external call.
 
+**Per-conversation opt-out.** Any member can stop their own messages from
+being summarized by an external LLM in one conversation:
+
+```
+PUT    /api/v1/conversations/{id}/ai-opt-out   -> 200 {"conversationId": "...", "aiOptOut": true}
+DELETE /api/v1/conversations/{id}/ai-opt-out   -> 200 {"conversationId": "...", "aiOptOut": false}
+GET    /api/v1/conversations/{id}/ai-opt-out   -> 200 {"conversationId": "...", "aiOptOut": <bool>}
+```
+
+The endpoints are member-only and idempotent, and the state is always scoped to
+the caller; another member's choice is never exposed. The LLM provider re-reads
+the opt-out rows and the caller's persisted consent immediately before building
+the external prompt, so a change committed after the request started still
+applies. The external input excludes messages authored by opted-out members;
+the built-in local extractive engine may still quote them because no text
+leaves the server. An external summary cache entry that cites an opted-out
+member's message (or lists that member as a participant) is deleted and
+regenerated instead of being replayed. If every message in the window is
+excluded, the LLM is not called and the local engine answers with
+`fallbackReason: NO_EXTERNAL_CONTEXT`.
+
 ## Privacy
 
 - Without the operator key or without the caller's consent no text leaves the server.
 - With both, the server sends only usable message text, after redaction: phone numbers, emails, URL paths and queries, long digit strings, token-like strings; sender names become stable labels (`U1`, `U2`, ...). Message ids never leave the server (the model cites short indexes).
-- Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits and deletes change the cache key.
-- Eligible text from every participant in the window, including the requester, is sent on the requester's behalf. There is no per-conversation veto yet (see known limitations).
+- Eligible text from every participant in the window, including the requester, is sent on the requester's behalf, except text authored by a member who opted out in that conversation. The cloud primary, cloud fallback and the local server model all receive the filtered window; only the built-in local extractive engine may still use the opted-out messages.
+- Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits, deletes and opt-out changes change the cache key or invalidate the cached entry.
 
 ## Operator configuration
 
@@ -119,8 +145,9 @@ The primary cloud provider can be paired with a fallback provider under
 `nexachat.summary.llm-fallback.*`. The fallback is disabled by default and
 becomes usable only when its key is configured, so a deployment with an empty
 fallback balance never calls it. It uses the same OpenAI-compatible client,
-consent check, redaction, base-URL validation and output validation as the
-primary, and it receives the same already-redacted prompt.
+consent check, opt-out filtering, redaction, base-URL validation and output
+validation as the primary, and it receives the same already-filtered,
+already-redacted prompt.
 
 On a primary transport error, timeout, HTTP 5xx, HTTP 429 or an open circuit,
 the fallback is tried once. A primary 4xx other than 429 (bad request, auth) is

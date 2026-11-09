@@ -81,6 +81,21 @@ cache are scoped by the same identity.
   re-checks the persisted flag immediately before the outbound call.
 - Without consent, retrieval and extractive answers still work using the
   offline lexical provider; no external call is made.
+- **Per-conversation opt-out (Flyway V13).** Any member can call
+  `PUT /api/v1/conversations/{id}/ai-opt-out` to exclude their own messages
+  from AI processing in that conversation; `DELETE` clears it. Both are
+  member-only and idempotent, and `GET` returns only the caller's own state
+  (`{conversationId, aiOptOut}`); another member's choice is never exposed.
+  Opted-out messages are excluded from the candidate set, lexical candidates,
+  reply-parent recovery, lazy indexing and the background backfill, including
+  for the offline lexical provider. Opting out also deletes the stored vectors
+  for that member's messages in the conversation and cached ask answers that
+  cite them.
+- The ask response carries `contextOmitted`: `true` when at least one eligible
+  message in the conversation is currently excluded because its author opted
+  out. It is a neutral flag and never identifies the member. The local
+  extractive path honors the same exclusion because it is part of the RAG
+  retrieval pipeline.
 - Message text and the question are redacted (`Redactor`) before they leave
   the server: phone numbers, emails, URL paths and queries, long digit
   strings and token-like strings.
@@ -89,7 +104,8 @@ cache are scoped by the same identity.
   in a message cannot redirect the model or leak another conversation.
 - Cached answers store the question hash and vector, the answer payload and
   the cited message ids/hashes. A cache hit is replayed only when every cited
-  message still exists, is not deleted and its content hash matches.
+  message still exists, is not deleted, its content hash matches, and its
+  author has not opted out of AI processing in that conversation.
 - Vectors are never exposed by any API. `GET /api/v1/rag/stats` returns
   aggregate counters only. This endpoint is operator telemetry restricted
   to authorized administrator phone numbers (`NEXACHAT_ADMIN_PHONES`);
