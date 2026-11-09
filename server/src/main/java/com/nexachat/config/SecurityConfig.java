@@ -34,8 +34,8 @@ import java.util.List;
  *   <li>bcrypt cost 12 (FR/NFR-3: ≥10, spec requires 12).</li>
  *   <li>CORS is an explicit per-environment allow-list; credentials are never
  *       enabled, so no origin can ride a logged-in browser session.</li>
- *   <li>{@code /api/v1/rag/stats} is operator telemetry and is restricted to
- *       the configured admin phones.</li>
+ *   <li>Operator telemetry and non-health Actuator endpoints are restricted
+ *       to the configured admin phones.</li>
  * </ul>
  */
 @Configuration
@@ -86,6 +86,7 @@ public class SecurityConfig {
                         // Aggregate RAG counters are operator telemetry, not
                         // user data: only the configured admin phones may read.
                         .requestMatchers("/api/v1/rag/stats").access(ragStatsAuthorizationManager)
+                        .requestMatchers("/actuator/**").access(ragStatsAuthorizationManager)
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(securityErrorHandler)

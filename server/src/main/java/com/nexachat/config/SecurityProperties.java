@@ -12,7 +12,8 @@ import java.util.List;
  *       admitted; the secure default for a native-client deployment, which
  *       sends no {@code Origin} header at all.</li>
  *   <li>{@code admin-phones} — E.164 numbers allowed to read operator
- *       telemetry such as {@code /api/v1/rag/stats}. Normalized on use.</li>
+ *       telemetry such as {@code /api/v1/rag/stats} and non-health Actuator
+ *       endpoints. Normalized on use.</li>
  * </ul>
  *
  * <p>Both lists are environment-driven ({@code NEXACHAT_CORS_ALLOWED_ORIGINS},

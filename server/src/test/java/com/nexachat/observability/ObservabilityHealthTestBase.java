@@ -16,6 +16,7 @@ import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.TestPropertySource;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -33,7 +34,10 @@ import static org.mockito.Mockito.when;
  * {@code NexaChatApplicationTests}.
  */
 @SpringBootTest
+@TestPropertySource(properties = "nexachat.security.admin-phones=+84900000001")
 abstract class ObservabilityHealthTestBase {
+
+    private static final String ADMIN_PHONE = "+84900000001";
 
     @MockitoBean
     protected UserRepository userRepository;
@@ -80,13 +84,15 @@ abstract class ObservabilityHealthTestBase {
         return "http://127.0.0.1:" + port + path;
     }
 
-    /** A valid access token for {@code userId}; the mocked repository accepts it. */
+    /** A valid admin access token for {@code userId}; the mocked repository accepts it. */
     protected String accessToken(JwtService jwtService, UUID userId) {
         when(userRepository.existsById(userId)).thenReturn(true);
         when(userRepository.findAuthValidityById(userId))
                 .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
         User user = mock(User.class);
         when(user.getId()).thenReturn(userId);
+        when(user.getPhone()).thenReturn(ADMIN_PHONE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         return jwtService.generateAccessToken(user);
     }
 }

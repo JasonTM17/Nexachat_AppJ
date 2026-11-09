@@ -167,18 +167,24 @@ public class AttachmentService {
 
     /**
      * Applies the attachment authZ rule to the raw {@code /api/v1/files/**}
-     * path (FileController): a storage key that maps to a
+     * path (FileController): an exact storage key that maps to a
      * {@code message_attachments} row must satisfy the same owner/member rule
-     * as {@link #loadContent}. Keys with no row — avatars and other
-     * profile-public files — pass unchecked: they have no membership concept.
+     * as {@link #loadContent}. If the exact lookup misses, the storage layer
+     * still rejects case-variant paths before opening bytes. Keys with no
+     * attachment row — avatars and other profile-public files — pass unchecked:
+     * they have no membership concept.
      *
      * @throws ApiException {@code NOT_MEMBER} when the key is an attachment the
      *                      requester may not read
      */
     @Transactional(readOnly = true)
     public void assertStorageKeyReadable(String storageKey, UUID requesterId) {
-        attachmentRepository.findByStorageKey(storageKey)
-                .ifPresent(attachment -> assertReadable(attachment, requesterId));
+        attachmentRepository.findByStorageKey(storageKey).ifPresent(attachment -> {
+            if (!attachment.getStorageKey().equals(storageKey)) {
+                throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+            }
+            assertReadable(attachment, requesterId);
+        });
     }
 
     /**

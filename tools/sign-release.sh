@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # tools/sign-release.sh — assemble the release APK and sign it with the LOCAL
-# dev upload keystore. Run from anywhere:  tools/sign-release.sh [version-tag]
+# upload keystore. Run from anywhere: tools/sign-release.sh [version-tag] [options]
 #
 # Inputs
 #   release/keystore/signing.properties   storeFile, keyAlias,
 #                                         keystore.storePassword, keyPassword
 #   $ANDROID_HOME / $ANDROID_SDK_ROOT     must identify the local Android SDK
 #   $JAVA_HOME                            falls back to `java` on PATH
+#   -PapiBaseUrl                          overrides local.properties and the Gradle default
 #
 # Outputs (release/ is gitignored — never committed, never shipped)
 #   release/nexachat-<tag>-unsigned.apk   verbatim assembleRelease output
@@ -15,36 +16,76 @@
 # Requires: Git Bash (or any POSIX shell), JDK 21+, Android SDK build-tools.
 set -euo pipefail
 
+say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+
+TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TOOLS_DIR/release-url-guard.sh"
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'USAGE'
-Usage: tools/sign-release.sh [version-tag]
+Usage: tools/sign-release.sh [version-tag] [-PapiBaseUrl=<url>] [--allow-http-smoke]
 
 Assemble, align, sign, and verify a release APK using local signing.properties.
 The output in release/ is regenerated for the supplied tag (default: v1.0.0).
+Signed releases require an HTTPS API_BASE_URL. The explicit --allow-http-smoke
+flag permits HTTP only for a local smoke build.
 Requires ANDROID_HOME or ANDROID_SDK_ROOT, JDK 21+, and the local keystore.
 PowerShell twin: tools/sign-release.ps1.
 USAGE
     exit 0
 fi
-if [[ $# -gt 1 ]]; then
-    echo "ERROR: expected at most one version tag (use --help)." >&2
-    exit 2
-fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION_TAG="${1:-v1.0.0}"
+VERSION_TAG="v1.0.0"
+VERSION_TAG_SET=false
+API_BASE_URL_SET=false
+API_BASE_URL_OVERRIDE=''
+ALLOW_HTTP_SMOKE=false
+while (($#)); do
+    case "$1" in
+        --allow-http-smoke)
+            ALLOW_HTTP_SMOKE=true
+            ;;
+        -PapiBaseUrl=*)
+            API_BASE_URL_SET=true
+            API_BASE_URL_OVERRIDE="${1#*=}"
+            ;;
+        -PapiBaseUrl)
+            (($# >= 2)) || fail "-PapiBaseUrl requires a URL value."
+            shift
+            API_BASE_URL_SET=true
+            API_BASE_URL_OVERRIDE="$1"
+            ;;
+        -*)
+            fail "unknown option (use --help)."
+            ;;
+        *)
+            [[ "$VERSION_TAG_SET" == false ]] || fail "expected only one version tag (use --help)."
+            VERSION_TAG="$1"
+            VERSION_TAG_SET=true
+            ;;
+    esac
+    shift
+done
+
+[[ "$VERSION_TAG" =~ ^[A-Za-z0-9._-]+$ ]] \
+    || fail "version tag may contain only letters, numbers, dot, underscore, and hyphen."
+
+API_BASE_URL_EFFECTIVE="$(resolve_effective_api_base_url \
+    "$API_BASE_URL_SET" "$API_BASE_URL_OVERRIDE" "$REPO_ROOT/android/local.properties")"
+if ! guard_release_api_base_url "$API_BASE_URL_EFFECTIVE" "$ALLOW_HTTP_SMOKE"; then
+    exit 1
+fi
+GRADLE_ARGS=(-PapiBaseUrl="$API_BASE_URL_EFFECTIVE")
+
 OUT_DIR="release"
 PROPS="release/keystore/signing.properties"
 GRADLE_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
 UNSIGNED_OUT="$OUT_DIR/nexachat-${VERSION_TAG}-unsigned.apk"
 SIGNED_OUT="$OUT_DIR/nexachat-${VERSION_TAG}.apk"
-
-say()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
-
-[[ "$VERSION_TAG" =~ ^[A-Za-z0-9._-]+$ ]] || fail "version tag may contain only letters, numbers, dot, underscore, and hyphen."
 
 # Convert Windows paths (D:\x or D:/x) to POSIX (/d/x) for bash use.
 to_unix() {
@@ -96,7 +137,7 @@ say "keystore    : $STORE_FILE (alias $KEY_ALIAS)"
 
 # ---- 1. Assemble release APK ------------------------------------------------
 say "assembleRelease (Gradle)…"
-(cd android && ./gradlew assembleRelease --console=plain)
+(cd android && ./gradlew assembleRelease "${GRADLE_ARGS[@]}" --console=plain)
 if [[ ! -f "$GRADLE_APK" && -f "android/app/build/outputs/apk/release/app-release.apk" ]]; then
     GRADLE_APK="android/app/build/outputs/apk/release/app-release.apk"
 fi

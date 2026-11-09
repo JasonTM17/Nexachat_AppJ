@@ -289,7 +289,9 @@ or request metadata.
 
 The server exposes three observability surfaces. Only health is reachable by
 default, on the API port; metrics and Prometheus are opt-in and should be moved
-to a loopback-bound management port before exposure:
+to a loopback-bound management port before exposure. Health remains public;
+every other exposed Actuator endpoint requires a valid JWT for a phone in
+`NEXACHAT_ADMIN_PHONES`:
 
 | Surface | Default | How to enable |
 |---|---|---|
@@ -306,9 +308,9 @@ management:
     address: 127.0.0.1
 ```
 
-Do not bind the management port to a public interface without adding
-authentication in front of it. When you move the port, point the Compose and
-Dockerfile health checks at it too.
+Keep the management port bound to loopback. If you expose it through an edge,
+retain the admin-JWT check and add network controls. When you move the port,
+point the Compose and Dockerfile health checks at it too.
 
 ### Health
 

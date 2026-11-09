@@ -351,6 +351,20 @@ class AttachmentServiceTest {
     }
 
     @Test
+    void assertStorageKeyReadable_rejectsCaseVariantOfCanonicalAttachmentKey() {
+        MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
+        when(attachmentRepository.findByStorageKey("ATTACHMENTS/X.PNG"))
+                .thenReturn(Optional.of(attachment));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> attachmentService.assertStorageKeyReadable("ATTACHMENTS/X.PNG", requesterId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(404);
+        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+    }
+
+    @Test
     void assertStorageKeyReadable_attachmentKey_appliesOwnerMemberRule() {
         MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
         UUID conversationId = attachment.getMessage().getConversation().getId();
