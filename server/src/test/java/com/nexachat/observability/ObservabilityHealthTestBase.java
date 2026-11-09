@@ -11,6 +11,9 @@ import com.nexachat.message.PinnedMessageRepository;
 import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.notification.UserDeviceTokenRepository;
+import com.nexachat.poll.PollOptionRepository;
+import com.nexachat.poll.PollRepository;
+import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
@@ -59,6 +62,12 @@ abstract class ObservabilityHealthTestBase {
     protected PinnedMessageRepository pinnedMessageRepository;
     @MockitoBean
     protected UserDeviceTokenRepository userDeviceTokenRepository;
+    @MockitoBean
+    protected PollRepository pollRepository;
+    @MockitoBean
+    protected PollOptionRepository pollOptionRepository;
+    @MockitoBean
+    protected PollVoteRepository pollVoteRepository;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {

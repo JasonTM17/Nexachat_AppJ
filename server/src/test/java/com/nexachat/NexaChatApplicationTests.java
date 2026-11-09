@@ -10,6 +10,9 @@ import com.nexachat.message.MessageRepository;
 import com.nexachat.message.PinnedMessageRepository;
 import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
+import com.nexachat.poll.PollOptionRepository;
+import com.nexachat.poll.PollRepository;
+import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -57,6 +60,15 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private com.nexachat.notification.UserDeviceTokenRepository userDeviceTokenRepository;
+
+    @MockitoBean
+    private PollRepository pollRepository;
+
+    @MockitoBean
+    private PollOptionRepository pollOptionRepository;
+
+    @MockitoBean
+    private PollVoteRepository pollVoteRepository;
 
     @Test
     void contextLoads() {
