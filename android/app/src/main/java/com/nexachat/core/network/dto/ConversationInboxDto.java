@@ -23,12 +23,20 @@ public final class ConversationInboxDto {
     @Nullable private final String avatarUrl;
     @Nullable private final List<ConversationMemberDto> members;
     @Nullable private final PeerPresenceDto peerPresence;
+    @Nullable private final List<String> labels;
 
     public ConversationInboxDto() {
-        this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null);
+        this(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                List.of(), null, List.of());
     }
 
     public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, List.of());
+    }
+
+    public ConversationInboxDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable Long lastMessageSeq, @Nullable InboxLastMessageDto lastMessage, @Nullable String lastMessageContent, @Nullable String lastMessageSenderName, @Nullable String lastMessageAt, @Nullable Integer unreadCount, @Nullable Long lastReadSeq, @Nullable OtherUserDto otherUser, @Nullable String otherUserName, @Nullable String otherUserAvatar, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable PeerPresenceDto peerPresence, @Nullable List<String> labels) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -45,6 +53,7 @@ public final class ConversationInboxDto {
         this.avatarUrl = avatarUrl;
         this.members = members == null ? List.of() : members;
         this.peerPresence = peerPresence;
+        this.labels = labels == null ? List.of() : List.copyOf(labels);
     }
 
     public ConversationInboxDto(String id, String type, String title, java.util.List<ConversationMemberDto> members) {
@@ -113,6 +122,10 @@ public final class ConversationInboxDto {
 
     @Nullable public PeerPresenceDto getPeerPresence() {
         return peerPresence;
+    }
+
+    @NonNull public List<String> getLabels() {
+        return labels == null ? List.of() : labels;
     }
 
 
@@ -227,11 +240,14 @@ public final class ConversationInboxDto {
                 && Objects.equals(otherUserAvatar, that.otherUserAvatar)
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(members, that.members)
-                && Objects.equals(peerPresence, that.peerPresence);
+                && Objects.equals(peerPresence, that.peerPresence)
+                && Objects.equals(labels, that.labels);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar, avatarUrl, members, peerPresence);
+        return Objects.hash(id, type, title, lastMessageSeq, lastMessage, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser,
+                otherUserName, otherUserAvatar, avatarUrl, members, peerPresence, labels);
     }
 }

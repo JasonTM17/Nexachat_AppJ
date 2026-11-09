@@ -234,6 +234,31 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
+     * Fetches the complete server-filtered inbox set and writes its rows through
+     * to Room without pruning unfiltered cached conversations.
+     */
+    @NonNull
+    public Single<Result<Set<String>>> refreshInboxByLabel(@NonNull String labelId) {
+        return currentUserIdOptional()
+                .flatMap(myId -> fetchInboxItems(null, null, labelId).flatMap(result -> {
+                    if (result instanceof Result.Failure<?>) {
+                        return Single.<Result<Set<String>>>just(Result.cast(result));
+                    }
+                    InboxFetch fetch = successValue(result);
+                    List<ConversationEntity> rows = new ArrayList<>(fetch.items.size());
+                    Set<String> ids = new LinkedHashSet<>();
+                    for (ConversationInboxDto item : fetch.items) {
+                        rows.add(toEntity(item, myId.orElse(null)));
+                        if (item.getId() != null) ids.add(item.getId());
+                    }
+                    return upsertPreservingClientColumns(rows)
+                            .andThen(Single.fromCallable(() ->
+                                    new Result.Success<Set<String>>(Set.copyOf(ids))));
+                }))
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
      * Loads the next keyset page. Concurrent callers share one network request;
      * a failed page leaves its cursor intact so a later call retries it.
      */
@@ -514,10 +539,17 @@ public final class ConversationRepository implements AutoCloseable {
     private Single<Result<InboxFetch>> fetchInboxItems(
             @Nullable Integer limit,
             @Nullable String cursor) {
+        return fetchInboxItems(limit, cursor, null);
+    }
+
+    private Single<Result<InboxFetch>> fetchInboxItems(
+            @Nullable Integer limit,
+            @Nullable String cursor,
+            @Nullable String labelId) {
         AtomicReference<ResponseBody> responseBody = new AtomicReference<>();
         AtomicReference<String> headerCursor = new AtomicReference<>();
         Call<ResponseBody> capturingCall = new ResponseCapturingCall<>(
-                messageApi.getConversations(limit, cursor), response -> {
+                messageApi.getConversations(limit, cursor, labelId), response -> {
                     responseBody.set(response.body());
                     headerCursor.set(response.headers().get(NEXT_CURSOR_HEADER));
                 });
@@ -878,7 +910,8 @@ public final class ConversationRepository implements AutoCloseable {
                         keepNewerLocalActivity
                                 ? old.getLastMessageDeleted()
                                 : row.getLastMessageDeleted(),
-                        old != null ? old.getPeerDeliveredSeq() : 0L));
+                        old != null ? old.getPeerDeliveredSeq() : 0L,
+                        row.getLabelIdsCsv()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -911,7 +944,9 @@ public final class ConversationRepository implements AutoCloseable {
                 0L,
                 myRole,
                 dto.resolvedOtherId(myId),
-                dto.getLastMessage() != null && dto.getLastMessage().getDeletedAt() != null);
+                dto.getLastMessage() != null && dto.getLastMessage().getDeletedAt() != null,
+                0L,
+                String.join(",", dto.getLabels()));
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -970,7 +1005,8 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getMyRole(),
                 row.getOtherUserId(),
                 row.getLastMessageDeleted(),
-                peer);
+                peer,
+                row.getLabelIds());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {
@@ -979,7 +1015,7 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
                 row.getAvatarUrl(), row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted());
+                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.getLabelIdsCsv());
     }
 
     private ConversationEntity withAvatarUrl(ConversationEntity row, @Nullable String avatarUrl) {
@@ -988,7 +1024,7 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
                 avatarUrl, row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
-                row.getLastMessageDeleted());
+                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.getLabelIdsCsv());
     }
 
     private String resolveMime(Uri uri) {

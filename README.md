@@ -7,7 +7,7 @@ pin, reply and forward text — in a bilingual (Vi/En) Material 3 UI that keeps
 message sending available offline.
 
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
-> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v8`, `Hilt`, `Material 3`)
+> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v9`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
 > **PostgreSQL 16** with Flyway `V1–V15`, **WebRTC** 1-to-1 voice calls, consent-gated
 > **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
@@ -81,7 +81,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 |---|---|---|
 | Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password, access-token revocation cutoff (`tokens_valid_after`, V11) | `server/auth`, `app/feature/auth`, `core/storage` |
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
-| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, durable offline outbox (Room v8) with WorkManager drain, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
+| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, durable offline outbox (Room v9) with WorkManager drain, caller-owned inbox labels, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
 | Conversation Archive | Member-scoped browser for conversation media, files and links, with filters and keyset paging | `server/archive`, `app/feature/archive` |
 | Conversation Preferences | Server APIs for per-member mute/archive and per-conversation AI opt-out; Android controls are pending in this checkout | `server/conversation`, `server/summary` |
@@ -107,7 +107,7 @@ flowchart LR
     subgraph Android["android/ — Java 21 LTS, XML Views + ViewBinding, Hilt"]
         UI["Fragments + XML Views<br/>(feature/*)"] --> VM["ViewModels<br/>(LiveData + RxJava 3, SavedStateHandle)"]
         VM --> REPO["Repositories"]
-        REPO --> ROOM[("Room v8 — SSOT<br/>messages · conversations<br/>outbox · offline_outbox · reactions · pins")]
+        REPO --> ROOM[("Room v9 — SSOT<br/>messages · conversations · labels<br/>outbox · offline_outbox · reactions · pins")]
         REPO --> TS["TokenStore<br/>AES/GCM @ AndroidKeyStore"]
         REPO --> ST["StompClient<br/>(OkHttp raw WS)"]
         REPO --> RT["Retrofit APIs"]

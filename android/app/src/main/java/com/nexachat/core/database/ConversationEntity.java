@@ -3,7 +3,10 @@ package com.nexachat.core.database;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.room.Entity;
+import androidx.room.ColumnInfo;
 import androidx.room.PrimaryKey;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 /** Inbox row; direct conversations carry a resolved peer and groups use title. */
@@ -32,6 +35,8 @@ public final class ConversationEntity {
     private final boolean lastMessageDeleted;
     /** Client-only highest other-member delivered watermark. */
     private final long peerDeliveredSeq;
+    /** Caller-owned label ids cached with the Room-backed inbox row. */
+    @NonNull @ColumnInfo(defaultValue = "''") private final String labelIdsCsv;
 
     public ConversationEntity(
             @NonNull String id,
@@ -49,7 +54,8 @@ public final class ConversationEntity {
             @Nullable String myRole,
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
-            long peerDeliveredSeq) {
+            long peerDeliveredSeq,
+            @NonNull String labelIdsCsv) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -66,6 +72,30 @@ public final class ConversationEntity {
         this.otherUserId = otherUserId;
         this.lastMessageDeleted = lastMessageDeleted;
         this.peerDeliveredSeq = peerDeliveredSeq;
+        this.labelIdsCsv = Objects.requireNonNull(labelIdsCsv, "labelIdsCsv");
+    }
+
+    @androidx.room.Ignore
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq, "");
     }
 
     @androidx.room.Ignore
@@ -87,7 +117,7 @@ public final class ConversationEntity {
             boolean lastMessageDeleted) {
         this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
                 lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, myRole, otherUserId, lastMessageDeleted, 0L);
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, 0L, "");
     }
 
     @NonNull public String getId() { return id; }
@@ -106,13 +136,21 @@ public final class ConversationEntity {
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
     public long getPeerDeliveredSeq() { return peerDeliveredSeq; }
+    @NonNull public String getLabelIdsCsv() { return labelIdsCsv; }
+    @NonNull public List<String> getLabelIds() {
+        if (labelIdsCsv.isBlank()) return List.of();
+        return Arrays.stream(labelIdsCsv.split(","))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+    }
 
     /** Returns this row with a locally renamed title. */
     @NonNull public ConversationEntity withTitle(@Nullable String newTitle) {
         return new ConversationEntity(id, type, newTitle, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
-                peerDeliveredSeq);
+                peerDeliveredSeq, labelIdsCsv);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -120,7 +158,7 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, peerDeliveredSeq);
+                lastMessageDeleted, peerDeliveredSeq, labelIdsCsv);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -129,7 +167,7 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
-                lastMessageDeleted, peerDeliveredSeq);
+                lastMessageDeleted, peerDeliveredSeq, labelIdsCsv);
     }
 
     /** Returns this row with updated peerDeliveredSeq. */
@@ -137,7 +175,15 @@ public final class ConversationEntity {
         return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, newPeerDeliveredSeq);
+                lastMessageDeleted, newPeerDeliveredSeq, labelIdsCsv);
+    }
+
+    /** Returns this row with a replaced caller-owned label assignment cache. */
+    @NonNull public ConversationEntity withLabelIdsCsv(@NonNull String newLabelIdsCsv) {
+        return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                lastMessageDeleted, peerDeliveredSeq, newLabelIdsCsv);
     }
 
     @Override public boolean equals(Object other) {
@@ -155,14 +201,15 @@ public final class ConversationEntity {
                 && Objects.equals(otherUserName, that.otherUserName)
                 && Objects.equals(otherUserAvatar, that.otherUserAvatar)
                 && Objects.equals(avatarUrl, that.avatarUrl) && Objects.equals(myRole, that.myRole)
-                && Objects.equals(otherUserId, that.otherUserId);
+                && Objects.equals(otherUserId, that.otherUserId)
+                && Objects.equals(labelIdsCsv, that.labelIdsCsv);
     }
 
     @Override public int hashCode() {
         return Objects.hash(id, type, title, lastMessageSeq, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
-                lastMessageDeleted, peerDeliveredSeq);
+                lastMessageDeleted, peerDeliveredSeq, labelIdsCsv);
     }
 
     @NonNull @Override public String toString() {
@@ -173,6 +220,7 @@ public final class ConversationEntity {
                 + ", otherUserName=" + otherUserName + ", otherUserAvatar=" + otherUserAvatar
                 + ", avatarUrl=" + avatarUrl + ", peerReadSeq=" + peerReadSeq + ", myRole="
                 + myRole + ", otherUserId=" + otherUserId + ", lastMessageDeleted="
-                + lastMessageDeleted + ", peerDeliveredSeq=" + peerDeliveredSeq + ')';
+                + lastMessageDeleted + ", peerDeliveredSeq=" + peerDeliveredSeq
+                + ", labelIdsCsv=" + labelIdsCsv + ')';
     }
 }

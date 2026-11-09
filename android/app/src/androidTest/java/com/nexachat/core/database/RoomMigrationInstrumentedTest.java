@@ -31,7 +31,8 @@ import org.junit.runner.RunWith;
 public final class RoomMigrationInstrumentedTest {
     private static final String V6_TO_V7_DB = "nexachat-room-v6-v7.db";
     private static final String V7_TO_V8_DB = "nexachat-room-v7-v8.db";
-    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v8.db";
+    private static final String V8_TO_V9_DB = "nexachat-room-v8-v9.db";
+    private static final String FULL_CHAIN_DB = "nexachat-room-v6-v9.db";
     private static final String ATTACHMENTS_JSON =
             "[{\"fileId\":\"attachment-1\",\"url\":\"https://example.test/image.jpg\","
                     + "\"mimeType\":\"image/jpeg\"}]";
@@ -49,6 +50,7 @@ public final class RoomMigrationInstrumentedTest {
     public void cleanUp() {
         context.deleteDatabase(V6_TO_V7_DB);
         context.deleteDatabase(V7_TO_V8_DB);
+        context.deleteDatabase(V8_TO_V9_DB);
         context.deleteDatabase(FULL_CHAIN_DB);
     }
 
@@ -99,6 +101,31 @@ public final class RoomMigrationInstrumentedTest {
     }
 
     @Test
+    public void migrateV8ToV9PreservesConversationAndDefaultsLabels() throws Exception {
+        context.deleteDatabase(V8_TO_V9_DB);
+        SupportSQLiteDatabase oldDb = helper.createDatabase(V8_TO_V9_DB, 8);
+        try {
+            seedRows(oldDb, 8);
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                V8_TO_V9_DB, 9, true, AppDatabase.MIGRATION_8_9);
+        try {
+            assertExistingRows(db);
+            assertV7ValuesSurviveV8(db);
+            assertEquals("peerDeliveredSeq survives v9", 31L,
+                    singleLong(db, "SELECT peerDeliveredSeq FROM conversations WHERE id = 'c-1'"));
+            assertEquals("existing conversations start with no local labels", "",
+                    singleString(db, "SELECT labelIdsCsv FROM conversations WHERE id = 'c-1'"));
+            assertNoForeignKeyViolations(db);
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void fullChainFromOldestExportedSchemaPreservesRows() throws Exception {
         SupportSQLiteDatabase oldDb = helper.createDatabase(FULL_CHAIN_DB, 6);
         try {
@@ -113,11 +140,13 @@ public final class RoomMigrationInstrumentedTest {
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 8, db.getVersion());
+            assertEquals("full chain reaches the current schema", 9, db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
                     singleLong(db, "SELECT peerDeliveredSeq FROM conversations WHERE id = 'c-1'"));
+            assertEquals("labelIdsCsv defaults to empty", "",
+                    singleString(db, "SELECT labelIdsCsv FROM conversations WHERE id = 'c-1'"));
             assertV8Indexes(db);
             assertNewTablesAcceptRows(db);
             assertNoForeignKeyViolations(db);
@@ -134,7 +163,8 @@ public final class RoomMigrationInstrumentedTest {
             AppDatabase.MIGRATION_4_5,
             AppDatabase.MIGRATION_5_6,
             AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8
+            AppDatabase.MIGRATION_7_8,
+            AppDatabase.MIGRATION_8_9
         };
     }
 
@@ -157,6 +187,26 @@ public final class RoomMigrationInstrumentedTest {
                     new Object[] {
                         "m-1", "c-1", 23L, "u-1", "Lan", "IMAGE", "Photo", null, null,
                         null, null, CREATED_AT, ATTACHMENTS_JSON
+                    });
+        } else if (version >= 8) {
+            db.execSQL(
+                    "INSERT INTO conversations (id, type, title, lastMessageSeq, "
+                            + "lastMessageContent, lastMessageSenderName, lastMessageAt, unreadCount, "
+                            + "otherUserName, otherUserAvatar, avatarUrl, peerReadSeq, myRole, "
+                            + "otherUserId, lastMessageDeleted, peerDeliveredSeq) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    new Object[] {
+                        "c-1", "DIRECT", null, 23L, null, "Lan", CREATED_AT, 4, "Lan",
+                        "avatar.png", "group-avatar.png", 12L, "MEMBER", "peer-2", 1, 31L
+                    });
+            db.execSQL(
+                    "INSERT INTO messages (id, conversationId, seq, senderId, senderDisplayName, "
+                            + "type, content, clientMessageId, replyToId, replyToSenderName, "
+                            + "replyToSnippet, createdAt, attachmentsJson, editedAtEpochMs, "
+                            + "deletedAtEpochMs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    new Object[] {
+                        "m-1", "c-1", 23L, "u-1", "Lan", "IMAGE", "Photo", null, null,
+                        null, null, CREATED_AT, ATTACHMENTS_JSON, EDITED_AT, null
                     });
         } else {
             db.execSQL(

@@ -31,7 +31,8 @@ public interface MessageApi {
     @GET("api/v1/conversations")
     Call<ResponseBody> getConversations(
             @Query("limit") Integer limit,
-            @Query("cursor") String cursor
+            @Query("cursor") String cursor,
+            @Query("labelId") String labelId
     );
 
     @GET("api/v1/conversations/{id}/messages")

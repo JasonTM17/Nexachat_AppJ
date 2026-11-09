@@ -57,6 +57,7 @@ import com.nexachat.feature.ask.AskBottomSheetFragment;
 import com.nexachat.feature.ask.AskCitationJump;
 import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
+import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
@@ -597,7 +598,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 .setItems(new CharSequence[]{
                         getString(R.string.ask_action),
                         getString(R.string.summary_overflow_action),
-                        getString(R.string.archive_title)
+                        getString(R.string.archive_title),
+                        getString(R.string.label_assign_menu)
                 }, (dialog, which) -> {
                     if (which == 0) {
                         showAsk();
@@ -605,6 +607,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         showSummary();
                     } else if (which == 2) {
                         openArchive();
+                    } else if (which == 3 && !conversationId.isBlank()) {
+                        LabelDialogFragment.show(requireActivity(), conversationId);
                     }
                 }).show();
     }

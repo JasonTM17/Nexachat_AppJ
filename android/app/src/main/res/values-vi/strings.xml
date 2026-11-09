@@ -277,4 +277,43 @@
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
 
+    <string name="label_filter_all">Tất cả</string>
+    <string name="label_manage">Quản lý nhãn</string>
+    <string name="label_manage_description">Quản lý nhãn cuộc trò chuyện</string>
+    <string name="label_assign_menu">Phân loại cuộc trò chuyện</string>
+    <string name="label_assign_title">Nhãn cuộc trò chuyện</string>
+    <string name="label_manage_title">Quản lý nhãn</string>
+    <string name="label_empty_manage">Chưa có nhãn. Tạo nhãn để sắp xếp cuộc trò chuyện.</string>
+    <string name="label_empty_assignment">Hãy tạo nhãn trước khi gán.</string>
+    <string name="label_empty_filter">Không có cuộc trò chuyện mang nhãn “%1$s”.</string>
+    <string name="label_create">Tạo nhãn</string>
+    <string name="label_create_title">Nhãn mới</string>
+    <string name="label_edit_title">Sửa nhãn</string>
+    <string name="label_save">Lưu</string>
+    <string name="label_done">Hoàn tất</string>
+    <string name="label_retry">Thử lại</string>
+    <string name="label_back_to_assignment">Quay lại cuộc trò chuyện</string>
+    <string name="label_name_hint">Tên nhãn (1–30 ký tự)</string>
+    <string name="label_filter_description">Lọc hộp thư theo nhãn %1$s</string>
+    <string name="label_chip_description">Nhãn: %1$s</string>
+    <string name="label_assign_checkbox">Gán nhãn %1$s</string>
+    <string name="label_delete_description">Xóa nhãn %1$s</string>
+    <string name="label_delete_title">Xóa nhãn?</string>
+    <string name="label_delete_message">Nhãn “%1$s” sẽ bị gỡ khỏi mọi cuộc trò chuyện.</string>
+    <string name="label_error_validation">Tên nhãn phải có 1–30 ký tự và chưa được sử dụng.</string>
+    <string name="label_error_conflict">Đã có nhãn trùng tên.</string>
+    <string name="label_error_rate_limit">Bạn thay đổi nhãn quá nhanh. Hãy thử lại sau.</string>
+    <string name="label_error_offline">Cần có kết nối Internet để dùng nhãn. Hãy thử lại khi trực tuyến.</string>
+    <string name="label_error_label_limit">Bạn có thể tạo tối đa 10 nhãn.</string>
+    <string name="label_error_assignment_limit">Mỗi cuộc trò chuyện có thể có tối đa 3 nhãn.</string>
+    <string name="label_error_generic">Không thể cập nhật nhãn. Hãy thử lại.</string>
+    <string name="label_color_indigo">Chàm</string>
+    <string name="label_color_blue">Xanh dương</string>
+    <string name="label_color_cyan">Xanh lơ</string>
+    <string name="label_color_teal">Xanh ngọc</string>
+    <string name="label_color_emerald">Ngọc lục bảo</string>
+    <string name="label_color_amber">Hổ phách</string>
+    <string name="label_color_rose">Hồng đậm</string>
+    <string name="label_color_purple">Tím</string>
+
 </resources>

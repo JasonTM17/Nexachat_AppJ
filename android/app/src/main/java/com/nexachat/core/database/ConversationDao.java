@@ -35,6 +35,15 @@ public interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     Maybe<ConversationEntity> byId(String conversationId);
 
+    @Query("UPDATE conversations SET labelIdsCsv = :labelIdsCsv WHERE id = :conversationId")
+    Completable updateLabelIds(String conversationId, String labelIdsCsv);
+
+    /** Removes one UUID token from every cached caller-owned assignment list. */
+    @Query("UPDATE conversations SET labelIdsCsv = "
+            + "trim(replace(',' || labelIdsCsv || ',', ',' || :labelId || ',', ','), ',') "
+            + "WHERE instr(',' || labelIdsCsv || ',', ',' || :labelId || ',') > 0")
+    Completable removeLabelIdFromAll(String labelId);
+
     /** Reads client-only columns that a REPLACE upsert would otherwise wipe. */
     @Query("SELECT * FROM conversations WHERE id IN (:ids)")
     Single<List<ConversationEntity>> byIds(List<String> ids);

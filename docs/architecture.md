@@ -1,7 +1,7 @@
 # NexaChat Architecture
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
-> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v8) → REST
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v9) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
 > (Flyway V1–V15) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
@@ -24,7 +24,7 @@ flowchart LR
         subgraph DS["Data Sources"]
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
-            ROOM[("Room DB v8 (RxJava 3)<br/>cache · outbox · offline_outbox · users · call_logs")]
+            ROOM[("Room DB v9 (RxJava 3)<br/>cache · caller-owned labels · outbox · offline_outbox · users · call_logs")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
@@ -135,7 +135,7 @@ sequenceDiagram
   Attachment metadata and stored bytes are retained, but the deleted message's
   attachments cannot be downloaded through the message binding.
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
-  from Room v8, requests `POST /api/v1/sync`, and atomically applies new messages,
+  from Room v9, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
   server covering index `idx_messages_delta_sync` on `(conversation_id, seq)` and the
   append-only `reaction_events` audit table (Flyway V10) with additive reaction cursors.

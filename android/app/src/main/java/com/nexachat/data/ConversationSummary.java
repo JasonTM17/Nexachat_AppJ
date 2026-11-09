@@ -1,6 +1,7 @@
 package com.nexachat.data;
 
 import androidx.annotation.Nullable;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -36,6 +37,8 @@ public final class ConversationSummary {
     private final boolean lastMessageDeleted;
     /** Live or seeded direct-peer presence; null for groups or hidden peers. */
     @Nullable private final PeerPresence peerPresence;
+    /** Caller-owned labels assigned to this conversation. */
+    private final List<String> labelIds;
 
     public ConversationSummary(
             String id,
@@ -56,7 +59,47 @@ public final class ConversationSummary {
             @Nullable PeerPresence peerPresence) {
         this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
                 lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
-                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted, peerPresence);
+                peerReadSeq, 0L, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, List.of());
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            List<String> labelIds) {
+        this.id = Objects.requireNonNull(id, "id");
+        this.type = Objects.requireNonNull(type, "type");
+        this.title = title;
+        this.lastMessageContent = lastMessageContent;
+        this.lastMessageSenderName = lastMessageSenderName;
+        this.lastMessageAtEpochMs = lastMessageAtEpochMs;
+        this.lastMessageSeq = lastMessageSeq;
+        this.unreadCount = unreadCount;
+        this.otherUserName = otherUserName;
+        this.otherUserAvatar = otherUserAvatar;
+        this.avatarUrl = avatarUrl;
+        this.peerReadSeq = peerReadSeq;
+        this.peerDeliveredSeq = peerDeliveredSeq;
+        this.myRole = myRole;
+        this.otherUserId = otherUserId;
+        this.lastMessageDeleted = lastMessageDeleted;
+        this.peerPresence = peerPresence;
+        this.labelIds = List.copyOf(Objects.requireNonNull(labelIds, "labelIds"));
     }
 
     public ConversationSummary(
@@ -77,23 +120,10 @@ public final class ConversationSummary {
             @Nullable String otherUserId,
             boolean lastMessageDeleted,
             @Nullable PeerPresence peerPresence) {
-        this.id = Objects.requireNonNull(id, "id");
-        this.type = Objects.requireNonNull(type, "type");
-        this.title = title;
-        this.lastMessageContent = lastMessageContent;
-        this.lastMessageSenderName = lastMessageSenderName;
-        this.lastMessageAtEpochMs = lastMessageAtEpochMs;
-        this.lastMessageSeq = lastMessageSeq;
-        this.unreadCount = unreadCount;
-        this.otherUserName = otherUserName;
-        this.otherUserAvatar = otherUserAvatar;
-        this.avatarUrl = avatarUrl;
-        this.peerReadSeq = peerReadSeq;
-        this.peerDeliveredSeq = peerDeliveredSeq;
-        this.myRole = myRole;
-        this.otherUserId = otherUserId;
-        this.lastMessageDeleted = lastMessageDeleted;
-        this.peerPresence = peerPresence;
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, List.of());
     }
 
     public String getId() { return id; }
@@ -113,6 +143,7 @@ public final class ConversationSummary {
     @Nullable public String getOtherUserId() { return otherUserId; }
     public boolean getLastMessageDeleted() { return lastMessageDeleted; }
     @Nullable public PeerPresence getPeerPresence() { return peerPresence; }
+    public List<String> getLabelIds() { return labelIds; }
 
     /** The group title wins over the direct peer name. */
     public String getDisplayName() {
@@ -149,7 +180,8 @@ public final class ConversationSummary {
                 && Objects.equals(avatarUrl, that.avatarUrl)
                 && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
-                && Objects.equals(peerPresence, that.peerPresence);
+                && Objects.equals(peerPresence, that.peerPresence)
+                && Objects.equals(labelIds, that.labelIds);
     }
 
     @Override
@@ -157,6 +189,6 @@ public final class ConversationSummary {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
-                lastMessageDeleted, peerPresence);
+                lastMessageDeleted, peerPresence, labelIds);
     }
 }

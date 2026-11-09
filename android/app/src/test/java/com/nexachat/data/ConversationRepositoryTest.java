@@ -143,7 +143,7 @@ public final class ConversationRepositoryTest {
 
     private void stubInbox(List<ConversationInboxDto> items) throws Exception {
         String json = inboxAdapter.toJson(items);
-        when(messageApi.getConversations(any(), any()))
+        when(messageApi.getConversations(any(), any(), any()))
                 .thenReturn(asCall(Response.success(ResponseBody.create(
                         okhttp3.MediaType.parse("application/json"), json))));
     }
@@ -151,9 +151,9 @@ public final class ConversationRepositoryTest {
     private void stubInboxPage(String requestCursor, String nextCursor, String body) {
         Call<ResponseBody> call = asCall(inboxResponse(body, nextCursor));
         if (requestCursor == null) {
-            when(messageApi.getConversations(eq(30), isNull())).thenReturn(call);
+            when(messageApi.getConversations(eq(30), isNull(), isNull())).thenReturn(call);
         } else {
-            when(messageApi.getConversations(eq(30), eq(requestCursor))).thenReturn(call);
+            when(messageApi.getConversations(eq(30), eq(requestCursor), isNull())).thenReturn(call);
         }
     }
 
@@ -330,7 +330,27 @@ public final class ConversationRepositoryTest {
 
         repository.refreshInbox().blockingGet();
 
-        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+        verify(messageApi, times(1)).getConversations(eq(30), isNull(), isNull());
+    }
+
+    @Test
+    public void labelFilterUsesUnpagedServerQueryAndPreservesUnrelatedRoomRows() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("cached-unrelated", 40)).blockingAwait();
+        when(messageApi.getConversations(isNull(), isNull(), eq("label-1")))
+                .thenReturn(asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"),
+                        "[{\"id\":\"labeled\",\"type\":\"GROUP\","
+                                + "\"title\":\"Labeled\",\"members\":[],"
+                                + "\"labels\":[\"label-1\"]}]"))));
+
+        Result<java.util.Set<String>> result = repository.refreshInboxByLabel("label-1").blockingGet();
+
+        assertEquals(java.util.Set.of("labeled"),
+                ((Result.Success<java.util.Set<String>>) result).getValue());
+        assertEquals(java.util.Set.of("cached-unrelated", "labeled"), dao().rows.keySet());
+        assertEquals(List.of("label-1"), dao().rows.get("labeled").getLabelIds());
+        verify(messageApi, times(1)).getConversations(isNull(), isNull(), eq("label-1"));
     }
 
     @Test
@@ -384,7 +404,7 @@ public final class ConversationRepositoryTest {
         stubInboxPage(null, null, inboxJsonWithCount(30));
         repository.refreshInboxPage().blockingGet();
         assertEquals(30, dao().rows.size());
-        verify(messageApi, times(3)).getConversations(eq(30), isNull());
+        verify(messageApi, times(3)).getConversations(eq(30), isNull(), isNull());
     }
 
     @Test
@@ -399,7 +419,7 @@ public final class ConversationRepositoryTest {
 
         assertFalse(((Result.Success<Boolean>) last).getValue());
         assertFalse(((Result.Success<Boolean>) exhausted).getValue());
-        verify(messageApi, times(1)).getConversations(eq(30), eq("cursor-page-2"));
+        verify(messageApi, times(1)).getConversations(eq(30), eq("cursor-page-2"), isNull());
     }
 
     @Test
@@ -407,7 +427,7 @@ public final class ConversationRepositoryTest {
         buildRepository();
         stubInboxPage(null, "cursor-retry", inboxJson("conv-a", 20));
         repository.refreshInboxPage().blockingGet();
-        when(messageApi.getConversations(eq(30), eq("cursor-retry")))
+        when(messageApi.getConversations(eq(30), eq("cursor-retry"), isNull()))
                 .thenReturn(asCall(Response.error(503, ResponseBody.create(
                         okhttp3.MediaType.parse("application/json"), "{}"))))
                 .thenReturn(asCall(inboxResponse(inboxJson("conv-b", 10), null)));
@@ -418,7 +438,7 @@ public final class ConversationRepositoryTest {
         assertTrue(failed instanceof Result.Failure<?>);
         assertFalse(((Result.Success<Boolean>) retried).getValue());
         assertEquals(java.util.Set.of("conv-a", "conv-b"), dao().rows.keySet());
-        verify(messageApi, times(2)).getConversations(eq(30), eq("cursor-retry"));
+        verify(messageApi, times(2)).getConversations(eq(30), eq("cursor-retry"), isNull());
     }
 
     @Test
@@ -451,7 +471,7 @@ public final class ConversationRepositoryTest {
         List<ConversationEntity> ordered = dao().inboxFlow().blockingFirst();
         assertEquals(List.of("moved", "top-a", "top-b", "older"), ordered.stream()
                 .map(ConversationEntity::getId).toList());
-        verify(messageApi, never()).getConversations(eq(30), eq("cursor-before-message"));
+        verify(messageApi, never()).getConversations(eq(30), eq("cursor-before-message"), isNull());
     }
 
     @Test
@@ -460,16 +480,16 @@ public final class ConversationRepositoryTest {
         String firstPage = "[{\"id\":\"conv-first\",\"type\":\"GROUP\",\"title\":\"First\",\"members\":[]}]";
         String secondPage = "[{\"id\":\"conv-target\",\"type\":\"GROUP\",\"title\":\"Target\",\"members\":[]}]";
         Headers headers = new Headers.Builder().add("X-Next-Cursor", "cursor-page-2").build();
-        when(messageApi.getConversations(eq(100), isNull())).thenReturn(asCall(Response.success(
+        when(messageApi.getConversations(eq(100), isNull(), isNull())).thenReturn(asCall(Response.success(
                 ResponseBody.create(okhttp3.MediaType.parse("application/json"), firstPage), headers)));
-        when(messageApi.getConversations(eq(100), eq("cursor-page-2"))).thenReturn(asCall(Response.success(
+        when(messageApi.getConversations(eq(100), eq("cursor-page-2"), isNull())).thenReturn(asCall(Response.success(
                 ResponseBody.create(okhttp3.MediaType.parse("application/json"), secondPage))));
 
         Result<GroupDetail> result = repository.groupDetail("conv-target").blockingGet();
 
         assertEquals("Target", ((Result.Success<GroupDetail>) result).getValue().getTitle());
-        verify(messageApi, times(1)).getConversations(eq(100), isNull());
-        verify(messageApi, times(1)).getConversations(eq(100), eq("cursor-page-2"));
+        verify(messageApi, times(1)).getConversations(eq(100), isNull(), isNull());
+        verify(messageApi, times(1)).getConversations(eq(100), eq("cursor-page-2"), isNull());
     }
 
     @Test
@@ -511,7 +531,7 @@ public final class ConversationRepositoryTest {
         String json = "[{\"id\":\"conv-d\",\"type\":\"DIRECT\","
                 + "\"otherUser\":{\"userId\":\"u-peer\",\"displayName\":\"Peer\"},"
                 + "\"peerPresence\":{\"online\":true,\"lastSeenAt\":null}}]";
-        when(messageApi.getConversations(any(), any())).thenReturn(asCall(Response.success(
+        when(messageApi.getConversations(any(), any(), any())).thenReturn(asCall(Response.success(
                 ResponseBody.create(okhttp3.MediaType.parse("application/json"), json))));
 
         repository.refreshInbox().blockingGet();
@@ -529,7 +549,7 @@ public final class ConversationRepositoryTest {
         String json = "[{\"id\":\"conv-d\",\"type\":\"DIRECT\",\"lastMessageSeq\":7,"
                 + "\"lastMessage\":{\"seq\":7,\"type\":\"TEXT\",\"content\":null,"
                 + "\"deletedAt\":\"2026-11-03T11:00:00Z\"}}]";
-        when(messageApi.getConversations(any(), any())).thenReturn(asCall(Response.success(
+        when(messageApi.getConversations(any(), any(), any())).thenReturn(asCall(Response.success(
                 ResponseBody.create(okhttp3.MediaType.parse("application/json"), json))));
 
         repository.refreshInbox().blockingGet();
@@ -550,7 +570,7 @@ public final class ConversationRepositoryTest {
             presenceFlow.onNext(Collections.unmodifiableMap(next));
             return null;
         }).when(presenceRepository).clear(any());
-        when(messageApi.getConversations(any(), any())).thenReturn(asCall(Response.success(
+        when(messageApi.getConversations(any(), any(), any())).thenReturn(asCall(Response.success(
                 ResponseBody.create(okhttp3.MediaType.parse("application/json"),
                         "[{\"id\":\"conv-d\",\"type\":\"DIRECT\","
                                 + "\"otherUser\":{\"userId\":\"u-peer\"}}]"))));
@@ -623,7 +643,8 @@ public final class ConversationRepositoryTest {
                 row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                 row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                 row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(),
-                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(), row.getLastMessageDeleted());
+                row.getAvatarUrl(), peerReadSeq, role, row.getOtherUserId(),
+                row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.getLabelIdsCsv());
     }
 
     private ConversationInboxDto inboxDto(String id) {
@@ -698,6 +719,30 @@ public final class ConversationRepositoryTest {
             return Maybe.defer(() -> {
                 ConversationEntity row = rows.get(conversationId);
                 return row == null ? Maybe.empty() : Maybe.just(row);
+            });
+        }
+
+        @Override
+        public Completable updateLabelIds(String conversationId, String labelIdsCsv) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) rows.put(conversationId, row.withLabelIdsCsv(labelIdsCsv));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable removeLabelIdFromAll(String labelId) {
+            return Completable.fromAction(() -> {
+                for (Map.Entry<String, ConversationEntity> entry : rows.entrySet()) {
+                    ConversationEntity row = entry.getValue();
+                    List<String> labels = row.getLabelIds().stream()
+                            .filter(id -> !labelId.equals(id)).toList();
+                    if (labels.size() != row.getLabelIds().size()) {
+                        entry.setValue(row.withLabelIdsCsv(String.join(",", labels)));
+                    }
+                }
+                publish();
             });
         }
 
@@ -835,7 +880,8 @@ public final class ConversationRepositoryTest {
                     row.getId(), row.getType(), row.getTitle(), row.getLastMessageSeq(),
                     row.getLastMessageContent(), row.getLastMessageSenderName(), row.getLastMessageAt(),
                     unread, row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), row.getLastMessageDeleted());
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(),
+                    row.getLastMessageDeleted(), row.getPeerDeliveredSeq(), row.getLabelIdsCsv());
         }
 
         private ConversationEntity withLastMessage(
@@ -843,7 +889,8 @@ public final class ConversationRepositoryTest {
             return new ConversationEntity(
                     row.getId(), row.getType(), row.getTitle(), seq, content, sender, at,
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
-                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted);
+                    row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
+                    row.getPeerDeliveredSeq(), row.getLabelIdsCsv());
         }
     }
 
