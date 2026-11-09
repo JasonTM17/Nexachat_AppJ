@@ -560,6 +560,41 @@ class ArchiveFlowIT {
     }
 
     @Test
+    void attachmentPaginationSplitsAMultiAttachmentMessageWithoutLossOrRepeat() throws Exception {
+        UUID conversationId = openGroup(bob);
+        Instant base = Instant.parse("2026-06-06T10:00:00Z");
+
+        UUID oldest = seedAttachmentMessage(conversationId, alice, "IMAGE",
+                "image/png", "oldest.png", base);
+        UUID middle = seedMessage(conversationId, alice, "IMAGE", null, base.plusSeconds(1));
+        UUID middleFirst = seedAttachment(middle, alice, "image/png", "mid-1.png");
+        UUID middleSecond = seedAttachment(middle, alice, "image/png", "mid-2.png");
+        UUID newest = seedAttachmentMessage(conversationId, alice, "IMAGE",
+                "image/png", "newest.png", base.plusSeconds(2));
+
+        JsonNode first = archivePage(conversationId, bob, "type=MEDIA&limit=2");
+        assertThat(items(first)).hasSize(2);
+        String cursor = first.get("nextCursor").asText();
+        JsonNode second = archivePage(conversationId, bob, "type=MEDIA&limit=2&cursor=" + cursor);
+
+        List<String> attachmentIds = new ArrayList<>();
+        first.get("items").forEach(item ->
+                attachmentIds.add(item.get("attachment").get("id").asText()));
+        second.get("items").forEach(item ->
+                attachmentIds.add(item.get("attachment").get("id").asText()));
+
+        assertThat(attachmentIds).hasSize(4);
+        assertThat(attachmentIds).doesNotHaveDuplicates();
+        assertThat(attachmentIds).contains(
+                middleFirst.toString(), middleSecond.toString());
+        assertThat(first.get("items").get(0).get("messageId").asText())
+                .isEqualTo(newest.toString());
+        assertThat(second.get("items").get(1).get("messageId").asText())
+                .isEqualTo(oldest.toString());
+        assertThat(second.get("nextCursor").isNull()).isTrue();
+    }
+
+    @Test
     void cursorsAreBoundToTheConversationAndTabAndCannotBypassMembership() throws Exception {
         UUID conversationA = openGroup(bob);
         UUID conversationB = openGroup(bob);
