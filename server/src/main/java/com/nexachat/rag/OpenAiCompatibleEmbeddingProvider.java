@@ -60,9 +60,13 @@ public final class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvide
         this.objectMapper = new ObjectMapper();
     }
 
+    /**
+     * Stable provider identifier scoped to the configured model, stored with
+     * every vector so a model change never reuses an incompatible space.
+     */
     @Override
     public String id() {
-        return ID;
+        return ID + ":" + model;
     }
 
     @Override

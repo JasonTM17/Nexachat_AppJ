@@ -142,14 +142,14 @@ public class RagEmbeddingService {
         for (RagMessage message : unique.values()) {
             String inputHash = RagHashes.embeddingInputHash(inputFor(message.content(), provider));
             if (inputHash.equals(storedHashes.get(message.id()))) {
-                float[] cached = cache.get(message.id());
+                float[] cached = cache.get(model, message.id());
                 if (cached != null) {
                     result.put(message.id(), cached);
                     continue;
                 }
                 float[] loaded = storedVectors.get(message.id());
                 if (loaded != null) {
-                    cache.put(message.id(), loaded);
+                    cache.put(model, message.id(), loaded);
                     result.put(message.id(), loaded);
                     continue;
                 }
@@ -172,7 +172,7 @@ public class RagEmbeddingService {
                 String hash = RagHashes.embeddingInputHash(inputs.get(position));
                 savedVectors.put(message.id(), vector);
                 savedHashes.put(message.id(), hash);
-                cache.put(message.id(), vector);
+                cache.put(model, message.id(), vector);
                 result.put(message.id(), vector);
             }
             if (provider == providers.primary()) {
