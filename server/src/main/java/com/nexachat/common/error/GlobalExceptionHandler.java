@@ -1,5 +1,6 @@
 package com.nexachat.common.error;
 
+import com.nexachat.call.CallException;
 import com.nexachat.common.dto.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -38,6 +39,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
         return ResponseEntity.status(ex.getHttpStatus()).body(ErrorResponse.of(ex));
+    }
+
+    @ExceptionHandler(CallException.class)
+    public ResponseEntity<ErrorResponse> handleCall(CallException ex) {
+        return switch (ex.getCode()) {
+            case NOT_MEMBER -> ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse.of(
+                    ApiErrorCode.NOT_MEMBER, ex.getMessage()));
+            case VALIDATION_FAILED -> ResponseEntity.badRequest().body(ErrorResponse.of(
+                    ApiErrorCode.VALIDATION_FAILED, ex.getMessage()));
+            case RATE_LIMITED -> ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ErrorResponse.of(
+                    ApiErrorCode.RATE_LIMITED, ex.getMessage()));
+            case CALL_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                    new ErrorResponse(new ErrorResponse.ErrorBody(
+                            CallException.Code.CALL_NOT_FOUND.name(), ex.getMessage(), null)));
+            case CALL_STATE_INVALID -> ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    new ErrorResponse(new ErrorResponse.ErrorBody(
+                            CallException.Code.CALL_STATE_INVALID.name(), ex.getMessage(), null)));
+        };
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -277,6 +277,12 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         }
         Matcher chatAck = APP_CHAT_ACK.matcher(destination);
         if (chatAck.matches()) {
+            UUID conversationId = ackConversationId(message.getPayload());
+            if (conversationId != null
+                    && !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+                log.warn("STOMP ack SEND denied: caller is not a conversation member");
+                return false;
+            }
             return consumeSendAllowance(userId, "acks", acksPerWindow,
                     ackWindowSeconds, null);
         }
@@ -347,6 +353,33 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 return null;
             }
             String id = body.path("clientMessageId").asText(null);
+            return id == null ? null : UUID.fromString(id);
+        } catch (java.io.IOException | IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * Parses the conversation scope carried by chat-level read/delivery acks.
+     * Missing or malformed IDs continue to payload conversion/validation. A
+     * malformed UUID may be rejected before handler invocation; neither path
+     * can advance a conversation watermark.
+     */
+    @Nullable
+    private UUID ackConversationId(Object payload) {
+        try {
+            JsonNode body;
+            if (payload instanceof byte[] bytes) {
+                body = objectMapper.readTree(bytes);
+            } else if (payload instanceof String text) {
+                body = objectMapper.readTree(text);
+            } else {
+                return null;
+            }
+            if (body == null || !body.isObject()) {
+                return null;
+            }
+            String id = body.path("conversationId").asText(null);
             return id == null ? null : UUID.fromString(id);
         } catch (java.io.IOException | IllegalArgumentException ex) {
             return null;

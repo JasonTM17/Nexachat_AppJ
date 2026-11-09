@@ -84,9 +84,12 @@ the implementing source file.
   by default
   (StompAuthChannelInterceptor.onSubscribe).
 - SEND authZ: `/app/conversations/{uuid}/{messages|typing|read|delivered}` and
-  `/app/chat.{delivery|read}.ack` re-check membership before any `@MessageMapping` runs —
-  belt-and-braces under MessageService.requireMember — and unknown destinations are dropped
-  (StompAuthChannelInterceptor.onSend); denial returns `null`.
+  `/app/chat.{delivery|read}.ack` re-check membership before any `@MessageMapping` runs.
+  The chat-level aliases carry `conversationId` in JSON, so the interceptor parses
+  that UUID and checks `(conversationId, userId)`; a missing or malformed ID
+  continues to payload conversion/validation and cannot advance a watermark.
+  Conversation handlers retain their service-level membership checks, and unknown
+  destinations are dropped (StompAuthChannelInterceptor.onSend); denial returns `null`.
 
 ## 4. Upload hardening
 

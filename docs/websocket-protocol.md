@@ -88,6 +88,11 @@ and expects one from the server every 10 s.
 | S→C | `/user/queue/presence` | SUBSCRIBE | `USER_ONLINE` / `USER_OFFLINE` envelope |
 | S→C | `/user/queue/calls` | SUBSCRIBE | `CallEvent` JSON; see [`docs/calls.md`](calls.md) |
 
+Both chat-level acknowledgement aliases are authorized against the payload's
+`conversationId` before dispatch. The connection user must still be a current
+member of that conversation; absent or malformed IDs reach payload
+conversion/validation and cannot advance a watermark.
+
 Notes:
 
 - `{id}` is the conversation UUID; the topic uses a dot

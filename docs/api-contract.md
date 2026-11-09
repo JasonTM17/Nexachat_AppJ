@@ -889,7 +889,7 @@ and the error surfaces verified from `CallRestController`, `CallController`,
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /calls/ice-config` | Bearer | — | `200` `CallIceConfig` — `{iceServers:[{urls:string[]}], ttlSeconds}` (`ttlSeconds` is `3600`; URLs come from `nexachat.calls.ice-servers`, comma-separated) | `UNAUTHORIZED` 401 |
-| `GET /calls/{callId}/offer` | Bearer; caller or callee of the live call | Path `callId` (UUID) | `200` `CallOfferResponse` — `{callId, sdp:{type, description}, iceConfig}` | `UNAUTHORIZED` 401 · **see REST note below** |
+| `GET /calls/{callId}/offer` | Bearer; caller or callee of the live call | Path `callId` (UUID) | `200` `CallOfferResponse` — `{callId, sdp:{type, description}, iceConfig}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CALL_NOT_FOUND` 404 (`GlobalExceptionHandler` maps `CallException`) |
 | `GET /conversations/{conversationId}/calls` | Bearer member of a **DIRECT** conversation | Query `limit?` (default `20`, clamped 1–100), optional opaque `cursor?` (keyset on `startedAt` + `callId`) | `200` `CallHistoryPage` — `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (non-direct conversation, bad `limit`, or malformed `cursor`) |
 
 `CallHistoryItem` =
@@ -910,11 +910,9 @@ slow STOMP). The service returns the stored `sdp` plus the same
 participant (`CallRegistry.find` + `peerOf`) and an offer is present
 (`CallRegistry.findOffer`). If the call or offer is missing, or the user is not a
 participant, `CallService` throws `CallException`
-(`CALL_NOT_FOUND` or `NOT_MEMBER`). **`CallException` is not registered on
-`GlobalExceptionHandler`**, so these domain failures currently become
-`500 INTERNAL_ERROR` on REST instead of structured call codes — only
-`UNAUTHORIZED` is shaped normally (`CallTimeoutSchedulerGraceTest` covers the
-happy path and non-participant rejection at the controller layer).
+(`CALL_NOT_FOUND` or `NOT_MEMBER`). `GlobalExceptionHandler` maps those codes to
+`404` / `403` on REST (`NOT_MEMBER` uses the shared `ApiErrorCode`; call-specific
+codes keep their STOMP string names in the JSON `error.code`).
 As of `CallService.validateEnvelope`, STOMP `INVITE` frames must not include
 `sdp`, so the `saveOffer` branch on invite is unreachable through public
 signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
@@ -1072,6 +1070,7 @@ above apply unchanged:
 - Typing signal: `SEND /app/conversations/{id}/typing`
 - Delivery receipt: `SEND /app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`)
 - Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`) — broadcast as `MESSAGE_READ` only when the reader shares seen; hidden recipients do not receive peers' receipts (see the settings section)
+- The chat-level receipt aliases carry `conversationId` in their payload. The server verifies current membership in that conversation before dispatch; a missing or malformed ID continues to payload conversion/validation and cannot advance a watermark.
 - Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/calls.md`](calls.md))
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.

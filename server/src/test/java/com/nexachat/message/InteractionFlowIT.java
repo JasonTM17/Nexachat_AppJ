@@ -256,6 +256,16 @@ class InteractionFlowIT {
         postJson("/api/v1/conversations/" + groupId + "/pins", alice.accessToken(),
                 Map.of("messageId", groupMessageId.toString()))
                 .andExpect(status().isNoContent());
+        deleteJson("/api/v1/conversations/" + groupId + "/pins/" + groupMessageId,
+                bob.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_ADMIN"));
+        deleteJson("/api/v1/conversations/" + groupId + "/pins/" + groupMessageId,
+                alice.accessToken())
+                .andExpect(status().isNoContent());
+        postJson("/api/v1/conversations/" + groupId + "/pins", alice.accessToken(),
+                Map.of("messageId", groupMessageId.toString()))
+                .andExpect(status().isNoContent());
         MvcResult pins = getJson("/api/v1/conversations/" + groupId + "/pins", bob.accessToken())
                 .andExpect(status().isOk())
                 .andReturn();
