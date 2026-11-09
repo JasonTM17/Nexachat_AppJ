@@ -92,6 +92,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check Markdown links
         run: python tools/check-markdown-links.py
+      - name: Check Android string resources
+        run: |
+          python tools/check-android-strings.py --self-test
+          python tools/check-android-strings.py
       - name: Check shell syntax and style when available
         shell: bash
         run: |

@@ -166,7 +166,7 @@
     <string name="action_pin_conversation">Pin conversation</string>
     <string name="action_unpin_conversation">Unpin conversation</string>
     <string name="pinned_title">Pinned</string>
-    <string name="pinned_count">%1$d/%2$d</string>
+    <string name="pinned_count" translatable="false">%1$d/%2$d</string>
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="action_jump_to_message">Go to message</string>
@@ -286,7 +286,7 @@
     <string name="voice_status_ready">ready</string>
     <string name="voice_status_loading">loading</string>
     <string name="voice_status_error">unavailable</string>
-    <string name="voice_duration_progress">%1$s / %2$s</string>
+    <string name="voice_duration_progress" translatable="false">%1$s / %2$s</string>
     <string name="voice_message_accessibility">Voice message, %1$s of %2$s, %3$s</string>
     <string name="voice_zero_duration">0:00</string>
 
