@@ -24,6 +24,9 @@ public final class AuthErrorIds {
         if (error instanceof ApiError.Network) {
             return R.string.error_network;
         }
+        if (error instanceof ApiError.SessionExpired) {
+            return R.string.session_expired_sign_in_again;
+        }
         return R.string.error_generic;
     }
 }

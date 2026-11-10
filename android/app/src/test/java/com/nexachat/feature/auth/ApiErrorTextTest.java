@@ -16,6 +16,9 @@ public final class ApiErrorTextTest {
         assertEquals(R.string.error_phone_exists, ApiErrorText.resource(ApiError.PhoneExists.INSTANCE));
         assertEquals(R.string.error_rate_limited, ApiErrorText.resource(ApiError.RateLimited.INSTANCE));
         assertEquals(R.string.error_network, ApiErrorText.resource(new ApiError.Network()));
+        assertEquals(
+                R.string.session_expired_sign_in_again,
+                ApiErrorText.resource(ApiError.SessionExpired.INSTANCE));
     }
 
     @Test
@@ -31,6 +34,7 @@ public final class ApiErrorTextTest {
             ApiError.PhoneExists.INSTANCE,
             ApiError.RateLimited.INSTANCE,
             new ApiError.Network(),
+            ApiError.SessionExpired.INSTANCE,
             new ApiError.Unknown("FUTURE"),
         };
         for (ApiError error : errors) {

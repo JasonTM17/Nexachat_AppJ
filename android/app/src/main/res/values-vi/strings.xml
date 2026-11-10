@@ -455,5 +455,6 @@
     <string name="label_color_amber">Hổ phách</string>
     <string name="label_color_rose">Hồng đậm</string>
     <string name="label_color_purple">Tím</string>
+    <string name="session_expired_sign_in_again">Phiên đã hết hạn, đăng nhập lại</string>
 
 </resources>
