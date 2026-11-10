@@ -90,7 +90,11 @@ class PollFlowTest {
     }
 
     @AfterAll
-    static void dropDatabase() {
+    void dropDatabase() {
+        javax.sql.DataSource dataSource = jdbcTemplate.getDataSource();
+        if (dataSource instanceof com.zaxxer.hikari.HikariDataSource hikari) {
+            hikari.close();
+        }
         TEST_DATABASE.close();
     }
 
@@ -230,6 +234,11 @@ class PollFlowTest {
 
     private static UUID id(JsonNode node) {
         return UUID.fromString(node.asText());
+    }
+
+    private void stampPollCreatedAt(UUID pollId, java.time.Instant createdAt) {
+        jdbcTemplate.update("UPDATE polls SET created_at = ? WHERE id = ?",
+                java.sql.Timestamp.from(createdAt), pollId);
     }
 
     private static List<UUID> optionIds(JsonNode poll) {
@@ -393,10 +402,11 @@ class PollFlowTest {
     void listIsNewestFirstAndCursorPaged() throws Exception {
         UUID group = createGroup(alice, List.of(bob), "Paging group " + System.nanoTime());
         JsonNode first = createPoll(alice, group, "P1", List.of("A", "B"), false, false, null);
-        Thread.sleep(5);
         JsonNode second = createPoll(alice, group, "P2", List.of("A", "B"), false, false, null);
-        Thread.sleep(5);
         JsonNode third = createPoll(alice, group, "P3", List.of("A", "B"), false, false, null);
+        stampPollCreatedAt(id(first.get("id")), java.time.Instant.parse("2026-01-01T10:00:00Z"));
+        stampPollCreatedAt(id(second.get("id")), java.time.Instant.parse("2026-01-01T11:00:00Z"));
+        stampPollCreatedAt(id(third.get("id")), java.time.Instant.parse("2026-01-01T12:00:00Z"));
 
         MvcResult pageOne = getJson(pollsPath(group) + "?limit=2", alice.accessToken())
                 .andExpect(status().isOk())
