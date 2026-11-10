@@ -18,8 +18,8 @@ public final class Redactor {
                     + "|(?<![@\\p{L}\\p{N}_])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}"
                     + "(?::\\d+)?(?:/[^\\s<>\\\"']*)?");
     private static final Pattern PHONE = Pattern.compile(
-            "(?<![\\p{L}\\p{N}])\\+?\\d[\\d(). -]{4,}\\d(?![\\p{L}\\p{N}])");
-    private static final Pattern LONG_DIGITS = Pattern.compile("\\d{7,}");
+            "(?<![\\p{L}\\p{N}])\\+?\\p{Nd}[\\p{Nd}(). -]{4,}\\p{Nd}(?![\\p{L}\\p{N}])");
+    private static final Pattern LONG_DIGITS = Pattern.compile("\\p{Nd}{7,}");
     private static final Pattern TOKEN = Pattern.compile(
             "(?=[A-Za-z0-9_-]{24,})(?=[A-Za-z0-9_-]*[A-Za-z_-])[A-Za-z0-9_-]{24,}");
 
