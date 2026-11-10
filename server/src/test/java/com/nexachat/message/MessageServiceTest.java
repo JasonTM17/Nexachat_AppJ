@@ -336,7 +336,8 @@ class MessageServiceTest {
                 .thenReturn(1);
         stubNewSendWithReadBack(stored);
         when(messageRepository.getReferenceById(stored.id())).thenReturn(newMessageWithId(stored.id()));
-        when(attachmentRepository.findAllById(List.of(attachmentId))).thenReturn(List.of(attachment));
+        when(attachmentRepository.findAllById(List.of(attachmentId)))
+                .thenReturn(List.of(attachment), List.of(attachment));
 
         MessageService.SendResult result = messageService.send(senderId, conversationId,
                 new SendMessageRequest(clientMessageId, "IMAGE", null, null, List.of(attachmentId)));
@@ -349,11 +350,7 @@ class MessageServiceTest {
     @Test
     void send_attachmentOwnedByAnotherUser_throwsValidation() {
         memberOk();
-        MessageRow stored = row(42);
         MessageAttachment attachment = uploadAttachment(UUID.randomUUID() /* other owner */, "image/png");
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -362,18 +359,15 @@ class MessageServiceTest {
                                 List.of(attachment.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
     void send_attachmentAlreadyBound_throwsValidation() {
         memberOk();
-        MessageRow stored = row(42);
         MessageAttachment attachment = uploadAttachment(senderId, "image/png");
         attachment.bindTo(newMessageWithId(UUID.randomUUID())); // bound elsewhere
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -382,17 +376,14 @@ class MessageServiceTest {
                                 List.of(attachment.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
     void send_mimeTypeMismatch_throwsValidation() {
         memberOk();
-        MessageRow stored = row(42);
         MessageAttachment pdf = uploadAttachment(senderId, "application/pdf");
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(pdf.getId()))).thenReturn(List.of(pdf));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -400,17 +391,14 @@ class MessageServiceTest {
                         new SendMessageRequest(clientMessageId, "IMAGE", null, null, List.of(pdf.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
     void send_unknownAttachmentId_throwsFileNotFound() {
         memberOk();
-        MessageRow stored = row(42);
         UUID attachmentId = UUID.randomUUID();
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(1);
-        stubNewSendWithReadBack(stored);
         when(attachmentRepository.findAllById(List.of(attachmentId))).thenReturn(List.of());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -418,7 +406,7 @@ class MessageServiceTest {
                         new SendMessageRequest(clientMessageId, "FILE", null, null, List.of(attachmentId))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
-        // The whole send transaction rolls back — no broadcast either.
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
