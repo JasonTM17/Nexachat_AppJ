@@ -16,6 +16,7 @@ public sealed interface ApiError
                 ApiError.PhoneExists,
                 ApiError.RateLimited,
                 ApiError.Network,
+                ApiError.SessionExpired,
                 ApiError.Unknown {
 
     /** 401 {@code INVALID_CREDENTIALS} (also reused for {@code WRONG_PASSWORD}). */
@@ -84,6 +85,29 @@ public sealed interface ApiError
         @Override
         public String toString() {
             return "RateLimited";
+        }
+    }
+
+    /** Refresh replay recovery failed; user must sign in again while keeping local data. */
+    final class SessionExpired implements ApiError {
+        public static final SessionExpired INSTANCE = new SessionExpired();
+
+        private SessionExpired() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof SessionExpired;
+        }
+
+        @Override
+        public int hashCode() {
+            return SessionExpired.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "SessionExpired";
         }
     }
 

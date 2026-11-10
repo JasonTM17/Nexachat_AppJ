@@ -213,6 +213,7 @@ public final class TokenRefresherTest {
         when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
         when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
         when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
+        when(store.markSessionReauthRequired(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 }

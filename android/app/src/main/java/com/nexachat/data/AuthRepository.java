@@ -14,6 +14,11 @@ import com.nexachat.core.network.TokenRefreshOutcome;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ChangePasswordRequest;
+import com.nexachat.core.network.dto.GoogleLinkRequest;
+import com.nexachat.core.network.dto.GoogleNonceResponse;
+import com.nexachat.core.network.dto.GoogleSignInRequest;
+import com.nexachat.core.network.dto.GoogleUnlinkRequest;
+import com.nexachat.core.network.dto.LinkedIdentitiesResponse;
 import com.nexachat.core.network.dto.LoginRequest;
 import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
@@ -132,8 +137,7 @@ public final class AuthRepository {
                 .andThen(Single.defer(tokenRefresher::refresh)).flatMap(outcome -> {
                     Result<Boolean> result = refreshMapping(outcome);
                     if (outcome instanceof TokenRefreshOutcome.FreshToken
-                            || outcome instanceof TokenRefreshOutcome.TransientFailure
-                            || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+                            || outcome instanceof TokenRefreshOutcome.TransientFailure) {
                         if (accountDataCleaner != null) accountDataCleaner.scheduleOutbox();
                         return deviceTokenRegistrationManager.onSessionAvailable()
                                 .onErrorComplete()
@@ -218,6 +222,54 @@ public final class AuthRepository {
                 .subscribeOn(Schedulers.io());
     }
 
+    /** Fetches a single-use nonce before a Google credential request. */
+    @NonNull
+    public Single<Result<GoogleNonceResponse>> requestGoogleNonce() {
+        return Single.defer(() -> ApiResult.safeApiCall(authApi.googleNonce())
+                        .map(AuthRepository::valueResult)
+                        .subscribeOn(Schedulers.io()));
+    }
+
+    /** Fetches the nonce used by the authenticated link flow. */
+    @NonNull
+    public Single<Result<GoogleNonceResponse>> requestGoogleLinkNonce() {
+        return Single.defer(() -> ApiResult.safeApiCall(authApi.googleLinkNonce())
+                        .map(AuthRepository::valueResult)
+                        .subscribeOn(Schedulers.io()));
+    }
+
+    /** Exchanges a Google ID token for a session; persists it exactly like a password login. */
+    @NonNull
+    public Single<Result<AuthResponse>> googleSignIn(
+            @NonNull String idToken,
+            @NonNull String nonce) {
+        return Single.defer(() -> persistOnSuccess(
+                authCall(authApi.googleSignIn(new GoogleSignInRequest(idToken, nonce)))));
+    }
+
+    /** Links a Google account; the server verifies the password and the nonce. */
+    @NonNull
+    public Single<Result<Unit>> linkGoogle(
+            @NonNull String idToken,
+            @NonNull String nonce,
+            @NonNull String password) {
+        return Single.defer(() -> authCallUnit(
+                authApi.linkGoogle(new GoogleLinkRequest(idToken, nonce, password))));
+    }
+
+    @NonNull
+    public Single<Result<Unit>> unlinkGoogle(@NonNull String password) {
+        return Single.defer(() -> authCallUnit(authApi.unlinkGoogle(
+                new GoogleUnlinkRequest(password))));
+    }
+
+    @NonNull
+    public Single<Result<LinkedIdentitiesResponse>> linkedIdentities() {
+        return Single.defer(() -> ApiResult.safeApiCall(authApi.linkedIdentities())
+                .map(AuthRepository::valueResult)
+                .subscribeOn(Schedulers.io()));
+    }
+
     @NonNull
     private Single<Result<AuthResponse>> persistOnSuccess(
             Single<Result<AuthResponse>> request) {
@@ -281,21 +333,30 @@ public final class AuthRepository {
 
     @NonNull
     private static Result<AuthResponse> authResult(@NonNull ApiResult<AuthResponse> result) {
-        if (result instanceof ApiResult.Success<?> success) {
-            return new Result.Success<>((AuthResponse) success.getBody());
-        }
-        return authResultFailure(result);
+        return valueResult(result);
     }
 
     @NonNull
     private static Result.Failure<AuthResponse> authResultFailure(
             @NonNull ApiResult<?> result) {
+        return new Result.Failure<>(errorOf(result));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Result<T> valueResult(@NonNull ApiResult<T> result) {
+        if (result instanceof ApiResult.Success<?> success) {
+            return new Result.Success<>((T) success.getBody());
+        }
+        return new Result.Failure<>(errorOf(result));
+    }
+
+    @NonNull
+    private static ApiError errorOf(@NonNull ApiResult<?> result) {
         if (result instanceof ApiResult.HttpError<?> httpError) {
-            return new Result.Failure<>(ApiError.from(
-                    httpError.getStatus(), httpError.getErrorCode()));
+            return ApiError.from(httpError.getStatus(), httpError.getErrorCode());
         }
         ApiResult.NetworkError<?> networkError = (ApiResult.NetworkError<?>) result;
-        return new Result.Failure<>(new ApiError.Network(networkError.getCause().getMessage()));
+        return new ApiError.Network(networkError.getCause().getMessage());
     }
 
     @NonNull
@@ -340,8 +401,10 @@ public final class AuthRepository {
         if (outcome instanceof TokenRefreshOutcome.FreshToken) {
             return new Result.Success<>(Boolean.TRUE);
         }
-        if (outcome instanceof TokenRefreshOutcome.TransientFailure
-                || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+        if (outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+            return Result.failure(ApiError.SessionExpired.INSTANCE);
+        }
+        if (outcome instanceof TokenRefreshOutcome.TransientFailure) {
             return Result.failure(new ApiError.Network("refresh request failed"));
         }
         if (outcome instanceof TokenRefreshOutcome.Rejected) {

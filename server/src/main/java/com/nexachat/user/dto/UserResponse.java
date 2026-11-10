@@ -19,4 +19,11 @@ public record UserResponse(UUID id, String phone, String displayName, String ava
         String displayName = deleted ? DeletedAccountPolicy.DISPLAY_NAME : user.getDisplayName();
         return new UserResponse(user.getId(), phone, displayName, user.getAvatarUrl(), deleted);
     }
+
+    /** {@code includePhone} false omits the number from display-name discovery hits. */
+    public static UserResponse forSearchResult(User user, boolean includePhone) {
+        UserResponse response = from(user);
+        return new UserResponse(response.id(), includePhone ? response.phone() : null,
+                response.displayName(), response.avatarUrl(), response.deleted());
+    }
 }

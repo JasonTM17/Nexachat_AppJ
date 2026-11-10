@@ -17,12 +17,23 @@ public final class SessionEvents {
     public Flowable<Event> getEvents() { return events; }
 
     public void emitLoggedOut() { events.onNext(Event.LoggedOut.INSTANCE); }
+
+    public void emitReauthenticationRequired() {
+        events.onNext(Event.ReauthenticationRequired.INSTANCE);
+    }
+
     public void emitSessionAvailable() { events.onNext(Event.SessionAvailable.INSTANCE); }
 
     public interface Event {
         final class LoggedOut implements Event {
             public static final LoggedOut INSTANCE = new LoggedOut();
             private LoggedOut() { }
+        }
+
+        final class ReauthenticationRequired implements Event {
+            public static final ReauthenticationRequired INSTANCE = new ReauthenticationRequired();
+
+            private ReauthenticationRequired() { }
         }
 
         final class SessionAvailable implements Event {

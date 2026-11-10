@@ -2,8 +2,8 @@
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v13) → REST
-> `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24; V21/V23 reserved) + file volume. Conversation RAG is available through the
+> `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
+> (Flyway V1–V20 + V22 + V24 + V25; V21/V23 reserved) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -33,7 +33,7 @@ flowchart LR
         UI --> SETTINGS
     end
 
-    subgraph Server["Backend — Modular Monolith (Java 21 LTS + Spring Boot 3.4)"]
+    subgraph Server["Backend — Modular Monolith (Java 21 LTS + Spring Boot 3.5.16)"]
         direction TB
         SEC["Spring Security<br/>JWT filter · Rate limit"]
         subgraph Mod["Modules"]
@@ -59,7 +59,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24 + V25 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 

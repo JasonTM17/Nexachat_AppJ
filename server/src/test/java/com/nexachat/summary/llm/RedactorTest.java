@@ -36,6 +36,27 @@ class RedactorTest {
     }
 
     @Test
+    void removesUnicodeDecimalDigitPhoneNumbers() {
+        String arabicIndic = "٠٩١٢٣٤٥٦٧٨";
+        String fullWidth = "０９１２３４５６７８";
+
+        String output = redactor.redact("Call " + arabicIndic + " or " + fullWidth);
+
+        assertThat(output).contains("[REDACTED_PHONE]");
+        assertThat(output).doesNotContain(arabicIndic, fullWidth);
+    }
+
+    @Test
+    void removesSupplementaryPlaneDecimalDigitPhoneNumbers() {
+        String supplementaryDigits = "𝟘𝟡𝟙-𝟚𝟛𝟜-𝟝𝟞𝟟𝟠";
+
+        String output = redactor.redact("Call " + supplementaryDigits);
+
+        assertThat(output).contains("[REDACTED_PHONE]");
+        assertThat(output).doesNotContain(supplementaryDigits);
+    }
+
+    @Test
     void preservesPlainConversationTextAndUrlDomain() {
         assertThat(redactor.redact("We will meet tomorrow at school.example.vn."))
                 .isEqualTo("We will meet tomorrow at school.example.vn.");

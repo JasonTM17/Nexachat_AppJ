@@ -32,6 +32,7 @@ services:
       DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      NEXACHAT_REFRESH_REPLAY_KEY: ${NEXACHAT_REFRESH_REPLAY_KEY:-}
       STORAGE_ROOT: ${STORAGE_ROOT:-/app/data/uploads}
       # Cloud LLM Tier (primary: Gemini via its OpenAI-compatible endpoint)
       NEXACHAT_SUMMARY_LLM_ENABLED: ${NEXACHAT_SUMMARY_LLM_ENABLED:-false}

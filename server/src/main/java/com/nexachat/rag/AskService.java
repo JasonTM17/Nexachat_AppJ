@@ -23,6 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * The ask router: cache, answerability gate, extractive answer, then the LLM
@@ -49,6 +53,15 @@ public class AskService {
     private final RagStats stats;
     private final ConversationAiOptOuts aiOptOuts;
     private final Clock clock;
+    /**
+     * One cold-cache computation per identical ask. Followers wait for the
+     * leader's response instead of repeating the embedding, retrieval and
+     * provider work. Conversation and user identify the membership scope, and
+     * consent state prevents a request from joining work started under a
+     * different consent decision.
+     */
+    private final ConcurrentHashMap<AskKey, CompletableFuture<AskResponse>> inFlight =
+            new ConcurrentHashMap<>();
 
     public AskService(
             AskRateLimiter rateLimiter,
@@ -117,27 +130,86 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(RagQuestionNormalizer.normalize(question));
 
+        AskKey key = new AskKey(conversationId, userId, questionHash, language, consented);
+        return computeOnce(key, () -> compute(
+                conversationId, userId, question, language, questionHash, consented, contextOmitted));
+    }
+
+    /**
+     * Single-flight: the first caller for a key computes and every concurrent
+     * caller for the same key receives that result. The entry is removed in
+     * {@code finally}, so a failure is never cached and the next request
+     * recomputes. Callers that arrive after the leader removed the entry fall
+     * through to the exact cache, which the leader has already written.
+     */
+    private AskResponse computeOnce(AskKey key, Supplier<AskResponse> computation) {
+        CompletableFuture<AskResponse> leader = new CompletableFuture<>();
+        CompletableFuture<AskResponse> pending = inFlight.putIfAbsent(key, leader);
+        if (pending != null) {
+            return await(pending);
+        }
+        try {
+            AskResponse response = computation.get();
+            leader.complete(response);
+            return response;
+        } catch (RuntimeException | Error failure) {
+            leader.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            leader.completeExceptionally(new IllegalStateException("ask computation did not complete"));
+            inFlight.remove(key, leader);
+        }
+    }
+
+    private AskResponse await(CompletableFuture<AskResponse> pending) {
+        try {
+            return pending.join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw exception;
+        }
+    }
+
+    private AskResponse compute(
+            UUID conversationId,
+            UUID userId,
+            String question,
+            SummaryLanguage language,
+            String questionHash,
+            boolean consented,
+            boolean contextOmitted) {
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(question, consented);
 
-        Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
-                conversationId, questionEmbedding.model(), questionHash);
-        if (exact.isPresent()
-                && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
-            stats.recordCacheHit();
-            return cachedResponse(exact.get(), contextOmitted);
-        }
-
-        double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-        for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
-                conversationId, questionEmbedding.model())) {
-            if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
-                    && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
+        if (consented) {
+            Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
+                    conversationId, questionEmbedding.model(), questionHash);
+            if (exact.isPresent()
+                    && exact.get().language() == language
+                    && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
                 stats.recordCacheHit();
-                return cachedResponse(candidate.ask(), contextOmitted);
+                return cachedResponse(exact.get(), contextOmitted);
+            }
+
+            double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
+            for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
+                    conversationId, questionEmbedding.model())) {
+                if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                        && candidate.ask().language() == language
+                        && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
+                    stats.recordCacheHit();
+                    return cachedResponse(candidate.ask(), contextOmitted);
+                }
             }
         }
 
+        long contentVersion = questionCache.contentVersion(conversationId);
         RetrievalResult retrieval = retrievalService.retrieve(conversationId, question, language, consented);
         if (retrieval.isEmpty()
                 || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
@@ -148,7 +220,7 @@ public class AskService {
         if (isLookupLike(question)
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted);
+                    contextOmitted, contentVersion);
         }
 
         if (consented) {
@@ -156,7 +228,7 @@ public class AskService {
                     userId, conversationId, question, language, retrieval.context(), retrieval.messages());
             if (llmAnswer != null) {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
-                        llmAnswer, retrieval.messages(), AskMode.LLM, language);
+                        llmAnswer, retrieval.messages(), AskMode.LLM, language, contentVersion);
                 if (answer != null) {
                     saveAnswer(conversationId, questionEmbedding, questionHash, answer);
                     stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
@@ -168,7 +240,7 @@ public class AskService {
 
         if (retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted);
+                    contextOmitted, contentVersion);
         }
         stats.recordNotFound();
         return AskResponse.notFound(contextOmitted);
@@ -180,8 +252,10 @@ public class AskService {
             String questionHash,
             SummaryLanguage language,
             RetrievalResult retrieval,
-            boolean contextOmitted) {
-        RagQuestionCache.CachedAsk answer = toCachedAsk(retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language);
+            boolean contextOmitted,
+            long contentVersion) {
+        RagQuestionCache.CachedAsk answer = toCachedAsk(
+                retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language, contentVersion);
         if (answer == null) {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted);
@@ -206,7 +280,11 @@ public class AskService {
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
-            RagMessage message, Map<UUID, RagMessage> messages, AskMode mode, SummaryLanguage language) {
+            RagMessage message,
+            Map<UUID, RagMessage> messages,
+            AskMode mode,
+            SummaryLanguage language,
+            long contentVersion) {
         if (message == null) {
             return null;
         }
@@ -217,11 +295,16 @@ public class AskService {
                 mode.name(),
                 List.of(message.id()),
                 RagHashes.citationsHash(List.of(message)),
-                language);
+                language,
+                contentVersion);
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
-            RagLlmAnswer llmAnswer, Map<UUID, RagMessage> messages, AskMode mode, SummaryLanguage language) {
+            RagLlmAnswer llmAnswer,
+            Map<UUID, RagMessage> messages,
+            AskMode mode,
+            SummaryLanguage language,
+            long contentVersion) {
         List<RagCitation> citations = new ArrayList<>();
         List<UUID> citedIds = new ArrayList<>();
         List<RagMessage> citedMessages = new ArrayList<>();
@@ -243,7 +326,8 @@ public class AskService {
                 mode.name(),
                 citedIds,
                 RagHashes.citationsHash(citedMessages),
-                language);
+                language,
+                contentVersion);
     }
 
     private AskResponse cachedResponse(RagQuestionCache.CachedAsk answer, boolean contextOmitted) {
@@ -289,5 +373,13 @@ public class AskService {
             return text;
         }
         return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+    }
+
+    private record AskKey(
+            UUID conversationId,
+            UUID userId,
+            String questionHash,
+            SummaryLanguage language,
+            boolean consented) {
     }
 }

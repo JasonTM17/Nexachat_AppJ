@@ -25,7 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -57,6 +57,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AttachmentFlowIT {
+
+    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(30_000);
 
     /** Minimal PNG (signature + IHDR start) — passes the magic-byte whitelist. */
     private static final byte[] PNG_BYTES = hex("89504E470D0A1A0A"
@@ -120,7 +122,7 @@ class AttachmentFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8491" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        return "+8491" + String.format("%07d", PHONE_SEQ.incrementAndGet());
     }
 
     private TestUser registerUser(String displayName) throws Exception {

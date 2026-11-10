@@ -100,6 +100,10 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
 
+    /** Current conversation ids for privacy cleanup after an account's realtime bridges are revoked. */
+    @Query("SELECT m.conversation.id FROM ConversationMember m WHERE m.user.id = :userId")
+    List<UUID> findConversationIdsByUserId(@Param("userId") UUID userId);
+
     /**
      * Members whose mute is currently effective: {@code muted = true} and either
      * forever ({@code mutedUntil IS NULL}) or not yet expired. Used by push
