@@ -74,6 +74,24 @@ public final class PostgresTestDatabase implements AutoCloseable {
         return password;
     }
 
+    /** Whether {@code databaseName} is still registered in {@code pg_database}. */
+    public static boolean existsOnServer(String databaseName) {
+        String baseUrl = env("IT_DB_URL", DEFAULT_JDBC_URL);
+        String username = env("IT_DB_USER", DEFAULT_USER);
+        String password = env("IT_DB_PASSWORD", DEFAULT_PASSWORD);
+        String maintenanceUrl = JdbcCoordinates.from(baseUrl).urlFor("postgres");
+        try (Connection connection = DriverManager.getConnection(maintenanceUrl, username, password);
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT 1 FROM pg_database WHERE datname = ?")) {
+            statement.setString(1, databaseName);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not query PostgreSQL for database " + databaseName, exception);
+        }
+    }
+
     public DataSource dataSource() {
         SimpleDriverDataSource dataSource = new SimpleDriverDataSource();
         dataSource.setDriver(new org.postgresql.Driver());

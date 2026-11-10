@@ -526,6 +526,21 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void acknowledgedMessagesKeepTheirExistingActions() {
+        for (DeliveryStatus status : List.of(DeliveryStatus.DELIVERED, DeliveryStatus.READ)) {
+            ChatMessage target = message("acked-" + status, 8L, true, status, null);
+            viewModel.setReplyTarget(target);
+            assertEquals(target.getId(), state().getReplyTarget().getMessageId());
+            assertTrue(viewModel.canEdit(target));
+            assertTrue(viewModel.canDelete(target));
+            viewModel.toggleReaction(target, "👍");
+            verify(messageRepository).toggleReaction(target.getId(), CONVERSATION_ID, "👍");
+            viewModel.togglePin(target);
+            verify(messageRepository).pinMessage(CONVERSATION_ID, target.getId());
+        }
+    }
+
+    @Test
     public void pendingMessagesCannotBecomeReplyTarget() {
         viewModel.setReplyTarget(message("cm-1", null, true, DeliveryStatus.SENDING, null));
         assertNull(state().getReplyTarget());

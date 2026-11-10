@@ -60,7 +60,8 @@ public final class ArchiveListAdapter
                         ? binding.getRoot().getContext().getString(R.string.archive_tab_links)
                         : item.getLink().getUrl();
         binding.archiveRowTitle.setText(title);
-        binding.archiveRowIcon.setVisibility(file ? View.VISIBLE : View.GONE);
+        binding.archiveRowIcon.setVisibility(View.VISIBLE);
+        binding.archiveRowIcon.setImageResource(file ? R.drawable.ic_attach_file : R.drawable.ic_language);
         String details = ArchiveText.details(binding.getRoot().getContext(), currentState, item);
         if (file && attachment != null && attachment.getSizeBytes() != null
                 && attachment.getSizeBytes() >= 0L) {

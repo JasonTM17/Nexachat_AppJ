@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
@@ -89,6 +91,27 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMissingParam(MissingServletRequestParameterException ex) {
         return ResponseEntity.badRequest().body(ErrorResponse.of(
                 ApiErrorCode.VALIDATION_FAILED, "Missing request parameter: " + ex.getParameterName()));
+    }
+
+    /**
+     * A multipart request that omits its required part is a client error, not
+     * an internal failure. Spring raises this before the controller runs, so
+     * without this mapping the generic advice answered 500.
+     */
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ErrorResponse> handleMissingPart(MissingServletRequestPartException ex) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                ApiErrorCode.VALIDATION_FAILED, "Missing request part: " + ex.getRequestPartName()));
+    }
+
+    /**
+     * Malformed multipart framing (bad boundary, truncated body) is likewise a
+     * client error; only the upload-size overflow has its own 413 mapping.
+     */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex) {
+        return ResponseEntity.badRequest().body(ErrorResponse.of(
+                ApiErrorCode.VALIDATION_FAILED, "Malformed multipart request"));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
