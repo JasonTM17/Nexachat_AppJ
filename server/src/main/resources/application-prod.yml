@@ -23,6 +23,10 @@
 server:
   forward-headers-strategy: framework
   shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript
+    min-response-size: 1024
   error:
     include-exception: false
     include-message: never
@@ -37,15 +41,28 @@ logging:
 spring:
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  jpa:
+    open-in-view: false
+  flyway:
+    validate-on-migrate: true
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+      fail-on-null-for-primitives: false
+    mapper:
+      accept-case-insensitive-enums: false
   datasource:
     url: ${DATABASE_URL}
     username: ${DATABASE_USER}
     password: ${DATABASE_PASSWORD}
     hikari:
+      # Two default prod instances × 10 connections stays below Postgres max_connections=100.
       maximum-pool-size: 10
       minimum-idle: 2
       connection-timeout: 30000
       validation-timeout: 5000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
   servlet:
     multipart:
       max-file-size: 25MB

@@ -144,6 +144,19 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     @PreDestroy
     public void shutdown() {
+        for (String sessionId : Set.copyOf(socketsBySession.keySet())) {
+            try {
+                WebSocketSession socket = socketsBySession.get(sessionId);
+                if (socket != null && socket.isOpen()) {
+                    socket.close(CloseStatus.GOING_AWAY);
+                }
+            } catch (IOException failure) {
+                log.warn("Could not close STOMP session during shutdown");
+            } finally {
+                unbind(sessionId);
+                socketsBySession.remove(sessionId);
+            }
+        }
         expiryScheduler.shutdownNow();
     }
 

@@ -1,6 +1,7 @@
 # Keep the build context small and reproducible.
 target/
 **/target/
+src/test/
 .git/
 data/
 uploads/
@@ -10,3 +11,4 @@ uploads/
 .idea/
 .vscode/
 *.log
+*.md
