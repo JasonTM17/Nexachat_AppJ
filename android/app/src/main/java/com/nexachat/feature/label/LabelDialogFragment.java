@@ -23,9 +23,12 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.lifecycle.ViewModelProvider;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 
 /** Label manager and conversation assignment dialog. */
@@ -76,19 +79,29 @@ public final class LabelDialogFragment extends DialogFragment {
         status = new TextView(requireContext());
         status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         status.setVisibility(View.GONE);
-        content.addView(status, matchWrap());
+        LinearLayout.LayoutParams statusLp = matchWrap();
+        statusLp.bottomMargin = dp(8);
+        content.addView(status, statusLp);
 
-        retryButton = new Button(requireContext());
+        retryButton = new MaterialButton(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle);
         retryButton.setText(R.string.label_retry);
         retryButton.setMinHeight(dp(ROW_MIN_HEIGHT_DP));
         retryButton.setVisibility(View.GONE);
         retryButton.setOnClickListener(v -> viewModel.reloadLabels());
-        content.addView(retryButton, matchWrap());
+        LinearLayout.LayoutParams retryLp = matchWrap();
+        retryLp.bottomMargin = dp(8);
+        content.addView(retryButton, retryLp);
 
         progress = new ProgressBar(requireContext());
         progress.setIndeterminate(true);
         progress.setVisibility(View.GONE);
-        content.addView(progress, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        LinearLayout.LayoutParams progressLp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        progressLp.gravity = Gravity.CENTER_HORIZONTAL;
+        progressLp.bottomMargin = dp(8);
+        content.addView(progress, progressLp);
 
         ScrollView scroll = new ScrollView(requireContext());
         scroll.setFillViewport(false);
@@ -99,19 +112,26 @@ public final class LabelDialogFragment extends DialogFragment {
         content.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        modeButton = new Button(requireContext());
+        modeButton = new MaterialButton(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle);
         modeButton.setMinHeight(dp(ROW_MIN_HEIGHT_DP));
         modeButton.setOnClickListener(v -> {
             manageMode = !manageMode;
             render(viewModel.getUiState().getValue());
         });
-        content.addView(modeButton, matchWrap());
+        LinearLayout.LayoutParams modeLp = matchWrap();
+        modeLp.topMargin = dp(8);
+        content.addView(modeButton, modeLp);
 
-        createButton = new Button(requireContext());
+        createButton = new MaterialButton(requireContext());
         createButton.setText(R.string.label_create);
         createButton.setMinHeight(dp(ROW_MIN_HEIGHT_DP));
         createButton.setOnClickListener(v -> openEditor(null));
-        content.addView(createButton, matchWrap());
+        LinearLayout.LayoutParams createLp = matchWrap();
+        createLp.topMargin = dp(8);
+        content.addView(createButton, createLp);
 
         int title = manageMode ? R.string.label_manage_title : R.string.label_assign_title;
         androidx.appcompat.app.AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
@@ -191,9 +211,15 @@ public final class LabelDialogFragment extends DialogFragment {
             labelName.setEnabled(!label.isPending() && !state.isLabelsMutating()
                     && !state.isAssignmentSaving());
             labelName.setOnClickListener(v -> openEditor(label));
-            row.addView(labelName, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            nameLp.setMarginEnd(dp(8));
+            row.addView(labelName, nameLp);
 
-            Button delete = new Button(requireContext());
+            MaterialButton delete = new MaterialButton(
+                    requireContext(),
+                    null,
+                    com.google.android.material.R.attr.borderlessButtonStyle);
             delete.setText(R.string.action_delete);
             delete.setContentDescription(getString(R.string.label_delete_description, label.getName()));
             delete.setMinHeight(dp(ROW_MIN_HEIGHT_DP));
@@ -201,7 +227,9 @@ public final class LabelDialogFragment extends DialogFragment {
                     && !state.isAssignmentSaving());
             delete.setOnClickListener(v -> confirmDelete(label));
             row.addView(delete, wrapWrap());
-            rows.addView(row, matchWrap());
+            LinearLayout.LayoutParams rowLp = matchWrap();
+            rowLp.bottomMargin = dp(6);
+            rows.addView(row, rowLp);
         }
     }
 
@@ -243,14 +271,27 @@ public final class LabelDialogFragment extends DialogFragment {
 
         LinearLayout form = new LinearLayout(requireContext());
         form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(8), dp(8), dp(8), dp(8));
-        EditText name = new EditText(requireContext());
+        form.setPadding(dp(20), dp(12), dp(20), dp(8));
+
+        TextInputLayout nameLayout = new TextInputLayout(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.textInputOutlinedStyle);
+        float radius = getResources().getDimension(R.dimen.corner_md);
+        nameLayout.setBoxCornerRadii(radius, radius, radius, radius);
+        nameLayout.setHint(getString(R.string.label_name_hint));
+        nameLayout.setCounterEnabled(true);
+        nameLayout.setCounterMaxLength(LabelRules.MAX_NAME_CODE_POINTS);
+
+        TextInputEditText name = new TextInputEditText(nameLayout.getContext());
         name.setSingleLine(true);
         name.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        name.setHint(R.string.label_name_hint);
         name.setContentDescription(getString(R.string.label_name_hint));
         if (existing != null) name.setText(existing.getName());
-        form.addView(name, matchWrap());
+        nameLayout.addView(name);
+        LinearLayout.LayoutParams nameLp = matchWrap();
+        nameLp.bottomMargin = dp(12);
+        form.addView(nameLayout, nameLp);
 
         ChipGroup colorGroup = new ChipGroup(requireContext());
         colorGroup.setSingleSelection(true);
@@ -260,6 +301,8 @@ public final class LabelDialogFragment extends DialogFragment {
             Chip chip = new Chip(requireContext());
             chip.setId(View.generateViewId());
             chip.setCheckable(true);
+            chip.setCheckedIconVisible(true);
+            chip.setCheckedIconTint(ColorStateList.valueOf(Color.WHITE));
             chip.setText(LabelText.colorName(color));
             chip.setTextColor(Color.WHITE);
             chip.setChipBackgroundColor(ColorStateList.valueOf(color.getBackgroundColor()));
@@ -284,11 +327,13 @@ public final class LabelDialogFragment extends DialogFragment {
                     View checked = checkedId == View.NO_ID ? null : colorGroup.findViewById(checkedId);
                     LabelColor color = checked != null && checked.getTag() instanceof LabelColor value
                             ? value : LabelColor.INDIGO;
-                    String value = LabelRules.normalizeName(name.getText().toString());
+                    String value = LabelRules.normalizeName(
+                            name.getText() == null ? "" : name.getText().toString());
                     if (!LabelRules.isValidName(value)) {
-                        name.setError(getString(R.string.label_error_validation));
+                        nameLayout.setError(getString(R.string.label_error_validation));
                         return;
                     }
+                    nameLayout.setError(null);
                     if (existing == null) viewModel.createLabel(value, color);
                     else viewModel.updateLabel(existing.getId(), value, color);
                     editor.dismiss();

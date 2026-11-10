@@ -92,25 +92,11 @@ public final class AiConsentRepositoryTest {
 
     private static void awaitValue(AiConsentRepository repository, boolean value)
             throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (Boolean.valueOf(value).equals(repository.aiSummaryConsent().getValue())) {
-                return;
-            }
-            Thread.sleep(10L);
-        }
-        throw new AssertionError("Consent did not become " + value);
+        LiveDataTestSupport.awaitBoolean(repository.aiSummaryConsent(), value);
     }
 
     private static void awaitError(AiConsentRepository repository, SummaryError error)
             throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            if (error == repository.error().getValue()) {
-                return;
-            }
-            Thread.sleep(10L);
-        }
-        throw new AssertionError("Consent error did not become " + error);
+        LiveDataTestSupport.awaitError(repository.error(), error);
     }
 }
