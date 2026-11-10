@@ -123,6 +123,7 @@ public class AskService {
         Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
                 conversationId, questionEmbedding.model(), questionHash);
         if (exact.isPresent()
+                && exact.get().language() == language
                 && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
             stats.recordCacheHit();
             return cachedResponse(exact.get(), contextOmitted);
@@ -132,6 +133,7 @@ public class AskService {
         for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
                 conversationId, questionEmbedding.model())) {
             if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                    && candidate.ask().language() == language
                     && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
                 stats.recordCacheHit();
                 return cachedResponse(candidate.ask(), contextOmitted);
