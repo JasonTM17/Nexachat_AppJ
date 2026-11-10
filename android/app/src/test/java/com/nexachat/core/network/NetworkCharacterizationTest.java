@@ -83,10 +83,14 @@ public final class NetworkCharacterizationTest {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(frameSource.onBackpressureBuffer());
         when(stomp.subscribe(any())).thenReturn(Flowable.empty());
+        io.reactivex.rxjava3.processors.FlowableProcessor<StompClient.State> firstConnection =
+                PublishProcessor.<StompClient.State>create().toSerialized();
+        io.reactivex.rxjava3.processors.FlowableProcessor<StompClient.State> secondConnection =
+                PublishProcessor.<StompClient.State>create().toSerialized();
         Flowable<StompClient.State> openedAndClosed = Flowable.just(
                 StompClient.State.Open.INSTANCE,
                 new StompClient.State.Closed(1000, "test"));
-        when(stomp.connect(any(), any())).thenReturn(openedAndClosed, openedAndClosed);
+        when(stomp.connect(any(), any())).thenReturn(firstConnection, secondConnection, openedAndClosed);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         TokenRefresher refresher = mock(TokenRefresher.class);
@@ -98,13 +102,16 @@ public final class NetworkCharacterizationTest {
             invocation.<Runnable>getArgument(1).run();
             return true;
         });
+        TestScheduler eventDeliveryScheduler = new TestScheduler();
         RealtimeSession session = new RealtimeSession(
                 stomp, store, refresher, new Moshi.Builder().build(),
-                new ReconnectPolicy(), monitor, () -> Flowable.just(false), scheduler);
+                new ReconnectPolicy(), monitor, () -> Flowable.just(false), scheduler,
+                eventDeliveryScheduler);
 
         List<ChatEvent> events = new ArrayList<>();
         session.getEvents().subscribe(events::add);
         scheduler.triggerActions();
+        firstConnection.onNext(StompClient.State.Open.INSTANCE);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_ERRORS_DESTINATION);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
@@ -112,14 +119,20 @@ public final class NetworkCharacterizationTest {
         StompFrame duplicate = messageFrame();
         frameSource.onNext(duplicate);
         frameSource.onNext(duplicate);
+        eventDeliveryScheduler.triggerActions();
         assertEquals(2, events.size());
         assertTrue(events.get(0) instanceof ChatEvent.MessageCreated);
         assertTrue(events.get(1) instanceof ChatEvent.MessageCreated);
         assertEquals(((ChatEvent.MessageCreated) events.get(0)).getMessage().getId(),
                 ((ChatEvent.MessageCreated) events.get(1)).getMessage().getId());
 
+        firstConnection.onNext(new StompClient.State.Closed(1000, "test"));
+        firstConnection.onComplete();
         scheduler.advanceTimeBy(1_300L, TimeUnit.MILLISECONDS);
+        secondConnection.onNext(StompClient.State.Open.INSTANCE);
         verify(stomp, times(2)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+        secondConnection.onNext(new StompClient.State.Closed(1000, "test"));
+        secondConnection.onComplete();
         session.ensureConnected();
         scheduler.triggerActions();
         verify(stomp, times(3)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);

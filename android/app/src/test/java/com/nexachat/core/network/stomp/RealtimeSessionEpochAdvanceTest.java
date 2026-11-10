@@ -162,7 +162,7 @@ public final class RealtimeSessionEpochAdvanceTest {
     }
 
     @Test
-    public void connectingStatePublicationIsAtomicWithSessionEpochAdvance() throws Exception {
+    public void connectingStateObserverDoesNotBlockSessionEpochAdvance() throws Exception {
         TestScheduler scheduler = new TestScheduler();
         BehaviorProcessor<Boolean> tokensPresent = BehaviorProcessor.createDefault(true);
         AtomicReference<Tokens> storedTokens = new AtomicReference<>(
@@ -189,7 +189,8 @@ public final class RealtimeSessionEpochAdvanceTest {
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         RealtimeSession session = new RealtimeSession(stomp, store, refresher,
                 new Moshi.Builder().build(), new ReconnectPolicy(() -> 0.0), monitor,
-                () -> Flowable.just(false), scheduler);
+                () -> Flowable.just(false), scheduler,
+                io.reactivex.rxjava3.schedulers.Schedulers.io());
 
         CountDownLatch connectingStateEntered = new CountDownLatch(1);
         CountDownLatch releaseConnectingState = new CountDownLatch(1);
@@ -250,9 +251,11 @@ public final class RealtimeSessionEpochAdvanceTest {
         epochAdvance.join(TimeUnit.SECONDS.toMillis(5L));
         assertFalse("token read publication should finish", tokenRead.isAlive());
         assertFalse("epoch advance should finish", epochAdvance.isAlive());
-        assertTrue("Connecting must publish atomically with its session epoch",
-                connectingStateObserved && epochAdvanceBlockedByPublication);
-        assertTrue(oldEpochCurrentDuringPublication);
+        assertTrue("Connecting state should reach the observer", connectingStateObserved);
+        assertFalse("session epoch advancement must not wait for a state observer",
+                epochAdvanceBlockedByPublication);
+        assertFalse("epoch should advance before the blocked observer is released",
+                oldEpochCurrentDuringPublication);
         assertNull(observerFailure.get());
         assertNull(tokenReadFailure.get());
         assertEquals(0L, epochAdvanceFinished.getCount());
