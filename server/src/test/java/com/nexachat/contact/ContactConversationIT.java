@@ -3,8 +3,11 @@ package com.nexachat.contact;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,6 +66,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ContactConversationIT {
 
     @DynamicPropertySource
@@ -153,6 +157,7 @@ class ContactConversationIT {
     // ---------------------------------------------------------------- search
 
     @Test
+    @Order(1)
     void userSearch_phoneExactAndPrefix() throws Exception {
         // Exact E.164 lookup → list of exactly one.
         mockMvc.perform(get("/api/v1/users/search")
@@ -163,13 +168,24 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
                 .andExpect(jsonPath("$[0].phone").value(bob.phone()));
 
-        // Prefix search on the unique displayName tag → bob found, caller excluded.
+        // Prefix search on the unique displayName tag → bob found, caller excluded; phone hidden.
         mockMvc.perform(get("/api/v1/users/search")
                         .param("q", uniqueTag)
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(bob.id().toString()));
+                .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
+                .andExpect(jsonPath("$[0].phone").doesNotExist());
+
+        // Valid E.164 that is not bob's exact number → empty list (no prefix match).
+        char last = bob.phone().charAt(bob.phone().length() - 1);
+        char flipped = last == '0' ? '1' : '0';
+        String nearMiss = bob.phone().substring(0, bob.phone().length() - 1) + flipped;
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("phone", nearMiss)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
 
         // Neither param / both params → 400 VALIDATION_FAILED.
         getJson("/api/v1/users/search", alice.accessToken())
@@ -190,9 +206,37 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @Test
+    @Order(2)
+    void userSearch_displayNameRevealsPhoneForExistingContactOnly() throws Exception {
+        mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("q", uniqueTag)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phone").doesNotExist());
+
+        postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("q", uniqueTag)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phone").value(bob.phone()));
+
+        mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+    }
+
     // -------------------------------------------------------------- contacts
 
     @Test
+    @Order(3)
     void contactsLifecycle() throws Exception {
         // Add by phone → 201 with the resolved user fields.
         postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
@@ -252,6 +296,7 @@ class ContactConversationIT {
     }
 
     @Test
+    @Order(4)
     void nonOwnerCannotPatchAnotherUsersContactAlias() throws Exception {
         postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
                 .andExpect(status().isCreated());
@@ -289,6 +334,7 @@ class ContactConversationIT {
     }
 
     @Test
+    @Order(5)
     void nonOwnerCannotDeleteAnotherUsersContact() throws Exception {
         postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
                 .andExpect(status().isCreated());
@@ -325,6 +371,7 @@ class ContactConversationIT {
     // ------------------------------------------------- direct conversations
 
     @Test
+    @Order(6)
     void directConversationIsIdempotentBothDirections() throws Exception {
         // A opens by userId → 201 with both members.
         MvcResult opened = postJson("/api/v1/conversations/direct", alice.accessToken(),
@@ -388,6 +435,7 @@ class ContactConversationIT {
      * the loser hits the direct_key UNIQUE violation and re-reads the winner.
      */
     @Test
+    @Order(7)
     void concurrentDirectOpenYieldsSingleRow() throws Exception {
         // carol↔alice — a pair untouched by the other tests so the 201-vs-200
         // assertions elsewhere stay order-independent.

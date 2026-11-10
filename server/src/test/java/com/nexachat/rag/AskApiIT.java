@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.message.MessageService;
+import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -19,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -27,10 +30,23 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -65,6 +81,10 @@ class AskApiIT {
     private ConversationRepository conversationRepository;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private MessageService messageService;
+    @MockitoSpyBean
+    private RagQuestionCache questionCache;
 
     private User caller;
     private User peer;
@@ -143,6 +163,7 @@ class AskApiIT {
 
     @Test
     void theSameQuestionIsReplayedFromTheCache() throws Exception {
+        grantAiConsent(caller);
         addMessage(peer.getId(), "The budget was approved at 1,200 dollars.");
 
         postAsk(caller, "{\"question\":\"How much budget was approved?\"}")
@@ -154,6 +175,104 @@ class AskApiIT {
                 .andExpect(jsonPath("$.mode").value("CACHE"))
                 .andExpect(jsonPath("$.usage.cached").value(true))
                 .andExpect(jsonPath("$.usage.llmCalls").value(0));
+    }
+
+    @Test
+    void memberWithoutConsentCannotReplayAnotherMembersCachedLlmAnswer() throws Exception {
+        TestMessage fact = addMessage(peer.getId(),
+                "The server migration is scheduled for March 14 at 02:00.");
+        String providerAnswer = "A provider answer from another member's consented request.";
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                providerAnswer,
+                List.of(new RagCitation(fact.id(), fact.seq(), "The server migration is scheduled.")),
+                "LLM", List.of(fact.id()), "valid-for-this-fixture", com.nexachat.summary.SummaryLanguage.EN);
+        doReturn(Optional.of(cached)).when(questionCache)
+                .findExact(eq(conversationId), any(String.class), any(String.class));
+        doReturn(true).when(questionCache).citationsValid(any(), any());
+
+        MvcResult result = postAsk(caller,
+                "{\"question\":\"When is the server migration scheduled?\",\"language\":\"EN\"}")
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertThat(body.path("mode").asText()).isEqualTo("EXTRACTIVE");
+        assertThat(body.path("answer").asText()).contains("March 14");
+        assertThat(body.path("answer").asText()).doesNotContain(providerAnswer);
+        verify(questionCache, never()).findExact(eq(conversationId), any(String.class), any(String.class));
+    }
+
+    @Test
+    void newTextMessageInvalidatesCachedAnswer() throws Exception {
+        grantAiConsent(caller);
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+
+        postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("EXTRACTIVE"));
+        postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("CACHE"));
+
+        messageService.send(peer.getId(), conversationId,
+                new SendMessageRequest(UUID.randomUUID(), "TEXT",
+                        "Correction: the server migration is now scheduled for March 21 at 03:00.",
+                        null, List.of()));
+
+        MvcResult result = postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
+        assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
+    }
+
+    @Test
+    void inFlightAskCannotRepublishCachedAnswerAfterNewTextInvalidation() throws Exception {
+        grantAiConsent(caller);
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+        CountDownLatch saveReached = new CountDownLatch(1);
+        CountDownLatch allowSave = new CountDownLatch(1);
+        AtomicBoolean pauseFirstSave = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (pauseFirstSave.compareAndSet(true, false)) {
+                saveReached.countDown();
+                if (!allowSave.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume the ask cache write");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(questionCache).save(eq(conversationId), any(String.class), any(String.class),
+                any(float[].class), any(RagQuestionCache.CachedAsk.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlightAsk = executor.submit(() -> postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(saveReached.await(10, TimeUnit.SECONDS)).isTrue();
+            messageService.send(peer.getId(), conversationId,
+                    new SendMessageRequest(UUID.randomUUID(), "TEXT",
+                            "Correction: the server migration is now scheduled for March 21 at 03:00.",
+                            null, List.of()));
+            allowSave.countDown();
+            inFlightAsk.get(10, TimeUnit.SECONDS);
+
+            MvcResult nextAsk = postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn();
+            JsonNode body = objectMapper.readTree(nextAsk.getResponse().getContentAsString());
+            assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
+            assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
+        } finally {
+            allowSave.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
@@ -202,6 +321,10 @@ class AskApiIT {
     private User createUser(String displayName) {
         String phone = "+849" + String.format("%09d", Math.floorMod(System.nanoTime(), 1_000_000_000L));
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
+    }
+
+    private void grantAiConsent(User user) {
+        jdbcTemplate.update("UPDATE users SET ai_summary_consent = TRUE WHERE id = ?", user.getId());
     }
 
     private void addMember(UUID userId) {

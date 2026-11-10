@@ -24,17 +24,19 @@ public final class SplashSession {
      * {@code refresh}. Otherwise a successful refresh (or a transient network failure)
      * navigates to the inbox; any other failure navigates to login.
      *
-     * @param hasValidRefresh one-shot probe for a decryptable stored session
+     * @param hasValidRefresh one-shot probe for a decryptable active session
+     * @param hasStoredRefreshCredential one-shot probe for stored credentials after reauth closure
      * @param refresh one-shot token refresh call
      * @return the navigation event to emit
      */
     public static Single<SplashNavEvent> restoreDestination(
             Single<Boolean> hasValidRefresh,
-            Single<Result<Boolean>> refresh
-    ) {
+            Single<Boolean> hasStoredRefreshCredential,
+            Single<Result<Boolean>> refresh) {
         return hasValidRefresh.flatMap(hasValid -> {
             if (!Boolean.TRUE.equals(hasValid)) {
-                return Single.just(SplashNavEvent.ToLogin.INSTANCE);
+                return hasStoredRefreshCredential.map(stored ->
+                        new SplashNavEvent.ToLogin(Boolean.TRUE.equals(stored)));
             }
             return refresh.map(SplashSession::toDestination);
         });
@@ -48,6 +50,10 @@ public final class SplashSession {
                 && failure.getError() instanceof ApiError.Network) {
             return SplashNavEvent.ToInbox.INSTANCE;
         }
-        return SplashNavEvent.ToLogin.INSTANCE;
+        if (result instanceof Result.Failure<?> failure
+                && failure.getError() instanceof ApiError.SessionExpired) {
+            return new SplashNavEvent.ToLogin(true);
+        }
+        return new SplashNavEvent.ToLogin(false);
     }
 }

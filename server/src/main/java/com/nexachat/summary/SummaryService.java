@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -197,15 +198,28 @@ public class SummaryService {
     static String contentHash(SummaryWindow window) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateHashField(digest, Integer.toString(window.messages().size()));
             for (SummaryMessage message : window.messages()) {
-                String value = message.id() + ":"
-                        + (message.editedAt() == null ? "" : message.editedAt().toString())
-                        + "\n";
-                digest.update(value.getBytes(StandardCharsets.UTF_8));
+                updateHashField(digest, message.id() == null ? null : message.id().toString());
+                updateHashField(digest, Long.toString(message.seq()));
+                updateHashField(digest, message.senderId() == null ? null : message.senderId().toString());
+                updateHashField(digest, message.senderName());
+                updateHashField(digest, message.text());
+                updateHashField(digest, message.createdAt() == null ? null : message.createdAt().toString());
+                updateHashField(digest, message.editedAt() == null ? null : message.editedAt().toString());
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private static void updateHashField(MessageDigest digest, String value) {
+        byte[] bytes = value == null ? null : value.getBytes(StandardCharsets.UTF_8);
+        int length = bytes == null ? -1 : bytes.length;
+        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(length).array());
+        if (bytes != null) {
+            digest.update(bytes);
         }
     }
 }

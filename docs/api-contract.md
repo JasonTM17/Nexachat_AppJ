@@ -76,6 +76,8 @@ Android client can consume the API but no dedicated screen is merged into
 | V23 | — | Intentionally unused/reserved; no file exists. |
 | V24 | `V24__hot_path_perf.sql` | Drops the unused `idx_conv_inbox` index; no table or column change. |
 | V25 | `V25__refresh_rotation_replay.sql` | Adds encrypted keyed-refresh response replay metadata and bounded cleanup support. |
+| V26–V27 | — | Used by the parallel account-deletion (`V26`) and email-OTP recovery (`V27`) branches; Google sign-in uses the next shared version, V28. |
+| V28 | `V28__google_signin.sql` | `user_identities` (one external identity per provider per user, `ON DELETE CASCADE`) and hashed single-use `google_signin_nonces`. |
 
 ## Operational notes
 
@@ -85,6 +87,11 @@ Android client can consume the API but no dedicated screen is merged into
 |---|---|---|
 | `nexachat.message.recall-window` | `PT24H` | Author recall window; inclusive boundary; valid `PT1M`–`P7D`; a current group admin bypasses it. |
 | `nexachat.auth.refresh-replay.key` (`NEXACHAT_REFRESH_REPLAY_KEY`) | empty | Optional Base64 encoding of exactly 32 random bytes; enables encrypted response recovery for matching keyed refresh retries during the fixed 30-second window. |
+| `nexachat.google.signin.enabled` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`) | `false` | Enables the Google Identity endpoints; every one answers 404 while off. |
+| `nexachat.google.signin.web-client-id` (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`) | empty | Required when the feature is on; the expected `aud` of the ID token and the client ID the Android app passes to Credential Manager. |
+| `nexachat.google.signin.android-client-ids` (`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) | empty | Required when Google sign-in is enabled; comma-separated Android OAuth client IDs trusted as the ID token's `azp`. |
+| `nexachat.google.signin.jwks-uri` (`NEXACHAT_GOOGLE_JWKS_URI`) | `https://www.googleapis.com/oauth2/v3/certs` | Google's rotating public keys; override only for tests. |
+| `nexachat.google.signin.nonce-ttl-seconds` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS`) | `300` | Single-use nonce lifetime. |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
 | `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window; an older `since` forces `reactionsFullRefresh`. |
 | `nexachat.reminders.enabled` | `true` | Enables the due-time reminder poll (`ReminderScheduler`); the purge job is configured separately under `nexachat.retention.jobs`. |
@@ -138,8 +145,9 @@ These keys are Spring properties; override them with the matching
 - **Base URL:** `http://localhost:8080` · **Path prefix:** `/api/v1`
 - **Auth:** JWT access token in the `Authorization: Bearer <accessToken>`
   header. Public (no token): `POST /auth/register`, `POST /auth/login`,
-  `POST /auth/refresh`, `/actuator/health`, and the `/ws` handshake (the JWT
-  travels in the STOMP CONNECT frame there instead).
+  `POST /auth/refresh`, `POST /auth/google`, `POST /auth/google/nonce`
+  (Google sign-in; 404 while disabled), `/actuator/health`, and the `/ws`
+  handshake (the JWT travels in the STOMP CONNECT frame there instead).
 - **Tokens:** access TTL 900 s (`accessTokenExpiresIn`); refresh TTL 14 days;
   refresh tokens rotate on use; `PATCH /auth/password` revokes other sessions
   by design.
@@ -175,7 +183,11 @@ These keys are Spring properties; override them with the matching
 | `REFRESH_RECOVERY_UNAVAILABLE` | 409 | Keyed retry cannot recover the original response; this error does not itself revoke the refresh family |
 | `REFRESH_SERVICE_UNAVAILABLE` | 503 | Replay-response encryption failed during rotation |
 | `UNAUTHORIZED` | 401 | Missing/invalid Bearer token |
-| `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change |
+| `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change, or the re-auth password did not match on link/unlink |
+| `GOOGLE_SIGN_IN_FAILED` | 401 | The Google ID token failed signature/issuer/audience/expiry/nonce verification |
+| `GOOGLE_ACCOUNT_NOT_LINKED` | 404 | The Google account is not linked to a NexaChat account |
+| `GOOGLE_ACCOUNT_ALREADY_LINKED` | 409 | That Google account (or another one for this user) is already linked |
+| `LAST_SIGN_IN_METHOD` | 409 | Unlinking would leave the account with no password to sign in with |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
 | `USER_NOT_FOUND` | 404 | Target user does not exist |
@@ -371,11 +383,44 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 |
+| `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled |
+| `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 · `RATE_LIMITED` 429 |
+| `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
+| `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose, bound to the caller; a public sign-in nonce or another account's link nonce is rejected) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
+| `POST /auth/identities/google` | Bearer | `{idToken, nonce, password}` — password re-authenticates the owner | `204` empty (idempotent for the same Google account) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_ALREADY_LINKED` 409 · `RATE_LIMITED` 429 |
+| `DELETE /auth/identities/google` | Bearer | `{password}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `LAST_SIGN_IN_METHOD` 409 |
+
+**Sign in with Google (V28).** Disabled unless
+`nexachat.google.signin.enabled=true` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`); while
+disabled every endpoint above answers `404 NOT_FOUND` and the Android build with
+no `-PgoogleWebClientId=` hides the buttons. The flow is: request a nonce, let
+Credential Manager return a Google ID token carrying that nonce, exchange it for
+a normal access/refresh pair. The server verifies the signature against Google's
+JWKS, `iss` (`accounts.google.com` or `https://accounts.google.com`), `aud` (the
+configured web client ID), `exp` (60 s skew) and the single-use nonce; then it
+maps the immutable `sub` claim to `user_identities`. The token must carry exactly
+one audience (the configured web client ID), a trustworthy `azp` when present, and
+an `iat` no more than 60 s in the future. An unlinked Google account
+returns `404 GOOGLE_ACCOUNT_NOT_LINKED` (the generic message never says whether
+the Google account exists); automatic account creation and email-based linking
+are not implemented. Linking requires the account password and refuses to move a
+Google account already linked to another user (`409`); unlinking also requires
+the password and is refused with `409 LAST_SIGN_IN_METHOD` when the account has
+no password left. Nonces are stored as SHA-256 hex and bound to their purpose
+(`signin` or `link`). A link nonce is also bound to its requesting account and
+the unique access-token `jti` used to request it; only the SHA-256 hash of the
+`jti` is stored. Access tokens without a `jti` remain valid for normal APIs but
+must be refreshed before starting a Google link flow. A refresh during linking
+requires restarting that flow with a fresh nonce. Nonces are consumed by one
+conditional `UPDATE` in its own transaction, so a failed sign-in cannot release
+a nonce for replay.
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: per client
-IP, register and login 10 req / 5 min and refresh 30 req / 5 min; register and
-login are additionally limited per phone number to 20 req / 5 min.
+IP, register and login 10 req / 5 min and refresh 30 req / 5 min; the Google
+nonce endpoint allows 30 req / 5 min and Google sign-in 20 req / 5 min; register
+and login are additionally limited per phone number to 20 req / 5 min. Link and
+unlink are limited per user to 10 req / 5 min.
 
 **Password limits:** register and change-password reject a secret that bcrypt cannot
 hash in full (more than 72 UTF-8 bytes, or containing NUL) with `400 VALIDATION_FAILED`;
