@@ -1,18 +1,36 @@
 # Play Store data-safety and listing facts
 
-Source: app and server code at `42831fe` (2026-11-10); site inventory includes
-the privacy and terms pages merged with this document. This is a code-derived
-worksheet for the Google Play Data safety form and the privacy policy. It is not
-a legal opinion and not a submitted declaration. Answers describe the release
-build with the network security policy in `android/app/src/main/`; the `debug`
-and `localSmoke` source sets are development-only and are not shipped.
+Source: app and server code at `15bb91e` (2026-11-11) on `main`, plus the
+account-recovery and account-deletion change set that is not merged yet:
+`feat/server-account-deletion` (API, data changes and D4 hardening),
+`feat/server-email-otp-deletion` (recovery email, email OTP, public deletion
+and password-reset routes), `feat/android-account-deletion` (Settings > Delete
+account), `feat/android-recovery-email`, `feat/android-forgot-password`, and
+the site deletion page on `feat/site-web-account-deletion` (which contains
+`docs/site-account-deletion`). This is a code-derived worksheet for the Google
+Play Data safety form and the privacy policy. It is not a legal opinion and not
+a submitted declaration. Answers describe the release build with the network
+security policy in `android/app/src/main/`; the `debug` and `localSmoke` source
+sets are development-only and are not shipped.
 
 Each answer is marked:
 
-- **Supported by code** — the repository implements the described behaviour.
+- **Supported by code (main)** — the repository implements the described
+  behaviour on `main` at `15bb91e`.
+- **Supported by code (branch)** — implemented on the named branch, not in
+  `main`.
+- **Pending merge** — depends on one or more named branches; re-verify at the
+  merge commit before submitting the form.
 - **Not supported** — the repository has no code path for that collection.
 - **Needs owner decision** — the answer depends on the shipped build, operator
   configuration, or a product/legal decision that the repository cannot make.
+
+The account-deletion and recovery-email answers are **pending merge**. Do not
+submit the Data safety form for a build that lacks
+`feat/server-account-deletion`, `feat/server-email-otp-deletion`,
+`feat/android-account-deletion`, `feat/android-recovery-email`,
+`feat/android-forgot-password` and the site deletion page: the deletion and
+recovery answers below would be false for that build.
 
 The form's "collected" means data transmitted off the device and stored. Data
 that exists only in app-private storage is listed separately in
@@ -21,25 +39,27 @@ that exists only in app-private storage is listed separately in
 Paths below are repository-relative. Unless a path starts with `android/` or
 `server/`, server Java paths are under `server/src/main/java/com/nexachat/`,
 server resources are under `server/src/main/resources/`, and Android paths are
-under `android/app/src/main/`.
+under `android/app/src/main/`. A path marked `branch <name>:` is read from that
+branch, not from `main`.
 
 ## Listing facts from the build
 
 | Fact | Value | Evidence | Status |
 |---|---|---|---|
-| App name | NexaChat | `android/app/src/main/res/values/strings.xml:3`, `android/app/src/main/res/values-vi/strings.xml:3` | Supported by code |
-| Release application ID | `com.nexachat` | `android/app/build.gradle:143` | Supported by code |
-| Debug / localSmoke IDs | `com.nexachat.debug`, `com.nexachat.localsmoke` | `android/app/build.gradle:192`, `:203` | Supported by code |
-| minSdk / targetSdk / compileSdk | 26 / 36 / 36 | `android/app/build.gradle:140-145` | Supported by code |
-| Default version name / code | `1.0.0` / `1`, overridden by release properties | `android/app/build.gradle:123-136` | Supported by code |
-| Locales | English (default) and Vietnamese | `android/app/src/main/res/values/`, `android/app/src/main/res/values-vi/`; `core/common/AppLocaleManager.java:19-24` | Supported by code |
-| ABI filters | `arm64-v8a`, `x86_64` | `android/app/build.gradle:157-159` | Supported by code |
-| Ads / in-app purchases | No ad, billing, or purchase SDK in the dependency catalog | `android/gradle/libs.versions.toml:40-112`, `android/app/build.gradle:319-387` | Supported by code (owner still declares "No ads") |
-| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code; `firebase-messaging` is the only Firebase module. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:100-102`, `android/app/build.gradle:375-376`; imports are Firebase core (`notification/FirebaseConfigDetector.java:7`), `firebase-messaging` (`notification/NexaFirebaseMessagingService.java:6-7`), and GMS `Tasks` (`notification/FirebaseTokenSource.java:4`) only; no analytics or crash SDK | Supported by code |
-| Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code |
-| Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code |
-| Account creation | Yes, by phone + password | `server/src/main/java/com/nexachat/auth/AuthController.java:40-45`; Android auth feature | Supported by code |
-| Account deletion | No in-app or REST path | `tools/fcm-live-check/README.md:51-52`; no deletion endpoint in `server/**/Controller.java` | Not supported |
+| App name | NexaChat | `android/app/src/main/res/values/strings.xml:3`, `android/app/src/main/res/values-vi/strings.xml:3` | Supported by code (main) |
+| Release application ID | `com.nexachat` | `android/app/build.gradle:155` | Supported by code (main) |
+| Debug / localSmoke IDs | `com.nexachat.debug`, `com.nexachat.localsmoke` | `android/app/build.gradle:205`, `:216` | Supported by code (main) |
+| minSdk / targetSdk / compileSdk | 26 / 36 / 36 | `android/app/build.gradle:152-157` | Supported by code (main) |
+| Default version name / code | `1.0.0` / `1`, overridden by release properties | `android/app/build.gradle:158-159` | Supported by code (main) |
+| Locales | English (default) and Vietnamese | `android/app/src/main/res/values/`, `android/app/src/main/res/values-vi/`; `core/common/AppLocaleManager.java:19-24` | Supported by code (main) |
+| ABI filters | `arm64-v8a`, `x86_64` | `android/app/build.gradle:170` | Supported by code (main) |
+| Ads / in-app purchases | No ad, billing, or purchase SDK in the dependency catalog | `android/gradle/libs.versions.toml:31-108`, `android/app/build.gradle:332-400` | Supported by code (main; owner still declares "No ads") |
+| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code; `firebase-messaging` is the only Firebase module. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:31-108`, `android/app/build.gradle:389`; imports are Firebase core (`notification/FirebaseConfigDetector.java:7`), `firebase-messaging` (`notification/NexaFirebaseMessagingService.java:6-7`), and GMS `Tasks` (`notification/FirebaseTokenSource.java:4`) only; no analytics or crash SDK | Supported by code (main) |
+| Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code (main) |
+| Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code (main) |
+| Account creation | Yes, by phone + password (`POST /api/v1/auth/register`). Google sign-in does not create an account; an unlinked Google account is refused. | `server/src/main/java/com/nexachat/auth/AuthController.java:40-44`; `auth/google/GoogleSignInService.java:84-101`; `db/migration/V28__google_signin.sql` | Supported by code (main) |
+| Sign-in methods | Phone + password; optional Google sign-in for accounts that previously linked Google from Settings while signed in. The Google feature is off unless the operator enables it. | `auth/google/GoogleAuthController.java:47-86`; `auth/google/GoogleSignInService.java:84-101`, `:122-149`; `application.yml:61-73` | Supported by code (main; feature flag) |
+| Account deletion | In-app Profile (Settings) > Delete account, confirmed with the current password, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` describes the same steps and the lost-device flow (phone + code to a verified recovery email; the web form is hidden until the operator configures its API origin). | `branch feat/server-account-deletion:user/AccountDeletionService.java`, `branch feat/server-account-deletion:user/UserController.java:52-57`; `branch feat/android-account-deletion:feature/profile/DeleteAccountFragment.java`; `branch feat/site-web-account-deletion:site/delete-account.html` | Pending merge |
 
 ## Data the app sends to the NexaChat server
 
@@ -48,23 +68,26 @@ retention job or an explicit delete action removes it.
 
 | Data | What is sent / stored | Evidence | Status |
 |---|---|---|---|
-| Account identity | E.164 phone number, password, display name; password is BCrypt-hashed server-side and never returned | `auth/dto/RegisterRequest.java:12-16`; `user/User.java:33-42`; `config/SecurityConfig.java:66` | Supported by code |
-| Session device label | The `User-Agent` request header is stored as `refresh_tokens.device_label`; refresh tokens are stored only as SHA-256 hashes | `auth/AuthController.java:28`, `:42-56`; `db/migration/V1__init.sql:25-34`; `auth/TokenService.java:133-137` | Supported by code |
-| Profile name and avatar | Display name, avatar image bytes; avatar URL is part of the public profile response | `user/dto/UpdateProfileRequest.java:9-11`; `attachment/AvatarController.java:50-60`; `user/dto/UserResponse.java:11-15` | Supported by code |
-| Phone discovery | The user types a phone number or display-name prefix; the server returns matching profiles including the phone field | `data/ContactsRepository.java:120-127`; `user/UserController.java:47-55`; `user/UserService.java:77-94`; `user/dto/UserResponse.java:11` | Supported by code |
-| Contacts | A user can add another user by phone; the server stores the contact edge and the owner's private alias | `db/migration/V1__init.sql:41-48`; `contact/ContactService.java` | Supported by code |
-| Messages | Text, message type, client message id, reply target, mentions, edit/delete state, timestamps | `db/migration/V1__init.sql:88-101`; `db/migration/V17__message_mentions.sql`; `message/MessageService.java:1083-1089` | Supported by code |
-| Attachments | File bytes and metadata: original name, MIME, size, width/height, duration, BlurHash; stored on the file volume | `db/migration/V1__init.sql:108-120`; `attachment/AttachmentService.java`; `application.yml:85-86` | Supported by code |
-| Read / delivered watermarks | Read and delivered sequence watermarks | `db/migration/V7__p0_receipts_sync_fcm.sql`; `docs/websocket-protocol.md` | Supported by code |
-| Reactions, pins | Emoji reactions, reaction events, pinned message ids | `db/migration/V3__interactions.sql`, `V10__reaction_events_idempotency_device_tokens.sql` | Supported by code |
-| Groups and invites | Group title, members, roles, invite-token hashes, join requests, bans | `db/migration/V20__group_invite_links.sql`; `docs/api-contract.md:127-128` | Supported by code |
-| Polls | Question, options, votes, close state, versioned change feed | `db/migration/V15__group_polls.sql` | Supported by code |
-| Reminders | Title, time, repeat rule, delivery state | `db/migration/V14__conversation_reminders.sql` | Supported by code |
-| Labels | Private label name/colour and per-conversation assignments | `db/migration/V18__conversation_labels.sql` | Supported by code |
-| Presence | Last-seen timestamp, online state; `showPresence` / `showSeen` settings | `db/migration/V4__presence.sql`; `user/User.java:47-60`; `docs/known-limitations.md:14-15` | Supported by code |
-| Calls | Invite/accept/reject/end, SDP and ICE payloads; SDP/ICE are relayed in memory, not persisted; call metadata is stored | `docs/calls.md:45-46`, `:115-116`; `db/migration/V5__calls.sql` | Supported by code |
-| Push registration | FCM registration token and platform; only when Firebase is configured and a session exists | `notification/DeviceTokenSyncExecutor.java:65-101`; `notification/DeviceTokenService.java:31-62`; `db/migration/V7__p0_receipts_sync_fcm.sql:15-25` | Supported by code |
-| AI request data | Summary scope or RAG question, and, when external AI is enabled, redacted message text sent to the configured provider | `application.yml:148-210`; `docs/ai-summary.md:90-95`; `docs/rag.md:77-112` | Supported by code; external call is owner-configured |
+| Account identity | E.164 phone number, password, display name; password is BCrypt-hashed server-side and never returned | `auth/dto/RegisterRequest.java:12-16`; `user/User.java:33-42`; `config/SecurityConfig.java:67` | Supported by code (main) |
+| Recovery email (optional) | A user-supplied email address, normalized to lowercase and stored in `users.email`; it is **verified** by a 6-digit code before use, and `users.email_verified_at` records the verification. The address is owner-only: it is not in `UserResponse`, other users' profile views, or search. It is used for account-recovery, account-deletion, and password-reset codes, not for marketing. A verified address is unique among active accounts. | `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:1-11`; `branch feat/server-email-otp-deletion:user/dto/MyProfileResponse.java`; `user/dto/UserResponse.java`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:44-56`; `branch feat/server-email-otp-deletion:user/EmailRecoveryService.java` | Pending merge |
+| Email OTP records | Per-code row: purpose (`VERIFY_EMAIL`, `DELETE_ACCOUNT`, `RESET_PASSWORD`), recipient address, an HMAC-SHA256 hash of the 6-digit code, expiry, attempt count and consumed timestamp. The plaintext code is not stored. | `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:13-31`; `branch feat/server-email-otp-deletion:recovery/OtpCodeHasher.java:23-43`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:108-132` | Pending merge |
+| Google identity (optional) | Google OpenID Connect `sub` (the immutable account identifier), the Google email at link time, and the link timestamp, stored in `user_identities`. The email is display-only and never used to match accounts. Linking requires the current password. The first Google sign-in for an unlinked `sub` is refused; Google never creates an account. | `db/migration/V28__google_signin.sql`; `auth/google/UserIdentity.java`; `auth/google/GoogleSignInService.java:84-101`, `:122-149` | Supported by code (main) |
+| Session device label | The `User-Agent` request header is stored as `refresh_tokens.device_label`; refresh tokens are stored only as SHA-256 hashes | `auth/AuthController.java:28`, `:42-56`; `db/migration/V1__init.sql:25-34`; `auth/TokenService.java:133-137` | Supported by code (main) |
+| Profile name and avatar | Display name, avatar image bytes; avatar URL is part of the public profile response | `user/dto/UpdateProfileRequest.java:9-11`; `attachment/AvatarController.java:50-60`; `user/dto/UserResponse.java:12-23` | Supported by code (main) |
+| Phone discovery | The user types a phone number or display-name prefix. An exact phone lookup returns the matching profile with the phone. A display-name prefix search returns profiles but omits the `phone` field unless the caller already has that user as a contact. | `data/ContactsRepository.java:120-127`; `user/UserController.java:51-56`; `user/UserService.java:76-107`; `user/dto/UserResponse.java:12-23` | Supported by code (main) |
+| Contacts | A user can add another user by phone; the server stores the contact edge and the owner's private alias | `db/migration/V1__init.sql:41-48`; `contact/ContactService.java` | Supported by code (main) |
+| Messages | Text, message type, client message id, reply target, mentions, edit/delete state, timestamps | `db/migration/V1__init.sql:88-101`; `db/migration/V17__message_mentions.sql`; `message/MessageService.java:406-449` | Supported by code (main) |
+| Attachments | File bytes and metadata: original name, MIME, size, width/height, duration, BlurHash; stored on the file volume | `db/migration/V1__init.sql:108-120`; `attachment/AttachmentService.java`; `application.yml:99-100` | Supported by code (main) |
+| Read / delivered watermarks | Read and delivered sequence watermarks | `db/migration/V7__p0_receipts_sync_fcm.sql`; `docs/websocket-protocol.md` | Supported by code (main) |
+| Reactions, pins | Emoji reactions, reaction events, pinned message ids | `db/migration/V3__interactions.sql`, `V10__reaction_events_idempotency_device_tokens.sql` | Supported by code (main) |
+| Groups and invites | Group title, members, roles, invite-token hashes, join requests, bans | `db/migration/V20__group_invite_links.sql`; `docs/api-contract.md:714-720` | Supported by code (main) |
+| Polls | Question, options, votes, close state, versioned change feed | `db/migration/V15__group_polls.sql` | Supported by code (main) |
+| Reminders | Title, time, repeat rule, delivery state | `db/migration/V14__conversation_reminders.sql` | Supported by code (main) |
+| Labels | Private label name/colour and per-conversation assignments | `db/migration/V18__conversation_labels.sql` | Supported by code (main) |
+| Presence | Last-seen timestamp, online state; `showPresence` / `showSeen` settings | `db/migration/V4__presence.sql`; `user/User.java:50-72`; `docs/known-limitations.md:14-15` | Supported by code (main) |
+| Calls | Invite/accept/reject/end, SDP and ICE payloads; SDP/ICE are relayed in memory, not persisted; call metadata is stored | `docs/calls.md:45-46`, `:115-116`; `db/migration/V5__calls.sql` | Supported by code (main) |
+| Push registration | FCM registration token and platform; only when Firebase is configured and a session exists | `notification/DeviceTokenSyncExecutor.java:65-101`; `notification/DeviceTokenService.java:31-62`; `db/migration/V7__p0_receipts_sync_fcm.sql:15-25` | Supported by code (main) |
+| AI request data | Summary scope or RAG question, and, when external AI is enabled, redacted message text sent to the configured provider | `application.yml:162-224`; `docs/ai-summary.md:91-96`; `docs/rag.md:77-112` | Supported by code (main); external call is owner-configured |
 
 The app does **not** read the device address book: the manifest has no
 `READ_CONTACTS`, and no `ContactsContract` usage exists. Discovery uses a typed
@@ -72,13 +95,18 @@ phone number or display-name prefix (`data/ContactsRepository.java:120-127`).
 The manifest also has no location, camera, storage, phone-state, SMS, or calendar
 permission (`android/app/src/main/AndroidManifest.xml:6-16`).
 
+Recovery email and Google identity data are owner-only. `MyProfileResponse`
+returns `email`/`emailVerified` only on `GET /users/me`; `UserResponse`, which
+feeds auth responses, profile updates, search results and member views, does not
+contain the recovery email or the Google identity.
+
 ## Data safety form: collection and security
 
 | Form question | Answer from this code | Evidence | Status |
 |---|---|---|---|
-| Does the app collect or share any required user data type? | Yes. Account, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the two tables above and `application.yml` configuration. | Supported by code |
-| Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:261-266` | Supported by code |
-| Do you provide a way for users to request that their data be deleted? | No self-service path exists. There is no account-deletion endpoint, Android screen, or deletion URL page, and retention jobs never delete user rows. The owner must add one before submission. | `tools/fcm-live-check/README.md:51-52`; `docs/operations.md:706-709`; no deletion route in `server/**/Controller.java` | Not supported |
+| Does the app collect or share any required user data type? | Yes. Account, optional recovery email, optional Google identity, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the tables above and `application.yml` configuration. | Supported by code (main); recovery-email part pending merge |
+| Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:353-356` | Supported by code (main) |
+| Do you provide a way for users to request that their data be deleted? | Yes, pending merge. The app provides Profile (Settings) > Delete account with the current password. The public page `site/delete-account.html` explains the same steps and, when its API origin is configured, the lost-device flow: phone number + a 6-digit code sent to the verified recovery email. Users without a verified recovery email are routed to the developer contact on the Play listing. Deletion is a server-side tombstone; sent messages and attachments stay visible to other members attributed to a deleted account. | `branch feat/server-account-deletion:user/UserController.java:52-57`, `branch feat/server-account-deletion:user/AccountDeletionService.java:79-115`; `branch feat/server-email-otp-deletion:recovery/AccountDeletionController.java`, `branch feat/server-email-otp-deletion:recovery/AccountRecoveryService.java:54-81`; `branch feat/android-account-deletion:feature/profile/DeleteAccountFragment.java`; `branch feat/site-web-account-deletion:site/delete-account.html` | Pending merge |
 
 ## Data safety form: data types
 
@@ -89,16 +117,17 @@ purpose applies.
 
 | Play data type | Handled by NexaChat | Required or optional | Purpose | Status |
 |---|---|---|---|---|
-| Personal info → Name | Display name, shown to other users | Required at registration | Account management; app functionality | Supported by code |
-| Personal info → Phone number | E.164 number; used for login, returned in user profiles, and included in display-name search results | Required at registration | Account management; app functionality | Supported by code |
-| Personal info → User IDs | Internal account UUID | Required | Account management; app functionality | Supported by code |
-| Messages → In-app messages | Text messages, edits, tombstones, reply/mention metadata | Required for messaging | App functionality | Supported by code |
-| Photos and videos → Photos | Avatar image and image attachments chosen by the user | Optional (user chooses) | App functionality | Supported by code |
-| Photos and videos → Videos | Video attachments chosen by the user | Optional | App functionality | Supported by code |
-| Audio files → Voice or sound recordings | Voice messages recorded with `RECORD_AUDIO`; no call recording code exists | Optional | App functionality | Supported by code |
-| Files and docs | Arbitrary file attachments up to 25 MB | Optional | App functionality | Supported by code |
+| Personal info → Name | Display name, shown to other users | Required at registration | Account management; app functionality | Supported by code (main) |
+| Personal info → Phone number | E.164 number; used for login, returned in user profiles, and shown in display-name search only to callers who already have the user as a contact | Required at registration | Account management; app functionality | Supported by code (main) |
+| Personal info → Email address | Optional recovery email; used only for account-recovery, account-deletion and password-reset security codes; never shown to other users and not used for marketing | Optional | Account management; fraud prevention, security, and compliance | Pending merge |
+| Personal info → User IDs | Internal account UUID; additionally the Google OpenID Connect `sub` when the user links Google | Required for the NexaChat account; Google ID optional | Account management; app functionality | Supported by code (main); Google ID optional |
+| Messages → In-app messages | Text messages, edits, tombstones, reply/mention metadata | Required for messaging | App functionality | Supported by code (main) |
+| Photos and videos → Photos | Avatar image and image attachments chosen by the user | Optional (user chooses) | App functionality | Supported by code (main) |
+| Photos and videos → Videos | Video attachments chosen by the user | Optional | App functionality | Supported by code (main) |
+| Audio files → Voice or sound recordings | Voice messages recorded with `RECORD_AUDIO`; no call recording code exists | Optional | App functionality | Supported by code (main) |
+| Files and docs | Arbitrary file attachments up to 25 MB | Optional | App functionality | Supported by code (main) |
 | Contacts | Device address book is **not** read. A manually typed phone number can create a private contact edge. Whether Play treats that as "Contacts" is a form-reading decision. | Optional | App functionality | Needs owner decision |
-| App activity → Other user-generated content | Reactions, pins, labels, polls and votes, reminders, group invites, call history | Optional | App functionality | Supported by code |
+| App activity → Other user-generated content | Reactions, pins, labels, polls and votes, reminders, group invites, call history | Optional | App functionality | Supported by code (main) |
 | App activity → App interactions | No analytics or interaction-event SDK; the app does not record taps/screens for analytics | — | — | Not supported |
 | App activity → In-app search history | Search queries are sent as request parameters; no search-history table or local search history exists, so no history is stored | Optional when used | App functionality (transient) | Not supported |
 | Location | No location permission or location API. Chat images are normally compressed with location metadata removed; a non-privacy compression failure falls back to the original, and avatar images and video attachments are stored as selected without that scrubber (see owner decisions). | — | — | Not supported |
@@ -108,7 +137,7 @@ purpose applies.
 | Web browsing | No browser or WebView history | — | — | Not supported |
 | SMS / MMS | No SMS permission or message access | — | — | Not supported |
 | App info and performance → Crash logs / diagnostics | No Crashlytics/Sentry/analytics SDK; server logs are operator-side and are not device diagnostics | — | — | Not supported |
-| Device or other IDs → FCM registration token | Token stored on the server and used to address push messages | Optional (push) | App functionality (push) | Supported by code |
+| Device or other IDs → FCM registration token | Token stored on the server and used to address push messages | Optional (push) | App functionality (push) | Supported by code (main) |
 | Device or other IDs → Firebase installation ID | The Firebase SDK maintains its own installation identity; app code does not read it | Optional (push) | App functionality (push) | Needs owner decision (third-party SDK disclosure) |
 
 ## Data shared with third parties
@@ -119,19 +148,24 @@ paths; the owner must confirm the shipped configuration and the processor terms.
 
 | Recipient | Data | When it leaves the deployment | Evidence | Status |
 |---|---|---|---|---|
-| Google Firebase Cloud Messaging | Device registration token; data-only payload: conversation/message ids, sequence, sender display name, call ids/names/timestamps, reminder ids and repeat rule. Message text and attachment bytes are not in the payload, but the sender's display name is. | The client contacts Firebase and obtains a token when the build has `google-services.json`; the server sends a payload only when `FCM_ENABLED=true` with a service account | `android/app/build.gradle:9-17`; `application.yml:211-222`; `notification/DefaultFcmPushService.java:65-77`, `:89-98`; `reminder/FcmReminderPushSender.java:29-31`, `:67-71` | Needs owner decision for the shipped build |
-| External summary LLM | Redacted eligible message text and the summary request; sender names become `U1..Un`, message ids and phone/email/URL tokens are removed | Only when an operator configures a summary key, the provider is enabled, and the requesting user has `aiSummaryConsent=true`. Text from other participants in the window is included unless they opted out in that conversation; their own `aiSummaryConsent` flag is not checked. Primary is Gemini-compatible; optional fallback is DeepSeek-compatible; a local server model can be configured instead. | `application.yml:148-175`; `docs/ai-summary.md:90-95`; `docs/known-limitations.md:33`; `docs/rag.md:77-112` | Needs owner decision; default config makes no external call |
-| External embedding provider | Redacted question and candidate message text for embedding | The ask path uses an external provider only when the requesting user consents. The background backfill uses the deployment's primary provider (external when configured) and filters only per-conversation opt-outs, not each author's `aiSummaryConsent`; enabling it therefore sends non-opted-out message text without per-author consent. The default `lexical` provider stays on the server. | `application.yml:176-210`; `docs/rag.md:44-52`, `:77-98`, `:127-133`; `rag/RagEmbeddingService.java:63-75`, `:101-124`, `:140-149`, `:199-201`; `rag/RagEmbeddingProviders.java:48-51` | Needs owner decision; default config is offline |
-| Google public STUN | Source IP and ICE candidates during call setup; no message or account content | During a call when the default ICE configuration is used; there is no TURN server. This is a network dependency, not an app data-sharing feature. | `docs/calls.md:115-116`, `:165` | Supported by code |
-| Ad, analytics, crash, or social SDKs | None | — | `android/gradle/libs.versions.toml:40-112`; `android/app/build.gradle:319-387` | Not supported |
+| Google Firebase Cloud Messaging | Device registration token; data-only payload: conversation/message ids, sequence, sender display name, call ids/names/timestamps, reminder ids and repeat rule. Message text and attachment bytes are not in the payload, but the sender's display name is. | The client contacts Firebase and obtains a token when the build has `google-services.json`; the server sends a payload only when `FCM_ENABLED=true` with a service account | `android/app/build.gradle:9-17`; `application.yml:225-236`; `notification/DefaultFcmPushService.java:65-77`, `:89-98`; `reminder/FcmReminderPushSender.java:29-31`, `:67-71` | Needs owner decision for the shipped build |
+| Google Identity Services (Credential Manager) | Google account email and Google `sub` identifier, returned to the app in an ID token when the user chooses Sign in with Google or links an account. The app sends the ID token and a server nonce to NexaChat; NexaChat stores only `sub` and the email at link time. The ID token itself is not stored. | Only when a user links or signs in with Google; the feature is off unless `NEXACHAT_GOOGLE_SIGNIN_ENABLED=true` and client IDs are configured | `android/app/src/main/java/com/nexachat/core/auth/CredentialManagerGoogleSignIn.java:52-95`; `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `server/src/main/java/com/nexachat/auth/google/GoogleIdTokenVerifier.java`; `user_identities` in `db/migration/V28__google_signin.sql` | Supported by code (main); owner must complete the OAuth consent screen and decide the form disclosure |
+| Transactional email provider (SMTP relay or Resend) | The verified recovery email address, the 6-digit code, and a bilingual message that states the purpose and the 10-minute validity. No marketing mail exists. | Only when the operator configures `NEXACHAT_MAIL_PROVIDER=smtp` or `resend` and a user requests a code; the default empty provider disables mail and makes authenticated email endpoints answer `503 MAIL_UNAVAILABLE`, while public requests still return `202` without sending | `branch feat/server-email-otp-deletion:mail/MailConfiguration.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48`; `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailContent.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailDispatcher.java` | Pending merge; provider name depends on configuration |
+| Google Firebase Realtime Database and Firebase Auth (opt-in bridge) | NexaChat UUID, a server-minted bridge UUID, conversation UUIDs, and lease-expiry timestamps under `sessions/` and `members/`; on revocation the bridge also deletes `presence/` and `typing/` paths. No phone number, email address, message text, attachment bytes, or NexaChat token is written. The custom Firebase token uses the NexaChat UUID as the Firebase UID and a `bridgeId` claim. | Only when `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL` is non-empty; the Android client in this repository has no Realtime Database dependency and does not call the bridge | `server/src/main/java/com/nexachat/firebase/auth/FirebaseRealtimeAuthService.java:54-100`; `firebase/client/FirebaseRtdbRestClient.java:68-95`; `firebase/config/FirebaseRealtimeAvailableCondition.java`; `application.yml:237-243`; `docs/operations.md:186-236` | Supported by code (main), disabled by default; owner decision to enable |
+| External summary LLM | Redacted eligible message text and the summary request; sender names become `U1..Un`, message ids and phone/email/URL tokens are removed | Only when an operator configures a summary key, the provider is enabled, and the requesting user has `aiSummaryConsent=true`. Text from other participants in the window is included unless they opted out in that conversation; their own `aiSummaryConsent` flag is not checked. Primary is Gemini-compatible; optional fallback is DeepSeek-compatible; a local server model can be configured instead. | `application.yml:162-190`; `docs/ai-summary.md:91-96`; `docs/known-limitations.md:33`; `docs/rag.md:77-112` | Needs owner decision; default config makes no external call |
+| External embedding provider | Redacted question and candidate message text for embedding | The ask path uses an external provider only when the requesting user consents. The background backfill uses the deployment's primary provider (external when configured) and filters only per-conversation opt-outs, not each author's `aiSummaryConsent`; enabling it therefore sends non-opted-out message text without per-author consent. The default `lexical` provider stays on the server. | `application.yml:190-224`; `docs/rag.md:44-52`, `:77-98`, `:127-133`; `rag/RagEmbeddingService.java:63-75`, `:101-124`, `:140-149`, `:199-201`; `rag/RagEmbeddingProviders.java:48-51` | Needs owner decision; default config is offline |
+| Google public STUN | Source IP and ICE candidates during call setup; no message or account content | During a call when the default ICE configuration is used; there is no TURN server. This is a network dependency, not an app data-sharing feature. | `docs/calls.md:115-116`, `:165` | Supported by code (main) |
+| Ad, analytics, crash, or social SDKs | None | — | `android/gradle/libs.versions.toml:31-108`; `android/app/build.gradle:332-400` | Not supported |
 
 Other NexaChat users can see the display name, avatar, and phone number returned
-by profile/search responses. Any authenticated user can search a display-name
-prefix and receive the matching profiles' phone field, not only an exact phone
-lookup. That is app functionality, not a third-party share, but the privacy
-policy must describe it, and the owner should decide whether to mask or omit the
-phone field in name search (`user/UserService.java:89-94`;
-`user/dto/UserResponse.java:11`; `data/ContactsRepository.java:125-127`).
+by profile responses. An authenticated caller can look up an exact phone number,
+and a display-name prefix search returns matching profiles; the `phone` field is
+omitted from those search results unless the caller already has the user as a
+contact (`user/UserService.java:96-107`; `user/dto/UserResponse.java:12-23`;
+`data/ContactsRepository.java:125-127`). Recovery email and Google identity are
+never included in those responses. The phone-field behavior is app functionality,
+not a third-party share, but the privacy policy must describe it, and the owner
+should confirm the contact exception is intended.
 
 The embedding backfill is one AI path where another participant's consent is
 not checked. The ask path resolves its provider from the requesting user's
@@ -150,85 +184,145 @@ legal basis, or the operator should keep the default `lexical` provider.
 | Call SDP and ICE payloads | In-memory call registry/relay, not a database table | `docs/calls.md:45-46`; `db/migration/V5__calls.sql` stores only call metadata |
 | Typing indicators | STOMP frame only | `docs/websocket-protocol.md` |
 | Online presence | In-memory session registry; `users.last_seen_at` is persisted separately | `docs/known-limitations.md:14-15` |
-| Rate-limit buckets and client IPs | In-memory bounded buckets; not persisted by the rate-limit code | `docs/security.md:193-198`; `config/ClientIpResolver.java` |
-| Raw AI prompts and model output | Not stored; only the validated summary/answer payload is cached | `docs/ai-summary.md:95`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql` |
+| Rate-limit buckets and client IPs | In-memory bounded buckets; not persisted by the rate-limit code | `docs/security.md:216-221`; `config/ClientIpResolver.java` |
+| Raw AI prompts and model output | Not stored; only the validated summary/answer payload is cached | `docs/ai-summary.md:96`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql` |
+| OTP plaintext code | Generated in memory and sent in the email; the database stores only the HMAC-SHA256 hash. The recipient's mailbox and the email provider necessarily see the code. | `branch feat/server-email-otp-deletion:recovery/OtpCodeHasher.java:31-37`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:141-149`; `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:13-24` |
+| Google ID token | Held transiently by the Android client and sent to the server for verification; not persisted by the app or the server. The server stores the `sub` and email at link time. | `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `server/src/main/java/com/nexachat/auth/google/GoogleSignInService.java:84-101`; `db/migration/V28__google_signin.sql` |
 
 ## On-device storage
 
 | Store | Contents | Protection | Evidence |
 |---|---|---|---|
-| Room database `nexachat.db` | Messages, conversations, reactions, pins, users, call logs, outbox, offline outbox, cached label ids and preferences | App-private SQLite; not SQLCipher-encrypted | `core/database/DatabaseModule.java:24-38`; `core/database/AppDatabase.java:16-28` |
-| Preferences DataStore `nexachat_tokens` | Access and refresh tokens; FCM registration token; recall-window config; sync cursors; locally hidden message ids | Tokens and FCM token: Base64 of `IV || AES-GCM` ciphertext with the key in AndroidKeyStore. Sync cursors, hidden ids and expiry timestamps are plaintext preferences. | `core/storage/TokenStore.java:23-31`, `:365-383`, `:437-485`; `core/storage/AesGcmTokenCipher.java:15-35`; `core/storage/StorageModule.java:19-30` |
+| Room database `nexachat.db` (version 13) | Messages, conversations, reactions, pins, users, call logs, outbox, offline outbox, cached label ids and preferences | App-private SQLite; not SQLCipher-encrypted | `core/database/DatabaseModule.java:24-38`; `core/database/AppDatabase.java:16-28` |
+| Preferences DataStore `nexachat_tokens` | Access and refresh tokens; FCM registration token; recall-window config; sync cursors; locally hidden message ids | Tokens and FCM token: Base64 of `IV || AES-GCM` ciphertext with the key in AndroidKeyStore. Sync cursors, hidden ids and expiry timestamps are plaintext preferences. | `core/storage/TokenStore.java:23-31`, `:395-410`, `:519-547`; `core/storage/AesGcmTokenCipher.java:15-35`; `core/storage/StorageModule.java:19-30` |
 | SharedPreferences `nexachat_settings` | Theme mode | App-private plaintext | `data/SettingsRepository.java:36-37`, `:105-107` |
 | SharedPreferences `nexachat_locale` | App locale | App-private plaintext | `core/common/AppLocaleManager.java:19-24`, `:110` |
 | `cacheDir/attachments` | Downloaded attachment files named by id | App-private cache | `data/AttachmentRepository.java:207-214`, `:345-346` |
 | Glide and OkHttp caches | Image thumbnails and HTTP responses; combined ceiling 2 GiB | App-private cache | `core/media/MediaCacheConfig.java:8-16`; `core/media/MediaGlideModule.java:19-23`; `core/network/NetworkModule.java:49` |
 | `cacheDir/media-uploads` and voice files | Temporary compressed images and voice recordings | App-private cache | `core/media/ImageCompressor.java:28`; `feature/chat/voice/VoiceRecorder.java:74-79` |
+| Google ID token | In memory during sign-in or link; not written to DataStore or Room | Transient | `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java` |
 | Backup / device transfer | All app data excluded | `allowBackup=false`; cloud-backup and device-transfer rules exclude every private domain | `android/app/src/main/AndroidManifest.xml:20-29`; `android/app/src/main/res/xml/backup_rules.xml:4-12`; `android/app/src/main/res/xml/data_extraction_rules.xml:3-26`; `android/app/src/test/java/com/nexachat/security/AndroidPrivacyConfigurationTest.java:24-58` |
 
 ### Local logout and account boundaries
 
 - `AccountDataCleaner.clearForLogout` clears the Room cache while preserving the
   ordinary outbox, and `clearAllTables()` when logout-all explicitly removes
-  queued sends (`data/AccountDataCleaner.java:64-113`). The FCM token and pending
+  queued sends (`data/AccountDataCleaner.java:83-113`). The FCM token and pending
   unregister request stay encrypted in DataStore so a later authenticated sync
   can unregister the device (`data/AuthRepository.java:167-207`;
   `notification/DeviceTokenRegistrationManager.java:69-81`).
 - `TokenStore.clear()` removes access/refresh tokens, recall config, hidden ids
   and sync cursors, but not the FCM token or a pending unregister
-  (`core/storage/TokenStore.java:487-517`).
-- The media caches in `cacheDir` are **not** cleared by `AccountDataCleaner` or
-  `TokenStore.clear()`. Downloaded attachments, thumbnails and HTTP cache
-  entries can outlive logout until Android evicts the cache or the user clears
-  app data. This is a product/privacy decision, not an implemented wipe.
-- Uninstalling the app or clearing app data is the only complete local wipe
-  documented by the code.
+  (`core/storage/TokenStore.java:519-547`).
+- **Account deletion is the exception.** The Android deletion branch clears the
+  entire Room database, including the outbox and offline outbox, clears the
+  OkHttp/Glide/media caches, clears the pending device-unregister residue, and
+  then clears the session tokens before returning to Login
+  (`branch feat/android-account-deletion:data/AuthRepository.java:289-323`;
+  `branch feat/android-account-deletion:core/media/MediaCacheCleaner.java`).
+- Ordinary logout (and logout-all) still does **not** clear the media caches in
+  `cacheDir`; downloaded attachments, thumbnails and HTTP cache entries can
+  outlive logout until Android evicts the cache or the user clears app data.
+  This is a product/privacy decision, not an implemented wipe.
+- Uninstalling the app or clearing app data is the complete local wipe for a user
+  who does not delete the account. Account deletion also wipes the app's local
+  data as described above.
 
 ## Retention and deletion
 
 All server retention jobs are disabled by default; the global switch is also
-off and dry-run is on (`application.yml:90-145`; `docs/operations.md:631-638`).
+off and dry-run is on (`application.yml:104-159`; `docs/operations.md:747-754`).
 Enabling a job does not delete messages, conversations, or users;
-`docs/operations.md:706-709` states those rows are never removed by these jobs.
+`docs/operations.md:822` states those rows are never removed by these jobs.
+Account deletion is an explicit user action, not a retention job.
 
 | Data | Default retention behaviour | Evidence |
 |---|---|---|
-| Account, messages, conversations, contacts, labels, memberships | No automatic deletion; message recall is a soft delete, not a row delete | `docs/operations.md:706-709`; `message/MessageService.java:391-434` |
-| Message tombstones | Row remains; optional job after 30 days clears content, mention flags and embeddings. Attachments remain unless the attachment job runs. | `application.yml:129-131`; `docs/known-limitations.md:18`, `:51` |
-| Attachments | Optional job: unbound uploads after 24 h, attachments of soft-deleted messages after 30 days | `application.yml:125-128`; `docs/operations.md:684-686` |
-| Refresh tokens | Hash rows remain until the optional 30-day cleanup runs | `application.yml:110-112`; `db/migration/V1__init.sql:25-34` |
-| Device tokens | Optional cleanup after 180 stale days | `application.yml:113-115`; `docs/operations.md:676-677` |
-| Fired one-shot reminders / ended calls | Optional cleanup after 30 / 365 days | `application.yml:116-124`; `docs/operations.md:678-683` |
-| Polls | Optional job redacts aged payloads and removes options/votes after 365 days; the poll tombstone remains | `application.yml:119-121`; `docs/operations.md:680-681` |
-| Summaries and RAG caches | 24 h TTL by default; expired rows are only purged when the optional summaries/rag-cache job is enabled | `db/migration/V6__conversation_summaries.sql`; `V9__conversation_rag.sql`; `application.yml:134-145` |
-| Derived copies of message text | Summary-cache rows can contain text from later-recalled messages until their 24 h expiry; the content hash changes on edit/delete, so the row is not replayed. The RAG ask cache is purged for the conversation on recall. Expired rows remain until the optional job runs. | `message/MessageService.java:391-434`; `rag/MessageRecallAskCacheListener.java:9-26`; `summary/SummaryService.java:75`, `:96`; `docs/rag.md:99-108`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql`; `application.yml:134-145` |
-| Server backups | `demo/backup.sh` creates SQL dumps on demand; no backup retention period is defined in the repository | `docs/operations.md:535-560` |
+| Account, messages, conversations, contacts, labels, memberships | No automatic deletion by a retention job; the account owner can delete the account explicitly (below). Message recall is a soft delete, not a row delete. | `docs/operations.md:822`; `message/MessageService.java:406-449`; `branch feat/server-account-deletion` |
+| Recovery email | Stored in `users.email` after verification until the user changes/removes it or deletes the account. Cleared by the deletion tombstone. | `branch feat/server-email-otp-deletion:user/User.java:218-229`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:100-106` |
+| Email OTP records | The code is valid for 10 minutes, dies after 5 wrong attempts, and a new code invalidates older unconsumed codes of the same purpose. **No cleanup job exists on the branch checked**: consumed and expired `email_otps` rows keep the recipient address and the HMAC hash, and account deletion does not delete them. | `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:108-132`; `branch feat/server-email-otp-deletion:recovery/EmailOtpRepository.java`; no delete statement in `branch feat/server-email-otp-deletion:user/AccountDeletionService.java` |
+| Linked Google identity | Stored until the user unlinks Google. Unlink deletes the row immediately; account deletion is required to delete it too, but that step is not in the account-deletion branch yet (brief 321, see caveats). | `auth/google/GoogleSignInService.java:151-169`; `db/migration/V28__google_signin.sql` |
+| Message tombstones | Row remains; optional job after 30 days clears content, mention flags and embeddings. Attachments remain unless the attachment job runs. | `application.yml:143-145`; `docs/known-limitations.md:18`, `:51` |
+| Attachments | Optional job: unbound uploads after 24 h, attachments of soft-deleted messages after 30 days | `application.yml:139-142`; `docs/operations.md:800-802` |
+| Refresh tokens | Hash rows remain until the optional 30-day cleanup runs | `application.yml:124-126`; `db/migration/V1__init.sql:25-34` |
+| Device tokens | Optional cleanup after 180 stale days | `application.yml:127-129`; `docs/operations.md:792-793` |
+| Fired one-shot reminders / ended calls | Optional cleanup after 30 / 365 days | `application.yml:130-138`; `docs/operations.md:794-799` |
+| Polls | Optional job redacts aged payloads and removes options/votes after 365 days; the poll tombstone remains | `application.yml:133-135`; `docs/operations.md:796-797` |
+| Summaries and RAG caches | 24 h TTL by default; expired rows are only purged when the optional summaries/rag-cache job is enabled. Account deletion deletes the summary and ask caches of every conversation the user belonged to (the caches are conversation-scoped, not requester-scoped). | `db/migration/V6__conversation_summaries.sql`; `V9__conversation_rag.sql`; `application.yml:148-159`; `branch feat/server-account-deletion:user/AccountDeletionJdbcSupport.java:25-45` |
+| Derived copies of message text | Recall or edit deletes cached summaries whose sequence window contains the changed message, and recall purges the RAG ask cache for the conversation; the ask cache also refuses a replay when a cited message is gone or its author opted out. Expired rows remain until the optional summaries/rag-cache job runs. | `message/MessageService.java:406-449`; `summary/MessageSummaryCacheInvalidationListener.java:10-33`; `summary/SummaryCacheRepository.java:103-121`; `rag/MessageRecallAskCacheListener.java:12-22`; `docs/rag.md:108-113`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql`; `application.yml:148-159` |
+| Server backups | `demo/backup.sh` creates SQL dumps on demand; no backup retention period is defined in the repository | `docs/operations.md:650-674` |
 
 Deletion actions that exist:
 
+- The account owner can delete the account in the app: Profile (Settings) >
+  Delete account, confirmed with the current password, calls
+  `DELETE /api/v1/users/me` and returns `204`. One transaction revokes every
+  refresh token and sets the access-token cutoff, deletes push/device
+  registrations, deletes contact edges in both directions, removes every group
+  membership through the leave path (admin hand-over rules apply, including the
+  sole-admin promotion), deletes the avatar file after commit, deletes unbound
+  uploads (file and metadata), private labels, group join requests, AI
+  consent/request-limit rows, and the summary and ask caches of the user's
+  conversations, then sets `users.deleted_at`, clears the phone (released for
+  re-registration), replaces the display name with a neutral value, clears
+  profile/privacy fields and overwrites the password hash with an unusable
+  tombstone. Direct conversations and sent messages/attachments stay visible to
+  other members attributed to the deleted account. After deletion, login with
+  the old phone is treated as an unknown user, search never returns the account,
+  profile reads show the neutral deleted state, and registering the same phone
+  creates a new, unrelated account. Branch `feat/server-account-deletion`
+  (migration V26); Android branch `feat/android-account-deletion`; public page
+  `site/delete-account.html`.
+- The lost-device web flow on `site/delete-account.html` (branch
+  `feat/site-web-account-deletion`) posts the phone number to
+  `POST /api/v1/account-deletion/request` and the code to
+  `POST /api/v1/account-deletion/confirm`. The public request always returns
+  `202` with a neutral message whether or not the phone exists or has a verified
+  email; the code is mailed only to an existing, non-deleted account with a
+  verified recovery email. Confirmation returns `204` and deletes through the
+  same `AccountDeletionService` tombstone path. The page hides the form and says
+  web deletion is not available until the operator sets its
+  `nexachat-api-base` meta value and the server CORS/CSP allow that origin.
 - A message author may recall their own message within 24 h; a current group
   admin may recall any group message. The row becomes a tombstone, mentions,
   reactions and pins are removed, and attachment bytes remain by default
-  (`message/MessageService.java:391-434`; `message/MessageRecallProperties.java:14-15`).
+  (`message/MessageService.java:406-449`; `message/MessageRecallProperties.java:14-15`).
 - Logout clears the local Room cache and tokens as described above; it does not
   delete server data.
 - Logout-all clears all local tables, including the outbox
   (`data/AuthRepository.java:195-202`; `data/AccountDataCleaner.java:109-112`).
 
+Recovery email and deletion caveats:
+
+- The account-deletion branch at the reviewed SHA does **not** yet delete
+  `user_identities` rows or the user's Google link nonces. Brief 321 requires
+  both in the same deletion transaction and a fail-closed Google sign-in for a
+  deleted user; until that commit lands, a deleted account's Google link can
+  still resolve. Treat the Google-identity part of the deletion answer as
+  pending merge.
+- The recovery-email branch clears `users.email`/`email_verified_at` on the
+  tombstone but leaves `email_otps` rows (address + HMAC hash) in place. There is
+  no cleanup job for them. This is an open retention item, not a claim that the
+  data is deleted.
+- Deleting the account also deletes the user's `conversation_ai_opt_outs` row.
+  Messages that remain visible from that account are therefore no longer
+  excluded from AI prompts by that opt-out; the retained text becomes eligible
+  for AI features again. The owner should confirm this is intended or keep the
+  opt-out row for retained messages.
+- The deletion service deletes the summary and ask caches for every conversation
+  the user belonged to, not only entries the user requested, because the cache
+  tables are conversation-scoped and have no requester column. This can remove
+  cached answers other members triggered.
+
 Deletion actions that do **not** exist:
 
-- No account-deletion endpoint or in-app screen. `tools/fcm-live-check/README.md:51-52`
-  explicitly records that the public API has no account-deletion endpoint.
-- No self-service data-export or "delete my data" request page.
-- No account-deletion page or request form under `site/`. The site does host a
-  privacy policy (`site/privacy.html`) and terms (`site/terms.html`); the rest
-  is the landing page, join page, 404 page and static assets
-  (`site/index.html`, `site/join/index.html`, `site/404.html`,
-  `site/robots.txt`, `site/sitemap.xml`, `site/.well-known/assetlinks.json`,
-  `site/style.css`, `site/favicon.svg`, `site/vercel.json`).
-
-This is a Play policy decision the owner must resolve before shipping an app
-that creates accounts.
+- No self-service data export.
+- No hard-delete endpoint for an individual message; recall is a soft delete
+  (author within 24 h, group admin any time).
+- No automatic hard delete of a tombstoned account or its retained messages.
+- No public deletion route for a user without a verified recovery email. That
+  user is routed to the developer contact on the Play listing.
+- No separate "delete my data" request form.
 
 ## Encryption
 
@@ -237,10 +331,13 @@ that creates accounts.
 | Android release traffic | Cleartext HTTP/WS is disabled in the release network policy; only the system CA store is trusted | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `android/app/src/test/java/com/nexachat/security/AndroidPrivacyConfigurationTest.java:60-80` |
 | Signed release build | `tools/release-url-guard.sh` rejects an `API_BASE_URL` that is not `https://` | `tools/release-url-guard.sh:78-88` |
 | Debug / localSmoke | Cleartext is permitted only in these development variants | `android/app/src/debug/res/xml/network_security_config.xml:10-12`; `android/app/src/localSmoke/res/xml/network_security_config.xml:9-11`; `android/app/src/test/java/com/nexachat/security/AndroidPrivacyConfigurationTest.java:82-113` |
-| Server edge | TLS is expected to terminate at a reverse proxy; the Compose stack itself is local HTTP | `docs/operations.md:261-266` |
-| Server to FCM / LLM | HTTPS endpoints; summary/RAG base URLs reject plain `http://` except loopback | `docs/ai-summary.md:115-122`; `docs/rag.md:63-66` |
+| Server edge | TLS is expected to terminate at a reverse proxy; the Compose stack itself is local HTTP | `docs/operations.md:353-356` |
+| Server to FCM / LLM | HTTPS endpoints; summary/RAG base URLs reject plain `http://` except loopback | `docs/ai-summary.md:125-128`; `docs/rag.md:63-66` |
+| Recovery email delivery | SMTP uses STARTTLS with a required upgrade on the configured port (default 587); Resend uses HTTPS `https://api.resend.com/emails`. The code is sent in the email body and is visible to the mailbox provider. | `branch feat/server-email-otp-deletion:application.yml` (spring.mail STARTTLS); `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48` |
+| Google identity verification | The server fetches Google's rotating public keys over HTTPS and verifies the ID token signature, issuer, audience and expiry; no client secret is stored in the app. | `auth/google/GoogleIdTokenVerifier.java`; `application.yml:69` |
+| Firebase bridge | HTTPS Realtime Database REST calls and Firebase Admin SDK calls; the service-account key stays server-side. | `firebase/client/FirebaseRtdbRestClient.java`; `firebase/config/FirebaseRealtimeConfiguration.java` |
 | At rest on device | Room and SharedPreferences are not encrypted; session and FCM tokens are Keystore-encrypted | `core/database/DatabaseModule.java:24-38`; `core/storage/TokenStore.java:23-31` |
-| At rest on server | PostgreSQL and attachment volume are not encrypted by the app; no end-to-end encryption | `docs/known-limitations.md:58`; `db/migration/V1__init.sql` |
+| At rest on server | PostgreSQL and the attachment volume are not encrypted by the app; recovery email, OTP hashes and Google identity rows are plain database columns protected by database access controls. No end-to-end encryption. | `docs/known-limitations.md:58`; `db/migration/V1__init.sql`; `db/migration/V27__account_recovery_email_otp.sql`; `db/migration/V28__google_signin.sql` |
 
 The release policy proves the app cannot silently use cleartext. It does not
 prove that a particular production deployment has a valid TLS certificate or
@@ -250,21 +347,22 @@ that the server is reachable; that remains an operator check.
 
 All permissions are declared in `android/app/src/main/AndroidManifest.xml:6-16`.
 There is no `READ_CONTACTS`, location, camera, storage, phone-state, SMS, or
-calendar permission.
+calendar permission. Google sign-in uses the Credential Manager API and adds no
+runtime permission.
 
 | Permission | Type | Why the app requests it | Where used | Status |
 |---|---|---|---|---|
-| `INTERNET` | Normal | Connect to the NexaChat REST/STOMP server | `android/app/src/main/AndroidManifest.xml:6`; all network features | Supported by code |
-| `ACCESS_NETWORK_STATE` | Normal | Detect connectivity loss for the offline banner and outbox retry | `android/app/src/main/AndroidManifest.xml:5-7`; outbox sync | Supported by code |
-| `RECORD_AUDIO` | Dangerous (runtime) | Record voice messages and provide microphone audio during a call | `feature/chat/ChatFragment.java:459-461`; `call/ui/CallActivity.java:415-437`; `call/ui/IncomingCallActivity.java:297-320`; rationale `android/app/src/main/res/values/strings_call.xml:25` | Supported by code |
-| `FOREGROUND_SERVICE` | Normal | Keep an active call's foreground service alive | `call/service/CallForegroundService`; `android/app/src/main/AndroidManifest.xml:76-80` | Supported by code |
-| `FOREGROUND_SERVICE_MICROPHONE` | Normal | Declare microphone use by the ongoing call service | `android/app/src/main/AndroidManifest.xml:76-80` (`foregroundServiceType="microphone|phoneCall"`) | Supported by code |
-| `FOREGROUND_SERVICE_PHONE_CALL` | Normal | Declare the call foreground-service type | `android/app/src/main/AndroidManifest.xml:76-80` | Supported by code |
-| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Show incoming-call and missed-call notifications | `call/ui/CallActivity.java:443-458`; `call/ui/IncomingCallActivity.java:326-341`; `call/service/CallNotifications.java`; rationale `android/app/src/main/res/values/strings_call.xml:28` | Supported by code |
-| `USE_FULL_SCREEN_INTENT` | Normal / special access | Show the incoming-call screen over the lock screen | `call/service/CallNotifications.java:85`; `android/app/src/main/AndroidManifest.xml:13` | Supported by code; Play declaration needed |
-| `MODIFY_AUDIO_SETTINGS` | Normal | Route call audio to earpiece/speaker and request audio focus | `call/media/WebRtcMediaEngine.java:362-377`; `feature/chat/voice/AndroidVoiceAudioFocus.java` | Supported by code |
-| `VIBRATE` | Normal | Vibrate for an incoming call | `call/media/CallRingtonePlayer.java:15`, `:46-53` | Supported by code |
-| `WAKE_LOCK` | Normal | Keep the CPU awake briefly while handling an FCM push and while a call uses the proximity lock | `notification/NexaFirebaseMessagingService.java:20-38`; `call/ui/CallActivity.java:551` | Supported by code |
+| `INTERNET` | Normal | Connect to the NexaChat REST/STOMP server and to Google Credential Manager | `android/app/src/main/AndroidManifest.xml:6`; all network features | Supported by code (main) |
+| `ACCESS_NETWORK_STATE` | Normal | Detect connectivity loss for the offline banner and outbox retry | `android/app/src/main/AndroidManifest.xml:5-7`; outbox sync | Supported by code (main) |
+| `RECORD_AUDIO` | Dangerous (runtime) | Record voice messages and provide microphone audio during a call | `feature/chat/ChatFragment.java:471-473`; `call/ui/CallActivity.java:415-437`; `call/ui/IncomingCallActivity.java:297-320`; rationale `android/app/src/main/res/values/strings_call.xml:25` | Supported by code (main) |
+| `FOREGROUND_SERVICE` | Normal | Keep an active call's foreground service alive | `call/service/CallForegroundService`; `android/app/src/main/AndroidManifest.xml:76-80` | Supported by code (main) |
+| `FOREGROUND_SERVICE_MICROPHONE` | Normal | Declare microphone use by the ongoing call service | `android/app/src/main/AndroidManifest.xml:76-80` (`foregroundServiceType="microphone|phoneCall"`) | Supported by code (main) |
+| `FOREGROUND_SERVICE_PHONE_CALL` | Normal | Declare the call foreground-service type | `android/app/src/main/AndroidManifest.xml:76-80` | Supported by code (main) |
+| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Show incoming-call and missed-call notifications | `call/ui/CallActivity.java:443-458`; `call/ui/IncomingCallActivity.java:326-341`; `call/service/CallNotifications.java`; rationale `android/app/src/main/res/values/strings_call.xml:28` | Supported by code (main) |
+| `USE_FULL_SCREEN_INTENT` | Normal / special access | Show the incoming-call screen over the lock screen | `call/service/CallNotifications.java:85`; `android/app/src/main/AndroidManifest.xml:13` | Supported by code (main); Play declaration needed |
+| `MODIFY_AUDIO_SETTINGS` | Normal | Route call audio to earpiece/speaker and request audio focus | `call/media/WebRtcMediaEngine.java:362-377`; `feature/chat/voice/AndroidVoiceAudioFocus.java` | Supported by code (main) |
+| `VIBRATE` | Normal | Vibrate for an incoming call | `call/media/CallRingtonePlayer.java:15`, `:46-53` | Supported by code (main) |
+| `WAKE_LOCK` | Normal | Keep the CPU awake briefly while handling an FCM push and while a call uses the proximity lock | `notification/NexaFirebaseMessagingService.java:20-38`; `call/ui/CallActivity.java:551` | Supported by code (main) |
 
 The microphone permission has explicit in-app strings:
 `voice_permission_required` for voice messages
@@ -282,10 +380,17 @@ These are owner decisions; do not infer them from code:
 1. **Privacy policy URL** — required by Play for an app that creates accounts
    and collects personal data. The site hosts a privacy policy at
    `site/privacy.html` (and terms at `site/terms.html`), but no policy URL is
-   configured in the app or repository.
+   configured in the app or repository. The policy text must also cover the
+   recovery email, the deletion form, and Google sign-in before submission.
 2. **Account deletion** — Play requires an in-app deletion path and a web
-   deletion URL for apps that let users create accounts. The repository has
-   neither, and retention jobs never delete user rows.
+   deletion URL for apps that create accounts. The code is on branches
+   `feat/server-account-deletion`, `feat/server-email-otp-deletion`,
+   `feat/android-account-deletion` and `feat/site-web-account-deletion`. Merge
+   all of them, apply the D3 review fixes to the site page, enable the web form
+   (API base meta, CORS and CSP), deploy the page, and set its URL in Play. The
+   branch at the reviewed SHA still leaves `email_otps` rows (address + hash)
+   and does not yet delete `user_identities`/link nonces; finish brief 321 and
+   decide the OTP-row cleanup before publishing the deletion answer.
 3. **Target audience and content rating** — no target-age declaration or content
    rating questionnaire is in the repository.
 4. **Ads declaration** — no ad SDK exists, but the owner must still answer the
@@ -317,28 +422,69 @@ These are owner decisions; do not infer them from code:
     (`data/AttachmentRepository.java:132-135`), and the avatar path and video
     attachments store the selected file without a scrubber. Decide whether to
     scrub them or disclose the residual risk.
-12. **Post-logout media cache** — decide whether logout must evict downloaded
-    attachments and image caches; the current code does not.
+12. **Post-logout media cache** — ordinary logout still does not evict
+    downloaded attachments and image caches; account deletion does. Decide
+    whether ordinary logout must also wipe them.
 13. **App Links / Play signing** — the release App Links fingerprint must match
     the Play App Signing certificate; this is tracked in
     `docs/known-limitations.md:53` and is outside the Data safety form.
-14. **Display-name search** — decide whether returning the phone field for a
-    display-name prefix is intended; the current API does so for any
-    authenticated caller (`user/UserService.java:89-94`). Mask/omit the field or
-    disclose the behavior in the privacy policy.
+14. **Display-name search** — the API now omits the `phone` field from
+    display-name prefix results unless the caller already has that user as a
+    contact (`user/UserService.java:96-107`). Confirm the contact exception is
+    intended and disclose it in the privacy policy.
+15. **Google sign-in disclosure** — the owner must create the Google Cloud OAuth
+    consent screen and client IDs, register the release/Play App Signing SHA-1,
+    and decide whether Google identity data is described as collected directly
+    by NexaChat or as a Google service. Google sign-in is off by default and
+    cannot create accounts; unlinking the last method is refused.
+16. **Email provider** — choose SMTP (the owner's mail account with an app
+    password) or Resend, verify the sending domain, and confirm the provider's
+    retention/DPA terms. Mail is disabled by default and the public deletion
+    request still returns `202` without sending.
+17. **Firebase bridge** — keep it off until the Realtime Database rules,
+    account/membership projections and emulator authorization checks exist. If
+    enabled, disclose the opt-in bridge metadata. The Android client in this
+    repository does not use the bridge yet; presence/typing projections remain
+    design work, not shipped behaviour.
+18. **OTP row cleanup** — decide whether to add a retention job for consumed or
+    expired `email_otps` rows, and whether account deletion should delete them.
+    The current branch does neither; the rows keep the recipient address and an
+    HMAC hash, not the plaintext code.
+19. **AI opt-out after deletion** — decide whether deleting
+    `conversation_ai_opt_outs` (so retained messages become eligible for AI
+    again) is the intended policy, or keep the opt-out row while the messages
+    are retained.
+20. **Web deletion page deployment** — the page exists only on a branch, is not
+    live, and its default configuration hides the form. The D3 review's
+    server-side deletion findings are addressed on the account-deletion branches,
+    but the page still needs the remaining D3 fixes (retention wording, error
+    copy, contrast, focus, deploy configuration); re-check the published page
+    before using it as the Play deletion URL.
 
 ## Verification notes
 
 - Source inspected: Android manifest, backup/network XML, Gradle catalog,
   privacy configuration test, Room entities and database module, DataStore and
-  Keystore storage, attachment/media caches, auth/logout flow, server Flyway
-  migrations, controllers, retention runner, FCM/LLM configuration, and the
-  linked architecture/security/operations/RAG/summary docs at `42831fe`.
-- Site inventory includes `site/privacy.html` and `site/terms.html` from the
-  site refresh merged with this document; app and server production code is
-  unchanged between `2ecafae` and `42831fe`.
+  Keystore storage, attachment/media caches, auth/logout/deletion flow, Google
+  Credential Manager client, server Flyway migrations V1–V28, controllers,
+  account-deletion and email-OTP services, the mail adapters, Firebase bridge
+  code, retention runner, FCM/LLM configuration, and the linked
+  architecture/security/operations/RAG/summary docs at `15bb91e`.
+- Branch sources inspected via `git show`: `feat/server-account-deletion`
+  (`ac27f39`), `feat/server-email-otp-deletion` (`4d8afbc`),
+  `feat/android-account-deletion` (`3249ec7`),
+  `feat/android-recovery-email` (`3134723`),
+  `feat/android-forgot-password` (`2354367`), `docs/site-account-deletion`
+  (`407fdf1`) and `feat/site-web-account-deletion` (`0aa6d2b`). None of these
+  branches is in `main` at `15bb91e`.
+- Account deletion was checked against the branch contract (`DELETE
+  /api/v1/users/me`, current password, `204`, V26 `deleted_at`, neutral display
+  name, released phone, V27 email columns, OTP hashing) but not executed against
+  a built server, APK, deployed site or Play Console; this document is static
+  source evidence.
 - Build, unit tests, instrumentation, and emulator checks were **NOT_RUN**: this
   document is static source evidence and the change does not modify code; the
   docs gate is `python tools/check-markdown-links.py`.
-- Play Console state, production TLS certificates, production FCM/AI keys, and
-  legal/privacy-policy review are **not verified** by this repository.
+- Play Console state, production TLS certificates, production FCM/AI/Google/
+  Firebase keys, live email delivery, and legal/privacy-policy review are **not
+  verified** by this repository.
