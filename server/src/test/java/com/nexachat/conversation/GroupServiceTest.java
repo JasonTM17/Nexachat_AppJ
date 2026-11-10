@@ -603,9 +603,9 @@ class GroupServiceTest {
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
 
         ConversationUpdatePayload payload = groupService.updateGroup(
-                adminId, conversationId, new PatchGroupRequest(null, " /files/av.png "));
+                adminId, conversationId, new PatchGroupRequest(null, " /api/v1/files/avatars/av.png "));
 
-        assertThat(payload.avatarUrl()).isEqualTo("/files/av.png");
+        assertThat(payload.avatarUrl()).isEqualTo("/api/v1/files/avatars/av.png");
         verify(messageService, never()).postSystemMessage(any(), any(), anyString());
     }
 
@@ -635,7 +635,7 @@ class GroupServiceTest {
         ConversationUpdatePayload payload = groupService.updateGroup(adminId, conversationId,
                 new PatchGroupRequest(null, avatarUrl));
 
-        assertThat(payload.avatarUrl()).isEqualTo(avatarUrl);
+        assertThat(payload.avatarUrl()).isEqualTo("/api/v1/files/" + storageKey + "?v=1");
         verify(attachmentRepository).lockStorageKeyForReference(storageKey);
     }
 
@@ -669,6 +669,18 @@ class GroupServiceTest {
         assertThat(payload.avatarUrl()).isEqualTo(
                 "/api/v1/files/" + storageKey + "?v=1");
         verify(attachmentRepository).lockStorageKeyForReference(storageKey);
+    }
+
+    @Test
+    void updateGroup_rejectsOffOriginAvatar() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.updateGroup(adminId, conversationId,
+                        new PatchGroupRequest(null, "https://evil.example/track.png")));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
