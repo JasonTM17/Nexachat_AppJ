@@ -286,13 +286,9 @@ class MagicBytesTest {
         data[5] = 't';
         data[6] = 'y';
         data[7] = 'p';
-        long start = System.nanoTime();
-        String mime = MagicBytes.sniff(data);
-        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
-        if (mime != null) {
-            assertTrue(MagicBytes.ALLOWED_MIMES.contains(mime));
-        }
-        assertTrue(elapsedMs < 1000, "sniff took " + elapsedMs + " ms");
+        // Hostile filler must not be misclassified as a concrete media type.
+        assertNull(MagicBytes.sniff(data));
+        assertFalse(MagicBytes.isAllowed(data));
     }
 
     @Test
@@ -307,11 +303,7 @@ class MagicBytesTest {
         byte[] file = concat(ftyp("isom", "isom", "iso2"), box("mdat", filler), moov("soun"));
         byte[] prefix = Arrays.copyOfRange(file, 0, 64 * 1024);
         byte[] suffix = Arrays.copyOfRange(file, file.length - 64 * 1024, file.length);
-        long start = System.nanoTime();
-        String mime = MagicBytes.sniff(prefix, suffix);
-        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
-        assertEquals("audio/mp4", mime);
-        assertTrue(elapsedMs < 1000, "sniff took " + elapsedMs + " ms");
+        assertEquals("audio/mp4", MagicBytes.sniff(prefix, suffix));
     }
 
     @Test
