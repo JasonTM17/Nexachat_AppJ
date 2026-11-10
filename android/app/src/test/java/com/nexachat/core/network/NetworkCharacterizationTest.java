@@ -21,8 +21,10 @@ import com.nexachat.core.network.stomp.StompClient;
 import com.nexachat.core.network.stomp.StompCommand;
 import com.nexachat.core.network.stomp.StompFrame;
 import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.storage.SessionSnapshot;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
+import io.reactivex.rxjava3.core.Single;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
@@ -53,6 +55,7 @@ public final class NetworkCharacterizationTest {
         AuthApi api = mock(AuthApi.class);
         Call<AuthResponse> call = mock(Call.class);
         when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
         when(call.execute()).thenAnswer(ignored -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -130,6 +133,28 @@ public final class NetworkCharacterizationTest {
             current.set(null);
             hasToken.onNext(false);
         }));
+        when(store.commitRefreshRotation(
+                        anyLong(),
+                        anyString(),
+                        anyString(),
+                        anyLong(),
+                        anyString(),
+                        any(RecallWindowConfig.class)))
+                .thenAnswer(invocation ->
+                        Completable.fromAction(() -> {
+                            current.set(new Tokens(
+                                    invocation.getArgument(2),
+                                    invocation.getArgument(3),
+                                    invocation.getArgument(4)));
+                            hasToken.onNext(true);
+                        }));
+        when(store.readSessionSnapshot())
+                .thenReturn(Single.just(new SessionSnapshot(1L, SessionSnapshot.Lifecycle.ACTIVE)));
+        when(store.bootstrapLegacySessionIfNeeded()).thenReturn(Single.just(1L));
+        when(store.readPendingRefresh()).thenReturn(Maybe.empty());
+        when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
+        when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
+        when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 
