@@ -5,6 +5,7 @@ import com.nexachat.core.network.dto.AddContactRequest;
 import com.nexachat.core.network.dto.AvatarResponse;
 import com.nexachat.core.network.dto.ContactDto;
 import com.nexachat.core.network.dto.ContactEnvelopeDto;
+import com.nexachat.core.network.dto.DeleteAccountRequest;
 import com.nexachat.core.network.dto.DirectConversationRequest;
 import com.nexachat.core.network.dto.DirectConversationResponse;
 import com.nexachat.core.network.dto.UpdateContactRequest;
@@ -51,6 +52,9 @@ public interface UserApi {
 
     @PATCH("api/v1/users/me")
     Call<UserDto> updateMe(@Body UpdateProfileRequest body);
+
+    @DELETE("api/v1/users/me")
+    Call<Void> deleteMe(@Body DeleteAccountRequest body);
 
     @Multipart
     @POST("api/v1/users/me/avatar")

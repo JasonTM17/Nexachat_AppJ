@@ -8,16 +8,19 @@ import com.nexachat.core.common.Result;
 import com.nexachat.core.common.WhitespaceTrim;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AuthApi;
+import com.nexachat.core.network.UserApi;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.network.TokenRefreshOutcome;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ChangePasswordRequest;
+import com.nexachat.core.network.dto.DeleteAccountRequest;
 import com.nexachat.core.network.dto.LoginRequest;
 import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.feature.auth.LoginNotice;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
@@ -43,23 +46,28 @@ import retrofit2.Call;
 public final class AuthRepository {
 
     private final AuthApi authApi;
+    @Nullable private final UserApi userApi;
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     private final TokenRefresher tokenRefresher;
     private final DeviceTokenRegistrationManager deviceTokenRegistrationManager;
     @Nullable private final AccountDataCleaner accountDataCleaner;
     @Nullable private final Moshi moshi;
+    @Nullable private final LoginNotice loginNotice;
 
     @Inject
     public AuthRepository(
             @NonNull AuthApi authApi,
+            @NonNull UserApi userApi,
             @NonNull TokenStore tokenStore,
             @NonNull SessionEvents sessionEvents,
             @NonNull TokenRefresher tokenRefresher,
             @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
             @NonNull AccountDataCleaner accountDataCleaner,
-            @NonNull Moshi moshi) {
+            @NonNull Moshi moshi,
+            @NonNull LoginNotice loginNotice) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = Objects.requireNonNull(userApi, "userApi");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
         this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
@@ -67,6 +75,7 @@ public final class AuthRepository {
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
         this.moshi = Objects.requireNonNull(moshi, "moshi");
+        this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -78,6 +87,7 @@ public final class AuthRepository {
             @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
             @NonNull AccountDataCleaner accountDataCleaner) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = null;
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
         this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
@@ -85,6 +95,49 @@ public final class AuthRepository {
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
         this.moshi = null;
+        this.loginNotice = null;
+    }
+
+    /** Preserves the narrow constructor used by local auth repository tests. */
+    public AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull Moshi moshi) {
+        this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = null;
+        this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
+        this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
+        this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.moshi = Objects.requireNonNull(moshi, "moshi");
+        this.loginNotice = null;
+    }
+
+    AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull UserApi userApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull LoginNotice loginNotice) {
+        this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = Objects.requireNonNull(userApi, "userApi");
+        this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
+        this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
+        this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.moshi = null;
+        this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -95,6 +148,7 @@ public final class AuthRepository {
             @NonNull TokenRefresher tokenRefresher,
             @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = null;
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
         this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
@@ -102,6 +156,7 @@ public final class AuthRepository {
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = null;
         this.moshi = null;
+        this.loginNotice = null;
     }
 
     @NonNull
@@ -204,6 +259,39 @@ public final class AuthRepository {
                                 () -> new Result.Success<>(Unit.INSTANCE)))
                 )
                 .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Permanently deletes the signed-in account after password confirmation; on
+     * success clears the local session like {@link #logout()} and queues a
+     * one-time login notice.
+     */
+    @NonNull
+    public Single<Result<Unit>> deleteAccount(@NonNull String password) {
+        if (userApi == null) {
+            return Single.just(Result.failure(new ApiError.Unknown("NO_USER_API")));
+        }
+        return Single.defer(() -> authCallUnit(userApi.deleteMe(deleteAccountRequest(password)))
+                .flatMap(result -> {
+                    if (!(result instanceof Result.Success<?>)) {
+                        return Single.just(result);
+                    }
+                    return Completable.fromAction(tokenRefresher::onLogout)
+                            .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
+                                    .onErrorComplete()
+                                    .andThen(tokenStore.clear())
+                                    .andThen(Completable.fromAction(this::markAccountDeletedNotice))
+                                    .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
+                            .andThen(Single.<Result<Unit>>fromCallable(
+                                    () -> new Result.Success<>(Unit.INSTANCE)));
+                }))
+                .subscribeOn(Schedulers.io());
+    }
+
+    private void markAccountDeletedNotice() {
+        if (loginNotice != null) {
+            loginNotice.setAccountDeleted();
+        }
     }
 
     @NonNull
@@ -327,6 +415,11 @@ public final class AuthRepository {
             @NonNull String newPassword,
             @Nullable String keepToken) {
         return new ChangePasswordRequest(oldPassword, newPassword, keepToken);
+    }
+
+    @NonNull
+    DeleteAccountRequest deleteAccountRequest(@NonNull String password) {
+        return new DeleteAccountRequest(password);
     }
 
     /**

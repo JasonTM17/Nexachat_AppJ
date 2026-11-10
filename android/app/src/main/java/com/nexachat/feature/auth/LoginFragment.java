@@ -15,9 +15,12 @@ import androidx.navigation.fragment.NavHostFragment;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentLoginBinding;
 import dagger.hilt.android.AndroidEntryPoint;
+import javax.inject.Inject;
 
 @AndroidEntryPoint
 public final class LoginFragment extends Fragment {
+    @Inject LoginNotice loginNotice;
+
     private FragmentLoginBinding binding;
     private AuthViewModel viewModel;
     private boolean rendering;
@@ -44,6 +47,11 @@ public final class LoginFragment extends Fragment {
                     R.id.registerFragment, args.isEmpty() ? null : args);
         });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        Integer noticeRes = loginNotice.consume();
+        if (noticeRes != null) {
+            binding.errorBanner.setText(noticeRes);
+            binding.errorBanner.setVisibility(View.VISIBLE);
+        }
         viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
             if (e == AuthViewModel.Event.LoggedIn) {
                 int destination = returnInviteToken == null

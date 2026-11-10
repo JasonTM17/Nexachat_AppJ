@@ -57,6 +57,11 @@
         android:label="@string/settings_language" />
 
     <fragment
+        android:id="@+id/deleteAccountFragment"
+        android:name="com.nexachat.feature.profile.DeleteAccountFragment"
+        android:label="@string/delete_account_title" />
+
+    <fragment
         android:id="@+id/chatFragment"
         android:name="com.nexachat.feature.chat.ChatFragment"
         android:label="@string/chat_title">

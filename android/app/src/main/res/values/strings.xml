@@ -461,4 +461,11 @@
     <string name="label_color_rose">Rose</string>
     <string name="label_color_purple">Purple</string>
 
+    <string name="action_delete_account">Delete account</string>
+    <string name="delete_account_title">Delete account</string>
+    <string name="delete_account_consequences">Your account will be permanently deleted; your messages stay visible to others as from a deleted account.</string>
+    <string name="delete_account_confirm">Delete my account</string>
+    <string name="login_account_deleted_notice">Your account was deleted.</string>
+    <string name="cd_delete_account_confirm">Confirm permanent account deletion</string>
+
 </resources>
