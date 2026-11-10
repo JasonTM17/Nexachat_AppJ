@@ -28,6 +28,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.data.domain.Pageable;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -534,6 +536,36 @@ class GroupServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(ex.getMessage()).contains("admin");
         verify(memberRepository, never()).delete(any(ConversationMember.class));
+    }
+
+    @Test
+    void leaveForAccountDeletion_promotesSuccessorBeforeSoleAdminLeaves() {
+        Conversation conversation = groupConversation();
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(conversation));
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+        ConversationMember adminMember =
+                member(conversation, adminId, "Admin Alice", ConversationMember.Role.ADMIN);
+        ConversationMember bobMember =
+                member(conversation, bobId, "Bob", ConversationMember.Role.MEMBER);
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(adminMember), Optional.of(adminMember));
+        when(memberRepository.countByConversation_IdAndRole(
+                conversationId, ConversationMember.Role.ADMIN)).thenReturn(1L);
+        when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
+        when(memberRepository.findMembersExcludingOrderByJoinedAt(
+                eq(conversationId), eq(adminId), any(Pageable.class)))
+                .thenReturn(List.of(bobMember));
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+
+        groupService.leaveForAccountDeletion(adminId, conversationId);
+
+        assertThat(bobMember.getRole()).isEqualTo(ConversationMember.Role.ADMIN);
+        verify(memberRepository).save(bobMember);
+        verify(messageService).postSystemMessage(
+                eq(adminId), eq(conversationId), eq("Admin Alice made Bob a group admin"));
+        verify(memberRepository).delete(adminMember);
     }
 
     @Test

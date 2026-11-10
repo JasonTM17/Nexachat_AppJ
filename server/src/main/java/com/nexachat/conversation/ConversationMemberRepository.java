@@ -196,6 +196,20 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
 
     /**
+     * Successor pick for account-deletion admin hand-over: earliest
+     * {@code joined_at}, tie-broken by user id (stable ordering).
+     */
+    @Query("""
+            SELECT m FROM ConversationMember m
+            WHERE m.conversation.id = :conversationId AND m.user.id <> :excludeUserId
+            ORDER BY m.joinedAt ASC, m.user.id ASC
+            """)
+    List<ConversationMember> findMembersExcludingOrderByJoinedAt(
+            @Param("conversationId") UUID conversationId,
+            @Param("excludeUserId") UUID excludeUserId,
+            Pageable pageable);
+
+    /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows
      * first, then everything by the denormalized {@code lastMessageSeq} (NULL
      * sorts last via {@code COALESCE}). {@code archived} selects the default

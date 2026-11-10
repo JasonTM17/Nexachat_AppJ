@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -98,8 +99,9 @@ public class AccountDeletionService {
 
     private void leaveAllGroups(UUID userId) {
         List<UUID> groupIds = new ArrayList<>(memberRepository.findGroupConversationIdsForUser(userId));
+        Collections.sort(groupIds);
         for (UUID conversationId : groupIds) {
-            groupService.leave(userId, conversationId);
+            groupService.leaveForAccountDeletion(userId, conversationId);
         }
     }
 

@@ -8,9 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -125,17 +131,140 @@ class AccountDeletionFlowIT extends SecurityITBase {
     }
 
     @Test
-    void soleAdminCannotDeleteWhileOtherMembersRemain() throws Exception {
+    void soleAdminDeletionPromotesEarliestRemainingMember() throws Exception {
         Registered admin = register("+84905553009", "secret123");
-        Registered member = register("+84905553010", "secret123");
-        postJson("/api/v1/conversations/group",
-                Map.of("title", "Admin trap", "memberIds", List.of(member.userId().toString())),
-                admin.accessToken())
-                .andExpect(status().isCreated());
+        Registered early = register("+84905553010", "secret123");
+        Registered late = register("+84905553011", "secret123");
 
-        deleteMe(admin.accessToken(), "secret123")
+        UUID groupId = createGroup(admin, List.of(early.userId(), late.userId()));
+        jdbcTemplate.update(
+                "UPDATE conversation_members SET joined_at = ? WHERE conversation_id = ? AND user_id = ?",
+                java.sql.Timestamp.from(Instant.parse("2019-06-01T00:00:00Z")),
+                groupId, early.userId());
+        jdbcTemplate.update(
+                "UPDATE conversation_members SET joined_at = ? WHERE conversation_id = ? AND user_id = ?",
+                java.sql.Timestamp.from(Instant.parse("2019-06-02T00:00:00Z")),
+                groupId, late.userId());
+
+        deleteMe(admin.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        assertThat(memberRole(groupId, early.userId())).isEqualTo("ADMIN");
+        assertThat(memberRole(groupId, late.userId())).isEqualTo("MEMBER");
+        assertThat(memberCount(groupId, admin.userId())).isZero();
+        assertThat(adminCount(groupId)).isEqualTo(1);
+        assertThat(systemMessages(groupId, early).stream()
+                .map(n -> n.get("content").asText())
+                .anyMatch(text -> text.contains("group admin"))).isTrue();
+    }
+
+    @Test
+    void promotionTieBreaksOnUserIdWhenJoinedAtEqual() throws Exception {
+        Registered admin = register("+84905553012", "secret123");
+        Registered userA = register("+84905553013", "secret123");
+        Registered userB = register("+84905553014", "secret123");
+
+        UUID groupId = createGroup(admin, List.of(userA.userId(), userB.userId()));
+        Instant sameJoin = Instant.parse("2020-01-01T00:00:00Z");
+        jdbcTemplate.update(
+                "UPDATE conversation_members SET joined_at = ? WHERE conversation_id = ? AND user_id IN (?, ?)",
+                java.sql.Timestamp.from(sameJoin), groupId, userA.userId(), userB.userId());
+
+        deleteMe(admin.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        UUID expectedAdmin = userA.userId().compareTo(userB.userId()) < 0 ? userA.userId() : userB.userId();
+        UUID expectedMember = expectedAdmin.equals(userA.userId()) ? userB.userId() : userA.userId();
+        assertThat(memberRole(groupId, expectedAdmin)).isEqualTo("ADMIN");
+        assertThat(memberRole(groupId, expectedMember)).isEqualTo("MEMBER");
+    }
+
+    @Test
+    void soleAdminDeletionWhenLastMemberLeavesEmptyGroup() throws Exception {
+        Registered admin = register("+84905553015", "secret123");
+        Registered member = register("+84905553024", "secret123");
+        UUID groupId = createGroup(admin, List.of(member.userId()));
+        deleteMe(member.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        deleteMe(admin.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        assertThat(memberCount(groupId, admin.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE conversation_id = ?",
+                Integer.class, groupId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversations WHERE id = ?", Integer.class, groupId)).isEqualTo(1);
+    }
+
+    @Test
+    void soleAdminDeletionHandOverInTwoGroupsAtOnce() throws Exception {
+        Registered admin = register("+84905553016", "secret123");
+        Registered g1Member = register("+84905553017", "secret123");
+        Registered g2Member = register("+84905553018", "secret123");
+
+        UUID groupOne = createGroup(admin, List.of(g1Member.userId()));
+        UUID groupTwo = createGroup(admin, List.of(g2Member.userId()));
+
+        deleteMe(admin.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        assertThat(memberRole(groupOne, g1Member.userId())).isEqualTo("ADMIN");
+        assertThat(memberRole(groupTwo, g2Member.userId())).isEqualTo("ADMIN");
+        assertThat(adminCount(groupOne)).isEqualTo(1);
+        assertThat(adminCount(groupTwo)).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentDeletionOfTwoAdminsStillLeavesAGroupAdmin() throws Exception {
+        Registered adminA = register("+84905553019", "secret123");
+        Registered adminB = register("+84905553020", "secret123");
+        Registered member = register("+84905553021", "secret123");
+
+        UUID groupId = createGroup(adminA, List.of(adminB.userId(), member.userId()));
+        jdbcTemplate.update(
+                "UPDATE conversation_members SET role = 'ADMIN' WHERE conversation_id = ? AND user_id = ?",
+                groupId, adminB.userId());
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> firstStatus = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return deleteMe(adminA.accessToken(), "secret123")
+                        .andReturn().getResponse().getStatus();
+            });
+            Future<Integer> secondStatus = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return deleteMe(adminB.accessToken(), "secret123")
+                        .andReturn().getResponse().getStatus();
+            });
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            assertThat(firstStatus.get(30, TimeUnit.SECONDS)).isEqualTo(204);
+            assertThat(secondStatus.get(30, TimeUnit.SECONDS)).isEqualTo(204);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
+                Integer.class, groupId, member.userId())).isEqualTo(1);
+        assertThat(memberRole(groupId, member.userId())).isEqualTo("ADMIN");
+        assertThat(adminCount(groupId)).isEqualTo(1);
+    }
+
+    @Test
+    void inAppSelfLeaveStillRejectsSoleAdminWithOtherMembers() throws Exception {
+        Registered admin = register("+84905553022", "secret123");
+        Registered member = register("+84905553023", "secret123");
+        UUID groupId = createGroup(admin, List.of(member.userId()));
+
+        postJson("/api/v1/conversations/" + groupId + "/leave", Map.of(), admin.accessToken())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        assertThat(memberCount(groupId, admin.userId())).isEqualTo(1);
+        assertThat(memberRole(groupId, admin.userId())).isEqualTo("ADMIN");
     }
 
     private ResultActions deleteMe(String accessToken, String password) throws Exception {
@@ -154,6 +283,17 @@ class AccountDeletionFlowIT extends SecurityITBase {
                 objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
     }
 
+    private UUID createGroup(Registered creator, List<UUID> memberIds) throws Exception {
+        var result = postJson("/api/v1/conversations/group",
+                Map.of("title", "Acct del " + UUID.randomUUID(), "memberIds",
+                        memberIds.stream().map(UUID::toString).toList()),
+                creator.accessToken())
+                .andExpect(status().isCreated())
+                .andReturn();
+        return UUID.fromString(
+                objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+    }
+
     private void setDisplayName(UUID userId, String name) {
         jdbcTemplate.update("UPDATE users SET display_name = ? WHERE id = ?", name, userId);
     }
@@ -162,5 +302,32 @@ class AccountDeletionFlowIT extends SecurityITBase {
         return jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
                 Integer.class, conversationId, userId);
+    }
+
+    private String memberRole(UUID conversationId, UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT role FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
+                String.class, conversationId, userId);
+    }
+
+    private int adminCount(UUID conversationId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE conversation_id = ? AND role = 'ADMIN'",
+                Integer.class, conversationId);
+    }
+
+    private List<JsonNode> systemMessages(UUID conversationId, Registered reader) throws Exception {
+        var result = mockMvc.perform(get("/api/v1/conversations/" + conversationId + "/messages")
+                        .header("Authorization", "Bearer " + reader.accessToken()))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode items = objectMapper.readTree(result.getResponse().getContentAsString()).get("items");
+        List<JsonNode> system = new java.util.ArrayList<>();
+        for (JsonNode item : items) {
+            if ("SYSTEM".equals(item.get("type").asText())) {
+                system.add(item);
+            }
+        }
+        return system;
     }
 }

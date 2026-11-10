@@ -222,8 +222,9 @@ the implementing source file.
   every refresh token, stamps the access-token cutoff, unregisters device tokens,
   removes contacts (both directions), clears per-user AI opt-outs and rate-limit
   rows, deletes the avatar file when stored under `/api/v1/files/avatars/…`, and
-  leaves the user from each group through the normal self-leave path (sole admin
-  with other members still present is rejected).
+  removes the user from each group through an account-deletion leave path that
+  auto-promotes a successor admin when needed (in-app self-leave still rejects
+  a sole admin while other members remain).
 - Deleted accounts are not returned from `GET /users/search`, exact phone lookup
   behaves like an unknown number, and login for the freed E.164 receives the same
   `INVALID_CREDENTIALS` envelope as a wrong password. Re-registration with that

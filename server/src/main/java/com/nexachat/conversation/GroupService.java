@@ -20,6 +20,7 @@ import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.broker.AbstractBrokerMessageHandler;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
@@ -260,7 +261,7 @@ public class GroupService {
     @Transactional
     public void removeMember(UUID callerId, UUID conversationId, UUID targetUserId) {
         Conversation conversation = requireGroup(conversationId);
-        removeMemberInternal(conversation, callerId, targetUserId);
+        removeMemberInternal(conversation, callerId, targetUserId, false);
     }
 
     /**
@@ -271,10 +272,26 @@ public class GroupService {
     @Transactional
     public void leave(UUID callerId, UUID conversationId) {
         Conversation conversation = requireGroup(conversationId);
-        removeMemberInternal(conversation, callerId, callerId);
+        removeMemberInternal(conversation, callerId, callerId, false);
     }
 
-    private void removeMemberInternal(Conversation conversation, UUID callerId, UUID targetUserId) {
+    /**
+     * Removes a user from a group as part of account deletion. Serializes on
+     * the conversation row; when the departure would leave members but no admin,
+     * promotes the earliest remaining member before the leave line is posted.
+     * Self-leave from the app keeps using {@link #leave} and its validation.
+     */
+    @Transactional
+    public void leaveForAccountDeletion(UUID userId, UUID conversationId) {
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        Conversation conversation = requireGroup(conversationId);
+        removeMemberInternal(conversation, userId, userId, true);
+    }
+
+    private void removeMemberInternal(Conversation conversation, UUID callerId, UUID targetUserId,
+                                      boolean accountDeletion) {
         UUID conversationId = conversation.getId();
         ConversationMember caller = requireMember(conversationId, callerId);
         boolean selfRemoval = targetUserId.equals(callerId);
@@ -287,12 +304,22 @@ public class GroupService {
                 .findByConversation_IdAndUser_Id(conversationId, targetUserId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.NOT_MEMBER, "User is not a member of this group"));
-        if (target.getRole() == ConversationMember.Role.ADMIN
-                && memberRepository.countByConversation_IdAndRole(
-                        conversationId, ConversationMember.Role.ADMIN) <= 1
-                && memberRepository.countByConversation_Id(conversationId) > 1) {
+        long adminCount = memberRepository.countByConversation_IdAndRole(
+                conversationId, ConversationMember.Role.ADMIN);
+        long memberCount = memberRepository.countByConversation_Id(conversationId);
+        boolean soleAdminWithOthers = target.getRole() == ConversationMember.Role.ADMIN
+                && adminCount <= 1
+                && memberCount > 1;
+        if (!accountDeletion && soleAdminWithOthers) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "The last admin cannot leave or be removed — assign another admin first");
+        }
+        if (accountDeletion
+                && target.getRole() == ConversationMember.Role.ADMIN
+                && adminCount > 0
+                && adminCount - 1 == 0
+                && memberCount - 1 > 0) {
+            promoteSuccessorToAdmin(conversation, callerId, conversationId, targetUserId);
         }
 
         String actorName = caller.getUser().getDisplayName();
@@ -310,6 +337,27 @@ public class GroupService {
                 selfRemoval ? "MEMBER_LEFT" : "MEMBER_REMOVED", List.of(targetUserId));
         log.info("{} {} {} in group {}",
                 callerId, selfRemoval ? "left" : "removed", targetUserId, conversationId);
+    }
+
+    private void promoteSuccessorToAdmin(
+            Conversation conversation, UUID actorId, UUID conversationId, UUID excludeUserId) {
+        List<ConversationMember> successors = memberRepository.findMembersExcludingOrderByJoinedAt(
+                conversationId, excludeUserId, PageRequest.of(0, 1));
+        if (successors.isEmpty()) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "No member available to promote before account deletion");
+        }
+        ConversationMember successor = successors.getFirst();
+        successor.changeRole(ConversationMember.Role.ADMIN);
+        memberRepository.save(successor);
+        String actorName = memberRepository.findByConversation_IdAndUser_Id(conversationId, actorId)
+                .map(member -> member.getUser().getDisplayName())
+                .orElse("Admin");
+        messageService.postSystemMessage(actorId, conversationId,
+                actorName + " made " + successor.getUser().getDisplayName() + " a group admin");
+        publishUpdate(conversation, "UPDATED", List.of());
+        log.info("Promoted {} to admin in group {} during account deletion of {}",
+                successor.getUser().getId(), conversationId, excludeUserId);
     }
 
     private void revokeTopicSubscriptionsAfterCommit(UUID userId, UUID conversationId) {

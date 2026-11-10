@@ -356,7 +356,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 **Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
-**Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, scrubs contacts/device tokens/AI consent rows, removes the user from every group (sole admin with other members remaining → `VALIDATION_FAILED` 400, same as self-leave), keeps direct conversations and all sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` = omitted).
+**Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, scrubs contacts/device tokens/AI consent rows, removes the user from every group (if the deleting user is the only admin while other members remain, the earliest remaining member by `joined_at` — tie-break by user id — is promoted to admin in the same transaction before the leave; when they are the last member, the group is left empty like self-leave), keeps direct conversations and all sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` = omitted). Self-leave (`POST …/leave`) keeps blocking a sole admin with other members present.
 
 ## Users — `/api/v1/users`
 
