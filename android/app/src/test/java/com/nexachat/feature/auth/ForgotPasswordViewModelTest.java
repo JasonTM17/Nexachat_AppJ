@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -43,6 +44,7 @@ public final class ForgotPasswordViewModelTest {
     @Before
     public void setUp() {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
+        RxJavaPlugins.setComputationSchedulerHandler(scheduler -> Schedulers.trampoline());
         RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = mock(PasswordResetRepository.class);
         clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
@@ -143,7 +145,7 @@ public final class ForgotPasswordViewModelTest {
         viewModel.onPhoneChanged("+84912345678");
         viewModel.sendCode();
         viewModel.onOtpChanged("123456");
-        String tooLong = "é".repeat(25);
+        String tooLong = "a".repeat(73);
         viewModel.onNewPasswordChanged(tooLong);
         viewModel.onConfirmPasswordChanged(tooLong);
         viewModel.submitReset();
@@ -152,20 +154,26 @@ public final class ForgotPasswordViewModelTest {
     }
 
     @Test
-    public void resendIgnoredWhileSubmitting() {
+    public void resendIgnoredWhileSubmitting() throws Exception {
+        CountDownLatch hang = new CountDownLatch(1);
         when(repository.requestResetCode(anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(repository.confirmReset(anyString(), anyString(), anyString()))
-                .thenReturn(Single.never());
+                .thenReturn(Single.fromCallable(() -> {
+                    hang.await();
+                    return new Result.Success<>(Unit.INSTANCE);
+                }).subscribeOn(Schedulers.io()));
         viewModel.onPhoneChanged("+84912345678");
         viewModel.sendCode();
         viewModel.onOtpChanged("123456");
         viewModel.onNewPasswordChanged("newpass12");
         viewModel.onConfirmPasswordChanged("newpass12");
         viewModel.submitReset();
+        assertTrue(viewModel.getUiState().getValue().isSubmitting());
         clock.advanceSeconds(ForgotPasswordViewModel.RESEND_COOLDOWN_SECONDS + 1L);
         viewModel.resendCode();
         verify(repository, times(1)).requestResetCode(anyString());
+        hang.countDown();
     }
 
     @Test

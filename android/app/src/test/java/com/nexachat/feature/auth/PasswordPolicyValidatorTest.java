@@ -18,10 +18,13 @@ public final class PasswordPolicyValidatorTest {
 
     @Test
     public void rejectsPasswordBeyond72Utf8BytesClientSide() {
-        String password = "é".repeat(25);
-        assertTrue(password.getBytes(StandardCharsets.UTF_8).length > 72);
-        assertFalse(PasswordPolicyValidator.isAcceptable(password));
-        assertTrue(PasswordPolicyValidator.isTooLong(password));
+        String ascii73 = "a".repeat(73);
+        assertFalse(PasswordPolicyValidator.isAcceptable(ascii73));
+        assertTrue(PasswordPolicyValidator.isTooLong(ascii73));
+
+        String multibyte = "é".repeat(37);
+        assertTrue(multibyte.getBytes(StandardCharsets.UTF_8).length > 72);
+        assertTrue(PasswordPolicyValidator.isTooLong(multibyte));
     }
 
   private static void assertEquals72Bytes(String password) {
