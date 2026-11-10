@@ -7,6 +7,7 @@ import com.nexachat.common.error.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpMethod;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -55,11 +56,15 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private final RateLimitService rateLimitService;
     private final ClientIpResolver clientIpResolver;
-    private final GoogleSignInProperties googleSignInProperties;
+    /**
+     * Optional: MVC slice tests import the interceptor without the Google
+     * configuration, and a missing bean means "feature off".
+     */
+    private final ObjectProvider<GoogleSignInProperties> googleSignInProperties;
 
     public RateLimitInterceptor(RateLimitService rateLimitService,
                                 ClientIpResolver clientIpResolver,
-                                GoogleSignInProperties googleSignInProperties) {
+                                ObjectProvider<GoogleSignInProperties> googleSignInProperties) {
         this.rateLimitService = rateLimitService;
         this.clientIpResolver = clientIpResolver;
         this.googleSignInProperties = googleSignInProperties;
@@ -73,7 +78,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         String uri = request.getRequestURI();
-        List<Rule> rules = googleSignInProperties.enabled()
+        List<Rule> rules = googleEnabled()
                 ? java.util.stream.Stream.concat(RULES.stream(), GOOGLE_RULES.stream()).toList()
                 : RULES;
         for (Rule rule : rules) {
@@ -90,5 +95,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             }
         }
         return true;
+    }
+
+    private boolean googleEnabled() {
+        GoogleSignInProperties properties = googleSignInProperties.getIfAvailable();
+        return properties != null && properties.enabled();
     }
 }
