@@ -2,6 +2,7 @@ package com.nexachat.observability;
 
 import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.JwtService;
+import com.nexachat.auth.google.UserIdentityRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
@@ -52,6 +53,8 @@ abstract class ObservabilityHealthTestBase {
     protected UserRepository userRepository;
     @MockitoBean
     protected com.nexachat.auth.RefreshTokenRepository refreshTokenRepository;
+    @MockitoBean
+    protected UserIdentityRepository userIdentityRepository;
     @MockitoBean
     protected ContactRepository contactRepository;
     @MockitoBean

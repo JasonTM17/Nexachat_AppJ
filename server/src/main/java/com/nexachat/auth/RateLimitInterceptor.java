@@ -38,7 +38,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final List<Rule> RULES = List.of(
             new Rule("login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
             new Rule("register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
-            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)));
+            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
+            // Google sign-in: a nonce is requested before every attempt, so it
+            // needs more headroom than the sign-in call itself.
+            new Rule("google-nonce", "/api/v1/auth/google/nonce", 30, Duration.ofMinutes(5)),
+            new Rule("google-signin", "/api/v1/auth/google", 20, Duration.ofMinutes(5)));
 
     private final RateLimitService rateLimitService;
     private final ClientIpResolver clientIpResolver;
