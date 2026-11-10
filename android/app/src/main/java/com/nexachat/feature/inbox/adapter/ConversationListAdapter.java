@@ -218,17 +218,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                     if (label == null) continue;
                     Chip chip = new Chip(itemView.getContext());
                     chip.setText(label.getName());
-                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
                     chip.setTextColor(android.graphics.Color.WHITE);
                     chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
                             label.getColor().getBackgroundColor()));
-                    chip.setEnsureMinTouchTargetSize(false);
-                    float density = itemView.getResources().getDisplayMetrics().density;
-                    chip.setChipMinHeight(22f * density);
-                    chip.setChipStartPadding(8f * density);
-                    chip.setChipEndPadding(8f * density);
-                    chip.setTextStartPadding(0f);
-                    chip.setTextEndPadding(0f);
                     chip.setClickable(false);
                     chip.setCheckable(false);
                     chip.setFocusable(false);

@@ -34,12 +34,12 @@
 
             <ImageView
                 android:id="@+id/cameraBadge"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="bottom|end"
                 android:background="@drawable/bg_camera_badge"
                 android:contentDescription="@string/profile_change_avatar"
-                android:padding="6dp"
+                android:padding="@dimen/space_sm"
                 android:src="@drawable/ic_camera_alt"
                 app:tint="@android:color/white" />
         </FrameLayout>

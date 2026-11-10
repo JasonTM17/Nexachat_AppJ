@@ -331,7 +331,6 @@ public final class LabelDialogFragment extends DialogFragment {
                             name.getText() == null ? "" : name.getText().toString());
                     if (!LabelRules.isValidName(value)) {
                         nameLayout.setError(getString(R.string.label_error_validation));
-                        name.setError(getString(R.string.label_error_validation));
                         return;
                     }
                     nameLayout.setError(null);

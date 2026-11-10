@@ -9,6 +9,8 @@ import android.view.ViewGroup;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -133,6 +135,7 @@ public final class ProfileFragment extends Fragment {
     private void render(ProfileViewModel.UiState state) {
         UserDto user = state.getUser();
         if (user != null) { binding.profileAvatar.setName(user.getDisplayName()); binding.profileAvatar.setAvatarUrl(user.getAvatarUrl()); binding.profileName.setText(user.getDisplayName()); binding.profilePhone.setText(user.getPhone()); }
+        binding.profileAvatar.setContentDescription(getString(R.string.profile_change_avatar));
         binding.profileAvatar.setEnabled(!state.isAvatarUploading());
         if (binding.cameraBadge != null) {
             binding.cameraBadge.setEnabled(!state.isAvatarUploading());
@@ -183,10 +186,12 @@ public final class ProfileFragment extends Fragment {
         form.addView(oldLayout, lp1);
         form.addView(nextLayout, lp2);
         form.addView(confirmLayout, lp3);
+        ScrollView scroll = new ScrollView(requireContext());
+        scroll.addView(form);
 
         AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.profile_change_password)
-                .setView(form)
+                .setView(scroll)
                 .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPasswordDialog())
                 .setPositiveButton(R.string.action_save, null)
                 .setOnCancelListener(d -> viewModel.dismissPasswordDialog())
@@ -260,6 +265,10 @@ public final class ProfileFragment extends Fragment {
         TextInputEditText input = new TextInputEditText(layout.getContext());
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setAutofillHints(hint == R.string.auth_current_password_label
+                ? View.AUTOFILL_HINT_PASSWORD : "newPassword");
+        input.setImeOptions(hint == R.string.auth_confirm_password_label
+                ? EditorInfo.IME_ACTION_DONE : EditorInfo.IME_ACTION_NEXT);
         layout.addView(input);
         return layout;
     }

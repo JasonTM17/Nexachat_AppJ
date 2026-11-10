@@ -47,6 +47,29 @@ public final class InboxBadgeRulesTest {
     }
 
     @Test
+    public void physicalSwipePreviewMatchesRelativeActionInBothLayoutDirections() {
+        ConversationSummary normal = summary("c1", false, false, false, null);
+        assertEquals(InboxBadgeRules.SwipeAction.PIN,
+                InboxBadgeRules.resolvePhysicalSwipeAction(normal, 100f, false));
+        assertEquals(InboxBadgeRules.SwipeAction.PIN,
+                InboxBadgeRules.resolvePhysicalSwipeAction(normal, -100f, true));
+        assertEquals(InboxBadgeRules.SwipeAction.ARCHIVE,
+                InboxBadgeRules.resolvePhysicalSwipeAction(normal, -100f, false));
+        assertEquals(InboxBadgeRules.SwipeAction.ARCHIVE,
+                InboxBadgeRules.resolvePhysicalSwipeAction(normal, 100f, true));
+        ConversationSummary changed = summary("c2", false, true, true, null);
+        assertEquals(InboxBadgeRules.SwipeAction.UNPIN,
+                InboxBadgeRules.resolvePhysicalSwipeAction(changed, -100f, true));
+        assertEquals(InboxBadgeRules.SwipeAction.UNARCHIVE,
+                InboxBadgeRules.resolvePhysicalSwipeAction(changed, 100f, true));
+        assertEquals(InboxBadgeRules.SwipeAction.NONE,
+                InboxBadgeRules.resolvePhysicalSwipeAction(normal, 0f, true));
+        assertEquals(InboxBadgeRules.SwipeAction.NONE,
+                InboxBadgeRules.resolvePhysicalSwipeAction(null, 100f, false));
+        assertNull(InboxBadgeRules.resolveOnlineStatus(null));
+    }
+
+    @Test
     public void resolveSwipeActions_reflectPinnedAndArchivedState() {
         ConversationSummary normal = summary("c1", false, false, false, null);
         assertEquals(InboxBadgeRules.SwipeAction.PIN, InboxBadgeRules.resolveStartSwipeAction(normal));

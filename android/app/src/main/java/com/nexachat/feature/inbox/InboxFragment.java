@@ -8,6 +8,8 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.animation.ValueAnimator;
 import android.view.LayoutInflater;
@@ -95,6 +97,7 @@ public final class InboxFragment extends Fragment {
         labelViewModel.load();
 
         binding.inboxUserAvatar.setName("Nexa");
+        binding.inboxUserAvatar.setContentDescription(getString(R.string.profile_title));
         binding.inboxUserAvatar.setOnlineStatus(true);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
@@ -633,6 +636,8 @@ public final class InboxFragment extends Fragment {
 
     private void attachSwipeGestureHelper() {
         Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        TextPaint labelPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        labelPaint.setTextSize(getResources().getDimension(R.dimen.inbox_swipe_text_size));
         ItemTouchHelper.SimpleCallback callback = new ItemTouchHelper.SimpleCallback(
                 0, ItemTouchHelper.START | ItemTouchHelper.END) {
             @Override
@@ -666,19 +671,6 @@ public final class InboxFragment extends Fragment {
                             InboxBadgeRules.resolveEndSwipeAction(conversation);
                     boolean archive = action == InboxBadgeRules.SwipeAction.ARCHIVE;
                     viewModel.setConversationArchived(conversation.getId(), archive);
-                    Snackbar.make(
-                                    binding.getRoot(),
-                                    archive
-                                            ? R.string.conversation_archived
-                                            : R.string.conversation_unarchived,
-                                    Snackbar.LENGTH_LONG)
-                            .setAction(
-                                    archive
-                                            ? R.string.conversation_unarchive
-                                            : R.string.conversation_archive,
-                                    v -> viewModel.setConversationArchived(
-                                            conversation.getId(), !archive))
-                            .show();
                 }
             }
 
@@ -692,16 +684,24 @@ public final class InboxFragment extends Fragment {
                     int actionState,
                     boolean isCurrentlyActive) {
                 View itemView = viewHolder.itemView;
-                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0f) {
+                int position = viewHolder.getBindingAdapterPosition();
+                if (binding != null && adapter != null
+                        && position != RecyclerView.NO_POSITION && position < adapter.getItemCount()
+                        && actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0f) {
                     boolean swipeRight = dX > 0f;
+                    InboxBadgeRules.SwipeAction action = InboxBadgeRules.resolvePhysicalSwipeAction(
+                            adapter.getCurrentList().get(position), dX,
+                            recyclerView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
+                    boolean pinAction = action == InboxBadgeRules.SwipeAction.PIN
+                            || action == InboxBadgeRules.SwipeAction.UNPIN;
                     int bgColor = resolveThemeColor(
                             requireContext(),
-                            swipeRight
+                            pinAction
                                     ? com.google.android.material.R.attr.colorPrimaryContainer
                                     : com.google.android.material.R.attr.colorSecondaryContainer);
                     int iconTint = resolveThemeColor(
                             requireContext(),
-                            swipeRight
+                            pinAction
                                     ? com.google.android.material.R.attr.colorOnPrimaryContainer
                                     : com.google.android.material.R.attr.colorOnSecondaryContainer);
                     backgroundPaint.setColor(bgColor);
@@ -718,38 +718,34 @@ public final class InboxFragment extends Fragment {
                                     itemView.getBottom());
                     c.drawRect(rect, backgroundPaint);
 
-                    Drawable icon = ContextCompat.getDrawable(
-                            requireContext(),
-                            swipeRight ? R.drawable.ic_push_pin : R.drawable.ic_check_circle);
-                    if (icon != null) {
-                        icon = icon.mutate();
-                        icon.setTint(iconTint);
-                        int iconSize = dp(24);
-                        int margin = dp(20);
-                        int top = itemView.getTop() + (itemView.getHeight() - iconSize) / 2;
-                        int bottom = top + iconSize;
-                        if (swipeRight && dX > margin + iconSize) {
-                            icon.setBounds(
-                                    itemView.getLeft() + margin,
-                                    top,
-                                    itemView.getLeft() + margin + iconSize,
-                                    bottom);
-                            icon.draw(c);
-                        } else if (!swipeRight && -dX > margin + iconSize) {
-                            icon.setBounds(
-                                    itemView.getRight() - margin - iconSize,
-                                    top,
-                                    itemView.getRight() - margin,
-                                    bottom);
-                            icon.draw(c);
-                        }
+                    int label = switch (action) {
+                        case PIN -> R.string.action_pin_conversation;
+                        case UNPIN -> R.string.action_unpin_conversation;
+                        case UNARCHIVE -> R.string.conversation_unarchive;
+                        default -> R.string.conversation_archive;
+                    };
+                    float margin = getResources().getDimension(R.dimen.space_md);
+                    float available = Math.abs(dX) - 2 * margin;
+                    if (available > 0f) {
+                        labelPaint.setColor(iconTint);
+                        CharSequence text = TextUtils.ellipsize(
+                                getString(label), labelPaint, available, TextUtils.TruncateAt.END);
+                        float width = labelPaint.measureText(text.toString());
+                        float x = swipeRight ? itemView.getLeft() + margin
+                                : itemView.getRight() - margin - width;
+                        float y = itemView.getTop() + (itemView.getHeight()
+                                - labelPaint.ascent() - labelPaint.descent()) / 2f;
+                        int save = c.save();
+                        c.clipRect(rect);
+                        c.drawText(text.toString(), x, y, labelPaint);
+                        c.restoreToCount(save);
                     }
                 }
                 super.onChildDraw(
                         c,
                         recyclerView,
                         viewHolder,
-                        dX * 0.5f,
+                        dX,
                         dY,
                         actionState,
                         isCurrentlyActive);

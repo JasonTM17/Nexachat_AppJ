@@ -62,4 +62,14 @@ public final class InboxBadgeRules {
         }
         return conversation.isArchived() ? SwipeAction.UNARCHIVE : SwipeAction.ARCHIVE;
     }
+
+    /** Canvas displacement is physical; swipe callbacks use relative START/END. */
+    @NonNull
+    public static SwipeAction resolvePhysicalSwipeAction(
+            @Nullable ConversationSummary conversation, float displacement, boolean rtl) {
+        if (displacement == 0f) return SwipeAction.NONE;
+        boolean towardsEnd = (displacement > 0f) != rtl;
+        return towardsEnd ? resolveStartSwipeAction(conversation)
+                : resolveEndSwipeAction(conversation);
+    }
 }
