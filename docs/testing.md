@@ -38,8 +38,11 @@ compiled classes and reports stay separate.
 
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
 parallel joins at `maxUses`, revoke during a join, approval limits, recall
-purging the ask cache, and a spoofed `X-Forwarded-For` (plus the opt-in
-retention seed/observe phases). `tools/e2e/final/final_extended.py` adds
+purging the ask cache, and a spoofed `X-Forwarded-For` that must not reset the
+per-IP invite preview bucket (a `429 RATE_LIMITED` has to appear within 80
+requests; Bucket4j refills greedily, so the first 60 need not all succeed).
+The opt-in retention seed/observe phases use the same stack.
+`tools/e2e/final/final_extended.py` adds
 idempotent send, recall/edit cache invalidation, STOMP receipt and removed-member
 handling, labels/pin/mute/archive isolation, mentions, reminders, polls, a
 500-message delta gap, 20-client fan-out, and an app-container restart. The
@@ -50,9 +53,5 @@ demo containers).
 Pass the stack coordinates with `--base-url`, `--db-container`, `--db-user` and
 `--db-name`; `final_extended.py` also takes `--app-container` for the
 `MockFcmGateway` push counts and `--only` for a subset of scenarios. See
-`python tools/e2e/final/<script>.py --help`.
-
-Known tooling caveat: the spoofed-XFF check in `final_live.py` stops at the 61st
-invite preview and is too strict because Bucket4j refills greedily. The `xff`
-scenario in `final_extended.py` keeps going to the first real `429` and is the
-corrected assertion.
+`python tools/e2e/final/<script>.py --help` for the required environment,
+including the literal `FCM_ENABLED=false`, retention settings and admin phone.
