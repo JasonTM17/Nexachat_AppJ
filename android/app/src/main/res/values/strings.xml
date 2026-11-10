@@ -461,4 +461,24 @@
     <string name="label_color_rose">Rose</string>
     <string name="label_color_purple">Purple</string>
 
+
+    <!-- Cluster B message interactions -->
+    <string name="message_actions_title">Message actions</string>
+    <string name="reaction_like">Like</string>
+    <string name="reaction_love">Love</string>
+    <string name="reaction_laugh">Laugh</string>
+    <string name="reaction_surprised">Surprised</string>
+    <string name="reaction_sad">Sad</string>
+    <string name="reaction_thanks">Thanks</string>
+    <string name="forward_no_results">No conversations found</string>
+    <string name="forward_selected">Selected</string>
+    <string name="forward_not_selected">Not selected</string>
+
+    <!-- Cluster B media viewer -->
+    <string name="media_toggle_zoom">Zoom / fit</string>
+    <string name="media_zoom_in">Zoom in</string>
+    <string name="media_zoom_out">Zoom out</string>
+    <string name="media_zoom_level">Zoom %1$d%%</string>
+    <string name="media_saved">File saved</string>
+    <string name="media_save_failed">Could not save file</string>
 </resources>
