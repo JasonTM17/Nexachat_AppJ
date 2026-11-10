@@ -1,0 +1,58 @@
+package com.nexachat.call.ui;
+
+import org.junit.Test;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.nio.file.*;
+import java.util.*;
+import static org.junit.Assert.assertTrue;
+
+/** Contrast against the actual fixed dark call surface in both app themes. */
+public final class CallContrastContractTest {
+    @Test public void avatarInitialsAndControlsRemainLegible() throws Exception {
+        for (boolean night : new boolean[]{false, true}) {
+            Map<String, String> colors = new HashMap<>();
+            load(colors, "values");
+            if (night) load(colors, "values-night");
+            for (int i = 0; i < 8; i++) {
+                check(colors, "call_avatar_fg_" + i, "call_avatar_bg_" + i, 4.5);
+            }
+            check(colors, "call_icon_on_control", "call_accept_background", 4.5);
+            check(colors, "call_icon_on_control", "call_decline_background", 4.5);
+            check(colors, "call_icon_on_control", "call_end_background", 4.5);
+        }
+    }
+
+    private static void load(Map<String, String> colors, String dir) throws Exception {
+        try (var files = Files.list(Path.of("src/main/res", dir))) {
+            for (Path path : files.filter(p -> p.toString().endsWith(".xml")).toList()) {
+                NodeList entries = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                        .parse(path.toFile()).getElementsByTagName("color");
+                for (int i = 0; i < entries.getLength(); i++) {
+                    Element e = (Element) entries.item(i);
+                    colors.put(e.getAttribute("name"), e.getTextContent().trim());
+                }
+            }
+        }
+    }
+
+    private static void check(Map<String, String> colors, String fg, String bg, double minimum) {
+        double a = luminance(resolve(colors, fg)), b = luminance(resolve(colors, bg));
+        double ratio = (Math.max(a,b) + .05) / (Math.min(a,b) + .05);
+        assertTrue(fg + " on " + bg + " contrast=" + ratio, ratio >= minimum);
+    }
+    private static long resolve(Map<String, String> colors, String name) {
+        String value = colors.get(name);
+        if (value.startsWith("@color/")) return resolve(colors, value.substring(7));
+        return Long.parseLong(value.substring(1), 16);
+    }
+    private static double luminance(long color) {
+        double[] rgb = {(color >> 16) & 255, (color >> 8) & 255, color & 255};
+        for (int i=0; i<3; i++) {
+            double c = rgb[i] / 255;
+            rgb[i] = c <= .04045 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4);
+        }
+        return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+    }
+}
