@@ -25,8 +25,8 @@
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
         android:minHeight="@dimen/min_touch_target"
-        app:tabMode="scrollable"
-        app:tabGravity="center"
+        app:tabMode="fixed"
+        app:tabGravity="fill"
         app:tabIndicatorColor="?attr/colorPrimary"
         app:tabTextColor="?attr/colorOnSurfaceVariant"
         app:tabSelectedTextColor="?attr/colorPrimary"
@@ -78,7 +78,9 @@
                 android:minWidth="@dimen/min_touch_target"
                 android:maxLines="2"
                 android:ellipsize="end"
-                android:text="@string/archive_filter_date" />
+                android:text="@string/archive_filter_date"
+                app:icon="@drawable/ic_tune_filter"
+                app:iconGravity="textStart" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/archiveClearFilters"
