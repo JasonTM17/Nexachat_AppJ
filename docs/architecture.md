@@ -2,7 +2,7 @@
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v13) → REST
-> `/api/v1` + STOMP over WebSocket → Spring Boot 3.4 modular monolith → PostgreSQL 16
+> `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
 > (Flyway V1–V20 + V22 + V24; V21/V23 reserved) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
@@ -33,7 +33,7 @@ flowchart LR
         UI --> SETTINGS
     end
 
-    subgraph Server["Backend — Modular Monolith (Java 21 LTS + Spring Boot 3.4)"]
+    subgraph Server["Backend — Modular Monolith (Java 21 LTS + Spring Boot 3.5.16)"]
         direction TB
         SEC["Spring Security<br/>JWT filter · Rate limit"]
         subgraph Mod["Modules"]

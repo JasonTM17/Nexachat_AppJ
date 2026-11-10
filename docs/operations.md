@@ -7,6 +7,11 @@ secret before starting the stack. Do not commit `.env` or signing files.
 
 ## Configuration
 
+Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
+`NEXACHAT_RAG_ENABLED`) must be exactly `true` or `false` in the environment or
+`.env` file. Spring Boot 3.5 no longer treats values such as `1`, `yes`, or
+`on` as enabled.
+
 | Variable | Required in production | Compose default | Placeholder example |
 |---|---|---|---|
 | `DATABASE_URL` | Yes outside Compose; Compose supplies a default | `jdbc:postgresql://db:5432/nexachat` | `jdbc:postgresql://db:5432/nexachat` |
