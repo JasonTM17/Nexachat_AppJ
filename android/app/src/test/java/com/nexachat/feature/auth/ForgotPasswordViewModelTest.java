@@ -11,6 +11,7 @@ import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.schedulers.TestScheduler;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -38,6 +39,7 @@ public final class ForgotPasswordViewModelTest {
 
     private PasswordResetRepository repository;
     private MutableClock clock;
+    private TestScheduler tickerScheduler;
     private ForgotPasswordViewModel viewModel;
 
     @Before
@@ -47,8 +49,9 @@ public final class ForgotPasswordViewModelTest {
         RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = mock(PasswordResetRepository.class);
         clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+        tickerScheduler = new TestScheduler();
         SavedStateHandle handle = new SavedStateHandle();
-        viewModel = new ForgotPasswordViewModel(repository, handle, clock);
+        viewModel = new ForgotPasswordViewModel(repository, handle, clock, tickerScheduler);
     }
 
     @After
@@ -90,7 +93,10 @@ public final class ForgotPasswordViewModelTest {
         viewModel.onNewPasswordChanged("newpass12");
         viewModel.onConfirmPasswordChanged("newpass12");
         viewModel.submitReset();
-        assertEquals(List.of(ForgotPasswordViewModel.Event.PasswordChanged), events);
+        assertEquals(
+                List.of(ForgotPasswordViewModel.Event.CodeSent,
+                        ForgotPasswordViewModel.Event.PasswordChanged),
+                events);
         verify(repository).confirmReset(eq("+84912345678"), eq("123456"), eq("newpass12"));
     }
 
@@ -120,6 +126,22 @@ public final class ForgotPasswordViewModelTest {
         assertTrue(viewModel.getUiState().getValue().getResendSecondsRemaining() > 0);
         viewModel.resendCode();
         verify(repository, times(1)).requestResetCode(anyString());
+    }
+
+    @Test
+    public void cooldownTicksDownToZeroWithoutBackgroundThreads() {
+        when(repository.requestResetCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        viewModel.onPhoneChanged("+84912345678");
+        viewModel.sendCode();
+
+        clock.advanceSeconds(30);
+        tickerScheduler.advanceTimeBy(30, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(30, viewModel.getUiState().getValue().getResendSecondsRemaining());
+
+        clock.advanceSeconds(30);
+        tickerScheduler.advanceTimeBy(30, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(0, viewModel.getUiState().getValue().getResendSecondsRemaining());
     }
 
     @Test
@@ -173,12 +195,35 @@ public final class ForgotPasswordViewModelTest {
     @Test
     public void secretsAreNotWrittenToSavedStateHandle() {
         SavedStateHandle handle = new SavedStateHandle();
-        ForgotPasswordViewModel local = new ForgotPasswordViewModel(repository, handle, clock);
+        ForgotPasswordViewModel local =
+                new ForgotPasswordViewModel(repository, handle, clock, tickerScheduler);
         local.onOtpChanged("123456");
         local.onNewPasswordChanged("secret-pass");
         local.onConfirmPasswordChanged("secret-pass");
         assertFalse(handle.keys().stream().anyMatch(
                 key -> key.contains("otp") || key.contains("password")));
+    }
+
+    @Test
+    public void changePhoneEntryRestoresThePhoneStepForCorrection() {
+        when(repository.requestResetCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        viewModel.onPhoneChanged("+84912345678");
+        viewModel.sendCode();
+        viewModel.onOtpChanged("123456");
+        viewModel.onNewPasswordChanged("newpass12");
+        viewModel.onConfirmPasswordChanged("newpass12");
+
+        viewModel.changePhoneEntry();
+
+        ForgotPasswordViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isCodeRequested());
+        assertFalse(state.isSending());
+        assertFalse(state.isResending());
+        assertEquals("+84912345678", state.getPhone());
+        assertEquals("", state.getOtp());
+        assertEquals("", state.getNewPassword());
+        assertEquals(0, state.getResendSecondsRemaining());
     }
 
     @Test

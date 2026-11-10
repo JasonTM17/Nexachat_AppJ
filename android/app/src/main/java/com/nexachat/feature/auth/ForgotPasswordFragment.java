@@ -57,7 +57,11 @@ public final class ForgotPasswordFragment extends Fragment {
         });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), event -> {
-            if (event == ForgotPasswordViewModel.Event.PasswordChanged) {
+            if (event == ForgotPasswordViewModel.Event.CodeSent) {
+                binding.forgotNeutralMessage.announceForAccessibility(
+                        getString(R.string.forgot_password_neutral_sent));
+                binding.forgotOtpInput.requestFocus();
+            } else if (event == ForgotPasswordViewModel.Event.PasswordChanged) {
                 Bundle result = new Bundle();
                 result.putBoolean(ForgotPasswordViewModel.RESULT_PASSWORD_CHANGED, true);
                 getParentFragmentManager().setFragmentResult(
@@ -102,10 +106,6 @@ public final class ForgotPasswordFragment extends Fragment {
         binding.forgotNeutralMessage.setVisibility(afterSend ? View.VISIBLE : View.GONE);
         binding.forgotResetSection.setVisibility(afterSend ? View.VISIBLE : View.GONE);
         binding.forgotChangePhone.setVisibility(afterSend ? View.VISIBLE : View.GONE);
-        if (afterSend && !rendering) {
-            binding.forgotNeutralMessage.announceForAccessibility(
-                    getString(R.string.forgot_password_neutral_sent));
-        }
 
         if (afterSend) {
             if (!binding.forgotOtpInput.getText().toString().equals(state.getOtp())) {

@@ -10,6 +10,7 @@ import com.nexachat.core.common.Result;
 import com.nexachat.data.PasswordResetRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -33,6 +34,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
     private final PasswordResetRepository repository;
     private final SavedStateHandle savedState;
     private final Clock clock;
+    private final Scheduler tickerScheduler;
     private final CompositeDisposable disposables = new CompositeDisposable();
     @Nullable private Disposable ticker;
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
@@ -43,16 +45,25 @@ public final class ForgotPasswordViewModel extends ViewModel {
     public ForgotPasswordViewModel(
             PasswordResetRepository repository,
             SavedStateHandle savedState) {
-        this(repository, savedState, Clock.systemUTC());
+        this(repository, savedState, Clock.systemUTC(), Schedulers.computation());
     }
 
     ForgotPasswordViewModel(
             PasswordResetRepository repository,
             SavedStateHandle savedState,
             Clock clock) {
+        this(repository, savedState, clock, Schedulers.computation());
+    }
+
+    ForgotPasswordViewModel(
+            PasswordResetRepository repository,
+            SavedStateHandle savedState,
+            Clock clock,
+            Scheduler tickerScheduler) {
         this.repository = Objects.requireNonNull(repository);
         this.savedState = Objects.requireNonNull(savedState);
         this.clock = Objects.requireNonNull(clock);
+        this.tickerScheduler = Objects.requireNonNull(tickerScheduler);
         String prefill = savedState.get(ARG_PREFILL_PHONE);
         String storedPhone = savedState.get(KEY_PHONE);
         if (storedPhone == null && prefill != null && !prefill.isEmpty()) {
@@ -118,6 +129,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
                                 savedState.set(KEY_CODE_REQUESTED, true);
                                 savedState.set(KEY_RESEND_UNTIL_MS, until);
                                 armTickerIfNeeded();
+                                events.postValue(Event.CodeSent);
                                 return current
                                         .withSending(false)
                                         .withCodeRequested(true)
@@ -261,7 +273,8 @@ public final class ForgotPasswordViewModel extends ViewModel {
         if (ticker != null && !ticker.isDisposed()) {
             return;
         }
-        ticker = io.reactivex.rxjava3.core.Observable.interval(0, 1, TimeUnit.SECONDS)
+        ticker = io.reactivex.rxjava3.core.Observable.interval(
+                        0, 1, TimeUnit.SECONDS, tickerScheduler)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(ignored -> {
                     Long deadline = savedState.get(KEY_RESEND_UNTIL_MS);
@@ -312,6 +325,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
     }
 
     public enum Event {
+        CodeSent,
         PasswordChanged
     }
 

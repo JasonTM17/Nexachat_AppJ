@@ -11,6 +11,7 @@ import com.nexachat.core.network.dto.VerifyRecoveryEmailResponse;
 import com.nexachat.data.RecoveryEmailRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -30,6 +31,7 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
     private final RecoveryEmailRepository repository;
     private final SavedStateHandle savedState;
     private final Clock clock;
+    private final Scheduler tickerScheduler;
     private final CompositeDisposable disposables = new CompositeDisposable();
     @Nullable private Disposable ticker;
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
@@ -39,16 +41,25 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
     public RecoveryEmailOtpViewModel(
             RecoveryEmailRepository repository,
             SavedStateHandle savedState) {
-        this(repository, savedState, Clock.systemUTC());
+        this(repository, savedState, Clock.systemUTC(), Schedulers.computation());
     }
 
     RecoveryEmailOtpViewModel(
             RecoveryEmailRepository repository,
             SavedStateHandle savedState,
             Clock clock) {
+        this(repository, savedState, clock, Schedulers.computation());
+    }
+
+    RecoveryEmailOtpViewModel(
+            RecoveryEmailRepository repository,
+            SavedStateHandle savedState,
+            Clock clock,
+            Scheduler tickerScheduler) {
         this.repository = Objects.requireNonNull(repository);
         this.savedState = Objects.requireNonNull(savedState);
         this.clock = Objects.requireNonNull(clock);
+        this.tickerScheduler = Objects.requireNonNull(tickerScheduler);
         String email = savedState.get(ARG_EMAIL);
         Long resendUntil = savedState.get(KEY_RESEND_UNTIL_MS);
         updateState(state -> state.withEmail(email == null ? "" : email));
@@ -150,7 +161,8 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
         if (ticker != null && !ticker.isDisposed()) {
             return;
         }
-        ticker = io.reactivex.rxjava3.core.Observable.interval(0, 1, TimeUnit.SECONDS)
+        ticker = io.reactivex.rxjava3.core.Observable.interval(
+                        0, 1, TimeUnit.SECONDS, tickerScheduler)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(ignored -> {
                     Long deadline = savedState.get(KEY_RESEND_UNTIL_MS);
