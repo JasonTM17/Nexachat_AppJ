@@ -182,6 +182,8 @@ final class FakeGoogleServers implements AutoCloseable {
         tokenRequestContentTypes.add(exchange.getRequestHeaders().getFirst("Content-Type"));
         tokenAssertions.add(formValue(body, "assertion"));
         if (tokenDelayMillis > 0) {
+            // Deliberate fake-server delay: it holds the token exchange open long
+            // enough for concurrent sends to overlap, which is the tested window.
             try {
                 Thread.sleep(tokenDelayMillis);
             } catch (InterruptedException ex) {

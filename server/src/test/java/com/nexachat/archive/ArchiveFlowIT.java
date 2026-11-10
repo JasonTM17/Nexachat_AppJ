@@ -2,6 +2,8 @@ package com.nexachat.archive;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.JwtProperties;
+import com.nexachat.testutil.TestAccessTokens;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -94,6 +96,8 @@ class ArchiveFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private JwtProperties jwtProperties;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -320,16 +324,19 @@ class ArchiveFlowIT {
     void revokedAccessTokenIsRejected() throws Exception {
         UUID conversationId = openGroup(bob, dana);
 
-        archive(conversationId, dana, "type=MEDIA").andExpect(status().isOk());
+        // Access tokens carry second-granularity iat; stamp this one before the
+        // revocation cutoff instead of sleeping into the next wall-clock second.
+        TestUser issuedBeforeLogout = new TestUser(dana.id(), dana.phone(), dana.displayName(),
+                TestAccessTokens.accessTokenIssuedAt(
+                        jwtProperties, dana.id(), Instant.now().minusSeconds(5)));
 
-        // Access tokens carry second-granularity iat; let the cookie fall in a
-        // previous second so the revocation cutoff is strictly later.
-        Thread.sleep(1_100L);
+        archive(conversationId, issuedBeforeLogout, "type=MEDIA").andExpect(status().isOk());
+
         mockMvc.perform(post("/api/v1/auth/logout-all")
-                        .header("Authorization", "Bearer " + dana.accessToken()))
+                        .header("Authorization", "Bearer " + issuedBeforeLogout.accessToken()))
                 .andExpect(status().isNoContent());
 
-        archive(conversationId, dana, "type=MEDIA")
+        archive(conversationId, issuedBeforeLogout, "type=MEDIA")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
