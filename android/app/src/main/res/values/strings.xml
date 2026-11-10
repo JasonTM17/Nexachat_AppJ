@@ -482,4 +482,14 @@
     <string name="media_zoom_level">Zoom %1$d%%</string>
     <string name="media_saved">File saved</string>
     <string name="media_save_failed">Could not save file</string>
+
+    <!-- System events (group membership, title) -->
+    <string name="system_event_group_created">%1$s created the group</string>
+    <string name="system_event_group_member_added">%1$s added %2$s</string>
+    <string name="system_event_group_member_approved">%1$s approved %2$s to join the group</string>
+    <string name="system_event_group_invite_joined">%1$s joined the group via invite link</string>
+    <string name="system_event_group_member_left">%1$s left the group</string>
+    <string name="system_event_group_member_removed">%1$s removed %2$s</string>
+    <string name="system_event_group_renamed">%1$s renamed the group to “%2$s”</string>
+    <string name="system_event_group_role_changed">%1$s changed %2$s’s role</string>
 </resources>

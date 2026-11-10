@@ -477,4 +477,14 @@
     <string name="media_zoom_level">Thu phóng %1$d%%</string>
     <string name="media_saved">Đã lưu tệp</string>
     <string name="media_save_failed">Không thể lưu tệp</string>
+
+    <!-- System events (group membership, title) -->
+    <string name="system_event_group_created">%1$s đã tạo nhóm</string>
+    <string name="system_event_group_member_added">%1$s đã thêm %2$s</string>
+    <string name="system_event_group_member_approved">%1$s đã duyệt %2$s tham gia nhóm</string>
+    <string name="system_event_group_invite_joined">%1$s đã tham gia nhóm qua liên kết mời</string>
+    <string name="system_event_group_member_left">%1$s đã rời nhóm</string>
+    <string name="system_event_group_member_removed">%1$s đã xóa %2$s khỏi nhóm</string>
+    <string name="system_event_group_renamed">%1$s đã đổi tên nhóm thành “%2$s”</string>
+    <string name="system_event_group_role_changed">%1$s đã đổi vai trò của %2$s</string>
 </resources>
