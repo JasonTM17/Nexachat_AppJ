@@ -199,7 +199,7 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
 
 3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
    - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
-   - Automatically escalated to when the summary task is complex or when the user explicitly triggers "Regenerate / Refresh" in AI mode.
+   - Preferred when the summary task is complex; an explicit "Regenerate / Refresh" keeps the request on an LLM tier rather than the built-in local engine.
    - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
      - Window message count $\ge 12$ messages (default `min-messages: 12`).
      - Window total length $\ge 1500$ characters (default `min-chars: 1500`).
