@@ -92,7 +92,13 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordLayout.setError(mismatch ? getString(R.string.error_password_mismatch) : null);
         binding.errorBanner.setVisibility(s.getError() == null ? View.GONE : View.VISIBLE);
         if (s.getError() != null) binding.errorBanner.setText(ApiErrorText.text(requireContext(), s.getError()));
-        binding.registerButton.setEnabled(!s.getLoading());
+        boolean notLoading = !s.getLoading();
+        binding.nameInput.setEnabled(notLoading);
+        binding.phoneInput.setEnabled(notLoading);
+        binding.passwordInput.setEnabled(notLoading);
+        binding.confirmPasswordInput.setEnabled(notLoading);
+        binding.registerButton.setEnabled(notLoading);
+        binding.secondaryAction.setEnabled(notLoading);
         rendering = false;
     }
     @Override public void onSaveInstanceState(@NonNull Bundle out) { super.onSaveInstanceState(out); out.putString("confirm", confirmation); out.putBoolean("confirmChecked", confirmChecked); }

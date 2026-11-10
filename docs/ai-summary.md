@@ -11,7 +11,7 @@ Two engines:
 | Engine | `generatedBy` | Network | When |
 |---|---|---|---|
 | Local extractive (heuristic, deterministic) | `LOCAL` | none | default, always available |
-| External LLM (OpenAI-compatible endpoint) | `LLM` | outbound HTTPS | only if the operator configured a key **and** the requesting user opted in; any failure falls back to local |
+| External LLM (OpenAI-compatible endpoint) | `LLM` | outbound HTTPS (cloud) or HTTP to the configured local-server host | only if the operator configured a usable cloud key or the local-server model **and** the requesting user opted in; any failure falls back to local |
 
 The local engine selects and labels existing messages; it does not generate new prose.
 
@@ -23,7 +23,7 @@ The local engine selects and labels existing messages; it does not generate new 
 { "scope": "UNREAD|LAST_N|TODAY", "limit": 50, "language": "AUTO|VI|EN", "refresh": false }
 ```
 
-`limit` applies to `LAST_N` (5..500). The window is capped at the latest 500 usable messages: `TEXT`, not deleted, not system; each message is truncated to 1,000 characters.
+`limit` applies to `LAST_N` (5..500). The window is capped at the latest 500 usable messages: `TEXT`, non-empty, not deleted, without attachments, not system; each message is truncated to 1,000 characters.
 
 `refresh: true` skips a valid cache read, regenerates the summary, and replaces the cache entry for the provider that produced the result. Refresh requests still count toward both rate limits.
 
@@ -47,8 +47,9 @@ Response `200`:
 ```
 
 Arrays are never null. Every `messageIds` is non-empty and a subset of the input window.
-`provider` is `primary` or `fallback` when an LLM produced the summary, and `null` when
-the local engine produced it. `contextOmitted` is `true` only when the returned
+`provider` is `primary` when the primary LLM target answered, `fallback` when the
+configured fallback target answered, and `null` when the local engine or a
+secondary LLM target answered. `contextOmitted` is `true` only when the returned
 summary was produced by the external LLM and at least one message in the window
 was excluded because its author opted out in this conversation; it never
 identifies the member. Local summaries report `false` because the local engine
@@ -62,7 +63,7 @@ Limits: 10 requests/min and 60/day per user.
 
 ## Settings and consent
 
-`GET /api/v1/users/me/settings` returns `showPresence` and `aiSummaryConsent` as booleans; `aiSummaryConsent` defaults to `false`. `PATCH` accepts either field independently; an omitted field keeps its current value, and an empty object is rejected.
+`GET /api/v1/users/me/settings` returns `showPresence`, `showSeen` and `aiSummaryConsent` as booleans; `showPresence` and `showSeen` default to `true`, and `aiSummaryConsent` defaults to `false`. `PATCH` accepts any of the three fields independently; an omitted field keeps its current value, and an empty object is rejected.
 
 Provider selection uses the persisted `users.ai_summary_consent` value. The LLM adapter checks that value again immediately before its outbound request, so consent revoked after provider selection still prevents the external call.
 
@@ -89,7 +90,7 @@ excluded, the LLM is not called and the local engine answers with
 
 ## Privacy
 
-- Without the operator key or without the caller's consent no text leaves the server.
+- Without a usable external LLM tier configured (a cloud key or an enabled local-server model) or without the caller's consent, no text leaves the server.
 - With both, the server sends only usable message text, after redaction: phone numbers, emails, URL paths and queries, long digit strings, token-like strings; sender names become stable labels (`U1`, `U2`, ...). Message ids never leave the server (the model cites short indexes).
 - Eligible text from every participant in the window, including the requester, is sent on the requester's behalf, except text authored by a member who opted out in that conversation. The cloud primary, cloud fallback and the local server model all receive the filtered window; only the built-in local extractive engine may still use the opted-out messages.
 - Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits, deletes and opt-out changes change the cache key or invalidate the cached entry.
@@ -99,8 +100,11 @@ excluded, the LLM is not called and the local engine answers with
 | Configuration key | Environment variable | Default |
 |---|---|---|
 | `nexachat.summary.provider` | `NEXACHAT_SUMMARY_PROVIDER` | `auto` |
+| `nexachat.summary.complexity.min-messages` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_MESSAGES` | `12` |
+| `nexachat.summary.complexity.min-chars` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_CHARS` | `1500` |
+| `nexachat.summary.complexity.min-participants` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_PARTICIPANTS` | `4` |
 | `nexachat.summary.llm.enabled` | `NEXACHAT_SUMMARY_LLM_ENABLED` | `false` |
-| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `nexachat.summary.llm.model` | `NEXACHAT_SUMMARY_LLM_MODEL` | `gemini-3.1-flash-lite` |
 | `nexachat.summary.llm.api-key` | `NEXACHAT_SUMMARY_LLM_API_KEY` | — (absent ⇒ provider unavailable) |
 | `nexachat.summary.llm.timeout-ms` | `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` | `30000` |
@@ -111,10 +115,16 @@ excluded, the LLM is not called and the local engine answers with
 | `nexachat.summary.llm-fallback.model` | `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | `deepseek-flash` |
 | `nexachat.summary.llm-fallback.api-key` | `NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY` | — (absent ⇒ fallback unavailable) |
 | `nexachat.summary.llm-fallback.timeout-ms` | `NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` | `30000` |
+| `nexachat.summary.llm.local-enabled` | `NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED` | `false` |
+| `nexachat.summary.llm.local-base-url` | `NEXACHAT_SUMMARY_LOCAL_LLM_BASE_URL` | `http://host.docker.internal:11434/v1` |
+| `nexachat.summary.llm.local-model` | `NEXACHAT_SUMMARY_LOCAL_LLM_MODEL` | `qwen2.5:3b` |
+| `nexachat.summary.llm.local-api-key` | `NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY` | `local-ollama` |
+| `nexachat.summary.llm.local-timeout-ms` | `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | `60000` |
 
-`provider` is `auto` (LLM only with a key and user consent), `local`, or `llm`. The base
+`provider` is `auto` (LLM only with a usable cloud key or local-server model, and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
-endpoints are rejected unless the host is loopback. The provider is OpenAI-compatible
+endpoints are rejected unless the host is loopback; the local-server tier allows
+plain HTTP to its configured host. The provider is OpenAI-compatible
 (tested with Google Gemini `gemini-3.1-flash-lite` through the Gemini OpenAI-compatible
 base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, as well as standard
 OpenAI-compatible endpoints supporting JSON mode `response_format: {"type":"json_object"}`).
@@ -123,9 +133,12 @@ lives only in the gitignored `.env` and is never logged, serialized, or echoed i
 
 Safety behaviour:
 
-- No outbound call is made unless the operator key is configured, the provider is
-  enabled, and the requesting user has `aiSummaryConsent = true`. The provider
-  re-checks the persisted consent immediately before the call.
+- No outbound call is made unless a usable cloud key or enabled local-server model
+  is configured, the relevant tier is enabled, and the requesting user has
+  `aiSummaryConsent = true`. The provider re-checks the persisted consent
+  immediately before the call. The local-server tier sends the same filtered prompt
+  to its configured `nexachat.summary.llm.local-base-url`, which must stay inside
+  the deployment's trust boundary.
 - Message text is redacted before sending (phone numbers, emails, URL paths and
   queries, long digit strings, token-like strings); sender names become stable labels
   `U1..Un`; message ids never leave the server — the model cites short indexes and the
@@ -143,8 +156,9 @@ Safety behaviour:
 
 The primary cloud provider can be paired with a fallback provider under
 `nexachat.summary.llm-fallback.*`. The fallback is disabled by default and
-becomes usable only when its key is configured, so a deployment with an empty
-fallback balance never calls it. It uses the same OpenAI-compatible client,
+becomes usable only when `nexachat.summary.llm-fallback.enabled=true` and its
+key is configured, so a deployment with an empty fallback balance never calls
+it. It uses the same OpenAI-compatible client,
 consent check, opt-out filtering, redaction, base-URL validation and output
 validation as the primary, and it receives the same already-filtered,
 already-redacted prompt.
@@ -154,8 +168,9 @@ the fallback is tried once. A primary 4xx other than 429 (bad request, auth) is
 not retried against the fallback: it would repeat the same bug, and the
 provider error body is never leaked. If both providers fail, the request
 degrades to the local engine exactly as before. The response `provider` field
-is `primary` or `fallback` when an LLM answered, and `null` when the local
-engine answered.
+is `primary` when the primary LLM target answered, `fallback` when the configured
+fallback target answered, and `null` when the local engine or a secondary LLM
+target answered.
 
 Limits: 10 requests/min and 60/day per user; the window is capped at 500 usable
 messages; each message is truncated to 1,000 characters before redaction.
@@ -181,19 +196,32 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
    - Zero external calls, zero API token spend, instant response.
    - Always used when the user has not consented (`aiSummaryConsent = false`) or as the ultimate offline fallback.
 
-2. **Tier 1: Local Server Model Tier (`LOCAL_LLM` / Ollama / vLLM)**
+2. **Tier 1: Local Server Model Tier (Ollama / vLLM)**
    - Configured via `NEXACHAT_SUMMARY_LOCAL_LLM_*` (e.g. `http://host.docker.internal:11434/v1`, model `qwen2.5:3b` or `llama3.2:3b`).
    - Handles routine AI generative summaries on the server machine without burning cloud tokens or transmitting data outside your deployment infrastructure.
+   - Both LLM tiers report `generatedBy: LLM`; the response `model` field is the model identifier of the target that answered.
 
 3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
    - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
-   - Automatically escalated to when the summary task is complex or when the user explicitly triggers "Regenerate / Refresh" in AI mode.
+   - Preferred when the summary task is complex; an explicit "Regenerate / Refresh"
+     keeps the request on an LLM tier rather than the built-in local engine. Refresh
+     never selects cloud over the local-server model.
    - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
      - Window message count $\ge 12$ messages (default `min-messages: 12`).
      - Window total length $\ge 1500$ characters (default `min-chars: 1500`).
      - Participant count $\ge 4$ active senders (default `min-participants: 4`).
-     - Explicit user refresh (`request.refresh() == true`).
 
 4. **Multi-Stage Graceful Fallback**
-   - If Cloud LLM times out, encounters a network issue, or fails schema validation, the request automatically falls back to the Local Server Model (if configured).
-   - If the Local Server Model is unreachable or fails, the request automatically falls back to the Native MMR Engine (`LOCAL`), guaranteeing the user always receives a valid, verified summary without an error banner.
+   When both the cloud and local-server tiers are usable, the order is:
+   - complex window: cloud primary → configured cloud fallback
+     (`nexachat.summary.llm-fallback.*`, retryable failures only) → local-server
+     model → built-in `LOCAL`;
+   - routine window with the local-server model enabled: local-server model →
+     configured cloud fallback (retryable failures only) → cloud primary →
+     built-in `LOCAL`.
+
+   The cloud fallback is tried once on a retryable primary failure (timeout,
+   transport error, HTTP 5xx/429) or when the primary circuit is open; a
+   non-retryable primary 4xx goes straight to the secondary target. If every LLM
+   tier fails, the built-in `LOCAL` engine answers with a `fallbackReason`, so the
+   user still receives a validated summary without an error banner.

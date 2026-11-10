@@ -17,6 +17,8 @@ import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
+import com.nexachat.feature.inbox.InboxBadgeRules;
+import com.nexachat.feature.inbox.InboxRowTypography;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 import com.nexachat.feature.label.ConversationLabel;
 import com.google.android.material.chip.Chip;
@@ -140,20 +142,23 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             title.setText(displayTitle);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
-            Boolean isOnline = null;
-            if (conversation.getPeerPresence() != null) {
-                isOnline = Boolean.valueOf(conversation.getPeerPresence().getOnline());
-            } else if (!conversation.isGroup()) {
-                isOnline = Boolean.TRUE;
-            }
-            avatar.setOnlineStatus(isOnline);
+            avatar.setOnlineStatus(InboxBadgeRules.resolveOnlineStatus(conversation));
 
             boolean unread = conversation.getUnreadCount() > 0;
+            InboxRowTypography.applyUnreadWeight(title, unread);
             preview.setText(ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
                     currentUserId
             ));
+            InboxRowTypography.applyUnreadWeight(preview, unread);
+            int previewColor = resolveThemeColor(
+                    itemView.getContext(),
+                    unread
+                            ? com.google.android.material.R.attr.colorOnSurface
+                            : com.google.android.material.R.attr.colorOnSurfaceVariant
+            );
+            preview.setTextColor(previewColor);
             InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
             int previewIcon = 0;
             if (previewKind == InboxPreviewKind.PHOTO) {
@@ -186,13 +191,14 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                         unread ? com.google.android.material.R.attr.colorPrimary : com.google.android.material.R.attr.colorOnSurfaceVariant
                 );
                 time.setTextColor(timeColor);
+                InboxRowTypography.applyUnreadWeight(time, unread);
             } else {
                 time.setVisibility(View.GONE);
             }
 
             if (unread) {
                 unreadBadge.setVisibility(View.VISIBLE);
-                unreadBadge.setText(String.valueOf(conversation.getUnreadCount()));
+                unreadBadge.setText(InboxBadgeRules.formatUnreadCount(conversation.getUnreadCount()));
             } else {
                 unreadBadge.setVisibility(View.GONE);
             }

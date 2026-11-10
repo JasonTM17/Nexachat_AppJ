@@ -151,7 +151,7 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 | `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
 | `PIN_UPDATED` | `{messageId, pinned}`; conversation id is in the envelope |
 | `USER_TYPING` | `{userId}`; conversation id is in the envelope and the Android client expires the indicator after a local 5 s TTL |
-| `CONVERSATION_UPDATED` | `{conversationId, title, avatarUrl, change, members[]}` state snapshot; also refreshes inbox snippets when the last message is edited or deleted |
+| `CONVERSATION_UPDATED` | `{conversationId, title, avatarUrl, change, members[]}` state snapshot; `change` is `CREATED`, `MEMBERS_ADDED`, `MEMBER_JOINED`, `MEMBER_REMOVED`, `MEMBER_LEFT` or `UPDATED`, and `members[]` are full member rows (`{userId, displayName, phone, avatarUrl, role, joinedAt}`); also refreshes inbox snippets when the last message is edited or deleted |
 | `USER_ONLINE` | `{userId, online:true, lastSeenAt:null}`; `conversationId` is null |
 | `USER_OFFLINE` | `{userId, online:false, lastSeenAt}`; `conversationId` is null |
 
@@ -203,10 +203,12 @@ The sender flips its optimistic Room row from `SENDING` to `SENT` by matching
 time or `serverTs`; a delayed lower-`seq` event still inserts in position.
 
 **Two-tick receipts and read watermarks.** Reception is acknowledged via
-`/app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`), advancing
+`/app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`; REST fallback
+`POST /api/v1/conversations/{id}/delivered` with `{upToSeq}`), advancing
 `conversation_members.last_delivered_seq` and broadcasting `MESSAGE_DELIVERED`.
 Reading is acknowledged via `/app/conversations/{id}/read` (or `/app/chat.read.ack`),
-advancing `last_read_seq` and broadcasting `MESSAGE_READ`. Watermarks are
+advancing `last_read_seq` and broadcasting `MESSAGE_READ`; a read ack also
+advances `last_delivered_seq` to the same `upToSeq`. Watermarks are
 monotonic and cannot exceed the conversation's latest `seq`. In 1-1 chat,
 `messageSeq <= peerDeliveredSeq` renders 2 gray ticks (delivered);
 `messageSeq <= peerReadSeq` renders 2 blue ticks (seen/read) (`ChatBubbleRules.java`).

@@ -1,5 +1,6 @@
 package com.nexachat.attachment;
 
+import com.nexachat.common.MultipartRequests;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -54,13 +56,14 @@ public class AttachmentController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AttachmentResponse> upload(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestParam("file") MultipartFile file,
+            @RequestParam("file") List<MultipartFile> files,
             @RequestParam(required = false) Integer width,
             @RequestParam(required = false) Integer height,
             @RequestParam(required = false) Integer duration,
             @RequestParam(required = false) String blurHash) {
         AttachmentResponse response = attachmentService.upload(
-                requireUserId(principal), file, width, height, duration, blurHash);
+                requireUserId(principal), MultipartRequests.requireSingleFile(files),
+                width, height, duration, blurHash);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

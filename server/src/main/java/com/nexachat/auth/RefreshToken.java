@@ -60,16 +60,41 @@ public class RefreshToken {
     @Column(name = "replaced_by")
     private UUID replacedBy;
 
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "replay_key_digest", length = 64)
+    private String replayKeyDigest;
+
+    @Column(name = "replay_ciphertext")
+    private byte[] replayCiphertext;
+
+    @Column(name = "replay_nonce")
+    private byte[] replayNonce;
+
+    @Column(name = "replay_rotated_at")
+    private Instant replayRotatedAt;
+
+    @Column(name = "replay_until")
+    private Instant replayUntil;
+
+    @Column(name = "replay_invalidated", nullable = false)
+    private boolean replayInvalidated;
+
     protected RefreshToken() {
         // JPA only
     }
 
     public static RefreshToken issue(User user, String tokenHash, String deviceLabel, Instant expiresAt) {
+        return issue(user, tokenHash, deviceLabel, expiresAt, null);
+    }
+
+    public static RefreshToken issue(User user, String tokenHash, String deviceLabel, Instant expiresAt,
+                                     Instant createdAt) {
         RefreshToken token = new RefreshToken();
         token.user = user;
         token.tokenHash = tokenHash;
         token.deviceLabel = deviceLabel;
         token.expiresAt = expiresAt;
+        token.createdAt = createdAt;
         return token;
     }
 
@@ -112,6 +137,30 @@ public class RefreshToken {
         return replacedBy;
     }
 
+    public String getReplayKeyDigest() {
+        return replayKeyDigest;
+    }
+
+    public byte[] getReplayCiphertext() {
+        return replayCiphertext == null ? null : replayCiphertext.clone();
+    }
+
+    public byte[] getReplayNonce() {
+        return replayNonce == null ? null : replayNonce.clone();
+    }
+
+    public Instant getReplayRotatedAt() {
+        return replayRotatedAt;
+    }
+
+    public Instant getReplayUntil() {
+        return replayUntil;
+    }
+
+    public boolean isReplayInvalidated() {
+        return replayInvalidated;
+    }
+
     public boolean isRevoked() {
         return revokedAt != null;
     }
@@ -126,5 +175,23 @@ public class RefreshToken {
 
     public void markReplacedBy(UUID replacementId) {
         this.replacedBy = replacementId;
+    }
+
+    public void storeReplay(String keyDigest, byte[] nonce, byte[] ciphertext,
+                            Instant rotatedAt, Instant replayUntil) {
+        this.replayKeyDigest = keyDigest;
+        this.replayNonce = nonce.clone();
+        this.replayCiphertext = ciphertext.clone();
+        this.replayRotatedAt = rotatedAt;
+        this.replayUntil = replayUntil;
+        this.replayInvalidated = false;
+    }
+
+    public void invalidateReplay() {
+        if (replayKeyDigest != null) {
+            this.replayInvalidated = true;
+        }
+        this.replayCiphertext = null;
+        this.replayNonce = null;
     }
 }

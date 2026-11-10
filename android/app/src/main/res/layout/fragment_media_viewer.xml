@@ -3,19 +3,18 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="?attr/colorSurface">
 
     <FrameLayout
         android:id="@+id/mediaContent"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <ImageView
+        <com.nexachat.feature.media.ZoomableMediaImageView
             android:id="@+id/mediaImage"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:contentDescription="@string/cd_open_attachment"
-            android:scaleType="fitCenter"
+            android:contentDescription="@string/cd_media_photo_zoom"
             android:visibility="gone" />
 
         <androidx.media3.ui.PlayerView
@@ -43,11 +42,11 @@
         android:id="@+id/viewerToolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@drawable/bg_media_scrim"
+        android:background="?attr/colorSurface"
         android:elevation="0dp"
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
-        app:navigationIconTint="?attr/colorOnPrimary"
+        app:navigationIconTint="?attr/colorOnSurface"
         app:titleTextAppearance="?attr/textAppearanceTitleMedium"
-        app:titleTextColor="?attr/colorOnPrimary" />
+        app:titleTextColor="?attr/colorOnSurface" />
 </FrameLayout>
