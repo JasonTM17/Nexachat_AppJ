@@ -153,6 +153,10 @@ public class AuthService {
 
         User user = userRepository.findById(rotation.userId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid"));
+        if (user.getDeletedAt() != null) {
+            tokenService.revokeIfOwned(rotation.refreshToken(), rotation.userId());
+            throw ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid");
+        }
         return buildResponse(user, rotation.refreshToken());
     }
 
@@ -175,8 +179,11 @@ public class AuthService {
 
     @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
 
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");

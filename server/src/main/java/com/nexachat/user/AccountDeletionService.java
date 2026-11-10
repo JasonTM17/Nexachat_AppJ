@@ -1,23 +1,26 @@
 package com.nexachat.user;
 
+import com.nexachat.auth.AccessTokensRevokedEvent;
 import com.nexachat.attachment.StorageService;
-import com.nexachat.auth.AccessTokenRevocationService;
-import com.nexachat.auth.TokenService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.GroupService;
 import com.nexachat.notification.UserDeviceTokenRepository;
+import com.nexachat.auth.TokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -37,7 +40,6 @@ public class AccountDeletionService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
-    private final AccessTokenRevocationService accessTokenRevocationService;
     private final UserDeviceTokenRepository deviceTokenRepository;
     private final ConversationMemberRepository memberRepository;
     private final GroupService groupService;
@@ -45,22 +47,24 @@ public class AccountDeletionService {
     private final ContactRepository contactRepository;
     private final Clock clock;
     private final AccountDeletionJdbcSupport jdbcSupport;
+    private final ApplicationEventPublisher eventPublisher;
+    private final AccountDeletionCoordination coordination;
 
     public AccountDeletionService(UserRepository userRepository,
                                   PasswordEncoder passwordEncoder,
                                   TokenService tokenService,
-                                  AccessTokenRevocationService accessTokenRevocationService,
                                   UserDeviceTokenRepository deviceTokenRepository,
                                   ConversationMemberRepository memberRepository,
                                   GroupService groupService,
                                   StorageService storageService,
                                   ContactRepository contactRepository,
                                   Clock clock,
-                                  @Autowired(required = false) AccountDeletionJdbcSupport jdbcSupport) {
+                                  AccountDeletionJdbcSupport jdbcSupport,
+                                  ApplicationEventPublisher eventPublisher,
+                                  AccountDeletionCoordination coordination) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
-        this.accessTokenRevocationService = accessTokenRevocationService;
         this.deviceTokenRepository = deviceTokenRepository;
         this.memberRepository = memberRepository;
         this.groupService = groupService;
@@ -68,6 +72,8 @@ public class AccountDeletionService {
         this.contactRepository = contactRepository;
         this.clock = clock;
         this.jdbcSupport = jdbcSupport;
+        this.eventPublisher = eventPublisher;
+        this.coordination = coordination;
     }
 
     @Transactional
@@ -81,19 +87,31 @@ public class AccountDeletionService {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
 
+        String avatarStorageKey = avatarStorageKey(user.getAvatarUrl());
+        List<String> unboundKeys = new ArrayList<>(jdbcSupport.findUnboundAttachmentStorageKeys(userId));
+
         leaveAllGroups(userId);
         contactRepository.deleteAllInvolvingUser(userId);
         deviceTokenRepository.deleteAllByUserId(userId);
-        if (jdbcSupport != null) {
-            jdbcSupport.scrubAiData(userId);
-        }
-        deleteAvatarFile(user);
+        jdbcSupport.scrubAiData(userId);
+        jdbcSupport.deleteGroupJoinRequests(userId);
+        jdbcSupport.deleteLabels(userId);
+        jdbcSupport.deleteUnboundAttachments(userId);
 
         tokenService.revokeAllForUser(userId);
-        accessTokenRevocationService.revoke(userId);
 
-        user.markDeleted(Instant.now(clock));
-        userRepository.save(user);
+        user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        coordination.beforeTombstone(userId);
+
+        Instant deletedAt = Instant.now(clock);
+        Instant accessCutoff = deletedAt.truncatedTo(ChronoUnit.SECONDS);
+        user.markDeleted(deletedAt);
+        user.invalidateAccessTokens(accessCutoff);
+        userRepository.saveAndFlush(user);
+
+        deleteStorageAfterCommit(avatarStorageKey, unboundKeys);
+        eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
         log.info("Account deleted for user {}", userId);
     }
 
@@ -105,12 +123,32 @@ public class AccountDeletionService {
         }
     }
 
-    private void deleteAvatarFile(User user) {
-        String avatarUrl = user.getAvatarUrl();
+    private static String avatarStorageKey(String avatarUrl) {
         if (avatarUrl == null || !avatarUrl.startsWith(FILES_PREFIX)) {
+            return null;
+        }
+        return avatarUrl.substring(FILES_PREFIX.length());
+    }
+
+    private void deleteStorageAfterCommit(String avatarKey, List<String> unboundKeys) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            deleteStorageKeys(avatarKey, unboundKeys);
             return;
         }
-        String storageKey = avatarUrl.substring(FILES_PREFIX.length());
-        storageService.deleteIfExists(storageKey);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteStorageKeys(avatarKey, unboundKeys);
+            }
+        });
+    }
+
+    private void deleteStorageKeys(String avatarKey, List<String> unboundKeys) {
+        if (avatarKey != null) {
+            storageService.deleteIfExists(avatarKey);
+        }
+        for (String key : unboundKeys) {
+            storageService.deleteIfExists(key);
+        }
     }
 }

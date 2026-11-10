@@ -106,8 +106,8 @@ class ConversationServiceTest {
         Conversation stored = conversationWithKey("k");
         when(directConversationCreator.createDirect(any(), any(), anyString())).thenReturn(stored);
         when(memberRepository.findMemberViews(stored.getId())).thenReturn(List.of(
-                new ConversationMemberView(callerId, "Caller", "+84901112233"),
-                new ConversationMemberView(otherId, "Other", "+84987776655")));
+                new ConversationMemberView(callerId, "Caller", "+84901112233", false),
+                new ConversationMemberView(otherId, "Other", "+84987776655", false)));
 
         ConversationService.OpenDirectResult result =
                 conversationService.openDirect(callerId, new OpenDirectRequest(null, otherId));

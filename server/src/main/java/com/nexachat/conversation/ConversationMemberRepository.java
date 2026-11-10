@@ -30,7 +30,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.ConversationMemberView(
-                       u.id, u.displayName, u.phone)
+                       u.id, u.displayName, u.phone, u.deletedAt IS NOT NULL)
             FROM ConversationMember m JOIN m.user u
             WHERE m.conversation.id = :conversationId
             ORDER BY u.id

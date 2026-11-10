@@ -44,7 +44,7 @@ public class UserService {
      */
     @Transactional
     public User updateDisplayName(UUID userId, String displayName) {
-        User user = getById(userId);
+        User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
         if (displayName != null) {
             String trimmed = displayName.trim();
             if (trimmed.isEmpty()) {

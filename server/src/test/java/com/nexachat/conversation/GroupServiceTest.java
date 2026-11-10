@@ -155,8 +155,8 @@ class GroupServiceTest {
         });
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
         when(memberRepository.findMemberViews(conversationId)).thenReturn(List.of(
-                new ConversationMemberView(adminId, "Admin Alice", "+84901110001"),
-                new ConversationMemberView(bobId, "Bob", "+84901110002")));
+                new ConversationMemberView(adminId, "Admin Alice", "+84901110001", false),
+                new ConversationMemberView(bobId, "Bob", "+84901110002", false)));
 
         ConversationResponse response = groupService.createGroup(
                 adminId, new CreateGroupRequest("  Team  ", List.of(bobId)));

@@ -229,6 +229,9 @@ public class GroupService {
         }
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
         memberRepository.saveAndFlush(ConversationMember.join(
                 conversation, user, ConversationMember.Role.MEMBER));
 
@@ -321,7 +324,9 @@ public class GroupService {
             promoteSuccessorToAdmin(conversation, callerId, conversationId, targetUserId);
         }
 
-        String actorName = caller.getUser().getDisplayName();
+        String actorName = accountDeletion && selfRemoval
+                ? com.nexachat.user.DeletedAccountPolicy.DISPLAY_NAME
+                : caller.getUser().getDisplayName();
         // The system line is posted BEFORE the member row is deleted so the
         // acting user is still a member when postSystemMessage checks. A
         // removed member is the event subject so push gating can still reach
@@ -610,7 +615,7 @@ public class GroupService {
         List<UUID> missing = new ArrayList<>();
         for (UUID id : userIds) {
             User user = byId.get(id);
-            if (user == null) {
+            if (user == null || user.getDeletedAt() != null) {
                 missing.add(id);
             } else {
                 resolved.add(user);

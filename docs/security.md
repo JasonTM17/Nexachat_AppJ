@@ -221,7 +221,9 @@ the implementing source file.
   (`AccountDeletionService.java`, Flyway V26 `users.deleted_at`). Success revokes
   every refresh token, stamps the access-token cutoff, unregisters device tokens,
   removes contacts (both directions), clears per-user AI opt-outs and rate-limit
-  rows, deletes the avatar file when stored under `/api/v1/files/avatars/…`, and
+  rows, deletes ask-cache and summary rows for conversations the member belonged to,
+  deletes the avatar file when stored under `/api/v1/files/avatars/…` (after commit),
+  and
   removes the user from each group through an account-deletion leave path that
   auto-promotes a successor admin when needed (in-app self-leave still rejects
   a sole admin while other members remain).

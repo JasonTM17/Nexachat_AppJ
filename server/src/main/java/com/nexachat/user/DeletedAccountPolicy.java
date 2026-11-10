@@ -9,6 +9,10 @@ public final class DeletedAccountPolicy {
 
     public static final String DISPLAY_NAME = "Deleted account";
 
+    /** bcrypt-shaped placeholder; never matches a real password. */
+    public static final String TOMBSTONE_PASSWORD_HASH =
+            "$2a$12$nxacctdelnxacctdelnxacuKxacctdelnxacctdelnxacctdelxxx";
+
     private DeletedAccountPolicy() {
     }
 

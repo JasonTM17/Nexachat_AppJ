@@ -85,10 +85,19 @@ public class ConversationService {
                     ApiErrorCode.VALIDATION_FAILED, "Provide exactly one of phone or userId");
         }
 
-        User other = hasUserId
-                ? userRepository.findById(request.userId())
-                        .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"))
-                : resolveByPhone(request.phone());
+        User other;
+        if (hasUserId) {
+            UUID otherId = request.userId();
+            other = userRepository.findById(otherId)
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+            String existingKey = directKey(callerId, otherId);
+            boolean hasDirect = conversationRepository.findByDirectKey(existingKey).isPresent();
+            if (other.getDeletedAt() != null && !hasDirect) {
+                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+            }
+        } else {
+            other = resolveByPhone(request.phone());
+        }
 
         if (other.getId().equals(callerId)) {
             throw ApiException.of(
