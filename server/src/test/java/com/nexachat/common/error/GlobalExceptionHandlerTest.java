@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.call.CallException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,5 +31,30 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(500);
         assertThat(body).contains("INTERNAL_ERROR", "Internal server error")
                 .doesNotContain("IllegalStateException", "stackTrace", "trace");
+    }
+
+    @Test
+    void missingMultipartPartIsAClientError() {
+        ResponseEntity<com.nexachat.common.dto.ErrorResponse> response =
+                new GlobalExceptionHandler().handleMissingPart(
+                        new MissingServletRequestPartException("file"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().error().code())
+                .isEqualTo(ApiErrorCode.VALIDATION_FAILED.getCode());
+        assertThat(response.getBody().error().message()).contains("file");
+    }
+
+    @Test
+    void malformedMultipartFramingIsAClientError() {
+        ResponseEntity<com.nexachat.common.dto.ErrorResponse> response =
+                new GlobalExceptionHandler().handleMultipart(
+                        new MultipartException("bad boundary"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody().error().code())
+                .isEqualTo(ApiErrorCode.VALIDATION_FAILED.getCode());
+        assertThat(response.getBody().error().message())
+                .doesNotContain("bad boundary");
     }
 }

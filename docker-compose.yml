@@ -1,6 +1,7 @@
 services:
   db:
-    image: postgres:16-alpine
+    # postgres:16-alpine (linux/amd64)
+    image: postgres:16-alpine@sha256:ac838714b7d794185a866e5a6b479b954e7d8a070568aa0acac6fe07c3070bf5
     environment:
       POSTGRES_DB: nexachat
       POSTGRES_USER: ${DATABASE_USER:?Set DATABASE_USER in .env}
@@ -97,6 +98,19 @@ services:
       - "8080:8080"
     volumes:
       - app-uploads:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 25s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness || exit 1"]
       interval: 15s
