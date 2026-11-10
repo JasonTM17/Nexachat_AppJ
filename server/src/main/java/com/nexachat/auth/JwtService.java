@@ -132,7 +132,8 @@ public class JwtService {
      * @throws JwtException for any other signature/format/claim problem
      */
     public JwtPrincipal parseAccessToken(String token) {
-        return new JwtPrincipal(parseAccessTokenClaims(token).userId());
+        AccessTokenClaims claims = parseAccessTokenClaims(token);
+        return new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt());
     }
 
     /** Value echoed to clients as {@code accessTokenExpiresIn}. */

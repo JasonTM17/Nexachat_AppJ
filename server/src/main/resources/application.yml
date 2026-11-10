@@ -234,3 +234,10 @@ nexachat:
     read-timeout-seconds: ${FCM_READ_TIMEOUT_SECONDS:10}
     max-retries: ${FCM_MAX_RETRIES:2}
     retry-base-delay-ms: ${FCM_RETRY_BASE_DELAY_MS:200}
+  firebase:
+    realtime-enabled: ${FIREBASE_REALTIME_ENABLED:false}
+    realtime-default: ${FIREBASE_REALTIME_DEFAULT:stomp}
+    call-status-enabled: ${FIREBASE_CALL_STATUS_ENABLED:false}
+    database-url: ${FIREBASE_DATABASE_URL:}
+    connect-timeout-seconds: ${FIREBASE_CONNECT_TIMEOUT_SECONDS:5}
+    read-timeout-seconds: ${FIREBASE_READ_TIMEOUT_SECONDS:10}
