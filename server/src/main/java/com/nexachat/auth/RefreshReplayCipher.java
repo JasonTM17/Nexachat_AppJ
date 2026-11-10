@@ -52,6 +52,15 @@ public class RefreshReplayCipher {
         }
     }
 
+    public boolean isKeyAvailable() {
+        try {
+            requireKey();
+            return true;
+        } catch (KeyUnavailableException exception) {
+            return false;
+        }
+    }
+
     public static String keyDigest(UUID requestKey) {
         try {
             return java.util.HexFormat.of().formatHex(

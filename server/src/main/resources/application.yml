@@ -35,7 +35,7 @@ management:
         liveness:
           include: ping
         readiness:
-          include: db,flyway,diskSpace
+          include: db,flyway,diskSpace,refreshReplay
   health:
     diskspace:
       path: ${nexachat.storage.root}

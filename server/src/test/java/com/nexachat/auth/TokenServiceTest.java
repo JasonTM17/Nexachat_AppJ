@@ -6,6 +6,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import com.nexachat.user.dto.UserResponse;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.Query;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,9 +15,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -42,6 +43,7 @@ class TokenServiceTest {
     @Mock private RefreshTokenRepository refreshTokenRepository;
     @Mock private UserRepository userRepository;
     @Mock private EntityManager entityManager;
+    @Mock private Query databaseTimeQuery;
     @Mock private RefreshReplayCipher replayCipher;
     @Mock private AuthResponseFactory responseFactory;
 
@@ -50,8 +52,12 @@ class TokenServiceTest {
     @BeforeEach
     void setUp() {
         tokenService = new TokenService(refreshTokenRepository, userRepository, entityManager,
-                new JwtProperties("test-secret", 900, 14), Clock.fixed(NOW, ZoneOffset.UTC),
-                replayCipher, responseFactory, (boundary, operation, userId, tokenId) -> { });
+                new JwtProperties("test-secret", 900, 14), replayCipher, responseFactory,
+                (boundary, operation, userId, tokenId) -> { });
+        lenient().when(entityManager.createNativeQuery("SELECT clock_timestamp()"))
+                .thenReturn(databaseTimeQuery);
+        lenient().when(databaseTimeQuery.getSingleResult())
+                .thenReturn(OffsetDateTime.ofInstant(NOW, ZoneOffset.UTC));
         lenient().when(responseFactory.create(any(), anyString())).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             String refresh = invocation.getArgument(1);
@@ -149,6 +155,7 @@ class TokenServiceTest {
         assertThat(old.getRevokedAt()).isEqualTo(NOW);
         assertThat(old.getReplacedBy()).isEqualTo(replacement.getId());
         verify(userRepository).findByIdForUpdate(userId);
+        verify(entityManager, times(1)).createNativeQuery("SELECT clock_timestamp()");
     }
 
     @Test

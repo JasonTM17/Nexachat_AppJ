@@ -201,30 +201,23 @@ class RefreshRotationReplayIT extends SecurityITBase {
     }
 
     @Test
-    void fixedWindowIncludesBeforeDeadlineAndRejectsAtDeadlineAndBackwardClock() throws Exception {
+    void replayRecoveryUsesDatabaseTimeDespiteApplicationClockSkew() throws Exception {
         Registered session = register("+84905552758");
         String key = UUID.randomUUID().toString();
         postRefresh(session.refreshToken(), key).andExpect(status().isOk());
         Instant rotatedAt = jdbcTemplate.queryForObject(
                 "SELECT replay_rotated_at FROM refresh_tokens WHERE token_hash = ?",
                 (rs, row) -> rs.getTimestamp(1).toInstant(), TokenService.sha256Hex(session.refreshToken()));
-
-        replayClock.set(rotatedAt.plusNanos(999_000_000));
-        postRefresh(session.refreshToken(), key).andExpect(status().isOk());
-        replayClock.set(rotatedAt.plusSeconds(30));
-        postRefresh(session.refreshToken(), key)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
-
-        Instant createdAt = jdbcTemplate.queryForObject(
-                "SELECT created_at FROM refresh_tokens WHERE token_hash = ?",
+        Instant replayUntil = jdbcTemplate.queryForObject(
+                "SELECT replay_until FROM refresh_tokens WHERE token_hash = ?",
                 (rs, row) -> rs.getTimestamp(1).toInstant(), TokenService.sha256Hex(session.refreshToken()));
-        replayClock.set(createdAt.minusSeconds(1));
-        postRefresh(session.refreshToken(), key)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
-        assertThat(refreshRowCount(session.userId())).isEqualTo(2);
-        assertThat(liveRowCount(session.userId())).isEqualTo(1);
+        Instant databaseNow = jdbcTemplate.queryForObject(
+                "SELECT clock_timestamp()", (rs, row) -> rs.getTimestamp(1).toInstant());
+        assertThat(rotatedAt).isAfter(databaseNow.minusSeconds(2)).isBefore(databaseNow.plusSeconds(1));
+        assertThat(replayUntil).isEqualTo(rotatedAt.plusSeconds(30));
+
+        replayClock.set(Instant.parse("2100-01-01T00:00:00Z"));
+        postRefresh(session.refreshToken(), key).andExpect(status().isOk());
     }
 
     @Test
@@ -232,11 +225,12 @@ class RefreshRotationReplayIT extends SecurityITBase {
         Registered session = register("+84905552759");
         String key = UUID.randomUUID().toString();
         postRefresh(session.refreshToken(), key).andExpect(status().isOk());
-        Instant replayUntil = jdbcTemplate.queryForObject(
-                "SELECT replay_until FROM refresh_tokens WHERE token_hash = ?",
-                (rs, row) -> rs.getTimestamp(1).toInstant(), TokenService.sha256Hex(session.refreshToken()));
-        replayClock.set(replayUntil);
+        jdbcTemplate.update("UPDATE refresh_tokens SET replay_until = clock_timestamp() "
+                        + "WHERE token_hash = ?", TokenService.sha256Hex(session.refreshToken()));
 
+        postRefresh(session.refreshToken(), key)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
         assertThat(replayCleanup.scrubExpiredPayloads()).isEqualTo(1);
         Integer tombstones = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM refresh_tokens WHERE token_hash = ? AND replay_key_digest IS NOT NULL "
@@ -248,6 +242,24 @@ class RefreshRotationReplayIT extends SecurityITBase {
                 .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
         assertThat(refreshRowCount(session.userId())).isEqualTo(2);
         assertThat(liveRowCount(session.userId())).isEqualTo(1);
+    }
+
+    @Test
+    void cleanupUsesDatabaseTimeInsteadOfApplicationClock() throws Exception {
+        Registered session = register("+84905552773");
+        postRefresh(session.refreshToken(), UUID.randomUUID().toString()).andExpect(status().isOk());
+        replayClock.set(Instant.parse("2100-01-01T00:00:00Z"));
+
+        assertThat(replayCleanup.scrubExpiredPayloads()).isZero();
+        Integer payloadsBeforeDeadline = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE token_hash = ? AND replay_ciphertext IS NOT NULL",
+                Integer.class, TokenService.sha256Hex(session.refreshToken()));
+        assertThat(payloadsBeforeDeadline).isEqualTo(1);
+
+        jdbcTemplate.update("UPDATE refresh_tokens SET replay_rotated_at = clock_timestamp() - INTERVAL '31 seconds', "
+                        + "replay_until = clock_timestamp() - INTERVAL '1 second' WHERE token_hash = ?",
+                TokenService.sha256Hex(session.refreshToken()));
+        assertThat(replayCleanup.scrubExpiredPayloads()).isEqualTo(1);
     }
 
     @Test
@@ -279,29 +291,22 @@ class RefreshRotationReplayIT extends SecurityITBase {
         Registered expired = register("+84905552762");
         String expiredKey = UUID.randomUUID().toString();
         postRefresh(expired.refreshToken(), expiredKey).andExpect(status().isOk());
-        Instant successorExpiry = jdbcTemplate.queryForObject(
-                "SELECT child.expires_at FROM refresh_tokens parent "
-                        + "JOIN refresh_tokens child ON child.id = parent.replaced_by WHERE parent.token_hash = ?",
-                (rs, row) -> rs.getTimestamp(1).toInstant(), TokenService.sha256Hex(expired.refreshToken()));
-        replayClock.set(successorExpiry);
+        jdbcTemplate.update("UPDATE refresh_tokens child SET expires_at = clock_timestamp() "
+                        + "FROM refresh_tokens parent WHERE parent.token_hash = ? AND child.id = parent.replaced_by",
+                TokenService.sha256Hex(expired.refreshToken()));
         postRefresh(expired.refreshToken(), expiredKey)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
     }
 
     @Test
-    void missingEncryptionKeyReturns503BeforeConsumption() throws Exception {
-        Registered session = register("+84905552763");
-        replayProperties.setKey("");
+    void missingEncryptionKeyUsesLegacyStrictRotation() throws Exception {
+        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("", "+84905552763");
+    }
 
-        postRefresh(session.refreshToken(), UUID.randomUUID().toString())
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("REFRESH_SERVICE_UNAVAILABLE"));
-
-        assertThat(refreshRowCount(session.userId())).isEqualTo(1);
-        assertThat(liveRowCount(session.userId())).isEqualTo(1);
-        replayProperties.setKey(SYNTHETIC_KEY);
-        postRefresh(session.refreshToken(), UUID.randomUUID().toString()).andExpect(status().isOk());
+    @Test
+    void malformedEncryptionKeyUsesLegacyStrictRotation() throws Exception {
+        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("not-base64", "+84905552772");
     }
 
     @Test
@@ -310,10 +315,8 @@ class RefreshRotationReplayIT extends SecurityITBase {
         Registered expiring = login("+84905552769");
         String key = UUID.randomUUID().toString();
         postRefresh(cached.refreshToken(), key).andExpect(status().isOk());
-        Instant expiry = jdbcTemplate.queryForObject(
-                "SELECT expires_at FROM refresh_tokens WHERE token_hash = ?",
-                (rs, row) -> rs.getTimestamp(1).toInstant(), TokenService.sha256Hex(expiring.refreshToken()));
-        replayClock.set(expiry);
+        jdbcTemplate.update("UPDATE refresh_tokens SET expires_at = clock_timestamp() WHERE token_hash = ?",
+                TokenService.sha256Hex(expiring.refreshToken()));
 
         postRefresh(expiring.refreshToken(), null)
                 .andExpect(status().isUnauthorized())
@@ -414,6 +417,24 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     private JsonNode response(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private void assertUnavailableEncryptionKeyUsesLegacyStrictRotation(String configuredKey, String phone)
+            throws Exception {
+        replayProperties.setKey(configuredKey);
+        Registered session = register(phone);
+        String requestKey = UUID.randomUUID().toString();
+
+        postRefresh(session.refreshToken(), requestKey).andExpect(status().isOk());
+        Integer replayRows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE token_hash = ? AND replay_key_digest IS NOT NULL",
+                Integer.class, TokenService.sha256Hex(session.refreshToken()));
+        assertThat(replayRows).isZero();
+
+        postRefresh(session.refreshToken(), requestKey)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
+        assertThat(liveRowCount(session.userId())).isZero();
     }
 
     private int refreshRowCount(UUID userId) {

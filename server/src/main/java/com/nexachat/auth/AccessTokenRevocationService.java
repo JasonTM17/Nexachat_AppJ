@@ -36,7 +36,6 @@ public class AccessTokenRevocationService {
     public void revoke(UUID userId) {
         User user = lockUser(userId, RefreshReplayConfiguration.Operation.ACCESS_REVOKE);
         Instant now = databaseTime();
-        tokenService.invalidateReplayPayloadsForUser(userId);
         stampAccessTokenCutoff(user, now);
         eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
     }
@@ -68,7 +67,7 @@ public class AccessTokenRevocationService {
 
     private static void stampAccessTokenCutoff(User user, Instant now) {
         if (user != null) {
-            // JWT iat has one-second resolution; equality remains the documented cohort limitation.
+            // JWT iat has one-second resolution; access tokens at the cutoff second fail closed.
             user.invalidateAccessTokens(now.truncatedTo(ChronoUnit.SECONDS));
         }
     }

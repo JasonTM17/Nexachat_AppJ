@@ -1,11 +1,22 @@
 package com.nexachat.auth;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -15,10 +26,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * previously issued access token from being replayed, while refresh-token
  * rotation keeps working exactly as before.
  */
+@Import(AccessTokenRevocationIT.RevocationClockConfiguration.class)
 class AccessTokenRevocationIT extends SecurityITBase {
 
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private CutoffClock cutoffClock;
+    @Autowired
+    private AccessTokenValidityCache validityCache;
+
+    @BeforeEach
+    void useSystemClockUnlessATestPinsTheCutoff() {
+        cutoffClock.useSystemTime();
+    }
 
     @Test
     void logoutInvalidatesTheAccessTokenItWasUsedWith() throws Exception {
@@ -27,7 +48,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
         getWithAuth("/api/v1/users/me", user.accessToken())
                 .andExpect(status().isOk());
 
-        letTheTokenFallInThePreviousSecond();
+        pinCutoffAtOrAfterTokens(user.accessToken());
         postJson("/api/v1/auth/logout", Map.of("refreshToken", user.refreshToken()),
                 user.accessToken())
                 .andExpect(status().isNoContent());
@@ -42,7 +63,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
         Registered user = register("+84905551202");
         Registered secondSession = login("+84905551202");
 
-        letTheTokenFallInThePreviousSecond();
+        pinCutoffAtOrAfterTokens(user.accessToken(), secondSession.accessToken());
         postJson("/api/v1/auth/logout-all", Map.of(), user.accessToken())
                 .andExpect(status().isNoContent());
 
@@ -58,7 +79,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
     void passwordChangeInvalidatesExistingAccessTokensButKeepsRotationAlive() throws Exception {
         Registered user = register("+84905551203");
 
-        letTheTokenFallInThePreviousSecond();
+        pinCutoffAtOrAfterTokens(user.accessToken());
         patchWithAuth("/api/v1/auth/password", Map.of(
                         "oldPassword", "secret123",
                         "newPassword", "newsecret456",
@@ -79,6 +100,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
                         refreshed.andReturn().getResponse().getContentAsString())
                 .get("accessToken").asText();
 
+        setCutoffOneSecondBefore(user.userId(), rotatedAccessToken);
         getWithAuth("/api/v1/users/me", rotatedAccessToken)
                 .andExpect(status().isOk());
     }
@@ -88,7 +110,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
         Registered first = register("+84905551204");
         Registered second = login("+84905551204");
 
-        letTheTokenFallInThePreviousSecond();
+        pinCutoffAtOrAfterTokens(first.accessToken(), second.accessToken());
         postJson("/api/v1/auth/logout", Map.of("refreshToken", first.refreshToken()),
                 first.accessToken())
                 .andExpect(status().isNoContent());
@@ -108,6 +130,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
         String rotatedAccessToken = objectMapper.readTree(
                         refreshed.andReturn().getResponse().getContentAsString())
                 .get("accessToken").asText();
+        setCutoffOneSecondBefore(second.userId(), rotatedAccessToken);
         getWithAuth("/api/v1/users/me", rotatedAccessToken)
                 .andExpect(status().isOk());
 
@@ -127,7 +150,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
                         rotated.andReturn().getResponse().getContentAsString())
                 .get("accessToken").asText();
 
-        letTheTokenFallInThePreviousSecond();
+        pinCutoffAtOrAfterTokens(user.accessToken(), rotatedAccessToken);
         postJson("/api/v1/auth/refresh", Map.of("refreshToken", user.refreshToken()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
@@ -141,14 +164,71 @@ class AccessTokenRevocationIT extends SecurityITBase {
     }
 
     @Test
-    void equalSecondIssuedAtRemainsAcceptedUntilJwtExpiry() throws Exception {
+    void logoutAllRejectsAccessTokenIssuedAtTheCutoffSecond() throws Exception {
         Registered user = register("+84905551206");
-        Timestamp issuedAt = Timestamp.from(jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt());
-        jdbcTemplate.update("UPDATE users SET tokens_valid_after = ? WHERE id = ?", issuedAt, user.userId());
+        Instant issuedAt = jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt();
+        cutoffClock.set(issuedAt);
 
-        // The existing one-second cutoff compares strictly before; equal-second
-        // tokens can remain valid until expiry. This is a characterized residual.
-        getWithAuth("/api/v1/users/me", user.accessToken()).andExpect(status().isOk());
+        postJson("/api/v1/auth/logout-all", Map.of(), user.accessToken())
+                .andExpect(status().isNoContent());
+        cutoffClock.useSystemTime();
+
+        getWithAuth("/api/v1/users/me", user.accessToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+    }
+
+    private void setCutoffOneSecondBefore(UUID userId, String accessToken) {
+        Instant issuedAt = jwtService.parseAccessTokenClaims(accessToken).issuedAt();
+        jdbcTemplate.update("UPDATE users SET tokens_valid_after = ? WHERE id = ?",
+                Timestamp.from(issuedAt.minusSeconds(1)), userId);
+        validityCache.evict(userId);
+    }
+
+    private void pinCutoffAtOrAfterTokens(String... accessTokens) {
+        Instant cutoff = java.util.Arrays.stream(accessTokens)
+                .map(jwtService::parseAccessTokenClaims)
+                .map(JwtService.AccessTokenClaims::issuedAt)
+                .max(Instant::compareTo)
+                .orElseThrow();
+        cutoffClock.set(cutoff);
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class RevocationClockConfiguration {
+        @Bean
+        @Primary
+        CutoffClock cutoffClock() {
+            return new CutoffClock();
+        }
+    }
+
+    static final class CutoffClock extends Clock {
+        private final AtomicReference<Instant> fixed = new AtomicReference<>();
+
+        void set(Instant value) {
+            fixed.set(value);
+        }
+
+        void useSystemTime() {
+            fixed.set(null);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant pinned = fixed.get();
+            return pinned == null ? Instant.now() : pinned;
+        }
     }
 
 }

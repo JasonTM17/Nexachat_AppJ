@@ -62,7 +62,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
             WITH candidates AS (
                 SELECT id
                 FROM refresh_tokens
-                WHERE replay_ciphertext IS NOT NULL AND replay_until <= :now
+                WHERE replay_ciphertext IS NOT NULL AND replay_until <= now()
                 ORDER BY replay_until, id
                 LIMIT :batchSize
                 FOR UPDATE SKIP LOCKED
@@ -72,5 +72,5 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
             FROM candidates
             WHERE token.id = candidates.id
             """, nativeQuery = true)
-    int scrubExpiredReplayPayloads(@Param("now") Instant now, @Param("batchSize") int batchSize);
+    int scrubExpiredReplayPayloads(@Param("batchSize") int batchSize);
 }

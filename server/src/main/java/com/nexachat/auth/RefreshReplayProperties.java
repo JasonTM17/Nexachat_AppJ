@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "nexachat.auth.refresh-replay")
 public class RefreshReplayProperties {
 
-    /** Base64 encoding of exactly 32 bytes. Empty means keyed recovery is unavailable. */
+    /** Base64 encoding of exactly 32 bytes. Empty disables replay recovery but keeps strict rotation available. */
     private String key = "";
 
     private int cleanupBatchSize = 500;

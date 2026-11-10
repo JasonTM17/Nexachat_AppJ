@@ -14,10 +14,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.Clock;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -44,7 +44,6 @@ public class TokenService {
     private final UserRepository userRepository;
     private final EntityManager entityManager;
     private final JwtProperties properties;
-    private final Clock clock;
     private final RefreshReplayCipher replayCipher;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
@@ -53,7 +52,6 @@ public class TokenService {
                         UserRepository userRepository,
                         EntityManager entityManager,
                         JwtProperties properties,
-                        Clock clock,
                         RefreshReplayCipher replayCipher,
                         AuthResponseFactory responseFactory,
                         RefreshReplayConfiguration.BoundaryHook boundaryHook) {
@@ -61,7 +59,6 @@ public class TokenService {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.properties = properties;
-        this.clock = clock;
         this.replayCipher = replayCipher;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
@@ -90,14 +87,7 @@ public class TokenService {
      */
     @Transactional
     public RotationResult rotate(String rawToken, UUID requestKey, String deviceLabel) {
-        // A keyed request cannot consume a token if encryption is unavailable.
-        if (requestKey != null) {
-            try {
-                replayCipher.requireKey();
-            } catch (RefreshReplayCipher.KeyUnavailableException exception) {
-                throw serviceUnavailable();
-            }
-        }
+        UUID replayRequestKey = requestKey != null && replayCipher.isKeyAvailable() ? requestKey : null;
 
         String predecessorHash = sha256Hex(rawToken);
         UUID userId = refreshTokenRepository.findUserIdByTokenHash(predecessorHash)
@@ -115,7 +105,7 @@ public class TokenService {
         }
 
         Instant now = databaseTime();
-        String keyDigest = requestKey == null ? null : RefreshReplayCipher.keyDigest(requestKey);
+        String keyDigest = replayRequestKey == null ? null : RefreshReplayCipher.keyDigest(replayRequestKey);
         if (predecessor.isRevoked()) {
             if (keyDigest != null && keyDigest.equals(predecessor.getReplayKeyDigest())) {
                 return recover(predecessor, userId, now);
@@ -127,7 +117,7 @@ public class TokenService {
         }
 
         String successorRaw = generateOpaqueToken();
-        Instant replayUntil = requestKey == null ? null : now.plus(REPLAY_WINDOW);
+        Instant replayUntil = replayRequestKey == null ? null : now.plus(REPLAY_WINDOW);
         RefreshToken successor = refreshTokenRepository.saveAndFlush(RefreshToken.issue(
                 user, sha256Hex(successorRaw), normalizeDeviceLabel(deviceLabel), freshExpiry(now), now));
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_SUCCESSOR_CREATED,
@@ -140,7 +130,7 @@ public class TokenService {
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_RESPONSE_CONSTRUCTION,
                 RefreshReplayConfiguration.Operation.ROTATE, userId, predecessor.getId());
         RefreshReplayCipher.EncryptedPayload encrypted = null;
-        if (requestKey != null) {
+        if (replayRequestKey != null) {
             try {
                 encrypted = replayCipher.encrypt(response, userId, predecessor.getId(), successor.getId(),
                         keyDigest, now, replayUntil);
@@ -251,15 +241,6 @@ public class TokenService {
         revokeAllForLockedUser(userId, now, keepHash);
     }
 
-    /** Invalidates all cached responses at an access-token revocation boundary. */
-    @Transactional
-    public void invalidateReplayPayloadsForUser(UUID userId) {
-        if (userRepository.findByIdForUpdate(userId).isEmpty()) {
-            return;
-        }
-        refreshTokenRepository.invalidateReplayPayloadsByUserId(userId);
-    }
-
     private void revokeAllForLockedUser(UUID userId, Instant now, String keepHash) {
         if (keepHash == null) {
             refreshTokenRepository.revokeAllActiveByUserId(userId, now);
@@ -344,7 +325,17 @@ public class TokenService {
     }
 
     private Instant databaseTime() {
-        return clock.instant().truncatedTo(ChronoUnit.MICROS);
+        Object value = entityManager.createNativeQuery("SELECT clock_timestamp()").getSingleResult();
+        if (value instanceof OffsetDateTime timestamp) {
+            return timestamp.toInstant();
+        }
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toInstant();
+        }
+        if (value instanceof Instant timestamp) {
+            return timestamp;
+        }
+        throw new IllegalStateException("PostgreSQL clock_timestamp returned an unsupported type");
     }
 
     private static String normalizeDeviceLabel(String deviceLabel) {

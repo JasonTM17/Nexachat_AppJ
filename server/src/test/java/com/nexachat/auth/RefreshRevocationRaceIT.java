@@ -238,6 +238,24 @@ class RefreshRevocationRaceIT extends SecurityITBase {
     }
 
     @Test
+    void logoutOnDistinctDevicePreservesCommittedReplayForSurvivingLineage() throws Exception {
+        Registered rotatingDevice = register("+84905552812");
+        Registered logoutDevice = login("+84905552812");
+        String requestKey = UUID.randomUUID().toString();
+
+        JsonNode committed = response(postRefresh(rotatingDevice.refreshToken(), requestKey)
+                .andExpect(status().isOk()).andReturn());
+        postJson("/api/v1/auth/logout", Map.of("refreshToken", logoutDevice.refreshToken()),
+                logoutDevice.accessToken()).andExpect(status().isNoContent());
+
+        JsonNode recovered = response(postRefresh(rotatingDevice.refreshToken(), requestKey)
+                .andExpect(status().isOk()).andReturn());
+        assertThat(recovered).isEqualTo(committed);
+        assertThat(isRevoked(recovered.path("refreshToken").asText())).isFalse();
+        assertThat(liveRows(rotatingDevice.userId())).isEqualTo(1);
+    }
+
+    @Test
     void concurrentRotateAndStaleLogoutSerializeBeforeInvalidatingReplay() throws Exception {
         Registered first = register("+84905552805");
         Registered otherDevice = login("+84905552805");
@@ -273,8 +291,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
         assertThat(isRevoked(first.refreshToken())).isTrue();
         Integer childRows = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND replaced_by IS NULL "
-                        + "AND created_at >= ? AND revoked_at IS NOT NULL",
-                Integer.class, first.userId(), Timestamp.from(replayClock.instant().minusSeconds(1)));
+                        + "AND revoked_at IS NOT NULL",
+                Integer.class, first.userId());
         assertThat(childRows).isGreaterThanOrEqualTo(1);
         assertThat(isRevoked(otherDevice.refreshToken())).isFalse();
         assertThat(eventIndex(RefreshReplayConfiguration.Boundary.AFTER_RESPONSE_CONSTRUCTION,
