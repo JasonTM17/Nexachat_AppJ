@@ -2,6 +2,7 @@ package com.nexachat.invite;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeAll;
@@ -112,7 +113,7 @@ class P1InviteMaxUsesRaceIT {
 
             CompletableFuture<Integer> first = joinAsync(token, bob.accessToken());
             CompletableFuture<Integer> second = joinAsync(token, carol.accessToken());
-            Thread.sleep(1200);
+            awaitBlockedTransactions(2, "conversations");
             lockConnection.commit();
 
             int firstStatus = first.get(10, TimeUnit.SECONDS);
@@ -128,6 +129,29 @@ class P1InviteMaxUsesRaceIT {
             assertThat(members).isEqualTo(3);
             assertThat(useCount).isEqualTo(1);
         }
+    }
+
+    /**
+     * Waits until the given number of racing requests have parked on a row lock
+     * of {@code relation} held by the test connection, so releasing the lock
+     * exercises the intended interleaving instead of racing a fixed sleep.
+     * Scoping by query text keeps an unrelated concurrent lock from satisfying
+     * the wait.
+     */
+    private void awaitBlockedTransactions(int expected, String relation) {
+        TestWaits.until(expected + " racing transaction(s) to block on the "
+                + relation + " row lock", () -> lockWaiters(relation) >= expected);
+    }
+
+    private int lockWaiters(String relation) {
+        Integer waiting = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND pid <> pg_backend_pid()
+                  AND wait_event_type = 'Lock'
+                  AND query ILIKE ?
+                """, Integer.class, "%" + relation + "%");
+        return waiting == null ? 0 : waiting;
     }
 
     private CompletableFuture<Integer> joinAsync(String token, String accessToken) {
@@ -163,7 +187,7 @@ class P1InviteMaxUsesRaceIT {
             }
 
             CompletableFuture<Integer> join = joinAsync(token, bob.accessToken());
-            Thread.sleep(800);
+            awaitBlockedTransactions(1, "conversations");
 
             // Revoke while the join is parked at the conversation lock with the
             // link entity already loaded inside its persistence context.
@@ -210,7 +234,12 @@ class P1InviteMaxUsesRaceIT {
             // the partial unique index admits only one.
             CompletableFuture<Integer> first = rotateAsync(groupId);
             CompletableFuture<Integer> second = rotateAsync(groupId);
-            Thread.sleep(1200);
+            // The first rotation parks on the link row; the second is serialized
+            // behind it by the conversation row lock it already holds.
+            TestWaits.until("the first rotation to block on the group_invite_links row lock "
+                    + "and the second behind the conversation row lock",
+                    () -> lockWaiters("group_invite_links") >= 1
+                            && lockWaiters("conversations") >= 1);
             lockConnection.commit();
 
             int firstStatus = first.get(10, TimeUnit.SECONDS);

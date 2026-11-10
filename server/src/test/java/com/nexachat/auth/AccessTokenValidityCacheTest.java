@@ -54,6 +54,8 @@ class AccessTokenValidityCacheTest {
 
         assertThat(cache.get(userId)).isPresent();
 
+        // Deliberate wall-clock wait: TTL expiry is the behaviour under test and
+        // the cache has no injectable clock.
         try {
             Thread.sleep(1_100L);
         } catch (InterruptedException e) {
