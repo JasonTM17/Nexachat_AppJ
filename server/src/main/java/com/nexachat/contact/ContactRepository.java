@@ -3,6 +3,7 @@ package com.nexachat.contact;
 import com.nexachat.contact.dto.ContactResponse;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,4 +25,8 @@ public interface ContactRepository extends JpaRepository<Contact, ContactId> {
             ORDER BY u.displayName
             """)
     List<ContactResponse> findAllByOwnerId(@Param("ownerId") UUID ownerId, Pageable pageable);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM Contact c WHERE c.owner.id = :userId OR c.contactUser.id = :userId")
+    void deleteAllInvolvingUser(@Param("userId") UUID userId);
 }

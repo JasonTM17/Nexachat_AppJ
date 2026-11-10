@@ -11,6 +11,7 @@ import java.util.UUID;
 public record UserResponse(UUID id, String phone, String displayName, String avatarUrl) {
 
     public static UserResponse from(User user) {
-        return new UserResponse(user.getId(), user.getPhone(), user.getDisplayName(), user.getAvatarUrl());
+        String phone = user.getDeletedAt() != null ? null : user.getPhone();
+        return new UserResponse(user.getId(), phone, user.getDisplayName(), user.getAvatarUrl());
     }
 }

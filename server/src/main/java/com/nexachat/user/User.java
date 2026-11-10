@@ -72,6 +72,10 @@ public class User {
     @Column(name = "tokens_valid_after")
     private Instant tokensValidAfter;
 
+    /** Non-null once the owner has deleted the account through DELETE /users/me. */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
     protected User() {
         // JPA only
     }
@@ -169,5 +173,28 @@ public class User {
 
     public void recordLastSeen(Instant lastSeenAt) {
         this.lastSeenAt = lastSeenAt;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
+    }
+
+    /**
+     * Marks the account deleted: frees {@link #phone}, scrubs profile fields and
+     * stamps {@link #deletedAt}. Called only from account deletion.
+     */
+    public void markDeleted(Instant deletedAt) {
+        this.deletedAt = deletedAt;
+        this.phone = null;
+        this.displayName = DeletedAccountPolicy.DISPLAY_NAME;
+        this.avatarUrl = null;
+        this.showPresence = false;
+        this.showSeen = false;
+        this.aiSummaryConsent = false;
+        this.lastSeenAt = null;
+    }
+
+    public void clearPhone() {
+        this.phone = null;
     }
 }

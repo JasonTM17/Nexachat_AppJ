@@ -165,7 +165,7 @@ class ConversationServiceTest {
     @Test
     void openDirect_byPhone_normalizesAndResolves() {
         when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
-        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(other()));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(other()));
         when(userRepository.findById(callerId)).thenReturn(Optional.of(caller()));
         Conversation stored = conversationWithKey("k");
         when(conversationRepository.findByDirectKey(anyString())).thenReturn(Optional.of(stored));
@@ -176,7 +176,7 @@ class ConversationServiceTest {
 
         assertThat(result.body().id()).isEqualTo(stored.getId());
         verify(phoneService).toE164("0987776655");
-        verify(userRepository).findByPhone("+84987776655");
+        verify(userRepository).findByPhoneAndDeletedAtIsNull("+84987776655");
     }
 
     @Test
@@ -194,7 +194,7 @@ class ConversationServiceTest {
     @Test
     void openDirect_unknownPhone_throwsUserNotFound404() {
         when(phoneService.toE164(anyString())).thenReturn("+84900000001");
-        when(userRepository.findByPhone("+84900000001")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> conversationService.openDirect(callerId, new OpenDirectRequest("0900000001", null)));

@@ -30,8 +30,12 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public User getById(UUID userId) {
-        return userRepository.findById(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
+        return user;
     }
 
     /**
@@ -81,7 +85,7 @@ public class UserService {
             } catch (IllegalArgumentException e) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
             }
-            return userRepository.findByPhone(e164)
+            return userRepository.findByPhoneAndDeletedAtIsNull(e164)
                     .map(user -> List.of(UserResponse.from(user)))
                     .orElseGet(List::of);
         }

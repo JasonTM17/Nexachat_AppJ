@@ -17,6 +17,7 @@ DELETE	/api/v1/devices/token	AUTHENTICATED	authenticated_self	rest-015
 DELETE	/api/v1/labels/{labelId}	AUTHENTICATED	authenticated_self	rest-016
 DELETE	/api/v1/messages/{messageId}/reactions/{emoji}	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-017
 DELETE	/api/v1/users/device-token	AUTHENTICATED	authenticated_self	rest-018
+DELETE	/api/v1/users/me	AUTHENTICATED	authenticated_self	rest-092
 GET	/api/v1/attachments/{id}/content	FILE_OWNER_OR_MEMBER	file_owner_or_member	rest-019
 GET	/api/v1/calls/ice-config	AUTHENTICATED	authenticated_self	rest-020
 GET	/api/v1/calls/{callId}/offer	CALL_PARTICIPANT	call_participant	rest-021

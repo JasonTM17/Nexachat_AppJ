@@ -354,7 +354,9 @@ account hash (it still pays one dummy bcrypt compare for timing).
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
-**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+
+**Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, scrubs contacts/device tokens/AI consent rows, removes the user from every group (sole admin with other members remaining → `VALIDATION_FAILED` 400, same as self-leave), keeps direct conversations and all sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` = omitted).
 
 ## Users — `/api/v1/users`
 
@@ -362,6 +364,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 |---|---|---|---|---|
 | `GET /users/me` | Bearer | — | `200` `UserResponse` | `UNAUTHORIZED` 401 |
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `DELETE /users/me` | Bearer | `{password}` — current password required | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (already deleted) |
 | `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 |
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS`, label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |

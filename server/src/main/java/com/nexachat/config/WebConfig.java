@@ -1,6 +1,7 @@
 package com.nexachat.config;
 
 import com.nexachat.auth.RateLimitInterceptor;
+import com.nexachat.auth.SensitiveCredentialRateLimitInterceptor;
 import com.nexachat.contact.ContactAddRateLimitInterceptor;
 import com.nexachat.user.UserSearchRateLimitInterceptor;
 import com.nexachat.message.MessageRateLimitInterceptor;
@@ -22,15 +23,18 @@ public class WebConfig implements WebMvcConfigurer {
     private final UserSearchRateLimitInterceptor userSearchRateLimitInterceptor;
     private final ContactAddRateLimitInterceptor contactAddRateLimitInterceptor;
     private final MessageRateLimitInterceptor messageRateLimitInterceptor;
+    private final SensitiveCredentialRateLimitInterceptor sensitiveCredentialRateLimitInterceptor;
 
     public WebConfig(RateLimitInterceptor rateLimitInterceptor,
                      UserSearchRateLimitInterceptor userSearchRateLimitInterceptor,
                      ContactAddRateLimitInterceptor contactAddRateLimitInterceptor,
-                     MessageRateLimitInterceptor messageRateLimitInterceptor) {
+                     MessageRateLimitInterceptor messageRateLimitInterceptor,
+                     SensitiveCredentialRateLimitInterceptor sensitiveCredentialRateLimitInterceptor) {
         this.rateLimitInterceptor = rateLimitInterceptor;
         this.userSearchRateLimitInterceptor = userSearchRateLimitInterceptor;
         this.contactAddRateLimitInterceptor = contactAddRateLimitInterceptor;
         this.messageRateLimitInterceptor = messageRateLimitInterceptor;
+        this.sensitiveCredentialRateLimitInterceptor = sensitiveCredentialRateLimitInterceptor;
     }
 
     @Override
@@ -43,5 +47,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/v1/contacts");
         registry.addInterceptor(messageRateLimitInterceptor)
                 .addPathPatterns("/api/v1/conversations/**");
+        registry.addInterceptor(sensitiveCredentialRateLimitInterceptor)
+                .addPathPatterns("/api/v1/auth/password", "/api/v1/users/me");
     }
 }

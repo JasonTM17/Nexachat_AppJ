@@ -86,7 +86,7 @@ public class AuthService {
         PasswordPolicy.requireRegisterable(request.password());
         enforcePhoneRateLimit("register", phone);
 
-        if (userRepository.existsByPhone(phone)) {
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         User user = User.create(phone, passwordEncoder.encode(request.password()), request.displayName().trim());
@@ -119,7 +119,7 @@ public class AuthService {
         }
         enforcePhoneRateLimit("login", phone);
 
-        User user = userRepository.findByPhone(phone).orElse(null);
+        User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         if (user == null) {
             // Pay one bcrypt compare anyway so unknown vs known users take the same time.
             passwordEncoder.matches(request.password(), dummyHash);

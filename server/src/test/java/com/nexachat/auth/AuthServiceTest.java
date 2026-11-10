@@ -83,7 +83,7 @@ class AuthServiceTest {
     @Test
     void register_success_normalizesHashesAndIssuesTokens() {
         when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(false);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(false);
 
         AuthResponse response = authService.register(
                 new RegisterRequest("0912345678", "secret123", "  Minh Tran  "), "JUnit-Agent");
@@ -106,7 +106,7 @@ class AuthServiceTest {
     @Test
     void register_duplicatePhone_throwsPhoneExists409() {
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(true);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(true);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.register(new RegisterRequest("0912345678", "secret123", "Minh"), null));
@@ -119,7 +119,7 @@ class AuthServiceTest {
     @Test
     void register_uniqueConstraintRaceOnSave_mapsToPhoneExists() {
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(false);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(false);
         when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_phone_key"));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -138,7 +138,7 @@ class AuthServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        verify(userRepository, never()).existsByPhone(anyString());
+        verify(userRepository, never()).existsByPhoneAndDeletedAtIsNull(anyString());
     }
 
     // ---------------------------------------------------------------- login
@@ -147,7 +147,7 @@ class AuthServiceTest {
     void login_success_issuesTokens() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
-        when(userRepository.findByPhone("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
 
         AuthResponse response = authService.login(new LoginRequest("0912345678", "secret123"), "JUnit");
@@ -161,7 +161,7 @@ class AuthServiceTest {
     void login_wrongPassword_throwsInvalidCredentials401() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.findByPhone("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -175,7 +175,7 @@ class AuthServiceTest {
     @Test
     void login_unknownUser_throwsIdenticalInvalidCredentials_andPaysBcryptCompare() {
         when(phoneService.toE164(anyString())).thenReturn("+84999999999");
-        when(userRepository.findByPhone("+84999999999")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84999999999")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.login(new LoginRequest("0999999999", "whatever123"), null));
@@ -196,7 +196,7 @@ class AuthServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
         verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
     }
 

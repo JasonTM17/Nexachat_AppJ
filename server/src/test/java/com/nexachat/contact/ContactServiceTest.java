@@ -69,7 +69,7 @@ class ContactServiceTest {
     void add_success_normalizesFindsAndPersists() {
         User target = userWithId("+84987776655", "Lan");
         when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
-        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(target));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(target));
         when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner()));
 
         ContactResponse response = contactService.add(ownerId, "0987776655");
@@ -90,7 +90,7 @@ class ContactServiceTest {
     @Test
     void add_unknownPhone_throwsUserNotFound404() {
         when(phoneService.toE164(anyString())).thenReturn("+84900000001");
-        when(userRepository.findByPhone("+84900000001")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> contactService.add(ownerId, "0900000001"));
@@ -104,7 +104,7 @@ class ContactServiceTest {
     void add_duplicatePk_throwsAlreadyContact409() {
         User target = userWithId("+84987776655", "Lan");
         when(phoneService.toE164(anyString())).thenReturn("+84987776655");
-        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(target));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(target));
         when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner()));
         when(contactRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("contacts_pkey"));
@@ -120,7 +120,7 @@ class ContactServiceTest {
     void add_self_throwsValidationFailedBeforeInsert() {
         User self = owner();
         when(phoneService.toE164(anyString())).thenReturn("+84901112233");
-        when(userRepository.findByPhone("+84901112233")).thenReturn(Optional.of(self));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84901112233")).thenReturn(Optional.of(self));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> contactService.add(ownerId, "+84901112233"));
@@ -139,7 +139,7 @@ class ContactServiceTest {
                 () -> contactService.add(ownerId, "abc"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
         verify(contactRepository, never()).saveAndFlush(any());
     }
 

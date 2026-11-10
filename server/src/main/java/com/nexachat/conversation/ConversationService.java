@@ -146,7 +146,7 @@ public class ConversationService {
         } catch (IllegalArgumentException e) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
         }
-        return userRepository.findByPhone(phone)
+        return userRepository.findByPhoneAndDeletedAtIsNull(phone)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.USER_NOT_FOUND, "No user registered with that phone number"));
     }

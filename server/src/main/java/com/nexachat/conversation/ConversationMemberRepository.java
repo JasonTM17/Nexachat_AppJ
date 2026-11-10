@@ -37,6 +37,13 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             """)
     List<ConversationMemberView> findMemberViews(@Param("conversationId") UUID conversationId);
 
+    @Query("""
+            SELECT m.conversation.id FROM ConversationMember m
+            JOIN m.conversation c
+            WHERE m.user.id = :userId AND c.type = com.nexachat.conversation.Conversation.Type.GROUP
+            """)
+    List<UUID> findGroupConversationIdsForUser(@Param("userId") UUID userId);
+
     /**
      * THE authorization primitive for message traffic (plan §11.3.2): used by
      * the STOMP SUBSCRIBE/SEND interceptors and every message service method.
