@@ -1,6 +1,7 @@
 package com.nexachat.conversation;
 
 import com.nexachat.attachment.AvatarController.AvatarResponse;
+import com.nexachat.common.MultipartRequests;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -95,8 +97,9 @@ public class GroupController {
     public AvatarResponse setAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestParam("file") MultipartFile file) throws IOException {
-        return groupService.setGroupAvatar(requireUserId(principal), conversationId, file);
+            @RequestParam("file") List<MultipartFile> files) throws IOException {
+        return groupService.setGroupAvatar(requireUserId(principal), conversationId,
+                MultipartRequests.requireSingleFile(files));
     }
 
     @PatchMapping("/{conversationId}")

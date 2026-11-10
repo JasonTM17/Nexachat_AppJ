@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +45,7 @@ class AvatarControllerTest {
         when(oversized.getSize()).thenReturn(StorageService.MAX_FILE_SIZE_BYTES + 1);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> controller.uploadAvatar(new JwtPrincipal(userId), oversized));
+                () -> controller.uploadAvatar(new JwtPrincipal(userId), List.of(oversized)));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_TOO_LARGE);
         verify(oversized, never()).getBytes();
