@@ -145,13 +145,13 @@ public final class TokenRefresher {
             AtomicReference<Single<TokenRefreshOutcome>> holder = new AtomicReference<>();
             Single<TokenRefreshOutcome> shared = Single.defer(operation::get)
                     .subscribeOn(Schedulers.io())
-                    .doFinally(() -> {
-                        synchronized (lock) {
-                            if (inFlight == holder.get()) {
-                                inFlight = null;
-                            }
+                    .doOnSuccess(outcome -> {
+                        if (outcome instanceof TokenRefreshOutcome.TransientFailure) {
+                            clearInFlight(holder);
                         }
                     })
+                    .doOnError(ignored -> clearInFlight(holder))
+                    .doFinally(() -> Schedulers.io().scheduleDirect(() -> clearInFlight(holder)))
                     .cache();
             holder.set(shared);
             inFlight = shared;
@@ -159,9 +159,16 @@ public final class TokenRefresher {
         }
     }
 
+    private void clearInFlight(AtomicReference<Single<TokenRefreshOutcome>> holder) {
+        synchronized (lock) {
+            if (inFlight == holder.get()) {
+                inFlight = null;
+            }
+        }
+    }
+
     private Single<TokenRefreshOutcome> performRefresh(String refreshToken, long startedGeneration) {
         return Single.fromCallable(() -> authApi.get().refresh(new RefreshRequest(refreshToken)).execute())
-                .subscribeOn(Schedulers.io())
                 .flatMap(response -> handleResponse(response, startedGeneration))
                 .onErrorResumeNext(error -> error instanceof IOException
                         ? Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE)
