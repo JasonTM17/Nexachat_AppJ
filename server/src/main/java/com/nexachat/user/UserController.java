@@ -4,14 +4,20 @@ import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.dto.DeleteAccountRequest;
+import com.nexachat.user.dto.EmailVerificationResponse;
+import com.nexachat.user.dto.MyProfileResponse;
+import com.nexachat.user.dto.RecoveryEmailRequest;
 import com.nexachat.user.dto.UpdateProfileRequest;
 import com.nexachat.user.dto.UserResponse;
+import com.nexachat.user.dto.VerifyEmailRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,15 +38,19 @@ public class UserController {
 
     private final UserService userService;
     private final AccountDeletionService accountDeletionService;
+    private final EmailRecoveryService emailRecoveryService;
 
-    public UserController(UserService userService, AccountDeletionService accountDeletionService) {
+    public UserController(UserService userService,
+                          AccountDeletionService accountDeletionService,
+                          EmailRecoveryService emailRecoveryService) {
         this.userService = userService;
         this.accountDeletionService = accountDeletionService;
+        this.emailRecoveryService = emailRecoveryService;
     }
 
     @GetMapping("/me")
-    public UserResponse me(@AuthenticationPrincipal JwtPrincipal principal) {
-        return UserResponse.from(userService.getById(requireUserId(principal)));
+    public MyProfileResponse me(@AuthenticationPrincipal JwtPrincipal principal) {
+        return MyProfileResponse.from(userService.getById(requireUserId(principal)));
     }
 
     @PatchMapping("/me")
@@ -54,6 +64,26 @@ public class UserController {
     public void deleteMe(@AuthenticationPrincipal JwtPrincipal principal,
                          @Valid @RequestBody DeleteAccountRequest request) {
         accountDeletionService.deleteAccount(requireUserId(principal), request.password());
+    }
+
+    @PutMapping("/me/email")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void requestEmailVerification(@AuthenticationPrincipal JwtPrincipal principal,
+                                         @Valid @RequestBody RecoveryEmailRequest request) {
+        emailRecoveryService.requestVerification(requireUserId(principal), request.email());
+    }
+
+    @PostMapping("/me/email/verify")
+    public EmailVerificationResponse verifyEmail(@AuthenticationPrincipal JwtPrincipal principal,
+                                                 @Valid @RequestBody VerifyEmailRequest request) {
+        return new EmailVerificationResponse(
+                emailRecoveryService.verify(requireUserId(principal), request.code()), true);
+    }
+
+    @DeleteMapping("/me/email")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteEmail(@AuthenticationPrincipal JwtPrincipal principal) {
+        emailRecoveryService.remove(requireUserId(principal));
     }
 
     /**

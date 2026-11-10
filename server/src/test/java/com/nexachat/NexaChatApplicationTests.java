@@ -22,6 +22,7 @@ import com.nexachat.user.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -93,6 +94,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private EntityManager entityManager;
+
+    @MockitoBean
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void contextLoads() {

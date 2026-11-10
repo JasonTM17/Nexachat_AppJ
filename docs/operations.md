@@ -19,6 +19,14 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
 | `MANAGEMENT_DISK_THRESHOLD` | No (disk space warning threshold on storage root) | `1GB` | `1GB` |
 | `NEXACHAT_CORS_ALLOWED_ORIGINS` | No (comma-separated browser origins; empty admits no web caller) | Empty | `https://web.nexachat.com` |
+| `NEXACHAT_MAIL_PROVIDER` | No (required only to enable recovery-email delivery; `smtp`, `resend`, or empty to disable) | Empty | `smtp` |
+| `MAIL_SMTP_HOST` | No (when SMTP is selected) | `smtp.gmail.com` | `smtp.gmail.com` |
+| `MAIL_SMTP_PORT` | No (when SMTP is selected; STARTTLS required) | `587` | `587` |
+| `MAIL_SMTP_USERNAME` | No (when SMTP is selected) | Empty | Gmail account name |
+| `MAIL_SMTP_PASSWORD` | No (when SMTP is selected; keep in `.env` or deployment secret store) | Empty | Gmail app password |
+| `MAIL_FROM` | No (sender address when SMTP is selected) | Empty | `NexaChat <mail@example.com>` |
+| `RESEND_API_KEY` | No (when Resend is selected; deployment secret store) | Empty | Not shown |
+| `RESEND_FROM` | No (sender on a verified domain when Resend is selected) | Empty | `NexaChat <no-reply@example.com>` |
 | `NEXACHAT_ADMIN_PHONES` | No (comma-separated admin E.164 phones allowed to read `/api/v1/rag/stats`) | Empty | `+84900000001` |
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
@@ -51,6 +59,31 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | No | `60000` | `60000` |
 | `NEXACHAT_RAG_ENABLED` | No (optional conversation RAG) | `true` | `true` |
 | `NEXACHAT_RAG_EMBEDDING_PROVIDER` | No | `lexical` | `lexical` (or `openai-compatible`) |
+
+### Recovery email delivery
+
+Recovery-email delivery is disabled when `NEXACHAT_MAIL_PROVIDER` is empty.
+Authenticated add/change-email requests then return `503 MAIL_UNAVAILABLE`; the
+public password-reset and account-deletion request endpoints keep their neutral
+`202 {}` response and send no message. Select `smtp` or `resend` to enable one
+provider. Delivery uses five-second connect/read timeouts and does not retry a
+provider failure.
+Actuator readiness does not probe the SMTP/Resend provider; delivery failures
+are handled by the recovery endpoints and generic application logs.
+
+For a small deployment, Gmail SMTP uses `smtp.gmail.com:587` with STARTTLS
+required. Set `MAIL_SMTP_USERNAME`, `MAIL_SMTP_PASSWORD`, and `MAIL_FROM`; keep
+the Gmail app password only in the ignored local `.env` or the deployment secret
+store. Gmail limits daily sends, so switch to a verified-domain sender such as
+Resend before increasing volume.
+
+For Resend, verify the sending domain first, then set
+`NEXACHAT_MAIL_PROVIDER=resend`, `RESEND_FROM` to an address on that domain, and
+`RESEND_API_KEY` in the deployment secret store. To rotate the key, put the
+replacement in the secret store, deploy and verify delivery in a controlled
+environment, then revoke the old key. Never place SMTP passwords or Resend
+keys in source control or logs. OTPs are short-lived, and the application logs
+do not include codes, recipient addresses, phone numbers, or provider keys.
 
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
@@ -588,8 +621,8 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V24 apply
-on app startup and are forward-only: add a new versioned SQL migration; never
+Back up before replacing the app image. Flyway applies versioned migrations
+through V27 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -612,11 +645,15 @@ V11 introduce:
   `group_invite_bans`.
 
 `V21` is reserved for the recall-window worker and `V23` is intentionally
-unused; neither has a file. `V22__retention_cleanup_indexes.sql` adds the
-retention indexes and `V24__hot_path_perf.sql` drops the unused
-`idx_conv_inbox`. Ensure every migration file V1–V20, `V22` and `V24` is present
-in the source tree before rebuilding the dev app container; the image packages
-the server migration resources used by Flyway at startup.
+unused; neither has a file. `V25` refresh-token replay hardening uses the token
+family columns already present in V1, so it also has no migration file.
+`V22__retention_cleanup_indexes.sql` adds retention indexes,
+`V24__hot_path_perf.sql` drops the unused `idx_conv_inbox`,
+`V26__user_account_deletion.sql` adds account tombstoning, and
+`V27__account_recovery_email_otp.sql` adds recovery email/OTP data. Ensure every
+migration file V1–V20, `V22`, `V24`, `V26`, and `V27` is present in the source
+tree before rebuilding the dev app container; the image packages the server
+migration resources used by Flyway at startup.
 
 ```sh
 bash demo/backup.sh

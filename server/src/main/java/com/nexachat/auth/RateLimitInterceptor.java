@@ -15,11 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-IP rate limit on the credential endpoints (plan T15 / §13 brute-force row):
+ * Per-IP rate limit on credential and public recovery endpoints:
  * <ul>
  *   <li>POST /api/v1/auth/login    — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/register — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/refresh  — 30 requests / 5 min</li>
+ *   <li>Public password-reset and account-deletion routes — 30 requests / 5 min each</li>
  * </ul>
  * Each rule gets its own bucket per client IP. Implemented as an interceptor
  * (not a servlet filter) so rejections flow through {@code GlobalExceptionHandler}
@@ -38,7 +39,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final List<Rule> RULES = List.of(
             new Rule("login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
             new Rule("register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
-            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)));
+            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
+            new Rule("account-deletion-request", "/api/v1/account-deletion/request", 30, Duration.ofMinutes(5)),
+            new Rule("account-deletion-confirm", "/api/v1/account-deletion/confirm", 30, Duration.ofMinutes(5)),
+            new Rule("password-reset-request", "/api/v1/auth/password-reset/request", 30, Duration.ofMinutes(5)),
+            new Rule("password-reset-confirm", "/api/v1/auth/password-reset/confirm", 30, Duration.ofMinutes(5)));
 
     private final RateLimitService rateLimitService;
     private final ClientIpResolver clientIpResolver;

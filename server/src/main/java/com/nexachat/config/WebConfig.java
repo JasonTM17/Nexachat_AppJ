@@ -40,7 +40,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(rateLimitInterceptor)
-                .addPathPatterns("/api/v1/auth/**");
+                .addPathPatterns("/api/v1/auth/**", "/api/v1/account-deletion/**");
         registry.addInterceptor(userSearchRateLimitInterceptor)
                 .addPathPatterns("/api/v1/users/search");
         registry.addInterceptor(contactAddRateLimitInterceptor)

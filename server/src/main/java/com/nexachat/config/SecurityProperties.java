@@ -7,10 +7,9 @@ import java.util.List;
 /**
  * Binds {@code nexachat.security.*}:
  * <ul>
- *   <li>{@code cors-allowed-origins} — exact origins admitted for cross-origin
- *       REST and WebSocket requests. Empty means no cross-origin caller is
- *       admitted; the secure default for a native-client deployment, which
- *       sends no {@code Origin} header at all.</li>
+ *   <li>{@code cors-allowed-origins} — exact origins admitted for the two
+ *       public account-deletion REST routes and WebSocket requests. Empty means
+ *       no cross-origin browser caller is admitted.</li>
  *   <li>{@code admin-phones} — E.164 numbers allowed to read operator
  *       telemetry such as {@code /api/v1/rag/stats} and non-health Actuator
  *       endpoints. Normalized on use.</li>

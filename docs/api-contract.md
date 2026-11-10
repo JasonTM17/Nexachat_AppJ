@@ -75,6 +75,9 @@ Android client can consume the API but no dedicated screen is merged into
 | V22 | `V22__retention_cleanup_indexes.sql` | Partial indexes to keep `RetentionJobRunner` batch discovery bounded (tokens, invite links, polls, attachments, tombstones, reaction events). |
 | V23 | — | Intentionally unused/reserved; no file exists. |
 | V24 | `V24__hot_path_perf.sql` | Drops the unused `idx_conv_inbox` index; no table or column change. |
+| V25 | — | Refresh-token replay hardening uses the existing V1 token-family columns; no schema migration file. |
+| V26 | `V26__user_account_deletion.sql` | Adds account tombstoning and phone reuse after deletion. |
+| V27 | `V27__account_recovery_email_otp.sql` | Adds owner-only recovery email fields, verified-email uniqueness, and purpose-bound OTP storage. |
 
 ## Operational notes
 
@@ -169,8 +172,11 @@ These keys are Spring properties; override them with the matching
 | `TOKEN_REUSED` | 401 | Rotated refresh token presented again (family revoked) |
 | `UNAUTHORIZED` | 401 | Missing/invalid Bearer token |
 | `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change |
+| `INVALID_OR_EXPIRED_CODE` | 400 | Recovery code is wrong, expired, consumed, or unavailable |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
+| `EMAIL_ALREADY_IN_USE` | 409 | Recovery email is already verified on another active account |
+| `MAIL_UNAVAILABLE` | 503 | No configured mail provider is available for an authenticated email operation |
 | `USER_NOT_FOUND` | 404 | Target user does not exist |
 | `ALREADY_CONTACT` | 409 | Contact already present |
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
@@ -341,6 +347,8 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 |
+| `POST /auth/password-reset/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an account with a verified recovery email | `RATE_LIMITED` 429 |
+| `POST /auth/password-reset/confirm` | Public | `{phone, code, newPassword}` — `newPassword` follows `PasswordPolicy` | `204` empty | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: register and
@@ -354,7 +362,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
-**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, password reset, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
 **Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, scrubs contacts/device tokens/AI consent rows, removes the user from every group (sole admin with other members remaining → `VALIDATION_FAILED` 400, same as self-leave), keeps direct conversations and all sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` = omitted).
 
@@ -362,13 +370,27 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /users/me` | Bearer | — | `200` `UserResponse` | `UNAUTHORIZED` 401 |
+| `GET /users/me` | Bearer | — | `200` `MyProfileResponse` = `{id, phone, displayName, avatarUrl, email, emailVerified}` | `UNAUTHORIZED` 401 |
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/me` | Bearer | `{password}` — current password required | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (already deleted) |
+| `PUT /users/me/email` | Bearer | `{email}` — normalized to lowercase and trimmed; sends a verification code | `202` empty | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
+| `POST /users/me/email/verify` | Bearer | `{code}` — six-digit code | `200` `{email, verified:true}` | `INVALID_OR_EXPIRED_CODE` 400 · `EMAIL_ALREADY_IN_USE` 409 |
+| `DELETE /users/me/email` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 |
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS`, label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+
+`UserResponse` remains `{id, phone, displayName, avatarUrl}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views.
+
+### Public account deletion recovery
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /account-deletion/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an active account with a verified recovery email | `RATE_LIMITED` 429 |
+| `POST /account-deletion/confirm` | Public | `{phone, code}` | `204` empty; deletes through the same service as `DELETE /users/me` | `INVALID_OR_EXPIRED_CODE` 400 · `RATE_LIMITED` 429 |
+
+Within their rate-limit allowance, password-reset and account-deletion request responses are identical for existing, unknown, deleted, and no-verified-email accounts. Phone lookup and OTP issuance run on a bounded background executor so response timing does not depend on account or email state. OTPs are six digits, expire after 10 minutes, allow at most five wrong attempts, and have a 60-second resend cooldown per user and purpose. A newly issued code invalidates prior unconsumed codes of that purpose. Stored codes are HMAC-SHA256 digests; verification uses a constant-time comparison. Public endpoints have independent 30/5-minute IP buckets; request routes also allow 10/5 minutes and confirmation routes 20/5 minutes per normalized phone. Only the two account-deletion routes above accept browser CORS from exact origins in `NEXACHAT_CORS_ALLOWED_ORIGINS`; password-reset and authenticated routes do not enable CORS.
 
 ## Contacts — `/api/v1/contacts`
 

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
 
@@ -22,6 +23,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByPhone(String phone);
 
     boolean existsByPhoneAndDeletedAtIsNull(String phone);
+
+    @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u"
+            + " WHERE u.email = :email AND u.emailVerifiedAt IS NOT NULL"
+            + " AND u.deletedAt IS NULL AND u.id <> :userId")
+    boolean existsVerifiedEmailForOtherUser(@Param("email") String email, @Param("userId") UUID userId);
 
     /**
      * Access-token cutoff for the JWT filter's hot path, plus proof that the

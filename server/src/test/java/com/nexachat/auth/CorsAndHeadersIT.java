@@ -21,8 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CorsAndHeadersIT extends SecurityITBase {
 
     @Test
-    void corsPreflightAdmitsOnlyTheConfiguredOrigin() throws Exception {
-        mockMvc.perform(options("/api/v1/auth/login")
+    void corsPreflightAdmitsConfiguredOriginOnlyOnPublicDeletionRoutes() throws Exception {
+        mockMvc.perform(options("/api/v1/account-deletion/request")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type"))
@@ -30,7 +30,7 @@ class CorsAndHeadersIT extends SecurityITBase {
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN))
                 .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS));
 
-        mockMvc.perform(options("/api/v1/auth/login")
+        mockMvc.perform(options("/api/v1/account-deletion/request")
                         .header(HttpHeaders.ORIGIN, "https://evil.example.com")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
                 .andExpect(status().isForbidden())
@@ -38,21 +38,20 @@ class CorsAndHeadersIT extends SecurityITBase {
     }
 
     @Test
-    void corsHeadersFollowTheAllowListOnSimpleRequests() throws Exception {
+    void corsIsNotEnabledForAuthenticatedApiRoutes() throws Exception {
         Registered user = register("+84905551501");
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, ALLOWED_ORIGIN));
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
 
-        // An origin outside the allow-list is refused outright: the request
-        // never reaches the handler and carries no CORS approval header.
+        // Other API routes do not emit CORS headers even for a disallowed origin.
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.ORIGIN, "https://evil.example.com")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))
-                .andExpect(status().isForbidden())
+                .andExpect(status().isOk())
                 .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
     }
 

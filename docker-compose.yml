@@ -32,6 +32,14 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       STORAGE_ROOT: ${STORAGE_ROOT:-/app/data/uploads}
+      NEXACHAT_MAIL_PROVIDER: ${NEXACHAT_MAIL_PROVIDER:-}
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-smtp.gmail.com}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-587}
+      MAIL_SMTP_USERNAME: ${MAIL_SMTP_USERNAME:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
       # Cloud LLM Tier (primary: Gemini via its OpenAI-compatible endpoint)
       NEXACHAT_SUMMARY_LLM_ENABLED: ${NEXACHAT_SUMMARY_LLM_ENABLED:-false}
       NEXACHAT_SUMMARY_LLM_BASE_URL: ${NEXACHAT_SUMMARY_LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
