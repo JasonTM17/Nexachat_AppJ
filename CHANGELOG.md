@@ -16,8 +16,9 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   1-to-1 call signaling and call history (`V5__calls.sql`), conversation
   summaries (`V6__conversation_summaries.sql`), receipts and delta sync
   (`V7__p0_receipts_sync_fcm.sql`).
-- Attachment BlurHash, trigram message search and HTTP byte-range downloads
-  (`V8__attachment_blurhash_search_trigram.sql`); conversation RAG with the
+- Attachment BlurHash and trigram message search
+  (`V8__attachment_blurhash_search_trigram.sql`); HTTP byte-range attachment
+  downloads; conversation RAG with the
   `POST /api/v1/conversations/{id}/ask` endpoint (`V9__conversation_rag.sql`).
 - Reaction events, request idempotency and user device tokens
   (`V10__reaction_events_idempotency_device_tokens.sql`).
@@ -33,8 +34,11 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 - FCM HTTP v1 delivery with an OAuth2 service-account flow, token caching,
   bounded retries and a mock gateway for local/test runs.
 - Conversation summary engines: local extractive, OpenAI-compatible cloud
-  provider (Gemini), optional fallback provider and a local Ollama/vLLM tier,
-  all behind user consent and per-conversation opt-out.
+  provider (Gemini), optional fallback provider and a local Ollama/vLLM tier.
+  The extractive tier makes no external call; the cloud and server-model tiers
+  require the requesting user's consent and honor each participant's
+  per-conversation opt-out. An author's account-level `aiSummaryConsent` is not
+  checked for summaries requested by someone else.
 - RAG retrieval with hybrid BM25/vector ranking, reciprocal-rank fusion, MMR
   diversification, answer caching and admin-only aggregate telemetry.
 - Actuator health groups, metrics, Prometheus exposure, JSON logging, request
@@ -105,8 +109,10 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   network-roaming recovery.
 - Conversation summaries and "Ask this chat" UI, including consent controls
   and source citations.
-- FCM token registration and sync wake-up handling; verified HTTPS invite
-  links (`https://nexachat.io.vn/join/<token>`) plus the `nexachat://` fallback.
+- FCM token registration and sync wake-up handling; App Links filter with
+  `autoVerify` for `https://nexachat.io.vn/join/<token>` plus the
+  `nexachat://` fallback. The Play signing SHA-256 must still be appended to
+  `assetlinks.json` before Play-distributed installs verify.
 - Media pipeline: image compression with EXIF orientation and GPS scrubbing,
   BlurHash placeholders, authenticated Glide disk cache and range-backed
   media viewing.
