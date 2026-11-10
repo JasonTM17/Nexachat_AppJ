@@ -21,4 +21,10 @@
     <color name="call_accept_background">#FF10B981</color>
     <color name="call_decline_background">#FFEF4444</color>
     <color name="call_end_background">#FFEF4444</color>
+    <color name="call_text_primary">@color/call_avatar_foreground</color>
+    <color name="call_text_secondary">@color/slate_border</color>
+    <color name="call_text_muted">#FFCBD5E1</color>
+    <color name="call_icon_on_control">@color/call_avatar_foreground</color>
+    <color name="call_action_decline_text">@color/call_decline_background</color>
+    <color name="call_action_accept_text">@color/call_accept_background</color>
 </resources>

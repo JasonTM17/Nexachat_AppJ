@@ -57,7 +57,7 @@
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="2"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/call_text_primary"
             android:textSize="26sp"
             android:textStyle="bold" />
 
@@ -69,7 +69,7 @@
             android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
-            android:textColor="#FF94A3B8"
+            android:textColor="@color/call_text_secondary"
             android:textSize="15sp" />
 
         <!-- Timer -->
@@ -80,7 +80,7 @@
             android:layout_marginTop="12dp"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/call_text_primary"
             android:textSize="32sp"
             android:textStyle="bold"
             android:visibility="gone" />
@@ -124,7 +124,7 @@
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
-                    app:iconTint="#FFFFFFFF" />
+                    app:iconTint="@color/call_icon_on_control" />
 
                 <TextView
                     android:id="@+id/call_mute_label"
@@ -133,7 +133,7 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_mute"
-                    android:textColor="#FFCBD5E1"
+                    android:textColor="@color/call_text_muted"
                     android:textSize="12sp" />
             </LinearLayout>
 
@@ -163,7 +163,7 @@
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
-                    app:iconTint="#FFFFFFFF" />
+                    app:iconTint="@color/call_icon_on_control" />
 
                 <TextView
                     android:id="@+id/call_speaker_label"
@@ -172,7 +172,7 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_speaker"
-                    android:textColor="#FFCBD5E1"
+                    android:textColor="@color/call_text_muted"
                     android:textSize="12sp" />
             </LinearLayout>
 
@@ -202,7 +202,7 @@
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="32dp"
-                    app:iconTint="#FFFFFFFF" />
+                    app:iconTint="@color/call_icon_on_control" />
 
                 <TextView
                     android:id="@+id/call_hang_up_label"
@@ -211,7 +211,7 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_hang_up"
-                    android:textColor="#FFEF4444"
+                    android:textColor="@color/call_action_decline_text"
                     android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>

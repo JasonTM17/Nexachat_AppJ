@@ -796,8 +796,9 @@ public final class MessageBubbleBinder {
             view.setClickable(true);
             view.setTextSize(12f);
             view.setChipCornerRadius(16f * root.getResources().getDisplayMetrics().density);
-            view.setChipMinHeight(28f * root.getResources().getDisplayMetrics().density);
-            view.setEnsureMinTouchTargetSize(false);
+            int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
+            view.setChipMinHeight(minTouchPx);
+            view.setEnsureMinTouchTargetSize(true);
             view.setTextColor(resolveThemeColor(
                     root.getContext(), com.google.android.material.R.attr.colorOnSurface));
             view.setChipStrokeWidth(root.getResources().getDisplayMetrics().density);

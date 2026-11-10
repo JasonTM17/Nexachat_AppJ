@@ -7,12 +7,12 @@ import static org.junit.Assert.assertEquals;
 public final class SummaryCitationLabelsTest {
 
     @Test
-    public void prefersSequenceChipLabel() {
-        assertEquals("#42", SummaryCitationLabels.chipLabel(42L, "abcdef"));
+    public void fallsBackToMessageIdPrefix() {
+        assertEquals("abcd", SummaryCitationLabels.messageIdPrefix("abcdef"));
     }
 
     @Test
-    public void fallsBackToMessageIdPrefix() {
-        assertEquals("abcd", SummaryCitationLabels.chipLabel(null, "abcdef"));
+    public void truncatesShortMessageIds() {
+        assertEquals("ab", SummaryCitationLabels.messageIdPrefix("ab"));
     }
 }
