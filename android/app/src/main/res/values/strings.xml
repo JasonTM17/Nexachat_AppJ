@@ -537,7 +537,6 @@
     <string name="recovery_email_verified_status">Verified: %1$s</string>
     <string name="recovery_email_none_status">No recovery email</string>
     <string name="recovery_email_load_failed">Could not load recovery email status</string>
-    <string name="action_retry">Retry</string>
     <string name="cd_recovery_email_row">Recovery email settings</string>
     <string name="cd_recovery_email_input">Recovery email address</string>
     <string name="cd_recovery_email_otp">Recovery email verification code</string>
