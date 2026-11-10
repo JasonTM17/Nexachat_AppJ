@@ -2,12 +2,6 @@ package com.nexachat.testutil;
 
 import org.junit.jupiter.api.Test;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -17,52 +11,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PostgresTestDatabaseHygieneTest {
 
     @Test
-    void createAndCloseRemovesTheDatabaseFromPostgres() throws SQLException {
-        int before = countDatabasesLike("nexachat_it_hygiene_%");
+    void createAndCloseRemovesTheDatabaseFromPostgres() {
+        String databaseName;
         try (PostgresTestDatabase database = PostgresTestDatabase.create("hygiene-proof")) {
-            assertThat(databaseExists(database.databaseName())).isTrue();
+            databaseName = database.databaseName();
+            assertThat(PostgresTestDatabase.existsOnServer(databaseName)).isTrue();
         }
-        int after = countDatabasesLike("nexachat_it_hygiene_%");
-        assertThat(after).isEqualTo(before);
+        assertThat(PostgresTestDatabase.existsOnServer(databaseName)).isFalse();
     }
 
-    private static int countDatabasesLike(String pattern) throws SQLException {
-        try (Connection connection = adminConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT count(*) FROM pg_database WHERE datname LIKE ?")) {
-            statement.setString(1, pattern);
-            try (ResultSet result = statement.executeQuery()) {
-                result.next();
-                return result.getInt(1);
+    /**
+     * Regression for full-suite flakiness: an oracle that compared counts of every
+     * {@code nexachat_it_hygiene_%} database failed when other workers dropped or leaked
+     * a matching name between the before/after snapshots ({@code expected: 1 but was: 0}).
+     */
+    @Test
+    void dropProofIsIndependentOfOtherHygieneDatabasesOnTheServer() {
+        try (PostgresTestDatabase decoy = PostgresTestDatabase.create("hygiene-decoy")) {
+            String databaseName;
+            try (PostgresTestDatabase database = PostgresTestDatabase.create("hygiene-proof")) {
+                databaseName = database.databaseName();
+                assertThat(PostgresTestDatabase.existsOnServer(databaseName)).isTrue();
+                assertThat(PostgresTestDatabase.existsOnServer(decoy.databaseName())).isTrue();
             }
+            assertThat(PostgresTestDatabase.existsOnServer(databaseName)).isFalse();
+            assertThat(PostgresTestDatabase.existsOnServer(decoy.databaseName())).isTrue();
         }
-    }
-
-    private static boolean databaseExists(String name) throws SQLException {
-        try (Connection connection = adminConnection();
-             PreparedStatement statement = connection.prepareStatement(
-                     "SELECT 1 FROM pg_database WHERE datname = ?")) {
-            statement.setString(1, name);
-            try (ResultSet result = statement.executeQuery()) {
-                return result.next();
-            }
-        }
-    }
-
-    private static Connection adminConnection() throws SQLException {
-        String base = System.getenv("IT_DB_URL");
-        if (base == null || base.isBlank()) {
-            base = "jdbc:postgresql://localhost:5433/nexachat_test";
-        }
-        String user = env("IT_DB_USER", "nexachat");
-        String password = env("IT_DB_PASSWORD", "nexachat");
-        int slash = base.lastIndexOf('/');
-        String maintenance = base.substring(0, slash + 1) + "postgres";
-        return DriverManager.getConnection(maintenance, user, password);
-    }
-
-    private static String env(String name, String fallback) {
-        String value = System.getenv(name);
-        return value == null || value.isBlank() ? fallback : value;
     }
 }

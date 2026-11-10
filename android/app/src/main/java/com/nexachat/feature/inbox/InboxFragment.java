@@ -6,7 +6,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextPaint;
 import android.text.TextUtils;
@@ -275,7 +274,7 @@ public final class InboxFragment extends Fragment {
                     chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
                     chip.setTextColor(onSurfaceVariantColor);
                     chip.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
-                    chip.setChipStrokeWidth(1f);
+                    chip.setChipStrokeWidth(dp(1));
                 }
             }
         }

@@ -41,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -258,6 +260,58 @@ class SummaryApiIT {
     }
 
     @Test
+    void recallPurgesOnlySummaryWindowsContainingRecalledMessage() throws Exception {
+        List<TestMessage> recalledWindow = addUsableMessages(5);
+        postSummary(caller, requestBody("LAST_N", 5, false))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cached").value(false));
+
+        List<TestMessage> retainedWindow = addUsableMessages(5);
+        postSummary(caller, requestBody("LAST_N", 5, false))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cached").value(false));
+
+        assertThat(cachedWindows()).containsExactly(
+                new SummaryWindowRange(recalledWindow.get(0).seq(), recalledWindow.get(4).seq()),
+                new SummaryWindowRange(retainedWindow.get(0).seq(), retainedWindow.get(4).seq()));
+
+        mockMvc.perform(delete("/api/v1/conversations/{conversationId}/messages/{messageId}",
+                        conversationId, recalledWindow.get(0).id())
+                .header("Authorization", "Bearer " + jwtService.generateAccessToken(caller)))
+                .andExpect(status().isNoContent());
+
+        assertThat(cachedWindows()).containsExactly(
+                new SummaryWindowRange(retainedWindow.get(0).seq(), retainedWindow.get(4).seq()));
+    }
+
+    @Test
+    void textEditPurgesOnlySummaryWindowsContainingEditedMessage() throws Exception {
+        List<TestMessage> editedWindow = addUsableMessages(5);
+        postSummary(caller, requestBody("LAST_N", 5, false))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cached").value(false));
+
+        List<TestMessage> retainedWindow = addUsableMessages(5);
+        postSummary(caller, requestBody("LAST_N", 5, false))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cached").value(false));
+
+        assertThat(cachedWindows()).containsExactly(
+                new SummaryWindowRange(editedWindow.get(0).seq(), editedWindow.get(4).seq()),
+                new SummaryWindowRange(retainedWindow.get(0).seq(), retainedWindow.get(4).seq()));
+
+        mockMvc.perform(patch("/api/v1/conversations/{conversationId}/messages/{messageId}",
+                        conversationId, editedWindow.get(0).id())
+                .header("Authorization", "Bearer " + jwtService.generateAccessToken(caller))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("content", "Edited summary source text"))))
+                .andExpect(status().isOk());
+
+        assertThat(cachedWindows()).containsExactly(
+                new SummaryWindowRange(retainedWindow.get(0).seq(), retainedWindow.get(4).seq()));
+    }
+
+    @Test
     void invalidRangeAndTooFewMessagesUseTypedErrors() throws Exception {
         postSummary(caller, requestBody("LAST_N", 4, false))
                 .andExpect(status().isBadRequest())
@@ -395,6 +449,17 @@ class SummaryApiIT {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
+    private List<SummaryWindowRange> cachedWindows() {
+        return jdbcTemplate.query("""
+                        SELECT from_seq, to_seq
+                        FROM message_summaries
+                        WHERE conversation_id = ?
+                        ORDER BY from_seq, to_seq
+                        """,
+                (rs, rowNum) -> new SummaryWindowRange(rs.getLong("from_seq"), rs.getLong("to_seq")),
+                conversationId);
+    }
+
     private static void assertCitationsAreInWindow(JsonNode body, Set<String> allowedIds) {
         for (String section : List.of("keyPoints", "decisions", "actionItems", "questions")) {
             for (JsonNode item : body.path(section)) {
@@ -408,5 +473,8 @@ class SummaryApiIT {
     }
 
     private record TestMessage(UUID id, long seq) {
+    }
+
+    private record SummaryWindowRange(long fromSeq, long toSeq) {
     }
 }

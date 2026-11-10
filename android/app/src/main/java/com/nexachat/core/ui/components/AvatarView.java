@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat;
 import com.bumptech.glide.Glide;
 import com.nexachat.R;
 import com.nexachat.core.common.AppConfig;
+import com.nexachat.core.ui.AvatarInitialsSizing;
 import com.nexachat.core.ui.MessageUiRules;
 
 /**
@@ -46,6 +47,7 @@ public class AvatarView extends FrameLayout {
         initialsView.setMaxLines(1);
         initialsView.setEllipsize(TextUtils.TruncateAt.END);
         initialsView.setTypeface(Typeface.DEFAULT_BOLD);
+        initialsView.setIncludeFontPadding(false);
         addView(initialsView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         imageView = new ImageView(context);
@@ -65,6 +67,9 @@ public class AvatarView extends FrameLayout {
         setContentDescription(displayName);
         applyColors();
         initialsView.setText(MessageUiRules.extractInitials(displayName));
+        if (getWidth() > 0 && getHeight() > 0) {
+            onSizeChanged(getWidth(), getHeight(), getWidth(), getHeight());
+        }
     }
 
     public void setAvatarUrl(@Nullable String avatarUrl) {
@@ -94,9 +99,10 @@ public class AvatarView extends FrameLayout {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        float sizeDp = h / getResources().getDisplayMetrics().density;
-        float sp = sizeDp >= 72 ? 26 : sizeDp >= 56 ? 20 : sizeDp >= 40 ? 15 : sizeDp >= 32 ? 12 : 10;
-        initialsView.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        int diameterPx = Math.min(w, h);
+        float density = getResources().getDisplayMetrics().density;
+        float textPx = AvatarInitialsSizing.textSizePx(diameterPx, displayName, density);
+        initialsView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx);
 
         int dotPx = Math.max(dpToPx(10), Math.round(Math.min(w, h) * 0.26f));
         LayoutParams lp = (LayoutParams) statusDotView.getLayoutParams();

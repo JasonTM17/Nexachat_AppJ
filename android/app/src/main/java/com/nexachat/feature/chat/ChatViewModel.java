@@ -103,6 +103,7 @@ public final class ChatViewModel extends ViewModel {
     private long searchCursor = -1L;
     private long lastTypingSentMs;
     private long lastReadSeq;
+    @Nullable private Long unreadDividerReadSnapshot;
     private boolean loadingOlder;
     private boolean webSocketOpen;
     private boolean restReachable;
@@ -270,6 +271,14 @@ public final class ChatViewModel extends ViewModel {
     }
 
     private void initializeConversation() {
+        if (!conversationId.isBlank()) {
+            long inbox = conversationRepository.peekMyLastReadSeq(conversationId);
+            long memory = messageRepository.peekLocalReadSeq(conversationId);
+            long snapshot = UnreadDividerRule.resolveReadWatermark(inbox, memory, null, false);
+            if (snapshot > 0L) {
+                unreadDividerReadSnapshot = snapshot;
+            }
+        }
         disposables.add(messageRepository.openConversation(conversationId)
                 .subscribeOn(Schedulers.io())
                 .andThen(messageRepository.refreshHistory(conversationId, null)
@@ -410,6 +419,22 @@ public final class ChatViewModel extends ViewModel {
         return state == null ? new AiOptOutState() : state;
     }
 
+    /** Read watermark retained for the unread divider before this screen marks messages read. */
+    public long peekLocalReadSeq() {
+        return conversationId.isBlank() ? 0L : messageRepository.peekLocalReadSeq(conversationId);
+    }
+
+    @Nullable
+    public Long getUnreadDividerReadSnapshot() {
+        return unreadDividerReadSnapshot;
+    }
+
+    public long peekMyLastReadSeq() {
+        return conversationId.isBlank()
+                ? 0L
+                : conversationRepository.peekMyLastReadSeq(conversationId);
+    }
+
     private void markNewestIncomingRead(List<ChatMessage> messages) {
         long newestIncoming = -1L;
         for (ChatMessage message : messages) {
@@ -529,7 +554,7 @@ public final class ChatViewModel extends ViewModel {
     /** Server edit affordance: own, delivered, live TEXT messages only. */
     public boolean canEdit(ChatMessage message) {
         return message.getMine()
-                && message.getStatus() == DeliveryStatus.SENT
+                && ChatBubbleRules.isMessageReplyable(message.getStatus())
                 && !message.isDeleted()
                 && MessageDto.TYPE_TEXT.equals(message.getType());
     }
@@ -537,7 +562,7 @@ public final class ChatViewModel extends ViewModel {
     /** Delete is author-only but includes attachment messages. */
     public boolean canDelete(ChatMessage message) {
         return message.getMine()
-                && message.getStatus() == DeliveryStatus.SENT
+                && ChatBubbleRules.isMessageReplyable(message.getStatus())
                 && !message.isDeleted();
     }
 
@@ -616,7 +641,7 @@ public final class ChatViewModel extends ViewModel {
                 break;
             }
         }
-        if (message == null || message.getStatus() != DeliveryStatus.SENT
+        if (message == null || !ChatBubbleRules.isMessageReplyable(message.getStatus())
                 || !ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             return;
         }
@@ -738,7 +763,7 @@ public final class ChatViewModel extends ViewModel {
     // ---- reply, reactions, and pins ----
 
     public void setReplyTarget(ChatMessage message) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         String snippet = message.getContent() == null ? message.getType() : message.getContent();
@@ -751,7 +776,7 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void toggleReaction(ChatMessage message, String emoji) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         disposables.add(messageRepository.toggleReaction(message.getId(), conversationId, emoji)
@@ -761,7 +786,7 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void togglePin(ChatMessage message) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         Completable operation = currentUiState().isPinned(message.getId())

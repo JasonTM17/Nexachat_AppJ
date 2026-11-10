@@ -11,7 +11,7 @@
     <string name="auth_confirm_password_label">Nhập lại mật khẩu</string>
     <string name="auth_current_password_label">Mật khẩu hiện tại</string>
     <string name="auth_new_password_label">Mật khẩu mới</string>
-    <string name="profile_password_changed">Đã đổi mật khẩu — các thiết bị khác đã bị đăng xuất</string>
+    <string name="profile_password_changed">Đã đổi mật khẩu. Các thiết bị khác đã đăng xuất.</string>
     <string name="profile_change_avatar">Đổi ảnh đại diện</string>
     <string name="group_change_avatar">Đổi ảnh nhóm</string>
     <string name="error_current_password_required">Nhập mật khẩu hiện tại</string>
@@ -28,24 +28,24 @@
     <!-- ApiError → user-facing messages -->
     <string name="error_invalid_credentials">Sai số điện thoại hoặc mật khẩu</string>
     <string name="error_phone_exists">Số điện thoại này đã được đăng ký</string>
-    <string name="error_rate_limited">Thử quá nhiều lần. Vui lòng thử lại sau</string>
-    <string name="error_network">Không có kết nối. Kiểm tra mạng</string>
-    <string name="error_generic">Có lỗi xảy ra. Vui lòng thử lại</string>
+    <string name="error_rate_limited">Thử quá nhiều lần. Hãy thử lại sau.</string>
+    <string name="error_network">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="error_generic">Có lỗi xảy ra. Hãy thử lại.</string>
     <string name="error_not_member">Bạn không còn trong cuộc trò chuyện này</string>
 
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
-    <string name="inbox_empty_unread">Không có cuộc trò chuyện chưa đọc</string>
-    <string name="inbox_empty_groups">Chưa có cuộc trò chuyện nhóm</string>
-    <string name="inbox_search_hint">Tìm cuộc trò chuyện</string>
+    <string name="inbox_empty_unread">Không có tin chưa đọc</string>
+    <string name="inbox_empty_groups">Chưa có nhóm nào</string>
+    <string name="inbox_search_hint">Tìm kiếm</string>
     <string name="inbox_active_now_header">ĐANG HOẠT ĐỘNG</string>
     <string name="inbox_view_all">Xem tất cả</string>
     <string name="inbox_filter_all">Tất cả</string>
     <string name="inbox_filter_unread">Chưa đọc</string>
     <string name="inbox_filter_groups">Nhóm</string>
     <string name="inbox_filter_archived">Lưu trữ</string>
-    <string name="inbox_empty_archived">Không có trò chuyện lưu trữ</string>
+    <string name="inbox_empty_archived">Chưa có lưu trữ</string>
     <string name="inbox_muted">Đã tắt thông báo</string>
     <string name="mute_menu_title">Tắt thông báo</string>
     <string name="mute_for_one_hour">Trong 1 giờ</string>
@@ -58,13 +58,13 @@
     <string name="conversation_muted">Đã tắt thông báo</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
-    <string name="conversation_unarchived">Đã chuyển về Tin nhắn</string>
+    <string name="conversation_unarchived">Đã bỏ lưu trữ</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>
-    <string name="conversation_ai_opt_in_title">Cho phép dùng AI trong cuộc trò chuyện này</string>
-    <string name="inbox_new_chat">Trò chuyện mới</string>
+    <string name="conversation_ai_opt_in_title">Cho phép AI trong cuộc trò chuyện này</string>
+    <string name="inbox_new_chat">Tin nhắn mới</string>
     <string name="inbox_more_options">Tùy chọn khác</string>
-    <string name="archive_title">Kho lưu trữ</string>
+    <string name="archive_title">Nội dung đã chia sẻ</string>
     <string name="archive_tab_media">Ảnh/Video</string>
     <string name="archive_tab_files">Tệp</string>
     <string name="archive_tab_links">Liên kết</string>
@@ -77,12 +77,12 @@
     <string name="archive_file_details" translatable="false">%1$s · %2$s</string>
     <string name="archive_clear_filters">Xóa lọc</string>
     <string name="archive_empty">Chưa có nội dung nào</string>
-    <string name="archive_loading">Đang tải nội dung đã chia sẻ</string>
-    <string name="archive_error">Không tải được nội dung đã chia sẻ</string>
-    <string name="archive_offline">Bạn đang ngoại tuyến. Hãy kiểm tra kết nối rồi thử lại.</string>
-    <string name="archive_forbidden">Bạn không còn quyền truy cập cuộc trò chuyện này.</string>
+    <string name="archive_loading">Đang tải nội dung…</string>
+    <string name="archive_error">Không tải được nội dung. Hãy thử lại.</string>
+    <string name="archive_offline">Không có kết nối mạng. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="archive_forbidden">Bạn không còn trong cuộc trò chuyện này.</string>
     <string name="archive_not_found">Không tìm thấy cuộc trò chuyện</string>
-    <string name="archive_unknown_sender">Người gửi không xác định</string>
+    <string name="archive_unknown_sender">Không rõ người gửi</string>
     <string name="archive_action_open">Mở</string>
     <string name="archive_action_original">Xem tin nhắn gốc</string>
     <string name="archive_action_share">Chia sẻ</string>
@@ -91,7 +91,7 @@
     <string name="archive_item_options_for">Tùy chọn cho %1$s</string>
     <string name="archive_kind_video">Đoạn video</string>
     <string name="archive_media_description">%1$s, từ %2$s, %3$s</string>
-    <string name="archive_link_unsafe">Chỉ có thể mở liên kết HTTPS an toàn</string>
+    <string name="archive_link_unsafe">Chỉ mở được liên kết HTTPS an toàn</string>
     <string name="archive_open_failed">Không mở được nội dung này</string>
     <string name="inbox_preview_photo">Ảnh</string>
     <string name="inbox_preview_voice">Tin nhắn thoại</string>
@@ -162,22 +162,22 @@
     <string name="dialog_reaction_picker_title">Thả cảm xúc</string>
     <string name="action_pin">Ghim</string>
     <string name="action_unpin">Bỏ ghim</string>
-    <string name="action_pin_conversation">Ghim hội thoại</string>
-    <string name="action_unpin_conversation">Bỏ ghim</string>
+    <string name="action_pin_conversation">Ghim trò chuyện</string>
+    <string name="action_unpin_conversation">Bỏ ghim trò chuyện</string>
     <string name="pinned_title">Đã ghim</string>
     <string name="pinned_count" translatable="false">%1$d/%2$d</string>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
-    <string name="action_jump_to_message">Chuyển tới tin nhắn</string>
-    <string name="error_pin_limit">Đã đạt giới hạn tin nhắn ghim</string>
-    <string name="error_conversation_pin_limit">Chỉ có thể ghim tối đa 5 hội thoại</string>
-    <string name="cd_pinned_conversation">Hội thoại đã ghim</string>
+    <string name="action_jump_to_message">Đi tới tin nhắn</string>
+    <string name="error_pin_limit">Chỉ ghim được tối đa 3 tin nhắn</string>
+    <string name="error_conversation_pin_limit">Chỉ ghim được tối đa 5 cuộc trò chuyện</string>
+    <string name="cd_pinned_conversation">Đã ghim cuộc trò chuyện</string>
 
     <!-- Media / attachments -->
     <string name="media_pick_visual">Ảnh hoặc video</string>
     <string name="media_pick_document">Tệp hoặc âm thanh</string>
     <string name="media_attachment">Đính kèm</string>
-    <string name="error_attachment_open">Không có ứng dụng nào mở được tệp này</string>
+    <string name="error_attachment_open">Không có ứng dụng mở được tệp này</string>
     <string name="error_attachment_too_large">Tệp vượt quá giới hạn 25 MB</string>
 
     <!-- Group -->
@@ -210,12 +210,12 @@
     <string name="copied_to_clipboard">Đã sao chép</string>
     <string name="action_forward">Chuyển tiếp</string>
     <string name="action_edit">Chỉnh sửa</string>
-    <string name="action_delete">Xoá</string>
+    <string name="action_delete">Xóa</string>
     <string name="action_recall">Thu hồi</string>
-    <string name="action_delete_for_me">Xóa khỏi cuộc trò chuyện của tôi</string>
+    <string name="action_delete_for_me">Xóa ở phía tôi</string>
     <string name="action_admin_delete">Gỡ tin nhắn</string>
-    <string name="action_more_options">Tuỳ chọn khác</string>
-    <string name="attachment_picker_title">Thêm tệp đính kèm</string>
+    <string name="action_more_options">Tùy chọn khác</string>
+    <string name="attachment_picker_title">Đính kèm</string>
     <string name="attachment_pick_image">Ảnh</string>
     <string name="attachment_pick_file">Tệp</string>
     <string name="forwarded_snackbar">Đã chuyển tiếp</string>
@@ -223,35 +223,35 @@
 
     <!-- Message Edit -->
     <string name="edit_message_title">Chỉnh sửa tin nhắn</string>
-    <string name="cd_cancel_edit">Huỷ chỉnh sửa</string>
+    <string name="cd_cancel_edit">Hủy chỉnh sửa</string>
     <string name="message_edited">Đã chỉnh sửa</string>
 
     <!-- Message Delete -->
-    <string name="dialog_delete_message_title">Xoá tin nhắn?</string>
-    <string name="dialog_delete_message_body">Xoá tin nhắn này cho tất cả mọi người?</string>
+    <string name="dialog_delete_message_title">Xóa tin nhắn?</string>
+    <string name="dialog_delete_message_body">Xóa tin nhắn này với mọi người?</string>
     <string name="dialog_recall_message_title">Thu hồi tin nhắn?</string>
-    <string name="dialog_recall_message_body">Xóa tin nhắn này khỏi cuộc trò chuyện của mọi người?</string>
-    <string name="dialog_delete_for_me_title">Xóa tin nhắn với riêng tôi?</string>
+    <string name="dialog_recall_message_body">Thu hồi tin nhắn này với mọi người?</string>
+    <string name="dialog_delete_for_me_title">Xóa ở phía tôi?</string>
     <string name="dialog_delete_for_me_body">Tin nhắn chỉ bị ẩn trên thiết bị này.</string>
     <string name="dialog_admin_delete_title">Gỡ tin nhắn?</string>
-    <string name="dialog_admin_delete_body">Xóa tin nhắn này cho mọi người với quyền quản trị viên?</string>
-    <string name="message_deleted">Tin nhắn đã bị xoá</string>
-    <string name="recall_window_expired">Đã hết thời hạn thu hồi. Cuộc trò chuyện đã được làm mới.</string>
+    <string name="dialog_admin_delete_body">Gỡ tin nhắn này cho mọi người với quyền quản trị viên?</string>
+    <string name="message_deleted">Tin nhắn đã bị xóa</string>
+    <string name="recall_window_expired">Đã quá thời hạn thu hồi.</string>
 
     <!-- In-Chat Search -->
-    <string name="search_in_chat_placeholder">Tìm trong cuộc trò chuyện…</string>
+    <string name="search_in_chat_placeholder">Tìm trong trò chuyện…</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
-    <string name="search_in_chat_error">Không thể tìm kiếm tin nhắn</string>
+    <string name="search_in_chat_error">Không tìm kiếm được. Hãy thử lại.</string>
     <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
-    <string name="cd_search_in_chat">Tìm kiếm trong cuộc trò chuyện</string>
-    <string name="cd_clear_search">Xoá tìm kiếm</string>
-    <string name="cd_call">Gọi điện</string>
+    <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
+    <string name="cd_clear_search">Xóa tìm kiếm</string>
+    <string name="cd_call">Gọi thoại</string>
 
     <!-- Forward Picker -->
     <string name="forward_title">Chuyển tiếp tin nhắn</string>
     <string name="forward_search_placeholder">Tìm cuộc trò chuyện…</string>
     <string name="forward_send">Gửi</string>
-    <string name="forward_no_matches">Không có cuộc trò chuyện phù hợp</string>
+    <string name="forward_no_matches">Không tìm thấy cuộc trò chuyện</string>
 
     <!-- Presence -->
     <string name="presence_active_now">Đang hoạt động</string>
@@ -277,10 +277,10 @@
     <string name="voice_slide_to_cancel">&lt; Trượt sang trái để hủy</string>
     <string name="voice_release_to_cancel">Thả tay để hủy</string>
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
-    <string name="voice_permission_required">Cần cấp quyền micro để ghi âm tin nhắn thoại</string>
+    <string name="voice_permission_required">Hãy cấp quyền micrô để ghi âm tin nhắn thoại.</string>
     <string name="voice_play">Phát tin nhắn thoại</string>
     <string name="voice_pause">Tạm dừng tin nhắn thoại</string>
-    <string name="voice_loading">Đang tải tin nhắn thoại</string>
+    <string name="voice_loading">Đang tải tin nhắn thoại…</string>
     <string name="voice_status_playing">đang phát</string>
     <string name="voice_status_paused">đã tạm dừng</string>
     <string name="voice_status_ready">sẵn sàng</string>
@@ -292,59 +292,59 @@
 
     <string name="voice_recording_duration_zero">00:00</string>
 
-    <string name="ask_action">Hỏi cuộc trò chuyện này</string>
-    <string name="ask_title">Hỏi cuộc trò chuyện này</string>
+    <string name="ask_action">Hỏi trong trò chuyện</string>
+    <string name="ask_title">Hỏi trong trò chuyện</string>
     <string name="ask_question_hint">Câu hỏi</string>
     <string name="ask_send">Hỏi</string>
     <string name="ask_send_accessibility">Gửi câu hỏi</string>
     <string name="ask_cancel">Hủy</string>
     <string name="ask_retry">Thử lại</string>
-    <string name="ask_close_accessibility">Đóng phần hỏi trong cuộc trò chuyện</string>
-    <string name="ask_loading">Đang tìm trong cuộc trò chuyện…</string>
+    <string name="ask_close_accessibility">Đóng hỏi đáp</string>
+    <string name="ask_loading">Đang tìm câu trả lời…</string>
     <string name="ask_not_found">Không tìm thấy tin nhắn phù hợp.</string>
-    <string name="ask_error_generic">Chưa thể trả lời. Hãy thử lại.</string>
-    <string name="ask_chat_unavailable">Cuộc trò chuyện này không còn khả dụng.</string>
-    <string name="ask_invalid_question">Nhập câu hỏi dài từ 1 đến 500 ký tự.</string>
-    <string name="ask_consent_title">Dùng AI để trả lời?</string>
-    <string name="ask_consent_required">Cần đồng ý dùng AI để trả lời câu hỏi này.</string>
-    <string name="ask_rate_limited">Bạn gửi quá nhiều câu hỏi. Hãy thử lại sau.</string>
+    <string name="ask_error_generic">Chưa trả lời được. Hãy thử lại.</string>
+    <string name="ask_chat_unavailable">Cuộc trò chuyện không còn khả dụng.</string>
+    <string name="ask_invalid_question">Nhập câu hỏi từ 1 đến 500 ký tự.</string>
+    <string name="ask_consent_title">Bật AI để trả lời?</string>
+    <string name="ask_consent_required">Hãy bật quyền dùng AI để trả lời câu hỏi.</string>
+    <string name="ask_rate_limited">Bạn hỏi quá nhanh. Hãy thử lại sau.</string>
     <plurals name="ask_rate_limited_retry">
         <item quantity="other">Thử lại sau %d giây.</item>
     </plurals>
     <string name="ask_question_counter">Câu hỏi: %1$d/500</string>
-    <string name="ask_from_message">Trích từ một tin nhắn</string>
+    <string name="ask_from_message">Từ tin nhắn</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
-    <string name="mention_all_picker">@all — mọi người</string>
-    <string name="mention_person_picker">Nhắc đến %1$s</string>
-    <string name="mention_limit_exceeded">Mỗi tin nhắn chỉ được nhắc tối đa 20 người. Tin nhắn đã được xoá.</string>
-    <string name="message_mentions_you">Bạn được nhắc đến.</string>
-    <string name="message_has_mentions">Tin nhắn này có lượt nhắc.</string>
-    <string name="error_mention_validation">Lượt nhắc trong tin nhắn không còn hợp lệ. Hãy kiểm tra rồi thử lại.</string>
-    <string name="error_mention_not_admin">Chỉ quản trị viên nhóm mới có thể nhắc tất cả mọi người.</string>
+    <string name="mention_all_picker">@all · Mọi người</string>
+    <string name="mention_person_picker">Nhắc %1$s</string>
+    <string name="mention_limit_exceeded">Chỉ nhắc tối đa 20 người mỗi tin nhắn. Nội dung đã được xóa.</string>
+    <string name="message_mentions_you">Đã nhắc đến bạn</string>
+    <string name="message_has_mentions">Có nhắc tên</string>
+    <string name="error_mention_validation">Lượt nhắc không hợp lệ. Hãy kiểm tra và thử lại.</string>
+    <string name="error_mention_not_admin">Chỉ quản trị viên mới được nhắc @all.</string>
 
     <!-- Group board, reminders and polls -->
-    <string name="group_board_title">Bảng nhóm</string>
+    <string name="group_board_title">Bảng tin nhóm</string>
     <string name="group_board_tab_reminders">Nhắc hẹn</string>
     <string name="meta_separator" translatable="false"> · </string>
     <string name="group_board_tab_polls">Bình chọn</string>
 
     <string name="reminder_add">Nhắc hẹn mới</string>
     <string name="reminder_empty">Chưa có nhắc hẹn nào</string>
-    <string name="reminder_loading">Đang tải nhắc hẹn</string>
-    <string name="reminder_error">Không tải được nhắc hẹn</string>
+    <string name="reminder_loading">Đang tải nhắc hẹn…</string>
+    <string name="reminder_error">Không tải được nhắc hẹn. Hãy thử lại.</string>
     <string name="reminder_error_title_required">Nhập tiêu đề</string>
     <string name="reminder_error_title_too_long">Tiêu đề quá dài</string>
     <string name="reminder_error_time_required">Chọn ngày và giờ</string>
-    <string name="reminder_error_time_past">Chọn thời điểm trong tương lai</string>
-    <string name="reminder_error_time_too_far">Chọn thời điểm trong vòng một năm</string>
-    <string name="reminder_error_not_member">Bạn không còn quyền truy cập cuộc trò chuyện này.</string>
-    <string name="reminder_error_not_admin">Chỉ quản trị viên nhóm mới có thể thay đổi nhắc hẹn này.</string>
-    <string name="reminder_error_forbidden">Chỉ người tạo hoặc quản trị viên nhóm mới có thể thay đổi nhắc hẹn này.</string>
-    <string name="reminder_error_not_found">Nhắc hẹn này không còn tồn tại.</string>
-    <string name="reminder_error_validation">Kiểm tra lại thông tin nhắc hẹn rồi thử lại.</string>
-    <string name="reminder_error_limit">Mỗi cuộc trò chuyện có tối đa 50 nhắc hẹn. Hãy xóa bớt một nhắc hẹn.</string>
-    <string name="reminder_error_conflict">Yêu cầu bị trùng với lần trước. Hãy thử lại.</string>
+    <string name="reminder_error_time_past">Chọn thời gian trong tương lai</string>
+    <string name="reminder_error_time_too_far">Chọn thời gian trong vòng 1 năm</string>
+    <string name="reminder_error_not_member">Bạn không còn trong cuộc trò chuyện này.</string>
+    <string name="reminder_error_not_admin">Chỉ quản trị viên mới sửa được nhắc hẹn này.</string>
+    <string name="reminder_error_forbidden">Chỉ người tạo hoặc quản trị viên mới sửa được nhắc hẹn này.</string>
+    <string name="reminder_error_not_found">Nhắc hẹn không còn tồn tại.</string>
+    <string name="reminder_error_validation">Kiểm tra lại thông tin nhắc hẹn và thử lại.</string>
+    <string name="reminder_error_limit">Tối đa 50 nhắc hẹn mỗi cuộc trò chuyện. Hãy xóa bớt một nhắc hẹn.</string>
+    <string name="reminder_error_conflict">Thao tác xung đột với lần trước. Hãy thử lại.</string>
     <string name="reminder_options">Tùy chọn nhắc hẹn</string>
     <string name="reminder_delete_confirm">Xóa nhắc hẹn này?</string>
     <string name="reminder_repeat_none">Không lặp</string>
@@ -367,19 +367,19 @@
 
     <string name="poll_add">Bình chọn mới</string>
     <string name="poll_empty">Chưa có bình chọn nào</string>
-    <string name="poll_loading">Đang tải bình chọn</string>
-    <string name="poll_error">Không tải được bình chọn</string>
-    <string name="poll_not_group">Bình chọn chỉ có trong trò chuyện nhóm.</string>
-    <string name="poll_not_member">Bạn không còn quyền truy cập cuộc trò chuyện này.</string>
-    <string name="poll_closed_vote">Bình chọn này đã kết thúc.</string>
+    <string name="poll_loading">Đang tải bình chọn…</string>
+    <string name="poll_error">Không tải được bình chọn. Hãy thử lại.</string>
+    <string name="poll_not_group">Bình chọn chỉ dùng trong nhóm.</string>
+    <string name="poll_not_member">Bạn không còn trong cuộc trò chuyện này.</string>
+    <string name="poll_closed_vote">Bình chọn đã kết thúc.</string>
     <string name="poll_closed">Đã kết thúc</string>
     <string name="poll_open">Đang mở</string>
-    <string name="poll_multiple">Chọn nhiều đáp án</string>
+    <string name="poll_multiple">Chọn nhiều</string>
     <string name="poll_anonymous">Ẩn danh</string>
     <string name="poll_closes">Kết thúc %1$s</string>
     <string name="poll_closed_on">Đã kết thúc %1$s</string>
     <string name="poll_vote">Bình chọn</string>
-    <string name="poll_retract">Thu hồi phiếu</string>
+    <string name="poll_retract">Rút phiếu</string>
     <plurals name="poll_voter_count">
         <item quantity="other">%d người bình chọn</item>
     </plurals>
@@ -388,65 +388,65 @@
     </plurals>
     <string name="poll_option_count_named" translatable="false">%1$s · %2$s</string>
     <string name="poll_manage">Tùy chọn bình chọn</string>
-    <string name="poll_close">Kết thúc bình chọn</string>
-    <string name="poll_close_confirm">Kết thúc bình chọn này? Không thể thay đổi phiếu sau đó.</string>
+    <string name="poll_close">Đóng bình chọn</string>
+    <string name="poll_close_confirm">Đóng bình chọn này? Không thể đổi phiếu sau khi đóng.</string>
     <string name="poll_delete">Xóa bình chọn</string>
     <string name="poll_delete_confirm">Xóa bình chọn này?</string>
     <string name="poll_create_title">Bình chọn mới</string>
     <string name="poll_question">Câu hỏi</string>
-    <string name="poll_option_hint">Lựa chọn %1$d</string>
-    <string name="poll_add_option">Thêm lựa chọn</string>
-    <string name="poll_remove_option">Xóa lựa chọn</string>
-    <string name="poll_multiple_label">Cho phép chọn nhiều đáp án</string>
-    <string name="poll_anonymous_label">Ẩn người bình chọn</string>
-    <string name="poll_expiry_add">Thêm thời hạn</string>
+    <string name="poll_option_hint">Phương án %1$d</string>
+    <string name="poll_add_option">Thêm phương án</string>
+    <string name="poll_remove_option">Xóa phương án</string>
+    <string name="poll_multiple_label">Chọn nhiều phương án</string>
+    <string name="poll_anonymous_label">Bình chọn ẩn danh</string>
+    <string name="poll_expiry_add">Đặt thời hạn</string>
     <string name="poll_expiry_value">Kết thúc %1$s</string>
-    <string name="poll_expiry_clear">Bỏ thời hạn</string>
+    <string name="poll_expiry_clear">Xóa thời hạn</string>
     <string name="poll_expiry_picker">Chọn ngày kết thúc</string>
     <string name="poll_create">Tạo bình chọn</string>
     <string name="poll_error_question">Nhập câu hỏi</string>
     <string name="poll_error_question_long">Câu hỏi quá dài</string>
-    <string name="poll_error_options_min">Thêm ít nhất hai lựa chọn</string>
-    <string name="poll_error_options_max">Chỉ dùng tối đa mười lựa chọn</string>
-    <string name="poll_error_option_blank">Điền đầy đủ các lựa chọn</string>
-    <string name="poll_error_option_long">Lựa chọn quá dài</string>
-    <string name="poll_error_option_duplicate">Các lựa chọn phải khác nhau</string>
+    <string name="poll_error_options_min">Thêm ít nhất 2 phương án</string>
+    <string name="poll_error_options_max">Tối đa 10 phương án</string>
+    <string name="poll_error_option_blank">Điền đầy đủ các phương án</string>
+    <string name="poll_error_option_long">Phương án quá dài</string>
+    <string name="poll_error_option_duplicate">Các phương án không được trùng nhau</string>
     <string name="poll_error_expiry_past">Chọn ngày kết thúc trong tương lai</string>
     <string name="poll_error_expiry_far">Chọn ngày trong vòng 30 ngày</string>
-    <string name="poll_error_create">Không tạo được bình chọn</string>
-    <string name="poll_error_manage">Không cập nhật được bình chọn</string>
-    <string name="poll_error_admin">Chỉ người tạo hoặc quản trị viên nhóm mới có thể thay đổi bình chọn này.</string>
+    <string name="poll_error_create">Không tạo được bình chọn. Hãy thử lại.</string>
+    <string name="poll_error_manage">Không cập nhật được bình chọn. Hãy thử lại.</string>
+    <string name="poll_error_admin">Chỉ người tạo hoặc quản trị viên mới sửa được bình chọn này.</string>
 
     <string name="label_filter_all">Tất cả</string>
     <string name="label_manage">Quản lý nhãn</string>
-    <string name="label_manage_description">Quản lý nhãn cuộc trò chuyện</string>
-    <string name="label_assign_menu">Phân loại cuộc trò chuyện</string>
-    <string name="label_assign_title">Nhãn cuộc trò chuyện</string>
+    <string name="label_manage_description">Quản lý nhãn trò chuyện</string>
+    <string name="label_assign_menu">Gán nhãn</string>
+    <string name="label_assign_title">Nhãn trò chuyện</string>
     <string name="label_manage_title">Quản lý nhãn</string>
-    <string name="label_empty_manage">Chưa có nhãn. Tạo nhãn để sắp xếp cuộc trò chuyện.</string>
-    <string name="label_empty_assignment">Hãy tạo nhãn trước khi gán.</string>
-    <string name="label_empty_filter">Không có cuộc trò chuyện mang nhãn “%1$s”.</string>
+    <string name="label_empty_manage">Chưa có nhãn. Tạo nhãn để phân loại cuộc trò chuyện.</string>
+    <string name="label_empty_assignment">Tạo nhãn trước khi gán.</string>
+    <string name="label_empty_filter">Chưa có cuộc trò chuyện gắn nhãn “%1$s”.</string>
     <string name="label_create">Tạo nhãn</string>
     <string name="label_create_title">Nhãn mới</string>
     <string name="label_edit_title">Sửa nhãn</string>
     <string name="label_save">Lưu</string>
     <string name="label_done">Hoàn tất</string>
     <string name="label_retry">Thử lại</string>
-    <string name="label_back_to_assignment">Quay lại cuộc trò chuyện</string>
+    <string name="label_back_to_assignment">Quay lại</string>
     <string name="label_name_hint">Tên nhãn (1–30 ký tự)</string>
-    <string name="label_filter_description">Lọc hộp thư theo nhãn %1$s</string>
+    <string name="label_filter_description">Lọc theo nhãn %1$s</string>
     <string name="label_chip_description">Nhãn: %1$s</string>
     <string name="label_assign_checkbox">Gán nhãn %1$s</string>
     <string name="label_delete_description">Xóa nhãn %1$s</string>
     <string name="label_delete_title">Xóa nhãn?</string>
-    <string name="label_delete_message">Nhãn “%1$s” sẽ bị gỡ khỏi mọi cuộc trò chuyện.</string>
-    <string name="label_error_validation">Tên nhãn phải có 1–30 ký tự và chưa được sử dụng.</string>
-    <string name="label_error_conflict">Đã có nhãn trùng tên.</string>
-    <string name="label_error_rate_limit">Bạn thay đổi nhãn quá nhanh. Hãy thử lại sau.</string>
-    <string name="label_error_offline">Cần có kết nối Internet để dùng nhãn. Hãy thử lại khi trực tuyến.</string>
-    <string name="label_error_label_limit">Bạn có thể tạo tối đa 10 nhãn.</string>
-    <string name="label_error_assignment_limit">Mỗi cuộc trò chuyện có thể có tối đa 3 nhãn.</string>
-    <string name="label_error_generic">Không thể cập nhật nhãn. Hãy thử lại.</string>
+    <string name="label_delete_message">Nhãn “%1$s” sẽ được gỡ khỏi mọi cuộc trò chuyện.</string>
+    <string name="label_error_validation">Tên nhãn dài 1–30 ký tự và không được trùng.</string>
+    <string name="label_error_conflict">Tên nhãn đã tồn tại.</string>
+    <string name="label_error_rate_limit">Thao tác quá nhanh. Hãy thử lại sau.</string>
+    <string name="label_error_offline">Không có kết nối mạng. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="label_error_label_limit">Tối đa 10 nhãn.</string>
+    <string name="label_error_assignment_limit">Tối đa 3 nhãn mỗi cuộc trò chuyện.</string>
+    <string name="label_error_generic">Không cập nhật được nhãn. Hãy thử lại.</string>
     <string name="label_color_indigo">Chàm</string>
     <string name="label_color_blue">Xanh dương</string>
     <string name="label_color_cyan">Xanh lơ</string>
@@ -458,5 +458,40 @@
     <string name="action_undo">Hoàn tác</string>
     <string name="conversation_pinned">Đã ghim lên đầu</string>
     <string name="conversation_unpinned">Đã bỏ ghim</string>
+    <string name="confirm_remove_contact">Xóa liên hệ này?</string>
 
+
+    <!-- Cluster B message interactions -->
+    <string name="message_actions_title">Thao tác với tin nhắn</string>
+    <string name="reaction_like">Thích</string>
+    <string name="reaction_love">Yêu thích</string>
+    <string name="reaction_laugh">Cười</string>
+    <string name="reaction_surprised">Ngạc nhiên</string>
+    <string name="reaction_sad">Buồn</string>
+    <string name="reaction_thanks">Cảm ơn</string>
+    <string name="forward_no_results">Không tìm thấy cuộc trò chuyện</string>
+    <string name="forward_selected">Đã chọn</string>
+    <string name="forward_not_selected">Chưa chọn</string>
+
+    <!-- Cluster B media viewer -->
+    <string name="cd_media_photo_zoom">Ảnh. Nhấn đúp để thu phóng</string>
+    <string name="media_toggle_zoom">Thu phóng / vừa màn hình</string>
+    <string name="media_zoom_in">Phóng to</string>
+    <string name="media_zoom_out">Thu nhỏ</string>
+    <string name="media_zoom_level">Thu phóng %1$d%%</string>
+    <string name="media_saved">Đã lưu tệp</string>
+    <string name="media_save_failed">Không thể lưu tệp</string>
+
+    <plurals name="chat_unread_divider">
+        <item quantity="other">%d tin nhắn chưa đọc</item>
+    </plurals>
+    <!-- System events (group membership, title) -->
+    <string name="system_event_group_created">%1$s đã tạo nhóm</string>
+    <string name="system_event_group_member_added">%1$s đã thêm %2$s</string>
+    <string name="system_event_group_member_approved">%1$s đã duyệt %2$s tham gia nhóm</string>
+    <string name="system_event_group_invite_joined">%1$s đã tham gia nhóm qua liên kết mời</string>
+    <string name="system_event_group_member_left">%1$s đã rời nhóm</string>
+    <string name="system_event_group_member_removed">%1$s đã xóa %2$s khỏi nhóm</string>
+    <string name="system_event_group_renamed">%1$s đã đổi tên nhóm thành “%2$s”</string>
+    <string name="system_event_group_role_changed">%1$s đã đổi vai trò của %2$s</string>
 </resources>

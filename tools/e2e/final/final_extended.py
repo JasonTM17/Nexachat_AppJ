@@ -6,9 +6,29 @@ and phone numbers are never printed. The database container must already be
 one ``final_live.py`` accepts (name prefix ``nexachat_e2e_grok2``).
 
 Retention is not repeated here: ``final_live.py`` drives it through the
-retention configuration. This script prints that scenario as NOT_RUN when
-``--skip-retention-note`` is absent, so the report can point at the other
-phase's real result.
+retention configuration. This script always records that scenario as NOT_RUN,
+so the report points at the other script's real result.
+
+Required environment
+--------------------
+The stack from ``final_live.py``: app at ``--base-url``, its Postgres container
+at ``--db-container``, and the app container name at ``--app-container`` (used
+for ``MockFcmGateway`` log counts and the restart scenario). Docker must be on
+``PATH``, and this script needs the third-party ``websocket-client`` package
+(``pip install websocket-client``).
+
+Set ``FCM_ENABLED=false`` literally in the app container when the run expects
+``MockFcmGateway``: a host ``FCM_ENABLED=true`` overrides the compose env file
+and enables the real FCM gateway, so the push counters would stay at zero.
+
+The retention phase lives in ``final_live.py`` and needs
+``NEXACHAT_RETENTION_INTERVAL_MS`` of at least ``60000``,
+``MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,metrics``, and an admin
+phone in ``NEXACHAT_ADMIN_PHONES``.
+
+Exit status is 1 when any scenario fails and 0 when all pass or are not run.
+A shell pipeline that ends in ``tee`` hides that status: use ``set -o
+pipefail`` or inspect ``${PIPESTATUS[0]}``.
 """
 
 from __future__ import annotations
@@ -1188,7 +1208,20 @@ def scenario_restart(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Extended NexaChat live scenarios")
+    parser = argparse.ArgumentParser(
+        description="Extended NexaChat live scenarios",
+        epilog=(
+            "Environment: the disposable stack from final_live.py, with the app container name "
+            "for MockFcmGateway push counts and the restart scenario. Set FCM_ENABLED=false "
+            "literally in the app container when the run expects the mock gateway (a host "
+            "FCM_ENABLED=true overrides the compose env file). Retention is driven by "
+            "final_live.py and needs NEXACHAT_RETENTION_INTERVAL_MS>=60000, "
+            "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,metrics and an admin phone in "
+            "NEXACHAT_ADMIN_PHONES. Requires websocket-client. Exit status is 1 when any "
+            "scenario fails; a pipeline ending in tee hides it unless pipefail is set."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--base-url", default=os.environ.get("API_BASE_URL") or "http://127.0.0.1:18091")
     parser.add_argument("--db-container", default="nexachat_e2e_grok2-r4-db")
     parser.add_argument("--db-user", default="e2egrok2")
