@@ -506,7 +506,33 @@
     <string name="forgot_password_resend_countdown">Gửi lại mã (%1$d)</string>
     <string name="forgot_password_code_invalid">Mã sai hoặc đã hết hạn</string>
     <string name="forgot_password_changed">Đã đổi mật khẩu. Hãy đăng nhập lại.</string>
+    <string name="forgot_password_password_too_long">Mật khẩu tối đa 72 byte</string>
+    <string name="forgot_password_change_phone">Đổi số</string>
     <string name="auth_password_policy_hint">Tối thiểu 8 ký tự, tối đa 72 byte</string>
     <string name="cd_forgot_phone">Số điện thoại để đặt lại mật khẩu</string>
     <string name="cd_forgot_otp">Mã xác minh đặt lại mật khẩu</string>
+    <!-- Recovery email (brief 306) -->
+    <string name="recovery_email_title">Email khôi phục</string>
+    <string name="recovery_email_add">Thêm</string>
+    <string name="recovery_email_change">Đổi email</string>
+    <string name="recovery_email_remove">Xóa email</string>
+    <string name="recovery_email_remove_confirm">Xóa email khôi phục này?</string>
+    <string name="recovery_email_field_label">Địa chỉ email</string>
+    <string name="recovery_email_send_code">Gửi mã</string>
+    <string name="recovery_email_verify">Xác minh</string>
+    <string name="recovery_email_resend">Gửi lại mã</string>
+    <string name="recovery_email_resend_countdown">Gửi lại mã (%1$d)</string>
+    <string name="recovery_email_otp_label">Mã 6 số</string>
+    <string name="recovery_email_otp_sent_to">Đã gửi mã tới %1$s</string>
+    <string name="recovery_email_invalid">Nhập địa chỉ email hợp lệ</string>
+    <string name="recovery_email_in_use">Email này đã được xác minh trên tài khoản khác</string>
+    <string name="recovery_email_code_invalid">Mã sai hoặc hết hạn</string>
+    <string name="recovery_email_mail_unavailable">Dịch vụ email không khả dụng</string>
+    <string name="recovery_email_verified_status">Đã xác minh: %1$s</string>
+    <string name="recovery_email_none_status">Chưa có email khôi phục</string>
+    <string name="recovery_email_load_failed">Không tải được trạng thái email khôi phục</string>
+    <string name="action_retry">Thử lại</string>
+    <string name="cd_recovery_email_row">Cài đặt email khôi phục</string>
+    <string name="cd_recovery_email_input">Địa chỉ email khôi phục</string>
+    <string name="cd_recovery_email_otp">Mã xác minh email khôi phục</string>
 </resources>

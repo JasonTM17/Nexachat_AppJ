@@ -17,6 +17,9 @@ public sealed interface ApiError
                 ApiError.InvalidOrExpiredCode,
                 ApiError.RateLimited,
                 ApiError.Network,
+                ApiError.MailUnavailable,
+                ApiError.EmailAlreadyInUse,
+                ApiError.RecoveryEmailInvalid,
                 ApiError.Unknown {
 
     /** 401 {@code INVALID_CREDENTIALS} (also reused for {@code WRONG_PASSWORD}). */
@@ -62,6 +65,75 @@ public sealed interface ApiError
         @Override
         public String toString() {
             return "PhoneExists";
+        }
+    }
+
+    /** 503 {@code MAIL_UNAVAILABLE} — outbound email is disabled or unreachable. */
+    final class MailUnavailable implements ApiError {
+        public static final MailUnavailable INSTANCE = new MailUnavailable();
+
+        private MailUnavailable() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof MailUnavailable;
+        }
+
+        @Override
+        public int hashCode() {
+            return MailUnavailable.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "MailUnavailable";
+        }
+    }
+
+    /** 409 {@code EMAIL_ALREADY_IN_USE} on recovery email verify. */
+    final class EmailAlreadyInUse implements ApiError {
+        public static final EmailAlreadyInUse INSTANCE = new EmailAlreadyInUse();
+
+        private EmailAlreadyInUse() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof EmailAlreadyInUse;
+        }
+
+        @Override
+        public int hashCode() {
+            return EmailAlreadyInUse.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "EmailAlreadyInUse";
+        }
+    }
+
+    /** Server rejected the recovery email address ({@code VALIDATION_FAILED} on email routes). */
+    final class RecoveryEmailInvalid implements ApiError {
+        public static final RecoveryEmailInvalid INSTANCE = new RecoveryEmailInvalid();
+
+        private RecoveryEmailInvalid() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof RecoveryEmailInvalid;
+        }
+
+        @Override
+        public int hashCode() {
+            return RecoveryEmailInvalid.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "RecoveryEmailInvalid";
         }
     }
 
@@ -200,6 +272,12 @@ public sealed interface ApiError
         }
         if ("PHONE_EXISTS".equals(serverCode)) {
             return PhoneExists.INSTANCE;
+        }
+        if ("MAIL_UNAVAILABLE".equals(serverCode)) {
+            return MailUnavailable.INSTANCE;
+        }
+        if ("EMAIL_ALREADY_IN_USE".equals(serverCode)) {
+            return EmailAlreadyInUse.INSTANCE;
         }
         if ("INVALID_OR_EXPIRED_CODE".equals(serverCode)) {
             return InvalidOrExpiredCode.INSTANCE;

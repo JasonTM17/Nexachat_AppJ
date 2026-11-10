@@ -512,7 +512,33 @@
     <string name="forgot_password_resend_countdown">Resend code (%1$d)</string>
     <string name="forgot_password_code_invalid">Code is wrong or expired</string>
     <string name="forgot_password_changed">Password changed. Sign in again.</string>
+    <string name="forgot_password_password_too_long">Password must be at most 72 bytes</string>
+    <string name="forgot_password_change_phone">Change number</string>
     <string name="auth_password_policy_hint">At least 8 characters, max 72 bytes</string>
     <string name="cd_forgot_phone">Phone number for password reset</string>
     <string name="cd_forgot_otp">Password reset verification code</string>
+    <!-- Recovery email (brief 306) -->
+    <string name="recovery_email_title">Recovery email</string>
+    <string name="recovery_email_add">Add</string>
+    <string name="recovery_email_change">Change email</string>
+    <string name="recovery_email_remove">Remove email</string>
+    <string name="recovery_email_remove_confirm">Remove this recovery email?</string>
+    <string name="recovery_email_field_label">Email address</string>
+    <string name="recovery_email_send_code">Send code</string>
+    <string name="recovery_email_verify">Verify</string>
+    <string name="recovery_email_resend">Resend code</string>
+    <string name="recovery_email_resend_countdown">Resend code (%1$d)</string>
+    <string name="recovery_email_otp_label">6-digit code</string>
+    <string name="recovery_email_otp_sent_to">Code sent to %1$s</string>
+    <string name="recovery_email_invalid">Enter a valid email address</string>
+    <string name="recovery_email_in_use">This email is already verified on another account</string>
+    <string name="recovery_email_code_invalid">Wrong or expired code</string>
+    <string name="recovery_email_mail_unavailable">Email service unavailable</string>
+    <string name="recovery_email_verified_status">Verified: %1$s</string>
+    <string name="recovery_email_none_status">No recovery email</string>
+    <string name="recovery_email_load_failed">Could not load recovery email status</string>
+    <string name="action_retry">Retry</string>
+    <string name="cd_recovery_email_row">Recovery email settings</string>
+    <string name="cd_recovery_email_input">Recovery email address</string>
+    <string name="cd_recovery_email_otp">Recovery email verification code</string>
 </resources>

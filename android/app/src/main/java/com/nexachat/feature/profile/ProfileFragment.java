@@ -68,6 +68,19 @@ public final class ProfileFragment extends Fragment {
         binding.saveName.setOnClickListener(v -> viewModel.saveDisplayName());
         binding.cancelName.setOnClickListener(v -> viewModel.cancelEditName());
         binding.changePassword.setOnClickListener(v -> { viewModel.openPasswordDialog(); showPasswordDialog(); });
+        binding.recoveryEmailRow.setTitle(getString(R.string.recovery_email_title));
+        binding.recoveryEmailRow.setLeadingIcon(R.drawable.ic_email);
+        binding.recoveryEmailRow.setContentDescription(getString(R.string.cd_recovery_email_row));
+        binding.recoveryEmailRow.setOnClickListener(v -> NavHostFragment.findNavController(this)
+                .navigate(R.id.action_profile_to_recoveryEmailManage));
+        getParentFragmentManager().setFragmentResultListener(
+                RecoveryEmailManageViewModel.RESULT_PROFILE_RELOAD,
+                getViewLifecycleOwner(),
+                (key, bundle) -> {
+                    if (bundle.getBoolean(RecoveryEmailManageViewModel.RESULT_PROFILE_RELOAD, false)) {
+                        viewModel.load();
+                    }
+                });
         binding.languageRow.setTitle(getString(R.string.settings_language));
         binding.languageRow.setLeadingIcon(R.drawable.ic_language);
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
@@ -134,7 +147,17 @@ public final class ProfileFragment extends Fragment {
 
     private void render(ProfileViewModel.UiState state) {
         UserDto user = state.getUser();
-        if (user != null) { binding.profileAvatar.setName(user.getDisplayName()); binding.profileAvatar.setAvatarUrl(user.getAvatarUrl()); binding.profileName.setText(user.getDisplayName()); binding.profilePhone.setText(user.getPhone()); }
+        if (user != null) {
+            binding.profileAvatar.setName(user.getDisplayName());
+            binding.profileAvatar.setAvatarUrl(user.getAvatarUrl());
+            binding.profileName.setText(user.getDisplayName());
+            binding.profilePhone.setText(user.getPhone());
+            if (user.hasVerifiedRecoveryEmail()) {
+                binding.recoveryEmailRow.setTrailingValue(user.getEmail());
+            } else {
+                binding.recoveryEmailRow.setTrailingValue(getString(R.string.recovery_email_add));
+            }
+        }
         binding.profileAvatar.setContentDescription(getString(R.string.profile_change_avatar));
         binding.profileAvatar.setEnabled(!state.isAvatarUploading());
         if (binding.cameraBadge != null) {
