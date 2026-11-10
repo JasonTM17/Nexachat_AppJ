@@ -2,6 +2,7 @@ package com.nexachat.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.ws.dto.WsErrorResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
@@ -77,6 +79,8 @@ class WsPayloadSecurityIT {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
 
     private TestUser sender;
     private UUID conversationId;
@@ -179,9 +183,11 @@ class WsPayloadSecurityIT {
         assertThat(session.isConnected()).isTrue();
     }
 
-    private BlockingQueue<WsErrorResponse> subscribeErrors() throws InterruptedException {
+    private BlockingQueue<WsErrorResponse> subscribeErrors() {
         BlockingQueue<WsErrorResponse> errors = new LinkedBlockingQueue<>();
+        String subscriptionId = "errors-" + UUID.randomUUID();
         StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
         headers.setDestination("/user/queue/errors");
         session.subscribe(headers, new StompFrameHandler() {
             @Override
@@ -194,8 +200,23 @@ class WsPayloadSecurityIT {
                 errors.add((WsErrorResponse) payload);
             }
         });
-        Thread.sleep(250);
+        TestWaits.until("STOMP error queue subscription of " + sender.id() + " to be registered",
+                () -> isSubscribed(sender.id(), subscriptionId, "/user/queue/errors"));
         return errors;
+    }
+
+    private boolean isSubscribed(UUID userId, String subscriptionId, String destination) {
+        String brokerDestination = destination.startsWith("/user/")
+                ? destination.substring("/user".length())
+                : destination;
+        var registeredUser = simpUserRegistry.getUser(userId.toString());
+        return registeredUser != null && registeredUser.getSessions().stream()
+                .flatMap(userSession -> userSession.getSubscriptions().stream())
+                .filter(subscription -> subscriptionId.equals(subscription.getId()))
+                .map(subscription -> subscription.getDestination())
+                .anyMatch(actual -> actual != null
+                        && (actual.equals(destination) || actual.equals(brokerDestination)
+                        || actual.startsWith(brokerDestination + "-user")));
     }
 
     private void expectValidationError(String destination, String body, MimeType contentType,

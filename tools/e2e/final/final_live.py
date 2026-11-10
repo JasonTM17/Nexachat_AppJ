@@ -17,6 +17,26 @@ retention-observe --expect dry-run|deleted
 
 The database container name must start with ``nexachat_e2e_grok2``. Tokens,
 passwords and phone numbers are never printed.
+
+Required environment
+--------------------
+A disposable compose stack built from this worktree, with its own Postgres
+container (name prefix ``nexachat_e2e_grok2``; the demo containers are
+refused) and the app reachable at ``--base-url``.
+
+Set ``FCM_ENABLED=false`` literally in the app container when the run expects
+``MockFcmGateway``: a host ``FCM_ENABLED=true`` overrides the compose env file
+and enables the real FCM gateway.
+
+``--phase retention-seed`` and ``--phase retention-observe`` additionally need
+``NEXACHAT_RETENTION_INTERVAL_MS`` of at least ``60000`` (startup rejects
+smaller values), ``MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,metrics``,
+and an admin phone in ``NEXACHAT_ADMIN_PHONES``. The prod profile exposes only
+health and denies ``/actuator/**`` without that phone.
+
+Exit status is 1 when any scenario fails and 0 when all pass or are not run.
+A shell pipeline that ends in ``tee`` hides that status: use ``set -o
+pipefail`` or inspect ``${PIPESTATUS[0]}``.
 """
 
 from __future__ import annotations
@@ -49,7 +69,7 @@ UUID_RE = re.compile(
 )
 FORBIDDEN_CONTAINERS = {"nexachat-db-1", "nexachat-app-1", "emulator-5570"}
 ALLOWED_PREFIX = "nexachat_e2e_grok2"
-PREVIEW_LIMIT = 60
+XFF_MAX_REQUESTS = 80
 MAX_USES = 2
 PARALLEL_JOINERS = 6
 KEY_PATTERN = r"^attachments/[0-9a-fA-F-]{36}[.][a-z0-9]+$"
@@ -57,16 +77,30 @@ RETENTION_JOBS = ("invite-links", "reminders", "polls", "attachments")
 
 
 class Results:
-    def __init__(self) -> None:
-        self.rows: list[tuple[str, bool, str]] = []
+    """Collects scenario outcomes as PASS, FAIL or NOT_RUN.
 
-    def add(self, name: str, ok: bool, detail: str) -> None:
-        self.rows.append((name, ok, detail))
-        print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+    A boolean is accepted for the first two states; NOT_RUN is explicit so the
+    summary never counts a scenario that did not execute as a pass.
+    """
+
+    def __init__(self) -> None:
+        self.rows: list[tuple[str, str, str]] = []
+
+    def add(self, name: str, status: bool | str, detail: str) -> None:
+        label = status if isinstance(status, str) else ("PASS" if status else "FAIL")
+        if label not in ("PASS", "FAIL", "NOT_RUN"):
+            raise ValueError(f"unknown scenario status {label!r}")
+        self.rows.append((name, label, detail))
+        print(f"[{label}] {name}: {detail}", flush=True)
 
     def finish(self) -> int:
-        failed = [row for row in self.rows if not row[1]]
-        print(f"{len(self.rows) - len(failed)} passed, {len(failed)} failed")
+        passed = [row for row in self.rows if row[1] == "PASS"]
+        failed = [row for row in self.rows if row[1] == "FAIL"]
+        not_run = [row for row in self.rows if row[1] == "NOT_RUN"]
+        print(
+            f"{len(passed)} passed, {len(failed)} failed, {len(not_run)} not run",
+            flush=True,
+        )
         return 1 if failed else 0
 
 
@@ -460,6 +494,15 @@ def scenario_recall_ask_cache(results: Results, client: Client, db: Database) ->
 
 
 def scenario_spoofed_forwarded_for(results: Results, client: Client) -> None:
+    """Spoofed X-Forwarded-For must not mint a fresh per-IP preview bucket.
+
+    Bucket4j refills the 60/minute bucket greedily, so a few requests past 60
+    can still succeed (``P1InviteIpRateLimitIT`` loops to 75 for the same
+    reason). The contract is therefore bounded: changing the forwarded
+    address on every call must never reset the bucket, so a 429
+    ``RATE_LIMITED`` has to appear within ``XFF_MAX_REQUESTS`` attempts.
+    Mirrors ``spoofed_xff_eventually_limited`` in ``final_extended.py``.
+    """
     admin = create_user(client, "E2E xff admin")
     partner = create_user(client, "E2E xff partner")
     group = create_group(client, admin["token"], "E2E xff", [partner["id"]])
@@ -469,38 +512,37 @@ def scenario_spoofed_forwarded_for(results: Results, client: Client) -> None:
         body={"requiresApproval": False},
     )
     if created.status != 201 or not (created.json() or {}).get("token"):
-        results.add("xff_setup", False, f"create link HTTP {created.status}")
+        results.add("spoofed_xff_does_not_bypass_preview_limit", False, f"create HTTP {created.status}")
         return
     raw_token = created.json()["token"]
+    # Two callers keep each per-user 60/minute bucket below its cap, so a 429
+    # can only come from the per-IP bucket the spoofed header must not reset.
     callers = [admin, partner]
-    statuses = []
-    for index in range(1, PREVIEW_LIMIT + 2):
+    first_429 = None
+    started = time.perf_counter()
+    for index in range(1, XFF_MAX_REQUESTS + 1):
         caller = callers[index % 2]
         response = client.get(
             f"/api/v1/invite-links/{raw_token}",
             token=caller["token"],
             headers={"X-Forwarded-For": f"198.51.100.{index}"},
         )
-        statuses.append(response.status)
-        if index <= PREVIEW_LIMIT and response.status != 200:
+        if response.status == 429 and response.error_code() == "RATE_LIMITED":
+            first_429 = index
             break
-    first_sixty = statuses[:PREVIEW_LIMIT]
-    last = statuses[PREVIEW_LIMIT] if len(statuses) > PREVIEW_LIMIT else None
-    last_code = None
-    if last == 429:
-        probe = client.get(
-            f"/api/v1/invite-links/{raw_token}",
-            token=admin["token"],
-            headers={"X-Forwarded-For": "203.0.113.50, 198.51.100.200"},
-        )
-        last_code = probe.error_code()
-        last = probe.status
-    ok = all(status == 200 for status in first_sixty) and last == 429 and last_code == "RATE_LIMITED"
+        if response.status != 200:
+            results.add(
+                "spoofed_xff_does_not_bypass_preview_limit",
+                False,
+                f"unexpected HTTP {response.status} at request {index}",
+            )
+            return
+    elapsed = time.perf_counter() - started
+    ok = first_429 is not None and elapsed < 30
     results.add(
         "spoofed_xff_does_not_bypass_preview_limit",
         ok,
-        f"first_{len(first_sixty)}_ok={all(status == 200 for status in first_sixty)} "
-        f"next={last} code={last_code}",
+        f"first_429={first_429} within={XFF_MAX_REQUESTS} elapsed={elapsed:.1f}s",
     )
 
 
@@ -803,7 +845,19 @@ def run_observe(client: Client, db: Database, expect: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Final-pass NexaChat live scenarios")
+    parser = argparse.ArgumentParser(
+        description="Final-pass NexaChat live scenarios",
+        epilog=(
+            "Environment: disposable compose stack with a database container whose name starts "
+            "with nexachat_e2e_grok2. Set FCM_ENABLED=false literally in the app container when "
+            "the run expects MockFcmGateway (a host FCM_ENABLED=true overrides the compose env "
+            "file). Retention phases also need NEXACHAT_RETENTION_INTERVAL_MS>=60000, "
+            "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,metrics and an admin phone in "
+            "NEXACHAT_ADMIN_PHONES. Exit status is 1 when any scenario fails; a pipeline ending "
+            "in tee hides it unless pipefail is set."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--base-url", default=os.environ.get("API_BASE_URL") or "http://127.0.0.1:18082")
     parser.add_argument("--db-container", default="nexachat_e2e_grok2-db-1")
     parser.add_argument("--db-user", default="e2egrok2")

@@ -662,14 +662,45 @@ public final class MessageBubbleBinder {
         if (metaInclude == null) {
             return;
         }
-        if (MessageViewTypeMapper.isSystemMessage(message)) {
+        if (MessageBubbleMetaRules.policyFor(message) == MessageBubbleMetaRules.MetaRowPolicy.HIDDEN) {
             metaInclude.setVisibility(View.GONE);
             return;
         }
         metaInclude.setVisibility(View.VISIBLE);
+        boolean systemMessage = MessageViewTypeMapper.isSystemMessage(message);
         MessageContentKind contentKind = MessageViewTypeMapper.resolveContentKind(message);
         boolean mediaMeta = contentKind == MessageContentKind.IMAGE
                 || contentKind == MessageContentKind.VIDEO;
+        if (systemMessage) {
+            TextView time = metaInclude.findViewById(R.id.timeLabel);
+            TextView edited = metaInclude.findViewById(R.id.editedLabel);
+            ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+            ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
+            TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
+            int metaColor = resolveThemeColor(
+                    root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+            metaInclude.setBackground(null);
+            metaInclude.setPadding(0, 0, 0, 0);
+            if (edited != null) {
+                edited.setVisibility(View.GONE);
+            }
+            if (time != null) {
+                time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
+                time.setTextColor(metaColor);
+                time.setAlpha(1.0f);
+                time.setVisibility(View.VISIBLE);
+            }
+            if (sending != null) {
+                sending.setVisibility(View.GONE);
+            }
+            if (deliveredIcon != null) {
+                deliveredIcon.setVisibility(View.GONE);
+            }
+            if (deliveryText != null) {
+                deliveryText.setVisibility(View.GONE);
+            }
+            return;
+        }
         float density = root.getResources().getDisplayMetrics().density;
         if (mediaMeta) {
             metaInclude.setBackgroundResource(R.drawable.bg_message_image_meta);

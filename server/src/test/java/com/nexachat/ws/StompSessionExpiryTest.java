@@ -78,6 +78,8 @@ class StompSessionExpiryTest {
         // The token is still valid at bind time.
         assertThat(registry.isAuthenticatedSession(sessionId)).isTrue();
 
+        // Deliberate wall-clock wait: token expiry is the behaviour under test
+        // and the registry derives its schedule from the real clock.
         Thread.sleep(2_300L);
 
         assertThat(outbound.preSend(topicFrame(), channel))

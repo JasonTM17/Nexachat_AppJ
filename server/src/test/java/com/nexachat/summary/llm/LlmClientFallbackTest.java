@@ -95,6 +95,8 @@ class LlmClientFallbackTest {
     void primaryTimeoutFallsBackOnce() throws Exception {
         startServers(150);
         primary.handle((exchange, body, authorization) -> {
+            // Deliberate fake-server delay: the slow response is what must make
+            // the primary call time out and trigger the fallback.
             try {
                 Thread.sleep(1_000);
             } catch (InterruptedException exception) {

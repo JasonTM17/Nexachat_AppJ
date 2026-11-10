@@ -470,6 +470,7 @@
     <string name="forward_not_selected">Chưa chọn</string>
 
     <!-- Cluster B media viewer -->
+    <string name="cd_media_photo_zoom">Ảnh. Nhấn đúp để thu phóng</string>
     <string name="media_toggle_zoom">Thu phóng / vừa màn hình</string>
     <string name="media_zoom_in">Phóng to</string>
     <string name="media_zoom_out">Thu nhỏ</string>

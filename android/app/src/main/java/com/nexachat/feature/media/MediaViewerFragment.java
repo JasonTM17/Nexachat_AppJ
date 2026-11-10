@@ -25,7 +25,6 @@ import com.nexachat.data.AttachmentRepository;
 import com.nexachat.databinding.FragmentMediaViewerBinding;
 import dagger.hilt.android.AndroidEntryPoint;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
-import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.File;
 import javax.inject.Inject;
@@ -42,7 +41,7 @@ public final class MediaViewerFragment extends Fragment {
     private static final int MENU_SAVE = 3;
     private static final int MENU_ZOOM = 4;
     private static final String SAVED_EXPORT = "media.pendingExport";
-    private final CompositeDisposable disposables = new CompositeDisposable();
+    private final MediaViewerSubscriptions subscriptions = new MediaViewerSubscriptions();
     @Nullable private File pendingExport;
     private final ActivityResultLauncher<String> saveDocument = registerForActivityResult(
             new ActivityResultContracts.CreateDocument("application/octet-stream"), uri -> {
@@ -50,7 +49,7 @@ public final class MediaViewerFragment extends Fragment {
                 pendingExport = null;
                 if (uri == null || file == null || !isAdded()) return;
                 android.content.Context context = requireContext().getApplicationContext();
-                disposables.add(io.reactivex.rxjava3.core.Completable.fromAction(() -> {
+                subscriptions.addExport(io.reactivex.rxjava3.core.Completable.fromAction(() -> {
                     try (var input = new java.io.FileInputStream(file);
                          var output = context.getContentResolver().openOutputStream(uri)) {
                         if (output == null) throw new java.io.IOException("Unavailable document output");
@@ -209,8 +208,8 @@ public final class MediaViewerFragment extends Fragment {
         }
         loadedImageAttachmentId = id;
         showLoading(ui);
-        disposables.clear();
-        disposables.add(
+        subscriptions.clearImageLoads();
+        subscriptions.addImageLoad(
                 attachmentRepository.downloadToCache(id, state.getDisplayName())
                         .subscribeOn(Schedulers.io())
                         .observeOn(AndroidSchedulers.mainThread())
@@ -357,8 +356,14 @@ public final class MediaViewerFragment extends Fragment {
     }
 
     @Override
+    public void onDestroy() {
+        subscriptions.clearOnDestroy();
+        super.onDestroy();
+    }
+
+    @Override
     public void onDestroyView() {
-        disposables.clear();
+        subscriptions.clearOnDestroyView();
         loadedImageAttachmentId = null;
         loadedImageFile = null;
         releasePlayer();

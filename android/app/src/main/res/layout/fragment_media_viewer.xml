@@ -14,7 +14,7 @@
             android:id="@+id/mediaImage"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:contentDescription="@string/cd_open_attachment"
+            android:contentDescription="@string/cd_media_photo_zoom"
             android:visibility="gone" />
 
         <androidx.media3.ui.PlayerView
