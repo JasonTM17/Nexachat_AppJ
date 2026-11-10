@@ -237,6 +237,7 @@ public class MessageService {
         Message.Type type = parseType(request.type());
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);
+        validateAttachmentsReady(senderId, type, attachmentIds);
         String content = normalizedContent(type, request.content());
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
@@ -974,8 +975,11 @@ public class MessageService {
      * <p>Skipped on the dedup path: the original send already bound its rows
      * and {@link #toResponse} re-reads them.</p>
      */
-    private void bindAttachments(UUID messageId, UUID senderId, Message.Type type,
-                                 List<UUID> attachmentIds) {
+    /**
+     * Validates attachment rows before the message INSERT so a client error
+     * cannot draw a {@code BIGSERIAL} and roll back, leaving a global gap.
+     */
+    private void validateAttachmentsReady(UUID senderId, Message.Type type, List<UUID> attachmentIds) {
         if (attachmentIds.isEmpty()) {
             return;
         }
@@ -983,7 +987,6 @@ public class MessageService {
         if (found.size() != attachmentIds.size()) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND, "Attachment not found");
         }
-        Message target = messageRepository.getReferenceById(messageId);
         for (MessageAttachment attachment : found) {
             if (!senderId.equals(attachment.getOwner().getId())) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
@@ -997,6 +1000,17 @@ public class MessageService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "Attachment content does not match message type " + type.name());
             }
+        }
+    }
+
+    private void bindAttachments(UUID messageId, UUID senderId, Message.Type type,
+                                 List<UUID> attachmentIds) {
+        if (attachmentIds.isEmpty()) {
+            return;
+        }
+        validateAttachmentsReady(senderId, type, attachmentIds);
+        Message target = messageRepository.getReferenceById(messageId);
+        for (MessageAttachment attachment : attachmentRepository.findAllById(attachmentIds)) {
             attachment.bindTo(target);
         }
     }
