@@ -114,6 +114,8 @@ public final class ChatBubbleRulesTest {
     @Test
     public void messageReplyableAndRetryAffordance() {
         assertTrue(ChatBubbleRules.isMessageReplyable(DeliveryStatus.SENT));
+        assertTrue(ChatBubbleRules.isMessageReplyable(DeliveryStatus.DELIVERED));
+        assertTrue(ChatBubbleRules.isMessageReplyable(DeliveryStatus.READ));
         assertFalse(ChatBubbleRules.isMessageReplyable(DeliveryStatus.FAILED));
         assertFalse(ChatBubbleRules.isMessageReplyable(DeliveryStatus.SENDING));
 
