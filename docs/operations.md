@@ -28,6 +28,10 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | No (optional "Sign in with Google"; all Google routes answer 404 while off) | `false` | `false` |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Yes when Google sign-in is enabled; startup fails closed without it | Empty | `<id>.apps.googleusercontent.com` |
+| `NEXACHAT_GOOGLE_JWKS_URI` | No (Google's rotating public keys; override only for tests) | `https://www.googleapis.com/oauth2/v3/certs` | `https://www.googleapis.com/oauth2/v3/certs` |
+| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | No (single-use sign-in nonce lifetime) | `300` | `300` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
