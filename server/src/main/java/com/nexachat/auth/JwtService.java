@@ -12,6 +12,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -29,6 +30,9 @@ public class JwtService {
 
     public static final String CLAIM_TYPE = "type";
     public static final String TYPE_ACCESS = "access";
+    /** Binds an access token to this service. Tokens for any other issuer or audience are rejected. */
+    public static final String ISSUER = "nexachat";
+    public static final String AUDIENCE = "nexachat-api";
 
     private static final int MIN_SECRET_BYTES = 32; // 256-bit minimum for HS256
 
@@ -51,6 +55,8 @@ public class JwtService {
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .issuer(ISSUER)
+                .audience().single(AUDIENCE)
                 .subject(user.getId().toString())
                 .claim(CLAIM_TYPE, TYPE_ACCESS)
                 .issuedAt(Date.from(now))
@@ -79,12 +85,20 @@ public class JwtService {
     public AccessTokenClaims parseAccessTokenClaims(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(key)
+                .clockSkewSeconds(0)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
 
         if (!TYPE_ACCESS.equals(claims.get(CLAIM_TYPE, String.class))) {
             throw new JwtException("Token is not an access token");
+        }
+        if (!ISSUER.equals(claims.getIssuer())) {
+            throw new JwtException("Token issuer is not accepted");
+        }
+        Set<String> audience = claims.getAudience();
+        if (audience == null || !audience.contains(AUDIENCE)) {
+            throw new JwtException("Token audience is not accepted");
         }
         String subject = claims.getSubject();
         if (subject == null) {

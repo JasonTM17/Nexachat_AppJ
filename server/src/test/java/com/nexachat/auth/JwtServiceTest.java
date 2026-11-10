@@ -43,6 +43,8 @@ class JwtServiceTest {
         Claims claims = Jwts.parser().verifyWith(KEY).build()
                 .parseSignedClaims(token).getPayload();
         assertThat(claims.getSubject()).isEqualTo(userId.toString());
+        assertThat(claims.getIssuer()).isEqualTo(JwtService.ISSUER);
+        assertThat(claims.getAudience()).containsExactly(JwtService.AUDIENCE);
         assertThat(claims.get(JwtService.CLAIM_TYPE, String.class)).isEqualTo(JwtService.TYPE_ACCESS);
         assertThat(claims.getExpiration().getTime() - claims.getIssuedAt().getTime())
                 .isEqualTo(900_000); // exp = iat + 900s
@@ -104,6 +106,34 @@ class JwtServiceTest {
                 .compact();
 
         assertThat(catchThrowableOfType(JwtException.class, () -> jwtService.parseAccessToken(forged)))
+                .isNotNull();
+    }
+
+    @Test
+    void parse_tokenWithoutAudience_isRejected() {
+        String unbound = Jwts.builder()
+                .subject(UUID.randomUUID().toString())
+                .issuer(JwtService.ISSUER)
+                .claim(JwtService.CLAIM_TYPE, JwtService.TYPE_ACCESS)
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith(KEY)
+                .compact();
+
+        assertThat(catchThrowableOfType(JwtException.class, () -> jwtService.parseAccessToken(unbound)))
+                .isNotNull();
+    }
+
+    @Test
+    void parse_noneAlgorithm_isRejected() {
+        String header = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("{\"alg\":\"none\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String body = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(("{\"sub\":\"" + UUID.randomUUID()
+                        + "\",\"iss\":\"nexachat\",\"aud\":\"nexachat-api\",\"type\":\"access\"}")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThat(catchThrowableOfType(JwtException.class,
+                () -> jwtService.parseAccessToken(header + "." + body + ".")))
                 .isNotNull();
     }
 

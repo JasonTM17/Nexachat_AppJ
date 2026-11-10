@@ -99,6 +99,20 @@ class ProductionConfigurationTest {
     }
 
     @Test
+    void productionJwtSecretRejectsTheDevelopmentDefault() {
+        productionContext(Map.of(
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "test-user",
+                "DATABASE_PASSWORD", "test-password",
+                "JWT_SECRET", "dev-secret-change-me-at-least-64-chars-long-0123456789",
+                "STORAGE_ROOT", "/tmp/nexachat-test-uploads")).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure())
+                    .hasStackTraceContaining("known development or low-diversity");
+        });
+    }
+
+    @Test
     void productionJwtSecretFailsFastWhenEnvironmentValueIsMissing() {
         productionContext(Map.of(
                 "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
@@ -124,7 +138,8 @@ class ProductionConfigurationTest {
                 .withPropertyValues("spring.profiles.active=prod")
                 .withUserConfiguration(DataSourceBindingConfiguration.class,
                         ProductionDataSourceConfiguration.class,
-                        ProductionJwtConfiguration.class);
+                        ProductionJwtConfiguration.class,
+                        ProductionJwtSecretGuard.class);
     }
 
     private static PropertySource<?> productionProperties() throws IOException {
