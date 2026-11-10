@@ -1,10 +1,11 @@
 # Play Store data-safety and listing facts
 
-Source: `2ecafae` (2026-11-10). This is a code-derived worksheet for the Google
-Play Data safety form and the privacy policy. It is not a legal opinion and not
-a submitted declaration. Answers describe the release build with the network
-security policy in `android/app/src/main/`; the `debug` and `localSmoke` source
-sets are development-only and are not shipped.
+Source: app and server code at `42831fe` (2026-11-10); site inventory includes
+the privacy and terms pages merged with this document. This is a code-derived
+worksheet for the Google Play Data safety form and the privacy policy. It is not
+a legal opinion and not a submitted declaration. Answers describe the release
+build with the network security policy in `android/app/src/main/`; the `debug`
+and `localSmoke` source sets are development-only and are not shipped.
 
 Each answer is marked:
 
@@ -34,7 +35,7 @@ under `android/app/src/main/`.
 | Locales | English (default) and Vietnamese | `android/app/src/main/res/values/`, `android/app/src/main/res/values-vi/`; `core/common/AppLocaleManager.java:19-24` | Supported by code |
 | ABI filters | `arm64-v8a`, `x86_64` | `android/app/build.gradle:157-159` | Supported by code |
 | Ads / in-app purchases | No ad, billing, or purchase SDK in the dependency catalog | `android/gradle/libs.versions.toml:40-112`, `android/app/build.gradle:319-387` | Supported by code (owner still declares "No ads") |
-| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code; `firebase-messaging` is the only Firebase module. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:100-102`, `android/app/build.gradle:375-376`; imports are `com.google.firebase.messaging.*` only | Supported by code |
+| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code; `firebase-messaging` is the only Firebase module. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:100-102`, `android/app/build.gradle:375-376`; imports are Firebase core (`notification/FirebaseConfigDetector.java:7`), `firebase-messaging` (`notification/NexaFirebaseMessagingService.java:6-7`), and GMS `Tasks` (`notification/FirebaseTokenSource.java:4`) only; no analytics or crash SDK | Supported by code |
 | Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code |
 | Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code |
 | Account creation | Yes, by phone + password | `server/src/main/java/com/nexachat/auth/AuthController.java:40-45`; Android auth feature | Supported by code |
@@ -219,9 +220,12 @@ Deletion actions that do **not** exist:
 - No account-deletion endpoint or in-app screen. `tools/fcm-live-check/README.md:51-52`
   explicitly records that the public API has no account-deletion endpoint.
 - No self-service data-export or "delete my data" request page.
-- No privacy-policy or account-deletion page under `site/`; the site contains
-  only the landing page, the join page, a 404 page, and static assets
-  (`site/index.html`, `site/join/index.html`, `site/404.html`).
+- No account-deletion page or request form under `site/`. The site does host a
+  privacy policy (`site/privacy.html`) and terms (`site/terms.html`); the rest
+  is the landing page, join page, 404 page and static assets
+  (`site/index.html`, `site/join/index.html`, `site/404.html`,
+  `site/robots.txt`, `site/sitemap.xml`, `site/.well-known/assetlinks.json`,
+  `site/style.css`, `site/favicon.svg`, `site/vercel.json`).
 
 This is a Play policy decision the owner must resolve before shipping an app
 that creates accounts.
@@ -276,8 +280,9 @@ request permission for contacts, location, camera, or external storage.
 These are owner decisions; do not infer them from code:
 
 1. **Privacy policy URL** — required by Play for an app that creates accounts
-   and collects personal data. There is no privacy-policy page in `site/`, and
-   no policy URL is configured in the app or repository.
+   and collects personal data. The site hosts a privacy policy at
+   `site/privacy.html` (and terms at `site/terms.html`), but no policy URL is
+   configured in the app or repository.
 2. **Account deletion** — Play requires an in-app deletion path and a web
    deletion URL for apps that let users create accounts. The repository has
    neither, and retention jobs never delete user rows.
@@ -328,9 +333,12 @@ These are owner decisions; do not infer them from code:
   privacy configuration test, Room entities and database module, DataStore and
   Keystore storage, attachment/media caches, auth/logout flow, server Flyway
   migrations, controllers, retention runner, FCM/LLM configuration, and the
-  linked architecture/security/operations/RAG/summary docs at `2ecafae`.
-- Build, unit tests, instrumentation, and emulator checks were **NOT_RUN**: the
-  batch brief forbids Gradle/Maven/emulator use on this memory-constrained
-  machine. The claims above are static source facts.
+  linked architecture/security/operations/RAG/summary docs at `42831fe`.
+- Site inventory includes `site/privacy.html` and `site/terms.html` from the
+  site refresh merged with this document; app and server production code is
+  unchanged between `2ecafae` and `42831fe`.
+- Build, unit tests, instrumentation, and emulator checks were **NOT_RUN**: this
+  document is static source evidence and the change does not modify code; the
+  docs gate is `python tools/check-markdown-links.py`.
 - Play Console state, production TLS certificates, production FCM/AI keys, and
   legal/privacy-policy review are **not verified** by this repository.
