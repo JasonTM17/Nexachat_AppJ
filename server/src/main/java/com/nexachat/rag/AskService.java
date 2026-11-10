@@ -23,6 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * The ask router: cache, answerability gate, extractive answer, then the LLM
@@ -49,6 +53,14 @@ public class AskService {
     private final RagStats stats;
     private final ConversationAiOptOuts aiOptOuts;
     private final Clock clock;
+    /**
+     * One cold-cache computation per identical ask. Followers wait for the
+     * leader's response instead of repeating the embedding, retrieval and
+     * provider work. The key is user-scoped so two members never share an
+     * answer produced under different consent or opt-out state.
+     */
+    private final ConcurrentHashMap<AskKey, CompletableFuture<AskResponse>> inFlight =
+            new ConcurrentHashMap<>();
 
     public AskService(
             AskRateLimiter rateLimiter,
@@ -117,6 +129,60 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(RagQuestionNormalizer.normalize(question));
 
+        AskKey key = new AskKey(conversationId, userId, questionHash, language);
+        return computeOnce(key, () -> compute(
+                conversationId, userId, question, language, questionHash, consented, contextOmitted));
+    }
+
+    /**
+     * Single-flight: the first caller for a key computes and every concurrent
+     * caller for the same key receives that result. The entry is removed in
+     * {@code finally}, so a failure is never cached and the next request
+     * recomputes. Callers that arrive after the leader removed the entry fall
+     * through to the exact cache, which the leader has already written.
+     */
+    private AskResponse computeOnce(AskKey key, Supplier<AskResponse> computation) {
+        CompletableFuture<AskResponse> leader = new CompletableFuture<>();
+        CompletableFuture<AskResponse> pending = inFlight.putIfAbsent(key, leader);
+        if (pending != null) {
+            return await(pending);
+        }
+        try {
+            AskResponse response = computation.get();
+            leader.complete(response);
+            return response;
+        } catch (RuntimeException | Error failure) {
+            leader.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            leader.completeExceptionally(new IllegalStateException("ask computation did not complete"));
+            inFlight.remove(key, leader);
+        }
+    }
+
+    private AskResponse await(CompletableFuture<AskResponse> pending) {
+        try {
+            return pending.join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw exception;
+        }
+    }
+
+    private AskResponse compute(
+            UUID conversationId,
+            UUID userId,
+            String question,
+            SummaryLanguage language,
+            String questionHash,
+            boolean consented,
+            boolean contextOmitted) {
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(question, consented);
 
@@ -291,5 +357,8 @@ public class AskService {
             return text;
         }
         return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+    }
+
+    private record AskKey(UUID conversationId, UUID userId, String questionHash, SummaryLanguage language) {
     }
 }
