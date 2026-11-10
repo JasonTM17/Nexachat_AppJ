@@ -372,25 +372,32 @@ public final class ChatViewModel extends ViewModel {
                 until == null
                         ? conversationRepository.muteConversationForever(conversationId)
                         : conversationRepository.muteConversation(conversationId, until),
-                ChatActionEvent.PreferenceChanged.Kind.MUTED);
+                ChatActionEvent.PreferenceChanged.Kind.MUTED,
+                this::unmuteConversation);
     }
 
     /** One-tap unmute. */
     public void unmuteConversation() {
-        runPreference(conversationRepository.unmuteConversation(conversationId),
-                ChatActionEvent.PreferenceChanged.Kind.UNMUTED);
+        runPreference(
+                conversationRepository.unmuteConversation(conversationId),
+                ChatActionEvent.PreferenceChanged.Kind.UNMUTED,
+                null);
     }
 
     /** Archives or restores this conversation for the caller. */
     public void setConversationArchived(boolean archived) {
-        runPreference(conversationRepository.setConversationArchived(conversationId, archived),
+        runPreference(
+                conversationRepository.setConversationArchived(conversationId, archived),
                 archived
                         ? ChatActionEvent.PreferenceChanged.Kind.ARCHIVED
-                        : ChatActionEvent.PreferenceChanged.Kind.UNARCHIVED);
+                        : ChatActionEvent.PreferenceChanged.Kind.UNARCHIVED,
+                () -> setConversationArchived(!archived));
     }
 
     private void runPreference(
-            Single<Result<Void>> request, ChatActionEvent.PreferenceChanged.Kind successKind) {
+            Single<Result<Void>> request,
+            ChatActionEvent.PreferenceChanged.Kind successKind,
+            @Nullable Runnable undo) {
         if (conversationId.isBlank()) return;
         disposables.add(request
                 .subscribeOn(Schedulers.io())
@@ -398,7 +405,8 @@ public final class ChatViewModel extends ViewModel {
                 .subscribe(
                         result -> {
                             if (result instanceof Result.Success<?>) {
-                                actionEvents.emit(new ChatActionEvent.PreferenceChanged(successKind));
+                                actionEvents.emit(
+                                        new ChatActionEvent.PreferenceChanged(successKind, undo));
                             } else if (result instanceof Result.Failure<?> failure) {
                                 updateUiState(state -> state.withError(failure.getError()));
                             }

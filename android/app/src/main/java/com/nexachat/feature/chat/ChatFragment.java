@@ -620,8 +620,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         .show();
             }
             if (event instanceof ChatActionEvent.PreferenceChanged changed) {
-                Snackbar.make(binding.getRoot(), preferenceMessage(changed.getKind()),
-                        Snackbar.LENGTH_SHORT).show();
+                Snackbar snackbar = Snackbar.make(
+                        binding.getRoot(), preferenceMessage(changed.getKind()), Snackbar.LENGTH_LONG);
+                if (changed.getUndo() != null) {
+                    snackbar.setAction(R.string.action_undo, ignored -> changed.getUndo().run());
+                }
+                snackbar.show();
             }
         });
         inboxViewModel.getUiState().observe(getViewLifecycleOwner(), next -> {
