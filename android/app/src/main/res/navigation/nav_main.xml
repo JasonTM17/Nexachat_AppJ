@@ -32,6 +32,16 @@
     </fragment>
 
     <fragment
+        android:id="@+id/forgotPasswordFragment"
+        android:name="com.nexachat.feature.auth.ForgotPasswordFragment"
+        android:label="@string/forgot_password_title">
+        <argument
+            android:name="prefillPhone"
+            android:defaultValue=""
+            app:argType="string" />
+    </fragment>
+
+    <fragment
         android:id="@+id/inboxFragment"
         android:name="com.nexachat.feature.inbox.InboxFragment"
         android:label="@string/inbox_title" />

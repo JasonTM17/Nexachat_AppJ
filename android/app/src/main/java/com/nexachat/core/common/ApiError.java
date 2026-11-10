@@ -14,6 +14,7 @@ import java.util.Objects;
 public sealed interface ApiError
         permits ApiError.InvalidCredentials,
                 ApiError.PhoneExists,
+                ApiError.InvalidOrExpiredCode,
                 ApiError.RateLimited,
                 ApiError.Network,
                 ApiError.Unknown {
@@ -61,6 +62,29 @@ public sealed interface ApiError
         @Override
         public String toString() {
             return "PhoneExists";
+        }
+    }
+
+    /** Wrong, expired, or already used email OTP ({@code INVALID_OR_EXPIRED_CODE}). */
+    final class InvalidOrExpiredCode implements ApiError {
+        public static final InvalidOrExpiredCode INSTANCE = new InvalidOrExpiredCode();
+
+        private InvalidOrExpiredCode() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof InvalidOrExpiredCode;
+        }
+
+        @Override
+        public int hashCode() {
+            return InvalidOrExpiredCode.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "InvalidOrExpiredCode";
         }
     }
 
@@ -176,6 +200,9 @@ public sealed interface ApiError
         }
         if ("PHONE_EXISTS".equals(serverCode)) {
             return PhoneExists.INSTANCE;
+        }
+        if ("INVALID_OR_EXPIRED_CODE".equals(serverCode)) {
+            return InvalidOrExpiredCode.INSTANCE;
         }
         if ("RATE_LIMITED".equals(serverCode) || httpStatus == 429) {
             return RateLimited.INSTANCE;

@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentLoginBinding;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -43,6 +44,19 @@ public final class LoginFragment extends Fragment {
             NavHostFragment.findNavController(this).navigate(
                     R.id.registerFragment, args.isEmpty() ? null : args);
         });
+        binding.forgotPasswordAction.setOnClickListener(v -> {
+            String phone = binding.phoneInput.getText() == null
+                    ? "" : binding.phoneInput.getText().toString();
+            Bundle args = new Bundle();
+            args.putString(ForgotPasswordViewModel.ARG_PREFILL_PHONE, phone);
+            NavHostFragment.findNavController(this).navigate(R.id.forgotPasswordFragment, args);
+        });
+        getParentFragmentManager().setFragmentResultListener(
+                ForgotPasswordViewModel.RESULT_PASSWORD_CHANGED,
+                getViewLifecycleOwner(),
+                (key, bundle) -> Snackbar.make(
+                                binding.getRoot(), R.string.forgot_password_changed, Snackbar.LENGTH_LONG)
+                        .show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
             if (e == AuthViewModel.Event.LoggedIn) {
@@ -82,12 +96,15 @@ public final class LoginFragment extends Fragment {
         binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
         binding.errorBanner.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
-        if (state.getError() != null) binding.errorBanner.setText(ApiErrorText.text(requireContext(), state.getError()));
+        if (state.getError() != null) {
+            binding.errorBanner.setText(ApiErrorText.text(requireContext(), state.getError()));
+        }
         boolean notLoading = !state.getLoading();
         binding.phoneInput.setEnabled(notLoading);
         binding.passwordInput.setEnabled(notLoading);
         binding.primaryAction.setEnabled(notLoading);
         binding.secondaryAction.setEnabled(notLoading);
+        binding.forgotPasswordAction.setEnabled(notLoading);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;
     }

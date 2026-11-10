@@ -29,6 +29,7 @@ public final class ApiErrorTextTest {
         ApiError[] errors = {
             ApiError.InvalidCredentials.INSTANCE,
             ApiError.PhoneExists.INSTANCE,
+            ApiError.InvalidOrExpiredCode.INSTANCE,
             ApiError.RateLimited.INSTANCE,
             new ApiError.Network(),
             new ApiError.Unknown("FUTURE"),

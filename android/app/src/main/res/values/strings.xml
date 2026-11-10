@@ -497,4 +497,19 @@
     <string name="system_event_group_member_removed">%1$s removed %2$s</string>
     <string name="system_event_group_renamed">%1$s renamed the group to “%2$s”</string>
     <string name="system_event_group_role_changed">%1$s changed %2$s’s role</string>
+
+    <!-- Forgot password (brief 306 E4) -->
+    <string name="action_forgot_password">Forgot password?</string>
+    <string name="forgot_password_title">Reset password</string>
+    <string name="forgot_password_send_code">Send code</string>
+    <string name="forgot_password_neutral_sent">If this number has a verified recovery email, we sent a code</string>
+    <string name="forgot_password_code_label">Verification code</string>
+    <string name="forgot_password_submit">Reset password</string>
+    <string name="forgot_password_resend">Resend code</string>
+    <string name="forgot_password_resend_countdown">Resend code (%1$d)</string>
+    <string name="forgot_password_code_invalid">Code is wrong or expired</string>
+    <string name="forgot_password_changed">Password changed. Sign in again.</string>
+    <string name="auth_password_policy_hint">At least 8 characters, max 72 bytes</string>
+    <string name="cd_forgot_phone">Phone number for password reset</string>
+    <string name="cd_forgot_otp">Password reset verification code</string>
 </resources>

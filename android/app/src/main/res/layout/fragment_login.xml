@@ -100,6 +100,16 @@
                         android:inputType="textPassword" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/forgotPasswordAction"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/action_forgot_password" />
+
                 <!-- Error banner -->
                 <TextView
                     android:id="@+id/errorBanner"

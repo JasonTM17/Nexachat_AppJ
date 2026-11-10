@@ -14,6 +14,9 @@ public final class ApiErrorText {
         if (error instanceof ApiError.InvalidCredentials) return R.string.error_invalid_credentials;
         if (error instanceof ApiError.PhoneExists) return R.string.error_phone_exists;
         if (error instanceof ApiError.RateLimited) return R.string.error_rate_limited;
+        if (error instanceof ApiError.InvalidOrExpiredCode) {
+            return R.string.forgot_password_code_invalid;
+        }
         if (error instanceof ApiError.Network) return R.string.error_network;
         return R.string.error_generic;
     }
