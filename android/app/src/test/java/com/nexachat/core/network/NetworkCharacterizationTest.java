@@ -94,6 +94,10 @@ public final class NetworkCharacterizationTest {
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
         RealtimeSession session = new RealtimeSession(
                 stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, () -> Flowable.just(false), scheduler);

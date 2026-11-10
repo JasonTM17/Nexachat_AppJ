@@ -42,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -342,15 +343,16 @@ public final class RealtimeSession {
 
     private void connectOnce() {
         final long sessionEpoch = tokenRefresher.sessionEpoch();
-        if (!tokenRefresher.isSessionCurrent(sessionEpoch)) {
-            synchronized (this) {
+        final long attemptId;
+        synchronized (this) {
+            if (!tokenRefresher.isSessionCurrent(sessionEpoch)) {
                 attemptActive = false;
+                return;
             }
-            return;
+            attemptId = connectionAttemptSeq.incrementAndGet();
+            activeConnectionAttemptId = attemptId;
+            activeAttemptSessionEpoch = sessionEpoch;
         }
-        final long attemptId = connectionAttemptSeq.incrementAndGet();
-        activeConnectionAttemptId = attemptId;
-        activeAttemptSessionEpoch = sessionEpoch;
         SerialDisposable attemptHolder = new SerialDisposable();
         connection.set(attemptHolder);
         authRecovery.set(Disposable.empty());
@@ -369,36 +371,30 @@ public final class RealtimeSession {
                     }
                     return tokenRefresher.refreshOutcomeIfNeeded(storedBearer)
                             .flatMapPublisher(outcome -> {
-                                if (!isAttemptLive(sessionEpoch, attemptId)) {
-                                    return Flowable.empty();
-                                }
-                                if (outcome instanceof TokenRefreshOutcome.FreshToken fresh) {
-                                    String rotated = fresh.getAccessToken();
-                                    attemptAccessToken = rotated;
-                                    return stompClient.connect(
-                                            rotated,
-                                            action -> tokenRefresher.runIfSessionCurrent(
-                                                    sessionEpoch, action));
-                                }
-                                if (outcome instanceof TokenRefreshOutcome.Rejected) {
-                                    tearDownLoggedOutSession();
-                                    return Flowable.empty();
-                                }
-                                if (outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
-                                    return Flowable.just(new StompClient.State.Failed(
-                                            StompClient.REASON_OFFLINE));
-                                }
-                                return Flowable.just(new StompClient.State.Failed(
-                                        StompClient.REASON_OFFLINE));
+                                AtomicReference<Flowable<StompClient.State>> next =
+                                        new AtomicReference<>(Flowable.empty());
+                                runIfAttemptLive(sessionEpoch, attemptId, () -> {
+                                    if (outcome instanceof TokenRefreshOutcome.FreshToken fresh) {
+                                        String rotated = fresh.getAccessToken();
+                                        attemptAccessToken = rotated;
+                                        next.set(stompClient.connect(
+                                                rotated,
+                                                action -> tokenRefresher.runIfSessionCurrent(
+                                                        sessionEpoch, action)));
+                                    } else if (outcome instanceof TokenRefreshOutcome.Rejected) {
+                                        tearDownLoggedOutSession();
+                                    } else {
+                                        next.set(Flowable.just(new StompClient.State.Failed(
+                                                StompClient.REASON_OFFLINE)));
+                                    }
+                                });
+                                return next.get();
                             });
                 })
                 .switchIfEmpty(Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
         AtomicBoolean attemptTerminal = new AtomicBoolean();
         Disposable attempt = prepared.subscribe(
-                connectionState -> {
-                    if (!isAttemptLive(sessionEpoch, attemptId)) {
-                        return;
-                    }
+                connectionState -> runIfAttemptLive(sessionEpoch, attemptId, () -> {
                     state.onNext(connectionState);
                     if (connectionState instanceof StompClient.State.Open) {
                         failures = 0;
@@ -417,7 +413,7 @@ public final class RealtimeSession {
                             finishAttempt(sessionEpoch, attemptId);
                         }
                     }
-                },
+                }),
                 ignored -> {
                     if (attemptTerminal.compareAndSet(false, true)) {
                         finishAttempt(sessionEpoch, attemptId);
@@ -436,6 +432,20 @@ public final class RealtimeSession {
                 && activeConnectionAttemptId == attemptId;
     }
 
+    /** Serializes attempt state publication with both attempt replacement and session changes. */
+    private boolean runIfAttemptLive(long sessionEpoch, long attemptId, Runnable action) {
+        AtomicBoolean ran = new AtomicBoolean();
+        boolean sessionCurrent = tokenRefresher.runIfSessionCurrent(sessionEpoch, () -> {
+            synchronized (this) {
+                if (activeConnectionAttemptId == attemptId) {
+                    action.run();
+                    ran.set(true);
+                }
+            }
+        });
+        return sessionCurrent && ran.get();
+    }
+
     /** Only explicit STOMP authentication failures trigger token recovery. */
     private static boolean isAuthSuspectFailure(StompClient.State state) {
         if (!(state instanceof StompClient.State.Failed failed)) {
@@ -445,60 +455,57 @@ public final class RealtimeSession {
     }
 
     private void finishAttempt(long sessionEpoch, long attemptId) {
-        if (!isAttemptLive(sessionEpoch, attemptId)) {
-            return;
-        }
-        synchronized (this) {
+        runIfAttemptLive(sessionEpoch, attemptId, () -> {
             attemptActive = false;
             if (activeConnectionAttemptId == attemptId) {
                 activeAttemptSessionEpoch = -1L;
             }
-        }
-        isOpen.onNext(false);
-        if (!hasSession || !sessionAdmitted) {
-            return;
-        }
-        if (authFailurePending) {
-            authFailurePending = false;
-            recoverFromAuthFailure(sessionEpoch, attemptId);
-            return;
-        }
-        failures++;
-        if (reconnectPolicy.shouldRetry(failures)) {
-            Disposable timer = reconnectScheduler.scheduleDirect(
-                    () -> {
-                        if (isAttemptLive(sessionEpoch, attemptId)) {
-                            launchConnectionLoop();
-                        }
-                    },
-                    reconnectPolicy.delayMillis(failures),
-                    TimeUnit.MILLISECONDS);
-            connection.set(timer);
-            return;
-        }
-        failures = 0;
-        parkedRounds++;
-        state.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
-        long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
-        Flowable<Object> wakeSignals = Flowable.merge(
-                networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
-                rearmRequests);
-        Flowable<Object> foregroundTimer = foreground.getIsForeground()
-                .distinctUntilChanged()
-                .switchMap(isForeground -> isForeground
-                        ? Flowable.timer(delay, TimeUnit.MILLISECONDS, reconnectScheduler)
-                                .map(value -> new Object())
-                        : Flowable.never());
-        Disposable wake = Flowable.merge(wakeSignals, foregroundTimer)
-                .take(1)
-                .subscribe(
-                        ignored -> {
+            isOpen.onNext(false);
+            if (!hasSession || !sessionAdmitted) {
+                return;
+            }
+            if (authFailurePending) {
+                authFailurePending = false;
+                recoverFromAuthFailure(sessionEpoch, attemptId);
+                return;
+            }
+            failures++;
+            if (reconnectPolicy.shouldRetry(failures)) {
+                Disposable timer = reconnectScheduler.scheduleDirect(
+                        () -> {
                             if (isAttemptLive(sessionEpoch, attemptId)) {
                                 launchConnectionLoop();
                             }
                         },
-                        ignored -> { });
-        parkedWake.set(wake);
+                        reconnectPolicy.delayMillis(failures),
+                        TimeUnit.MILLISECONDS);
+                connection.set(timer);
+                return;
+            }
+            failures = 0;
+            parkedRounds++;
+            state.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
+            long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
+            Flowable<Object> wakeSignals = Flowable.merge(
+                    networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
+                    rearmRequests);
+            Flowable<Object> foregroundTimer = foreground.getIsForeground()
+                    .distinctUntilChanged()
+                    .switchMap(isForeground -> isForeground
+                            ? Flowable.timer(delay, TimeUnit.MILLISECONDS, reconnectScheduler)
+                                    .map(value -> new Object())
+                            : Flowable.never());
+            Disposable wake = Flowable.merge(wakeSignals, foregroundTimer)
+                    .take(1)
+                    .subscribe(
+                            ignored -> {
+                                if (isAttemptLive(sessionEpoch, attemptId)) {
+                                    launchConnectionLoop();
+                                }
+                            },
+                            ignored -> { });
+            parkedWake.set(wake);
+        });
     }
 
     /** A transient refresh failure follows the same bounded backoff as socket failures. */
@@ -508,10 +515,7 @@ public final class RealtimeSession {
         }
         final String failedBearer = attemptAccessToken;
         authRecovery.set(tokenRefresher.refreshOutcomeIfNeeded(failedBearer)
-                .subscribe(outcome -> {
-                    if (!isAttemptLive(sessionEpoch, attemptId)) {
-                        return;
-                    }
+                .subscribe(outcome -> runIfAttemptLive(sessionEpoch, attemptId, () -> {
                     if (!hasSession || !sessionAdmitted) {
                         return;
                     }
@@ -526,11 +530,7 @@ public final class RealtimeSession {
                         return;
                     }
                     finishAttempt(sessionEpoch, attemptId);
-                }, ignored -> {
-                    if (isAttemptLive(sessionEpoch, attemptId)) {
-                        finishAttempt(sessionEpoch, attemptId);
-                    }
-                }));
+                }), ignored -> finishAttempt(sessionEpoch, attemptId)));
     }
 
     private void resubscribeWanted() {

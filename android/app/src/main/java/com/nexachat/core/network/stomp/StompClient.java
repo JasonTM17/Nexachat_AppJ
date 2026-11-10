@@ -209,11 +209,10 @@ public final class StompClient {
                 liveness.invalidate();
                 lifecycle.dispose();
             });
-            if (!stillCurrent.test(attemptId)) {
-                emitter.onComplete();
+            if (!tryEmitState(emitter, liveness, State.Connecting.INSTANCE)) {
+                completeIfCurrent(emitter, liveness);
                 return;
             }
-            emitter.onNext(State.Connecting.INSTANCE);
             SerialDisposable readHolder = new SerialDisposable();
             lifecycle.set(readHolder);
             if (accessToken != null) {
@@ -223,30 +222,28 @@ public final class StompClient {
             Disposable read = tokenStore.readTokens()
                     .subscribeOn(Schedulers.io())
                     .doOnComplete(() -> {
-                        if (!emitter.isCancelled() && stillCurrent.test(attemptId)) {
-                            emitter.onNext(new State.Failed(REASON_NO_TOKEN));
-                            emitter.onComplete();
-                        }
+                        emitStateAndCompleteIfCurrent(
+                                emitter, liveness, new State.Failed(REASON_NO_TOKEN));
                     })
                     .subscribe(tokens -> {
                         if (!stillCurrent.test(attemptId)) {
-                            emitter.onComplete();
+                            completeIfCurrent(emitter, liveness);
                             return;
                         }
                         String token = tokens.getAccessToken();
                         if (token.isBlank()) {
-                            emitter.onNext(new State.Failed(REASON_NO_TOKEN));
-                            emitter.onComplete();
+                            emitStateAndCompleteIfCurrent(
+                                    emitter, liveness, new State.Failed(REASON_NO_TOKEN));
                             return;
                         }
                         beginAttempt(token, attemptId, stillCurrent, liveness, emitter, lifecycle);
                     }, failure -> {
                         if (!stillCurrent.test(attemptId)) {
-                            emitter.onComplete();
+                            completeIfCurrent(emitter, liveness);
                             return;
                         }
-                        emitter.onNext(new State.Failed(failure.getMessage()));
-                        emitter.onComplete();
+                        emitStateAndCompleteIfCurrent(
+                                emitter, liveness, new State.Failed(failure.getMessage()));
                     });
             readHolder.set(read);
         }, BackpressureStrategy.LATEST);
@@ -279,17 +276,11 @@ public final class StompClient {
             @NonNull SerialDisposable lifecycle) {
         StateSink sink = new StateSink() {
             @Override public boolean trySend(@NonNull State state) {
-                if (emitter.isCancelled() || !stillCurrent.test(attemptId)) {
-                    return false;
-                }
-                emitter.onNext(state);
-                return true;
+                return tryEmitState(emitter, liveness, state);
             }
 
             @Override public void close() {
-                if (!emitter.isCancelled() && stillCurrent.test(attemptId)) {
-                    emitter.onComplete();
-                }
+                completeIfCurrent(emitter, liveness);
             }
         };
         try {
@@ -301,11 +292,45 @@ public final class StompClient {
                 }
             }));
         } catch (RuntimeException failure) {
-            if (stillCurrent.test(attemptId)) {
-                emitter.onNext(new State.Failed(failure.getMessage()));
+            emitStateAndCompleteIfCurrent(
+                    emitter, liveness, new State.Failed(failure.getMessage()));
+        }
+    }
+
+    private static boolean tryEmitState(
+            @NonNull io.reactivex.rxjava3.core.FlowableEmitter<State> emitter,
+            @NonNull AttemptLiveness liveness,
+            @NonNull State state) {
+        AtomicBoolean emitted = new AtomicBoolean();
+        boolean current = liveness.runIfCurrent(() -> {
+            if (!emitter.isCancelled()) {
+                emitter.onNext(state);
+                emitted.set(true);
+            }
+        });
+        return current && emitted.get();
+    }
+
+    private static void emitStateAndCompleteIfCurrent(
+            @NonNull io.reactivex.rxjava3.core.FlowableEmitter<State> emitter,
+            @NonNull AttemptLiveness liveness,
+            @NonNull State state) {
+        liveness.runIfCurrent(() -> {
+            if (!emitter.isCancelled()) {
+                emitter.onNext(state);
                 emitter.onComplete();
             }
-        }
+        });
+    }
+
+    private static void completeIfCurrent(
+            @NonNull io.reactivex.rxjava3.core.FlowableEmitter<State> emitter,
+            @NonNull AttemptLiveness liveness) {
+        liveness.runIfCurrent(() -> {
+            if (!emitter.isCancelled()) {
+                emitter.onComplete();
+            }
+        });
     }
 
     /** Queues a STOMP SEND. False means there is no open socket to accept it. */

@@ -56,6 +56,10 @@ public final class RealtimeSessionStaleStompFrameTest {
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
 
         StompClient stomp = new StompClient(new OkHttpClient(), store);
         Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();

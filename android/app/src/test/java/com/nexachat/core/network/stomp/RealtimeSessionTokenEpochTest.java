@@ -80,6 +80,7 @@ public final class RealtimeSessionTokenEpochTest {
             long expected = invocation.getArgument(0);
             return admission.getValue() && expected == epoch.get();
         });
+        stubSessionActionGate(refresher, admission, epoch::get);
 
         SingleSubject<TokenRefreshOutcome> pendingRefreshA = SingleSubject.create();
         when(refresher.refreshOutcomeIfNeeded("access-a")).thenReturn(pendingRefreshA);
@@ -164,6 +165,7 @@ public final class RealtimeSessionTokenEpochTest {
         when(refresher.sessionEpoch()).thenReturn(3L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
                 admission.getValue() && invocation.getArgument(0, Long.class) == 3L);
+        stubSessionActionGate(refresher, admission, () -> 3L);
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
@@ -190,6 +192,7 @@ public final class RealtimeSessionTokenEpochTest {
         when(refresher.sessionEpoch()).thenReturn(4L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
                 admission.getValue() && invocation.getArgument(0, Long.class) == 4L);
+        stubSessionActionGate(refresher, admission, () -> 4L);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
         when(stomp.connect(any(), any())).thenReturn(Flowable.concat(
@@ -252,6 +255,21 @@ public final class RealtimeSessionTokenEpochTest {
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(epoch);
         when(refresher.isSessionCurrent(epoch)).thenAnswer(ignored -> flow.getValue());
+        stubSessionActionGate(refresher, flow, () -> epoch);
+    }
+
+    private static void stubSessionActionGate(
+            TokenRefresher refresher,
+            BehaviorProcessor<Boolean> admission,
+            java.util.function.LongSupplier currentEpoch) {
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            long expected = invocation.getArgument(0);
+            if (!admission.getValue() || expected != currentEpoch.getAsLong()) {
+                return false;
+            }
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
     }
 
     private static RealtimeSession session(

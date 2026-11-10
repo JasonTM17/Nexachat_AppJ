@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -165,6 +166,13 @@ public final class RealtimeSessionEventDecodeTest {
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (invocation.getArgument(0, Long.class) != 1L || !admitted.getValue()) {
+                return false;
+            }
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, foreground);
     }

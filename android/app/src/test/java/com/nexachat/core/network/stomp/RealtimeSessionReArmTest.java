@@ -143,6 +143,7 @@ public final class RealtimeSessionReArmTest {
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(
                 invocation -> admission.getValue() && invocation.getArgument(0, Long.class) == 1L);
+        stubSessionActionGate(refresher, admission);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
         when(stomp.connect(anyString(), any())).thenReturn(Flowable.concat(
@@ -287,6 +288,19 @@ public final class RealtimeSessionReArmTest {
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(
                 invocation -> admitted.getValue() && invocation.getArgument(0, Long.class) == 1L);
+        stubSessionActionGate(refresher, admitted);
+    }
+
+    private static void stubSessionActionGate(
+            TokenRefresher refresher, BehaviorProcessor<Boolean> admitted) {
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (!admitted.getValue()
+                    || invocation.getArgument(0, Long.class) != 1L) {
+                return false;
+            }
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
     }
 
     private static StompClient failedClient(AtomicInteger count) {
