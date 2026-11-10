@@ -197,17 +197,17 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     /**
      * Successor pick for account-deletion admin hand-over: earliest
-     * {@code joined_at}, tie-broken by user id (stable ordering).
+     * {@code joined_at}, tie-broken by user id (PostgreSQL ordering).
      */
-    @Query("""
-            SELECT m FROM ConversationMember m
-            WHERE m.conversation.id = :conversationId AND m.user.id <> :excludeUserId
-            ORDER BY m.joinedAt ASC, m.user.id ASC
-            """)
-    List<ConversationMember> findMembersExcludingOrderByJoinedAt(
+    @Query(value = """
+            SELECT user_id FROM conversation_members
+            WHERE conversation_id = :conversationId AND user_id <> :excludeUserId
+            ORDER BY joined_at ASC, user_id ASC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findSuccessorUserIdForAccountDeletion(
             @Param("conversationId") UUID conversationId,
-            @Param("excludeUserId") UUID excludeUserId,
-            Pageable pageable);
+            @Param("excludeUserId") UUID excludeUserId);
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows

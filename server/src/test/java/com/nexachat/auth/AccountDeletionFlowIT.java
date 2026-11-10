@@ -169,9 +169,17 @@ class AccountDeletionFlowIT extends SecurityITBase {
                 "UPDATE conversation_members SET joined_at = ? WHERE conversation_id = ? AND user_id IN (?, ?)",
                 java.sql.Timestamp.from(sameJoin), groupId, userA.userId(), userB.userId());
 
+        UUID expectedAdmin = jdbcTemplate.queryForObject(
+                """
+                        SELECT user_id FROM conversation_members
+                        WHERE conversation_id = ? AND user_id IN (?, ?)
+                        ORDER BY joined_at ASC, user_id ASC
+                        LIMIT 1
+                        """,
+                UUID.class, groupId, userA.userId(), userB.userId());
+
         deleteMe(admin.accessToken(), "secret123").andExpect(status().isNoContent());
 
-        UUID expectedAdmin = userA.userId().compareTo(userB.userId()) < 0 ? userA.userId() : userB.userId();
         UUID expectedMember = expectedAdmin.equals(userA.userId()) ? userB.userId() : userA.userId();
         assertThat(memberRole(groupId, expectedAdmin)).isEqualTo("ADMIN");
         assertThat(memberRole(groupId, expectedMember)).isEqualTo("MEMBER");

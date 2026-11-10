@@ -28,8 +28,6 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.springframework.data.domain.Pageable;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -554,9 +552,10 @@ class GroupServiceTest {
         when(memberRepository.countByConversation_IdAndRole(
                 conversationId, ConversationMember.Role.ADMIN)).thenReturn(1L);
         when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
-        when(memberRepository.findMembersExcludingOrderByJoinedAt(
-                eq(conversationId), eq(adminId), any(Pageable.class)))
-                .thenReturn(List.of(bobMember));
+        when(memberRepository.findSuccessorUserIdForAccountDeletion(conversationId, adminId))
+                .thenReturn(Optional.of(bobId));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, bobId))
+                .thenReturn(Optional.of(bobMember));
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
 
         groupService.leaveForAccountDeletion(adminId, conversationId);

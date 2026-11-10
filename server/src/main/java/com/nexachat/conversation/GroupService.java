@@ -20,7 +20,6 @@ import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.broker.AbstractBrokerMessageHandler;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
@@ -341,13 +340,14 @@ public class GroupService {
 
     private void promoteSuccessorToAdmin(
             Conversation conversation, UUID actorId, UUID conversationId, UUID excludeUserId) {
-        List<ConversationMember> successors = memberRepository.findMembersExcludingOrderByJoinedAt(
-                conversationId, excludeUserId, PageRequest.of(0, 1));
-        if (successors.isEmpty()) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                    "No member available to promote before account deletion");
-        }
-        ConversationMember successor = successors.getFirst();
+        UUID successorUserId = memberRepository.findSuccessorUserIdForAccountDeletion(
+                conversationId, excludeUserId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "No member available to promote before account deletion"));
+        ConversationMember successor = memberRepository
+                .findByConversation_IdAndUser_Id(conversationId, successorUserId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER,
+                        "Successor is not a member of this group"));
         successor.changeRole(ConversationMember.Role.ADMIN);
         memberRepository.save(successor);
         String actorName = memberRepository.findByConversation_IdAndUser_Id(conversationId, actorId)
