@@ -79,7 +79,7 @@ public class GoogleSignInService {
     public AuthResponse signIn(GoogleSignInRequest request, String deviceLabel) {
         requireEnabled();
         GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
-        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_SIGNIN);
+        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_SIGNIN, null);
 
         UserIdentity identity = identityRepository
                 .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
@@ -102,7 +102,7 @@ public class GoogleSignInService {
         }
 
         GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
-        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_LINK);
+        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_LINK, userId);
 
         UserIdentity existing = identityRepository
                 .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
@@ -162,11 +162,11 @@ public class GoogleSignInService {
     public GoogleNonceService.IssuedNonce issueLinkNonce(UUID userId) {
         requireEnabled();
         enforceAccountRateLimit(userId, "google-link-nonce");
-        return nonceService.issue(GoogleNonceService.PURPOSE_LINK);
+        return nonceService.issue(GoogleNonceService.PURPOSE_LINK, userId);
     }
 
-    private void consumeNonce(String nonce, String purpose) {
-        if (!nonceService.consume(nonce, purpose)) {
+    private void consumeNonce(String nonce, String purpose, UUID userId) {
+        if (!nonceService.consume(nonce, purpose, userId)) {
             throw ApiException.of(ApiErrorCode.GOOGLE_SIGN_IN_FAILED,
                     "Google sign-in could not be completed");
         }

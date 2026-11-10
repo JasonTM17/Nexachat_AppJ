@@ -47,16 +47,20 @@ public class GoogleNonceService {
         this.properties = properties;
     }
 
-    /** @return the raw nonce (shown once) and its lifetime in seconds */
-    public IssuedNonce issue(String purpose) {
+    /**
+     * @param purpose {@link #PURPOSE_SIGNIN} (public, unowned) or {@link #PURPOSE_LINK}
+     * @param userId  the account that may consume a link nonce; {@code null} for sign-in
+     * @return the raw nonce (shown once) and its lifetime in seconds
+     */
+    public IssuedNonce issue(String purpose, java.util.UUID userId) {
         byte[] bytes = new byte[NONCE_BYTES];
         SECURE_RANDOM.nextBytes(bytes);
         String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         JdbcTemplate jdbcTemplate = jdbcTemplate();
         jdbcTemplate.update(
-                "INSERT INTO google_signin_nonces (nonce_hash, purpose, expires_at)"
-                        + " VALUES (?, ?, now() + (? * INTERVAL '1 second'))",
-                sha256Hex(nonce), purpose, properties.nonceTtlSeconds());
+                "INSERT INTO google_signin_nonces (nonce_hash, purpose, user_id, expires_at)"
+                        + " VALUES (?, ?, ?, now() + (? * INTERVAL '1 second'))",
+                sha256Hex(nonce), purpose, userId, properties.nonceTtlSeconds());
         jdbcTemplate.update(
                 "DELETE FROM google_signin_nonces WHERE id IN ("
                         + "SELECT id FROM google_signin_nonces WHERE expires_at < now() LIMIT "
@@ -74,15 +78,25 @@ public class GoogleNonceService {
      * would release the nonce for replay.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean consume(String nonce, String purpose) {
+    public boolean consume(String nonce, String purpose, java.util.UUID userId) {
         if (nonce == null || nonce.isBlank() || nonce.length() > MAX_NONCE_LENGTH) {
             return false;
         }
-        int updated = jdbcTemplate().update(
-                "UPDATE google_signin_nonces SET consumed_at = now()"
-                        + " WHERE nonce_hash = ? AND purpose = ?"
-                        + " AND consumed_at IS NULL AND expires_at > now()",
-                sha256Hex(nonce), purpose);
+        int updated;
+        if (userId == null) {
+            // Public sign-in nonces have no owner.
+            updated = jdbcTemplate().update(
+                    "UPDATE google_signin_nonces SET consumed_at = now()"
+                            + " WHERE nonce_hash = ? AND purpose = ? AND user_id IS NULL"
+                            + " AND consumed_at IS NULL AND expires_at > now()",
+                    sha256Hex(nonce), purpose);
+        } else {
+            updated = jdbcTemplate().update(
+                    "UPDATE google_signin_nonces SET consumed_at = now()"
+                            + " WHERE nonce_hash = ? AND purpose = ? AND user_id = ?"
+                            + " AND consumed_at IS NULL AND expires_at > now()",
+                    sha256Hex(nonce), purpose, userId);
+        }
         return updated == 1;
     }
 

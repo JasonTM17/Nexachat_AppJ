@@ -151,6 +151,21 @@ class GoogleSignInIT extends SecurityITBase {
     }
 
     @Test
+    void linkNonceCannotBeUsedUnderAnotherAuthenticatedAccount() throws Exception {
+        Registered nonceOwner = register(PHONE);
+        Registered other = register("+84905556013");
+        String nonce = issueLinkNonce(nonceOwner);
+
+        link(other, GoogleTestKeys.token(nonce), nonce)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_identities WHERE user_id IN (?, ?)", Integer.class,
+                nonceOwner.userId(), other.userId())).isZero();
+    }
+
+    @Test
     void linkRequiresTheCurrentPassword() throws Exception {
         Registered user = register(PHONE);
         String nonce = issueLinkNonce(user);

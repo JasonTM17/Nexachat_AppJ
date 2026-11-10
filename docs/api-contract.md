@@ -385,7 +385,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled |
 | `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 · `RATE_LIMITED` 429 |
 | `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
-| `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose; the public sign-in nonce is rejected here) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
+| `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose, bound to the caller; a public sign-in nonce or another account's link nonce is rejected) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
 | `POST /auth/identities/google` | Bearer | `{idToken, nonce, password}` — password re-authenticates the owner | `204` empty (idempotent for the same Google account) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_ALREADY_LINKED` 409 · `RATE_LIMITED` 429 |
 | `DELETE /auth/identities/google` | Bearer | `{password}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `LAST_SIGN_IN_METHOD` 409 |
 
@@ -406,8 +406,9 @@ are not implemented. Linking requires the account password and refuses to move a
 Google account already linked to another user (`409`); unlinking also requires
 the password and is refused with `409 LAST_SIGN_IN_METHOD` when the account has
 no password left. Nonces are stored as SHA-256 hex, bound to their purpose
-(`signin` or `link`) and consumed by one conditional `UPDATE` in its own
-transaction, so a failed sign-in cannot release a nonce for replay.
+(`signin` or `link`; link nonces are bound to the requesting account) and
+consumed by one conditional `UPDATE` in its own transaction, so a failed
+sign-in cannot release a nonce for replay.
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: per client

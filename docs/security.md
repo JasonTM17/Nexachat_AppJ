@@ -242,8 +242,9 @@ the implementing source file.
 - Replay protection: `POST /auth/google/nonce` issues a 256-bit nonce, persists
   only its SHA-256 hex with a five-minute expiry, and the token's `nonce` claim
   must match. Each nonce is bound to its purpose (`signin` for the public route,
-  `link` for the authenticated route), so a public nonce cannot be replayed
-  against the link endpoint. The service consumes it with one conditional
+  `link` for the authenticated route) and, for link nonces, to the account that
+  requested it, so a public nonce or another account's link nonce cannot be
+  replayed against the link endpoint. The service consumes it with one conditional
   `UPDATE ... WHERE purpose = ? AND consumed_at IS NULL AND expires_at > now()`
   in a `REQUIRES_NEW` transaction, so concurrent requests and a later rollback
   of the sign-in transaction cannot both use (or release) the nonce

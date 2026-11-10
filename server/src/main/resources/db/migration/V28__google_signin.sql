@@ -32,6 +32,8 @@ CREATE TABLE google_signin_nonces (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nonce_hash  CHAR(64)    NOT NULL UNIQUE,
     purpose     VARCHAR(16) NOT NULL,
+    -- Link nonces are bound to the account that requested them.
+    user_id     UUID        REFERENCES users(id) ON DELETE CASCADE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at  TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ,
@@ -41,3 +43,5 @@ CREATE TABLE google_signin_nonces (
 );
 
 CREATE INDEX idx_google_signin_nonces_expiry ON google_signin_nonces (purpose, expires_at);
+CREATE INDEX idx_google_signin_nonces_owner ON google_signin_nonces (user_id)
+    WHERE user_id IS NOT NULL;

@@ -46,7 +46,7 @@ public class GoogleAuthController {
     @PostMapping("/google/nonce")
     public GoogleNonceResponse signInNonce() {
         googleSignInService.requireEnabled();
-        return toResponse(nonceService.issue(GoogleNonceService.PURPOSE_SIGNIN));
+        return toResponse(nonceService.issue(GoogleNonceService.PURPOSE_SIGNIN, null));
     }
 
     /** Nonce for the authenticated link flow; the public nonce cannot be used here. */
