@@ -90,7 +90,7 @@ excluded, the LLM is not called and the local engine answers with
 
 ## Privacy
 
-- Without the operator key or without the caller's consent no text leaves the server.
+- Without a usable external LLM tier configured (a cloud key or an enabled local-server model) or without the caller's consent, no text leaves the server.
 - With both, the server sends only usable message text, after redaction: phone numbers, emails, URL paths and queries, long digit strings, token-like strings; sender names become stable labels (`U1`, `U2`, ...). Message ids never leave the server (the model cites short indexes).
 - Eligible text from every participant in the window, including the requester, is sent on the requester's behalf, except text authored by a member who opted out in that conversation. The cloud primary, cloud fallback and the local server model all receive the filtered window; only the built-in local extractive engine may still use the opted-out messages.
 - Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits, deletes and opt-out changes change the cache key or invalidate the cached entry.
@@ -133,9 +133,12 @@ lives only in the gitignored `.env` and is never logged, serialized, or echoed i
 
 Safety behaviour:
 
-- No outbound call is made unless the operator key is configured, the provider is
-  enabled, and the requesting user has `aiSummaryConsent = true`. The provider
-  re-checks the persisted consent immediately before the call.
+- No outbound call is made unless a usable cloud key or enabled local-server model
+  is configured, the relevant tier is enabled, and the requesting user has
+  `aiSummaryConsent = true`. The provider re-checks the persisted consent
+  immediately before the call. The local-server tier sends the same filtered prompt
+  to its configured `nexachat.summary.llm.local-base-url`, which must stay inside
+  the deployment's trust boundary.
 - Message text is redacted before sending (phone numbers, emails, URL paths and
   queries, long digit strings, token-like strings); sender names become stable labels
   `U1..Un`; message ids never leave the server — the model cites short indexes and the
@@ -153,8 +156,9 @@ Safety behaviour:
 
 The primary cloud provider can be paired with a fallback provider under
 `nexachat.summary.llm-fallback.*`. The fallback is disabled by default and
-becomes usable only when its key is configured, so a deployment with an empty
-fallback balance never calls it. It uses the same OpenAI-compatible client,
+becomes usable only when `nexachat.summary.llm-fallback.enabled=true` and its
+key is configured, so a deployment with an empty fallback balance never calls
+it. It uses the same OpenAI-compatible client,
 consent check, opt-out filtering, redaction, base-URL validation and output
 validation as the primary, and it receives the same already-filtered,
 already-redacted prompt.
@@ -195,17 +199,29 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
 2. **Tier 1: Local Server Model Tier (Ollama / vLLM)**
    - Configured via `NEXACHAT_SUMMARY_LOCAL_LLM_*` (e.g. `http://host.docker.internal:11434/v1`, model `qwen2.5:3b` or `llama3.2:3b`).
    - Handles routine AI generative summaries on the server machine without burning cloud tokens or transmitting data outside your deployment infrastructure.
-   - Both LLM tiers report `generatedBy: LLM`; the response `model` field names the endpoint that answered.
+   - Both LLM tiers report `generatedBy: LLM`; the response `model` field is the model identifier of the target that answered.
 
 3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
    - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
-   - Preferred when the summary task is complex; an explicit "Regenerate / Refresh" keeps the request on an LLM tier rather than the built-in local engine.
+   - Preferred when the summary task is complex; an explicit "Regenerate / Refresh"
+     keeps the request on an LLM tier rather than the built-in local engine. Refresh
+     never selects cloud over the local-server model.
    - Escalation trigger thresholds (configured via `NEXACHAT_SUMMARY_COMPLEXITY_*`):
      - Window message count $\ge 12$ messages (default `min-messages: 12`).
      - Window total length $\ge 1500$ characters (default `min-chars: 1500`).
      - Participant count $\ge 4$ active senders (default `min-participants: 4`).
-     - Explicit user refresh (`request.refresh() == true`).
 
 4. **Multi-Stage Graceful Fallback**
-   - If Cloud LLM times out, encounters a network issue, or fails schema validation, the request automatically falls back to the Local Server Model (if configured).
-   - If the Local Server Model is unreachable or fails, the request automatically falls back to the Native MMR Engine (`LOCAL`), guaranteeing the user always receives a valid, verified summary without an error banner.
+   When both the cloud and local-server tiers are usable, the order is:
+   - complex window: cloud primary → configured cloud fallback
+     (`nexachat.summary.llm-fallback.*`, retryable failures only) → local-server
+     model → built-in `LOCAL`;
+   - routine window with the local-server model enabled: local-server model →
+     configured cloud fallback (retryable failures only) → cloud primary →
+     built-in `LOCAL`.
+
+   The cloud fallback is tried once on a retryable primary failure (timeout,
+   transport error, HTTP 5xx/429) or when the primary circuit is open; a
+   non-retryable primary 4xx goes straight to the secondary target. If every LLM
+   tier fails, the built-in `LOCAL` engine answers with a `fallbackReason`, so the
+   user still receives a validated summary without an error banner.
