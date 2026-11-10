@@ -952,7 +952,6 @@ public class MessageRepositoryTest {
 
     @Test public void disposeDuringEditRollsBackOptimisticRow() {
         await(messageDao.upsert(own("m-1", 1L, "old")));
-        RxJavaPlugins.setIoSchedulerHandler(null);
         CountDownLatch networkStarted = new CountDownLatch(1);
         CountDownLatch releaseNetwork = new CountDownLatch(1);
         when(messageApi.editMessage(anyString(), anyString(), any())).thenReturn(blockingCall(networkStarted, releaseNetwork));
@@ -960,7 +959,6 @@ public class MessageRepositoryTest {
         awaitLatch(networkStarted);
         observer.dispose();
         releaseNetwork.countDown();
-        awaitCondition(() -> "old".equals(messages.get("m-1").getContent()));
         assertEquals("old", messages.get("m-1").getContent());
         assertNull(messages.get("m-1").getEditedAtEpochMs());
     }
@@ -1058,7 +1056,6 @@ public class MessageRepositoryTest {
         await(reactionDao.upsertAll(List.of(new MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true))));
         await(pinDao.upsert(new PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L)));
         await(conversationDao.upsert(conversation(1L, "bye")));
-        RxJavaPlugins.setIoSchedulerHandler(null);
         CountDownLatch networkStarted = new CountDownLatch(1);
         CountDownLatch releaseNetwork = new CountDownLatch(1);
         Call<Void> pending = blockingCall(networkStarted, releaseNetwork);
@@ -1067,10 +1064,6 @@ public class MessageRepositoryTest {
         awaitLatch(networkStarted);
         observer.dispose();
         releaseNetwork.countDown();
-        awaitCondition(() -> "bye".equals(messages.get("m-1").getContent())
-                && reactions.size() == 1
-                && pins.size() == 1
-                && !conversations.get(CONVERSATION_ID).getLastMessageDeleted());
         assertEquals("bye", messages.get("m-1").getContent()); assertNull(messages.get("m-1").getDeletedAtEpochMs());
         assertEquals(1, reactions.size()); assertEquals(1, pins.size());
         assertEquals("bye", conversations.get(CONVERSATION_ID).getLastMessageContent());
@@ -1245,14 +1238,6 @@ public class MessageRepositoryTest {
     private static void awaitLatch(CountDownLatch latch) {
         try { assertTrue("timed out waiting for request", latch.await(5, TimeUnit.SECONDS)); }
         catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
-    }
-    private static void awaitCondition(java.util.function.BooleanSupplier condition) {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
-            try { Thread.sleep(10L); }
-            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new AssertionError(interrupted); }
-        }
-        assertTrue("timed out waiting for rollback", condition.getAsBoolean());
     }
     private static ResponseBody body(String value) { return ResponseBody.create(null, value); }
     private static String jwtFor(String userId) {

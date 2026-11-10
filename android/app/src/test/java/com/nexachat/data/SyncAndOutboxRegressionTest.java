@@ -422,21 +422,16 @@ public final class SyncAndOutboxRegressionTest {
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(msgWatermarks));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(convWatermarks));
 
-        @SuppressWarnings("unchecked")
-        Call<SyncResponse> mockCall = mock(Call.class);
-        when(mockCall.clone()).thenReturn(mockCall);
-        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
-        try {
-            when(mockCall.execute()).thenReturn(Response.success(new SyncResponse(List.of(
-                    new SyncResponse.ConversationDeltaDto(
-                            "c1", List.of(), List.of(), List.of(), List.of(), 10L, false),
-                    new SyncResponse.ConversationDeltaDto(
-                            "c2", List.of(), List.of(), List.of(), List.of(), 8L, false),
-                    new SyncResponse.ConversationDeltaDto(
-                            "c3", List.of(), List.of(), List.of(), List.of(), 12L, false)),
-                    "2026-11-08T10:00:00Z")));
-        } catch (Exception ignored) {
-        }
+        SyncResponse watermarkResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "c1", List.of(), List.of(), List.of(), List.of(), 10L, false),
+                new SyncResponse.ConversationDeltaDto(
+                        "c2", List.of(), List.of(), List.of(), List.of(), 8L, false),
+                new SyncResponse.ConversationDeltaDto(
+                        "c3", List.of(), List.of(), List.of(), List.of(), 12L, false)),
+                "2026-11-08T10:00:00Z");
+        Call<SyncResponse> watermarkCall = responseCall(watermarkResponse);
+        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(watermarkCall);
 
         SyncEngine syncEngine = new SyncEngine(db, api, messageDao, conversationDao, reactionDao, tokenStore, moshi);
         TestObserver<Void> observer = syncEngine.sync().test();
@@ -486,14 +481,8 @@ public final class SyncAndOutboxRegressionTest {
         );
         SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
 
-        @SuppressWarnings("unchecked")
-        Call<SyncResponse> mockCall = mock(Call.class);
-        when(mockCall.clone()).thenReturn(mockCall);
-        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
-        try {
-            when(mockCall.execute()).thenReturn(Response.success(response));
-        } catch (Exception ignored) {
-        }
+        Call<SyncResponse> peerReceiptCall = responseCall(response);
+        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(peerReceiptCall);
 
         // Before and after sync, the peer's receipt watermark remains at 10.
         boolean seenBeforeSync = ChatBubbleRules.isSeenReceiptVisible(false, true, 15L, 10L);
@@ -537,14 +526,8 @@ public final class SyncAndOutboxRegressionTest {
         );
         SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
 
-        @SuppressWarnings("unchecked")
-        Call<SyncResponse> mockCall = mock(Call.class);
-        when(mockCall.clone()).thenReturn(mockCall);
-        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(mockCall);
-        try {
-            when(mockCall.execute()).thenReturn(Response.success(response));
-        } catch (Exception ignored) {
-        }
+        Call<SyncResponse> deleteOnlyCall = responseCall(response);
+        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(deleteOnlyCall);
 
         SyncEngine syncEngine = new SyncEngine(db, api, messageDao, conversationDao, reactionDao, tokenStore, moshi);
         TestObserver<Void> observer = syncEngine.sync().test();
@@ -594,15 +577,9 @@ public final class SyncAndOutboxRegressionTest {
 
         SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
                 "c1", List.of(), List.of(), List.of("m-deleted"), List.of(), 15L, false);
-        @SuppressWarnings("unchecked")
-        Call<SyncResponse> call = mock(Call.class);
-        when(call.clone()).thenReturn(call);
-        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(call);
-        try {
-            when(call.execute()).thenReturn(Response.success(
-                    new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z")));
-        } catch (Exception ignored) {
-        }
+        Call<SyncResponse> deletedPreviewCall = responseCall(
+                new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z"));
+        when(api.syncDeltas(any(SyncRequest.class))).thenReturn(deletedPreviewCall);
 
         SyncEngine engine = new SyncEngine(db, api, messageDao, conversationDao,
                 reactionDao, tokenStore, moshi);
@@ -613,5 +590,17 @@ public final class SyncAndOutboxRegressionTest {
         } else {
             verify(conversationDao, never()).markLastMessageDeleted(anyString());
         }
+    }
+
+    private static Call<SyncResponse> responseCall(SyncResponse response) {
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        try {
+            when(call.execute()).thenReturn(Response.success(response));
+        } catch (java.io.IOException setupFailure) {
+            throw new AssertionError(setupFailure);
+        }
+        return call;
     }
 }

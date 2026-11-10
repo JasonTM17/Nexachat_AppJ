@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import androidx.lifecycle.SavedStateHandle;
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -95,17 +96,28 @@ public final class SummaryViewModelTest {
             AtomicInteger calls = new AtomicInteger();
             CountDownLatch firstStarted = new CountDownLatch(1);
             CountDownLatch releaseFirst = new CountDownLatch(1);
+            CountDownLatch firstResponseDone = new CountDownLatch(1);
             try (SummaryTestServer server = new SummaryTestServer(exchange -> {
                 int call = calls.incrementAndGet();
                 if (call == 1) {
                     firstStarted.countDown();
                     try {
-                        releaseFirst.await(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
+                        try {
+                            if (!releaseFirst.await(5, TimeUnit.SECONDS)) {
+                                throw new AssertionError("timed out waiting to release stale response");
+                            }
+                            SummaryTestServer.respond(exchange, 200,
+                                    SummaryRepositoryTest.responseJson("summary-old", false));
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        } catch (IOException respondFailed) {
+                            throw new RuntimeException(respondFailed);
+                        } finally {
+                            firstResponseDone.countDown();
+                        }
+                    } catch (RuntimeException failed) {
+                        throw failed;
                     }
-                    SummaryTestServer.respond(exchange, 200,
-                            SummaryRepositoryTest.responseJson("summary-old", false));
                     return;
                 }
                 SummaryTestServer.respond(exchange, 200,
@@ -123,7 +135,8 @@ public final class SummaryViewModelTest {
                 viewModel.request(SummaryScope.TODAY, null);
                 SummaryUiState ready = awaitState(viewModel, SummaryUiState.Status.READY, "summary-new");
                 releaseFirst.countDown();
-                Thread.sleep(100L);
+                assertTrue("stale first response must finish before state check",
+                        firstResponseDone.await(5, TimeUnit.SECONDS));
                 assertEquals("summary-new", ready.getSummary().getSummaryId());
                 assertEquals("summary-new", viewModel.state().getValue().getSummary().getSummaryId());
 
@@ -146,18 +159,6 @@ public final class SummaryViewModelTest {
             SummaryViewModel viewModel,
             SummaryUiState.Status status,
             String summaryId) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            SummaryUiState value = viewModel.state().getValue();
-            if (value != null && value.getStatus() == status
-                    && (summaryId == null || (value.getSummary() != null
-                    && summaryId.equals(value.getSummary().getSummaryId())))) {
-                return value;
-            }
-            Thread.sleep(10L);
-        }
-        SummaryUiState value = viewModel.state().getValue();
-        throw new AssertionError("Timed out waiting for " + status + ", last="
-                + (value == null ? null : value.getStatus()));
+        return LiveDataTestSupport.awaitSummaryState(viewModel.state(), status, summaryId);
     }
 }

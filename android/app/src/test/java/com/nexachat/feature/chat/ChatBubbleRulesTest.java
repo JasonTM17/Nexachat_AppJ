@@ -15,13 +15,15 @@ public final class ChatBubbleRulesTest {
 
     @Test
     public void senderNamePaletteIndexIsStableAndBounded() {
-        String senderId = "sender-42";
-        int expected = Math.floorMod(senderId.hashCode(), ChatBubbleRules.SENDER_PALETTE_SIZE);
+        assertEquals(6, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
+        assertEquals(2, ChatBubbleRules.resolveSenderPaletteIndex("alice-7"));
+        assertEquals(3, ChatBubbleRules.resolveSenderPaletteIndex("peer-99"));
+        assertEquals(6, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
 
-        assertEquals(expected, ChatBubbleRules.resolveSenderPaletteIndex(senderId));
-        assertEquals(expected, ChatBubbleRules.resolveSenderPaletteIndex(senderId));
-        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex(null) >= 0);
-        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex(null) < ChatBubbleRules.SENDER_PALETTE_SIZE);
+        assertEquals(0, ChatBubbleRules.resolveSenderPaletteIndex(null));
+        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex("boundary-x") >= 0);
+        assertTrue(ChatBubbleRules.resolveSenderPaletteIndex("boundary-x")
+                < ChatBubbleRules.SENDER_PALETTE_SIZE);
     }
 
     @Test
