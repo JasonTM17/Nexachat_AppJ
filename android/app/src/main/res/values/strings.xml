@@ -320,7 +320,7 @@
     <string name="ask_citation_accessibility">Open message: %1$s</string>
     <string name="mention_all_picker">@all · Everyone</string>
     <string name="mention_person_picker">Mention %1$s</string>
-    <string name="mention_limit_exceeded">You can mention up to 20 people per message.</string>
+    <string name="mention_limit_exceeded">Mention up to 20 people per message. Message text was cleared.</string>
     <string name="message_mentions_you">You were mentioned.</string>
     <string name="message_has_mentions">This message includes mentions.</string>
     <string name="error_mention_validation">The mentions in this message are no longer valid. Review them and try again.</string>
@@ -347,7 +347,7 @@
     <string name="reminder_error_not_found">This reminder no longer exists.</string>
     <string name="reminder_error_validation">Check the reminder details and try again.</string>
     <string name="reminder_error_limit">A conversation can have up to 50 reminders. Delete one first.</string>
-    <string name="reminder_error_conflict">Duplicate request. Try again.</string>
+    <string name="reminder_error_conflict">This action conflicts with an earlier one. Try again.</string>
     <string name="reminder_options">Reminder options</string>
     <string name="reminder_delete_confirm">Delete this reminder?</string>
     <string name="reminder_repeat_none">No repeat</string>

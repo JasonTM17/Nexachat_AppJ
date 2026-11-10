@@ -64,7 +64,7 @@
     <string name="conversation_ai_opt_in_title">Cho phép AI trong cuộc trò chuyện này</string>
     <string name="inbox_new_chat">Tin nhắn mới</string>
     <string name="inbox_more_options">Tùy chọn khác</string>
-    <string name="archive_title">File phương tiện</string>
+    <string name="archive_title">Nội dung đã chia sẻ</string>
     <string name="archive_tab_media">Ảnh/Video</string>
     <string name="archive_tab_files">Tệp</string>
     <string name="archive_tab_links">Liên kết</string>
@@ -234,8 +234,8 @@
     <string name="dialog_delete_for_me_title">Xóa ở phía tôi?</string>
     <string name="dialog_delete_for_me_body">Tin nhắn chỉ bị ẩn trên thiết bị này.</string>
     <string name="dialog_admin_delete_title">Gỡ tin nhắn?</string>
-    <string name="dialog_admin_delete_body">Gỡ tin nhắn này với tư cách quản trị viên?</string>
-    <string name="message_deleted">Tin nhắn đã bị thu hồi</string>
+    <string name="dialog_admin_delete_body">Gỡ tin nhắn này cho mọi người với quyền quản trị viên?</string>
+    <string name="message_deleted">Tin nhắn đã bị xóa</string>
     <string name="recall_window_expired">Đã quá thời hạn thu hồi.</string>
 
     <!-- In-Chat Search -->
@@ -317,7 +317,7 @@
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
     <string name="mention_all_picker">@all · Mọi người</string>
     <string name="mention_person_picker">Nhắc %1$s</string>
-    <string name="mention_limit_exceeded">Chỉ nhắc được tối đa 20 người mỗi tin nhắn.</string>
+    <string name="mention_limit_exceeded">Chỉ nhắc tối đa 20 người mỗi tin nhắn. Nội dung đã được xóa.</string>
     <string name="message_mentions_you">Đã nhắc đến bạn</string>
     <string name="message_has_mentions">Có nhắc tên</string>
     <string name="error_mention_validation">Lượt nhắc không hợp lệ. Hãy kiểm tra và thử lại.</string>
@@ -344,7 +344,7 @@
     <string name="reminder_error_not_found">Nhắc hẹn không còn tồn tại.</string>
     <string name="reminder_error_validation">Kiểm tra lại thông tin nhắc hẹn và thử lại.</string>
     <string name="reminder_error_limit">Tối đa 50 nhắc hẹn mỗi cuộc trò chuyện. Hãy xóa bớt một nhắc hẹn.</string>
-    <string name="reminder_error_conflict">Thao tác bị trùng. Hãy thử lại.</string>
+    <string name="reminder_error_conflict">Thao tác xung đột với lần trước. Hãy thử lại.</string>
     <string name="reminder_options">Tùy chọn nhắc hẹn</string>
     <string name="reminder_delete_confirm">Xóa nhắc hẹn này?</string>
     <string name="reminder_repeat_none">Không lặp</string>
