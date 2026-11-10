@@ -187,7 +187,7 @@ class V20MigrationTest {
     private static void createDatabase(String database) throws SQLException {
         try (Connection connection = adminConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + database);
+            statement.executeUpdate("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
             statement.executeUpdate("CREATE DATABASE " + database);
         }
     }
@@ -195,7 +195,7 @@ class V20MigrationTest {
     private static void dropDatabase(String database) throws SQLException {
         try (Connection connection = adminConnection();
              Statement statement = connection.createStatement()) {
-            statement.executeUpdate("DROP DATABASE IF EXISTS " + database);
+            statement.executeUpdate("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
         }
     }
 

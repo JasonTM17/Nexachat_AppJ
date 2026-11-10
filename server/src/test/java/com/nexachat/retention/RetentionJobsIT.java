@@ -151,6 +151,20 @@ class RetentionJobsIT {
     }
 
     @Test
+    void rerunningTheSameRetentionJobIsIdempotent() {
+        UUID expired = insertRefreshToken("now() - interval '31 days'", "NULL");
+        UUID revoked = insertRefreshToken("now() + interval '1 day'", "now() - interval '31 days'");
+
+        assertThat(retentionJobRunner.runNow(RetentionJobRunner.Job.REFRESH_TOKENS, false)
+                .rowsAffected()).isEqualTo(2);
+        assertThat(retentionJobRunner.runNow(RetentionJobRunner.Job.REFRESH_TOKENS, false)
+                .rowsAffected()).isZero();
+
+        assertThat(rowExists("refresh_tokens", "id", expired)).isFalse();
+        assertThat(rowExists("refresh_tokens", "id", revoked)).isFalse();
+    }
+
+    @Test
     void removesFinishedJoinAndInviteHistoryButKeepsPendingAndCurrentRows() {
         UUID revokedConversation = insertConversation(firstUserId);
         UUID expiredConversation = insertConversation(firstUserId);

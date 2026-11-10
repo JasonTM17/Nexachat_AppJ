@@ -5,10 +5,13 @@ import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Owns a uniquely named PostgreSQL database for one integration-test scope. */
 public final class PostgresTestDatabase implements AutoCloseable {
@@ -22,7 +25,8 @@ public final class PostgresTestDatabase implements AutoCloseable {
     private final String username;
     private final String password;
     private final String maintenanceUrl;
-    private boolean closed;
+    private final Thread shutdownHook;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     private PostgresTestDatabase(String databaseName, String jdbcUrl, String username,
                                  String password, String maintenanceUrl) {
@@ -31,6 +35,8 @@ public final class PostgresTestDatabase implements AutoCloseable {
         this.username = username;
         this.password = password;
         this.maintenanceUrl = maintenanceUrl;
+        this.shutdownHook = new Thread(this::closeQuietly, "drop-" + databaseName);
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
     public static PostgresTestDatabase create(String purpose) {
@@ -50,6 +56,10 @@ public final class PostgresTestDatabase implements AutoCloseable {
         }
 
         return new PostgresTestDatabase(databaseName, jdbcUrl, username, password, maintenanceUrl);
+    }
+
+    public String databaseName() {
+        return databaseName;
     }
 
     public String jdbcUrl() {
@@ -75,17 +85,50 @@ public final class PostgresTestDatabase implements AutoCloseable {
 
     @Override
     public void close() {
-        if (closed) {
+        if (!closed.compareAndSet(false, true)) {
             return;
         }
-
+        try {
+            Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        } catch (IllegalStateException ignored) {
+            // JVM is already shutting down; the hook will run or has run.
+        }
+        terminateBackends();
         try (Connection connection = DriverManager.getConnection(maintenanceUrl, username, password);
              Statement statement = connection.createStatement()) {
             statement.execute("DROP DATABASE IF EXISTS \"" + databaseName + "\" WITH (FORCE)");
-            closed = true;
         } catch (SQLException exception) {
             throw new IllegalStateException("Could not drop isolated PostgreSQL test database " + databaseName,
                     exception);
+        }
+    }
+
+    private void closeQuietly() {
+        try {
+            close();
+        } catch (RuntimeException ignored) {
+            // Best-effort on JVM shutdown (e.g. Spring pools still closing).
+        }
+    }
+
+    private void terminateBackends() {
+        try (Connection connection = DriverManager.getConnection(maintenanceUrl, username, password)) {
+            try (PreparedStatement query = connection.prepareStatement("""
+                    SELECT pid FROM pg_stat_activity
+                    WHERE datname = ? AND pid <> pg_backend_pid()
+                    """)) {
+                query.setString(1, databaseName);
+                try (ResultSet rows = query.executeQuery()) {
+                    while (rows.next()) {
+                        int pid = rows.getInt("pid");
+                        try (Statement terminate = connection.createStatement()) {
+                            terminate.execute("SELECT pg_terminate_backend(" + pid + ")");
+                        }
+                    }
+                }
+            }
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not terminate backends for " + databaseName, exception);
         }
     }
 
