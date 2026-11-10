@@ -1,11 +1,14 @@
 # Play Store data-safety and listing facts
 
-Source: app and server code at `42831fe` (2026-11-10); site inventory includes
-the privacy and terms pages merged with this document. This is a code-derived
-worksheet for the Google Play Data safety form and the privacy policy. It is not
-a legal opinion and not a submitted declaration. Answers describe the release
-build with the network security policy in `android/app/src/main/`; the `debug`
-and `localSmoke` source sets are development-only and are not shipped.
+Source: app and server code at `42831fe` (2026-11-10), plus the account-deletion
+change on branch `feat/server-account-deletion` and its Android client on
+`feat/android-account-deletion`; site inventory includes the privacy and terms
+pages merged with this document and `site/delete-account.html` from branch
+`docs/site-account-deletion`. This is a code-derived worksheet for the Google
+Play Data safety form and the privacy policy. It is not a legal opinion and not
+a submitted declaration. Answers describe the release build with the network
+security policy in `android/app/src/main/`; the `debug` and `localSmoke` source
+sets are development-only and are not shipped.
 
 Each answer is marked:
 
@@ -13,6 +16,13 @@ Each answer is marked:
 - **Not supported** — the repository has no code path for that collection.
 - **Needs owner decision** — the answer depends on the shipped build, operator
   configuration, or a product/legal decision that the repository cannot make.
+
+Account-deletion answers marked **Supported by code (branch
+`feat/server-account-deletion`)** depend on three branches that are not in
+`main` at `42831fe`: `feat/server-account-deletion` (API and data changes),
+`feat/android-account-deletion` (Settings > Delete account) and
+`docs/site-account-deletion` (public page). They become true for a release only
+when all three merge and the site page is deployed.
 
 The form's "collected" means data transmitted off the device and stored. Data
 that exists only in app-private storage is listed separately in
@@ -39,7 +49,7 @@ under `android/app/src/main/`.
 | Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code |
 | Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code |
 | Account creation | Yes, by phone + password | `server/src/main/java/com/nexachat/auth/AuthController.java:40-45`; Android auth feature | Supported by code |
-| Account deletion | No in-app or REST path | `tools/fcm-live-check/README.md:51-52`; no deletion endpoint in `server/**/Controller.java` | Not supported |
+| Account deletion | In-app `Profile (Settings) > Delete account`, confirmed with the current password, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` documents the same steps and retention. | Branch `feat/server-account-deletion` (`user/AccountDeletionService.java`, `user/UserController.java`); branch `feat/android-account-deletion` (`feature/profile/DeleteAccountFragment.java`); `site/delete-account.html` | Supported by code (branch `feat/server-account-deletion`) |
 
 ## Data the app sends to the NexaChat server
 
@@ -78,7 +88,7 @@ permission (`android/app/src/main/AndroidManifest.xml:6-16`).
 |---|---|---|---|
 | Does the app collect or share any required user data type? | Yes. Account, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the two tables above and `application.yml` configuration. | Supported by code |
 | Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:261-266` | Supported by code |
-| Do you provide a way for users to request that their data be deleted? | No self-service path exists. There is no account-deletion endpoint, Android screen, or deletion URL page, and retention jobs never delete user rows. The owner must add one before submission. | `tools/fcm-live-check/README.md:51-52`; `docs/operations.md:706-709`; no deletion route in `server/**/Controller.java` | Not supported |
+| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password; the public page `site/delete-account.html` explains the steps and what is deleted or retained. Deletion revokes sessions, removes device tokens, contacts, group memberships, avatar, AI consent/cache/summary rows, clears the phone and display name, and keeps sent messages and attachments for other members attributed to a deleted account. Users who cannot sign in are routed to the developer contact on the Play listing. | Branch `feat/server-account-deletion`; branch `feat/android-account-deletion`; `site/delete-account.html` | Supported by code (branch `feat/server-account-deletion`) |
 
 ## Data safety form: data types
 
@@ -190,10 +200,11 @@ All server retention jobs are disabled by default; the global switch is also
 off and dry-run is on (`application.yml:90-145`; `docs/operations.md:631-638`).
 Enabling a job does not delete messages, conversations, or users;
 `docs/operations.md:706-709` states those rows are never removed by these jobs.
+Account deletion is an explicit user action, not a retention job.
 
 | Data | Default retention behaviour | Evidence |
 |---|---|---|
-| Account, messages, conversations, contacts, labels, memberships | No automatic deletion; message recall is a soft delete, not a row delete | `docs/operations.md:706-709`; `message/MessageService.java:391-434` |
+| Account, messages, conversations, contacts, labels, memberships | No automatic deletion by a retention job; the account owner can delete the account explicitly (below). Message recall is a soft delete, not a row delete. | `docs/operations.md:706-709`; `message/MessageService.java:391-434`; branch `feat/server-account-deletion` |
 | Message tombstones | Row remains; optional job after 30 days clears content, mention flags and embeddings. Attachments remain unless the attachment job runs. | `application.yml:129-131`; `docs/known-limitations.md:18`, `:51` |
 | Attachments | Optional job: unbound uploads after 24 h, attachments of soft-deleted messages after 30 days | `application.yml:125-128`; `docs/operations.md:684-686` |
 | Refresh tokens | Hash rows remain until the optional 30-day cleanup runs | `application.yml:110-112`; `db/migration/V1__init.sql:25-34` |
@@ -206,6 +217,22 @@ Enabling a job does not delete messages, conversations, or users;
 
 Deletion actions that exist:
 
+- The account owner can delete the account in the app: Profile (Settings) >
+  Delete account, confirmed with the current password, calls
+  `DELETE /api/v1/users/me` and returns `204`. One transaction revokes every
+  refresh token and sets the access-token cutoff, deletes push/device
+  registrations, deletes contact edges in both directions, removes every group
+  membership through the existing leave path (admin hand-over rules apply),
+  deletes the avatar file, deletes AI consent, ask-cache and summary rows
+  authored for the user, closes STOMP sessions, sets `users.deleted_at`, clears
+  the phone (released for re-registration) and replaces the display name with a
+  neutral value. Direct conversations and sent messages/attachments stay
+  visible to other members attributed to the deleted account. After deletion,
+  login with the old phone is treated as an unknown user, search never returns
+  the account, profile reads show the neutral deleted state, and registering
+  the same phone creates a new, unrelated account. Branch
+  `feat/server-account-deletion` (migration V26); Android branch
+  `feat/android-account-deletion`; public page `site/delete-account.html`.
 - A message author may recall their own message within 24 h; a current group
   admin may recall any group message. The row becomes a tombstone, mentions,
   reactions and pins are removed, and attachment bytes remain by default
@@ -217,18 +244,18 @@ Deletion actions that exist:
 
 Deletion actions that do **not** exist:
 
-- No account-deletion endpoint or in-app screen. `tools/fcm-live-check/README.md:51-52`
-  explicitly records that the public API has no account-deletion endpoint.
-- No self-service data-export or "delete my data" request page.
-- No account-deletion page or request form under `site/`. The site does host a
-  privacy policy (`site/privacy.html`) and terms (`site/terms.html`); the rest
-  is the landing page, join page, 404 page and static assets
-  (`site/index.html`, `site/join/index.html`, `site/404.html`,
-  `site/robots.txt`, `site/sitemap.xml`, `site/.well-known/assetlinks.json`,
-  `site/style.css`, `site/favicon.svg`, `site/vercel.json`).
+- No self-service data export.
+- No separate "delete my data" request form. `site/delete-account.html` is
+  informational: deletion runs only through the authenticated in-app endpoint,
+  and users who cannot sign in are routed to the developer contact on the
+  Google Play listing.
+- No hard-delete endpoint for an individual message; recall is a soft delete
+  (author within 24 h, group admin any time).
 
-This is a Play policy decision the owner must resolve before shipping an app
-that creates accounts.
+The account-deletion path above is on branches that are not in `main` at
+`42831fe`; it remains a release blocker until `feat/server-account-deletion`,
+`feat/android-account-deletion` and `docs/site-account-deletion` merge and the
+site page is deployed.
 
 ## Encryption
 
@@ -284,8 +311,14 @@ These are owner decisions; do not infer them from code:
    `site/privacy.html` (and terms at `site/terms.html`), but no policy URL is
    configured in the app or repository.
 2. **Account deletion** — Play requires an in-app deletion path and a web
-   deletion URL for apps that let users create accounts. The repository has
-   neither, and retention jobs never delete user rows.
+   deletion URL for apps that create accounts. The code is on branches
+   `feat/server-account-deletion` (API and data changes),
+   `feat/android-account-deletion` (Settings > Delete account) and
+   `docs/site-account-deletion` (public page at `site/delete-account.html`).
+   Merge all three and deploy the page before submission. The site publishes no
+   support address; the page routes users who lost their device to the developer
+   contact on the Google Play listing, so that contact must be live and
+   monitored.
 3. **Target audience and content rating** — no target-age declaration or content
    rating questionnaire is in the repository.
 4. **Ads declaration** — no ad SDK exists, but the owner must still answer the
@@ -293,6 +326,7 @@ These are owner decisions; do not infer them from code:
 5. **Data safety submission** — the final form answers, contact email, and
    whether data is "shared" or only processed by service providers are legal
    and product decisions. This document is the code map, not the submission.
+   The site publishes no support address (decision 2).
 6. **Store listing facts** — title, short/full description, category, tags,
    screenshots, feature graphic, and app-access instructions for review are not
    in the repository.
@@ -334,9 +368,14 @@ These are owner decisions; do not infer them from code:
   Keystore storage, attachment/media caches, auth/logout flow, server Flyway
   migrations, controllers, retention runner, FCM/LLM configuration, and the
   linked architecture/security/operations/RAG/summary docs at `42831fe`.
-- Site inventory includes `site/privacy.html` and `site/terms.html` from the
-  site refresh merged with this document; app and server production code is
-  unchanged between `2ecafae` and `42831fe`.
+- Site inventory includes `site/privacy.html`, `site/terms.html` and
+  `site/delete-account.html`; app and server production code is unchanged
+  between `2ecafae` and `42831fe`, and the deletion change is on the branches
+  named at the top, not on `main`.
+- Account deletion was checked against the branch contract (`DELETE
+  /api/v1/users/me`, current password, `204`, V26 `deleted_at`, neutral display
+  name, released phone) but not executed against a built server, APK, deployed
+  site or Play Console; this document is static source evidence.
 - Build, unit tests, instrumentation, and emulator checks were **NOT_RUN**: this
   document is static source evidence and the change does not modify code; the
   docs gate is `python tools/check-markdown-links.py`.
