@@ -58,19 +58,19 @@ JAVA_HOME='<jdk-21-or-newer>' ANDROID_HOME='<android-sdk>' \
 cd ..
 ```
 
-Repository hygiene (the same checks as the `repo-hygiene` CI job):
+Repository hygiene (core checks; the CI job also runs `actionlint` and
+`shellcheck` when it is installed):
 
 ```bash
 python tools/check-markdown-links.py
 python site/check.py
 python tools/check-android-strings.py --self-test
 python tools/check-android-strings.py
-bash -n demo/*.sh tools/*.sh
+find demo tools -name '*.sh' -type f -print0 | xargs -0 -n1 bash -n
 ```
 
-CI also runs `actionlint` and a committed-secret scan
-(`.github/workflows/ci.yml`). The server and Android jobs are the required
-gates; do not release on a red or skipped job.
+CI also runs a committed-secret scan (`.github/workflows/ci.yml`). The server
+and Android jobs are the required gates; do not release on a red or skipped job.
 
 ## 3. Build, check and sign the Android artifact
 
@@ -140,7 +140,9 @@ down-migration.
    reviewed as backward-compatible. If a migration fails, keep the app stopped
    and restore the pre-upgrade backup (`docs/operations.md` §Upgrade).
 
-Compose demo equivalent:
+Compose demo equivalent (create `.env` from `.env.example` first;
+`docker-compose.yml` requires `DATABASE_USER`, `DATABASE_PASSWORD` and
+`JWT_SECRET` and fails closed without them):
 
 ```bash
 docker compose build app
