@@ -155,7 +155,7 @@ class AuthorizationSqlBudgetIT {
         List<Map<String, Object>> watermarks = conversationIds.stream()
                 .map(id -> Map.<String, Object>of("conversationId", id, "lastSeq", 0L))
                 .toList();
-        measure("POST /api/v1/sync (3 conversations)", 42,
+        measure("POST /api/v1/sync (3 conversations)", 36,
                 () -> postJson("/api/v1/sync", owner, Map.of("watermarks", watermarks))
                         .andExpect(status().isOk()).andReturn());
 
