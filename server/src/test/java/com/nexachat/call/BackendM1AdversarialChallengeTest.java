@@ -6,6 +6,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.*;
 import com.nexachat.message.dto.*;
 import com.nexachat.notification.*;
@@ -282,11 +283,16 @@ public class BackendM1AdversarialChallengeTest {
         void testLargeWatermarkListHandledSafely() {
             int count = 200;
             List<SyncRequest.ConversationWatermark> watermarks = new ArrayList<>(count);
+            lenient().when(memberRepository.findMemberFlags(eq(userId), any())).thenAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                Collection<UUID> ids = invocation.getArgument(1);
+                return ids.stream()
+                        .map(id -> new MemberFlagsRow(id, false, null, false, false, null))
+                        .toList();
+            });
             for (int i = 0; i < count; i++) {
                 UUID cId = UUID.randomUUID();
                 watermarks.add(new SyncRequest.ConversationWatermark(cId, (long) i));
-                lenient().when(conversationRepository.existsById(cId)).thenReturn(true);
-                lenient().when(memberRepository.existsByConversation_IdAndUser_Id(cId, userId)).thenReturn(true);
                 lenient().when(messageRepository.findRowsAfter(eq(cId), eq((long) i), any(Pageable.class)))
                         .thenReturn(List.of());
                 lenient().when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn((long) i);
@@ -308,13 +314,10 @@ public class BackendM1AdversarialChallengeTest {
             UUID memberConv = UUID.randomUUID();
             UUID nonMemberConv = UUID.randomUUID();
 
-            when(conversationRepository.existsById(memberConv)).thenReturn(true);
-            when(memberRepository.existsByConversation_IdAndUser_Id(memberConv, userId)).thenReturn(true);
+            when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                    List.of(new MemberFlagsRow(memberConv, false, null, false, false, null)));
             when(messageRepository.findRowsAfter(eq(memberConv), anyLong(), any(Pageable.class))).thenReturn(List.of());
             when(messageRepository.findMaxSeqByConversationId(memberConv)).thenReturn(10L);
-
-            when(conversationRepository.existsById(nonMemberConv)).thenReturn(true);
-            when(memberRepository.existsByConversation_IdAndUser_Id(nonMemberConv, userId)).thenReturn(false);
 
             SyncRequest request = new SyncRequest(
                     List.of(
@@ -335,8 +338,8 @@ public class BackendM1AdversarialChallengeTest {
         @DisplayName("2.4 Deleted messages have content masked to null in newMessages")
         void testDeletedMessageContentMasked() {
             UUID convId = UUID.randomUUID();
-            when(conversationRepository.existsById(convId)).thenReturn(true);
-            when(memberRepository.existsByConversation_IdAndUser_Id(convId, userId)).thenReturn(true);
+            when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                    List.of(new MemberFlagsRow(convId, false, null, false, false, null)));
 
             Instant now = Instant.now();
             MessageRow deletedRow = new MessageRow(
@@ -370,8 +373,8 @@ public class BackendM1AdversarialChallengeTest {
         @DisplayName("2.5 LimitPerConv clamping boundaries: 5000 -> 100, -10 -> 1")
         void testLimitPerConvClamping() {
             UUID convId = UUID.randomUUID();
-            when(conversationRepository.existsById(convId)).thenReturn(true);
-            when(memberRepository.existsByConversation_IdAndUser_Id(convId, userId)).thenReturn(true);
+            when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                    List.of(new MemberFlagsRow(convId, false, null, false, false, null)));
             when(messageRepository.findMaxSeqByConversationId(convId)).thenReturn(0L);
 
             ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);

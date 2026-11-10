@@ -43,6 +43,7 @@ WHERE m.user_id = :'hot_user'
   )
   AND msg.conversation_id = m.conversation_id
   AND msg.seq > m.last_read_seq
+  AND msg.deleted_at IS NULL
 GROUP BY m.conversation_id;
 
 \echo '=== 4. direct peer presence (findDirectPeerPresence)'
