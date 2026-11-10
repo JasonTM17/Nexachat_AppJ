@@ -26,6 +26,7 @@ public final class ZoomableMediaImageView extends AppCompatImageView {
         super(context, attrs);
         setScaleType(ScaleType.MATRIX);
         setClickable(true);
+        setContentDescription(context.getString(R.string.cd_media_photo_zoom));
         scaleDetector = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override public boolean onScale(ScaleGestureDetector detector) {
                 zoomTo(zoom * detector.getScaleFactor(), detector.getFocusX(), detector.getFocusY());
