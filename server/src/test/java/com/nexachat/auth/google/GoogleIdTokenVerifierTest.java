@@ -8,6 +8,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,6 +53,48 @@ class GoogleIdTokenVerifierTest {
         String token = GoogleTestKeys.token(claims -> {
             claims.nonce = NONCE;
             claims.audience = "some-other-app.apps.googleusercontent.com";
+        });
+
+        assertFailed(token, NONCE);
+    }
+
+    @Test
+    void rejectsAnUntrustedAuthorizedPartyEvenWhenTheAudienceMatches() {
+        String token = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.mutate = builder -> builder.claim("azp", "untrusted-client.apps.googleusercontent.com");
+        });
+
+        assertFailed(token, NONCE);
+    }
+
+    @Test
+    void rejectsAnAdditionalUntrustedAudience() {
+        String token = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.mutate = builder -> builder.audience(List.of(
+                    GoogleTestKeys.AUDIENCE, "untrusted-client.apps.googleusercontent.com"));
+        });
+
+        assertFailed(token, NONCE);
+    }
+
+    @Test
+    void acceptsATrustedAndroidAuthorizedParty() {
+        String token = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.mutate = builder -> builder.claim("azp", GoogleTestKeys.ANDROID_CLIENT_ID);
+        });
+
+        assertThat(verifier.verify(token, NONCE).subject()).isEqualTo(GoogleTestKeys.SUBJECT);
+    }
+
+    @Test
+    void rejectsAnIssuedAtBeyondTheClockSkew() {
+        String token = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.issuedAt = Instant.now().plusSeconds(120);
+            claims.expiresAt = Instant.now().plusSeconds(300);
         });
 
         assertFailed(token, NONCE);
@@ -123,7 +166,8 @@ class GoogleIdTokenVerifierTest {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(
                             (java.security.interfaces.RSAPublicKey) key.toRSAPublicKey())
                     .build();
-            decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(GoogleTestKeys.AUDIENCE));
+            decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(
+                    GoogleTestKeys.AUDIENCE, List.of(GoogleTestKeys.ANDROID_CLIENT_ID)));
             return decoder;
         } catch (com.nimbusds.jose.JOSEException exception) {
             throw new IllegalStateException("Could not expose the test public key", exception);

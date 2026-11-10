@@ -39,7 +39,8 @@ public class GoogleSignInConfiguration {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwksUri())
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
                 .build();
-        decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(properties.webClientId()));
+        decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(
+                properties.webClientId(), properties.androidClientIds()));
         return decoder;
     }
 }

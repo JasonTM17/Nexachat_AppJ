@@ -1,5 +1,6 @@
 package com.nexachat.auth;
 
+import com.nexachat.auth.google.GoogleSignInProperties;
 import com.nexachat.config.ClientIpResolver;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -20,6 +21,8 @@ import java.util.Map;
  *   <li>POST /api/v1/auth/login    — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/register — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/refresh  — 30 requests / 5 min</li>
+ *   <li>POST /api/v1/auth/google/nonce — 30 requests / 5 min (only while the feature is on)</li>
+ *   <li>POST /api/v1/auth/google       — 20 requests / 5 min (only while the feature is on)</li>
  * </ul>
  * Each rule gets its own bucket per client IP. Implemented as an interceptor
  * (not a servlet filter) so rejections flow through {@code GlobalExceptionHandler}
@@ -38,18 +41,28 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final List<Rule> RULES = List.of(
             new Rule("login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
             new Rule("register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
-            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
-            // Google sign-in: a nonce is requested before every attempt, so it
-            // needs more headroom than the sign-in call itself.
+            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)));
+
+    /**
+     * Google buckets exist only while the feature is enabled: a disabled
+     * endpoint must answer 404 even after a burst, never 429.
+     */
+    private static final List<Rule> GOOGLE_RULES = List.of(
+            // A nonce is requested before every attempt, so it needs more
+            // headroom than the sign-in call itself.
             new Rule("google-nonce", "/api/v1/auth/google/nonce", 30, Duration.ofMinutes(5)),
             new Rule("google-signin", "/api/v1/auth/google", 20, Duration.ofMinutes(5)));
 
     private final RateLimitService rateLimitService;
     private final ClientIpResolver clientIpResolver;
+    private final GoogleSignInProperties googleSignInProperties;
 
-    public RateLimitInterceptor(RateLimitService rateLimitService, ClientIpResolver clientIpResolver) {
+    public RateLimitInterceptor(RateLimitService rateLimitService,
+                                ClientIpResolver clientIpResolver,
+                                GoogleSignInProperties googleSignInProperties) {
         this.rateLimitService = rateLimitService;
         this.clientIpResolver = clientIpResolver;
+        this.googleSignInProperties = googleSignInProperties;
     }
 
     @Override
@@ -60,7 +73,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         String uri = request.getRequestURI();
-        for (Rule rule : RULES) {
+        List<Rule> rules = googleSignInProperties.enabled()
+                ? java.util.stream.Stream.concat(RULES.stream(), GOOGLE_RULES.stream()).toList()
+                : RULES;
+        for (Rule rule : rules) {
             if (rule.path().equals(uri)) {
                 String key = rule.name() + '|' + clientIpResolver.rateLimitClientIp(request);
                 RateLimitService.Consumption consumption =

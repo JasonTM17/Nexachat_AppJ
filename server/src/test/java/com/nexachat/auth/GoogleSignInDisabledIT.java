@@ -33,11 +33,21 @@ class GoogleSignInDisabledIT extends SecurityITBase {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
 
+        postJson("/api/v1/auth/identities/google/nonce", Map.of(), user.accessToken())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
         postJson("/api/v1/auth/identities/google",
                 Map.of("idToken", "irrelevant", "nonce", "irrelevant", "password", "secret123"),
                 user.accessToken())
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+
+        for (int attempt = 0; attempt < 31; attempt++) {
+            postJson("/api/v1/auth/google/nonce", Map.of(), null, remoteAddr("10.30.0.5"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        }
 
         mockMvc.perform(delete("/api/v1/auth/identities/google")
                         .header("Authorization", "Bearer " + user.accessToken())
@@ -49,7 +59,7 @@ class GoogleSignInDisabledIT extends SecurityITBase {
 
     @Test
     void theTablesExistEvenWhileTheFeatureIsOff() throws Exception {
-        // Flyway applies V27 for every deployment; the flag only gates the API.
+        // Flyway applies V28 for every deployment; the flag only gates the API.
         Integer identities = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_identities", Integer.class);
         Integer nonces = jdbcTemplate.queryForObject(

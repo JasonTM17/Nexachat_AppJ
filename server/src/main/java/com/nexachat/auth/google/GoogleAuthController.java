@@ -44,10 +44,15 @@ public class GoogleAuthController {
     }
 
     @PostMapping("/google/nonce")
-    public GoogleNonceResponse nonce() {
+    public GoogleNonceResponse signInNonce() {
         googleSignInService.requireEnabled();
-        GoogleNonceService.IssuedNonce issued = nonceService.issue();
-        return new GoogleNonceResponse(issued.nonce(), issued.expiresInSeconds());
+        return toResponse(nonceService.issue(GoogleNonceService.PURPOSE_SIGNIN));
+    }
+
+    /** Nonce for the authenticated link flow; the public nonce cannot be used here. */
+    @PostMapping("/identities/google/nonce")
+    public GoogleNonceResponse linkNonce(@AuthenticationPrincipal JwtPrincipal principal) {
+        return toResponse(googleSignInService.issueLinkNonce(requireUserId(principal)));
     }
 
     @PostMapping("/google")
@@ -73,6 +78,10 @@ public class GoogleAuthController {
     public void unlink(@AuthenticationPrincipal JwtPrincipal principal,
                        @Valid @RequestBody GoogleUnlinkRequest request) {
         googleSignInService.unlink(requireUserId(principal), request);
+    }
+
+    private static GoogleNonceResponse toResponse(GoogleNonceService.IssuedNonce issued) {
+        return new GoogleNonceResponse(issued.nonce(), issued.expiresInSeconds());
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

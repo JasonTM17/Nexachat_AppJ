@@ -64,6 +64,8 @@ nexachat:
     signin:
       enabled: ${NEXACHAT_GOOGLE_SIGNIN_ENABLED:false}
       web-client-id: ${NEXACHAT_GOOGLE_WEB_CLIENT_ID:}
+      # Comma-separated Android OAuth client IDs trusted as the token's azp.
+      android-client-ids: ${NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS:}
       jwks-uri: ${NEXACHAT_GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
       nonce-ttl-seconds: ${NEXACHAT_GOOGLE_NONCE_TTL_SECONDS:300}
   security:

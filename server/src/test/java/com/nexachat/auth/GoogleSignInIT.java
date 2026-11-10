@@ -55,19 +55,19 @@ class GoogleSignInIT extends SecurityITBase {
 
     @Test
     void nonceIsIssuedHashedAndSingleUse() throws Exception {
-        String nonce = issueNonce();
+        Registered user = register(PHONE);
+        String nonce = issueLinkNonce(user);
 
         String stored = jdbcTemplate.queryForObject(
                 "SELECT nonce_hash FROM google_signin_nonces", String.class);
         assertThat(stored).hasSize(64).isNotEqualTo(nonce);
         assertThat(stored).isEqualTo(com.nexachat.auth.google.GoogleNonceService.sha256Hex(nonce));
 
-        Registered user = register(PHONE);
         String token = GoogleTestKeys.token(nonce);
         link(user, token, nonce).andExpect(status().isNoContent());
 
         // The same nonce cannot be consumed by a second request.
-        postJson("/api/v1/auth/google", Map.of("idToken", token, "nonce", nonce))
+        link(user, token, nonce)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
         assertThat(jdbcTemplate.queryForObject(
@@ -78,7 +78,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void signInIssuesTokensThatRotate() throws Exception {
         Registered user = register(PHONE);
-        String linkNonce = issueNonce();
+        String linkNonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(linkNonce), linkNonce).andExpect(status().isNoContent());
 
         String signInNonce = issueNonce();
@@ -106,7 +106,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void linkedAccountCanSignInAgainAfterItsRefreshTokenExpires() throws Exception {
         Registered user = register(PHONE);
-        String linkNonce = issueNonce();
+        String linkNonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(linkNonce), linkNonce).andExpect(status().isNoContent());
 
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -121,16 +121,39 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void unlinkedAccountIs404WithoutRevealingAccounts() throws Exception {
         String nonce = issueNonce();
-        postJson("/api/v1/auth/google",
-                Map.of("idToken", GoogleTestKeys.token(nonce), "nonce", nonce))
+        String token = GoogleTestKeys.token(nonce);
+        postJson("/api/v1/auth/google", Map.of("idToken", token, "nonce", nonce))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("GOOGLE_ACCOUNT_NOT_LINKED"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT consumed_at IS NOT NULL FROM google_signin_nonces WHERE nonce_hash = ?",
+                Boolean.class, com.nexachat.auth.google.GoogleNonceService.sha256Hex(nonce)))
+                .isTrue();
+        postJson("/api/v1/auth/google", Map.of("idToken", token, "nonce", nonce))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
+    }
+
+    @Test
+    void publicSignInNonceCannotBeReusedToLinkUnderAnotherAccount() throws Exception {
+        Registered first = register(PHONE);
+        Registered second = register("+84905556012");
+        String nonce = issueNonce();
+
+        link(second, GoogleTestKeys.token(nonce), nonce)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_identities WHERE user_id IN (?, ?)", Integer.class,
+                first.userId(), second.userId())).isZero();
     }
 
     @Test
     void linkRequiresTheCurrentPassword() throws Exception {
         Registered user = register(PHONE);
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(user);
         String token = GoogleTestKeys.token(nonce);
 
         postJson("/api/v1/auth/identities/google",
@@ -147,10 +170,10 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void linkingIsIdempotentForTheSameAccount() throws Exception {
         Registered user = register(PHONE);
-        String first = issueNonce();
+        String first = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(first), first).andExpect(status().isNoContent());
 
-        String second = issueNonce();
+        String second = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(second), second).andExpect(status().isNoContent());
 
         assertThat(jdbcTemplate.queryForObject(
@@ -162,10 +185,10 @@ class GoogleSignInIT extends SecurityITBase {
     void oneGoogleAccountCannotBeLinkedToTwoUsers() throws Exception {
         Registered first = register(PHONE);
         Registered second = register("+84905556002");
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(first);
         link(first, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
-        String otherNonce = issueNonce();
+        String otherNonce = issueLinkNonce(second);
         link(second, GoogleTestKeys.token(otherNonce), otherNonce)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("GOOGLE_ACCOUNT_ALREADY_LINKED"));
@@ -174,10 +197,10 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void linkingASecondGoogleAccountToTheSameUserIsRefused() throws Exception {
         Registered user = register(PHONE);
-        String first = issueNonce();
+        String first = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(first), first).andExpect(status().isNoContent());
 
-        String second = issueNonce();
+        String second = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(claims -> {
             claims.nonce = second;
             claims.subject = "another-google-subject";
@@ -189,7 +212,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void unlinkNeedsThePasswordAndStopsGoogleSignIn() throws Exception {
         Registered user = register(PHONE);
-        String linkNonce = issueNonce();
+        String linkNonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(linkNonce), linkNonce).andExpect(status().isNoContent());
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
@@ -221,7 +244,7 @@ class GoogleSignInIT extends SecurityITBase {
     void linkedIdentitiesAreListedForTheOwnerOnly() throws Exception {
         Registered owner = register(PHONE);
         Registered other = register("+84905556003");
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(owner);
         link(owner, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
         getWithAuth("/api/v1/auth/identities", owner.accessToken())
@@ -239,7 +262,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void identityRowsAreRemovedWithTheirUser() throws Exception {
         Registered user = register(PHONE);
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
         jdbcTemplate.update("DELETE FROM users WHERE id = ?", user.userId());
@@ -252,7 +275,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void unlinkIsRefusedWhenTheAccountHasNoPassword() throws Exception {
         Registered user = register(PHONE);
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
         jdbcTemplate.update("UPDATE users SET password_hash = ? WHERE id = ?", " ", user.userId());
 
@@ -268,7 +291,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void rejectsTokensForAnotherAudienceIssuerExpiryOrKey() throws Exception {
         Registered user = register(PHONE);
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
         assertSignInRejected(claims ->
@@ -284,7 +307,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void adoptsKeysGoogleRotatesInAfterACachedFetch() throws Exception {
         Registered user = register(PHONE);
-        String nonce = issueNonce();
+        String nonce = issueLinkNonce(user);
         link(user, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
         JWKS.publish(List.of(GoogleTestKeys.keyA(), GoogleTestKeys.keyB()));
@@ -307,6 +330,15 @@ class GoogleSignInIT extends SecurityITBase {
         postJson("/api/v1/auth/google/nonce", Map.of(), null, remoteAddr("10.30.0.1"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    private String issueLinkNonce(Registered user) throws Exception {
+        var result = postJson("/api/v1/auth/identities/google/nonce", Map.of(), user.accessToken())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nonce").isString())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("nonce").asText();
     }
 
     private String issueNonce() throws Exception {

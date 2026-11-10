@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 public final class GoogleTestKeys {
 
     public static final String AUDIENCE = "test-web-client.apps.googleusercontent.com";
+    public static final String ANDROID_CLIENT_ID = "test-android-client.apps.googleusercontent.com";
     public static final String SUBJECT = "google-subject-1";
     public static final String EMAIL = "user@example.com";
 

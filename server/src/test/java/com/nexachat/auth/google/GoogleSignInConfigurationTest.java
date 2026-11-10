@@ -13,14 +13,14 @@ class GoogleSignInConfigurationTest {
     @Test
     void disabledFeatureDoesNotRequireAClientId() {
         assertThatCode(() -> GoogleSignInConfiguration.decoderFor(
-                new GoogleSignInProperties(false, "", null, 300)))
+                new GoogleSignInProperties(false, "", null, 300, java.util.List.of())))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void enabledFeatureWithoutAClientIdFailsStartup() {
         assertThatThrownBy(() -> GoogleSignInConfiguration.decoderFor(
-                new GoogleSignInProperties(true, " ", "https://example.invalid/certs", 300)))
+                new GoogleSignInProperties(true, " ", "https://example.invalid/certs", 300, java.util.List.of())))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("web-client-id");
     }
@@ -29,14 +29,14 @@ class GoogleSignInConfigurationTest {
     void enabledFeatureBuildsARealDecoderWithoutContactingTheNetwork() {
         JwtDecoder decoder = GoogleSignInConfiguration.decoderFor(
                 new GoogleSignInProperties(true, GoogleTestKeys.AUDIENCE,
-                        "http://127.0.0.1:1/certs", 300));
+                        "http://127.0.0.1:1/certs", 300, java.util.List.of()));
 
         assertThat(decoder).isNotNull();
     }
 
     @Test
     void defaultsApplyWhenPropertiesAreOmitted() {
-        GoogleSignInProperties properties = new GoogleSignInProperties(false, "", "", 0);
+        GoogleSignInProperties properties = new GoogleSignInProperties(false, "", "", 0, java.util.List.of());
 
         assertThat(properties.jwksUri()).isEqualTo("https://www.googleapis.com/oauth2/v3/certs");
         assertThat(properties.nonceTtlSeconds()).isEqualTo(300);

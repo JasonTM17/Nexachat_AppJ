@@ -2,6 +2,8 @@ package com.nexachat.auth.google;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -27,6 +29,10 @@ public class GoogleNonceService {
     private static final int MAX_NONCE_LENGTH = 512;
     private static final int CLEANUP_BATCH = 200;
 
+    /** Nonce purposes: a public sign-in nonce is not valid for the link endpoint. */
+    public static final String PURPOSE_SIGNIN = "signin";
+    public static final String PURPOSE_LINK = "link";
+
     /**
      * Resolved lazily: the {@code test} profile excludes DataSource
      * autoconfiguration, and a disabled Google feature must not need a database
@@ -42,15 +48,15 @@ public class GoogleNonceService {
     }
 
     /** @return the raw nonce (shown once) and its lifetime in seconds */
-    public IssuedNonce issue() {
+    public IssuedNonce issue(String purpose) {
         byte[] bytes = new byte[NONCE_BYTES];
         SECURE_RANDOM.nextBytes(bytes);
         String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         JdbcTemplate jdbcTemplate = jdbcTemplate();
         jdbcTemplate.update(
-                "INSERT INTO google_signin_nonces (nonce_hash, expires_at)"
-                        + " VALUES (?, now() + (? * INTERVAL '1 second'))",
-                sha256Hex(nonce), properties.nonceTtlSeconds());
+                "INSERT INTO google_signin_nonces (nonce_hash, purpose, expires_at)"
+                        + " VALUES (?, ?, now() + (? * INTERVAL '1 second'))",
+                sha256Hex(nonce), purpose, properties.nonceTtlSeconds());
         jdbcTemplate.update(
                 "DELETE FROM google_signin_nonces WHERE id IN ("
                         + "SELECT id FROM google_signin_nonces WHERE expires_at < now() LIMIT "
@@ -59,17 +65,24 @@ public class GoogleNonceService {
     }
 
     /**
-     * Marks {@code nonce} consumed. Returns {@code false} for a malformed,
-     * unknown, expired or already-consumed value — the caller must fail closed.
+     * Marks {@code nonce} consumed for {@code purpose}. Returns {@code false}
+     * for a malformed, unknown, wrong-purpose, expired or already-consumed
+     * value — the caller must fail closed.
+     *
+     * <p>{@code REQUIRES_NEW}: the consumption must survive the caller's
+     * rollback, otherwise a failed sign-in (for example an unlinked account)
+     * would release the nonce for replay.
      */
-    public boolean consume(String nonce) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean consume(String nonce, String purpose) {
         if (nonce == null || nonce.isBlank() || nonce.length() > MAX_NONCE_LENGTH) {
             return false;
         }
         int updated = jdbcTemplate().update(
                 "UPDATE google_signin_nonces SET consumed_at = now()"
-                        + " WHERE nonce_hash = ? AND consumed_at IS NULL AND expires_at > now()",
-                sha256Hex(nonce));
+                        + " WHERE nonce_hash = ? AND purpose = ?"
+                        + " AND consumed_at IS NULL AND expires_at > now()",
+                sha256Hex(nonce), purpose);
         return updated == 1;
     }
 
