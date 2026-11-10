@@ -20,4 +20,26 @@ public final class TokenRefreshRules {
         }
         return status == 403 && "FORBIDDEN".equals(errorCode);
     }
+
+    /** Known matching retry after the server recovery window; never logs the user out. */
+    public static boolean isRecoveryUnavailable(int status, String errorCode) {
+        return status == 409 && "REFRESH_RECOVERY_UNAVAILABLE".equals(errorCode);
+    }
+
+    /** Keyed refresh is unavailable before rotation; client may retry with the same key. */
+    public static boolean isRefreshServiceUnavailable(int status, String errorCode) {
+        return status == 503 && "REFRESH_SERVICE_UNAVAILABLE".equals(errorCode);
+    }
+
+    /** Retryable transport or server overload responses that preserve local session state. */
+    public static boolean isTransientStatus(int status, String errorCode) {
+        if (isRecoveryUnavailable(status, errorCode)
+                || isRefreshServiceUnavailable(status, errorCode)) {
+            return true;
+        }
+        if (status == 429) {
+            return true;
+        }
+        return status >= 500;
+    }
 }

@@ -7,7 +7,8 @@ public sealed interface TokenRefreshOutcome
         permits TokenRefreshOutcome.FreshToken,
                 TokenRefreshOutcome.Rejected,
                 TokenRefreshOutcome.TransientFailure,
-                TokenRefreshOutcome.NoRefreshToken {
+                TokenRefreshOutcome.NoRefreshToken,
+                TokenRefreshOutcome.RecoveryRequired {
 
     /** A usable access token exists, either freshly rotated or already current. */
     final class FreshToken implements TokenRefreshOutcome {
@@ -36,7 +37,7 @@ public sealed interface TokenRefreshOutcome
 
         @Override
         public String toString() {
-            return "FreshToken(accessToken=" + accessToken + ")";
+            return "FreshToken";
         }
     }
 
@@ -83,6 +84,32 @@ public sealed interface TokenRefreshOutcome
         @Override
         public String toString() {
             return "TransientFailure";
+        }
+    }
+
+    /**
+     * Server recovery is unavailable for a quarantined rotation; local session
+     * data remains until explicit sign-in again.
+     */
+    final class RecoveryRequired implements TokenRefreshOutcome {
+        public static final RecoveryRequired INSTANCE = new RecoveryRequired();
+
+        private RecoveryRequired() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof RecoveryRequired;
+        }
+
+        @Override
+        public int hashCode() {
+            return RecoveryRequired.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "RecoveryRequired";
         }
     }
 

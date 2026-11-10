@@ -52,6 +52,19 @@ public final class TokenStore {
     private static final Preferences.Key<Set<String>> SYNC_CURSOR_USER_IDS =
             PreferencesKeys.stringSetKey("sync_server_time_user_ids");
     private static final String SYNC_CURSOR_PREFIX = "sync_server_time_";
+    private static final Preferences.Key<Long> SESSION_EPOCH =
+            PreferencesKeys.longKey("session_epoch");
+    private static final Preferences.Key<String> SESSION_LIFECYCLE =
+            PreferencesKeys.stringKey("session_lifecycle");
+    private static final Preferences.Key<Long> PENDING_REFRESH_EPOCH =
+            PreferencesKeys.longKey("pending_refresh_epoch");
+    private static final Preferences.Key<String> PENDING_REFRESH_KEY =
+            PreferencesKeys.stringKey("pending_refresh_key");
+    private static final Preferences.Key<String> PENDING_PREDECESSOR =
+            PreferencesKeys.stringKey("pending_refresh_predecessor");
+    private static final String LIFECYCLE_ACTIVE = "active";
+    private static final String LIFECYCLE_CLOSING = "closing";
+    private static final String LIFECYCLE_CLOSED = "closed";
 
     private final RxDataStore<Preferences> dataStore;
     private final TokenCipher cipher;
@@ -82,40 +95,225 @@ public final class TokenStore {
                 Objects.requireNonNull(recallWindowConfig, "recallWindowConfig"));
     }
 
+    /** Emits the durable session revision and lifecycle. */
+    @NonNull
+    public Single<SessionSnapshot> readSessionSnapshot() {
+        return dataStore.data().firstOrError()
+                .map(preferences -> snapshotFrom(preferences));
+    }
+
+    /**
+     * Initializes session metadata for installs that stored tokens before epoch
+     * tracking existed.
+     */
+    @NonNull
+    public Single<Long> bootstrapLegacySessionIfNeeded() {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            if (updated.get(SESSION_EPOCH) != null) {
+                                return preferences;
+                            }
+                            if (toTokens(preferences) == null) {
+                                updated.set(SESSION_EPOCH, 0L);
+                                updated.set(SESSION_LIFECYCLE, LIFECYCLE_CLOSED);
+                                return (Preferences) updated;
+                            }
+                            updated.set(SESSION_EPOCH, 1L);
+                            updated.set(SESSION_LIFECYCLE, LIFECYCLE_ACTIVE);
+                            return (Preferences) updated;
+                        }))
+                .map(prefs -> Objects.requireNonNullElse(prefs.get(SESSION_EPOCH), 0L));
+    }
+
+    /**
+     * Opens a newly authenticated session with a monotonic epoch and clears any
+     * stale pending rotation from a prior account.
+     */
+    @NonNull
+    public Single<Long> establishNewSession(
+            @NonNull String access,
+            long accessExpiresAtEpochMs,
+            @NonNull String refresh,
+            @NonNull RecallWindowConfig recallWindowConfig) {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            long nextEpoch = Objects.requireNonNullElse(
+                                    updated.get(SESSION_EPOCH), 0L) + 1L;
+                            writeTokens(
+                                    updated,
+                                    access,
+                                    accessExpiresAtEpochMs,
+                                    refresh,
+                                    recallWindowConfig);
+                            updated.set(SESSION_EPOCH, nextEpoch);
+                            updated.set(SESSION_LIFECYCLE, LIFECYCLE_ACTIVE);
+                            clearPendingRefresh(updated);
+                            return (Preferences) updated;
+                        }))
+                .map(prefs -> Objects.requireNonNull(prefs.get(SESSION_EPOCH)));
+    }
+
+    /**
+     * Marks the session as closing and advances the durable revision before slow
+     * logout cleanup runs.
+     */
+    @NonNull
+    public Single<Long> reserveSessionClosing(long expectedEpoch) {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            long current = Objects.requireNonNullElse(
+                                    updated.get(SESSION_EPOCH), 0L);
+                            if (current != expectedEpoch) {
+                                return preferences;
+                            }
+                            long closingEpoch = expectedEpoch + 1L;
+                            updated.set(SESSION_EPOCH, closingEpoch);
+                            updated.set(SESSION_LIFECYCLE, LIFECYCLE_CLOSING);
+                            return (Preferences) updated;
+                        }))
+                .map(prefs -> Objects.requireNonNullElse(prefs.get(SESSION_EPOCH), 0L));
+    }
+
+    /** Finalizes durable closed state after local cleanup completes. */
+    @NonNull
+    public Completable markSessionClosed(long expectedEpoch) {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            long current = Objects.requireNonNullElse(
+                                    updated.get(SESSION_EPOCH), 0L);
+                            if (current != expectedEpoch) {
+                                return preferences;
+                            }
+                            updated.set(SESSION_LIFECYCLE, LIFECYCLE_CLOSED);
+                            clearPendingRefresh(updated);
+                            return (Preferences) updated;
+                        }))
+                .ignoreElement();
+    }
+
+    /** Empty unless a quarantined rotation marker exists for the active revision. */
+    @NonNull
+    public Maybe<PendingRefresh> readPendingRefresh() {
+        return dataStore.data().firstElement().flatMap(preferences ->
+                Maybe.fromCallable(() -> pendingFrom(preferences)));
+    }
+
+    /**
+     * Persists a request key before dispatch. Returns false when the expected epoch
+     * is no longer active or another key is already quarantined.
+     */
+    @NonNull
+    public Single<Boolean> reservePendingRefresh(
+            long expectedEpoch,
+            @NonNull String predecessorRefreshToken,
+            @NonNull String requestKey) {
+        Objects.requireNonNull(predecessorRefreshToken, "predecessorRefreshToken");
+        Objects.requireNonNull(requestKey, "requestKey");
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            if (!canReservePending(updated, expectedEpoch)) {
+                                return preferences;
+                            }
+                            String existingKey = decryptString(updated.get(PENDING_REFRESH_KEY));
+                            Long existingEpoch = updated.get(PENDING_REFRESH_EPOCH);
+                            if (existingKey != null
+                                    && (!existingKey.equals(requestKey)
+                                            || !Long.valueOf(expectedEpoch).equals(existingEpoch))) {
+                                return preferences;
+                            }
+                            updated.set(PENDING_REFRESH_EPOCH, expectedEpoch);
+                            updated.set(PENDING_REFRESH_KEY, encryptString(requestKey));
+                            updated.set(PENDING_PREDECESSOR, encryptString(predecessorRefreshToken));
+                            return (Preferences) updated;
+                        }))
+                .map(this::pendingReservedFor)
+                .map(reserved -> reserved != null
+                        && reserved.getSessionEpoch() == expectedEpoch
+                        && requestKey.equals(reserved.getRequestKey()));
+    }
+
+    /**
+     * Saves successor credentials and removes the pending marker in one compare step.
+     */
+    @NonNull
+    public Completable commitRefreshRotation(
+            long expectedEpoch,
+            @NonNull String expectedRequestKey,
+            @NonNull String access,
+            long accessExpiresAtEpochMs,
+            @NonNull String refresh,
+            @NonNull RecallWindowConfig recallWindowConfig) {
+        Objects.requireNonNull(expectedRequestKey, "expectedRequestKey");
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            PendingRefresh pending = pendingFrom(updated);
+                            if (pending == null
+                                    || pending.getSessionEpoch() != expectedEpoch
+                                    || !pending.getRequestKey().equals(expectedRequestKey)) {
+                                return preferences;
+                            }
+                            if (!Objects.requireNonNullElse(
+                                            updated.get(SESSION_EPOCH), 0L)
+                                    .equals(expectedEpoch)
+                                    || !LIFECYCLE_ACTIVE.equals(
+                                            updated.get(SESSION_LIFECYCLE))) {
+                                return preferences;
+                            }
+                            writeTokens(
+                                    updated,
+                                    access,
+                                    accessExpiresAtEpochMs,
+                                    refresh,
+                                    recallWindowConfig);
+                            clearPendingRefresh(updated);
+                            return (Preferences) updated;
+                        }))
+                .ignoreElement();
+    }
+
     private Completable persistSession(
             @NonNull String access,
             long accessExpiresAtEpochMs,
             @NonNull String refresh,
             @Nullable RecallWindowConfig recallWindowConfig) {
-        return dataStore.updateDataAsync(
-                        preferences ->
-                                Single.fromCallable(
-                                        () -> {
-                                            MutablePreferences updated =
-                                                    preferences.toMutablePreferences();
-                                            updated.set(
-                                                    ACCESS_TOKEN,
-                                                    TokenEncoding.b64(
-                                                            cipher.encrypt(
-                                                                    access.getBytes(
-                                                                            StandardCharsets.UTF_8))));
-                                            updated.set(ACCESS_EXPIRES_AT, accessExpiresAtEpochMs);
-                                            updated.set(
-                                                    REFRESH_TOKEN,
-                                                    TokenEncoding.b64(
-                                                            cipher.encrypt(
-                                                                    refresh.getBytes(
-                                                                            StandardCharsets.UTF_8))));
-                                            if (recallWindowConfig != null) {
-                                                updated.set(RECALL_WINDOW_SECONDS,
-                                                        recallWindowConfig.getRecallWindowSeconds());
-                                                updated.set(GROUP_ADMIN_RECALL_AFTER_WINDOW,
-                                                        recallWindowConfig
-                                                                .mayGroupAdminRecallAfterWindow());
-                                            }
-                                            return (Preferences) updated;
-                                        }))
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            writeTokens(updated, access, accessExpiresAtEpochMs, refresh,
+                                    recallWindowConfig);
+                            return (Preferences) updated;
+                        }))
                 .ignoreElement();
+    }
+
+    private void writeTokens(
+            @NonNull MutablePreferences updated,
+            @NonNull String access,
+            long accessExpiresAtEpochMs,
+            @NonNull String refresh,
+            @Nullable RecallWindowConfig recallWindowConfig)
+            throws GeneralSecurityException, IOException {
+        updated.set(
+                ACCESS_TOKEN,
+                TokenEncoding.b64(
+                        cipher.encrypt(access.getBytes(StandardCharsets.UTF_8))));
+        updated.set(ACCESS_EXPIRES_AT, accessExpiresAtEpochMs);
+        updated.set(
+                REFRESH_TOKEN,
+                TokenEncoding.b64(
+                        cipher.encrypt(refresh.getBytes(StandardCharsets.UTF_8))));
+        if (recallWindowConfig != null) {
+            updated.set(RECALL_WINDOW_SECONDS, recallWindowConfig.getRecallWindowSeconds());
+            updated.set(
+                    GROUP_ADMIN_RECALL_AFTER_WINDOW,
+                    recallWindowConfig.mayGroupAdminRecallAfterWindow());
+        }
     }
 
     /** Emits the persisted policy, or the documented 24-hour legacy fallback. */
@@ -308,6 +506,11 @@ public final class TokenStore {
                                                 }
                                             }
                                             updated.remove(SYNC_CURSOR_USER_IDS);
+                                            clearPendingRefresh(updated);
+                                            Long epoch = updated.get(SESSION_EPOCH);
+                                            if (epoch != null) {
+                                                updated.set(SESSION_LIFECYCLE, LIFECYCLE_CLOSED);
+                                            }
                                             return (Preferences) updated;
                                         }))
                 .ignoreElement();
@@ -325,7 +528,13 @@ public final class TokenStore {
     @NonNull
     public Flowable<Boolean> hasValidRefresh() {
         return dataStore.data()
-                .map(preferences -> toTokens(preferences) != null)
+                .map(preferences -> {
+                    if (toTokens(preferences) == null) {
+                        return false;
+                    }
+                    String lifecycle = preferences.get(SESSION_LIFECYCLE);
+                    return lifecycle == null || LIFECYCLE_ACTIVE.equals(lifecycle);
+                })
                 .distinctUntilChanged();
     }
 
@@ -341,6 +550,52 @@ public final class TokenStore {
         String refresh = decryptString(preferences.get(REFRESH_TOKEN));
         if (access == null || expiresAt == null || refresh == null) return null;
         return new Tokens(access, expiresAt, refresh);
+    }
+
+    @NonNull
+    private SessionSnapshot snapshotFrom(@NonNull Preferences preferences) {
+        long epoch = Objects.requireNonNullElse(preferences.get(SESSION_EPOCH), 0L);
+        String raw = preferences.get(SESSION_LIFECYCLE);
+        SessionSnapshot.Lifecycle lifecycle = switch (raw == null ? "" : raw) {
+            case LIFECYCLE_ACTIVE -> SessionSnapshot.Lifecycle.ACTIVE;
+            case LIFECYCLE_CLOSING -> SessionSnapshot.Lifecycle.CLOSING;
+            default -> SessionSnapshot.Lifecycle.CLOSED;
+        };
+        return new SessionSnapshot(epoch, lifecycle);
+    }
+
+    @Nullable
+    private PendingRefresh pendingFrom(@NonNull Preferences preferences) {
+        Long epoch = preferences.get(PENDING_REFRESH_EPOCH);
+        String key = decryptString(preferences.get(PENDING_REFRESH_KEY));
+        String predecessor = decryptString(preferences.get(PENDING_PREDECESSOR));
+        if (epoch == null || key == null || predecessor == null) {
+            return null;
+        }
+        return new PendingRefresh(key, predecessor, epoch);
+    }
+
+    @Nullable
+    private PendingRefresh pendingReservedFor(@NonNull Preferences preferences) {
+        String key = decryptString(preferences.get(PENDING_REFRESH_KEY));
+        if (key == null) {
+            return null;
+        }
+        return pendingFrom(preferences);
+    }
+
+    private static boolean canReservePending(
+            @NonNull MutablePreferences updated, long expectedEpoch) {
+        if (!Objects.requireNonNullElse(updated.get(SESSION_EPOCH), 0L).equals(expectedEpoch)) {
+            return false;
+        }
+        return LIFECYCLE_ACTIVE.equals(updated.get(SESSION_LIFECYCLE));
+    }
+
+    private static void clearPendingRefresh(@NonNull MutablePreferences updated) {
+        updated.remove(PENDING_REFRESH_EPOCH);
+        updated.remove(PENDING_REFRESH_KEY);
+        updated.remove(PENDING_PREDECESSOR);
     }
 
     @Nullable
