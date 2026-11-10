@@ -64,6 +64,19 @@ public final class AuthApiGoogleTest {
     }
 
     @Test
+    public void linkNonceIsAnAuthenticatedPostOnItsOwnPath() throws Exception {
+        server.enqueue(new MockResponse().setBody("{\"nonce\":\"n-2\",\"expiresInSeconds\":300}"));
+
+        GoogleNonceResponse response = api.googleLinkNonce().execute().body();
+
+        assertEquals("n-2", response.getNonce());
+        RecordedRequest request = server.takeRequest();
+        assertEquals("POST", request.getMethod());
+        assertEquals("/api/v1/auth/identities/google/nonce", request.getPath());
+        assertFalse(AuthApi.isPublicAuthPath(request.getPath()));
+    }
+
+    @Test
     public void signInPostsTheIdTokenAndNonce() throws Exception {
         server.enqueue(new MockResponse().setBody(authResponseJson()));
 

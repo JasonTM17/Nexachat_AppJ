@@ -122,7 +122,7 @@ public final class GoogleSignInFlowTest {
 
     @Test
     public void linkSendsTokenNonceAndPassword() {
-        when(repository.requestGoogleNonce()).thenReturn(
+        when(repository.requestGoogleLinkNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-2", 300))));
         when(repository.linkGoogle("id-token", "nonce-2", "secret123")).thenReturn(
                 Single.just(new Result.Success<>(Unit.INSTANCE)));
@@ -133,11 +133,12 @@ public final class GoogleSignInFlowTest {
 
         assertTrue(result instanceof Result.Success<?>);
         verify(repository).linkGoogle(eq("id-token"), eq("nonce-2"), eq("secret123"));
+        verify(repository, never()).requestGoogleNonce();
     }
 
     @Test
     public void linkSurfacesTheServerError() {
-        when(repository.requestGoogleNonce()).thenReturn(
+        when(repository.requestGoogleLinkNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-3", 300))));
         when(repository.linkGoogle(anyString(), anyString(), anyString())).thenReturn(
                 Single.just(Result.failure(new ApiError.Unknown("GOOGLE_ACCOUNT_ALREADY_LINKED"))));

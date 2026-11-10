@@ -231,6 +231,14 @@ public final class AuthRepository {
                         .subscribeOn(Schedulers.io()));
     }
 
+    /** Fetches the nonce used by the authenticated link flow. */
+    @NonNull
+    public Single<Result<GoogleNonceResponse>> requestGoogleLinkNonce() {
+        return Single.defer(() -> ApiResult.safeApiCall(authApi.googleLinkNonce())
+                        .map(AuthRepository::valueResult)
+                        .subscribeOn(Schedulers.io()));
+    }
+
     /** Exchanges a Google ID token for a session; persists it exactly like a password login. */
     @NonNull
     public Single<Result<AuthResponse>> googleSignIn(

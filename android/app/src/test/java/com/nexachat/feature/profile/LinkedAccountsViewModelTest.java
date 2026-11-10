@@ -116,7 +116,7 @@ public final class LinkedAccountsViewModelTest {
                 .thenReturn(Single.just(new Result.Success<>(new LinkedIdentitiesResponse(List.of()))))
                 .thenReturn(Single.just(new Result.Success<>(new LinkedIdentitiesResponse(List.of(
                         new LinkedIdentityDto("google", "user@example.com", "2026-01-01T00:00:00Z"))))));
-        when(repository.requestGoogleNonce()).thenReturn(
+        when(repository.requestGoogleLinkNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
         when(repository.linkGoogle("id-token", "nonce-1", "secret123")).thenReturn(
                 Single.just(new Result.Success<>(Unit.INSTANCE)));
@@ -133,7 +133,7 @@ public final class LinkedAccountsViewModelTest {
     public void linkConflictSurfacesTheServerCode() {
         when(repository.linkedIdentities()).thenReturn(Single.just(
                 new Result.Success<>(new LinkedIdentitiesResponse(List.of()))));
-        when(repository.requestGoogleNonce()).thenReturn(
+        when(repository.requestGoogleLinkNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
         when(repository.linkGoogle(anyString(), anyString(), anyString())).thenReturn(
                 Single.just(Result.failure(new ApiError.Unknown("GOOGLE_ACCOUNT_ALREADY_LINKED"))));
@@ -174,7 +174,7 @@ public final class LinkedAccountsViewModelTest {
         viewModel.link(null, "");
         viewModel.unlink("");
 
-        verify(repository, never()).requestGoogleNonce();
+        verify(repository, never()).requestGoogleLinkNonce();
         verify(repository, never()).unlinkGoogle(anyString());
     }
 

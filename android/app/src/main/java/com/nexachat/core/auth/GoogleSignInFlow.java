@@ -57,7 +57,7 @@ public class GoogleSignInFlow {
         if (!isConfigured()) {
             return Single.just(Result.<com.nexachat.core.common.Unit>failure(unavailable()));
         }
-        return authRepository.requestGoogleNonce().flatMap(nonce -> {
+        return authRepository.requestGoogleLinkNonce().flatMap(nonce -> {
             String value = nonceValue(nonce);
             if (value == null) {
                 return Single.just(Result.<com.nexachat.core.common.Unit>failure(errorOf(nonce)));

@@ -59,6 +59,10 @@ public interface AuthApi {
     @POST("api/v1/auth/google/nonce")
     Call<GoogleNonceResponse> googleNonce();
 
+    /** Link-flow nonce: a public sign-in nonce is not accepted by the link endpoint. */
+    @POST("api/v1/auth/identities/google/nonce")
+    Call<GoogleNonceResponse> googleLinkNonce();
+
     @POST("api/v1/auth/google")
     Call<AuthResponse> googleSignIn(@Body GoogleSignInRequest body);
 
