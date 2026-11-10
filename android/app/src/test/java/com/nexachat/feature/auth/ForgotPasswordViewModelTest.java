@@ -17,7 +17,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -154,15 +153,11 @@ public final class ForgotPasswordViewModelTest {
     }
 
     @Test
-    public void resendIgnoredWhileSubmitting() throws Exception {
-        CountDownLatch hang = new CountDownLatch(1);
+    public void resendIgnoredWhileSubmitting() {
         when(repository.requestResetCode(anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
         when(repository.confirmReset(anyString(), anyString(), anyString()))
-                .thenReturn(Single.fromCallable(() -> {
-                    hang.await();
-                    return new Result.Success<>(Unit.INSTANCE);
-                }).subscribeOn(Schedulers.io()));
+                .thenReturn(Single.create(emitter -> { /* in-flight */ }));
         viewModel.onPhoneChanged("+84912345678");
         viewModel.sendCode();
         viewModel.onOtpChanged("123456");
@@ -173,7 +168,6 @@ public final class ForgotPasswordViewModelTest {
         clock.advanceSeconds(ForgotPasswordViewModel.RESEND_COOLDOWN_SECONDS + 1L);
         viewModel.resendCode();
         verify(repository, times(1)).requestResetCode(anyString());
-        hang.countDown();
     }
 
     @Test
