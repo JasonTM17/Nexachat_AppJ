@@ -64,11 +64,18 @@ class ProductionConfigurationTest {
         PropertySource<?> production = productionProperties();
 
         assertThat(production.getProperty("server.shutdown")).isEqualTo("graceful");
+        assertThat(production.getProperty("server.compression.enabled")).isEqualTo(true);
         assertThat(production.getProperty("spring.lifecycle.timeout-per-shutdown-phase")).isEqualTo("20s");
+        assertThat(production.getProperty("spring.jpa.open-in-view")).isEqualTo(false);
+        assertThat(production.getProperty("spring.flyway.validate-on-migrate")).isEqualTo(true);
+        assertThat(production.getProperty("spring.jackson.deserialization.fail-on-unknown-properties"))
+                .isEqualTo(true);
         assertThat(production.getProperty("spring.datasource.hikari.maximum-pool-size")).isEqualTo(10);
         assertThat(production.getProperty("spring.datasource.hikari.minimum-idle")).isEqualTo(2);
         assertThat(production.getProperty("spring.datasource.hikari.connection-timeout")).isEqualTo(30000);
         assertThat(production.getProperty("spring.datasource.hikari.validation-timeout")).isEqualTo(5000);
+        assertThat(production.getProperty("spring.datasource.hikari.max-lifetime")).isEqualTo(1800000);
+        assertThat(production.getProperty("spring.datasource.hikari.leak-detection-threshold")).isEqualTo(60000);
         assertThat(production.getProperty("spring.servlet.multipart.max-file-size")).isEqualTo("25MB");
         assertThat(production.getProperty("spring.servlet.multipart.max-request-size")).isEqualTo("25MB");
     }
@@ -103,10 +110,23 @@ class ProductionConfigurationTest {
         productionContext(Map.of(
                 "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
                 "DATABASE_USER", "test-user",
-                "DATABASE_PASSWORD", "test-password")).run(context -> {
+                "DATABASE_PASSWORD", "test-password",
+                "STORAGE_ROOT", "/tmp/nexachat-test-uploads")).run(context -> {
             assertThat(context).hasFailed();
-            assertThat(context.getStartupFailure())
-                    .hasStackTraceContaining("must be at least 32 bytes (256-bit) for HS256");
+            assertThat(context.getStartupFailure().toString())
+                    .contains("must be at least 32 bytes (256-bit) for HS256");
+        });
+    }
+
+    @Test
+    void productionStorageRootFailsFastWhenEnvironmentValueIsMissing() throws IOException {
+        productionContext(Map.of(
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "test-user",
+                "DATABASE_PASSWORD", "test-password",
+                "JWT_SECRET", TEST_JWT_SECRET)).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure()).hasStackTraceContaining("STORAGE_ROOT");
         });
     }
 
@@ -123,7 +143,7 @@ class ProductionConfigurationTest {
                 })
                 .withPropertyValues("spring.profiles.active=prod")
                 .withUserConfiguration(DataSourceBindingConfiguration.class,
-                        ProductionDataSourceConfiguration.class,
+                        com.nexachat.config.ProductionDataSourceConfiguration.class,
                         ProductionJwtConfiguration.class);
     }
 

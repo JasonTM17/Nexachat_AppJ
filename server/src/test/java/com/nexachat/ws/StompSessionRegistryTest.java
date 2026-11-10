@@ -57,4 +57,20 @@ class StompSessionRegistryTest {
         verify(socket).close(CloseStatus.POLICY_VIOLATION);
         assertThat(registry.isAuthenticatedSession(sessionId)).isFalse();
     }
+
+    @Test
+    void shutdownClosesOpenSocketsWithGoingAway() throws Exception {
+        UserRepository users = mock(UserRepository.class);
+        StompSessionRegistry registry = new StompSessionRegistry(users);
+
+        WebSocketSession socket = mock(WebSocketSession.class);
+        when(socket.getId()).thenReturn("shutdown-session");
+        when(socket.isOpen()).thenReturn(true);
+        WebSocketHandlerDecorator handler = (WebSocketHandlerDecorator)
+                registry.decorate(mock(WebSocketHandler.class));
+        handler.afterConnectionEstablished(socket);
+        registry.shutdown();
+
+        verify(socket).close(CloseStatus.GOING_AWAY);
+    }
 }
