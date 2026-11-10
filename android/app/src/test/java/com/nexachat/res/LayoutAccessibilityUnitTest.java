@@ -47,6 +47,47 @@ public final class LayoutAccessibilityUnitTest {
         throw new IllegalStateException("Could not locate res directory");
     }
 
+    private static final Pattern HEX_COLOR_IN_LAYOUT =
+            Pattern.compile("android:(textColor|background|fillColor|tint)=\"#");
+
+    @Test
+    public void layoutsAvoidHardcodedHexColors() throws Exception {
+        List<String> violations = new ArrayList<>();
+        scanLayoutFilesForHex(new File(resDir, "layout"), violations);
+        File layoutLand = new File(resDir, "layout-land");
+        if (layoutLand.isDirectory()) {
+            scanLayoutFilesForHex(layoutLand, violations);
+        }
+        if (!violations.isEmpty()) {
+            fail("Hardcoded hex colors in layouts:\n" + String.join("\n", violations));
+        }
+    }
+
+    private static void scanLayoutFilesForHex(File dir, List<String> violations) {
+        if (!dir.isDirectory()) {
+            return;
+        }
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".xml"));
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(
+                    file.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+                StringBuilder body = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    body.append(line).append('\n');
+                }
+                if (HEX_COLOR_IN_LAYOUT.matcher(body).find()) {
+                    violations.add(file.getName());
+                }
+            } catch (java.io.IOException ignored) {
+                violations.add(file.getName() + " (unreadable)");
+            }
+        }
+    }
+
     @Test
     public void imageButtonsHaveContentDescriptionAndMinTouchTarget() throws Exception {
         List<String> violations = new ArrayList<>();

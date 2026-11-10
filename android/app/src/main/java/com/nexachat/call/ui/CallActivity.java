@@ -399,7 +399,8 @@ public class CallActivity extends ComponentActivity {
         if (currentSession == null || currentSession.getAnsweredAtMs() == null) return;
         long elapsedSeconds = Math.max(0L,
                 (System.currentTimeMillis() - currentSession.getAnsweredAtMs()) / 1000L);
-        String formatted = CallTimerFormatter.formatSeconds(elapsedSeconds);
+        String formatted = CallTimerFormatter.formatSeconds(
+                elapsedSeconds, getString(R.string.time_duration_mm_ss));
         timer.setText(formatted);
         timer.setContentDescription(getString(R.string.call_timer_content_description, formatted));
     }

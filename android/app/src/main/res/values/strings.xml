@@ -161,6 +161,7 @@
 
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>
+    <string name="dialog_reaction_picker_title">React</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
     <string name="action_pin_conversation">Pin conversation</string>

@@ -6,4 +6,7 @@
     <string name="a11y_attachment_pending_failed" translatable="false">%1$s — %2$s</string>
     <string name="a11y_reaction_chip" translatable="false">%1$s %2$d</string>
     <string name="a11y_summary_topic_chip" translatable="false">#%1$s</string>
+    <string name="summary_citation_seq" translatable="false">#%1$d</string>
+    <string name="ui_remove_symbol" translatable="false">×</string>
+    <string name="time_duration_mm_ss" translatable="false">%02d:%02d</string>
 </resources>

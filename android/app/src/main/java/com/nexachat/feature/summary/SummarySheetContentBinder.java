@@ -210,7 +210,9 @@ public final class SummarySheetContentBinder {
             Long seq = messageSeqMap.get(messageId);
             boolean jumpable = com.nexachat.core.ui.SummaryUiRules.isCitationJumpable(
                     messageId, localMessageIds);
-            String label = SummaryCitationLabels.chipLabel(seq, messageId);
+            String label = seq != null
+                    ? context.getString(R.string.summary_citation_seq, seq)
+                    : SummaryCitationLabels.messageIdPrefix(messageId);
             String chipText = jumpable
                     ? context.getString(R.string.summary_citation_chip, label)
                     : context.getString(R.string.summary_citation_unavailable);

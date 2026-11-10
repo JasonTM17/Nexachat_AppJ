@@ -712,11 +712,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
             row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             TextView remove = new TextView(requireContext());
-            remove.setText("×");
+            remove.setText(R.string.ui_remove_symbol);
             remove.setTextSize(24f);
             remove.setGravity(android.view.Gravity.CENTER);
             remove.setContentDescription(getString(R.string.action_cancel));
             remove.setMinWidth(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
+            remove.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
             remove.setOnClickListener(v -> viewModel.removePendingAttachment(item.getLocalId()));
             row.addView(remove, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             binding.pendingAttachments.addView(row);

@@ -159,6 +159,7 @@
 
     <!-- Message interactions -->
     <string name="action_reply">Trả lời</string>
+    <string name="dialog_reaction_picker_title">Thả cảm xúc</string>
     <string name="action_pin">Ghim</string>
     <string name="action_unpin">Bỏ ghim</string>
     <string name="action_pin_conversation">Ghim hội thoại</string>

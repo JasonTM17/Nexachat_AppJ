@@ -33,6 +33,9 @@ IDENTICAL_LOCALE_ALLOWLIST = frozenset(
         "voice_zero_duration",
         "summary_badge_ai",
         "summary_citation_chip",
+        "summary_citation_seq",
+        "ui_remove_symbol",
+        "time_duration_mm_ss",
     }
 )
 

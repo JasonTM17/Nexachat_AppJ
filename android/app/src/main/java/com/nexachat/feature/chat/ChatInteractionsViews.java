@@ -84,7 +84,7 @@ public final class ChatInteractionsViews {
 
     public static void showReactionPicker(@NonNull Context context, @NonNull java.util.function.Consumer<String> onPick) {
         new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.action_reply)
+                .setTitle(R.string.dialog_reaction_picker_title)
                 .setItems(REACTIONS, (dialog, which) -> onPick.accept(REACTIONS[which]))
                 .show();
     }

@@ -57,7 +57,7 @@
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="2"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/call_text_primary"
             android:textSize="26sp"
             android:textStyle="bold" />
 
@@ -70,7 +70,7 @@
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
             android:text="@string/call_state_incoming"
-            android:textColor="#FF94A3B8"
+            android:textColor="@color/call_text_secondary"
             android:textSize="16sp" />
 
         <View
@@ -112,7 +112,7 @@
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="32dp"
-                    app:iconTint="#FFFFFFFF" />
+                    app:iconTint="@color/call_icon_on_control" />
 
                 <TextView
                     android:id="@+id/incoming_decline_label"
@@ -121,7 +121,7 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_decline"
-                    android:textColor="#FFEF4444"
+                    android:textColor="@color/call_action_decline_text"
                     android:textSize="13sp" />
             </LinearLayout>
 
@@ -151,7 +151,7 @@
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
                     app:iconSize="32dp"
-                    app:iconTint="#FFFFFFFF" />
+                    app:iconTint="@color/call_icon_on_control" />
 
                 <TextView
                     android:id="@+id/incoming_accept_label"
@@ -160,7 +160,7 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_accept"
-                    android:textColor="#FF10B981"
+                    android:textColor="@color/call_action_accept_text"
                     android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
