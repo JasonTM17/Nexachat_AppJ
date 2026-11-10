@@ -8,6 +8,7 @@ import com.nexachat.core.common.Unit;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -79,6 +80,25 @@ public final class RecoveryEmailFormViewModelTest {
                 ApiError.MailUnavailable.INSTANCE,
                 viewModel.getUiState().getValue().getError());
         assertFalse(viewModel.getUiState().getValue().isCodeSent());
+    }
+
+    @Test
+    public void editWhileSendingDoesNotOpenTheOtpStepForTheOldAddress() {
+        SingleSubject<Result<Unit>> pending = SingleSubject.create();
+        when(repository.requestVerificationCode(anyString())).thenReturn(pending);
+        RecoveryEmailFormViewModel viewModel =
+                new RecoveryEmailFormViewModel(repository, new SavedStateHandle());
+        viewModel.onEmailChanged("first@test.com");
+        viewModel.sendCode();
+        assertTrue(viewModel.getUiState().getValue().isSending());
+
+        viewModel.onEmailChanged("second@test.com");
+        pending.onSuccess(new Result.Success<>(Unit.INSTANCE));
+
+        RecoveryEmailFormViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isSending());
+        assertFalse(state.isCodeSent());
+        assertEquals("second@test.com", state.getEmailInput());
     }
 
     @Test

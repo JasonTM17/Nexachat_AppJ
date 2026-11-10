@@ -63,4 +63,45 @@ public final class RecoveryEmailManageViewModelTest {
         assertEquals(user, state.getUser());
         assertNull(state.getError());
     }
+
+    @Test
+    public void removeSuccessClearsVerifiedEmailAndSignalsCompletion() {
+        UserDto user = new UserDto("1", "+84900000000", "alice", null, "a@b.c", true);
+        when(contactsRepository.getMe()).thenReturn(Single.just(new Result.Success<>(user)));
+        when(recoveryEmailRepository.removeVerifiedEmail())
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        RecoveryEmailManageViewModel viewModel =
+                new RecoveryEmailManageViewModel(contactsRepository, recoveryEmailRepository);
+
+        viewModel.removeEmail();
+
+        RecoveryEmailManageViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isRemoving());
+        assertTrue(state.isRemoveComplete());
+        assertNull(state.getUser().getEmail());
+        assertFalse(state.getUser().hasVerifiedRecoveryEmail());
+
+        viewModel.consumeRemoveComplete();
+        assertFalse(viewModel.getUiState().getValue().isRemoveComplete());
+    }
+
+    @Test
+    public void removeFailureKeepsTheVerifiedEmailAndShowsError() {
+        UserDto user = new UserDto("1", "+84900000000", "alice", null, "a@b.c", true);
+        when(contactsRepository.getMe()).thenReturn(Single.just(new Result.Success<>(user)));
+        ApiError apiError = new ApiError.Network();
+        when(recoveryEmailRepository.removeVerifiedEmail())
+                .thenReturn(Single.just(Result.failure(apiError)));
+        RecoveryEmailManageViewModel viewModel =
+                new RecoveryEmailManageViewModel(contactsRepository, recoveryEmailRepository);
+
+        viewModel.removeEmail();
+
+        RecoveryEmailManageViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isRemoving());
+        assertFalse(state.isRemoveComplete());
+        assertEquals(apiError, state.getError());
+        assertEquals("a@b.c", state.getUser().getEmail());
+        assertTrue(state.getUser().hasVerifiedRecoveryEmail());
+    }
 }

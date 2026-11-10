@@ -27,9 +27,30 @@ public final class PasswordPolicyValidatorTest {
         assertTrue(PasswordPolicyValidator.isTooLong(multibyte));
     }
 
-  private static void assertEquals72Bytes(String password) {
-    if (password.getBytes(StandardCharsets.UTF_8).length != 72) {
-      throw new AssertionError("expected 72 UTF-8 bytes");
+    @Test
+    public void acceptsExactlyEightCharacters() {
+        String password = "12345678";
+        assertTrue(PasswordPolicyValidator.isAcceptable(password));
+        assertFalse(PasswordPolicyValidator.isTooShort(password));
+        assertFalse(PasswordPolicyValidator.isTooLong(password));
     }
-  }
+
+    @Test
+    public void rejectsSevenCharacters() {
+        assertFalse(PasswordPolicyValidator.isAcceptable("1234567"));
+        assertTrue(PasswordPolicyValidator.isTooShort("1234567"));
+    }
+
+    @Test
+    public void rejectsNulCharacterEvenWhenLengthAndBytesFit() {
+        String withNul = "1234567\u0000";
+        assertFalse(PasswordPolicyValidator.isAcceptable(withNul));
+        assertTrue(PasswordPolicyValidator.isTooLong(withNul));
+    }
+
+    private static void assertEquals72Bytes(String password) {
+        if (password.getBytes(StandardCharsets.UTF_8).length != 72) {
+            throw new AssertionError("expected 72 UTF-8 bytes");
+        }
+    }
 }
