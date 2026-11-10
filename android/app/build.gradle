@@ -317,6 +317,12 @@ tasks.register('checkFirebaseConfig') {
 }
 
 dependencies {
+    constraints {
+        // Media3 requests Guava 33.3.1-android. CVE-2026-102554 deserializes
+        // attacker-controlled CompactHash* sizes; 33.7.2-android is the fix.
+        implementation(libs.guava)
+    }
+
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // Activity / Navigation / Lifecycle / Views

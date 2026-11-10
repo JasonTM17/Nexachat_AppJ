@@ -37,6 +37,22 @@ public final class PlayTargetSdkContractTest {
                 major == 8 && minor >= 9 && minor < 10);
     }
 
+    @Test
+    public void media3GuavaIsPinnedPastDeserializationCve() throws Exception {
+        String catalog = read(locate(
+                new File("../gradle/libs.versions.toml"),
+                new File("gradle/libs.versions.toml"),
+                new File("android/gradle/libs.versions.toml")));
+        String gradle = read(locate(
+                new File("build.gradle"),
+                new File("app/build.gradle"),
+                new File("android/app/build.gradle")));
+        assertTrue("catalog must pin Guava 33.7.2-android (CVE-2026-102554)",
+                catalog.contains("guava = \"33.7.2-android\""));
+        assertTrue("app must constrain the Media3 Guava transitive to that pin",
+                gradle.contains("constraints {") && gradle.contains("libs.guava"));
+    }
+
     private static void assertEqualsToken(String name, int expected, String gradle) {
         Matcher matcher = Pattern.compile("(?m)^\\s*" + name + "\\s+(\\d+)").matcher(gradle);
         assertTrue(name + " must be declared", matcher.find());
