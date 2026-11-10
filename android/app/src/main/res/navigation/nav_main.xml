@@ -85,6 +85,11 @@
             app:argType="string" />
     </fragment>
 
+    <fragment
+        android:id="@+id/deleteAccountFragment"
+        android:name="com.nexachat.feature.profile.DeleteAccountFragment"
+        android:label="@string/delete_account_title" />
+
     <action
         android:id="@+id/action_profile_to_recoveryEmailManage"
         app:destination="@id/recoveryEmailManageFragment" />

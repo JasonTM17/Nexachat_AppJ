@@ -121,6 +121,17 @@
                     android:textColor="?attr/colorOnErrorContainer"
                     android:visibility="gone" />
 
+                <TextView
+                    android:id="@+id/noticeBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:background="@drawable/bg_settings_tile_tint"
+                    android:padding="12dp"
+                    android:textColor="?attr/colorOnSurface"
+                    android:visibility="gone" />
+
                 <!-- One full-width primary button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/primaryAction"

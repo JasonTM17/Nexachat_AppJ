@@ -465,7 +465,6 @@
     <string name="conversation_unpinned">Unpinned</string>
     <string name="confirm_remove_contact">Remove this contact?</string>
 
-
     <!-- Cluster B message interactions -->
     <string name="message_actions_title">Message actions</string>
     <string name="reaction_like">Like</string>
@@ -540,4 +539,10 @@
     <string name="cd_recovery_email_row">Recovery email settings</string>
     <string name="cd_recovery_email_input">Recovery email address</string>
     <string name="cd_recovery_email_otp">Recovery email verification code</string>
+    <string name="action_delete_account">Delete account</string>
+    <string name="delete_account_title">Delete account</string>
+    <string name="delete_account_consequences">Your account will be permanently deleted; your messages stay visible to others as from a deleted account.</string>
+    <string name="delete_account_confirm">Delete my account</string>
+    <string name="login_account_deleted_notice">Your account was deleted.</string>
+    <string name="error_wrong_password">Current password is incorrect</string>
 </resources>

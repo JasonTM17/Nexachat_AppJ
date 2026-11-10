@@ -7,9 +7,9 @@ import static org.junit.Assert.assertEquals;
 public final class ApiErrorTest {
 
     @Test
-    public void mapsBothCredentialCodesToTheSameDomainError() {
+    public void mapsCredentialCodesToDistinctDomainErrors() {
         assertEquals(ApiError.InvalidCredentials.INSTANCE, ApiError.from(401, "INVALID_CREDENTIALS"));
-        assertEquals(ApiError.InvalidCredentials.INSTANCE, ApiError.from(401, "WRONG_PASSWORD"));
+        assertEquals(ApiError.WrongPassword.INSTANCE, ApiError.from(401, "WRONG_PASSWORD"));
     }
 
     @Test

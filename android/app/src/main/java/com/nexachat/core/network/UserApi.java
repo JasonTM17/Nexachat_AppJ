@@ -5,6 +5,7 @@ import com.nexachat.core.network.dto.AddContactRequest;
 import com.nexachat.core.network.dto.AvatarResponse;
 import com.nexachat.core.network.dto.ContactDto;
 import com.nexachat.core.network.dto.ContactEnvelopeDto;
+import com.nexachat.core.network.dto.DeleteAccountRequest;
 import com.nexachat.core.network.dto.DirectConversationRequest;
 import com.nexachat.core.network.dto.DirectConversationResponse;
 import com.nexachat.core.network.dto.UpdateContactRequest;
@@ -21,6 +22,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.DELETE;
 import retrofit2.http.GET;
+import retrofit2.http.HTTP;
 import retrofit2.http.Multipart;
 import retrofit2.http.POST;
 import retrofit2.http.PATCH;
@@ -55,6 +57,9 @@ public interface UserApi {
 
     @PATCH("api/v1/users/me")
     Call<UserDto> updateMe(@Body UpdateProfileRequest body);
+
+    @HTTP(method = "DELETE", path = "api/v1/users/me", hasBody = true)
+    Call<Void> deleteMe(@Body DeleteAccountRequest body);
 
     @Multipart
     @POST("api/v1/users/me/avatar")

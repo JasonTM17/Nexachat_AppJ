@@ -114,6 +114,28 @@ public final class TokenAuthenticatorTest {
     }
 
     @Test
+    public void wrongPassword401DoesNotTriggerRefresh() throws Exception {
+        TokenStore store = store(new Tokens(OLD, 0, "rt-1"));
+        AuthApi api = mock(AuthApi.class);
+        Request request = new Request.Builder().url("https://nexachat.test/api/v1/users/me")
+                .header(
+                        AuthInterceptor.HEADER_AUTHORIZATION,
+                        AuthInterceptor.BEARER_PREFIX + OLD)
+                .build();
+        okhttp3.Response response = new okhttp3.Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(401)
+                .message("Unauthorized")
+                .body(okhttp3.ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"WRONG_PASSWORD\"}}"))
+                .build();
+        assertNull(authenticator(store, api, new SessionEvents()).authenticate(null, response));
+        verify(api, never()).refresh(any());
+    }
+
+    @Test
     public void chained401LimitStopsRetryStorm() throws Exception {
         TokenStore store = store(new Tokens(OLD, 0, "rt-1"));
         AuthApi api = mock(AuthApi.class);

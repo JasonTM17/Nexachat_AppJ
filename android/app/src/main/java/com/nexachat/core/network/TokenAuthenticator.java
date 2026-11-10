@@ -1,5 +1,6 @@
 package com.nexachat.core.network;
 
+import com.nexachat.core.network.dto.ErrorResponse;
 import java.io.IOException;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -19,6 +20,7 @@ import okhttp3.Route;
 public final class TokenAuthenticator implements Authenticator {
 
     private static final int MAX_ATTEMPTS = 3;
+    private static final int PEEK_BODY_BYTES = 8 * 1024;
 
     private final TokenRefresher tokenRefresher;
 
@@ -35,6 +37,9 @@ public final class TokenAuthenticator implements Authenticator {
             return null;
         }
         if (responseCount(response) >= MAX_ATTEMPTS) {
+            return null;
+        }
+        if (isWrongPassword(response)) {
             return null;
         }
 
@@ -73,6 +78,18 @@ public final class TokenAuthenticator implements Authenticator {
         return authorization.startsWith(AuthInterceptor.BEARER_PREFIX)
                 ? authorization.substring(AuthInterceptor.BEARER_PREFIX.length())
                 : authorization;
+    }
+
+    private static boolean isWrongPassword(Response response) {
+        if (response.code() != 401 || response.body() == null) {
+            return false;
+        }
+        try {
+            return "WRONG_PASSWORD".equals(
+                    ErrorResponse.errorCodeOf(response.peekBody(PEEK_BODY_BYTES).string()));
+        } catch (IOException ignored) {
+            return false;
+        }
     }
 
     private int responseCount(Response response) {

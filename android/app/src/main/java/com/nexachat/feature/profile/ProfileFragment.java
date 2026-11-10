@@ -133,6 +133,12 @@ public final class ProfileFragment extends Fragment {
         binding.logoutAllRow.setLeadingIcon(R.drawable.ic_logout);
         binding.logoutAllRow.setDestructive(true);
         binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
+        binding.deleteAccountRow.setTitle(getString(R.string.action_delete_account));
+        binding.deleteAccountRow.setLeadingIcon(R.drawable.ic_delete);
+        binding.deleteAccountRow.setDestructive(true);
+        binding.deleteAccountRow.setContentDescription(getString(R.string.action_delete_account));
+        binding.deleteAccountRow.setOnClickListener(v ->
+                NavHostFragment.findNavController(this).navigate(R.id.deleteAccountFragment));
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
         viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> binding.showSeen.setChecked(Boolean.TRUE.equals(value)));

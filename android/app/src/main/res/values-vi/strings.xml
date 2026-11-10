@@ -460,7 +460,6 @@
     <string name="conversation_unpinned">Đã bỏ ghim</string>
     <string name="confirm_remove_contact">Xóa liên hệ này?</string>
 
-
     <!-- Cluster B message interactions -->
     <string name="message_actions_title">Thao tác với tin nhắn</string>
     <string name="reaction_like">Thích</string>
@@ -534,4 +533,10 @@
     <string name="cd_recovery_email_row">Cài đặt email khôi phục</string>
     <string name="cd_recovery_email_input">Địa chỉ email khôi phục</string>
     <string name="cd_recovery_email_otp">Mã xác minh email khôi phục</string>
+    <string name="action_delete_account">Xóa tài khoản</string>
+    <string name="delete_account_title">Xóa tài khoản</string>
+    <string name="delete_account_consequences">Tài khoản của bạn sẽ bị xóa vĩnh viễn; tin nhắn vẫn hiển thị với người khác như từ tài khoản đã xóa.</string>
+    <string name="delete_account_confirm">Xóa tài khoản của tôi</string>
+    <string name="login_account_deleted_notice">Tài khoản của bạn đã được xóa.</string>
+    <string name="error_wrong_password">Mật khẩu hiện tại không đúng</string>
 </resources>

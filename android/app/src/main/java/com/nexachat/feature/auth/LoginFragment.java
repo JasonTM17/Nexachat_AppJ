@@ -16,13 +16,18 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentLoginBinding;
 import dagger.hilt.android.AndroidEntryPoint;
+import javax.inject.Inject;
 
 @AndroidEntryPoint
 public final class LoginFragment extends Fragment {
+    @Inject LoginNotice loginNotice;
+
     private FragmentLoginBinding binding;
     private AuthViewModel viewModel;
     private boolean rendering;
     @Nullable private String returnInviteToken;
+    @Nullable private Integer persistedNoticeResId;
+    private static final String STATE_NOTICE_RES_ID = "loginNoticeResId";
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
         binding = FragmentLoginBinding.inflate(inflater, container, false);
@@ -58,6 +63,16 @@ public final class LoginFragment extends Fragment {
                                 binding.getRoot(), R.string.forgot_password_changed, Snackbar.LENGTH_LONG)
                         .show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        if (state != null && state.containsKey(STATE_NOTICE_RES_ID)) {
+            persistedNoticeResId = state.getInt(STATE_NOTICE_RES_ID);
+        }
+        if (persistedNoticeResId == null) {
+            persistedNoticeResId = loginNotice.consume();
+        }
+        if (persistedNoticeResId != null) {
+            binding.noticeBanner.setText(persistedNoticeResId);
+            binding.noticeBanner.setVisibility(View.VISIBLE);
+        }
         viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
             if (e == AuthViewModel.Event.LoggedIn) {
                 int destination = returnInviteToken == null
@@ -99,6 +114,10 @@ public final class LoginFragment extends Fragment {
         if (state.getError() != null) {
             binding.errorBanner.setText(ApiErrorText.text(requireContext(), state.getError()));
         }
+        if (persistedNoticeResId != null) {
+            binding.noticeBanner.setText(persistedNoticeResId);
+            binding.noticeBanner.setVisibility(View.VISIBLE);
+        }
         boolean notLoading = !state.getLoading();
         binding.phoneInput.setEnabled(notLoading);
         binding.passwordInput.setEnabled(notLoading);
@@ -107,6 +126,14 @@ public final class LoginFragment extends Fragment {
         binding.forgotPasswordAction.setEnabled(notLoading);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (persistedNoticeResId != null) {
+            outState.putInt(STATE_NOTICE_RES_ID, persistedNoticeResId);
+        }
     }
 
     @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
