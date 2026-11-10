@@ -44,6 +44,9 @@ class GoogleSignInIT extends SecurityITBase {
         JWKS.close();
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private JwtService jwtService;
+
     @BeforeEach
     void cleanNonces() {
         jdbcTemplate.update("DELETE FROM google_signin_nonces");
@@ -88,9 +91,11 @@ class GoogleSignInIT extends SecurityITBase {
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
 
-        // The access token is a normal access token: it authenticates REST.
-        getWithAuth("/api/v1/users/me", body.path("accessToken").asText())
-                .andExpect(status().isOk());
+        // The access token is a normal access token: it authenticates REST and
+        // passes the same JwtService verification a STOMP CONNECT uses.
+        String accessToken = body.path("accessToken").asText();
+        getWithAuth("/api/v1/users/me", accessToken).andExpect(status().isOk());
+        assertThat(jwtService.parseAccessToken(accessToken).userId()).isEqualTo(user.userId());
 
         // ... and its refresh token participates in normal rotation.
         postJson("/api/v1/auth/refresh", Map.of("refreshToken", body.path("refreshToken").asText()))
