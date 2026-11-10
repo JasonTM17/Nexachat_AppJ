@@ -163,20 +163,20 @@ nexachat:
       timeout-ms: ${NEXACHAT_SUMMARY_LLM_TIMEOUT_MS:30000}
       max-input-chars: ${NEXACHAT_SUMMARY_LLM_MAX_INPUT_CHARS:24000}
       max-output-tokens: ${NEXACHAT_SUMMARY_LLM_MAX_OUTPUT_TOKENS:4000}
-      # Fallback cloud provider: tried once when the primary fails retryably.
-      # Disabled by default; it activates only when its key is configured.
-      llm-fallback:
-        enabled: ${NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED:false}
-        base-url: ${NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL:https://api.deepseek.com}
-        model: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:deepseek-flash}
-        api-key: ${NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY:}
-        timeout-ms: ${NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS:30000}
       # Dedicated Local Server Model Tier (Ollama / vLLM / local server model)
       local-enabled: ${NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED:false}
       local-base-url: ${NEXACHAT_SUMMARY_LOCAL_LLM_BASE_URL:http://host.docker.internal:11434/v1}
       local-model: ${NEXACHAT_SUMMARY_LOCAL_LLM_MODEL:qwen2.5:3b}
       local-api-key: ${NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY:local-ollama}
       local-timeout-ms: ${NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS:60000}
+    # Fallback cloud provider: tried once when the primary fails retryably.
+    # Disabled by default; it activates only when enabled and its key is configured.
+    llm-fallback:
+      enabled: ${NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED:false}
+      base-url: ${NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL:https://api.deepseek.com}
+      model: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:deepseek-flash}
+      api-key: ${NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY:}
+      timeout-ms: ${NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS:30000}
   rag:
     enabled: ${NEXACHAT_RAG_ENABLED:true}
     embedding:
