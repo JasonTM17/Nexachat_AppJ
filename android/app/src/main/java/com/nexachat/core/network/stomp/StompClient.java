@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.LongPredicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -146,6 +147,9 @@ public final class StompClient {
     private volatile BiConsumer<WebSocketListener, Long> testListenerCapture;
 
     @Nullable
+    private volatile BiFunction<WebSocketListener, Long, WebSocket> testWebSocketFactory;
+
+    @Nullable
     private volatile WebSocket socket;
     private volatile boolean open;
     private volatile long lastInboundMs;
@@ -176,10 +180,14 @@ public final class StompClient {
     @NonNull
     public Flowable<State> connect(@Nullable String accessToken) {
         final long attemptId = connectAttemptSeq.incrementAndGet();
-        LongPredicate stillCurrent = ignored -> connectAttemptSeq.get() == attemptId;
+        AttemptLiveness liveness = new AttemptLiveness(connectAttemptSeq, attemptId);
+        LongPredicate stillCurrent = ignored -> liveness.isCurrent();
         return Flowable.create(emitter -> {
             SerialDisposable lifecycle = new SerialDisposable();
-            emitter.setCancellable(lifecycle::dispose);
+            emitter.setCancellable(() -> {
+                liveness.invalidate();
+                lifecycle.dispose();
+            });
             if (!stillCurrent.test(attemptId)) {
                 emitter.onComplete();
                 return;
@@ -188,7 +196,7 @@ public final class StompClient {
             SerialDisposable readHolder = new SerialDisposable();
             lifecycle.set(readHolder);
             if (accessToken != null) {
-                beginAttempt(accessToken, attemptId, stillCurrent, emitter, lifecycle);
+                beginAttempt(accessToken, attemptId, stillCurrent, liveness, emitter, lifecycle);
                 return;
             }
             Disposable read = tokenStore.readTokens()
@@ -210,7 +218,7 @@ public final class StompClient {
                             emitter.onComplete();
                             return;
                         }
-                        beginAttempt(token, attemptId, stillCurrent, emitter, lifecycle);
+                        beginAttempt(token, attemptId, stillCurrent, liveness, emitter, lifecycle);
                     }, failure -> {
                         if (!stillCurrent.test(attemptId)) {
                             emitter.onComplete();
@@ -235,10 +243,17 @@ public final class StompClient {
         testListenerCapture = capture;
     }
 
+    @VisibleForTesting
+    void setTestWebSocketFactoryForTests(
+            @Nullable BiFunction<WebSocketListener, Long, WebSocket> factory) {
+        testWebSocketFactory = factory;
+    }
+
     private void beginAttempt(
             @NonNull String token,
             long attemptId,
             @NonNull LongPredicate stillCurrent,
+            @NonNull AttemptLiveness liveness,
             @NonNull io.reactivex.rxjava3.core.FlowableEmitter<State> emitter,
             @NonNull SerialDisposable lifecycle) {
         StateSink sink = new StateSink() {
@@ -257,7 +272,7 @@ public final class StompClient {
             }
         };
         try {
-            AutoCloseable cleanup = startConnection(token, sink, stillCurrent, attemptId);
+            AutoCloseable cleanup = startConnection(token, sink, stillCurrent, attemptId, liveness);
             lifecycle.set(Disposable.fromAction(() -> {
                 try {
                     cleanup.close();
@@ -333,7 +348,8 @@ public final class StompClient {
             @NonNull String token,
             @NonNull StateSink sink,
             @NonNull LongPredicate stillCurrent,
-            long attemptId
+            long attemptId,
+            @NonNull AttemptLiveness liveness
     ) {
         java.util.function.Consumer<String> bearerObserver = connectBearerObserver;
         if (bearerObserver != null) {
@@ -348,64 +364,70 @@ public final class StompClient {
         WebSocketListener listener = new WebSocketListener() {
             @Override
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
-                if (!stillCurrent.test(attemptId)) {
+                if (!liveness.runIfCurrent(() -> {
+                    socket = webSocket;
+                    lastInboundMs = System.currentTimeMillis();
+                    LinkedHashMap<String, String> headers = new LinkedHashMap<>();
+                    headers.put("accept-version", "1.2");
+                    headers.put("host", wsUrl.host());
+                    headers.put("heart-beat", HEARTBEAT_MS + "," + HEARTBEAT_MS);
+                    headers.put("Authorization", "Bearer " + token);
+                    webSocket.send(StompCodec.encode(new StompFrame(StompCommand.CONNECT, headers)));
+                })) {
                     webSocket.cancel();
-                    return;
                 }
-                socket = webSocket;
-                lastInboundMs = System.currentTimeMillis();
-                LinkedHashMap<String, String> headers = new LinkedHashMap<>();
-                headers.put("accept-version", "1.2");
-                headers.put("host", wsUrl.host());
-                headers.put("heart-beat", HEARTBEAT_MS + "," + HEARTBEAT_MS);
-                headers.put("Authorization", "Bearer " + token);
-                webSocket.send(StompCodec.encode(new StompFrame(StompCommand.CONNECT, headers)));
             }
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
-                if (!stillCurrent.test(attemptId)) {
+                if (!liveness.runIfCurrent(() -> lastInboundMs = System.currentTimeMillis())) {
                     return;
                 }
-                lastInboundMs = System.currentTimeMillis();
                 for (StompFrame frame : parser.feed(text)) {
+                    if (!stillCurrent.test(attemptId)) {
+                        return;
+                    }
                     String command = frame.getCommand();
                     if (StompCommand.CONNECTED.equals(command)) {
-                        open = true;
-                        sink.trySend(State.Open.INSTANCE);
-                    } else if (StompCommand.ERROR.equals(command)) {
-                        if (!stillCurrent.test(attemptId)) {
+                        if (!liveness.runIfCurrent(() -> {
+                            open = true;
+                            sink.trySend(State.Open.INSTANCE);
+                        })) {
                             return;
                         }
-                        incomingFrames.onNext(frame);
+                    } else if (StompCommand.ERROR.equals(command)) {
+                        if (!liveness.runIfCurrent(() -> incomingFrames.onNext(frame))) {
+                            return;
+                        }
                         if (!open) {
                             String reason = isBlank(frame.getBody())
                                     ? REASON_ERROR_FRAME
                                     : frame.getBody();
-                            sink.trySend(new State.Failed(reason));
+                            if (!liveness.runIfCurrent(
+                                    () -> sink.trySend(new State.Failed(reason)))) {
+                                return;
+                            }
                         }
                     } else {
-                        if (!stillCurrent.test(attemptId)) {
+                        if (!liveness.runIfCurrent(() -> incomingFrames.onNext(frame))) {
                             return;
                         }
-                        incomingFrames.onNext(frame);
                     }
                 }
             }
 
             @Override
             public void onClosing(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
-                webSocket.close(code, reason);
+                liveness.runIfCurrent(() -> webSocket.close(code, reason));
             }
 
             @Override
             public void onClosed(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
-                if (!stillCurrent.test(attemptId)) {
-                    return;
-                }
-                open = false;
-                sink.trySend(new State.Closed(code, reason));
-                sink.close();
+                liveness.runIfCurrent(() -> {
+                    open = false;
+                    sink.trySend(new State.Closed(code, reason));
+                    sink.close();
+                });
             }
 
             @Override
@@ -414,16 +436,15 @@ public final class StompClient {
                     @NonNull Throwable failure,
                     @Nullable Response response
             ) {
-                if (!stillCurrent.test(attemptId)) {
-                    return;
-                }
-                open = false;
-                Integer httpStatus = response == null ? null : response.code();
-                boolean auth = httpStatus != null
-                        && (httpStatus == HTTP_UNAUTHORIZED || httpStatus == HTTP_FORBIDDEN);
-                String reason = httpStatus == null ? failure.getMessage() : "HTTP_" + httpStatus;
-                sink.trySend(new State.Failed(reason, auth));
-                sink.close();
+                liveness.runIfCurrent(() -> {
+                    open = false;
+                    Integer httpStatus = response == null ? null : response.code();
+                    boolean auth = httpStatus != null
+                            && (httpStatus == HTTP_UNAUTHORIZED || httpStatus == HTTP_FORBIDDEN);
+                    String reason = httpStatus == null ? failure.getMessage() : "HTTP_" + httpStatus;
+                    sink.trySend(new State.Failed(reason, auth));
+                    sink.close();
+                });
             }
         };
 
@@ -431,37 +452,42 @@ public final class StompClient {
         if (capture != null) {
             capture.accept(listener, attemptId);
         }
-        WebSocket webSocket = okHttpClient.newWebSocket(request, listener);
+        BiFunction<WebSocketListener, Long, WebSocket> testFactory = testWebSocketFactory;
+        WebSocket webSocket = testFactory == null
+                ? okHttpClient.newWebSocket(request, listener)
+                : testFactory.apply(listener, attemptId);
         socket = webSocket;
         ScheduledExecutorService scheduler = newAttemptScheduler();
         AtomicBoolean cleanedUp = new AtomicBoolean();
         ScheduledFuture<?> connectTimeout = scheduler.schedule(() -> {
-            if (!open && !cleanedUp.get()) {
-                sink.trySend(new State.Failed(REASON_CONNECT_TIMEOUT));
-                webSocket.cancel();
-            }
+            liveness.runIfCurrent(() -> {
+                if (!open && !cleanedUp.get()) {
+                    sink.trySend(new State.Failed(REASON_CONNECT_TIMEOUT));
+                    webSocket.cancel();
+                }
+            });
         }, CONNECT_ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         ScheduledFuture<?> heartbeat = scheduler.scheduleWithFixedDelay(() -> {
-            if (cleanedUp.get()) {
-                return;
-            }
-            WebSocket active = socket;
-            if (active == null) {
-                return;
-            }
-            if (!open) {
-                return;
-            }
-            active.send(HEARTBEAT_FRAME);
-            if (System.currentTimeMillis() - lastInboundMs > DEAD_AFTER_MS) {
-                active.cancel();
-            }
+            liveness.runIfCurrent(() -> {
+                if (cleanedUp.get()) {
+                    return;
+                }
+                WebSocket active = socket;
+                if (active == null || !open) {
+                    return;
+                }
+                active.send(HEARTBEAT_FRAME);
+                if (System.currentTimeMillis() - lastInboundMs > DEAD_AFTER_MS) {
+                    active.cancel();
+                }
+            });
         }, HEARTBEAT_MS, HEARTBEAT_MS, TimeUnit.MILLISECONDS);
 
         return () -> {
             if (!cleanedUp.compareAndSet(false, true)) {
                 return;
             }
+            liveness.invalidate();
             open = false;
             connectTimeout.cancel(false);
             heartbeat.cancel(false);
@@ -491,6 +517,34 @@ public final class StompClient {
             return thread;
         };
         return Executors.newSingleThreadScheduledExecutor(factory);
+    }
+
+    /** Serializes listener side effects with synchronous attempt cancellation. */
+    private static final class AttemptLiveness {
+        private final AtomicLong attemptSequence;
+        private final long attemptId;
+        private boolean active = true;
+
+        private AttemptLiveness(AtomicLong attemptSequence, long attemptId) {
+            this.attemptSequence = attemptSequence;
+            this.attemptId = attemptId;
+        }
+
+        private synchronized boolean isCurrent() {
+            return active && attemptSequence.get() == attemptId;
+        }
+
+        private synchronized boolean runIfCurrent(Runnable action) {
+            if (!active || attemptSequence.get() != attemptId) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
+
+        private synchronized void invalidate() {
+            active = false;
+        }
     }
 
     private static boolean isBlank(@NonNull String value) {
