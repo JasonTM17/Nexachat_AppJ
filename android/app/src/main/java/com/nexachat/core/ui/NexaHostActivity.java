@@ -120,17 +120,22 @@ public class NexaHostActivity extends AppCompatActivity {
     }
 
     private void onSessionEvent(@NonNull SessionEvents.Event event) {
-        if (!(event instanceof SessionEvents.Event.LoggedOut)) {
+        boolean sessionExpired = event instanceof SessionEvents.Event.ReauthenticationRequired;
+        if (!(event instanceof SessionEvents.Event.LoggedOut) && !sessionExpired) {
             return;
         }
         if (getSupportFragmentManager().isStateSaved()) {
             pendingLogoutNavigation = true;
             return;
         }
-        navigateToLoginIfPossible();
+        navigateToLoginIfPossible(sessionExpired);
     }
 
     private void navigateToLoginIfPossible() {
+        navigateToLoginIfPossible(false);
+    }
+
+    private void navigateToLoginIfPossible(boolean sessionExpired) {
         if (getSupportFragmentManager().isStateSaved()) {
             pendingLogoutNavigation = true;
             return;
@@ -153,6 +158,12 @@ public class NexaHostActivity extends AppCompatActivity {
                     loginArgs = new Bundle();
                     loginArgs.putString("returnInviteToken", token);
                 }
+            }
+            if (sessionExpired) {
+                if (loginArgs == null) {
+                    loginArgs = new Bundle();
+                }
+                loginArgs.putBoolean("showSessionExpired", true);
             }
             nav.navigate(R.id.action_global_login, loginArgs);
             pendingLogoutNavigation = false;

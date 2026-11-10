@@ -7,6 +7,11 @@ secret before starting the stack. Do not commit `.env` or signing files.
 
 ## Configuration
 
+Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
+`NEXACHAT_RAG_ENABLED`) must be exactly `true` or `false` in the environment or
+`.env` file. Spring Boot 3.5 no longer treats values such as `1`, `yes`, or
+`on` as enabled.
+
 | Variable | Required in production | Compose default | Placeholder example |
 |---|---|---|---|
 | `DATABASE_URL` | Yes outside Compose; Compose supplies a default | `jdbc:postgresql://db:5432/nexachat` | `jdbc:postgresql://db:5432/nexachat` |
@@ -23,6 +28,11 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | No (optional "Sign in with Google"; all Google routes answer 404 while off) | `false` | `false` |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Yes when Google sign-in is enabled; startup fails closed without it | Empty | `<id>.apps.googleusercontent.com` |
+| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Yes when Google sign-in is enabled (comma-separated Android OAuth client IDs trusted as token `azp`) | Empty while disabled | `<id>.apps.googleusercontent.com` |
+| `NEXACHAT_GOOGLE_JWKS_URI` | No (Google's rotating public keys; override only for tests) | `https://www.googleapis.com/oauth2/v3/certs` | `https://www.googleapis.com/oauth2/v3/certs` |
+| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | No (single-use sign-in nonce lifetime) | `300` | `300` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
@@ -32,6 +42,12 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `FCM_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `FCM_MAX_RETRIES` | No | `2` | `2` |
 | `FCM_RETRY_BASE_DELAY_MS` | No | `200` | `200` |
+| `FIREBASE_REALTIME_ENABLED` | No (opt-in Firebase Auth bridge) | `false` | `false` |
+| `FIREBASE_DATABASE_URL` | Required when the bridge is enabled | Empty (bridge stays disabled) | `https://<database>.<region>.firebasedatabase.app` |
+| `FIREBASE_REALTIME_DEFAULT` | No (reserved rollout default) | `stomp` | `stomp` |
+| `FIREBASE_CALL_STATUS_ENABLED` | No (call status is not enabled by this bridge) | `false` | `false` |
+| `FIREBASE_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
+| `FIREBASE_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
 | `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `NEXACHAT_SUMMARY_LLM_MODEL` | Yes when summary LLM enabled | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` |
@@ -166,6 +182,60 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 `android/app/google-services.json` that registers its device token. None of
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
+
+### Firebase realtime auth bridge (staged rollout)
+
+The Firebase bridge is disabled by default. It creates its Spring beans and
+contacts Firebase only when `FIREBASE_REALTIME_ENABLED=true` **and**
+`FIREBASE_DATABASE_URL` is non-empty. If either condition is false, the bridge
+routes are absent and the existing STOMP service continues to work. A non-empty
+URL must be the HTTPS root URL of a Firebase Realtime Database; an invalid URL
+fails startup. Keep the URL empty in `.env` until the Firebase project and rules
+are ready.
+
+This bridge reuses `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`; FCM push can
+remain disabled independently with `FCM_ENABLED=false`. The service account
+must belong to the same project and have the Firebase Authentication and
+Realtime Database permissions required by the deployment. Provide it through
+the process environment or a protected key file; never commit the key. The
+backend uses it to sign custom auth tokens, revoke Firebase refresh tokens, and
+write private lease state over the RTDB REST API.
+
+Before enabling the bridge in a Firebase project:
+
+1. Enable Firebase Authentication and create a Realtime Database in the chosen
+   region. Keep the database in locked mode during setup.
+2. Review and install the complete rules candidate at
+   `tools/firebase-rules/database.rules.json`. The default rules deny access;
+   user accounts, control state, and current conversation memberships must be
+   projected before authorized Firebase reads can succeed. The projection and
+   Firebase Emulator authorization checks are owned by later rollout steps;
+   this S1 bridge alone does not make a client data path ready for production.
+3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
+   `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
+   service-account project, installed rules, and projection before directing
+   any client to Firebase. `FIREBASE_REALTIME_DEFAULT` stays `stomp` and
+   `FIREBASE_CALL_STATUS_ENABLED` stays `false` for this stage.
+4. Configure a project budget and billing alerts, then monitor database reads,
+   writes, and download volume during a staged rollout.
+
+The current Compose file does not forward `FIREBASE_*` variables into the app
+container. Setting them only in `.env` will not enable this bridge in Compose;
+the deployment configuration must explicitly pass the reviewed Firebase
+variables to the backend before the feature is enabled. To turn the bridge off,
+set `FIREBASE_REALTIME_ENABLED=false` and restart the backend. Existing STOMP
+clients and routes remain available.
+
+Bridge issue, renewal, and single-session deletion hold a lock on that user's
+PostgreSQL row through the Firebase request so they serialize with logout and
+password-change revocation on every server instance sharing the database. RTDB
+REST calls use the configured connect/read timeouts; Firebase Admin requests
+use the same timeout settings. Google service-account token refresh has retries
+disabled and uses the Google Auth HTTP client's bounded 20-second connect/read
+defaults. A slow Firebase request can therefore delay another bridge operation
+or logout for that same user until its timeout; other users use different rows.
+If a database commit fails after a lease write, the response is not returned and
+the orphaned lease expires within 120 seconds.
 
 **Mute gating.** `NEW_MESSAGE` pushes are skipped for members who muted the
 conversation (per-member `muted` / `muted_until` on `conversation_members`; a

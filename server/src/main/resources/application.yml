@@ -58,6 +58,16 @@ nexachat:
     refresh-replay:
       key: ${NEXACHAT_REFRESH_REPLAY_KEY:}
       cleanup-batch-size: 500
+  google:
+    # "Sign in with Google" (OpenID Connect). Off by default; the owner creates
+    # the OAuth clients in Google Cloud and supplies the web client ID.
+    signin:
+      enabled: ${NEXACHAT_GOOGLE_SIGNIN_ENABLED:false}
+      web-client-id: ${NEXACHAT_GOOGLE_WEB_CLIENT_ID:}
+      # Comma-separated Android OAuth client IDs trusted as the token's azp.
+      android-client-ids: ${NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS:}
+      jwks-uri: ${NEXACHAT_GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
+      nonce-ttl-seconds: ${NEXACHAT_GOOGLE_NONCE_TTL_SECONDS:300}
   security:
     # Exact browser origins allowed to call the API. Empty admits no
     # cross-origin caller (the native app sends no Origin header); set this in
@@ -224,3 +234,10 @@ nexachat:
     read-timeout-seconds: ${FCM_READ_TIMEOUT_SECONDS:10}
     max-retries: ${FCM_MAX_RETRIES:2}
     retry-base-delay-ms: ${FCM_RETRY_BASE_DELAY_MS:200}
+  firebase:
+    realtime-enabled: ${FIREBASE_REALTIME_ENABLED:false}
+    realtime-default: ${FIREBASE_REALTIME_DEFAULT:stomp}
+    call-status-enabled: ${FIREBASE_CALL_STATUS_ENABLED:false}
+    database-url: ${FIREBASE_DATABASE_URL:}
+    connect-timeout-seconds: ${FIREBASE_CONNECT_TIMEOUT_SECONDS:5}
+    read-timeout-seconds: ${FIREBASE_READ_TIMEOUT_SECONDS:10}

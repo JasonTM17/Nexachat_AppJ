@@ -3,8 +3,6 @@ package com.nexachat.feature.auth;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.ViewModel;
-import com.nexachat.core.common.ApiError;
-import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AuthRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
@@ -26,30 +24,19 @@ public final class SplashViewModel extends ViewModel {
         Objects.requireNonNull(tokenStore, "tokenStore");
         Objects.requireNonNull(authRepository, "authRepository");
 
-        disposables.add(tokenStore.getHasValidRefresh()
-                .first(false)
+        disposables.add(SplashSession.restoreDestination(
+                        tokenStore.getHasValidRefresh().first(false),
+                        tokenStore.hasStoredRefreshCredential(),
+                        Single.defer(authRepository::refresh))
                 .subscribeOn(Schedulers.io())
-                .flatMap(hasRefresh -> hasRefresh
-                        ? authRepository.refresh().map(SplashViewModel::destinationFor)
-                        : Single.just(SplashNavEvent.ToLogin.INSTANCE))
                 .subscribe(
                         navEvents::postValue,
-                        error -> navEvents.postValue(SplashNavEvent.ToLogin.INSTANCE)));
+                        error -> navEvents.postValue(new SplashNavEvent.ToLogin(false))));
     }
 
     @NonNull
     public LiveData<SplashNavEvent> getNavEvents() {
         return navEvents;
-    }
-
-    private static SplashNavEvent destinationFor(Result<Boolean> result) {
-        if (result instanceof Result.Success<?>) {
-            return SplashNavEvent.ToInbox.INSTANCE;
-        }
-        ApiError error = ((Result.Failure<?>) result).getError();
-        return error instanceof ApiError.Network
-                ? SplashNavEvent.ToInbox.INSTANCE
-                : SplashNavEvent.ToLogin.INSTANCE;
     }
 
     @Override

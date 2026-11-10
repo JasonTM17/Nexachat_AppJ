@@ -1,5 +1,7 @@
 package com.nexachat.notification;
 
+import com.nexachat.google.GoogleServiceAccountCredentials;
+import com.nexachat.google.GoogleServiceAccountCredentialsFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -31,7 +33,7 @@ final class FcmTokenProvider {
     private static final long REFRESH_MARGIN_SECONDS = 300L;
     private static final long DEFAULT_EXPIRES_IN_SECONDS = 3600L;
 
-    private final ServiceAccountCredentials credentials;
+    private final GoogleServiceAccountCredentials credentials;
     private final URI tokenEndpoint;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -40,7 +42,7 @@ final class FcmTokenProvider {
 
     private volatile Token cached;
 
-    private FcmTokenProvider(ServiceAccountCredentials credentials, URI tokenEndpoint,
+    private FcmTokenProvider(GoogleServiceAccountCredentials credentials, URI tokenEndpoint,
                              HttpClient httpClient, ObjectMapper objectMapper, Duration readTimeout) {
         this.credentials = credentials;
         this.tokenEndpoint = tokenEndpoint;
@@ -51,8 +53,8 @@ final class FcmTokenProvider {
 
     static FcmTokenProvider create(FcmProperties properties, HttpClient httpClient,
                                    ObjectMapper objectMapper, Duration readTimeout) {
-        ServiceAccountCredentials credentials =
-                ServiceAccountCredentials.load(properties.getServiceAccountJson(), objectMapper);
+        GoogleServiceAccountCredentials credentials =
+                GoogleServiceAccountCredentialsFactory.load(properties.getServiceAccountJson(), objectMapper);
         String configured = properties.getTokenUri();
         URI tokenEndpoint = configured != null && !configured.isBlank()
                 ? FcmEndpoints.tokenEndpoint(configured, true)

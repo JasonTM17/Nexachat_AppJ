@@ -40,6 +40,9 @@ import java.util.Set;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -79,6 +82,8 @@ public final class RealtimeSession {
     private static final int NORMAL_CODE = 1000;
     private static final int EVENTS_BUFFER = 128;
     private static final int RESYNC_BUFFER = 4;
+    private static final long NO_EPOCH = -1L;
+    private static final long NO_ATTEMPT = -1L;
 
     private final StompClient stompClient;
     private final TokenStore tokenStore;
@@ -87,6 +92,7 @@ public final class RealtimeSession {
     private final NetworkMonitor networkMonitor;
     private final AppForegroundState foreground;
     private final Scheduler reconnectScheduler;
+    private final Scheduler observerDeliveryScheduler;
 
     private final JsonAdapter<WsEnvelope> envelopeAdapter;
     private final JsonAdapter<MessageDto> messageAdapter;
@@ -101,17 +107,31 @@ public final class RealtimeSession {
     private final JsonAdapter<ConversationUpdateDto> conversationUpdateAdapter;
     private final JsonAdapter<Map<String, Object>> mapAdapter;
 
-    private final FlowableProcessor<StompClient.State> state = BehaviorProcessor.<StompClient.State>createDefault(
-            new StompClient.State.Closed(NORMAL_CODE, "never connected")).toSerialized();
-    private final BehaviorProcessor<Boolean> openState = BehaviorProcessor.createDefault(false);
-    private final FlowableProcessor<Boolean> isOpen = openState.toSerialized();
-    private final FlowableProcessor<ChatEvent> events = PublishProcessor.<ChatEvent>create().toSerialized();
-    private final FlowableProcessor<Object> resyncRequests = PublishProcessor.create().toSerialized();
+    private final FlowableProcessor<EpochPublication<StompClient.State>> state =
+            BehaviorProcessor.<EpochPublication<StompClient.State>>createDefault(
+                    new EpochPublication<>(NO_EPOCH, NO_ATTEMPT,
+                            new StompClient.State.Closed(NORMAL_CODE, "never connected")))
+                    .toSerialized();
+    private final BehaviorProcessor<EpochPublication<Boolean>> openState =
+            BehaviorProcessor.createDefault(
+                    new EpochPublication<>(NO_EPOCH, NO_ATTEMPT, false));
+    private final FlowableProcessor<EpochPublication<Boolean>> isOpen = openState.toSerialized();
+    private final FlowableProcessor<EpochPublication<ChatEvent>> events =
+            PublishProcessor.<EpochPublication<ChatEvent>>create().toSerialized();
+    private final FlowableProcessor<EpochPublication<Object>> resyncRequests =
+            PublishProcessor.<EpochPublication<Object>>create().toSerialized();
     private final FlowableProcessor<Object> rearmRequests = PublishProcessor.create().toSerialized();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private final SerialDisposable connection = new SerialDisposable();
     private final SerialDisposable parkedWake = new SerialDisposable();
+    private final SerialDisposable authRecovery = new SerialDisposable();
+    private final AtomicLong connectionAttemptSeq = new AtomicLong();
+    private volatile long activeConnectionAttemptId;
+    /** Session epoch captured at {@link #connectOnce()} start; cleared when the attempt ends. */
+    private volatile long activeAttemptSessionEpoch = -1L;
     private volatile boolean hasSession;
+    private volatile boolean tokensPresent;
+    private volatile boolean sessionAdmitted;
     private boolean attemptActive;
     private int failures;
     private int parkedRounds;
@@ -133,7 +153,7 @@ public final class RealtimeSession {
             @NonNull NetworkMonitor networkMonitor,
             @NonNull AppForegroundState foreground) {
         this(stompClient, tokenStore, tokenRefresher, moshi, reconnectPolicy,
-                networkMonitor, foreground, Schedulers.single());
+                networkMonitor, foreground, Schedulers.single(), Schedulers.io());
     }
 
     /** Deterministic scheduler seam for reconnect policy tests. */
@@ -146,6 +166,21 @@ public final class RealtimeSession {
             @NonNull NetworkMonitor networkMonitor,
             @NonNull AppForegroundState foreground,
             @NonNull Scheduler reconnectScheduler) {
+        this(stompClient, tokenStore, tokenRefresher, moshi, reconnectPolicy,
+                networkMonitor, foreground, reconnectScheduler, Schedulers.io());
+    }
+
+    /** Scheduler seam for deterministic delivery-boundary and subscriber tests. */
+    public RealtimeSession(
+            @NonNull StompClient stompClient,
+            @NonNull TokenStore tokenStore,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull Moshi moshi,
+            @NonNull ReconnectPolicy reconnectPolicy,
+            @NonNull NetworkMonitor networkMonitor,
+            @NonNull AppForegroundState foreground,
+            @NonNull Scheduler reconnectScheduler,
+            @NonNull Scheduler observerDeliveryScheduler) {
         this.stompClient = stompClient;
         this.tokenStore = tokenStore;
         this.tokenRefresher = tokenRefresher;
@@ -153,6 +188,7 @@ public final class RealtimeSession {
         this.networkMonitor = networkMonitor;
         this.foreground = foreground;
         this.reconnectScheduler = reconnectScheduler;
+        this.observerDeliveryScheduler = observerDeliveryScheduler;
 
         envelopeAdapter = moshi.adapter(WsEnvelope.class);
         messageAdapter = moshi.adapter(MessageDto.class);
@@ -174,62 +210,194 @@ public final class RealtimeSession {
         // Presence must be subscribed before the first peer event can land.
         wantedSubscriptions.add(USER_PRESENCE_DESTINATION);
 
-        subscriptions.add(tokenStore.getHasValidRefresh().subscribe(this::onTokenPresence));
+        subscriptions.add(tokenStore.getHasValidRefresh()
+                .distinctUntilChanged()
+                .subscribe(present -> {
+                    tokensPresent = present;
+                    applySessionSignals();
+                }));
+        subscriptions.add(tokenRefresher.sessionEpochChanges()
+                .subscribe(epoch -> {
+                    if (epoch == tokenRefresher.sessionEpoch()) {
+                        launchConnectionLoop();
+                    }
+                }));
+        subscriptions.add(tokenRefresher.sessionAdmission()
+                .distinctUntilChanged()
+                .subscribe(admitted -> {
+                    sessionAdmitted = admitted;
+                    applySessionSignals();
+                }));
         subscriptions.add(networkMonitor.getIsOnline()
                 .filter(Boolean::booleanValue)
-                .subscribe(ignored -> { if (hasSession && !isCurrentlyOpen()) ensureConnected(); }));
+                .subscribe(ignored -> {
+                    if (hasSession && sessionAdmitted && !isCurrentlyOpen()) {
+                        ensureConnected();
+                    }
+                }));
         subscriptions.add(stompClient.getFrames().subscribe(this::dispatch));
     }
 
     @NonNull
     public Flowable<StompClient.State> getState() {
-        return state.onBackpressureLatest();
+        return currentPublications(state.onBackpressureLatest());
     }
 
     @NonNull
     public Flowable<Boolean> getIsOpen() {
-        return isOpen.onBackpressureLatest();
+        return currentPublications(isOpen.onBackpressureLatest());
     }
 
     @NonNull
     public Flowable<ChatEvent> getEvents() {
-        return events.onBackpressureBuffer(EVENTS_BUFFER, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
+        return currentAttemptPublications(events.onBackpressureBuffer(
+                EVENTS_BUFFER,
+                () -> { },
+                io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST));
     }
 
     @NonNull
     public Flowable<Object> getResyncRequests() {
-        return resyncRequests.onBackpressureBuffer(RESYNC_BUFFER, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
+        return currentAttemptPublications(resyncRequests.onBackpressureBuffer(
+                RESYNC_BUFFER,
+                () -> { },
+                io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST));
     }
 
-    public boolean isCurrentlyOpen() { return Boolean.TRUE.equals(openState.getValue()); }
+    public boolean isCurrentlyOpen() {
+        EpochPublication<Boolean> publication = openState.getValue();
+        return publication != null && Boolean.TRUE.equals(publication.value);
+    }
 
-    private void onTokenPresence(boolean hasToken) {
-        boolean wasLoggedIn = hasSession;
-        hasSession = hasToken;
-        if (hasToken) {
-            if (!wasLoggedIn) {
-                failures = 0;
-                parkedRounds = 0;
-            }
-            launchConnectionLoop();
+    private <T> Flowable<T> currentPublications(
+            @NonNull Flowable<EpochPublication<T>> publications) {
+        return publications
+                .observeOn(observerDeliveryScheduler)
+                .filter(this::isCurrentAtDelivery)
+                .map(publication -> publication.value);
+    }
+
+    private <T> Flowable<T> currentAttemptPublications(
+            @NonNull Flowable<EpochPublication<T>> publications) {
+        return publications
+                .observeOn(observerDeliveryScheduler)
+                .filter(this::isCurrentAttemptAtDelivery)
+                .map(publication -> publication.value);
+    }
+
+    /** Re-checks the stamped session/attempt immediately before downstream observers run. */
+    private boolean isCurrentAtDelivery(@NonNull EpochPublication<?> publication) {
+        if (publication.sessionEpoch == NO_EPOCH) {
+            return true;
+        }
+        if (publication.attemptId == NO_ATTEMPT) {
+            return tokenRefresher.sessionEpoch() == publication.sessionEpoch;
+        }
+        return tokenRefresher.isSessionCurrent(publication.sessionEpoch)
+                && activeConnectionAttemptId == publication.attemptId;
+    }
+
+    private boolean isCurrentAttemptAtDelivery(@NonNull EpochPublication<?> publication) {
+        return publication.sessionEpoch != NO_EPOCH
+                && publication.attemptId != NO_ATTEMPT
+                && tokenRefresher.isSessionCurrent(publication.sessionEpoch)
+                && activeConnectionAttemptId == publication.attemptId;
+    }
+
+    private void publishState(
+            @NonNull StompClient.State value, long sessionEpoch, long attemptId) {
+        state.onNext(new EpochPublication<>(sessionEpoch, attemptId, value));
+    }
+
+    private void publishOpenState(boolean value, long sessionEpoch, long attemptId) {
+        isOpen.onNext(new EpochPublication<>(sessionEpoch, attemptId, value));
+    }
+
+    private void publishResyncRequest(long sessionEpoch, long attemptId) {
+        resyncRequests.onNext(new EpochPublication<>(sessionEpoch, attemptId, new Object()));
+    }
+
+    private void applySessionSignals() {
+        if (!tokensPresent) {
+            tearDownLoggedOutSession();
             return;
         }
-        synchronized (this) { attemptActive = false; }
+        if (!sessionAdmitted) {
+            closeForAdmissionBoundary();
+            return;
+        }
+        boolean wasAdmitted = hasSession;
+        hasSession = true;
+        if (!wasAdmitted) {
+            failures = 0;
+            parkedRounds = 0;
+        }
+        launchConnectionLoop();
+    }
+
+    private void tearDownLoggedOutSession() {
+        hasSession = false;
+        synchronized (this) {
+            attemptActive = false;
+        }
+        authRecovery.set(Disposable.empty());
         wantedSubscriptions.clear();
         connection.set(Disposable.empty());
         parkedWake.set(Disposable.empty());
         stompClient.close();
-        isOpen.onNext(false);
-        state.onNext(new StompClient.State.Closed(NORMAL_CODE, "logged out"));
+        long sessionEpoch = tokenRefresher.sessionEpoch();
+        publishOpenState(false, sessionEpoch, NO_ATTEMPT);
+        publishState(new StompClient.State.Closed(NORMAL_CODE, "logged out"),
+                sessionEpoch, NO_ATTEMPT);
     }
 
-    /** Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer. */
-    private void launchConnectionLoop() {
+    /** Closes the socket when admission closes while refresh bytes may still exist. */
+    private void closeForAdmissionBoundary() {
+        hasSession = tokensPresent;
         synchronized (this) {
-            if (!hasSession || isCurrentlyOpen() || attemptActive) return;
+            attemptActive = false;
+        }
+        authRecovery.set(Disposable.empty());
+        connection.set(Disposable.empty());
+        parkedWake.set(Disposable.empty());
+        stompClient.close();
+        publishOpenState(false, tokenRefresher.sessionEpoch(), NO_ATTEMPT);
+    }
+
+    /**
+     * Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer.
+     * A new establishment retires the prior epoch's socket before checking the open state.
+     */
+    private void launchConnectionLoop() {
+        retirePriorSessionEpoch();
+        synchronized (this) {
+            if (!hasSession || !sessionAdmitted || !tokensPresent || isCurrentlyOpen() || attemptActive) {
+                return;
+            }
+            long epoch = tokenRefresher.sessionEpoch();
+            if (!tokenRefresher.isSessionCurrent(epoch)) {
+                return;
+            }
             attemptActive = true;
         }
         connectOnce();
+    }
+
+    /** Cancels an open or pending socket whose bearer belongs to the previous account session. */
+    private void retirePriorSessionEpoch() {
+        long currentEpoch = tokenRefresher.sessionEpoch();
+        synchronized (this) {
+            if (activeAttemptSessionEpoch < 0L || activeAttemptSessionEpoch == currentEpoch) {
+                return;
+            }
+            activeAttemptSessionEpoch = -1L;
+            attemptActive = false;
+        }
+        authRecovery.set(Disposable.empty());
+        connection.set(Disposable.empty());
+        parkedWake.set(Disposable.empty());
+        stompClient.close();
+        publishOpenState(false, currentEpoch, NO_ATTEMPT);
     }
 
     /** Starts the loop if needed and wakes it after retry-budget exhaustion. */
@@ -245,53 +413,122 @@ public final class RealtimeSession {
 
     public void dispose() {
         hasSession = false;
-        synchronized (this) { attemptActive = false; }
+        tokensPresent = false;
+        sessionAdmitted = false;
+        synchronized (this) {
+            attemptActive = false;
+        }
+        authRecovery.dispose();
         subscriptions.dispose();
         connection.dispose();
         parkedWake.dispose();
         stompClient.close();
-        isOpen.onNext(false);
+        publishOpenState(false, tokenRefresher.sessionEpoch(), NO_ATTEMPT);
     }
 
     private void connectOnce() {
+        final long sessionEpoch = tokenRefresher.sessionEpoch();
+        final long attemptId;
+        synchronized (this) {
+            if (!tokenRefresher.isSessionCurrent(sessionEpoch)) {
+                attemptActive = false;
+                return;
+            }
+            attemptId = connectionAttemptSeq.incrementAndGet();
+            activeConnectionAttemptId = attemptId;
+            activeAttemptSessionEpoch = sessionEpoch;
+        }
         SerialDisposable attemptHolder = new SerialDisposable();
         connection.set(attemptHolder);
+        authRecovery.set(Disposable.empty());
         authFailurePending = false;
         Flowable<StompClient.State> prepared = tokenStore.readTokens()
                 .flatMapPublisher(tokens -> {
-                    attemptAccessToken = tokens.getAccessToken();
-                    if (!tokens.isAccessExpired()) return stompClient.connect();
-                    return tokenRefresher.refreshOutcomeIfNeeded(tokens.getAccessToken())
+                    if (!isAttemptLive(sessionEpoch, attemptId)) {
+                        return Flowable.empty();
+                    }
+                    String storedBearer = tokens.getAccessToken();
+                    if (!tokens.isAccessExpired()) {
+                        attemptAccessToken = storedBearer;
+                        return stompClient.connect(
+                                storedBearer,
+                                action -> tokenRefresher.runIfSessionCurrent(sessionEpoch, action));
+                    }
+                    return tokenRefresher.refreshOutcomeIfNeeded(storedBearer)
                             .flatMapPublisher(outcome -> {
-                                if (outcome instanceof TokenRefreshOutcome.FreshToken) {
-                                    return stompClient.connect();
-                                }
-                                if (outcome instanceof TokenRefreshOutcome.Rejected) {
-                                    onTokenPresence(false);
-                                    return Flowable.empty();
-                                }
-                                return Flowable.just(new StompClient.State.Failed(
-                                        StompClient.REASON_OFFLINE));
+                                AtomicReference<Flowable<StompClient.State>> next =
+                                        new AtomicReference<>(Flowable.empty());
+                                runIfAttemptLive(sessionEpoch, attemptId, () -> {
+                                    if (outcome instanceof TokenRefreshOutcome.FreshToken fresh) {
+                                        String rotated = fresh.getAccessToken();
+                                        attemptAccessToken = rotated;
+                                        next.set(stompClient.connect(
+                                                rotated,
+                                                action -> tokenRefresher.runIfSessionCurrent(
+                                                        sessionEpoch, action)));
+                                    } else if (outcome instanceof TokenRefreshOutcome.Rejected) {
+                                        tearDownLoggedOutSession();
+                                    } else {
+                                        next.set(Flowable.just(new StompClient.State.Failed(
+                                                StompClient.REASON_OFFLINE)));
+                                    }
+                                });
+                                return next.get();
                             });
                 })
                 .switchIfEmpty(Flowable.just(new StompClient.State.Failed(StompClient.REASON_NO_TOKEN)));
+        AtomicBoolean attemptTerminal = new AtomicBoolean();
         Disposable attempt = prepared.subscribe(
-                connectionState -> {
-                    state.onNext(connectionState);
+                connectionState -> runIfAttemptLive(sessionEpoch, attemptId, () -> {
+                    publishState(connectionState, sessionEpoch, attemptId);
                     if (connectionState instanceof StompClient.State.Open) {
                         failures = 0;
                         parkedRounds = 0;
-                        isOpen.onNext(true);
+                        publishOpenState(true, sessionEpoch, attemptId);
                         resubscribeWanted();
-                        resyncRequests.onNext(new Object());
+                        publishResyncRequest(sessionEpoch, attemptId);
                     } else {
-                        isOpen.onNext(false);
+                        publishOpenState(false, sessionEpoch, attemptId);
                         if (isAuthSuspectFailure(connectionState)) {
                             authFailurePending = true;
                         }
+                        if ((connectionState instanceof StompClient.State.Failed
+                                || connectionState instanceof StompClient.State.Closed)
+                                && attemptTerminal.compareAndSet(false, true)) {
+                            finishAttempt(sessionEpoch, attemptId);
+                        }
                     }
-                }, ignored -> finishAttempt(), this::finishAttempt);
+                }),
+                ignored -> {
+                    if (attemptTerminal.compareAndSet(false, true)) {
+                        finishAttempt(sessionEpoch, attemptId);
+                    }
+                },
+                () -> {
+                    if (attemptTerminal.compareAndSet(false, true)) {
+                        finishAttempt(sessionEpoch, attemptId);
+                    }
+                });
         attemptHolder.set(attempt);
+    }
+
+    private boolean isAttemptLive(long sessionEpoch, long attemptId) {
+        return tokenRefresher.isSessionCurrent(sessionEpoch)
+                && activeConnectionAttemptId == attemptId;
+    }
+
+    /** Serializes attempt state publication with both attempt replacement and session changes. */
+    private boolean runIfAttemptLive(long sessionEpoch, long attemptId, Runnable action) {
+        AtomicBoolean ran = new AtomicBoolean();
+        boolean sessionCurrent = tokenRefresher.runIfSessionCurrent(sessionEpoch, () -> {
+            synchronized (this) {
+                if (activeConnectionAttemptId == attemptId) {
+                    action.run();
+                    ran.set(true);
+                }
+            }
+        });
+        return sessionCurrent && ran.get();
     }
 
     /** Only explicit STOMP authentication failures trigger token recovery. */
@@ -302,52 +539,85 @@ public final class RealtimeSession {
         return failed.isAuth();
     }
 
-    private void finishAttempt() {
-        synchronized (this) { attemptActive = false; }
-        isOpen.onNext(false);
-        if (!hasSession) return;
-        if (authFailurePending) {
-            authFailurePending = false;
-            recoverFromAuthFailure();
-            return;
-        }
-        failures++;
-        if (reconnectPolicy.shouldRetry(failures)) {
-            Disposable timer = reconnectScheduler.scheduleDirect(
-                    this::launchConnectionLoop, reconnectPolicy.delayMillis(failures), TimeUnit.MILLISECONDS);
-            connection.set(timer);
-            return;
-        }
-        failures = 0;
-        parkedRounds++;
-        state.onNext(new StompClient.State.Failed(StompClient.REASON_OFFLINE));
-        long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
-        Flowable<Object> wakeSignals = Flowable.merge(
-                networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
-                rearmRequests);
-        Flowable<Object> foregroundTimer = foreground.getIsForeground()
-                .distinctUntilChanged()
-                .switchMap(isForeground -> isForeground
-                        ? Flowable.timer(delay, TimeUnit.MILLISECONDS, reconnectScheduler).map(value -> new Object())
-                        : Flowable.never());
-        Disposable wake = Flowable.merge(wakeSignals, foregroundTimer)
-                .take(1)
-                .subscribe(ignored -> launchConnectionLoop(), ignored -> { });
-        parkedWake.set(wake);
+    private void finishAttempt(long sessionEpoch, long attemptId) {
+        runIfAttemptLive(sessionEpoch, attemptId, () -> {
+            attemptActive = false;
+            if (activeConnectionAttemptId == attemptId) {
+                activeAttemptSessionEpoch = -1L;
+            }
+            publishOpenState(false, sessionEpoch, attemptId);
+            if (!hasSession || !sessionAdmitted) {
+                return;
+            }
+            if (authFailurePending) {
+                authFailurePending = false;
+                recoverFromAuthFailure(sessionEpoch, attemptId);
+                return;
+            }
+            failures++;
+            if (reconnectPolicy.shouldRetry(failures)) {
+                Disposable timer = reconnectScheduler.scheduleDirect(
+                        () -> {
+                            if (isAttemptLive(sessionEpoch, attemptId)) {
+                                launchConnectionLoop();
+                            }
+                        },
+                        reconnectPolicy.delayMillis(failures),
+                        TimeUnit.MILLISECONDS);
+                connection.set(timer);
+                return;
+            }
+            failures = 0;
+            parkedRounds++;
+            publishState(new StompClient.State.Failed(StompClient.REASON_OFFLINE),
+                    sessionEpoch, attemptId);
+            long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
+            Flowable<Object> wakeSignals = Flowable.merge(
+                    networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
+                    rearmRequests);
+            Flowable<Object> foregroundTimer = foreground.getIsForeground()
+                    .distinctUntilChanged()
+                    .switchMap(isForeground -> isForeground
+                            ? Flowable.timer(delay, TimeUnit.MILLISECONDS, reconnectScheduler)
+                                    .map(value -> new Object())
+                            : Flowable.never());
+            Disposable wake = Flowable.merge(wakeSignals, foregroundTimer)
+                    .take(1)
+                    .subscribe(
+                            ignored -> {
+                                if (isAttemptLive(sessionEpoch, attemptId)) {
+                                    launchConnectionLoop();
+                                }
+                            },
+                            ignored -> { });
+            parkedWake.set(wake);
+        });
     }
 
     /** A transient refresh failure follows the same bounded backoff as socket failures. */
-    private void recoverFromAuthFailure() {
-        if (!hasSession) return;
-        tokenRefresher.refreshOutcomeIfNeeded(attemptAccessToken)
-                .subscribe(outcome -> {
-                    if (!hasSession) return;
-                    if (outcome instanceof TokenRefreshOutcome.Rejected) {
-                        onTokenPresence(false);
+    private void recoverFromAuthFailure(long sessionEpoch, long attemptId) {
+        if (!hasSession || !sessionAdmitted) {
+            return;
+        }
+        final String failedBearer = attemptAccessToken;
+        authRecovery.set(tokenRefresher.refreshOutcomeIfNeeded(failedBearer)
+                .subscribe(outcome -> runIfAttemptLive(sessionEpoch, attemptId, () -> {
+                    if (!hasSession || !sessionAdmitted) {
                         return;
                     }
-                    finishAttempt();
-                }, ignored -> finishAttempt());
+                    if (outcome instanceof TokenRefreshOutcome.Rejected) {
+                        tearDownLoggedOutSession();
+                        return;
+                    }
+                    if (outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+                        failures = 0;
+                        parkedRounds++;
+                        publishState(new StompClient.State.Failed(StompClient.REASON_OFFLINE),
+                                sessionEpoch, attemptId);
+                        return;
+                    }
+                    finishAttempt(sessionEpoch, attemptId);
+                }), ignored -> finishAttempt(sessionEpoch, attemptId)));
     }
 
     private void resubscribeWanted() {
@@ -405,6 +675,11 @@ public final class RealtimeSession {
     }
 
     private void dispatch(@NonNull StompFrame frame) {
+        long attemptEpoch = activeAttemptSessionEpoch;
+        long attemptId = activeConnectionAttemptId;
+        if (attemptEpoch >= 0L && !tokenRefresher.isSessionCurrent(attemptEpoch)) {
+            return;
+        }
         if (!StompCommand.MESSAGE.equals(frame.getCommand())) {
             return;
         }
@@ -415,7 +690,7 @@ public final class RealtimeSession {
                 stompClient.subscriptionIdFor(USER_ERRORS_DESTINATION),
                 frame.getHeaders().get("subscription"))) {
             SendErrorDto error = parse(sendErrorAdapter, frame.getBody());
-            events.onNext(
+            publishEvent(attemptEpoch, attemptId,
                     new ChatEvent.SendRejected(
                             error == null ? null : error.getCode(),
                             error == null ? null : error.getClientMessageId()));
@@ -426,7 +701,11 @@ public final class RealtimeSession {
         if (envelope == null) {
             return;
         }
-        events.onNext(toChatEvent(envelope));
+        publishEvent(attemptEpoch, attemptId, toChatEvent(envelope));
+    }
+
+    private void publishEvent(long sessionEpoch, long attemptId, @NonNull ChatEvent event) {
+        events.onNext(new EpochPublication<>(sessionEpoch, attemptId, event));
     }
 
     @NonNull
@@ -554,5 +833,17 @@ public final class RealtimeSession {
     @NonNull
     public static String topicDestination(@NonNull String conversationId) {
         return TOPIC_PREFIX + conversationId;
+    }
+
+    private static final class EpochPublication<T> {
+        private final long sessionEpoch;
+        private final long attemptId;
+        @NonNull private final T value;
+
+        private EpochPublication(long sessionEpoch, long attemptId, @NonNull T value) {
+            this.sessionEpoch = sessionEpoch;
+            this.attemptId = attemptId;
+            this.value = value;
+        }
     }
 }

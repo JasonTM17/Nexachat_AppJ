@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
+import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AuthResponse;
@@ -30,14 +31,53 @@ public final class AuthViewModel extends ViewModel {
     public static final int MIN_PASSWORD_LENGTH = 8;
 
     private final AuthRepository authRepository;
+    private final GoogleSignInFlow googleSignInFlow;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
     private final OneShotLiveData<Event> events = new OneShotLiveData<>();
     private UiState currentState = mutableUiState.getValue();
 
     @Inject
-    public AuthViewModel(AuthRepository authRepository) {
+    public AuthViewModel(AuthRepository authRepository, GoogleSignInFlow googleSignInFlow) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
+        this.googleSignInFlow = Objects.requireNonNull(googleSignInFlow, "googleSignInFlow");
+    }
+
+    /** True when the build carries a Google web client ID; otherwise the button stays hidden. */
+    public boolean isGoogleSignInAvailable() {
+        return googleSignInFlow.isConfigured();
+    }
+
+    /**
+     * Runs nonce -> Credential Manager -> server exchange. The Activity is used
+     * only for the Credential Manager call and is never retained.
+     */
+    public void googleSignIn(@NonNull android.content.Context activity) {
+        if (currentState().getLoading() || !googleSignInFlow.isConfigured()) {
+            return;
+        }
+        updateState(state -> state.withLoading(true, null));
+        disposables.add(googleSignInFlow.signIn(activity)
+                .subscribeOn(Schedulers.io())
+                .subscribe(
+                        this::finishGoogleSignIn,
+                        error -> updateState(state -> state.withLoading(
+                                false, new ApiError.Network(error.getMessage())))));
+    }
+
+    private void finishGoogleSignIn(Result<AuthResponse> result) {
+        if (result instanceof Result.Failure<?> failure
+                && GoogleSignInFlow.CODE_CANCELLED.equals(codeOf(failure.getError()))) {
+            // Dismissing the Google sheet is not an error worth a banner.
+            updateState(state -> state.withLoading(false, null));
+            return;
+        }
+        finishSubmit(result);
+    }
+
+    @Nullable
+    private static String codeOf(ApiError error) {
+        return error instanceof ApiError.Unknown unknown ? unknown.getCode() : null;
     }
 
     public LiveData<UiState> getUiState() {

@@ -2,6 +2,8 @@ package com.nexachat.notification;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.google.GoogleServiceAccountCredentials;
+import com.nexachat.google.GoogleServiceAccountCredentialsFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -422,8 +424,8 @@ class GoogleHttpFcmGatewayTest {
                 .doesNotContain("FAKE-REDACTION-PROBE")
                 .doesNotContain("private_key");
 
-        ServiceAccountCredentials credentials =
-                ServiceAccountCredentials.load(servers.serviceAccountJson(), new ObjectMapper());
+        GoogleServiceAccountCredentials credentials =
+                GoogleServiceAccountCredentialsFactory.load(servers.serviceAccountJson(), new ObjectMapper());
         assertThat(credentials.toString())
                 .doesNotContain(PRIVATE_KEY_MARKER)
                 .doesNotContain(CLIENT_EMAIL)

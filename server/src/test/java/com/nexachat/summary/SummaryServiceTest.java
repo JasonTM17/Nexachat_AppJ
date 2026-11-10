@@ -54,6 +54,19 @@ class SummaryServiceTest {
     }
 
     @Test
+    void contentHashChangesWhenTextChangesWithoutTimestampChange() {
+        SummaryWindow original = window(conversationId, 5);
+        SummaryMessage first = original.messages().get(0);
+        SummaryMessage edited = new SummaryMessage(first.id(), first.seq(), first.senderId(), first.senderName(),
+                "Edited message content", first.createdAt(), first.editedAt());
+        SummaryWindow changed = new SummaryWindow(conversationId, 0, 0,
+                List.of(edited, original.messages().get(1), original.messages().get(2),
+                        original.messages().get(3), original.messages().get(4)));
+
+        assertThat(SummaryService.contentHash(original)).isNotEqualTo(SummaryService.contentHash(changed));
+    }
+
+    @Test
     void tooFewUsableMessagesReturnsTypedDomainErrorBeforeProviderSelection() {
         SummaryWindow shortWindow = window(conversationId, 4);
         SummaryRequest request = request(false);
