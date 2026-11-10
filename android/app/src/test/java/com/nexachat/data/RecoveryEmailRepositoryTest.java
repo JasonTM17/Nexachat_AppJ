@@ -54,6 +54,46 @@ public final class RecoveryEmailRepositoryTest {
     }
 
     @Test
+    public void requestMapsEmailInUse() {
+        RecoveryEmailRepository repository = new RecoveryEmailRepository(userApi);
+        when(userApi.requestRecoveryEmailVerification(any()))
+                .thenReturn(errorCall(409, "{\"error\":{\"code\":\"EMAIL_ALREADY_IN_USE\"}}"));
+
+        Result<Unit> result = repository.requestVerificationCode("a@b.c").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(
+                ApiError.EmailAlreadyInUse.INSTANCE,
+                ((Result.Failure<?>) result).getError());
+    }
+
+    @Test
+    public void requestMapsValidationFailedToRecoveryEmailInvalid() {
+        RecoveryEmailRepository repository = new RecoveryEmailRepository(userApi);
+        when(userApi.requestRecoveryEmailVerification(any()))
+                .thenReturn(errorCall(400, "{\"error\":{\"code\":\"VALIDATION_FAILED\"}}"));
+
+        Result<Unit> result = repository.requestVerificationCode("a@b.c").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(
+                ApiError.RecoveryEmailInvalid.INSTANCE,
+                ((Result.Failure<?>) result).getError());
+    }
+
+    @Test
+    public void bare503DoesNotMapToMailUnavailable() {
+        RecoveryEmailRepository repository = new RecoveryEmailRepository(userApi);
+        when(userApi.requestRecoveryEmailVerification(any()))
+                .thenReturn(errorCall(503, "{}"));
+
+        Result<Unit> result = repository.requestVerificationCode("a@b.c").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertTrue(((Result.Failure<?>) result).getError() instanceof ApiError.Unknown);
+    }
+
+    @Test
     public void requestMapsMailUnavailable() {
         RecoveryEmailRepository repository = new RecoveryEmailRepository(userApi);
         when(userApi.requestRecoveryEmailVerification(any()))

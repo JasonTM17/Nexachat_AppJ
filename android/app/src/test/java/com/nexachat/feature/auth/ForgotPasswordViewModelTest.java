@@ -7,6 +7,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.common.Unit;
 import com.nexachat.data.PasswordResetRepository;
+import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -16,7 +17,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -43,6 +43,7 @@ public final class ForgotPasswordViewModelTest {
     @Before
     public void setUp() {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
+        RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
         repository = mock(PasswordResetRepository.class);
         clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
         SavedStateHandle handle = new SavedStateHandle();
@@ -52,6 +53,7 @@ public final class ForgotPasswordViewModelTest {
     @After
     public void tearDown() {
         RxJavaPlugins.reset();
+        RxAndroidPlugins.reset();
     }
 
     @Test
@@ -117,6 +119,64 @@ public final class ForgotPasswordViewModelTest {
         assertTrue(viewModel.getUiState().getValue().getResendSecondsRemaining() > 0);
         viewModel.resendCode();
         verify(repository, times(1)).requestResetCode(anyString());
+    }
+
+    @Test
+    public void submitShowsMismatchWhileButtonStaysEnabledForCompleteOtp() {
+        when(repository.requestResetCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        viewModel.onPhoneChanged("+84912345678");
+        viewModel.sendCode();
+        viewModel.onOtpChanged("123456");
+        viewModel.onNewPasswordChanged("newpass12");
+        viewModel.onConfirmPasswordChanged("newpass13");
+        viewModel.submitReset();
+        ForgotPasswordViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isConfirmMismatch());
+        verify(repository, never()).confirmReset(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void submitRejectsTooLongPasswordLocally() {
+        when(repository.requestResetCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        viewModel.onPhoneChanged("+84912345678");
+        viewModel.sendCode();
+        viewModel.onOtpChanged("123456");
+        String tooLong = "é".repeat(25);
+        viewModel.onNewPasswordChanged(tooLong);
+        viewModel.onConfirmPasswordChanged(tooLong);
+        viewModel.submitReset();
+        assertTrue(viewModel.getUiState().getValue().isPasswordTooLong());
+        verify(repository, never()).confirmReset(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void resendIgnoredWhileSubmitting() {
+        when(repository.requestResetCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(repository.confirmReset(anyString(), anyString(), anyString()))
+                .thenReturn(Single.never());
+        viewModel.onPhoneChanged("+84912345678");
+        viewModel.sendCode();
+        viewModel.onOtpChanged("123456");
+        viewModel.onNewPasswordChanged("newpass12");
+        viewModel.onConfirmPasswordChanged("newpass12");
+        viewModel.submitReset();
+        clock.advanceSeconds(ForgotPasswordViewModel.RESEND_COOLDOWN_SECONDS + 1L);
+        viewModel.resendCode();
+        verify(repository, times(1)).requestResetCode(anyString());
+    }
+
+    @Test
+    public void secretsAreNotWrittenToSavedStateHandle() {
+        SavedStateHandle handle = new SavedStateHandle();
+        ForgotPasswordViewModel local = new ForgotPasswordViewModel(repository, handle, clock);
+        local.onOtpChanged("123456");
+        local.onNewPasswordChanged("secret-pass");
+        local.onConfirmPasswordChanged("secret-pass");
+        assertFalse(handle.keys().stream().anyMatch(
+                key -> key.contains("otp") || key.contains("password")));
     }
 
     @Test

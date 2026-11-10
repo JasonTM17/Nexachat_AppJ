@@ -64,5 +64,16 @@
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_add"
             app:cornerRadius="12dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/recoveryEmailRetry"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/action_retry"
+            android:visibility="gone"
+            app:cornerRadius="12dp" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

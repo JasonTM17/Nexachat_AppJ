@@ -27,9 +27,6 @@ public final class ForgotPasswordViewModel extends ViewModel {
     public static final int RESEND_COOLDOWN_SECONDS = 60;
 
     private static final String KEY_PHONE = "forgot_phone";
-    private static final String KEY_OTP = "forgot_otp";
-    private static final String KEY_NEW_PASSWORD = "forgot_new_password";
-    private static final String KEY_CONFIRM_PASSWORD = "forgot_confirm_password";
     private static final String KEY_CODE_REQUESTED = "forgot_code_requested";
     private static final String KEY_RESEND_UNTIL_MS = "forgot_resend_until_ms";
 
@@ -63,15 +60,9 @@ public final class ForgotPasswordViewModel extends ViewModel {
             savedState.set(KEY_PHONE, storedPhone);
         }
         final String initialPhone = storedPhone == null ? "" : storedPhone;
-        String otp = savedState.get(KEY_OTP);
-        String newPassword = savedState.get(KEY_NEW_PASSWORD);
-        String confirm = savedState.get(KEY_CONFIRM_PASSWORD);
         Boolean requested = savedState.get(KEY_CODE_REQUESTED);
         updateState(state -> state
                 .withPhone(initialPhone)
-                .withOtp(otp == null ? "" : otp)
-                .withNewPassword(newPassword == null ? "" : newPassword)
-                .withConfirmPassword(confirm == null ? "" : confirm)
                 .withCodeRequested(requested != null && requested));
         Long resendUntil = savedState.get(KEY_RESEND_UNTIL_MS);
         if (resendUntil != null) {
@@ -141,7 +132,6 @@ public final class ForgotPasswordViewModel extends ViewModel {
 
     public void onOtpChanged(@Nullable String raw) {
         String sanitized = PasswordResetOtpSanitizer.sanitize(raw == null ? "" : raw);
-        savedState.set(KEY_OTP, sanitized);
         updateState(state -> state
                 .withOtp(sanitized)
                 .withCodeError(false)
@@ -150,37 +140,58 @@ public final class ForgotPasswordViewModel extends ViewModel {
 
     public void onNewPasswordChanged(@Nullable String raw) {
         String next = raw == null ? "" : raw;
-        savedState.set(KEY_NEW_PASSWORD, next);
         updateState(state -> state
                 .withNewPassword(next)
                 .withPasswordInvalid(false)
+                .withPasswordTooLong(false)
                 .withConfirmMismatch(false)
                 .withError(null));
     }
 
     public void onConfirmPasswordChanged(@Nullable String raw) {
         String next = raw == null ? "" : raw;
-        savedState.set(KEY_CONFIRM_PASSWORD, next);
         updateState(state -> state
                 .withConfirmPassword(next)
                 .withConfirmMismatch(false)
                 .withError(null));
     }
 
+    public void changePhoneEntry() {
+        stopTicker();
+        savedState.set(KEY_CODE_REQUESTED, false);
+        savedState.remove(KEY_RESEND_UNTIL_MS);
+        updateState(state -> state
+                .withCodeRequested(false)
+                .withOtp("")
+                .withNewPassword("")
+                .withConfirmPassword("")
+                .withCodeError(false)
+                .withPasswordInvalid(false)
+                .withPasswordTooLong(false)
+                .withConfirmMismatch(false)
+                .withSending(false)
+                .withResending(false)
+                .withSubmitting(false)
+                .withResendSecondsRemaining(0)
+                .withError(null));
+    }
+
     public void submitReset() {
         UiState state = currentState();
-        if (state.isSubmitting() || !state.isCodeRequested()) {
+        if (state.isSubmitting() || state.isResending() || !state.isCodeRequested()) {
             return;
         }
         if (!PasswordResetOtpSanitizer.isComplete(state.getOtp())) {
             return;
         }
-        boolean passwordInvalid = !PasswordPolicyValidator.isAcceptable(state.getNewPassword());
+        boolean passwordInvalid = PasswordPolicyValidator.isTooShort(state.getNewPassword());
+        boolean passwordTooLong = PasswordPolicyValidator.isTooLong(state.getNewPassword());
         boolean mismatch = !AuthFieldValidators.passwordsMatch(
                 state.getNewPassword(), state.getConfirmPassword());
-        if (passwordInvalid || mismatch) {
+        if (passwordInvalid || passwordTooLong || mismatch) {
             updateState(current -> current
                     .withPasswordInvalid(passwordInvalid)
+                    .withPasswordTooLong(passwordTooLong)
                     .withConfirmMismatch(mismatch));
             return;
         }
@@ -189,6 +200,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
                 .withCodeError(false)
                 .withError(null)
                 .withPasswordInvalid(false)
+                .withPasswordTooLong(false)
                 .withConfirmMismatch(false));
         disposables.add(repository.confirmReset(
                         state.getPhone(), state.getOtp(), state.getNewPassword())
@@ -214,6 +226,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
         UiState state = currentState();
         if (!state.isCodeRequested()
                 || state.isResending()
+                || state.isSubmitting()
                 || state.getResendSecondsRemaining() > 0) {
             return;
         }
@@ -310,6 +323,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
         private final boolean codeRequested;
         private final boolean phoneInvalid;
         private final boolean passwordInvalid;
+        private final boolean passwordTooLong;
         private final boolean confirmMismatch;
         private final boolean codeError;
         private final boolean sending;
@@ -326,6 +340,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
             codeRequested = false;
             phoneInvalid = false;
             passwordInvalid = false;
+            passwordTooLong = false;
             confirmMismatch = false;
             codeError = false;
             sending = false;
@@ -343,6 +358,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
                 boolean codeRequested,
                 boolean phoneInvalid,
                 boolean passwordInvalid,
+                boolean passwordTooLong,
                 boolean confirmMismatch,
                 boolean codeError,
                 boolean sending,
@@ -357,6 +373,7 @@ public final class ForgotPasswordViewModel extends ViewModel {
             this.codeRequested = codeRequested;
             this.phoneInvalid = phoneInvalid;
             this.passwordInvalid = passwordInvalid;
+            this.passwordTooLong = passwordTooLong;
             this.confirmMismatch = confirmMismatch;
             this.codeError = codeError;
             this.sending = sending;
@@ -392,6 +409,10 @@ public final class ForgotPasswordViewModel extends ViewModel {
 
         public boolean isPasswordInvalid() {
             return passwordInvalid;
+        }
+
+        public boolean isPasswordTooLong() {
+            return passwordTooLong;
         }
 
         public boolean isConfirmMismatch() {
@@ -430,98 +451,105 @@ public final class ForgotPasswordViewModel extends ViewModel {
         public UiState withOtp(String value) {
             return new UiState(
                     phone, value, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withNewPassword(String value) {
             return new UiState(
                     phone, otp, value, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withConfirmPassword(String value) {
             return new UiState(
                     phone, otp, newPassword, value, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withCodeRequested(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, value, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withPhoneInvalid(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, value,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withPasswordInvalid(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    value, confirmMismatch, codeError, sending, resending, submitting,
+                    value, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
+                    resendSecondsRemaining, error);
+        }
+
+        public UiState withPasswordTooLong(boolean value) {
+            return new UiState(
+                    phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
+                    passwordInvalid, value, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withConfirmMismatch(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, value, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, value, codeError, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withCodeError(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, value, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, value, sending, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withSending(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, value, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, value, resending, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withResending(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, value, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, value, submitting,
                     resendSecondsRemaining, error);
         }
 
         public UiState withSubmitting(boolean value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, value,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, value,
                     resendSecondsRemaining, error);
         }
 
         public UiState withResendSecondsRemaining(int value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     value, error);
         }
 
         public UiState withError(@Nullable ApiError value) {
             return new UiState(
                     phone, otp, newPassword, confirmPassword, codeRequested, phoneInvalid,
-                    passwordInvalid, confirmMismatch, codeError, sending, resending, submitting,
+                    passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending, submitting,
                     resendSecondsRemaining, value);
         }
 
         private UiState copy(java.util.function.Function<String, String> phoneMapper) {
             return new UiState(
                     phoneMapper.apply(phone), otp, newPassword, confirmPassword, codeRequested,
-                    phoneInvalid, passwordInvalid, confirmMismatch, codeError, sending, resending,
+                    phoneInvalid, passwordInvalid, passwordTooLong, confirmMismatch, codeError, sending, resending,
                     submitting, resendSecondsRemaining, error);
         }
     }

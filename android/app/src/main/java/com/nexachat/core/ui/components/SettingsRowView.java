@@ -71,6 +71,11 @@ public class SettingsRowView extends LinearLayout {
             if (value == null || value.length() == 0) {
                 valueView.setVisibility(GONE);
             } else {
+                valueView.setMaxWidth(
+                        (int) TypedValue.applyDimension(
+                                TypedValue.COMPLEX_UNIT_DIP, 140, getResources().getDisplayMetrics()));
+                valueView.setMaxLines(1);
+                valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 valueView.setText(value);
                 valueView.setVisibility(VISIBLE);
             }

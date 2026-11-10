@@ -105,11 +105,14 @@ public final class RecoveryEmailRepository {
     }
 
     private static ApiError mapRecoveryError(int status, String code) {
-        if (status == 503 && "MAIL_UNAVAILABLE".equals(code)) {
-            return ApiError.MailUnavailable.INSTANCE;
-        }
         if ("MAIL_UNAVAILABLE".equals(code)) {
             return ApiError.MailUnavailable.INSTANCE;
+        }
+        if ("EMAIL_ALREADY_IN_USE".equals(code)) {
+            return ApiError.EmailAlreadyInUse.INSTANCE;
+        }
+        if ("VALIDATION_FAILED".equals(code)) {
+            return ApiError.RecoveryEmailInvalid.INSTANCE;
         }
         if ("INVALID_OR_EXPIRED_CODE".equals(code)) {
             return ApiError.InvalidOrExpiredCode.INSTANCE;

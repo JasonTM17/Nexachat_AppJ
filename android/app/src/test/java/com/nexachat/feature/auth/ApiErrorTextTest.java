@@ -16,6 +16,15 @@ public final class ApiErrorTextTest {
         assertEquals(R.string.error_phone_exists, ApiErrorText.resource(ApiError.PhoneExists.INSTANCE));
         assertEquals(R.string.error_rate_limited, ApiErrorText.resource(ApiError.RateLimited.INSTANCE));
         assertEquals(R.string.error_network, ApiErrorText.resource(new ApiError.Network()));
+        assertEquals(
+                R.string.recovery_email_mail_unavailable,
+                ApiErrorText.resource(ApiError.MailUnavailable.INSTANCE));
+        assertEquals(
+                R.string.recovery_email_in_use,
+                ApiErrorText.resource(ApiError.EmailAlreadyInUse.INSTANCE));
+        assertEquals(
+                R.string.recovery_email_invalid,
+                ApiErrorText.resource(ApiError.RecoveryEmailInvalid.INSTANCE));
     }
 
     @Test

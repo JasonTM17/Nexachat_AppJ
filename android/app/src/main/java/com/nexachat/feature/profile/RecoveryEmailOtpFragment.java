@@ -21,6 +21,7 @@ import dagger.hilt.android.AndroidEntryPoint;
 public final class RecoveryEmailOtpFragment extends Fragment {
     private FragmentRecoveryEmailOtpBinding binding;
     private RecoveryEmailOtpViewModel viewModel;
+    private boolean rendering;
     private static final String STATE_NOTED_COOLDOWN = "recovery_otp_noted_cooldown";
     private boolean notedInitialCooldown;
 
@@ -60,6 +61,7 @@ public final class RecoveryEmailOtpFragment extends Fragment {
     }
 
     private void render(RecoveryEmailOtpViewModel.UiState state) {
+        rendering = true;
         if (!state.getEmail().isEmpty()) {
             binding.recoveryOtpTarget.setText(
                     getString(R.string.recovery_email_otp_sent_to, state.getEmail()));
@@ -72,9 +74,9 @@ public final class RecoveryEmailOtpFragment extends Fragment {
                 ? getString(R.string.recovery_email_code_invalid)
                 : null);
         boolean complete = RecoveryEmailOtpSanitizer.isComplete(state.getOtp());
-        binding.recoveryOtpVerify.setEnabled(complete && !state.isVerifying());
+        binding.recoveryOtpVerify.setEnabled(complete && !state.isVerifying() && !state.isResending());
         binding.recoveryOtpResend.setEnabled(
-                !state.isResending() && state.getResendSecondsRemaining() <= 0);
+                !state.isResending() && !state.isVerifying() && state.getResendSecondsRemaining() <= 0);
         if (state.getResendSecondsRemaining() > 0) {
             binding.recoveryOtpResend.setText(getString(
                     R.string.recovery_email_resend_countdown,
@@ -97,6 +99,7 @@ public final class RecoveryEmailOtpFragment extends Fragment {
                     RecoveryEmailManageViewModel.RESULT_PROFILE_RELOAD, result);
             NavHostFragment.findNavController(this).popBackStack(R.id.profileFragment, false);
         }
+        rendering = false;
     }
 
     private final class OtpTextWatcher implements TextWatcher {
@@ -108,7 +111,7 @@ public final class RecoveryEmailOtpFragment extends Fragment {
 
         @Override
         public void onTextChanged(CharSequence s, int start, int before, int count) {
-            if (selfChange) {
+            if (selfChange || rendering) {
                 return;
             }
             String sanitized = RecoveryEmailOtpSanitizer.sanitize(s.toString());

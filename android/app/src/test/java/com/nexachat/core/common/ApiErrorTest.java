@@ -38,4 +38,15 @@ public final class ApiErrorTest {
         assertEquals(503, failure.getHttpStatus());
         assertEquals(-1, new ApiError.Unknown("LOCAL_FAILURE").getHttpStatus());
     }
+
+    @Test
+    public void mailUnavailableRequiresExplicitCode() {
+        assertEquals(ApiError.MailUnavailable.INSTANCE, ApiError.from(503, "MAIL_UNAVAILABLE"));
+        assertTrue(ApiError.from(503, null) instanceof ApiError.Unknown);
+    }
+
+    @Test
+    public void mapsEmailAlreadyInUse() {
+        assertEquals(ApiError.EmailAlreadyInUse.INSTANCE, ApiError.from(409, "EMAIL_ALREADY_IN_USE"));
+    }
 }

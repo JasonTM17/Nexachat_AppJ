@@ -24,7 +24,6 @@ import javax.inject.Inject;
 public final class RecoveryEmailOtpViewModel extends ViewModel {
 
     static final String ARG_EMAIL = "email";
-    private static final String KEY_OTP = "recovery_otp";
     private static final String KEY_RESEND_UNTIL_MS = "recovery_resend_until_ms";
     public static final int RESEND_COOLDOWN_SECONDS = 60;
 
@@ -51,11 +50,8 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
         this.savedState = Objects.requireNonNull(savedState);
         this.clock = Objects.requireNonNull(clock);
         String email = savedState.get(ARG_EMAIL);
-        String otp = savedState.get(KEY_OTP);
         Long resendUntil = savedState.get(KEY_RESEND_UNTIL_MS);
-        updateState(state -> state
-                .withEmail(email == null ? "" : email)
-                .withOtp(otp == null ? "" : otp));
+        updateState(state -> state.withEmail(email == null ? "" : email));
         if (resendUntil != null) {
             updateResendSeconds(resendUntil);
         }
@@ -68,7 +64,6 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
 
     public void onOtpChanged(@Nullable String raw) {
         String sanitized = RecoveryEmailOtpSanitizer.sanitize(raw == null ? "" : raw);
-        savedState.set(KEY_OTP, sanitized);
         updateState(state -> state
                 .withOtp(sanitized)
                 .withCodeError(false)
@@ -77,7 +72,8 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
 
     public void verify() {
         UiState state = currentState();
-        if (state.isVerifying() || !RecoveryEmailOtpSanitizer.isComplete(state.getOtp())) {
+        if (state.isVerifying() || state.isResending()
+                || !RecoveryEmailOtpSanitizer.isComplete(state.getOtp())) {
             return;
         }
         updateState(current -> current.withVerifying(true).withCodeError(false).withError(null));
@@ -105,7 +101,7 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
 
     public void resendCode() {
         UiState state = currentState();
-        if (state.isResending() || state.getResendSecondsRemaining() > 0) {
+        if (state.isResending() || state.isVerifying() || state.getResendSecondsRemaining() > 0) {
             return;
         }
         String email = state.getEmail();

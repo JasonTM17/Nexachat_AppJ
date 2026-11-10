@@ -64,6 +64,7 @@ public final class RecoveryEmailFormViewModel extends ViewModel {
             updateState(current -> current.withEmailInvalid(true));
             return;
         }
+        final String submittedEmail = email.trim().toLowerCase(Locale.ROOT);
         updateState(current -> current
                 .withSending(true)
                 .withError(null)
@@ -74,8 +75,12 @@ public final class RecoveryEmailFormViewModel extends ViewModel {
                 .subscribe(
                         result -> updateState(current -> {
                             if (result instanceof Result.Success<?>) {
+                                String currentInput = current.getEmailInput().trim().toLowerCase(Locale.ROOT);
+                                if (!submittedEmail.equals(currentInput)) {
+                                    return current.withSending(false);
+                                }
                                 return current.withSending(false)
-                                        .withPendingEmail(email.trim().toLowerCase(Locale.ROOT))
+                                        .withPendingEmail(submittedEmail)
                                         .withCodeSent(true);
                             }
                             return current.withSending(false).withError(

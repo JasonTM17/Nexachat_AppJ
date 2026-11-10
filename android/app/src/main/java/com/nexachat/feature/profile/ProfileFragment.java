@@ -70,7 +70,6 @@ public final class ProfileFragment extends Fragment {
         binding.changePassword.setOnClickListener(v -> { viewModel.openPasswordDialog(); showPasswordDialog(); });
         binding.recoveryEmailRow.setTitle(getString(R.string.recovery_email_title));
         binding.recoveryEmailRow.setLeadingIcon(R.drawable.ic_email);
-        binding.recoveryEmailRow.setContentDescription(getString(R.string.cd_recovery_email_row));
         binding.recoveryEmailRow.setOnClickListener(v -> NavHostFragment.findNavController(this)
                 .navigate(R.id.action_profile_to_recoveryEmailManage));
         getParentFragmentManager().setFragmentResultListener(
@@ -160,8 +159,13 @@ public final class ProfileFragment extends Fragment {
             binding.profilePhone.setText(user.getPhone());
             if (user.hasVerifiedRecoveryEmail()) {
                 binding.recoveryEmailRow.setTrailingValue(user.getEmail());
+                binding.recoveryEmailRow.setContentDescription(
+                        getString(R.string.recovery_email_title) + ", " + user.getEmail());
             } else {
                 binding.recoveryEmailRow.setTrailingValue(getString(R.string.recovery_email_add));
+                binding.recoveryEmailRow.setContentDescription(
+                        getString(R.string.recovery_email_title) + ", "
+                                + getString(R.string.recovery_email_add));
             }
         }
         binding.profileAvatar.setContentDescription(getString(R.string.profile_change_avatar));

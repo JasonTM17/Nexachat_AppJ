@@ -25,4 +25,14 @@ public final class PasswordPolicyValidator {
     public static boolean isTooShort(@NonNull String password) {
         return password.length() < MIN_LENGTH;
     }
+
+    public static boolean isTooLong(@NonNull String password) {
+        if (password.indexOf('\0') >= 0) {
+            return true;
+        }
+        if (password.length() < MIN_LENGTH) {
+            return false;
+        }
+        return password.getBytes(StandardCharsets.UTF_8).length > MAX_UTF8_BYTES;
+    }
 }

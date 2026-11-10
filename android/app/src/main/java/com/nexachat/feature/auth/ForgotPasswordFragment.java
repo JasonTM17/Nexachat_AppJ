@@ -47,6 +47,7 @@ public final class ForgotPasswordFragment extends Fragment {
         binding.forgotSendCode.setOnClickListener(v -> viewModel.sendCode());
         binding.forgotSubmit.setOnClickListener(v -> viewModel.submitReset());
         binding.forgotResend.setOnClickListener(v -> viewModel.resendCode());
+        binding.forgotChangePhone.setOnClickListener(v -> viewModel.changePhoneEntry());
         binding.forgotConfirmPasswordInput.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_DONE) {
                 viewModel.submitReset();
@@ -100,6 +101,11 @@ public final class ForgotPasswordFragment extends Fragment {
         binding.forgotSendCode.setEnabled(!state.isSending());
         binding.forgotNeutralMessage.setVisibility(afterSend ? View.VISIBLE : View.GONE);
         binding.forgotResetSection.setVisibility(afterSend ? View.VISIBLE : View.GONE);
+        binding.forgotChangePhone.setVisibility(afterSend ? View.VISIBLE : View.GONE);
+        if (afterSend && !rendering) {
+            binding.forgotNeutralMessage.announceForAccessibility(
+                    getString(R.string.forgot_password_neutral_sent));
+        }
 
         if (afterSend) {
             if (!binding.forgotOtpInput.getText().toString().equals(state.getOtp())) {
@@ -116,19 +122,21 @@ public final class ForgotPasswordFragment extends Fragment {
                     .equals(state.getConfirmPassword())) {
                 binding.forgotConfirmPasswordInput.setText(state.getConfirmPassword());
             }
-            binding.forgotNewPasswordLayout.setError(state.isPasswordInvalid()
-                    ? getString(R.string.error_password_short)
-                    : null);
+            binding.forgotNewPasswordLayout.setError(state.isPasswordTooLong()
+                    ? getString(R.string.forgot_password_password_too_long)
+                    : state.isPasswordInvalid()
+                            ? getString(R.string.error_password_short)
+                            : null);
             binding.forgotConfirmPasswordLayout.setError(state.isConfirmMismatch()
                     ? getString(R.string.error_password_mismatch)
                     : null);
-            boolean ready = PasswordResetOtpSanitizer.isComplete(state.getOtp())
-                    && PasswordPolicyValidator.isAcceptable(state.getNewPassword())
-                    && AuthFieldValidators.passwordsMatch(
-                            state.getNewPassword(), state.getConfirmPassword());
-            binding.forgotSubmit.setEnabled(ready && !state.isSubmitting());
+            boolean canSubmit = PasswordResetOtpSanitizer.isComplete(state.getOtp());
+            binding.forgotSubmit.setEnabled(
+                    canSubmit && !state.isSubmitting() && !state.isResending());
             binding.forgotResend.setEnabled(
-                    !state.isResending() && state.getResendSecondsRemaining() <= 0);
+                    !state.isResending()
+                            && !state.isSubmitting()
+                            && state.getResendSecondsRemaining() <= 0);
             if (state.getResendSecondsRemaining() > 0) {
                 binding.forgotResend.setText(getString(
                         R.string.forgot_password_resend_countdown,

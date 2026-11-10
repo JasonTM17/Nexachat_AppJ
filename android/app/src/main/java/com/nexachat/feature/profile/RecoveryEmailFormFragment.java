@@ -21,6 +21,7 @@ import dagger.hilt.android.AndroidEntryPoint;
 public final class RecoveryEmailFormFragment extends Fragment {
     private FragmentRecoveryEmailFormBinding binding;
     private RecoveryEmailFormViewModel viewModel;
+    private boolean rendering;
 
     @Nullable
     @Override
@@ -38,13 +39,13 @@ public final class RecoveryEmailFormFragment extends Fragment {
         binding.recoveryFormToolbar.setTitle(R.string.recovery_email_title);
         binding.recoveryFormToolbar.setNavigationOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigateUp());
-        binding.recoveryFormEmailInput.addTextChangedListener(new SimpleTextWatcher(
-                value -> viewModel.onEmailChanged(value)));
+        binding.recoveryFormEmailInput.addTextChangedListener(new EmailTextWatcher());
         binding.recoveryFormSend.setOnClickListener(v -> viewModel.sendCode());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
 
     private void render(RecoveryEmailFormViewModel.UiState state) {
+        rendering = true;
         if (!binding.recoveryFormEmailInput.getText().toString().equals(state.getEmailInput())) {
             binding.recoveryFormEmailInput.setText(state.getEmailInput());
             binding.recoveryFormEmailInput.setSelection(state.getEmailInput().length());
@@ -52,6 +53,7 @@ public final class RecoveryEmailFormFragment extends Fragment {
         binding.recoveryFormEmailLayout.setError(state.isEmailInvalid()
                 ? getString(R.string.recovery_email_invalid)
                 : null);
+        binding.recoveryFormEmailInput.setEnabled(!state.isSending());
         binding.recoveryFormSend.setEnabled(!state.isSending());
         ApiError error = state.getError();
         if (error != null) {
@@ -67,6 +69,7 @@ public final class RecoveryEmailFormFragment extends Fragment {
             NavHostFragment.findNavController(this)
                     .navigate(R.id.action_recoveryEmailForm_to_recoveryEmailOtp, args);
         }
+        rendering = false;
     }
 
     @Override
@@ -75,20 +78,16 @@ public final class RecoveryEmailFormFragment extends Fragment {
         binding = null;
     }
 
-    private static final class SimpleTextWatcher implements TextWatcher {
-        private final java.util.function.Consumer<String> consumer;
-
-        SimpleTextWatcher(java.util.function.Consumer<String> consumer) {
-            this.consumer = consumer;
-        }
-
+    private final class EmailTextWatcher implements TextWatcher {
         @Override
         public void beforeTextChanged(CharSequence s, int start, int count, int after) {
         }
 
         @Override
         public void onTextChanged(CharSequence s, int start, int before, int count) {
-            consumer.accept(s.toString());
+            if (!rendering) {
+                viewModel.onEmailChanged(s.toString());
+            }
         }
 
         @Override

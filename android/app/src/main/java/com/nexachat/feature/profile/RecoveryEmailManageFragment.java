@@ -41,6 +41,7 @@ public final class RecoveryEmailManageFragment extends Fragment {
         binding.recoveryEmailChange.setOnClickListener(v -> navigateToForm());
         binding.recoveryEmailAdd.setOnClickListener(v -> navigateToForm());
         binding.recoveryEmailRemove.setOnClickListener(v -> confirmRemove());
+        binding.recoveryEmailRetry.setOnClickListener(v -> viewModel.load());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
 
@@ -60,16 +61,28 @@ public final class RecoveryEmailManageFragment extends Fragment {
 
     private void render(RecoveryEmailManageViewModel.UiState state) {
         UserDto user = state.getUser();
+        boolean loadFailed = !state.isLoading() && user == null && state.getError() != null;
         boolean verified = user != null && user.hasVerifiedRecoveryEmail();
-        binding.recoveryEmailStatus.setText(verified
-                ? getString(R.string.recovery_email_verified_status, user.getEmail())
-                : getString(R.string.recovery_email_none_status));
-        binding.recoveryEmailChange.setVisibility(verified ? View.VISIBLE : View.GONE);
-        binding.recoveryEmailRemove.setVisibility(verified ? View.VISIBLE : View.GONE);
-        binding.recoveryEmailAdd.setVisibility(verified ? View.GONE : View.VISIBLE);
+
+        if (loadFailed) {
+            binding.recoveryEmailStatus.setText(R.string.recovery_email_load_failed);
+            binding.recoveryEmailChange.setVisibility(View.GONE);
+            binding.recoveryEmailRemove.setVisibility(View.GONE);
+            binding.recoveryEmailAdd.setVisibility(View.GONE);
+            binding.recoveryEmailRetry.setVisibility(View.VISIBLE);
+        } else {
+            binding.recoveryEmailStatus.setText(verified
+                    ? getString(R.string.recovery_email_verified_status, user.getEmail())
+                    : getString(R.string.recovery_email_none_status));
+            binding.recoveryEmailChange.setVisibility(verified ? View.VISIBLE : View.GONE);
+            binding.recoveryEmailRemove.setVisibility(verified ? View.VISIBLE : View.GONE);
+            binding.recoveryEmailAdd.setVisibility(verified ? View.GONE : View.VISIBLE);
+            binding.recoveryEmailRetry.setVisibility(View.GONE);
+            binding.recoveryEmailAdd.setEnabled(!state.isLoading());
+        }
+
         binding.recoveryEmailRemove.setEnabled(!state.isRemoving());
         binding.recoveryEmailChange.setEnabled(!state.isRemoving());
-        binding.recoveryEmailAdd.setEnabled(!state.isLoading());
 
         ApiError error = state.getError();
         binding.recoveryEmailError.setVisibility(error == null ? View.GONE : View.VISIBLE);
