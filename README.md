@@ -9,7 +9,7 @@ message sending available offline.
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v13`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20` + `V22`, **WebRTC** 1-to-1 voice calls, consent-gated
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls, consent-gated
 > **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
 > Every architectural claim below links directly to its executable source and verification suite.
 
@@ -127,7 +127,7 @@ flowchart LR
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V22<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -156,10 +156,10 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V22, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
-| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
+| Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + AGP 8.9.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
 | Deploy | Multi-stage `server/Dockerfile`, `docker-compose.yml` | `API_BASE_URL` via `local.properties`/`-PapiBaseUrl` |
 
 Design system: tokens, component states and the XML layout mapping are in
@@ -173,7 +173,7 @@ Dark & Light Mode showcase frames are indexed in
 |---|---|---|
 | JDK | 21 LTS (Temurin) | `java -version`. Server requires JDK 21+ (`sourceCompatibility 21`). Android Gradle requires JDK 21+ (`android/gradle.properties`, `compileOptions VERSION_21`). |
 | Maven | 3.9+ | system `mvn` (there is no `server/mvnw` wrapper) |
-| Android SDK | minSdk 26 · targetSdk 35 | via Android Studio |
+| Android SDK | minSdk 26 · targetSdk 36 (compileSdk 36) | via Android Studio |
 | Docker | recent | PostgreSQL + app image via `docker compose` |
 
 ## Quickstart — server
@@ -250,8 +250,8 @@ The seed creates a DIRECT chat (An↔Binh), a sample group conversation, contact
 unread badges; it is re-runnable (`ON CONFLICT DO NOTHING`). The local stack runs
 entirely on LAN — no internet needed; runtime setup and backup notes are in
 [docs/operations.md](docs/operations.md). Note the debug
-build alone permits LAN cleartext — the release config blocks it
-(`app/src/debug/res/xml/network_security_config.xml`).
+build and the local-smoke variant permit LAN cleartext — release blocks it
+(`app/src/main/res/xml/network_security_config.xml`).
 
 ## Running tests
 
@@ -290,7 +290,7 @@ nexachat/
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V22   # Flyway migrations
+│  ├─ src/main/resources/db/migration/V1–V20, V22, V24   # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
 │  ├─ design/       design tokens + design-system references
@@ -330,5 +330,5 @@ Released under the [MIT License](LICENSE).
 
 NexaChat is designed and operated as a single-node real-time messaging deployment;
 architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
-cleartext debug profile, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
+cleartext debug/localSmoke profiles, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
 [docs/known-limitations.md](docs/known-limitations.md).

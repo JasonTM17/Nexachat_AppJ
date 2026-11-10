@@ -73,6 +73,8 @@ Android client can consume the API but no dedicated screen is merged into
 | V20 | `V20__group_invite_links.sql` | Group invite links, join requests and invite bans. |
 | V21 | — | Reserved for the recall-window worker; no schema change was required, so no V21 file exists. |
 | V22 | `V22__retention_cleanup_indexes.sql` | Partial indexes to keep `RetentionJobRunner` batch discovery bounded (tokens, invite links, polls, attachments, tombstones, reaction events). |
+| V23 | — | Intentionally unused/reserved; no file exists. |
+| V24 | `V24__hot_path_perf.sql` | Drops the unused `idx_conv_inbox` index; no table or column change. |
 
 ## Operational notes
 
@@ -333,7 +335,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /auth/register` | Public | `{phone, password, displayName}` — password 8–72 chars, displayName ≤60 | `201` `AuthResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
+| `POST /auth/register` | Public | `{phone, password, displayName}` — password 8+ chars and ≤72 UTF-8 bytes, no NUL; displayName ≤60 | `201` `AuthResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
 | `POST /auth/login` | Public | `{phone, password}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 |
 | `POST /auth/refresh` | Public | `{refreshToken}` | `200` `AuthResponse` (new token pair) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
@@ -343,6 +345,14 @@ Each item of `attachments` is an `AttachmentResponse` =
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: register and
 login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone).
+
+**Password limits:** register and change-password reject a secret that bcrypt cannot
+hash in full (more than 72 UTF-8 bytes, or containing NUL) with `400 VALIDATION_FAILED`;
+login treats the same input as `401 INVALID_CREDENTIALS` without comparing it to the
+account hash (it still pays one dummy bcrypt compare for timing).
+
+**Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
+`aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
 **Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
@@ -527,7 +537,7 @@ single backend node.
 
 `ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt, aiOptOut}`.
 `LabelResponse` = `{id, name, colorId, createdAt, updatedAt}`.
-`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, pinned, pinnedAt?, labels: [uuid], aiOptOut, peerPresence?{online, lastSeenAt}}`; `labels` contains only the authenticated caller's label IDs and is always an array. Null `contentSnippet` marks a deleted last message. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted; `pinnedAt` is the start of the caller's current pin (ISO-8601 UTC) and is omitted when the conversation is not pinned. Null optional values may be omitted.
+`InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, pinned, pinnedAt?, labels: [uuid], aiOptOut, peerPresence?{online, lastSeenAt}}`; `unreadCount` counts live messages with `seq > lastReadSeq` and excludes soft-deleted rows; `labels` contains only the authenticated caller's label IDs and is always an array. Null `contentSnippet` marks a deleted last message. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted; `pinnedAt` is the start of the caller's current pin (ISO-8601 UTC) and is omitted when the conversation is not pinned. Null optional values may be omitted.
 `aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.
 `MessagePageResponse` = `{items: MessageResponse[], nextBeforeSeq, hasMore}`; echo `nextBeforeSeq` as `beforeSeq` for the next older page only for `beforeSeq` history/search paging. `afterSeq` pages are oldest-first and set `nextBeforeSeq` to null.
 `MessageResponse` = `{id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId, replyToId, replyTo?, reactions?, attachments[], mentions[], mentionAll, createdAt, editedAt, deletedAt}` (`mentions` is empty and `mentionAll` false when unused; optional null fields are omitted; deleted `content` is explicit `null`).
@@ -613,11 +623,16 @@ explicit JSON `null`. `ArchiveAttachmentView` =
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /conversations/group` | Bearer | `{title, memberIds[]}` — non-blank title ≤80 chars; at least one other member after deduplication | `201` `ConversationResponse` (creator = ADMIN) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
-| `PATCH /conversations/{conversationId}` | Bearer ADMIN | `{title?, avatarUrl?}` — at least one field; empty `avatarUrl` clears it | `200` `ConversationUpdatePayload` (broadcasts `CONVERSATION_UPDATED`; title changes also post a SYSTEM message) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PATCH /conversations/{conversationId}` | Bearer ADMIN | `{title?, avatarUrl?}` — at least one field; `avatarUrl` must resolve to a relative `/api/v1/files/` path (an absolute URL on this origin is normalized); empty `avatarUrl` clears it | `200` `ConversationUpdatePayload` (broadcasts `CONVERSATION_UPDATED`; title changes also post a SYSTEM message) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/members` | Bearer ADMIN | `{userIds[]}` | `204` (SYSTEM `MEMBER_ADDED` message broadcast) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `USER_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/members/{userId}` | Bearer ADMIN | — | `204` (SYSTEM `MEMBER_REMOVED` broadcast; sole admin cannot be removed) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `VALIDATION_FAILED` 400 |
 | `POST /conversations/{conversationId}/leave` | Bearer | — | `204` (SYSTEM `MEMBER_LEFT` broadcast; sole admin blocked) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `VALIDATION_FAILED` 400 |
-| `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+| `POST /conversations/{conversationId}/avatar` | Bearer ADMIN | `multipart/form-data` field `file`; image magic bytes only, stored under `avatars/` | `200` `{avatarUrl}` (a relative `/api/v1/files/` path; broadcasts `CONVERSATION_UPDATED`) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 · `FILE_TOO_LARGE` 413 · `MIME_NOT_ALLOWED` 415 |
+
+Group `avatarUrl` values are stored only as relative `/api/v1/files/` paths: an
+absolute `http(s)` URL whose path is already under that prefix is rewritten to
+the relative form, and any other host, scheme, user-info, `..` or `\` is
+`400 VALIDATION_FAILED` (`AvatarUrlPolicy.java`).
 
 ## Group Invite Links — `/api/v1/conversations/{id}/invite-link` and `/api/v1/invite-links`
 
@@ -808,7 +823,7 @@ checked.
 | `GET /attachments/{id}/content` | Bearer member of the bound conversation (owner only while unbound) | — | `200` raw bytes, server-sniffed `Content-Type`, inline `Content-Disposition`, `X-Content-Type-Options: nosniff` | `UNAUTHORIZED` 401 · `FORBIDDEN`/`NOT_MEMBER` 403 · `ATTACHMENT_NOT_FOUND` 404 · `FILE_NOT_FOUND` 404 |
 
 `AttachmentResponse` = `{id, url, originalName, mimeType, sizeBytes, width?, height?, durationMs?, blurHash?}`. Internal owner/message/storage fields and creation time are not exposed in this DTO. `blurHash` is the optional BlurHash placeholder for image attachments; it is `null` (omitted on the wire) for non-image and legacy rows.
-Upload validation reads magic bytes, not the client-declared MIME; text types pass a UTF-8 check (`LocalStorageService`). `blurHash` is accepted only on image uploads and must be 6–64 characters from the BlurHash base83 alphabet; anything else is `400 VALIDATION_FAILED`.
+Upload validation reads magic bytes, not the client-declared MIME; text uploads (`text/plain`, `text/markdown`, `text/csv`) must decode as UTF-8, and leading HTML/SVG/XML markup is rejected as `415 MIME_NOT_ALLOWED` (`LocalStorageService`). `blurHash` is accepted only on image uploads and must be 6–64 characters from the BlurHash base83 alphabet; anything else is `400 VALIDATION_FAILED`.
 
 ISO-BMFF (`ftyp`) files are classified by their tracks, not the brand alone: Android's `MediaRecorder` writes voice notes as `.m4a` under a generic `isom`/`mp42` brand, so a brand-only check would report `video/mp4`. The sniffer walks the boxes and reads each `trak/mdia/hdlr` handler — only `soun` tracks yield `audio/mp4`, any `vide` track yields `video/mp4`. A missing, truncated, or malformed `moov` falls back to the brand (`m4a` → `audio/mp4`, `isom`/`mp41`/`mp42` → `video/mp4`, anything else is rejected). The walk is bounded (box count, no per-box allocation) and never throws on hostile boxes.
 
