@@ -11,13 +11,13 @@
         android:gravity="center_vertical"
         android:minHeight="56dp"
         android:orientation="horizontal"
-        android:paddingHorizontal="16dp"
+        android:paddingHorizontal="@dimen/space_md"
         android:paddingVertical="10dp">
 
         <com.nexachat.core.ui.components.AvatarView
             android:id="@+id/avatar"
-            android:layout_width="48dp"
-            android:layout_height="48dp" />
+            android:layout_width="@dimen/min_touch_target"
+            android:layout_height="@dimen/min_touch_target" />
 
         <TextView
             android:id="@+id/title"
@@ -42,7 +42,7 @@
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="1dp"
+        android:layout_height="@dimen/elevation_level1"
         android:layout_gravity="bottom"
         android:layout_marginStart="76dp"
         android:background="?attr/colorOutlineVariant" />
