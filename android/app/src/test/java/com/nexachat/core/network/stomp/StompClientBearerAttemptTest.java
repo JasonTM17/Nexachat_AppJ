@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -25,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -270,6 +272,89 @@ public final class StompClientBearerAttemptTest {
         inbound.assertNoValues();
         assertFalse(client.isOpen());
         attempt.cancel();
+    }
+
+    @Test
+    public void lateDisposedSetupCleanupCannotClearReplacementSocket() throws Exception {
+        TokenStore store = mock(TokenStore.class);
+        TokenRefresher refresher = new TokenRefresher(
+                store, mock(SessionEvents.class), () -> null);
+        refresher.onSessionEstablished(1L);
+
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
+        Map<Long, List<String>> sentFrames = new ConcurrentHashMap<>();
+        CountDownLatch firstFactoryEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirstFactory = new CountDownLatch(1);
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> {
+            WebSocket socket = mock(WebSocket.class);
+            List<String> attemptFrames = new CopyOnWriteArrayList<>();
+            sentFrames.put(attemptId, attemptFrames);
+            when(socket.send(anyString())).thenAnswer(invocation -> {
+                attemptFrames.add(invocation.getArgument(0));
+                return true;
+            });
+            sockets.put(attemptId, socket);
+            if (attemptId == 1L) {
+                firstFactoryEntered.countDown();
+                try {
+                    if (!releaseFirstFactory.await(5L, TimeUnit.SECONDS)) {
+                        throw new AssertionError("test did not release the first socket factory");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("first socket factory was interrupted", interrupted);
+                }
+            }
+            return socket;
+        });
+
+        TestSubscriber<StompClient.State> firstAttempt = new TestSubscriber<>();
+        AtomicReference<Throwable> setupFailure = new AtomicReference<>();
+        Thread firstSetup = new Thread(() -> {
+            try {
+                client.connect("account-a",
+                        action -> refresher.runIfSessionCurrent(1L, action)).subscribe(firstAttempt);
+            } catch (Throwable failure) {
+                setupFailure.set(failure);
+            }
+        });
+        firstSetup.start();
+        boolean firstFactoryStarted = firstFactoryEntered.await(5L, TimeUnit.SECONDS);
+        if (!firstFactoryStarted) {
+            releaseFirstFactory.countDown();
+            firstSetup.join(TimeUnit.SECONDS.toMillis(5L));
+        }
+        assertTrue(firstFactoryStarted);
+
+        firstAttempt.cancel();
+        refresher.onSessionEstablished(2L);
+        TestSubscriber<StompClient.State> secondAttempt = client.connect(
+                "account-b", action -> refresher.runIfSessionCurrent(2L, action)).test();
+        WebSocket socketB = sockets.get(2L);
+        WebSocketListener listenerB = listeners.get(2L);
+        assertNotNull(socketB);
+        assertNotNull(listenerB);
+        listenerB.onOpen(socketB, mock(Response.class));
+        listenerB.onMessage(socketB, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        assertTrue("replacement socket must open", client.isOpen());
+        assertTrue(client.send("before-cleanup", "{}"));
+
+        releaseFirstFactory.countDown();
+        firstSetup.join(TimeUnit.SECONDS.toMillis(5L));
+        assertFalse("retired setup should finish", firstSetup.isAlive());
+        assertNull(setupFailure.get());
+        assertTrue("late account A cleanup must not clear account B open state", client.isOpen());
+        int secondSocketFramesBefore = sentFrames.get(2L).size();
+        assertTrue("late account A cleanup must not clear account B socket",
+                client.send("after-cleanup", "{}"));
+        assertEquals(secondSocketFramesBefore + 1, sentFrames.get(2L).size());
+        assertTrue("retired account A must never CONNECT", sentFrames.get(1L).isEmpty());
+        verify(sockets.get(1L)).cancel();
+
+        secondAttempt.cancel();
     }
 
     @Test

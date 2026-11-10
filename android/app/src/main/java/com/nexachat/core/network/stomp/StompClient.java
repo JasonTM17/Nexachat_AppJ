@@ -145,6 +145,7 @@ public final class StompClient {
     private final ConcurrentHashMap<String, String> subscriptionIds = new ConcurrentHashMap<>();
     private final AtomicInteger subscriptionCounter = new AtomicInteger();
     private final AtomicLong connectAttemptSeq = new AtomicLong();
+    private final Object attemptSequenceLock = new Object();
 
     @Nullable
     private volatile java.util.function.Consumer<String> connectBearerObserver;
@@ -195,9 +196,12 @@ public final class StompClient {
     public Flowable<State> connect(
             @Nullable String accessToken,
             @NonNull SessionActionGate sessionActionGate) {
-        final long attemptId = connectAttemptSeq.incrementAndGet();
+        final long attemptId;
+        synchronized (attemptSequenceLock) {
+            attemptId = connectAttemptSeq.incrementAndGet();
+        }
         AttemptLiveness liveness = new AttemptLiveness(
-                connectAttemptSeq, attemptId, sessionActionGate);
+                connectAttemptSeq, attemptId, sessionActionGate, attemptSequenceLock);
         LongPredicate stillCurrent = ignored -> liveness.isCurrent();
         return Flowable.create(emitter -> {
             SerialDisposable lifecycle = new SerialDisposable();
@@ -473,7 +477,10 @@ public final class StompClient {
         WebSocket webSocket = testFactory == null
                 ? okHttpClient.newWebSocket(request, listener)
                 : testFactory.apply(listener, attemptId);
-        socket = webSocket;
+        if (!liveness.runIfCurrent(() -> socket = webSocket)) {
+            webSocket.cancel();
+            return () -> { };
+        }
         ScheduledExecutorService scheduler = newAttemptScheduler();
         AtomicBoolean cleanedUp = new AtomicBoolean();
         ScheduledFuture<?> connectTimeout = scheduler.schedule(() -> {
@@ -505,7 +512,14 @@ public final class StompClient {
                 return;
             }
             liveness.invalidate();
-            open = false;
+            synchronized (attemptSequenceLock) {
+                if (connectAttemptSeq.get() == attemptId) {
+                    open = false;
+                    if (socket == webSocket) {
+                        socket = null;
+                    }
+                }
+            }
             connectTimeout.cancel(false);
             heartbeat.cancel(false);
             scheduler.shutdownNow();
@@ -516,9 +530,6 @@ public final class StompClient {
             }
             webSocket.close(NORMAL_CLOSURE_CODE, CLOSE_REASON);
             webSocket.cancel();
-            if (socket == webSocket) {
-                socket = null;
-            }
         };
     }
 
@@ -541,22 +552,27 @@ public final class StompClient {
         private final AtomicLong attemptSequence;
         private final long attemptId;
         private final SessionActionGate sessionActionGate;
+        private final Object attemptSequenceLock;
         private boolean active = true;
 
         private AttemptLiveness(
                 AtomicLong attemptSequence,
                 long attemptId,
-                SessionActionGate sessionActionGate) {
+                SessionActionGate sessionActionGate,
+                Object attemptSequenceLock) {
             this.attemptSequence = attemptSequence;
             this.attemptId = attemptId;
             this.sessionActionGate = sessionActionGate;
+            this.attemptSequenceLock = attemptSequenceLock;
         }
 
         private boolean isCurrent() {
             AtomicBoolean current = new AtomicBoolean();
             boolean sessionCurrent = sessionActionGate.runIfCurrent(() -> {
-                synchronized (this) {
-                    current.set(active && attemptSequence.get() == attemptId);
+                synchronized (attemptSequenceLock) {
+                    synchronized (this) {
+                        current.set(active && attemptSequence.get() == attemptId);
+                    }
                 }
             });
             return sessionCurrent && current.get();
@@ -565,10 +581,12 @@ public final class StompClient {
         private boolean runIfCurrent(Runnable action) {
             AtomicBoolean ran = new AtomicBoolean();
             boolean sessionCurrent = sessionActionGate.runIfCurrent(() -> {
-                synchronized (this) {
-                    if (active && attemptSequence.get() == attemptId) {
-                        action.run();
-                        ran.set(true);
+                synchronized (attemptSequenceLock) {
+                    synchronized (this) {
+                        if (active && attemptSequence.get() == attemptId) {
+                            action.run();
+                            ran.set(true);
+                        }
                     }
                 }
             });
