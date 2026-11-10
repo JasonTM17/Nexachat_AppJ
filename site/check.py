@@ -647,6 +647,7 @@ REQUIRED_HTML_PAGES = (
     "404.html",
     "privacy.html",
     "terms.html",
+    "delete-account.html",
     os.path.join("join", "index.html"),
 )
 
@@ -654,6 +655,25 @@ PUBLIC_SITEMAP_URLS = (
     "https://nexachat.io.vn/",
     "https://nexachat.io.vn/privacy.html",
     "https://nexachat.io.vn/terms.html",
+    "https://nexachat.io.vn/delete-account.html",
+)
+
+DELETION_PAGE = "delete-account.html"
+DELETION_PAGE_VI_PHRASES = (
+    "Cài đặt",
+    "Xóa tài khoản",
+    "mật khẩu hiện tại",
+    "Dữ liệu bị xóa",
+    "Dữ liệu còn lại",
+    "Google Play",
+)
+DELETION_PAGE_EN_PHRASES = (
+    "Settings",
+    "Delete account",
+    "current password",
+    "Data that is deleted",
+    "Data that remains",
+    "Google Play",
 )
 
 
@@ -682,7 +702,7 @@ def test_site_pages_and_assets():
         if missing_urls:
             failures.append(f"sitemap.xml missing URL(s): {missing_urls}")
         else:
-            log_pass("sitemap.xml lists all public URLs (home, privacy, terms)")
+            log_pass("sitemap.xml lists all public URLs (home, privacy, terms, deletion)")
 
     robots_path = os.path.join(SITE_DIR, "robots.txt")
     if not os.path.isfile(robots_path):
@@ -718,7 +738,7 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing skip link to #main")
         if 'name="description"' not in html:
             failures.append(f"{rel_page} missing meta description")
-        if rel_page in ("index.html", "privacy.html", "terms.html"):
+        if rel_page in ("index.html", "privacy.html", "terms.html", "delete-account.html"):
             if 'rel="canonical"' not in html:
                 failures.append(f"{rel_page} missing canonical link")
 
@@ -823,7 +843,7 @@ def test_dark_theme_contrast_tokens():
 def test_no_contradictory_hreflang():
     """Bilingual single-URL pages must not declare hreflang vi/en pointing at the same href."""
     failures = []
-    pages = ("index.html", "privacy.html", "terms.html")
+    pages = ("index.html", "privacy.html", "terms.html", "delete-account.html")
     hreflang_re = re.compile(
         r'<link[^>]+rel=["\']alternate["\'][^>]+hreflang=["\']([^"\']+)["\'][^>]+href=["\']([^"\']+)["\']',
         re.IGNORECASE,
@@ -917,6 +937,51 @@ def test_bilingual_user_visible_text():
 
     if not failures:
         log_pass("Public HTML pages include vi/en text and join install fallback copy")
+    return failures
+
+
+def test_account_deletion_page():
+    """The public account-deletion page and its privacy/footer links must exist."""
+    failures = []
+    page_path = os.path.join(SITE_DIR, DELETION_PAGE)
+    if not os.path.isfile(page_path):
+        return [f"Missing HTML page {DELETION_PAGE}"]
+
+    with open(page_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    if 'rel="canonical" href="https://nexachat.io.vn/delete-account.html"' not in html:
+        failures.append(f"{DELETION_PAGE} canonical must be https://nexachat.io.vn/delete-account.html")
+    if "noindex" in html.lower():
+        failures.append(f"{DELETION_PAGE} must be indexable (no noindex robots meta)")
+
+    for phrase in DELETION_PAGE_VI_PHRASES:
+        if phrase not in html:
+            failures.append(f"{DELETION_PAGE} missing Vietnamese deletion copy: {phrase}")
+    for phrase in DELETION_PAGE_EN_PHRASES:
+        if phrase not in html:
+            failures.append(f"{DELETION_PAGE} missing English deletion copy: {phrase}")
+
+    privacy_path = os.path.join(SITE_DIR, "privacy.html")
+    if os.path.isfile(privacy_path):
+        with open(privacy_path, "r", encoding="utf-8") as f:
+            privacy_html = f.read()
+        if privacy_html.count('href="/delete-account.html"') < 2:
+            failures.append("privacy.html must link the deletion page from its body and its footer")
+    else:
+        failures.append("Missing site/privacy.html")
+
+    for rel_page in REQUIRED_HTML_PAGES:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            page_html = f.read()
+        if 'href="/delete-account.html"' not in page_html:
+            failures.append(f"{rel_page} footer must link /delete-account.html")
+
+    if not failures:
+        log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
     return failures
 
 
@@ -1114,6 +1179,9 @@ def main():
 
     f_i18n = test_bilingual_user_visible_text()
     all_failures.extend(f_i18n)
+
+    f_deletion = test_account_deletion_page()
+    all_failures.extend(f_deletion)
 
     f_ld = test_index_inline_json_ld()
     all_failures.extend(f_ld)
