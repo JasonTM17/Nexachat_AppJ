@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -86,11 +87,15 @@ public final class NetworkCharacterizationTest {
         Flowable<StompClient.State> openedAndClosed = Flowable.just(
                 StompClient.State.Open.INSTANCE,
                 new StompClient.State.Closed(1000, "test"));
-        when(stomp.connect()).thenReturn(openedAndClosed, openedAndClosed);
+        when(stomp.connect(any())).thenReturn(openedAndClosed, openedAndClosed);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(Flowable.just(true));
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
         RealtimeSession session = new RealtimeSession(
-                stomp, store, mock(TokenRefresher.class), new Moshi.Builder().build(),
+                stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, () -> Flowable.just(false), scheduler);
 
         List<ChatEvent> events = new ArrayList<>();

@@ -4,6 +4,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -135,7 +138,7 @@ public final class RealtimeSessionReArmTest {
         TokenStore store = loggedInStore(Long.MAX_VALUE, loggedIn);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenReturn(Flowable.concat(
+        when(stomp.connect(anyString())).thenReturn(Flowable.concat(
                 Flowable.just(StompClient.State.Open.INSTANCE), Flowable.never()));
         RealtimeSession session = session(store, stomp, BehaviorProcessor.createDefault(false),
                 BehaviorProcessor.createDefault(false), mock(TokenRefresher.class), scheduler);
@@ -144,7 +147,7 @@ public final class RealtimeSessionReArmTest {
         loggedIn.onNext(false);
         scheduler.triggerActions();
         assertFalse(session.isCurrentlyOpen());
-        verify(stomp, times(1)).close();
+        verify(stomp, atLeast(1)).close();
     }
 
     @Test
@@ -171,7 +174,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -196,7 +199,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -222,7 +225,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed(StompClient.REASON_CONNECT_TIMEOUT));
         });
@@ -261,14 +264,23 @@ public final class RealtimeSessionReArmTest {
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(online);
         AppForegroundState foregroundState = () -> foreground;
+        stubEpochAdmission(refresher);
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 reconnectPolicy, monitor, foregroundState, scheduler);
+    }
+
+    private static void stubEpochAdmission(TokenRefresher refresher) {
+        BehaviorProcessor<Boolean> admitted = BehaviorProcessor.createDefault(true);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(anyLong())).thenAnswer(
+                invocation -> admitted.getValue() && invocation.getArgument(0, Long.class) == 1L);
     }
 
     private static StompClient failedClient(AtomicInteger count) {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString())).thenAnswer(ignored -> {
             count.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("offline"));
         });

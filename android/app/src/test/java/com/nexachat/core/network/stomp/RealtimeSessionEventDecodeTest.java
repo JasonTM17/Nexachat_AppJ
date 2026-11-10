@@ -18,6 +18,7 @@ import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
@@ -63,8 +64,8 @@ public final class RealtimeSessionEventDecodeTest {
     public void everyOpenResubscribesPresenceQueue() {
         TokenStore store = tokenStore(true);
         StompClient stomp = stomp();
-        when(stomp.connect()).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
-        session(store, stomp, null);
+        when(stomp.connect(any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
+        session(store, stomp, null, true);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
     }
 
@@ -149,15 +150,21 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     private RealtimeSession session(boolean loggedIn, String errorId) {
-        return session(tokenStore(loggedIn), stomp(), errorId);
+        return session(tokenStore(loggedIn), stomp(), errorId, loggedIn);
     }
 
-    private RealtimeSession session(TokenStore store, StompClient stomp, String errorId) {
+    private RealtimeSession session(TokenStore store, StompClient stomp, String errorId, boolean loggedIn) {
         if (errorId != null) when(stomp.subscriptionIdFor(RealtimeSession.USER_ERRORS_DESTINATION)).thenReturn(errorId);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         AppForegroundState foreground = () -> Flowable.just(false);
-        return new RealtimeSession(stomp, store, mock(TokenRefresher.class), new Moshi.Builder().build(),
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        BehaviorProcessor<Boolean> admitted = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(
+                loggedIn);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
+        return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, foreground);
     }
 
@@ -165,7 +172,7 @@ public final class RealtimeSessionEventDecodeTest {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(frames.onBackpressureBuffer());
         when(stomp.subscribe(any())).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenReturn(Flowable.never());
+        when(stomp.connect(any())).thenReturn(Flowable.never());
         return stomp;
     }
 
