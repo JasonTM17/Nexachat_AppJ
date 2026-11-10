@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.message.MessageService;
+import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -65,6 +67,8 @@ class AskApiIT {
     private ConversationRepository conversationRepository;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private MessageService messageService;
 
     private User caller;
     private User peer;
@@ -154,6 +158,32 @@ class AskApiIT {
                 .andExpect(jsonPath("$.mode").value("CACHE"))
                 .andExpect(jsonPath("$.usage.cached").value(true))
                 .andExpect(jsonPath("$.usage.llmCalls").value(0));
+    }
+
+    @Test
+    void newTextMessageInvalidatesCachedAnswer() throws Exception {
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+
+        postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("EXTRACTIVE"));
+        postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("CACHE"));
+
+        messageService.send(peer.getId(), conversationId,
+                new SendMessageRequest(UUID.randomUUID(), "TEXT",
+                        "Correction: the server migration is now scheduled for March 21 at 03:00.",
+                        null, List.of()));
+
+        MvcResult result = postAsk(caller, question)
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
+        assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
     }
 
     @Test
