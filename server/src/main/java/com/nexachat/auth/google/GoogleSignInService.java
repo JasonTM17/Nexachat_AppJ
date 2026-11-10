@@ -13,6 +13,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -49,7 +50,7 @@ public class GoogleSignInService {
     private final TokenService tokenService;
     private final AuthResponseFactory responseFactory;
     private final RateLimitService rateLimitService;
-    private final TransactionTemplate transactionTemplate;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     public GoogleSignInService(GoogleSignInProperties properties,
                                GoogleIdTokenVerifier verifier,
@@ -60,7 +61,7 @@ public class GoogleSignInService {
                                TokenService tokenService,
                                AuthResponseFactory responseFactory,
                                RateLimitService rateLimitService,
-                               PlatformTransactionManager transactionManager) {
+                               ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.properties = properties;
         this.verifier = verifier;
         this.nonceService = nonceService;
@@ -70,7 +71,7 @@ public class GoogleSignInService {
         this.tokenService = tokenService;
         this.responseFactory = responseFactory;
         this.rateLimitService = rateLimitService;
-        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionManagerProvider = transactionManagerProvider;
     }
 
     /** Every endpoint of a disabled feature answers 404 — existence is not disclosed. */
@@ -88,7 +89,7 @@ public class GoogleSignInService {
         // Keep remote JWKS access and the independently committed nonce update
         // outside this transaction. Otherwise concurrent requests can each hold
         // one pool connection while waiting for a REQUIRES_NEW connection.
-        return transactionTemplate.execute(status -> {
+        return transactionTemplate().execute(status -> {
             UserIdentity identity = identityRepository
                     .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
                     .orElseThrow(GoogleSignInService::notLinked);
@@ -115,7 +116,7 @@ public class GoogleSignInService {
         // The password check above preserves the request contract: a wrong
         // password does not burn a valid nonce. Recheck after locking because
         // the password may change while the token is verified.
-        transactionTemplate.executeWithoutResult(status -> linkInTransaction(userId, request, claims));
+        transactionTemplate().executeWithoutResult(status -> linkInTransaction(userId, request, claims));
     }
 
     private void linkInTransaction(UUID userId, GoogleLinkRequest request, GoogleIdTokenClaims claims) {
@@ -191,6 +192,10 @@ public class GoogleSignInService {
             throw ApiException.of(ApiErrorCode.GOOGLE_SIGN_IN_FAILED,
                     "Google sign-in could not be completed");
         }
+    }
+
+    private TransactionTemplate transactionTemplate() {
+        return new TransactionTemplate(transactionManagerProvider.getObject());
     }
 
     private void enforceAccountRateLimit(UUID userId, String action) {
