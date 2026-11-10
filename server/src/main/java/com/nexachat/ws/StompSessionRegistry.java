@@ -43,12 +43,20 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     private static final Logger log = LoggerFactory.getLogger(StompSessionRegistry.class);
 
+    /** Inbound STOMP frame cap. Larger frames are closed by the WebSocket transport. */
+    public static final int MAX_MESSAGE_BYTES = 64 * 1024;
+    /** Authenticated sockets one account may hold at once. */
+    public static final int MAX_SESSIONS_PER_USER = 32;
+    /** How long a raw socket may sit before a successful STOMP CONNECT. */
+    static final long HANDSHAKE_DEADLINE_SECONDS = 10;
+
     private final UserRepository userRepository;
     private final ConcurrentHashMap<String, WebSocketSession> socketsBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, UUID> userBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Set<String>> sessionsByUser = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Instant> expiresBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> expiryTasks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> handshakeDeadlines = new ConcurrentHashMap<>();
     private final ScheduledExecutorService expiryScheduler =
             Executors.newSingleThreadScheduledExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "nexachat-stomp-expiry");
@@ -62,6 +70,9 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     @Override
     public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.setMessageSizeLimit(MAX_MESSAGE_BYTES);
+        registration.setSendBufferSizeLimit(512 * 1024);
+        registration.setSendTimeLimit(10_000);
         registration.addDecoratorFactory(this);
     }
 
@@ -71,9 +82,11 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
                 socketsBySession.put(session.getId(), session);
+                scheduleHandshakeDeadline(session.getId());
                 try {
                     super.afterConnectionEstablished(session);
                 } catch (Exception e) {
+                    cancelHandshakeDeadline(session.getId());
                     socketsBySession.remove(session.getId(), session);
                     throw e;
                 }
@@ -103,6 +116,10 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
             closeSession(sessionId);
             return;
         }
+        if (!canOpenSession(principal.userId())) {
+            closeSession(sessionId);
+            return;
+        }
         bind(sessionId, principal.userId(), principal.expiresAt());
     }
 
@@ -128,6 +145,28 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     @PreDestroy
     public void shutdown() {
         expiryScheduler.shutdownNow();
+    }
+
+    /** False once {@code userId} already holds {@link #MAX_SESSIONS_PER_USER} sockets. */
+    public boolean canOpenSession(UUID userId) {
+        Set<String> sessions = sessionsByUser.get(userId);
+        return sessions == null || sessions.size() < MAX_SESSIONS_PER_USER;
+    }
+
+    /** Closes a socket whose STOMP CONNECT was rejected. */
+    public void closeHandshake(String sessionId) {
+        if (sessionId == null) {
+            return;
+        }
+        closeSession(sessionId);
+    }
+
+    /** Closes the socket when CONNECT never completed. Package-visible for tests. */
+    void closeIfHandshakeIncomplete(String sessionId) {
+        cancelHandshakeDeadline(sessionId);
+        if (sessionId != null && !userBySession.containsKey(sessionId)) {
+            closeSession(sessionId);
+        }
     }
 
     /** True while the STOMP session is still bound to a user with a live access token. */
@@ -162,6 +201,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     }
 
     private void bind(String sessionId, UUID userId, Instant expiresAt) {
+        cancelHandshakeDeadline(sessionId);
         UUID previous = userBySession.putIfAbsent(sessionId, userId);
         if (previous != null) {
             return;
@@ -174,6 +214,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     }
 
     private void unbind(String sessionId) {
+        cancelHandshakeDeadline(sessionId);
         cancelExpiry(sessionId);
         expiresBySession.remove(sessionId);
         UUID userId = userBySession.remove(sessionId);
@@ -186,6 +227,24 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
             if (sessions.isEmpty()) {
                 sessionsByUser.remove(userId, sessions);
             }
+        }
+    }
+
+    private void scheduleHandshakeDeadline(String sessionId) {
+        ScheduledFuture<?> task = expiryScheduler.schedule(
+                () -> closeIfHandshakeIncomplete(sessionId),
+                HANDSHAKE_DEADLINE_SECONDS,
+                TimeUnit.SECONDS);
+        ScheduledFuture<?> previous = handshakeDeadlines.put(sessionId, task);
+        if (previous != null) {
+            previous.cancel(false);
+        }
+    }
+
+    private void cancelHandshakeDeadline(String sessionId) {
+        ScheduledFuture<?> task = handshakeDeadlines.remove(sessionId);
+        if (task != null) {
+            task.cancel(false);
         }
     }
 

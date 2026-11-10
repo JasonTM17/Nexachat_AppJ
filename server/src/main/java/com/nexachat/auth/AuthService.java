@@ -83,6 +83,7 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request, String deviceLabel) {
         final String phone = normalizeForRegister(request.phone());
+        PasswordPolicy.requireRegisterable(request.password());
         enforcePhoneRateLimit("register", phone);
 
         if (userRepository.existsByPhone(phone)) {
@@ -105,6 +106,10 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request, String deviceLabel) {
+        if (!PasswordPolicy.fitsBcrypt(request.password())) {
+            passwordEncoder.matches("nexachat-timing-equalization", dummyHash);
+            throw invalidCredentials();
+        }
         String phone;
         try {
             phone = phoneService.toE164(request.phone());
@@ -176,6 +181,7 @@ public class AuthService {
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
+        PasswordPolicy.requireRegisterable(request.newPassword());
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
 

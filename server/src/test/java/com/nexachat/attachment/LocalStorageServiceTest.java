@@ -75,6 +75,32 @@ class LocalStorageServiceTest {
     }
 
     @Test
+    void rejectsHtmlAndSvgDisguisedAsText() {
+        byte[] html = "<html><script>alert(1)</script></html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] svg = "\n<svg xmlns='http://www.w3.org/2000/svg'></svg>"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        ApiException htmlEx = catchThrowableOfType(ApiException.class,
+                () -> newService().store("attachments", "notes.md", "text/markdown", html));
+        ApiException svgEx = catchThrowableOfType(ApiException.class,
+                () -> newService().store("attachments", "notes.txt", "text/plain", svg));
+
+        assertThat(htmlEx.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        assertThat(svgEx.getCode()).isEqualTo(ApiErrorCode.MIME_NOT_ALLOWED);
+        assertThat(tempDir).isEmptyDirectory();
+    }
+
+    @Test
+    void storesOrdinaryText() {
+        byte[] notes = "Meeting notes, no markup.".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        var stored = newService().store("attachments", "notes.txt", "text/plain", notes);
+
+        assertThat(stored.mimeType()).isEqualTo("text/plain");
+        assertThat(stored.sizeBytes()).isEqualTo(notes.length);
+    }
+
+    @Test
     void rejectsEmptyContent() {
         ApiException ex = catchThrowableOfType(ApiException.class, () ->
                 newService().store("avatars", "empty.jpg", "image/jpeg", new byte[0]));

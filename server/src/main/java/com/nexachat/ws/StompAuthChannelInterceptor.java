@@ -89,6 +89,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private final UserRepository userRepository;
     private final ConversationMemberRepository memberRepository;
     private final RateLimitService rateLimitService;
+    private final StompSessionRegistry sessionRegistry;
     private final SimpMessagingTemplate messaging;
     private final ObjectMapper objectMapper;
     private final long messagesPerWindow;
@@ -97,6 +98,30 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private final long typingWindowSeconds;
     private final long acksPerWindow;
     private final long ackWindowSeconds;
+
+    public StompAuthChannelInterceptor(JwtService jwtService,
+                                       UserRepository userRepository,
+                                       ConversationMemberRepository memberRepository,
+                                       RateLimitService rateLimitService,
+                                       @Lazy
+                                       SimpMessagingTemplate messaging,
+                                       ObjectMapper objectMapper,
+                                       @Value("${nexachat.rate-limit.stomp.messages-per-window:30}")
+                                       long messagesPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.window-seconds:10}")
+                                       long messageWindowSeconds,
+                                       @Value("${nexachat.rate-limit.stomp.typing-per-window:60}")
+                                       long typingPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.typing-window-seconds:10}")
+                                       long typingWindowSeconds,
+                                       @Value("${nexachat.rate-limit.stomp.acks-per-window:120}")
+                                       long acksPerWindow,
+                                       @Value("${nexachat.rate-limit.stomp.ack-window-seconds:10}")
+                                       long ackWindowSeconds) {
+        this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
+                messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
+                acksPerWindow, ackWindowSeconds, null);
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public StompAuthChannelInterceptor(JwtService jwtService,
@@ -117,11 +142,13 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                                        @Value("${nexachat.rate-limit.stomp.acks-per-window:120}")
                                        long acksPerWindow,
                                        @Value("${nexachat.rate-limit.stomp.ack-window-seconds:10}")
-                                       long ackWindowSeconds) {
+                                       long ackWindowSeconds,
+                                       StompSessionRegistry sessionRegistry) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
         this.rateLimitService = rateLimitService;
+        this.sessionRegistry = sessionRegistry;
         this.messaging = messaging;
         this.objectMapper = objectMapper;
         this.messagesPerWindow = messagesPerWindow;
@@ -154,7 +181,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return message;
         }
         return switch (accessor.getCommand()) {
-            case CONNECT -> onConnect(accessor) ? message : null;
+            case CONNECT, STOMP -> acceptConnect(accessor) ? message : null;
             case SUBSCRIBE -> onSubscribe(accessor) ? message : null;
             case SEND -> onSend(accessor, message) ? message : null;
             default -> message;
@@ -162,6 +189,15 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     }
 
     // ------------------------------------------------------------ CONNECT authN
+
+    /** CONNECT and the STOMP 1.2 equivalent. A failed handshake closes the socket. */
+    private boolean acceptConnect(StompHeaderAccessor accessor) {
+        boolean accepted = onConnect(accessor);
+        if (!accepted && sessionRegistry != null) {
+            sessionRegistry.closeHandshake(accessor.getSessionId());
+        }
+        return accepted;
+    }
 
     private boolean onConnect(StompHeaderAccessor accessor) {
         String header = accessor.getFirstNativeHeader("Authorization");
@@ -191,6 +227,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         // not open a socket either.
         if (isAccessTokenRevoked(principal.userId(), issuedAt)) {
             log.warn("STOMP CONNECT rejected: access token was revoked");
+            return false;
+        }
+        if (sessionRegistry != null && !sessionRegistry.canOpenSession(principal.userId())) {
+            log.warn("STOMP CONNECT rejected: too many open sessions");
             return false;
         }
         accessor.setUser(new StompUserPrincipal(principal.userId(), issuedAt, expiresAt));

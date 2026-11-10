@@ -1,6 +1,7 @@
 package com.nexachat.conversation;
 
 import com.nexachat.attachment.AvatarController.AvatarResponse;
+import com.nexachat.attachment.AvatarUrlPolicy;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
@@ -382,7 +383,9 @@ public class GroupService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "avatarUrl must be at most " + MAX_AVATAR_URL_LENGTH + " characters");
             }
-            String normalizedAvatarUrl = avatarUrl.isEmpty() ? null : avatarUrl;
+            String normalizedAvatarUrl = avatarUrl.isEmpty()
+                    ? null
+                    : AvatarUrlPolicy.toRelativeFilesUrl(avatarUrl);
             if (normalizedAvatarUrl != null) {
                 normalizedAvatarUrl = lockAndCanonicalizeAttachmentAvatarReference(normalizedAvatarUrl);
             }
