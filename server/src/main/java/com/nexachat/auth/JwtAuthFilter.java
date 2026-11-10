@@ -73,7 +73,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
                 } else {
                     var authentication = new UsernamePasswordAuthenticationToken(
-                            new JwtPrincipal(claims.userId()), null, List.of());
+                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt()), null, List.of());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }

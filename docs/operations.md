@@ -32,6 +32,12 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `FCM_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `FCM_MAX_RETRIES` | No | `2` | `2` |
 | `FCM_RETRY_BASE_DELAY_MS` | No | `200` | `200` |
+| `FIREBASE_REALTIME_ENABLED` | No (opt-in Firebase Auth bridge) | `false` | `false` |
+| `FIREBASE_DATABASE_URL` | Required when the bridge is enabled | Empty (bridge stays disabled) | `https://<database>.<region>.firebasedatabase.app` |
+| `FIREBASE_REALTIME_DEFAULT` | No (reserved rollout default) | `stomp` | `stomp` |
+| `FIREBASE_CALL_STATUS_ENABLED` | No (call status is not enabled by this bridge) | `false` | `false` |
+| `FIREBASE_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
+| `FIREBASE_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
 | `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `NEXACHAT_SUMMARY_LLM_MODEL` | Yes when summary LLM enabled | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` |
@@ -166,6 +172,60 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 `android/app/google-services.json` that registers its device token. None of
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
+
+### Firebase realtime auth bridge (staged rollout)
+
+The Firebase bridge is disabled by default. It creates its Spring beans and
+contacts Firebase only when `FIREBASE_REALTIME_ENABLED=true` **and**
+`FIREBASE_DATABASE_URL` is non-empty. If either condition is false, the bridge
+routes are absent and the existing STOMP service continues to work. A non-empty
+URL must be the HTTPS root URL of a Firebase Realtime Database; an invalid URL
+fails startup. Keep the URL empty in `.env` until the Firebase project and rules
+are ready.
+
+This bridge reuses `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`; FCM push can
+remain disabled independently with `FCM_ENABLED=false`. The service account
+must belong to the same project and have the Firebase Authentication and
+Realtime Database permissions required by the deployment. Provide it through
+the process environment or a protected key file; never commit the key. The
+backend uses it to sign custom auth tokens, revoke Firebase refresh tokens, and
+write private lease state over the RTDB REST API.
+
+Before enabling the bridge in a Firebase project:
+
+1. Enable Firebase Authentication and create a Realtime Database in the chosen
+   region. Keep the database in locked mode during setup.
+2. Review and install the complete rules candidate at
+   `tools/firebase-rules/database.rules.json`. The default rules deny access;
+   user accounts, control state, and current conversation memberships must be
+   projected before authorized Firebase reads can succeed. The projection and
+   Firebase Emulator authorization checks are owned by later rollout steps;
+   this S1 bridge alone does not make a client data path ready for production.
+3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
+   `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
+   service-account project, installed rules, and projection before directing
+   any client to Firebase. `FIREBASE_REALTIME_DEFAULT` stays `stomp` and
+   `FIREBASE_CALL_STATUS_ENABLED` stays `false` for this stage.
+4. Configure a project budget and billing alerts, then monitor database reads,
+   writes, and download volume during a staged rollout.
+
+The current Compose file does not forward `FIREBASE_*` variables into the app
+container. Setting them only in `.env` will not enable this bridge in Compose;
+the deployment configuration must explicitly pass the reviewed Firebase
+variables to the backend before the feature is enabled. To turn the bridge off,
+set `FIREBASE_REALTIME_ENABLED=false` and restart the backend. Existing STOMP
+clients and routes remain available.
+
+Bridge issue, renewal, and single-session deletion hold a lock on that user's
+PostgreSQL row through the Firebase request so they serialize with logout and
+password-change revocation on every server instance sharing the database. RTDB
+REST calls use the configured connect/read timeouts; Firebase Admin requests
+use the same timeout settings. Google service-account token refresh has retries
+disabled and uses the Google Auth HTTP client's bounded 20-second connect/read
+defaults. A slow Firebase request can therefore delay another bridge operation
+or logout for that same user until its timeout; other users use different rows.
+If a database commit fails after a lease write, the response is not returned and
+the orphaned lease expires within 120 seconds.
 
 **Mute gating.** `NEW_MESSAGE` pushes are skipped for members who muted the
 conversation (per-member `muted` / `muted_until` on `conversation_members`; a

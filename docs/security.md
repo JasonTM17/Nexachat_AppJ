@@ -59,6 +59,28 @@ the implementing source file.
   access tokens with `401 TOKEN_INVALID`. The lookup is served from an in-memory bounded LRU
   cache (`AccessTokenValidityCache`, `nexachat.security.validity-cache-ttl-seconds`, default 60 s)
   with a database projection fallback (`findAuthValidityById`).
+- Firebase bridge issuance and renewal do not trust that cache: each operation reads the current
+  account and token cutoff from the database before signing or writing a lease. When enabled,
+  `POST /api/v1/realtime/firebase-token` returns a no-store Firebase custom token whose Firebase
+  UID is the existing Nexa UUID and whose `bridgeId` claim is server-minted. The custom token is
+  an exchange credential with a maximum one-hour validity; database access depends on the separate
+  RTDB lease, which lasts at most 120 seconds and is capped by the Nexa access-token expiry.
+  Lease renewal accepts at most 30 conversation ids and rechecks current membership before each
+  grant (`FirebaseRealtimeAuthService.java`).
+- Issue, renewal, and explicit bridge deletion take a pessimistic lock on the shared Nexa user row
+  and hold it through Firebase writes; a bounded in-process lock also orders local cleanup. This
+  makes a pending logout/password-change cutoff wait for an in-flight lease write across server
+  instances using the same database (`FirebaseRealtimeAuthService.java`,
+  `UserRepository.findByIdForUpdate`). After the durable cutoff commits, the Firebase listener
+  deletes that user's bridge sessions and presence, clears typing state for their current
+  conversations, and asks Firebase Auth to revoke refresh tokens
+  (`FirebaseSessionRevocationListener.java`). Firebase cleanup is best-effort: if the provider is
+  unavailable, or the database transaction fails after a remote lease write, that lease can remain
+  until its maximum 120-second expiry. A failed transaction does not return the custom token, and a
+  downloaded copy cannot be recalled.
+  Firebase remains disabled by default; install and verify the complete RTDB rules and server-side
+  account/membership projections before enabling clients. The S1 bridge does not include those
+  projections or Firebase Emulator authorization evidence.
 
 ## 3. Transport authorization
 
