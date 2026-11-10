@@ -52,6 +52,7 @@ public final class RealtimeSessionStaleStompFrameTest {
         TokenRefresher refresher = mock(TokenRefresher.class);
         BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
         when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
 

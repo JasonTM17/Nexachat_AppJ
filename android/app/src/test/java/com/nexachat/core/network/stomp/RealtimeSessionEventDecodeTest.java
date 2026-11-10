@@ -162,6 +162,7 @@ public final class RealtimeSessionEventDecodeTest {
         BehaviorProcessor<Boolean> admitted = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(
                 loggedIn);
         when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),

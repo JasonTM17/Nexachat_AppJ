@@ -189,6 +189,12 @@ public final class RealtimeSession {
                     tokensPresent = present;
                     applySessionSignals();
                 }));
+        subscriptions.add(tokenRefresher.sessionEpochChanges()
+                .subscribe(epoch -> {
+                    if (epoch == tokenRefresher.sessionEpoch()) {
+                        launchConnectionLoop();
+                    }
+                }));
         subscriptions.add(tokenRefresher.sessionAdmission()
                 .distinctUntilChanged()
                 .subscribe(admitted -> {
@@ -274,16 +280,11 @@ public final class RealtimeSession {
 
     /**
      * Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer.
-     * {@link #attemptActive} is cleared when the token session epoch advances without an
-     * admission false→true transition (re-login on an already-admitted owner).
+     * A new establishment retires the prior epoch's socket before checking the open state.
      */
     private void launchConnectionLoop() {
+        retirePriorSessionEpoch();
         synchronized (this) {
-            if (attemptActive
-                    && activeAttemptSessionEpoch >= 0L
-                    && tokenRefresher.sessionEpoch() != activeAttemptSessionEpoch) {
-                attemptActive = false;
-            }
             if (!hasSession || !sessionAdmitted || !tokensPresent || isCurrentlyOpen() || attemptActive) {
                 return;
             }
@@ -294,6 +295,23 @@ public final class RealtimeSession {
             attemptActive = true;
         }
         connectOnce();
+    }
+
+    /** Cancels an open or pending socket whose bearer belongs to the previous account session. */
+    private void retirePriorSessionEpoch() {
+        long currentEpoch = tokenRefresher.sessionEpoch();
+        synchronized (this) {
+            if (activeAttemptSessionEpoch < 0L || activeAttemptSessionEpoch == currentEpoch) {
+                return;
+            }
+            activeAttemptSessionEpoch = -1L;
+            attemptActive = false;
+        }
+        authRecovery.set(Disposable.empty());
+        connection.set(Disposable.empty());
+        parkedWake.set(Disposable.empty());
+        stompClient.close();
+        isOpen.onNext(false);
     }
 
     /** Starts the loop if needed and wakes it after retry-budget exhaustion. */
@@ -565,6 +583,10 @@ public final class RealtimeSession {
     }
 
     private void dispatch(@NonNull StompFrame frame) {
+        long attemptEpoch = activeAttemptSessionEpoch;
+        if (attemptEpoch >= 0L && !tokenRefresher.isSessionCurrent(attemptEpoch)) {
+            return;
+        }
         if (!StompCommand.MESSAGE.equals(frame.getCommand())) {
             return;
         }

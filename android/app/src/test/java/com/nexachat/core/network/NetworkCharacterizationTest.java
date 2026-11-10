@@ -91,6 +91,7 @@ public final class NetworkCharacterizationTest {
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(Flowable.just(true));
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
         RealtimeSession session = new RealtimeSession(

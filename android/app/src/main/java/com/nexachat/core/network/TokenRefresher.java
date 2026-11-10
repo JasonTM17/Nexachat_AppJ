@@ -17,6 +17,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
+import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +46,8 @@ public final class TokenRefresher {
     private final AtomicLong sessionEpoch = new AtomicLong();
     private final FlowableProcessor<Boolean> admissionEvents =
             BehaviorProcessor.createDefault(false).toSerialized();
+    private final FlowableProcessor<Long> sessionEpochEvents =
+            PublishProcessor.<Long>create().toSerialized();
     private volatile boolean admissionOpen;
     private volatile boolean bootstrapComplete;
     private volatile boolean closingOrClosed;
@@ -93,14 +96,16 @@ public final class TokenRefresher {
         return admissionOpen && sessionEpoch.get() == expectedEpoch;
     }
 
-    /**
-     * Replaying admission signal for realtime callers; never performs bootstrap or IO.
-     * Starts false until a durable session is active, closes at logout/clear entry,
-     * and opens only after establishment or coherent bootstrap.
-     */
+    /** Replaying admission state for realtime callers; never performs bootstrap or IO. */
     @NonNull
     public Flowable<Boolean> sessionAdmission() {
         return admissionEvents.distinctUntilChanged().onBackpressureLatest();
+    }
+
+    /** Emits each persisted login/register session epoch without performing bootstrap or IO. */
+    @NonNull
+    public Flowable<Long> sessionEpochChanges() {
+        return sessionEpochEvents.onBackpressureLatest();
     }
 
     /** Forced rotation used when restoring a session at startup. */
@@ -149,6 +154,7 @@ public final class TokenRefresher {
             pendingSuccessResponse = null;
             bootstrapComplete = true;
         }
+        sessionEpochEvents.onNext(newEpoch);
         Runnable hook = admissionTestHookBeforeTrue;
         if (hook != null) {
             hook.run();

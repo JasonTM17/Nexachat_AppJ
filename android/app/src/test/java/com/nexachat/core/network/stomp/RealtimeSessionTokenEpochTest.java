@@ -74,6 +74,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicLong epoch = new AtomicLong(1L);
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenAnswer(ignored -> epoch.get());
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation -> {
             long expected = invocation.getArgument(0);
@@ -159,6 +160,7 @@ public final class RealtimeSessionTokenEpochTest {
         BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(false);
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(3L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
                 admission.getValue() && invocation.getArgument(0, Long.class) == 3L);
@@ -184,6 +186,7 @@ public final class RealtimeSessionTokenEpochTest {
         BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(4L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
                 admission.getValue() && invocation.getArgument(0, Long.class) == 4L);
@@ -246,6 +249,7 @@ public final class RealtimeSessionTokenEpochTest {
     private static void stubAdmission(TokenRefresher refresher, long epoch) {
         BehaviorProcessor<Boolean> flow = BehaviorProcessor.createDefault(true);
         when(refresher.sessionAdmission()).thenReturn(flow);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
         when(refresher.sessionEpoch()).thenReturn(epoch);
         when(refresher.isSessionCurrent(epoch)).thenAnswer(ignored -> flow.getValue());
     }
