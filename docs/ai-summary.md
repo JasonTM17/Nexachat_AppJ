@@ -11,7 +11,7 @@ Two engines:
 | Engine | `generatedBy` | Network | When |
 |---|---|---|---|
 | Local extractive (heuristic, deterministic) | `LOCAL` | none | default, always available |
-| External LLM (OpenAI-compatible endpoint) | `LLM` | outbound HTTPS | only if the operator configured a key **and** the requesting user opted in; any failure falls back to local |
+| External LLM (OpenAI-compatible endpoint) | `LLM` | outbound HTTPS (cloud) or HTTP to the configured local-server host | only if the operator configured a usable cloud key or the local-server model **and** the requesting user opted in; any failure falls back to local |
 
 The local engine selects and labels existing messages; it does not generate new prose.
 
@@ -23,7 +23,7 @@ The local engine selects and labels existing messages; it does not generate new 
 { "scope": "UNREAD|LAST_N|TODAY", "limit": 50, "language": "AUTO|VI|EN", "refresh": false }
 ```
 
-`limit` applies to `LAST_N` (5..500). The window is capped at the latest 500 usable messages: `TEXT`, not deleted, not system; each message is truncated to 1,000 characters.
+`limit` applies to `LAST_N` (5..500). The window is capped at the latest 500 usable messages: `TEXT`, non-empty, not deleted, without attachments, not system; each message is truncated to 1,000 characters.
 
 `refresh: true` skips a valid cache read, regenerates the summary, and replaces the cache entry for the provider that produced the result. Refresh requests still count toward both rate limits.
 
@@ -47,8 +47,9 @@ Response `200`:
 ```
 
 Arrays are never null. Every `messageIds` is non-empty and a subset of the input window.
-`provider` is `primary` or `fallback` when an LLM produced the summary, and `null` when
-the local engine produced it. `contextOmitted` is `true` only when the returned
+`provider` is `primary` when the primary LLM target answered, `fallback` when the
+configured fallback target answered, and `null` when the local engine or a
+secondary LLM target answered. `contextOmitted` is `true` only when the returned
 summary was produced by the external LLM and at least one message in the window
 was excluded because its author opted out in this conversation; it never
 identifies the member. Local summaries report `false` because the local engine
@@ -120,7 +121,7 @@ excluded, the LLM is not called and the local engine answers with
 | `nexachat.summary.llm.local-api-key` | `NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY` | `local-ollama` |
 | `nexachat.summary.llm.local-timeout-ms` | `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | `60000` |
 
-`provider` is `auto` (LLM only with a key and user consent), `local`, or `llm`. The base
+`provider` is `auto` (LLM only with a usable cloud key or local-server model, and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
 endpoints are rejected unless the host is loopback; the local-server tier allows
 plain HTTP to its configured host. The provider is OpenAI-compatible
@@ -163,8 +164,9 @@ the fallback is tried once. A primary 4xx other than 429 (bad request, auth) is
 not retried against the fallback: it would repeat the same bug, and the
 provider error body is never leaked. If both providers fail, the request
 degrades to the local engine exactly as before. The response `provider` field
-is `primary` or `fallback` when an LLM answered, and `null` when the local
-engine answered.
+is `primary` when the primary LLM target answered, `fallback` when the configured
+fallback target answered, and `null` when the local engine or a secondary LLM
+target answered.
 
 Limits: 10 requests/min and 60/day per user; the window is capped at 500 usable
 messages; each message is truncated to 1,000 characters before redaction.
