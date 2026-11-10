@@ -48,7 +48,7 @@ class RestInputRobustnessIT extends RobustnessITBase {
 
     @BeforeAll
     void seedFixture() throws Exception {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        resetSharedFixtureDatabase();
         alice = register("+84907100001", "Alice Fuzz");
         bob = register("+84907100002", "Bob Fuzz");
         stranger = register("+84907100003", "Stranger Fuzz");
@@ -58,11 +58,22 @@ class RestInputRobustnessIT extends RobustnessITBase {
 
     // --- Path UUID corruption (every controller using UUID path vars) ---
 
+    /** Values that reach the controller's UUID conversion and must be a 400. */
     static Stream<String> invalidConversationIds() {
         return Stream.of(
                 "not-a-uuid",
                 "00000000-0000-0000-0000",
-                "12345",
+                "12345"
+        );
+    }
+
+    /**
+     * Values that the servlet path handling rejects before any handler runs
+     * (path traversal, NUL, decoded pipe). There is no application envelope for
+     * these: the contract is only that they are a 4xx, never a routed success.
+     */
+    static Stream<String> illegalUrlSegments() {
+        return Stream.of(
                 "../../etc/passwd",
                 "%00",
                 "v2%7C1%7C0"
@@ -74,30 +85,66 @@ class RestInputRobustnessIT extends RobustnessITBase {
     void invalidConversationIdInPathReturns4xx(String badId) throws Exception {
         mockMvc.perform(get("/api/v1/conversations/" + badId + "/messages")
                         .header("Authorization", "Bearer " + alice.accessToken()))
-                .andExpect(isSafeClientResponse());
+                .andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
         mockMvc.perform(post("/api/v1/conversations/" + badId + "/messages")
                         .header("Authorization", "Bearer " + alice.accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"clientMessageId\":\"" + UUID.randomUUID()
                                 + "\",\"type\":\"TEXT\",\"content\":\"x\"}"))
-                .andExpect(isSafeClientResponse());
+                .andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("illegalUrlSegments")
+    void illegalUrlSegmentsNeverReachAHandler(String badSegment) throws Exception {
+        mockMvc.perform(get("/api/v1/conversations/" + badSegment + "/messages")
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().is4xxClientError());
+        mockMvc.perform(post("/api/v1/conversations/" + badSegment + "/messages")
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"clientMessageId\":\"" + UUID.randomUUID()
+                                + "\",\"type\":\"TEXT\",\"content\":\"x\"}"))
+                .andExpect(status().is4xxClientError());
     }
 
     @ParameterizedTest
     @MethodSource("invalidConversationIds")
-    void invalidConversationIdOnNestedRoutes(String badId) throws Exception {
+    void invalidConversationIdOnNestedGetRoutesReturns4xx(String badId) throws Exception {
         String token = alice.accessToken();
         List<String> paths = List.of(
                 "/api/v1/conversations/" + badId + "/messages/search?q=hi",
                 "/api/v1/conversations/" + badId + "/pins",
                 "/api/v1/conversations/" + badId + "/polls",
+                "/api/v1/conversations/" + badId + "/polls/changes",
                 "/api/v1/conversations/" + badId + "/reminders",
-                "/api/v1/conversations/" + badId + "/ask",
-                "/api/v1/conversations/" + badId + "/summary",
-                "/api/v1/conversations/" + badId + "/archive");
+                "/api/v1/conversations/" + badId + "/archive",
+                "/api/v1/conversations/" + badId + "/ai-opt-out",
+                "/api/v1/conversations/" + badId + "/calls",
+                "/api/v1/conversations/" + badId + "/invite-link",
+                "/api/v1/conversations/" + badId + "/join-requests",
+                "/api/v1/conversations/" + badId + "/join-requests/me");
         for (String path : paths) {
             mockMvc.perform(get(path).header("Authorization", "Bearer " + token))
-                    .andExpect(isSafeClientResponse());
+                    .andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
+        }
+    }
+
+    /**
+     * {@code /ask} and {@code /summary} are POST-only, so probing them with a
+     * GET would stop at 405 before the path variable is ever converted.
+     */
+    @ParameterizedTest
+    @MethodSource("invalidConversationIds")
+    void invalidConversationIdOnNestedPostRoutesReturns4xx(String badId) throws Exception {
+        String token = alice.accessToken();
+        List<String> actions = List.of("/ask", "/summary", "/read", "/delivered");
+        for (String action : actions) {
+            mockMvc.perform(post("/api/v1/conversations/" + badId + action)
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
         }
     }
 
@@ -167,7 +214,7 @@ class RestInputRobustnessIT extends RobustnessITBase {
                 "clientMessageId", UUID.randomUUID().toString(),
                 "type", "TEXT",
                 "content", RTL + COMBINING + EMOJI_ZWJ + FOUR_BYTE + ZWJ));
-        postRaw(base, unicodePayload, alice.accessToken()).andExpect(isSafeClientResponse());
+        postRaw(base, unicodePayload, alice.accessToken()).andExpect(status().isCreated());
 
         mockMvc.perform(post(base)
                         .header("Authorization", "Bearer " + alice.accessToken())
@@ -175,7 +222,9 @@ class RestInputRobustnessIT extends RobustnessITBase {
                         .content("{}"))
                 .andExpect(isClientErrorWithCode("UNSUPPORTED_MEDIA_TYPE"));
 
-        assertThat(messageCount(conversationId)).isGreaterThanOrEqualTo(before);
+        // Five rejected bodies, one accepted unicode message, one rejected
+        // content type: exactly one new row, never a partial write per probe.
+        assertThat(messageCount(conversationId)).isEqualTo(before + 1);
     }
 
     @Test
@@ -224,7 +273,7 @@ class RestInputRobustnessIT extends RobustnessITBase {
                 .andExpect(isClientErrorWithCode("NOT_MEMBER"));
     }
 
-    // --- Idempotent concurrent send ---
+    // --- Sequential idempotent send (concurrency lives in IdempotencyConcurrencyIT) ---
 
     @Test
     void duplicateClientMessageIdViaRestIsIdempotent() throws Exception {
@@ -288,13 +337,13 @@ class RestInputRobustnessIT extends RobustnessITBase {
                 alice.accessToken()).andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
 
         postRaw("/api/v1/labels",
-                "{\"name\":\"" + "L".repeat(300) + "\",\"color\":\"#fff\"}",
-                alice.accessToken()).andExpect(isSafeClientResponse());
+                "{\"name\":\"" + "L".repeat(300) + "\",\"colorId\":\"BLUE\"}",
+                alice.accessToken()).andExpect(isClientErrorWithCode("VALIDATION_FAILED"));
 
         postJson("/api/v1/conversations/" + conv + "/messages",
                 Map.of("clientMessageId", UUID.randomUUID().toString(),
                         "type", "TEXT", "content", "after polls"),
-                alice.accessToken());
+                alice.accessToken()).andExpect(status().isCreated());
     }
 
     @Test

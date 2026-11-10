@@ -12,6 +12,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
@@ -44,8 +45,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Hostile STOMP payloads on every {@code @MessageMapping} destination; the
- * session must stay up and errors use {@code WsErrorResponse} without leaks.
+ * Hostile STOMP payloads on every {@code @MessageMapping} destination.
+ *
+ * <p>Every destination that declares a JSON payload must answer a malformed
+ * body with a {@link WsErrorResponse} and no stored row; the session must stay
+ * up. {@code /app/conversations/{id}/typing} declares no payload, so a body is
+ * ignored by contract — the assertion there is "no error, no row, session
+ * alive", not an invented rejection.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
@@ -53,6 +59,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class StompInputRobustnessIT {
 
     private static final long TIMEOUT_SECONDS = 10;
+    private static final long ERROR_TIMEOUT_SECONDS = 5;
+
+    private static final List<String> MALFORMED_BODIES = List.of(
+            "not-json",
+            "null",
+            "[]",
+            "",
+            "{\"clientMessageId\":\"bad\",\"type\":\"TEXT\",\"content\":\"x\"}",
+            "{\"upToSeq\":-1}");
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -74,6 +89,8 @@ class StompInputRobustnessIT {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private String accessToken;
     private UUID conversationId;
@@ -133,47 +150,101 @@ class StompInputRobustnessIT {
     }
 
     @Test
-    void everyMessageMappingSurvivesMalformedPayloads() throws Exception {
+    void messageDestinationRejectsEveryMalformedBodyAndStoresNothing() throws Exception {
         BlockingQueue<WsErrorResponse> errors = subscribeErrors();
+        long before = messageCount();
 
-        List<String> destinations = List.of(
-                "/app/conversations/" + conversationId + "/messages",
-                "/app/conversations/" + conversationId + "/typing",
+        sendAndAwaitRejection("/app/conversations/" + conversationId + "/messages", errors);
+
+        assertThat(messageCount()).isEqualTo(before);
+        assertNoStrayError(errors);
+    }
+
+    @Test
+    void watermarkDestinationsRejectEveryMalformedBody() throws Exception {
+        BlockingQueue<WsErrorResponse> errors = subscribeErrors();
+        long before = messageCount();
+
+        for (String destination : List.of(
                 "/app/conversations/" + conversationId + "/read",
                 "/app/conversations/" + conversationId + "/delivered",
                 "/app/chat.delivery.ack",
-                "/app/chat.read.ack",
-                "/app/calls/" + conversationId + "/signal");
-
-        List<String> bodies = List.of(
-                "not-json",
-                "null",
-                "[]",
-                "",
-                "{\"clientMessageId\":\"bad\",\"type\":\"TEXT\",\"content\":\"x\"}",
-                "{\"upToSeq\":-1}");
-
-        for (String destination : destinations) {
-            for (String body : bodies) {
-                sendExpectValidationOrRejection(destination, body, errors);
-            }
+                "/app/chat.read.ack")) {
+            sendAndAwaitRejection(destination, errors);
         }
-        assertThat(session.isConnected()).isTrue();
+
+        assertThat(messageCount()).isEqualTo(before);
+        assertNoStrayError(errors);
     }
 
-    private void sendExpectValidationOrRejection(
-            String destination, String body, BlockingQueue<WsErrorResponse> errors) throws Exception {
-        StompHeaders headers = new StompHeaders();
-        headers.setDestination(destination);
-        headers.setContentType(MimeTypeUtils.APPLICATION_JSON);
-        session.send(headers, body.getBytes(StandardCharsets.UTF_8));
-        WsErrorResponse error = errors.poll(2, TimeUnit.SECONDS);
-        if (error != null) {
-            assertThat(error.code()).isIn("VALIDATION_FAILED", "NOT_MEMBER", "UNAUTHORIZED", "RATE_LIMITED");
+    @Test
+    void callSignallingRejectsEveryMalformedBody() throws Exception {
+        BlockingQueue<WsErrorResponse> errors = subscribeErrors();
+
+        sendAndAwaitRejection("/app/calls/" + conversationId + "/signal", errors);
+
+        assertNoStrayError(errors);
+    }
+
+    /**
+     * Typing carries no payload in the frozen contract, so malformed JSON must
+     * be ignored rather than invented into a validation failure. The only
+     * observable requirements: no stored message, no error frame, session up.
+     */
+    @Test
+    void typingDestinationIgnoresBodyWithoutStoringAnything() throws Exception {
+        BlockingQueue<WsErrorResponse> errors = subscribeErrors();
+        long before = messageCount();
+
+        for (String body : MALFORMED_BODIES) {
+            send("/app/conversations/" + conversationId + "/typing", body);
+        }
+
+        assertThat(session.isConnected()).isTrue();
+        assertThat(messageCount()).isEqualTo(before);
+        assertThat(errors.poll(500, TimeUnit.MILLISECONDS))
+                .as("typing has no payload contract and must not emit an error")
+                .isNull();
+    }
+
+    private void sendAndAwaitRejection(String destination, BlockingQueue<WsErrorResponse> errors)
+            throws Exception {
+        for (String body : MALFORMED_BODIES) {
+            send(destination, body);
+            WsErrorResponse error = errors.poll(ERROR_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            assertThat(error)
+                    .as("%s must reject body %s", destination, describe(body))
+                    .isNotNull();
+            assertThat(error.code())
+                    .as("%s error code for body %s", destination, describe(body))
+                    .isEqualTo("VALIDATION_FAILED");
             assertThat(objectMapper.writeValueAsString(error))
                     .doesNotContain("stackTrace", "SQLException", "at com.nexachat");
         }
         assertThat(session.isConnected()).isTrue();
+    }
+
+    private void send(String destination, String body) {
+        StompHeaders headers = new StompHeaders();
+        headers.setDestination(destination);
+        headers.setContentType(MimeTypeUtils.APPLICATION_JSON);
+        session.send(headers, body.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void assertNoStrayError(BlockingQueue<WsErrorResponse> errors) throws InterruptedException {
+        assertThat(errors.poll(250, TimeUnit.MILLISECONDS))
+                .as("exactly one error per rejected frame")
+                .isNull();
+    }
+
+    private long messageCount() {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM messages WHERE conversation_id = ?", Long.class, conversationId);
+        return count == null ? 0L : count;
+    }
+
+    private static String describe(String body) {
+        return body.isEmpty() ? "<empty>" : body;
     }
 
     private BlockingQueue<WsErrorResponse> subscribeErrors() {

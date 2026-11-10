@@ -47,7 +47,7 @@ class MultipartInputRobustnessIT extends RobustnessITBase {
 
     @BeforeAll
     void seed() throws Exception {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        resetSharedFixtureDatabase();
         alice = register("+84907500001", "Multipart Fuzz");
         peer = register("+84907500002", "Multipart Peer");
         MvcResult group = postJson("/api/v1/conversations/group",

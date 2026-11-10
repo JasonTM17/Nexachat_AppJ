@@ -24,6 +24,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * Shared database, storage, and MockMvc wiring for the API input-robustness suite.
+ *
+ * <p>Each subclass owns the <em>whole</em> shared IT database while it runs:
+ * {@link #resetSharedFixtureDatabase()} truncates {@code users} before the
+ * class fixture is seeded, so the suites must run sequentially (the Failsafe
+ * default). Parallel test execution would delete another class's fixture.
  */
 @SpringBootTest
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
@@ -129,6 +134,23 @@ abstract class RobustnessITBase {
                 .andReturn();
         return UUID.fromString(
                 objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText());
+    }
+
+    /**
+     * Clears the shared fixture tables before a class-scoped fixture is seeded.
+     *
+     * <p>This is only safe under sequential execution: every class in this
+     * package truncates the same database, so a parallel class would lose its
+     * users mid-run. JUnit's parallel switch is therefore a hard failure here
+     * instead of a silent, order-dependent corruption.
+     */
+    protected void resetSharedFixtureDatabase() {
+        String parallel = System.getProperty("junit.jupiter.execution.parallel.enabled", "false");
+        if (!"false".equalsIgnoreCase(parallel)) {
+            throw new IllegalStateException(
+                    "The robustness IT suites truncate the shared IT database and must run sequentially");
+        }
+        jdbcTemplate.update("TRUNCATE users CASCADE");
     }
 
     protected long messageCount(UUID conversationId) {

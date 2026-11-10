@@ -31,6 +31,11 @@ final class RobustnessResponseAssert {
                     .isLessThan(500);
 
             String body = response.getContentAsString();
+            if (status >= 400) {
+                assertThat(body)
+                        .as("4xx responses must carry the error envelope")
+                        .isNotBlank();
+            }
             if (body != null && !body.isBlank()) {
                 for (String marker : LEAK_MARKERS) {
                     assertThat(body).doesNotContainIgnoringCase(marker);
@@ -43,11 +48,33 @@ final class RobustnessResponseAssert {
         };
     }
 
+    /**
+     * A response that must be a client rejection: the status is 4xx (not a
+     * silently accepted 2xx) and the body is the shared error envelope.
+     */
+    static ResultMatcher isClientError() {
+        return result -> {
+            var response = result.getResponse();
+            int status = response.getStatus();
+            assertThat(status)
+                    .as("HTTP status")
+                    .isBetween(400, 499);
+
+            String body = response.getContentAsString();
+            assertThat(body)
+                    .as("client errors must carry the error envelope")
+                    .isNotBlank();
+            for (String marker : LEAK_MARKERS) {
+                assertThat(body).doesNotContainIgnoringCase(marker);
+            }
+            jsonPath("$.error.code").exists().match(result);
+            jsonPath("$.error.message").exists().match(result);
+        };
+    }
+
     static ResultMatcher isClientErrorWithCode(String code) {
         return result -> {
-            isSafeClientResponse().match(result);
-            int status = result.getResponse().getStatus();
-            assertThat(status).isBetween(400, 499);
+            isClientError().match(result);
             jsonPath("$.error.code").value(code).match(result);
         };
     }

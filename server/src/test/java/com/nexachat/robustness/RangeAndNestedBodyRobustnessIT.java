@@ -48,7 +48,7 @@ class RangeAndNestedBodyRobustnessIT extends RobustnessITBase {
 
     @BeforeAll
     void seed() throws Exception {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        resetSharedFixtureDatabase();
         alice = register("+84907600001", "Range Fuzz");
         Registered peer = register("+84907600002", "Range Peer");
         conversationId = openDirect(alice, peer.userId()).id();
