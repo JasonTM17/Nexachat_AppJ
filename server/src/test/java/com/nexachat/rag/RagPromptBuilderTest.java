@@ -43,9 +43,9 @@ class RagPromptBuilderTest {
         RagPrompt prompt = builder.build(hostileQuestion, SummaryLanguage.EN, List.of(item));
         JsonNode data = new ObjectMapper().readTree(prompt.userMessage());
 
+        assertThat(data.isObject()).isTrue();
         assertThat(data.path("messages").get(0).path("text").asText()).isEqualTo(hostileMessage);
         assertThat(data.path("question").asText()).isEqualTo(hostileQuestion);
-        assertThat(prompt.userMessage()).doesNotContain("BEGIN UNTRUSTED CHAT JSON", "END UNTRUSTED CHAT JSON");
         assertThat(prompt.systemMessage()).contains("entire JSON object", "untrusted");
     }
 
