@@ -607,8 +607,9 @@ public class MessageService {
             UUID conversationId = wm.conversationId();
             long lastSeq = wm.lastSeq();
 
-            if (!conversationRepository.existsById(conversationId)
-                    || !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+            // Membership was batched once in findMemberFlags; missing rows are
+            // unknown conversations or conversations the caller does not belong to.
+            if (!flagsByConversation.containsKey(conversationId)) {
                 continue;
             }
 

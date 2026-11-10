@@ -6,6 +6,7 @@ import com.nexachat.auth.RateLimitService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.*;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.SyncRequest;
@@ -283,11 +284,16 @@ public class BackendM1Iteration2RegressionTest {
         void messageServiceClampsWatermarkListTo100() {
             int count = 150;
             List<SyncRequest.ConversationWatermark> watermarks = new ArrayList<>(count);
+            lenient().when(memberRepository.findMemberFlags(eq(userId), any())).thenAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                Collection<UUID> ids = invocation.getArgument(1);
+                return ids.stream()
+                        .map(id -> new MemberFlagsRow(id, false, null, false, false, null))
+                        .toList();
+            });
             for (int i = 0; i < count; i++) {
                 UUID cId = UUID.randomUUID();
                 watermarks.add(new SyncRequest.ConversationWatermark(cId, (long) i));
-                lenient().when(conversationRepository.existsById(cId)).thenReturn(true);
-                lenient().when(memberRepository.existsByConversation_IdAndUser_Id(cId, userId)).thenReturn(true);
                 lenient().when(messageRepository.findRowsAfter(eq(cId), eq((long) i), any(Pageable.class)))
                         .thenReturn(List.of());
                 lenient().when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn((long) i);
@@ -305,8 +311,8 @@ public class BackendM1Iteration2RegressionTest {
         void editedAndDeletedQueriesBoundedByLimit() {
             UUID cId = UUID.randomUUID();
             Instant since = Instant.now().minusSeconds(60);
-            when(conversationRepository.existsById(cId)).thenReturn(true);
-            when(memberRepository.existsByConversation_IdAndUser_Id(cId, userId)).thenReturn(true);
+            when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                    List.of(new MemberFlagsRow(cId, false, null, false, false, null)));
             when(messageRepository.findRowsAfter(eq(cId), eq(10L), any(Pageable.class))).thenReturn(List.of());
 
             List<MessageRow> manyEdited = new ArrayList<>();

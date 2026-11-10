@@ -8,6 +8,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.ReactionEventId;
@@ -80,8 +81,7 @@ class SyncControllerTest {
 
     @Test
     void syncDeltaReturnsDeltasAcrossWatermarks() {
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
 
         MessageRow row1 = new MessageRow(
                 UUID.randomUUID(), conversationId, 101L, userId, "Test User",
@@ -115,8 +115,7 @@ class SyncControllerTest {
     @Test
     void syncDeltaIncludesEditedDeletedAndReactionsWhenSinceIsGiven() {
         Instant since = Instant.now().minusSeconds(3600);
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
 
         MessageRow editedRow = new MessageRow(
                 UUID.randomUUID(), conversationId, 95L, userId, "Test User",
@@ -193,8 +192,7 @@ class SyncControllerTest {
         );
         SyncController clockedController = new SyncController(clockedService);
 
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
         when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(messageRepository.findMaxSeqByConversationId(conversationId)).thenAnswer(invocation -> {
@@ -235,8 +233,7 @@ class SyncControllerTest {
         );
         SyncController controller = new SyncController(capped);
 
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
         when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(reactionEventRepository.findEventIdsSince(eq(conversationId), eq(since), any(), eq(3)))
@@ -281,8 +278,7 @@ class SyncControllerTest {
         );
         SyncController controller = new SyncController(service);
 
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
         when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
@@ -302,8 +298,7 @@ class SyncControllerTest {
     void syncDeltaEchoesReactionCursorIntoTheEventQuery() {
         Instant since = Instant.now().minusSeconds(3600);
         UUID reactionMsgId = UUID.randomUUID();
-        when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        stubMembership();
         when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(reactionEventRepository.findEventIdsSince(eq(conversationId), eq(since), eq(42L), anyInt()))
@@ -360,6 +355,11 @@ class SyncControllerTest {
      * and {@code WRITE_DATES_AS_TIMESTAMPS} disabled, so {@code Instant}
      * renders as an ISO-8601 string.
      */
+    private void stubMembership() {
+        when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                List.of(new MemberFlagsRow(conversationId, false, null, false, false, null)));
+    }
+
     private static ObjectMapper mapper() {
         return new ObjectMapper()
                 .findAndRegisterModules()
