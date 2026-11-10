@@ -4,8 +4,10 @@
   --card-bg: #1e293b;
   --text-main: #f8fafc;
   --text-muted: #cbd5e1;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
+  --primary: #60a5fa;
+  --primary-hover: #3b82f6;
+  --btn-bg: #1d4ed8;
+  --btn-bg-hover: #1e40af;
   --secondary-bg: #334155;
   --secondary-hover: #475569;
   --border-color: #334155;
@@ -21,6 +23,8 @@
     --text-muted: #475569;
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
+    --btn-bg: #2563eb;
+    --btn-bg-hover: #1d4ed8;
     --secondary-bg: #e2e8f0;
     --secondary-hover: #cbd5e1;
     --border-color: #e2e8f0;
@@ -150,7 +154,7 @@ body {
   min-height: 2.75rem;
   min-width: 2.75rem;
   padding: 0.625rem 1.25rem;
-  background-color: var(--primary);
+  background-color: var(--btn-bg);
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
@@ -164,7 +168,7 @@ body {
 }
 
 .btn:hover {
-  background-color: var(--primary-hover);
+  background-color: var(--btn-bg-hover);
 }
 
 .btn:focus-visible {
