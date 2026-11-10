@@ -190,10 +190,9 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows
-     * first, then everything by the denormalized {@code lastMessageSeq} —
-     * NULLs (no messages yet) sort last, matching
-     * {@code idx_conv_inbox ... DESC NULLS LAST}. {@code archived} selects the
-     * default (non-archived) or archived view.
+     * first, then everything by the denormalized {@code lastMessageSeq} (NULL
+     * sorts last via {@code COALESCE}). {@code archived} selects the default
+     * (non-archived) or archived view.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
@@ -370,9 +369,9 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     /**
      * Unread counts for a set of the caller's conversations in one grouped
-     * query: {@code COUNT(messages.seq > lastReadSeq)} per conversation
-     * (watermark model, plan §9.3.4). Conversations with zero unread simply
-     * return no row.
+     * query: {@code COUNT(messages.seq > lastReadSeq AND NOT deleted)} per
+     * conversation (watermark model, plan §9.3.4). Conversations with zero
+     * unread simply return no row.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.UnreadCountRow(
@@ -382,6 +381,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
               AND m.conversation.id IN :conversationIds
               AND msg.conversation.id = m.conversation.id
               AND msg.seq > m.lastReadSeq
+              AND msg.deletedAt IS NULL
             GROUP BY m.conversation.id
             """)
     List<UnreadCountRow> countUnreadByConversation(@Param("userId") UUID userId,
