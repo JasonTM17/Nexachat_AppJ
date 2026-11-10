@@ -8,10 +8,13 @@ import com.nexachat.core.network.dto.ContactEnvelopeDto;
 import com.nexachat.core.network.dto.DirectConversationRequest;
 import com.nexachat.core.network.dto.DirectConversationResponse;
 import com.nexachat.core.network.dto.UpdateContactRequest;
+import com.nexachat.core.network.dto.SetRecoveryEmailRequest;
 import com.nexachat.core.network.dto.UpdateProfileRequest;
 import com.nexachat.core.network.dto.UpdateUserSettingsRequest;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.network.dto.UserSettingsDto;
+import com.nexachat.core.network.dto.VerifyRecoveryEmailRequest;
+import com.nexachat.core.network.dto.VerifyRecoveryEmailResponse;
 import java.util.List;
 import okhttp3.MultipartBody;
 import retrofit2.Call;
@@ -23,6 +26,7 @@ import retrofit2.http.POST;
 import retrofit2.http.PATCH;
 import retrofit2.http.Part;
 import retrofit2.http.Path;
+import retrofit2.http.PUT;
 import retrofit2.http.Query;
 
 /**
@@ -55,6 +59,15 @@ public interface UserApi {
     @Multipart
     @POST("api/v1/users/me/avatar")
     Call<AvatarResponse> uploadAvatar(@Part MultipartBody.Part file);
+
+    @PUT("api/v1/users/me/email")
+    Call<Void> requestRecoveryEmailVerification(@Body SetRecoveryEmailRequest body);
+
+    @POST("api/v1/users/me/email/verify")
+    Call<VerifyRecoveryEmailResponse> verifyRecoveryEmail(@Body VerifyRecoveryEmailRequest body);
+
+    @DELETE("api/v1/users/me/email")
+    Call<Void> removeRecoveryEmail();
 
     @GET("api/v1/contacts")
     Call<List<ContactDto>> getContacts();

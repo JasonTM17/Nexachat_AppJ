@@ -497,4 +497,26 @@
     <string name="system_event_group_member_removed">%1$s removed %2$s</string>
     <string name="system_event_group_renamed">%1$s renamed the group to “%2$s”</string>
     <string name="system_event_group_role_changed">%1$s changed %2$s’s role</string>
+
+    <!-- Recovery email (brief 306) -->
+    <string name="recovery_email_title">Recovery email</string>
+    <string name="recovery_email_add">Add</string>
+    <string name="recovery_email_change">Change email</string>
+    <string name="recovery_email_remove">Remove email</string>
+    <string name="recovery_email_remove_confirm">Remove this recovery email?</string>
+    <string name="recovery_email_field_label">Email address</string>
+    <string name="recovery_email_send_code">Send code</string>
+    <string name="recovery_email_verify">Verify</string>
+    <string name="recovery_email_resend">Resend code</string>
+    <string name="recovery_email_resend_countdown">Resend code (%1$d)</string>
+    <string name="recovery_email_otp_label">6-digit code</string>
+    <string name="recovery_email_otp_sent_to">Code sent to %1$s</string>
+    <string name="recovery_email_invalid">Enter a valid email address</string>
+    <string name="recovery_email_code_invalid">Wrong or expired code</string>
+    <string name="recovery_email_mail_unavailable">Email service unavailable</string>
+    <string name="recovery_email_verified_status">Verified: %1$s</string>
+    <string name="recovery_email_none_status">No recovery email</string>
+    <string name="cd_recovery_email_row">Recovery email settings</string>
+    <string name="cd_recovery_email_input">Recovery email address</string>
+    <string name="cd_recovery_email_otp">Recovery email verification code</string>
 </resources>

@@ -16,6 +16,8 @@ public sealed interface ApiError
                 ApiError.PhoneExists,
                 ApiError.RateLimited,
                 ApiError.Network,
+                ApiError.MailUnavailable,
+                ApiError.InvalidOrExpiredCode,
                 ApiError.Unknown {
 
     /** 401 {@code INVALID_CREDENTIALS} (also reused for {@code WRONG_PASSWORD}). */
@@ -61,6 +63,52 @@ public sealed interface ApiError
         @Override
         public String toString() {
             return "PhoneExists";
+        }
+    }
+
+    /** 503 {@code MAIL_UNAVAILABLE} — outbound email is disabled or unreachable. */
+    final class MailUnavailable implements ApiError {
+        public static final MailUnavailable INSTANCE = new MailUnavailable();
+
+        private MailUnavailable() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof MailUnavailable;
+        }
+
+        @Override
+        public int hashCode() {
+            return MailUnavailable.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "MailUnavailable";
+        }
+    }
+
+    /** Wrong, expired, or already used email OTP ({@code INVALID_OR_EXPIRED_CODE}). */
+    final class InvalidOrExpiredCode implements ApiError {
+        public static final InvalidOrExpiredCode INSTANCE = new InvalidOrExpiredCode();
+
+        private InvalidOrExpiredCode() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof InvalidOrExpiredCode;
+        }
+
+        @Override
+        public int hashCode() {
+            return InvalidOrExpiredCode.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "InvalidOrExpiredCode";
         }
     }
 
@@ -176,6 +224,12 @@ public sealed interface ApiError
         }
         if ("PHONE_EXISTS".equals(serverCode)) {
             return PhoneExists.INSTANCE;
+        }
+        if ("MAIL_UNAVAILABLE".equals(serverCode) || (httpStatus == 503 && serverCode == null)) {
+            return MailUnavailable.INSTANCE;
+        }
+        if ("INVALID_OR_EXPIRED_CODE".equals(serverCode)) {
+            return InvalidOrExpiredCode.INSTANCE;
         }
         if ("RATE_LIMITED".equals(serverCode) || httpStatus == 429) {
             return RateLimited.INSTANCE;
