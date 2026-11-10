@@ -135,19 +135,29 @@ public final class RealtimeSessionReArmTest {
     public void logoutCancelsLoopAndClosesSocket() {
         TestScheduler scheduler = new TestScheduler();
         BehaviorProcessor<Boolean> loggedIn = BehaviorProcessor.createDefault(true);
+        BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
         TokenStore store = loggedInStore(Long.MAX_VALUE, loggedIn);
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(anyLong())).thenAnswer(
+                invocation -> admission.getValue() && invocation.getArgument(0, Long.class) == 1L);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
         when(stomp.connect(anyString())).thenReturn(Flowable.concat(
                 Flowable.just(StompClient.State.Open.INSTANCE), Flowable.never()));
         RealtimeSession session = session(store, stomp, BehaviorProcessor.createDefault(false),
-                BehaviorProcessor.createDefault(false), mock(TokenRefresher.class), scheduler);
+                BehaviorProcessor.createDefault(false), refresher, scheduler);
         scheduler.triggerActions();
         assertTrue(session.isCurrentlyOpen());
+        // Logout closes admission while refresh bytes may still be present, then clears tokens.
+        admission.onNext(false);
+        scheduler.triggerActions();
         loggedIn.onNext(false);
         scheduler.triggerActions();
         assertFalse(session.isCurrentlyOpen());
-        verify(stomp, atLeast(1)).close();
+        // One close at the admission boundary; one when tokens are cleared.
+        verify(stomp, times(2)).close();
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.nexachat.core.network.stomp;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -9,9 +10,13 @@ import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import java.util.concurrent.atomic.AtomicInteger;
+import io.reactivex.rxjava3.subscribers.TestSubscriber;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -44,16 +49,45 @@ public final class StompClientBearerAttemptTest {
     }
 
     @Test
-    public void newerAttemptSuppressesStaleListenerCallbacks() {
+    public void supersededAttemptDoesNotPublishInboundFrames() {
         TokenStore store = mock(TokenStore.class);
         when(store.readTokens()).thenReturn(Maybe.just(new Tokens("first", Long.MAX_VALUE, "r")));
         StompClient client = new StompClient(new OkHttpClient(), store);
-        AtomicInteger emissions = new AtomicInteger();
-        client.setConnectBearerObserverForTests(ignored -> emissions.incrementAndGet());
-        client.connect("first").test();
-        assertEquals(1, emissions.get());
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.connect("first").test().assertValueAt(0, StompClient.State.Connecting.INSTANCE);
+        WebSocketListener stale = listeners.get(1L);
+        client.connect("second").test().assertValueAt(0, StompClient.State.Connecting.INSTANCE);
+
+        TestSubscriber<StompFrame> inbound = client.getFrames().test();
+        String staleMessage = StompCodec.encode(new StompFrame(StompCommand.MESSAGE));
+        WebSocket socket = mock(WebSocket.class);
+        stale.onMessage(socket, staleMessage);
+        inbound.assertNoValues();
+
+        String staleError = StompCodec.encode(
+                new StompFrame(StompCommand.ERROR, Map.of(), "stale"));
+        stale.onMessage(socket, staleError);
+        inbound.assertNoValues();
+    }
+
+    @Test
+    public void supersededAttemptCloseDoesNotPublishTerminalState() {
+        TokenStore store = mock(TokenStore.class);
+        when(store.readTokens()).thenReturn(Maybe.just(new Tokens("first", Long.MAX_VALUE, "r")));
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        io.reactivex.rxjava3.subscribers.TestSubscriber<StompClient.State> firstAttempt =
+                client.connect("first").test();
+        WebSocketListener stale = listeners.get(1L);
         client.connect("second").test();
-        assertEquals(2, emissions.get());
+
+        WebSocket socket = mock(WebSocket.class);
+        stale.onClosed(socket, 1000, "stale");
+        firstAttempt.assertValueAt(0, StompClient.State.Connecting.INSTANCE);
+        firstAttempt.assertNoErrors();
+        assertFalse(client.isOpen());
     }
 
     @Test
