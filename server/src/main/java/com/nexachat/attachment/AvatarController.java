@@ -1,6 +1,7 @@
 package com.nexachat.attachment;
 
 import com.nexachat.common.MagicBytes;
+import com.nexachat.common.MultipartRequests;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Self-service avatar upload: POST /api/v1/users/me/avatar.
@@ -37,11 +39,12 @@ public class AvatarController {
     @PostMapping("/me/avatar")
     public AvatarResponse uploadAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestParam("file") MultipartFile file) throws IOException {
+            @RequestParam("file") List<MultipartFile> files) throws IOException {
         if (principal == null) {
             throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
         }
-        if (file == null || file.isEmpty()) {
+        MultipartFile file = MultipartRequests.requireSingleFile(files);
+        if (file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Avatar file is required");
         }
         if (file.getSize() > StorageService.MAX_FILE_SIZE_BYTES) {

@@ -101,6 +101,26 @@ public class SummaryCacheRepository {
     }
 
     @Transactional
+    public void deleteContainingSequence(UUID conversationId, long sequence) {
+        jdbcTemplate.update("""
+                DELETE FROM message_summaries
+                WHERE conversation_id = ? AND from_seq <= ? AND to_seq >= ?
+                """, conversationId, sequence, sequence);
+    }
+
+    @Transactional
+    public void deleteContainingMessage(UUID conversationId, UUID messageId) {
+        jdbcTemplate.update("""
+                DELETE FROM message_summaries AS cached_summary
+                USING messages AS source_message
+                WHERE cached_summary.conversation_id = ?
+                  AND source_message.id = ?
+                  AND source_message.conversation_id = cached_summary.conversation_id
+                  AND source_message.seq BETWEEN cached_summary.from_seq AND cached_summary.to_seq
+                """, conversationId, messageId);
+    }
+
+    @Transactional
     public SavedSummary saveIfAbsent(
             UUID conversationId,
             SummaryWindow window,

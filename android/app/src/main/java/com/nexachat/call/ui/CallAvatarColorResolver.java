@@ -2,9 +2,11 @@ package com.nexachat.call.ui;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.util.TypedValue;
 import android.widget.TextView;
 import androidx.core.content.ContextCompat;
 import com.nexachat.R;
+import com.nexachat.core.ui.AvatarInitialsSizing;
 import com.nexachat.core.ui.components.AvatarPalette;
 
 /** Applies the existing app avatar palette index to a native call-screen initials view. */
@@ -30,5 +32,21 @@ public final class CallAvatarColorResolver {
         initialsView.setBackgroundTintList(ColorStateList.valueOf(
                 ContextCompat.getColor(context, BACKGROUND_RESOURCES[index])));
         initialsView.setTextColor(ContextCompat.getColor(context, FOREGROUND_RESOURCES[index]));
+        applyInitialsSize(context, initialsView, name);
+    }
+
+    /** Keeps call-screen initials inside the circular avatar at large font scale. */
+    public static void applyInitialsSize(Context context, TextView initialsView, String name) {
+        if (context == null || initialsView == null) return;
+        initialsView.setIncludeFontPadding(false);
+        initialsView.post(() -> {
+            int diameterPx = Math.min(initialsView.getWidth(), initialsView.getHeight());
+            if (diameterPx <= 0) {
+                return;
+            }
+            float density = context.getResources().getDisplayMetrics().density;
+            float textPx = AvatarInitialsSizing.textSizePx(diameterPx, name, density);
+            initialsView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx);
+        });
     }
 }

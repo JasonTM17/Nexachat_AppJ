@@ -1,6 +1,8 @@
 package com.nexachat.message;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -10,6 +12,15 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MessageAttachmentRepository extends JpaRepository<MessageAttachment, UUID> {
+
+    /**
+     * Acquires attachment claims in a stable order so concurrent sends cannot
+     * both validate and bind the same upload.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT attachment FROM MessageAttachment attachment "
+            + "WHERE attachment.id IN :ids ORDER BY attachment.id")
+    List<MessageAttachment> findAllByIdForUpdateOrderById(@Param("ids") Collection<UUID> ids);
 
     /** Batch fetch for a page of messages — avoids the per-message N+1. */
     List<MessageAttachment> findByMessage_IdIn(Collection<UUID> messageIds);

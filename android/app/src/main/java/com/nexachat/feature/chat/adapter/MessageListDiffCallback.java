@@ -32,6 +32,9 @@ public final class MessageListDiffCallback extends DiffUtil.ItemCallback<Message
         if (MessageListItem.Kind.DATE_SEPARATOR.equals(oldItem.getKind())) {
             return Objects.equals(oldItem.getDateSeparatorLabel(), newItem.getDateSeparatorLabel());
         }
+        if (MessageListItem.Kind.UNREAD_DIVIDER.equals(oldItem.getKind())) {
+            return oldItem.getUnreadDividerCount() == newItem.getUnreadDividerCount();
+        }
         ChatMessage left = oldItem.getMessage();
         ChatMessage right = newItem.getMessage();
         if (left == null || right == null) {
