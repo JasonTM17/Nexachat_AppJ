@@ -777,6 +777,191 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void archiveAndUndoNeverOverlapServerCalls() throws Exception {
+        java.util.concurrent.ExecutorService ioPool =
+                java.util.concurrent.Executors.newCachedThreadPool(
+                        runnable -> {
+                            Thread thread = new Thread(runnable, "repo-io");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.from(ioPool));
+        try {
+        buildRepository();
+        dao().upsert(conversation("conv-order")).blockingAwait();
+        java.util.concurrent.atomic.AtomicInteger inFlight =
+                new java.util.concurrent.atomic.AtomicInteger();
+        java.util.List<String> callOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-order")).thenAnswer(invocation -> {
+            callOrder.add("archive");
+            return trackedVoidCall(heldArchive, inFlight);
+        });
+        java.util.concurrent.CountDownLatch unarchiveStarted =
+                new java.util.concurrent.CountDownLatch(1);
+        when(settingsApi.unarchive("conv-order")).thenAnswer(invocation -> {
+            callOrder.add("unarchive");
+            unarchiveStarted.countDown();
+            return asCall(Response.<Void>success(204, null));
+        });
+
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-order", true).subscribe(),
+                "archive-order");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+        assertEquals(1, inFlight.get());
+
+        assertTrue(repository.setConversationArchived("conv-order", false).blockingGet()
+                instanceof Result.Success<?>);
+        assertEquals(java.util.List.of("archive"), callOrder);
+        assertEquals(1, inFlight.get());
+
+        heldArchive.completeSuccess();
+        archiveThread.join(5_000);
+        assertTrue(unarchiveStarted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(java.util.List.of("archive", "unarchive"), callOrder);
+        assertFalse(dao().rows.get("conv-order").isArchived());
+        assertEquals(0, inFlight.get());
+        } finally {
+            RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+            ioPool.shutdownNow();
+        }
+    }
+
+    @Test
+    public void archiveUndoArchiveCoalescesFollowUpServerWork() throws Exception {
+        java.util.concurrent.ExecutorService ioPool =
+                java.util.concurrent.Executors.newCachedThreadPool(
+                        runnable -> {
+                            Thread thread = new Thread(runnable, "repo-io-coalesce");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.from(ioPool));
+        try {
+        buildRepository();
+        dao().upsert(conversation("conv-coalesce")).blockingAwait();
+        java.util.List<String> callOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-coalesce")).thenAnswer(invocation -> {
+            callOrder.add("archive");
+            return heldArchive;
+        });
+        when(settingsApi.unarchive("conv-coalesce")).thenAnswer(invocation -> {
+            callOrder.add("unarchive");
+            return asCall(Response.<Void>success(204, null));
+        });
+
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-coalesce", true).subscribe(),
+                "coalesce-flight");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+        repository.setConversationArchived("conv-coalesce", false).blockingGet();
+        repository.setConversationArchived("conv-coalesce", true).blockingGet();
+
+        heldArchive.completeSuccess();
+        archiveThread.join(5_000);
+
+        assertEquals(java.util.List.of("archive"), callOrder);
+        assertTrue(dao().rows.get("conv-coalesce").isArchived());
+        } finally {
+            RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+            ioPool.shutdownNow();
+        }
+    }
+
+    @Test
+    public void muteWhileArchiveInFlightQueuesServerMuteCall() throws Exception {
+        java.util.concurrent.ExecutorService ioPool =
+                java.util.concurrent.Executors.newCachedThreadPool(runnable -> {
+                    Thread thread = new Thread(runnable, "repo-io-mute");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.from(ioPool));
+        try {
+            buildRepository();
+            dao().upsert(conversation("conv-mute-order")).blockingAwait();
+            java.util.List<String> callOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
+            HoldVoidCall heldMute = new HoldVoidCall();
+            when(settingsApi.mute(eq("conv-mute-order"), eq(MuteRequest.forever())))
+                    .thenAnswer(invocation -> {
+                        callOrder.add("mute");
+                        return heldMute;
+                    });
+            java.util.concurrent.CountDownLatch unmuteStarted =
+                    new java.util.concurrent.CountDownLatch(1);
+            when(settingsApi.unmute("conv-mute-order")).thenAnswer(invocation -> {
+                callOrder.add("unmute");
+                unmuteStarted.countDown();
+                return asCall(Response.<Void>success(204, null));
+            });
+
+            Thread muteThread = new Thread(
+                    () -> repository.muteConversationForever("conv-mute-order").subscribe(),
+                    "mute-flight");
+            muteThread.start();
+            heldMute.awaitExecuteReached();
+            assertTrue(repository.unmuteConversation("conv-mute-order").blockingGet()
+                    instanceof Result.Success<?>);
+            assertEquals(java.util.List.of("mute"), callOrder);
+
+            heldMute.completeSuccess();
+            muteThread.join(5_000);
+            assertTrue(unmuteStarted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(java.util.List.of("mute", "unmute"), callOrder);
+            assertFalse(dao().rows.get("conv-mute-order").isMuted());
+        } finally {
+            RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+            ioPool.shutdownNow();
+        }
+    }
+
+    @Test
+    public void failedLatestArchiveRollsBackToServerConfirmedNotRoomRace() {
+        buildRepository();
+        dao().upsert(conversation("conv-rollback")).blockingAwait();
+        when(settingsApi.archive("conv-rollback")).thenReturn(asCall(Response.<Void>success(204, null)));
+        when(settingsApi.unarchive("conv-rollback")).thenReturn(asCall(Response.error(503,
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "{}"))));
+
+        repository.setConversationArchived("conv-rollback", true).blockingGet();
+        assertTrue(dao().rows.get("conv-rollback").isArchived());
+
+        Result<Void> undo = repository.setConversationArchived("conv-rollback", false).blockingGet();
+        assertTrue(undo instanceof Result.Failure<?>);
+        assertTrue(dao().rows.get("conv-rollback").isArchived());
+    }
+
+    @Test
+    public void syncDuringArchiveLanePreservesOptimisticUndo() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-sync")).blockingAwait();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-sync")).thenReturn(heldArchive);
+        when(settingsApi.unarchive("conv-sync"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-sync", true).subscribe(),
+                "sync-lane");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+        repository.setConversationArchived("conv-sync", false).blockingGet();
+        assertFalse(dao().rows.get("conv-sync").isArchived());
+
+        stubInboxPage(null, null, inboxJson(false, new Object[] {"conv-sync", 1}));
+        repository.refreshInbox().blockingGet();
+        assertFalse("sync must not flip row while lane still in flight",
+                dao().rows.get("conv-sync").isArchived());
+
+        heldArchive.completeSuccess();
+        archiveThread.join(5_000);
+    }
+
+    @Test
     public void staleArchiveResponseDoesNotOverwriteNewerUndo() throws Exception {
         buildRepository();
         dao().upsert(conversation("conv-race")).blockingAwait();
@@ -1505,6 +1690,56 @@ public final class ConversationRepositoryTest {
                     row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt(),
                     row.getLabelIdsCsv());
         }
+    }
+
+    private static Call<Void> trackedVoidCall(
+            HoldVoidCall delegate, java.util.concurrent.atomic.AtomicInteger inFlight) {
+        return new Call<Void>() {
+            @Override
+            public Response<Void> execute() throws java.io.IOException {
+                assertEquals(1, inFlight.incrementAndGet());
+                try {
+                    return delegate.execute();
+                } finally {
+                    inFlight.decrementAndGet();
+                }
+            }
+
+            @Override
+            public void enqueue(Callback<Void> callback) {
+                delegate.enqueue(callback);
+            }
+
+            @Override
+            public boolean isExecuted() {
+                return delegate.isExecuted();
+            }
+
+            @Override
+            public void cancel() {
+                delegate.cancel();
+            }
+
+            @Override
+            public boolean isCanceled() {
+                return delegate.isCanceled();
+            }
+
+            @Override
+            public Call<Void> clone() {
+                return trackedVoidCall(delegate, inFlight);
+            }
+
+            @Override
+            public Request request() {
+                return delegate.request();
+            }
+
+            @Override
+            public Timeout timeout() {
+                return delegate.timeout();
+            }
+        };
     }
 
     private static final class HoldVoidCall implements Call<Void> {

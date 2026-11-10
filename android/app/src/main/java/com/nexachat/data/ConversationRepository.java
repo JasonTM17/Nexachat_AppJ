@@ -63,6 +63,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import okhttp3.MediaType;
@@ -150,6 +151,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final Set<String> inboxWalkIds = new LinkedHashSet<>();
     @Nullable private Single<Result<Boolean>> inFlightNextInboxPage;
     private final ConversationPreferenceLanes preferenceLanes = new ConversationPreferenceLanes();
+    private final ConversationPreferenceNetworkQueue preferenceNetwork;
 
     @Inject
     public ConversationRepository(
@@ -182,6 +184,39 @@ public final class ConversationRepository implements AutoCloseable {
         this.pageAdapter = moshi.adapter(ConversationsPageDto.class);
         this.listAdapter = moshi.adapter(Types.newParameterizedType(
                 List.class, ConversationInboxDto.class));
+        this.preferenceNetwork = new ConversationPreferenceNetworkQueue(
+                this::callVoid,
+                new ConversationPreferenceNetworkQueue.OutcomeHandler() {
+                    @Override
+                    @NonNull
+                    public Single<Result<Void>> onArchiveNetworkComplete(
+                            @NonNull String conversationId,
+                            long version,
+                            boolean attemptedArchived,
+                            @NonNull Result<Void> result) {
+                        return resolveArchiveNetwork(conversationId, version, result);
+                    }
+
+                    @Override
+                    @NonNull
+                    public Single<Result<Void>> onMuteNetworkComplete(
+                            @NonNull String conversationId,
+                            long version,
+                            @NonNull ConversationPreferenceNetworkQueue.MuteState attempted,
+                            @NonNull Result<Void> result) {
+                        return resolveMuteNetwork(conversationId, version, result);
+                    }
+
+                    @Override
+                    @NonNull
+                    public Single<Result<Void>> onPinNetworkComplete(
+                            @NonNull String conversationId,
+                            long version,
+                            @NonNull ConversationPreferenceNetworkQueue.PinState attempted,
+                            @NonNull Result<Void> result) {
+                        return resolvePinNetwork(conversationId, version, result);
+                    }
+                });
         watchPushTriggers();
     }
 
@@ -366,7 +401,7 @@ public final class ConversationRepository implements AutoCloseable {
                 conversationId,
                 true,
                 until.toEpochMilli(),
-                callVoid(settingsApi.mute(conversationId, MuteRequest.until(until))))
+                state -> muteCallFor(conversationId, state))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -377,7 +412,7 @@ public final class ConversationRepository implements AutoCloseable {
                 conversationId,
                 true,
                 null,
-                callVoid(settingsApi.mute(conversationId, MuteRequest.forever())))
+                state -> muteCallFor(conversationId, state))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -388,7 +423,7 @@ public final class ConversationRepository implements AutoCloseable {
                 conversationId,
                 false,
                 null,
-                callVoid(settingsApi.unmute(conversationId)))
+                state -> muteCallFor(conversationId, state))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -396,10 +431,12 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Single<Result<Void>> setConversationArchived(
             @NonNull String conversationId, boolean archived) {
-        Call<Void> call = archived
-                ? settingsApi.archive(conversationId)
-                : settingsApi.unarchive(conversationId);
-        return operationTracker.track(orderedArchive(conversationId, archived, callVoid(call))
+        return operationTracker.track(orderedArchive(
+                conversationId,
+                archived,
+                isArchived -> isArchived
+                        ? settingsApi.archive(conversationId)
+                        : settingsApi.unarchive(conversationId))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -578,7 +615,7 @@ public final class ConversationRepository implements AutoCloseable {
         return operationTracker.track(orderedPin(
                 conversationId,
                 true,
-                callVoid(messageApi.pinConversation(conversationId)))
+                state -> pinCallFor(conversationId, state))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -590,7 +627,7 @@ public final class ConversationRepository implements AutoCloseable {
         return operationTracker.track(orderedPin(
                 conversationId,
                 false,
-                callVoid(messageApi.unpinConversation(conversationId)))
+                state -> pinCallFor(conversationId, state))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -1084,21 +1121,15 @@ public final class ConversationRepository implements AutoCloseable {
     private Single<Result<Void>> orderedArchive(
             @NonNull String conversationId,
             boolean archived,
-            @NonNull Single<Result<Void>> request) {
+            @NonNull Function<Boolean, Call<Void>> callForArchived) {
         ConversationPreferenceLanes.Ticket ticket =
                 preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.ARCHIVE);
         return conversationDao.byId(conversationId)
                 .flatMapSingle(existing -> {
-                    boolean previous = existing.isArchived();
+                    preferenceNetwork.seedArchiveIfUnknown(conversationId, existing.isArchived());
                     return conversationDao.updateArchived(conversationId, archived)
-                            .andThen(request)
-                            .flatMap(result -> resolveOrderedPreferenceResult(
-                                    conversationId,
-                                    ConversationPreferenceLanes.Kind.ARCHIVE,
-                                    ticket.version,
-                                    result,
-                                    conversationDao.updateArchived(conversationId, previous)
-                                            .andThen(Single.just(result))));
+                            .andThen(preferenceNetwork.submitArchive(
+                                    conversationId, ticket, archived, callForArchived));
                 })
                 .switchIfEmpty(Single.just(Result.failure(
                         new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
@@ -1109,23 +1140,18 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull String conversationId,
             boolean muted,
             @Nullable Long mutedUntilEpochMs,
-            @NonNull Single<Result<Void>> request) {
+            @NonNull Function<ConversationPreferenceNetworkQueue.MuteState, Call<Void>> callForState) {
         ConversationPreferenceLanes.Ticket ticket =
                 preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.MUTE);
+        ConversationPreferenceNetworkQueue.MuteState desired =
+                new ConversationPreferenceNetworkQueue.MuteState(muted, mutedUntilEpochMs);
         return conversationDao.byId(conversationId)
                 .flatMapSingle(existing -> {
-                    boolean previousMuted = existing.isMuted();
-                    Long previousUntil = existing.getMutedUntilEpochMs();
+                    preferenceNetwork.seedMuteIfUnknown(
+                            conversationId, existing.isMuted(), existing.getMutedUntilEpochMs());
                     return conversationDao.updateMute(conversationId, muted, mutedUntilEpochMs)
-                            .andThen(request)
-                            .flatMap(result -> resolveOrderedPreferenceResult(
-                                    conversationId,
-                                    ConversationPreferenceLanes.Kind.MUTE,
-                                    ticket.version,
-                                    result,
-                                    conversationDao.updateMute(
-                                                    conversationId, previousMuted, previousUntil)
-                                            .andThen(Single.just(result))));
+                            .andThen(preferenceNetwork.submitMute(
+                                    conversationId, ticket, desired, callForState));
                 })
                 .switchIfEmpty(Single.just(Result.failure(
                         new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
@@ -1135,28 +1161,108 @@ public final class ConversationRepository implements AutoCloseable {
     private Single<Result<Void>> orderedPin(
             @NonNull String conversationId,
             boolean pinned,
-            @NonNull Single<Result<Void>> request) {
+            @NonNull Function<ConversationPreferenceNetworkQueue.PinState, Call<Void>> callForState) {
         ConversationPreferenceLanes.Ticket ticket =
                 preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.PIN);
+        long pinnedAt = pinned ? System.currentTimeMillis() : 0L;
+        Long appliedPinnedAt = pinned ? pinnedAt : null;
+        ConversationPreferenceNetworkQueue.PinState desired =
+                new ConversationPreferenceNetworkQueue.PinState(pinned, appliedPinnedAt);
         return conversationDao.byId(conversationId)
                 .flatMapSingle(existing -> {
-                    boolean previousPinned = existing.isPinned();
-                    Long previousPinnedAt = existing.getPinnedAt();
-                    long pinnedAt = pinned ? System.currentTimeMillis() : 0L;
-                    Long appliedPinnedAt = pinned ? pinnedAt : null;
+                    preferenceNetwork.seedPinIfUnknown(
+                            conversationId, existing.isPinned(), existing.getPinnedAt());
                     return conversationDao.updatePin(conversationId, pinned, appliedPinnedAt)
-                            .andThen(request)
-                            .flatMap(result -> resolveOrderedPreferenceResult(
-                                    conversationId,
-                                    ConversationPreferenceLanes.Kind.PIN,
-                                    ticket.version,
-                                    result,
-                                    conversationDao.updatePin(
-                                                    conversationId, previousPinned, previousPinnedAt)
-                                            .andThen(Single.just(result))));
+                            .andThen(preferenceNetwork.submitPin(
+                                    conversationId, ticket, desired, callForState));
                 })
                 .switchIfEmpty(Single.just(Result.failure(
                         new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+    }
+
+    @NonNull
+    private Single<Result<Void>> resolveArchiveNetwork(
+            @NonNull String conversationId,
+            long version,
+            @NonNull Result<Void> result) {
+        return resolveOrderedPreferenceResult(
+                conversationId,
+                ConversationPreferenceLanes.Kind.ARCHIVE,
+                version,
+                result,
+                rollbackArchive(conversationId).andThen(Single.just(result)));
+    }
+
+    @NonNull
+    private Single<Result<Void>> resolveMuteNetwork(
+            @NonNull String conversationId,
+            long version,
+            @NonNull Result<Void> result) {
+        return resolveOrderedPreferenceResult(
+                conversationId,
+                ConversationPreferenceLanes.Kind.MUTE,
+                version,
+                result,
+                rollbackMute(conversationId).andThen(Single.just(result)));
+    }
+
+    @NonNull
+    private Single<Result<Void>> resolvePinNetwork(
+            @NonNull String conversationId,
+            long version,
+            @NonNull Result<Void> result) {
+        return resolveOrderedPreferenceResult(
+                conversationId,
+                ConversationPreferenceLanes.Kind.PIN,
+                version,
+                result,
+                rollbackPin(conversationId).andThen(Single.just(result)));
+    }
+
+    @NonNull
+    private Completable rollbackArchive(@NonNull String conversationId) {
+        return conversationDao.updateArchived(
+                conversationId, preferenceNetwork.confirmedArchived(conversationId));
+    }
+
+    @NonNull
+    private Completable rollbackMute(@NonNull String conversationId) {
+        ConversationPreferenceNetworkQueue.MuteState confirmed =
+                preferenceNetwork.confirmedMute(conversationId);
+        return conversationDao.updateMute(
+                conversationId, confirmed.muted, confirmed.mutedUntilEpochMs);
+    }
+
+    @NonNull
+    private Completable rollbackPin(@NonNull String conversationId) {
+        ConversationPreferenceNetworkQueue.PinState confirmed =
+                preferenceNetwork.confirmedPin(conversationId);
+        return conversationDao.updatePin(
+                conversationId, confirmed.pinned, confirmed.pinnedAtEpochMs);
+    }
+
+    @NonNull
+    private Call<Void> muteCallFor(
+            @NonNull String conversationId,
+            @NonNull ConversationPreferenceNetworkQueue.MuteState state) {
+        if (!state.muted) {
+            return settingsApi.unmute(conversationId);
+        }
+        if (state.mutedUntilEpochMs == null) {
+            return settingsApi.mute(conversationId, MuteRequest.forever());
+        }
+        return settingsApi.mute(
+                conversationId,
+                MuteRequest.until(java.time.Instant.ofEpochMilli(state.mutedUntilEpochMs)));
+    }
+
+    @NonNull
+    private Call<Void> pinCallFor(
+            @NonNull String conversationId,
+            @NonNull ConversationPreferenceNetworkQueue.PinState state) {
+        return state.pinned
+                ? messageApi.pinConversation(conversationId)
+                : messageApi.unpinConversation(conversationId);
     }
 
     @NonNull
@@ -1244,6 +1350,21 @@ public final class ConversationRepository implements AutoCloseable {
             List<ConversationEntity> merged = new ArrayList<>(rows.size());
             for (ConversationEntity row : rows) {
                 ConversationEntity old = prior.get(row.getId());
+                String conversationId = row.getId();
+                if (!preferenceLanes.preserveLocalOverServer(
+                        conversationId, ConversationPreferenceLanes.Kind.MUTE)) {
+                    preferenceNetwork.noteServerMute(
+                            conversationId, row.isMuted(), row.getMutedUntilEpochMs());
+                }
+                if (!preferenceLanes.preserveLocalOverServer(
+                        conversationId, ConversationPreferenceLanes.Kind.ARCHIVE)) {
+                    preferenceNetwork.noteServerArchive(conversationId, row.isArchived());
+                }
+                if (!preferenceLanes.preserveLocalOverServer(
+                        conversationId, ConversationPreferenceLanes.Kind.PIN)) {
+                    preferenceNetwork.noteServerPin(
+                            conversationId, row.isPinned(), row.getPinnedAt());
+                }
                 boolean keepNewerLocalActivity = old != null
                         && old.getLastMessageSeq() > row.getLastMessageSeq();
                 merged.add(new ConversationEntity(
