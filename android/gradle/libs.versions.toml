@@ -2,7 +2,7 @@
 # Rule: no hardcoded version strings inside build.gradle files.
 
 [versions]
-agp = "8.7.3"
+agp = "8.9.3"
 hilt = "2.52"
 google-services = "4.5.0"
 lifecycle = "2.8.7"
@@ -29,6 +29,8 @@ mockito = "5.14.2"
 arch-core-testing = "2.2.0"
 work = "2.9.1"
 firebase-messaging = "24.0.0"
+# Media3 pulls 33.3.1-android. CVE-2026-102554 is fixed in 33.7.2.
+guava = "33.7.2-android"
 
 # Testing
 junit = "4.13.2"
@@ -97,6 +99,7 @@ androidx-work-rxjava3 = { group = "androidx.work", name = "work-rxjava3", versio
 
 # Firebase Cloud Messaging
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebase-messaging" }
+guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
 
 # Unit tests
 junit = { group = "junit", name = "junit", version.ref = "junit" }

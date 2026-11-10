@@ -30,6 +30,11 @@
 
         <!-- allowBackup=false: tokens live in Keystore-AES storage; no reason to
              back up app data to the cloud (plan §13, JWT theft row). -->
+        <!-- FLAG_SECURE is intentionally unset. Chat text is meant to be
+             visible and shareable; session tokens are not drawn. They are
+             AES/GCM ciphertext in DataStore, keyed by AndroidKeyStore, and
+             TokenStore.clear() removes them on logout. Incoming-call UI is
+             already excludeFromRecents. -->
 
         <!-- Custom URI schemes can be claimed by any app. Invite tokens are single-purpose,
              revocable, and rate-limited server-side. -->

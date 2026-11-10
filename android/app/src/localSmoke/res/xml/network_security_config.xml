@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  localSmoke does not inherit src/debug resources. Without this file the
+  variant would ship the release policy and could not reach its default
+  cleartext API host. Android applies base-config, not domain-config, to IP
+  literals, so 10.0.2.2 and LAN addresses cannot be listed as domains.
+  Release stays on src/main, where cleartext is disabled.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

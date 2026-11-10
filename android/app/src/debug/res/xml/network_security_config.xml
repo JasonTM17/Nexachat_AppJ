@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Debug-source-set override: Cleartext HTTP/WS is permitted for local development
-  including the Android emulator host alias (10.0.2.2) and LAN demo hosts.
-  This file ships only in debug builds. Release builds use the restrictive
-  main config where cleartext traffic is disabled globally.
+  Debug-source-set override. localSmoke carries its own copy under
+  src/localSmoke/res/xml/network_security_config.xml because that build type
+  does not merge src/debug. Cleartext is permitted from the base-config:
+  the emulator and LAN dev servers are IP literals, and Android does not
+  apply domain-config to IP addresses. Release uses src/main, where
+  cleartext is disabled with no exemptions.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />

@@ -3,8 +3,9 @@
   Production network security configuration.
   Cleartext HTTP/WS traffic is strictly disabled globally with no exemptions.
   All production connections must use TLS (HTTPS/WSS).
-  Cleartext overrides for emulator and LAN development are debug-only
-  and reside in src/debug/res/xml/network_security_config.xml.
+  Cleartext overrides for the emulator and LAN development live in the debug
+  and localSmoke source sets. Android applies base-config, not domain-config,
+  to IP literals, so those variants cannot list 10.0.2.2 as a domain.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
