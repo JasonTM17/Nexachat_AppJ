@@ -21,6 +21,8 @@ public final class ConversationSummary {
     @Nullable private final Long lastMessageAtEpochMs;
     private final long lastMessageSeq;
     private final int unreadCount;
+    /** Caller's own read watermark from the last inbox or delta payload (0 when unknown). */
+    private final long myLastReadSeq;
     @Nullable private final String otherUserName;
     @Nullable private final String otherUserAvatar;
     /** Group avatar set by an admin; null for direct rows and unstyled groups. */
@@ -77,7 +79,7 @@ public final class ConversationSummary {
             boolean pinned,
             @Nullable Long pinnedAtEpochMs) {
         this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
-                lastMessageSeq, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
                 peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
                 pinnedAtEpochMs, List.of());
@@ -108,6 +110,39 @@ public final class ConversationSummary {
             boolean pinned,
             @Nullable Long pinnedAtEpochMs,
             List<String> labelIds) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
+                pinnedAtEpochMs, labelIds);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            long myLastReadSeq,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs,
+            List<String> labelIds) {
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -116,6 +151,7 @@ public final class ConversationSummary {
         this.lastMessageAtEpochMs = lastMessageAtEpochMs;
         this.lastMessageSeq = lastMessageSeq;
         this.unreadCount = unreadCount;
+        this.myLastReadSeq = Math.max(0L, myLastReadSeq);
         this.otherUserName = otherUserName;
         this.otherUserAvatar = otherUserAvatar;
         this.avatarUrl = avatarUrl;
@@ -268,6 +304,7 @@ public final class ConversationSummary {
     @Nullable public Long getLastMessageAtEpochMs() { return lastMessageAtEpochMs; }
     public long getLastMessageSeq() { return lastMessageSeq; }
     public int getUnreadCount() { return unreadCount; }
+    public long getMyLastReadSeq() { return myLastReadSeq; }
     @Nullable public String getOtherUserName() { return otherUserName; }
     @Nullable public String getOtherUserAvatar() { return otherUserAvatar; }
     @Nullable public String getAvatarUrl() { return avatarUrl; }
@@ -338,6 +375,7 @@ public final class ConversationSummary {
         if (!(other instanceof ConversationSummary that)) return false;
         return lastMessageSeq == that.lastMessageSeq
                 && unreadCount == that.unreadCount
+                && myLastReadSeq == that.myLastReadSeq
                 && peerReadSeq == that.peerReadSeq
                 && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
@@ -365,7 +403,7 @@ public final class ConversationSummary {
     @Override
     public int hashCode() {
         return Objects.hash(id, type, title, lastMessageContent, lastMessageSenderName,
-                lastMessageAtEpochMs, lastMessageSeq, unreadCount, otherUserName,
+                lastMessageAtEpochMs, lastMessageSeq, unreadCount, myLastReadSeq, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
                 pinned, pinnedAtEpochMs, labelIds);

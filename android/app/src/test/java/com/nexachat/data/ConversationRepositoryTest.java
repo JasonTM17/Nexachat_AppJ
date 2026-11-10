@@ -97,6 +97,10 @@ public final class ConversationRepositoryTest {
     private final OutboxDao outboxDao = org.mockito.Mockito.mock(OutboxDao.class);
     private final PresenceRepository presenceRepository =
             org.mockito.Mockito.mock(PresenceRepository.class);
+    private final SessionOperationTracker operationTracker = new SessionOperationTracker();
+    private final InboxReadWatermarkCache inboxReadWatermarkCache = new InboxReadWatermarkCache();
+    private final MessageRepository messageRepository =
+            org.mockito.Mockito.mock(MessageRepository.class);
     private final BehaviorProcessor<Map<String, PeerPresence>> presenceFlow =
             BehaviorProcessor.createDefault(Collections.emptyMap());
     private final Moshi moshi = new Moshi.Builder().build();
@@ -153,7 +157,10 @@ public final class ConversationRepositoryTest {
                 tokenStore,
                 moshi,
                 context,
-                appDatabase);
+                appDatabase,
+                operationTracker,
+                inboxReadWatermarkCache,
+                messageRepository);
     }
 
     private <T> Call<T> asCall(Response<T> response) {
