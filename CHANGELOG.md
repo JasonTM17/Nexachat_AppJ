@@ -70,8 +70,8 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 - Message recall removes mentions, reactions and pins, hides the message from
   search and archive, and purges the conversation's cached RAG answers;
   editing a message purges cached answers and its stored embedding.
-- Attachment uploads reject active markup disguised as text, case-variant
-  storage keys and oversized bodies before buffering.
+- Attachment uploads reject active markup disguised as text and case-variant
+  storage keys; oversized bodies are rejected before buffering.
 
 **Security**
 
