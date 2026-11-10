@@ -35,7 +35,7 @@ import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.nexachat.R;
-import com.nexachat.call.ui.CallLogResourceResolver;
+import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.BlurHashDecoder;
@@ -377,14 +377,8 @@ public final class MessageBubbleBinder {
             if (systemLabel != null) {
                 systemLabel.setVisibility(View.VISIBLE);
                 String raw = message.getContent() != null ? message.getContent() : "";
-                if (raw.startsWith("CALL|")) {
-                    CallLogResourceResolver.ResolvedCallLog resolved =
-                            CallLogResourceResolver.fromSystemMessage(raw, message.getMine());
-                    systemLabel.setText(root.getContext().getString(
-                            resolved.getResourceId(), resolved.getArguments()));
-                } else {
-                    systemLabel.setText(raw);
-                }
+                systemLabel.setText(SystemEventFormatter.format(
+                        root.getContext(), raw, message.getMine()));
             }
             return;
         }
@@ -448,11 +442,8 @@ public final class MessageBubbleBinder {
             body.setVisibility(View.VISIBLE);
             String raw = message.getContent() != null ? message.getContent() : message.getType();
             if (raw != null && raw.startsWith("CALL|")) {
-                CallLogResourceResolver.ResolvedCallLog resolved =
-                        CallLogResourceResolver.fromSystemMessage(raw, message.getMine());
-                body.setText(
-                        root.getContext().getString(resolved.getResourceId(), resolved.getArguments())
-                );
+                body.setText(SystemEventFormatter.format(
+                        root.getContext(), raw, message.getMine()));
             } else {
                 body.setContentDescription(null);
                 body.setText(raw != null ? raw : "");
