@@ -68,9 +68,6 @@ public final class MessageListMapper {
         }
         List<MessageListItem> rows = new ArrayList<>();
         for (int index = 0; index < chronological.size(); index++) {
-            if (index == unreadDividerBeforeMessageIndex && unreadDividerCount > 0) {
-                rows.add(MessageListItem.unreadDivider(unreadDividerCount));
-            }
             ChatMessage message = chronological.get(index);
             ChatMessage previous = index > 0 ? chronological.get(index - 1) : null;
             if (ChatUiRules.shouldShowDateSeparator(
@@ -83,6 +80,9 @@ public final class MessageListMapper {
                         dateLabels
                 );
                 rows.add(MessageListItem.dateSeparator(label, message.getCreatedAtEpochMs()));
+            }
+            if (index == unreadDividerBeforeMessageIndex && unreadDividerCount > 0) {
+                rows.add(MessageListItem.unreadDivider(unreadDividerCount));
             }
 
             MessageGroupPosition groupPosition = MessageGroupingRules.resolveGroupPosition(chronological, index);

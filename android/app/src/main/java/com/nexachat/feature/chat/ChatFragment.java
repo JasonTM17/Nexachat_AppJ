@@ -120,6 +120,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private boolean searchOpen;
     @Nullable private Long unreadDividerLocalReadSeq;
     private boolean unreadDividerDismissed;
+    private boolean unreadDividerWasVisible;
+    private int cachedUnreadDividerAdapterPos = -1;
+    private int cachedFirstUnreadAdapterPos = -1;
     private final ActivityResultLauncher<PickVisualMediaRequest> visualPicker =
             registerForActivityResult(
                     new ActivityResultContracts.PickMultipleVisualMedia(10),
@@ -220,7 +223,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 if (binding == null || adapter == null) return;
                 LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
                 if (manager != null && searchOpen && manager.findLastVisibleItemPosition() >= adapter.getItemCount() - 3 && searchState.getHasMore()) viewModel.loadMoreSearch();
-                else                 if (manager != null && manager.findFirstVisibleItemPosition() <= 1 && state.getHasMore()) viewModel.loadOlder();
+                else if (manager != null && manager.findFirstVisibleItemPosition() <= 1 && state.getHasMore()) viewModel.loadOlder();
                 binding.scrollDownFab.setVisibility(manager != null && manager.findLastVisibleItemPosition() < adapter.getItemCount() - 3 ? View.VISIBLE : View.GONE);
                 updateUnreadDividerReached(manager);
             }
@@ -767,9 +770,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             unreadCount = UnreadDividerRule.countUnreadIncoming(messages, localReadSeq);
             unreadBeforeIndex = UnreadDividerRule.indexOfFirstUnread(messages, localReadSeq);
         }
+        ConversationSummary inboxRow = currentConversation();
+        int inboxUnread = inboxRow == null ? 0 : inboxRow.getUnreadCount();
         boolean firstUnreadVisible = isFirstUnreadVisible(messages, localReadSeq, manager, oldCount);
         boolean showDivider = localReadSeq >= 0L
-                && UnreadDividerRule.shouldShowDivider(unreadCount, unreadDividerDismissed, firstUnreadVisible);
+                && UnreadDividerRule.shouldShowDivider(
+                        unreadCount, unreadDividerDismissed, firstUnreadVisible, inboxUnread);
         int dividerIndex = showDivider ? unreadBeforeIndex : -1;
         int dividerCount = showDivider ? unreadCount : 0;
         List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
@@ -782,6 +788,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 System.currentTimeMillis(),
                 dividerIndex,
                 dividerCount);
+        cacheUnreadDividerAdapterPositions(rows, messages, localReadSeq);
         String stableAnchor = anchorId;
         boolean dividerShown = showDivider;
         adapter.submitList(rows, () -> {
@@ -854,67 +861,63 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             @Nullable LinearLayoutManager manager,
             int previousItemCount
     ) {
-        if (manager == null || previousItemCount <= 0 || localReadSeq < 0L) {
-            return false;
-        }
-        int firstUnreadPos = indexOfFirstUnreadAdapterPosition(messages, localReadSeq, false);
-        if (firstUnreadPos < 0) {
+        if (manager == null || previousItemCount <= 0 || localReadSeq < 0L || adapter == null) {
             return false;
         }
         int firstVisible = manager.findFirstVisibleItemPosition();
         int lastVisible = manager.findLastVisibleItemPosition();
-        return firstUnreadPos >= firstVisible && firstUnreadPos <= lastVisible;
+        if (firstVisible < 0 || lastVisible < 0) {
+            return false;
+        }
+        List<MessageListItem> current = adapter.getCurrentList();
+        for (int i = firstVisible; i <= lastVisible && i < current.size(); i++) {
+            MessageListItem item = current.get(i);
+            if (item.getKind() == MessageListItem.Kind.MESSAGE
+                    && UnreadDividerRule.countsAsUnread(item.getMessage(), localReadSeq)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void updateUnreadDividerReached(@Nullable LinearLayoutManager manager) {
         if (unreadDividerDismissed || unreadDividerLocalReadSeq == null || manager == null || binding == null) {
             return;
         }
-        long localReadSeq = unreadDividerLocalReadSeq;
-        int dividerPos = indexOfFirstUnreadAdapterPosition(state.getMessages(), localReadSeq, true);
-        int firstUnreadPos = indexOfFirstUnreadAdapterPosition(state.getMessages(), localReadSeq, false);
-        int target = dividerPos >= 0 ? dividerPos : firstUnreadPos;
-        if (target < 0) {
+        int dividerPos = cachedUnreadDividerAdapterPos;
+        if (dividerPos < 0) {
             return;
         }
-        if (manager.findLastVisibleItemPosition() >= target) {
+        int firstVisible = manager.findFirstVisibleItemPosition();
+        int lastVisible = manager.findLastVisibleItemPosition();
+        if (UnreadDividerRule.isDividerAdapterPositionVisible(dividerPos, firstVisible, lastVisible)) {
+            unreadDividerWasVisible = true;
+            return;
+        }
+        if (UnreadDividerRule.shouldDismissDivider(
+                dividerPos, firstVisible, lastVisible, unreadDividerWasVisible)) {
             unreadDividerDismissed = true;
             submitMessages(state.getMessages());
         }
     }
 
-    private int indexOfFirstUnreadAdapterPosition(
+    private void cacheUnreadDividerAdapterPositions(
+            @NonNull List<MessageListItem> rows,
             @NonNull List<ChatMessage> messages,
-            long localReadSeq,
-            boolean dividerRow
+            long localReadSeq
     ) {
-        int messageIndex = UnreadDividerRule.indexOfFirstUnread(messages, localReadSeq);
-        if (messageIndex < 0) {
-            return -1;
-        }
-        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
-                messages,
-                state.isGroup(),
-                state.isShowSeen() ? state.getPeerReadSeq() : 0L,
-                state.getPeerDeliveredSeq(),
-                null,
-                new DateSeparatorLabels("", ""),
-                0L,
-                dividerRow ? messageIndex : -1,
-                dividerRow ? UnreadDividerRule.countUnreadIncoming(messages, localReadSeq) : 0);
+        cachedUnreadDividerAdapterPos = -1;
+        cachedFirstUnreadAdapterPos = -1;
         for (int i = 0; i < rows.size(); i++) {
-            if (dividerRow) {
-                if (rows.get(i).getKind() == MessageListItem.Kind.UNREAD_DIVIDER) {
-                    return i;
-                }
-            } else {
-                ChatMessage message = rows.get(i).getMessage();
-                if (UnreadDividerRule.countsAsUnread(message, localReadSeq)) {
-                    return i;
-                }
+            MessageListItem row = rows.get(i);
+            if (row.getKind() == MessageListItem.Kind.UNREAD_DIVIDER) {
+                cachedUnreadDividerAdapterPos = i;
+            } else if (row.getKind() == MessageListItem.Kind.MESSAGE
+                    && cachedFirstUnreadAdapterPos < 0
+                    && UnreadDividerRule.countsAsUnread(row.getMessage(), localReadSeq)) {
+                cachedFirstUnreadAdapterPos = i;
             }
         }
-        return -1;
     }
 
     private void setSearchOpen(boolean open) {
@@ -1292,6 +1295,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding = null;
         unreadDividerLocalReadSeq = null;
         unreadDividerDismissed = false;
+        unreadDividerWasVisible = false;
+        cachedUnreadDividerAdapterPos = -1;
+        cachedFirstUnreadAdapterPos = -1;
         super.onDestroyView();
     }
 }

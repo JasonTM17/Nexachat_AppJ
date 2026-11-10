@@ -84,12 +84,43 @@ public final class UnreadDividerRule {
     public static boolean shouldShowDivider(
             int unreadCount,
             boolean dismissed,
-            boolean firstUnreadVisible
+            boolean firstUnreadVisible,
+            int inboxUnreadCount
     ) {
-        if (dismissed || unreadCount <= 0 || firstUnreadVisible) {
+        if (dismissed || unreadCount <= 0 || firstUnreadVisible || inboxUnreadCount <= 0) {
             return false;
         }
         return true;
+    }
+
+    public static boolean isDividerAdapterPositionVisible(
+            int dividerAdapterPosition,
+            int firstVisible,
+            int lastVisible
+    ) {
+        if (dividerAdapterPosition < 0 || firstVisible < 0 || lastVisible < 0) {
+            return false;
+        }
+        return dividerAdapterPosition >= firstVisible && dividerAdapterPosition <= lastVisible;
+    }
+
+    /**
+     * Dismiss only after the divider row has been on screen and then leaves the viewport.
+     * Opening scrolled to the bottom must not dismiss when the divider sits above the window.
+     */
+    public static boolean shouldDismissDivider(
+            int dividerAdapterPosition,
+            int firstVisible,
+            int lastVisible,
+            boolean dividerWasVisible
+    ) {
+        if (dividerAdapterPosition < 0) {
+            return false;
+        }
+        if (isDividerAdapterPositionVisible(dividerAdapterPosition, firstVisible, lastVisible)) {
+            return false;
+        }
+        return dividerWasVisible;
     }
 
     private static long loadedHistoryReadCeiling(

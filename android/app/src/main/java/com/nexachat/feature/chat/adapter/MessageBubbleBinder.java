@@ -25,6 +25,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.TextViewCompat;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.ViewModelStoreOwner;
+import com.nexachat.res.QuantityStrings;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
@@ -181,11 +182,11 @@ public final class MessageBubbleBinder {
         TextView label = root.findViewById(R.id.unreadDividerLabel);
         View dividerRoot = root.findViewById(R.id.unreadDividerRoot);
         if (label != null) {
-            label.setText(com.nexachat.res.QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+            label.setText(QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
         }
         if (dividerRoot != null) {
             dividerRoot.setContentDescription(
-                    com.nexachat.res.QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+                    QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
         }
     }
 

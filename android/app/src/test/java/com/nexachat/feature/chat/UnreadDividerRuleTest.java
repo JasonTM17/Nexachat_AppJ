@@ -42,12 +42,17 @@ public final class UnreadDividerRuleTest {
 
     @Test
     public void zeroUnreadHidesDivider() {
-        assertFalse(UnreadDividerRule.shouldShowDivider(0, false, false));
+        assertFalse(UnreadDividerRule.shouldShowDivider(0, false, false, 1));
     }
 
     @Test
     public void oneUnreadShowsWhenNotVisible() {
-        assertTrue(UnreadDividerRule.shouldShowDivider(1, false, false));
+        assertTrue(UnreadDividerRule.shouldShowDivider(1, false, false, 1));
+    }
+
+    @Test
+    public void inboxZeroUnreadHidesDividerEvenWhenMessagesDerivedCountPositive() {
+        assertFalse(UnreadDividerRule.shouldShowDivider(5, false, false, 0));
     }
 
     @Test
@@ -79,8 +84,32 @@ public final class UnreadDividerRuleTest {
 
     @Test
     public void dismissedOrVisibleHidesDivider() {
-        assertFalse(UnreadDividerRule.shouldShowDivider(4, true, false));
-        assertFalse(UnreadDividerRule.shouldShowDivider(4, false, true));
+        assertFalse(UnreadDividerRule.shouldShowDivider(4, true, false, 4));
+        assertFalse(UnreadDividerRule.shouldShowDivider(4, false, true, 4));
+    }
+
+    @Test
+    public void openAtBottomDoesNotDismissWhenDividerAboveViewport() {
+        int dividerPos = 40;
+        int firstVisible = 80;
+        int lastVisible = 100;
+        assertFalse(UnreadDividerRule.shouldDismissDivider(
+                dividerPos, firstVisible, lastVisible, false));
+    }
+
+    @Test
+    public void dismissesAfterDividerWasVisibleAndLeavesViewport() {
+        int dividerPos = 50;
+        assertFalse(UnreadDividerRule.shouldDismissDivider(dividerPos, 45, 55, true));
+        assertTrue(UnreadDividerRule.shouldDismissDivider(dividerPos, 60, 100, true));
+    }
+
+    @Test
+    public void legacyLastVisibleGreaterThanTargetWouldHaveFalseDismissed() {
+        int dividerPos = 40;
+        int lastVisible = 100;
+        assertTrue(lastVisible >= dividerPos);
+        assertFalse(UnreadDividerRule.shouldDismissDivider(dividerPos, 80, lastVisible, false));
     }
 
     @Test

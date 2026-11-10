@@ -481,5 +481,4 @@
     <plurals name="chat_unread_divider">
         <item quantity="other">%d tin nhắn chưa đọc</item>
     </plurals>
-    <string name="cd_chat_unread_divider" translatable="false">Vạch phân cách tin chưa đọc</string>
 </resources>
