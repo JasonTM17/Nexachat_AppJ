@@ -951,16 +951,37 @@ public class MessageRepositoryTest {
     }
 
     @Test public void disposeDuringEditRollsBackOptimisticRow() {
-        await(messageDao.upsert(own("m-1", 1L, "old")));
-        CountDownLatch networkStarted = new CountDownLatch(1);
-        CountDownLatch releaseNetwork = new CountDownLatch(1);
-        when(messageApi.editMessage(anyString(), anyString(), any())).thenReturn(blockingCall(networkStarted, releaseNetwork));
-        TestObserver<Result<Unit>> observer = repository.editMessage(CONVERSATION_ID, "m-1", "edited").test();
-        awaitLatch(networkStarted);
-        observer.dispose();
-        releaseNetwork.countDown();
-        assertEquals("old", messages.get("m-1").getContent());
-        assertNull(messages.get("m-1").getEditedAtEpochMs());
+        RxJavaPlugins.setIoSchedulerHandler(null);
+        try {
+            await(messageDao.upsert(own("m-1", 1L, "old")));
+            CountDownLatch networkStarted = new CountDownLatch(1);
+            CountDownLatch releaseNetwork = new CountDownLatch(1);
+            CountDownLatch rollbackApplied = new CountDownLatch(1);
+            doAnswer(call -> {
+                MessageEntity row = call.getArgument(0);
+                if (messages.containsKey(row.getId())) {
+                    messages.put(row.getId(), row);
+                }
+                messageChanges.onNext(messageChanges.getValue() + 1);
+                if ("m-1".equals(row.getId()) && "old".equals(row.getContent())
+                        && row.getEditedAtEpochMs() == null) {
+                    rollbackApplied.countDown();
+                }
+                return Completable.complete();
+            }).when(messageDao).update(any());
+            when(messageApi.editMessage(anyString(), anyString(), any()))
+                    .thenReturn(blockingCall(networkStarted, releaseNetwork));
+            TestObserver<Result<Unit>> observer =
+                    repository.editMessage(CONVERSATION_ID, "m-1", "edited").test();
+            awaitLatch(networkStarted);
+            observer.dispose();
+            releaseNetwork.countDown();
+            awaitLatch(rollbackApplied);
+            assertEquals("old", messages.get("m-1").getContent());
+            assertNull(messages.get("m-1").getEditedAtEpochMs());
+        } finally {
+            RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+        }
     }
 
     @Test public void editIgnoresBlankIdenticalAndNonOwnedContent() {
@@ -1052,22 +1073,43 @@ public class MessageRepositoryTest {
     }
 
     @Test public void disposeDuringDeleteRestoresOptimisticState() {
-        await(messageDao.upsert(own("m-1", 1L, "bye")));
-        await(reactionDao.upsertAll(List.of(new MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true))));
-        await(pinDao.upsert(new PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L)));
-        await(conversationDao.upsert(conversation(1L, "bye")));
-        CountDownLatch networkStarted = new CountDownLatch(1);
-        CountDownLatch releaseNetwork = new CountDownLatch(1);
-        Call<Void> pending = blockingCall(networkStarted, releaseNetwork);
-        when(messageApi.deleteMessage(anyString(), anyString())).thenReturn(pending);
-        TestObserver<Result<Unit>> observer = repository.deleteMessage(CONVERSATION_ID, "m-1").test();
-        awaitLatch(networkStarted);
-        observer.dispose();
-        releaseNetwork.countDown();
-        assertEquals("bye", messages.get("m-1").getContent()); assertNull(messages.get("m-1").getDeletedAtEpochMs());
-        assertEquals(1, reactions.size()); assertEquals(1, pins.size());
-        assertEquals("bye", conversations.get(CONVERSATION_ID).getLastMessageContent());
-        assertEquals(false, conversations.get(CONVERSATION_ID).getLastMessageDeleted());
+        RxJavaPlugins.setIoSchedulerHandler(null);
+        try {
+            await(messageDao.upsert(own("m-1", 1L, "bye")));
+            await(reactionDao.upsertAll(List.of(new MessageReactionEntity("m-1", CONVERSATION_ID, "👍", 1, true))));
+            await(pinDao.upsert(new PinnedMessageEntity(CONVERSATION_ID, "m-1", 1L)));
+            await(conversationDao.upsert(conversation(1L, "bye")));
+            CountDownLatch networkStarted = new CountDownLatch(1);
+            CountDownLatch releaseNetwork = new CountDownLatch(1);
+            CountDownLatch rollbackApplied = new CountDownLatch(1);
+            doAnswer(call -> {
+                String id = call.getArgument(0);
+                ConversationEntity row = conversations.get(id);
+                long seq = call.getArgument(1);
+                if (row != null && seq == row.getLastMessageSeq()) {
+                    conversations.put(id, conversationLast(row, seq, call.getArgument(2),
+                            row.getLastMessageSenderName(), row.getLastMessageAt(), false));
+                }
+                rollbackApplied.countDown();
+                return Completable.complete();
+            }).when(conversationDao).updateLastMessageContent(anyString(), anyLong(), any());
+            Call<Void> pending = blockingCall(networkStarted, releaseNetwork);
+            when(messageApi.deleteMessage(anyString(), anyString())).thenReturn(pending);
+            TestObserver<Result<Unit>> observer =
+                    repository.deleteMessage(CONVERSATION_ID, "m-1").test();
+            awaitLatch(networkStarted);
+            observer.dispose();
+            releaseNetwork.countDown();
+            awaitLatch(rollbackApplied);
+            assertEquals("bye", messages.get("m-1").getContent());
+            assertNull(messages.get("m-1").getDeletedAtEpochMs());
+            assertEquals(1, reactions.size());
+            assertEquals(1, pins.size());
+            assertEquals("bye", conversations.get(CONVERSATION_ID).getLastMessageContent());
+            assertEquals(false, conversations.get(CONVERSATION_ID).getLastMessageDeleted());
+        } finally {
+            RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
+        }
     }
 
     @Test public void deletingInboxLastMessageSetsNeutralSnippetFlag() {
