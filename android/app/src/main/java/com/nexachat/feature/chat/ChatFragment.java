@@ -207,6 +207,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         layout.setStackFromEnd(true);
         list.setLayoutManager(layout);
         list.setAdapter(adapter);
+        new androidx.recyclerview.widget.ItemTouchHelper(new ReplySwipeCallback(
+                adapter, () -> searchOpen || editingMessage != null, viewModel::setReplyTarget)).attachToRecyclerView(list);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 if (binding == null || adapter == null) return;
@@ -683,12 +685,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         View root = binding.replyEditBanner.getRoot();
         if (editingMessage != null) {
             ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editingMessage.getContent(), () -> { editingMessage = null; editInput = ""; editingMentionDraft = MentionDraft.empty(""); mentionQuery = null; render(); });
+            root.findViewById(R.id.cancelReplyEdit).setContentDescription(getString(R.string.cd_cancel_edit));
+            ((android.widget.ImageView) root.findViewById(R.id.replyIcon)).setImageResource(R.drawable.ic_edit);
             return;
         }
         ChatViewModel.ReplyTarget target = state.getReplyTarget();
         if (target == null) { root.setVisibility(View.GONE); return; }
         String prefix = target.getSenderName() == null ? getString(R.string.action_reply) : target.getSenderName();
         ChatInteractionsViews.bindReplyBanner(root, prefix + ": " + target.getSnippet(), viewModel::clearReplyTarget);
+        ((android.widget.ImageView) root.findViewById(R.id.replyIcon)).setImageResource(R.drawable.ic_reply);
     }
 
     private void renderAttachments() {
@@ -1046,7 +1051,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         ChatMessage message = resolveOriginal(messageId); if (message == null) return;
         boolean groupAdmin = state.isGroup() && state.getCanPin();
         RecallWindowRules.DeleteAction deleteAction = RecallWindowRules.deleteAction(
-                message.getStatus() == DeliveryStatus.SENT,
+                ChatBubbleRules.isMessageReplyable(message.getStatus()),
                 message.isDeleted(),
                 message.getMine(),
                 groupAdmin,

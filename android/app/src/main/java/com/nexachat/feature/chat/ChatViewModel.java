@@ -521,7 +521,7 @@ public final class ChatViewModel extends ViewModel {
     /** Server edit affordance: own, delivered, live TEXT messages only. */
     public boolean canEdit(ChatMessage message) {
         return message.getMine()
-                && message.getStatus() == DeliveryStatus.SENT
+                && ChatBubbleRules.isMessageReplyable(message.getStatus())
                 && !message.isDeleted()
                 && MessageDto.TYPE_TEXT.equals(message.getType());
     }
@@ -529,7 +529,7 @@ public final class ChatViewModel extends ViewModel {
     /** Delete is author-only but includes attachment messages. */
     public boolean canDelete(ChatMessage message) {
         return message.getMine()
-                && message.getStatus() == DeliveryStatus.SENT
+                && ChatBubbleRules.isMessageReplyable(message.getStatus())
                 && !message.isDeleted();
     }
 
@@ -608,7 +608,7 @@ public final class ChatViewModel extends ViewModel {
                 break;
             }
         }
-        if (message == null || message.getStatus() != DeliveryStatus.SENT
+        if (message == null || !ChatBubbleRules.isMessageReplyable(message.getStatus())
                 || !ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             return;
         }
@@ -730,7 +730,7 @@ public final class ChatViewModel extends ViewModel {
     // ---- reply, reactions, and pins ----
 
     public void setReplyTarget(ChatMessage message) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         String snippet = message.getContent() == null ? message.getType() : message.getContent();
@@ -743,7 +743,7 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void toggleReaction(ChatMessage message, String emoji) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         disposables.add(messageRepository.toggleReaction(message.getId(), conversationId, emoji)
@@ -753,7 +753,7 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void togglePin(ChatMessage message) {
-        if (message.getStatus() != DeliveryStatus.SENT) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
             return;
         }
         Completable operation = currentUiState().isPinned(message.getId())

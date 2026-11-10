@@ -456,4 +456,25 @@
     <string name="label_color_rose">Hồng đậm</string>
     <string name="label_color_purple">Tím</string>
 
+
+    <!-- Cluster B message interactions -->
+    <string name="message_actions_title">Thao tác với tin nhắn</string>
+    <string name="reaction_like">Thích</string>
+    <string name="reaction_love">Yêu thích</string>
+    <string name="reaction_laugh">Cười</string>
+    <string name="reaction_surprised">Ngạc nhiên</string>
+    <string name="reaction_sad">Buồn</string>
+    <string name="reaction_thanks">Cảm ơn</string>
+    <string name="forward_no_results">Không tìm thấy cuộc trò chuyện</string>
+    <string name="forward_selected">Đã chọn</string>
+    <string name="forward_not_selected">Chưa chọn</string>
+
+    <!-- Cluster B media viewer -->
+    <string name="cd_media_photo_zoom">Ảnh. Nhấn đúp để thu phóng</string>
+    <string name="media_toggle_zoom">Thu phóng / vừa màn hình</string>
+    <string name="media_zoom_in">Phóng to</string>
+    <string name="media_zoom_out">Thu nhỏ</string>
+    <string name="media_zoom_level">Thu phóng %1$d%%</string>
+    <string name="media_saved">Đã lưu tệp</string>
+    <string name="media_save_failed">Không thể lưu tệp</string>
 </resources>

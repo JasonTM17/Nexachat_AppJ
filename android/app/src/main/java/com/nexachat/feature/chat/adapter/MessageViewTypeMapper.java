@@ -21,7 +21,8 @@ public final class MessageViewTypeMapper {
             return false;
         }
         String content = message.getContent();
-        return content != null && content.startsWith("CALL|");
+        return "SYSTEM".equalsIgnoreCase(message.getType())
+                || content != null && content.startsWith("CALL|");
     }
 
     public static MessageContentKind resolveContentKind(@Nullable ChatMessage message) {
