@@ -817,23 +817,35 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 break;
             }
         }
-        if (row == null || row.getUnreadCount() <= 0) {
+        long watermark = computeUnreadDividerWatermark(row);
+        if (watermark <= 0L) {
             return;
         }
-        long fromInbox = UnreadDividerRule.localLastReadSeq(row);
-        long fromMemory = viewModel.peekLocalReadSeq();
-        unreadDividerLocalReadSeq = Math.max(fromInbox, fromMemory);
+        unreadDividerLocalReadSeq = watermark;
+    }
+
+    private long computeUnreadDividerWatermark(@Nullable ConversationSummary row) {
+        long inboxSeq = row != null ? row.getMyLastReadSeq() : viewModel.peekMyLastReadSeq();
+        Long snapshot = viewModel.getUnreadDividerReadSnapshot();
+        if (snapshot != null) {
+            inboxSeq = Math.max(inboxSeq, snapshot);
+        }
+        long memorySeq = viewModel.peekLocalReadSeq();
+        List<ChatMessage> messages = state == null ? List.of() : state.getMessages();
+        boolean hasMoreOlder = state != null && state.getHasMore();
+        return UnreadDividerRule.resolveReadWatermark(inboxSeq, memorySeq, messages, hasMoreOlder);
     }
 
     private long resolveUnreadDividerLocalReadSeq() {
         if (unreadDividerLocalReadSeq != null) {
             return unreadDividerLocalReadSeq;
         }
-        ConversationSummary row = currentConversation();
-        if (row != null && row.getUnreadCount() > 0) {
-            return UnreadDividerRule.localLastReadSeq(row);
+        long watermark = computeUnreadDividerWatermark(currentConversation());
+        if (watermark > 0L) {
+            unreadDividerLocalReadSeq = watermark;
+            return watermark;
         }
-        return viewModel.peekLocalReadSeq();
+        return -1L;
     }
 
     private boolean isFirstUnreadVisible(

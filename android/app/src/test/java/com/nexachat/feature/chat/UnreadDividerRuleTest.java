@@ -2,9 +2,7 @@ package com.nexachat.feature.chat;
 
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.data.ChatMessage;
-import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
-import com.nexachat.data.PeerPresence;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -17,9 +15,29 @@ import static org.junit.Assert.assertTrue;
 public final class UnreadDividerRuleTest {
 
     @Test
-    public void localLastReadSeqFromInboxRow() {
-        ConversationSummary row = conversation(100L, 3);
-        assertEquals(97L, UnreadDividerRule.localLastReadSeq(row));
+    public void sequenceGapCountsAllUnreadAfterAuthoritativeWatermark() {
+        List<ChatMessage> messages = Arrays.asList(
+                incoming(22L),
+                incoming(24L),
+                incoming(25L));
+        assertEquals(3, UnreadDividerRule.countUnreadIncoming(messages, 20L));
+        assertEquals(0, UnreadDividerRule.indexOfFirstUnread(messages, 20L));
+    }
+
+    @Test
+    public void inferredLastSeqMinusUnreadWouldSkipFirstUnreadWithGaps() {
+        List<ChatMessage> messages = Arrays.asList(
+                incoming(22L),
+                incoming(24L),
+                incoming(25L));
+        long wrongWatermark = 25L - 3;
+        assertEquals(2, UnreadDividerRule.countUnreadIncoming(messages, wrongWatermark));
+        assertEquals(1, UnreadDividerRule.indexOfFirstUnread(messages, wrongWatermark));
+    }
+
+    @Test
+    public void resolveReadWatermarkPrefersInboxLastReadSeq() {
+        assertEquals(20L, UnreadDividerRule.resolveReadWatermark(20L, 0L, null, false));
     }
 
     @Test
@@ -44,6 +62,15 @@ public final class UnreadDividerRuleTest {
     }
 
     @Test
+    public void systemRowsNeverCountAsUnread() {
+        List<ChatMessage> messages = Arrays.asList(
+                system(21L),
+                incoming(22L));
+        assertEquals(1, UnreadDividerRule.countUnreadIncoming(messages, 20L));
+        assertEquals(1, UnreadDividerRule.indexOfFirstUnread(messages, 20L));
+    }
+
+    @Test
     public void allOwnMessagesNeverCount() {
         List<ChatMessage> messages = Arrays.asList(mine(8L), mine(9L), mine(10L));
         assertEquals(0, UnreadDividerRule.countUnreadIncoming(messages, 5L));
@@ -64,6 +91,21 @@ public final class UnreadDividerRuleTest {
     }
 
     @Test
+    public void pagingCapsWatermarkAtLoadedFloor() {
+        List<ChatMessage> messages = Arrays.asList(incoming(22L), incoming(24L));
+        assertEquals(20L, UnreadDividerRule.resolveReadWatermark(20L, 0L, messages, true));
+        assertEquals(21L, UnreadDividerRule.resolveReadWatermark(0L, 0L, messages, true));
+    }
+
+    @Test
+    public void readOnOpenRaceRetainsPreOpenMemoryWatermark() {
+        long preOpen = UnreadDividerRule.resolveReadWatermark(20L, 18L, null, false);
+        long afterMarkRead = UnreadDividerRule.resolveReadWatermark(20L, 25L, null, false);
+        assertEquals(20L, preOpen);
+        assertEquals(25L, afterMarkRead);
+    }
+
+    @Test
     public void newMessageArrivingWhileOpenIncreasesCount() {
         List<ChatMessage> before = Arrays.asList(incoming(11L), incoming(12L));
         List<ChatMessage> after = Arrays.asList(incoming(11L), incoming(12L), incoming(13L));
@@ -71,50 +113,26 @@ public final class UnreadDividerRuleTest {
         assertEquals(3, UnreadDividerRule.countUnreadIncoming(after, 10L));
     }
 
-    private static ConversationSummary conversation(long lastSeq, int unread) {
-        return new ConversationSummary(
-                "conv",
-                "DIRECT",
-                null,
-                "hi",
-                "Peer",
-                1L,
-                lastSeq,
-                unread,
-                "Peer",
-                null,
-                null,
-                0L,
-                0L,
-                null,
-                "peer",
-                false,
-                (PeerPresence) null,
-                false,
-                null,
-                false,
-                false,
-                false,
-                null,
-                Collections.emptyList());
-    }
-
     private static ChatMessage incoming(long seq) {
-        return message(seq, false);
+        return message(seq, false, MessageDto.TYPE_TEXT);
     }
 
     private static ChatMessage mine(long seq) {
-        return message(seq, true);
+        return message(seq, true, MessageDto.TYPE_TEXT);
     }
 
-    private static ChatMessage message(long seq, boolean mine) {
+    private static ChatMessage system(long seq) {
+        return message(seq, false, "SYSTEM");
+    }
+
+    private static ChatMessage message(long seq, boolean mine, String type) {
         return new ChatMessage(
                 "id-" + seq,
                 "conv",
                 seq,
                 mine ? "me" : "peer",
                 mine ? "Me" : "Peer",
-                MessageDto.TYPE_TEXT,
+                type,
                 "text",
                 null,
                 null,

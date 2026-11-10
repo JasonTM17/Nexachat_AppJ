@@ -103,6 +103,7 @@ public final class ChatViewModel extends ViewModel {
     private long searchCursor = -1L;
     private long lastTypingSentMs;
     private long lastReadSeq;
+    @Nullable private Long unreadDividerReadSnapshot;
     private boolean loadingOlder;
     private boolean webSocketOpen;
     private boolean restReachable;
@@ -270,6 +271,14 @@ public final class ChatViewModel extends ViewModel {
     }
 
     private void initializeConversation() {
+        if (!conversationId.isBlank()) {
+            long inbox = conversationRepository.peekMyLastReadSeq(conversationId);
+            long memory = messageRepository.peekLocalReadSeq(conversationId);
+            long snapshot = UnreadDividerRule.resolveReadWatermark(inbox, memory, null, false);
+            if (snapshot > 0L) {
+                unreadDividerReadSnapshot = snapshot;
+            }
+        }
         disposables.add(messageRepository.openConversation(conversationId)
                 .subscribeOn(Schedulers.io())
                 .andThen(messageRepository.refreshHistory(conversationId, null)
@@ -405,6 +414,17 @@ public final class ChatViewModel extends ViewModel {
     /** Read watermark retained for the unread divider before this screen marks messages read. */
     public long peekLocalReadSeq() {
         return conversationId.isBlank() ? 0L : messageRepository.peekLocalReadSeq(conversationId);
+    }
+
+    @Nullable
+    public Long getUnreadDividerReadSnapshot() {
+        return unreadDividerReadSnapshot;
+    }
+
+    public long peekMyLastReadSeq() {
+        return conversationId.isBlank()
+                ? 0L
+                : conversationRepository.peekMyLastReadSeq(conversationId);
     }
 
     private void markNewestIncomingRead(List<ChatMessage> messages) {

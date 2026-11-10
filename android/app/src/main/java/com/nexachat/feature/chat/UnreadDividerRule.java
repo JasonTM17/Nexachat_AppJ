@@ -11,20 +11,38 @@ import java.util.List;
  */
 public final class UnreadDividerRule {
 
+    private static final String TYPE_SYSTEM = "SYSTEM";
+
     private UnreadDividerRule() {
     }
 
     /**
-     * Local last-read sequence implied by the cached inbox row before the chat screen marks read.
+     * Combines inbox, in-memory, and loaded-history anchors into the read watermark
+     * used to place the divider. Never infers read position from {@code lastSeq - unreadCount}.
      */
-    public static long localLastReadSeq(@NonNull ConversationSummary conversation) {
-        long lastSeq = Math.max(0L, conversation.getLastMessageSeq());
-        int unread = Math.max(0, conversation.getUnreadCount());
-        return Math.max(0L, lastSeq - unread);
+    public static long resolveReadWatermark(
+            long inboxLastReadSeq,
+            long memoryLastReadSeq,
+            @Nullable List<ChatMessage> chronological,
+            boolean hasMoreOlder) {
+        long authoritative = Math.max(Math.max(0L, inboxLastReadSeq), Math.max(0L, memoryLastReadSeq));
+        if (chronological == null || chronological.isEmpty()) {
+            return authoritative;
+        }
+        long loadedAnchor = loadedHistoryReadCeiling(chronological, hasMoreOlder);
+        if (authoritative > 0L) {
+            return hasMoreOlder ? Math.min(authoritative, loadedAnchor) : authoritative;
+        }
+        return loadedAnchor;
     }
 
-    public static long localLastReadSeq(long lastMessageSeq, int unreadCount) {
-        return Math.max(0L, Math.max(0L, lastMessageSeq) - Math.max(0, unreadCount));
+    /**
+     * @deprecated Use {@link #resolveReadWatermark(long, long, List, boolean)} with
+     *     {@link ConversationSummary#getMyLastReadSeq()} instead of subtracting unread count.
+     */
+    @Deprecated
+    public static long localLastReadSeq(@NonNull ConversationSummary conversation) {
+        return Math.max(0L, conversation.getMyLastReadSeq());
     }
 
     public static int countUnreadIncoming(
@@ -56,6 +74,9 @@ public final class UnreadDividerRule {
         if (message == null || message.getMine()) {
             return false;
         }
+        if (TYPE_SYSTEM.equalsIgnoreCase(message.getType())) {
+            return false;
+        }
         Long seq = message.getSeq();
         return seq != null && seq > localLastReadSeq;
     }
@@ -69,5 +90,25 @@ public final class UnreadDividerRule {
             return false;
         }
         return true;
+    }
+
+    private static long loadedHistoryReadCeiling(
+            @NonNull List<ChatMessage> chronological,
+            boolean hasMoreOlder
+    ) {
+        long minSeq = Long.MAX_VALUE;
+        for (ChatMessage message : chronological) {
+            Long seq = message.getSeq();
+            if (seq != null && seq < minSeq) {
+                minSeq = seq;
+            }
+        }
+        if (minSeq == Long.MAX_VALUE) {
+            return 0L;
+        }
+        if (hasMoreOlder) {
+            return Math.max(0L, minSeq - 1L);
+        }
+        return 0L;
     }
 }

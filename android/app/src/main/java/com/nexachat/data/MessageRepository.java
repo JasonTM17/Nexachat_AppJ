@@ -373,6 +373,21 @@ public final class MessageRepository {
         return seq == null ? 0L : seq;
     }
 
+    /**
+     * Seeds the local read watermark from inbox or delta payloads without
+     * sending a read receipt. Values only move forward.
+     */
+    public void adoptInboxReadSeq(@NonNull String conversationId, long lastReadSeq) {
+        if (lastReadSeq <= 0L) {
+            return;
+        }
+        lastMarkedRead.merge(conversationId, lastReadSeq, Math::max);
+    }
+
+    void adoptInboxReadSeqFromCache(@NonNull String conversationId, long lastReadSeq) {
+        adoptInboxReadSeq(conversationId, lastReadSeq);
+    }
+
     /** Hides a message on this signed-in device without changing server history. */
     public Completable hideMessageForMe(String messageId) {
         return operationTracker.track(

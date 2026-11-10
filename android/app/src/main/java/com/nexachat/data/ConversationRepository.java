@@ -118,6 +118,8 @@ public final class ConversationRepository implements AutoCloseable {
     private final ConversationDao conversationDao;
     private final AppDatabase appDatabase;
     private final SessionOperationTracker operationTracker;
+    private final InboxReadWatermarkCache inboxReadWatermarkCache;
+    @Nullable private final MessageRepository messageRepository;
     private final PresenceRepository presenceRepository;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
@@ -160,13 +162,17 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull Moshi moshi,
             @ApplicationContext @NonNull Context context,
             @NonNull AppDatabase appDatabase,
-            @NonNull SessionOperationTracker operationTracker) {
+            @NonNull SessionOperationTracker operationTracker,
+            @NonNull InboxReadWatermarkCache inboxReadWatermarkCache,
+            @NonNull MessageRepository messageRepository) {
         this.messageApi = messageApi;
         this.groupApi = groupApi;
         this.settingsApi = settingsApi;
         this.conversationDao = conversationDao;
         this.appDatabase = appDatabase;
         this.operationTracker = operationTracker;
+        this.inboxReadWatermarkCache = inboxReadWatermarkCache;
+        this.messageRepository = messageRepository;
         this.presenceRepository = presenceRepository;
         this.session = session;
         this.tokenStore = tokenStore;
@@ -191,7 +197,8 @@ public final class ConversationRepository implements AutoCloseable {
             @ApplicationContext @NonNull Context context,
             @NonNull AppDatabase appDatabase) {
         this(messageApi, groupApi, settingsApi, conversationDao, presenceRepository,
-                session, tokenStore, moshi, context, appDatabase, new SessionOperationTracker());
+                session, tokenStore, moshi, context, appDatabase, new SessionOperationTracker(),
+                new InboxReadWatermarkCache(), null);
     }
 
     /**
@@ -1148,8 +1155,26 @@ public final class ConversationRepository implements AutoCloseable {
         }).subscribeOn(Schedulers.io());
     }
 
+    /** Caller read watermark remembered for inbox rendering and unread divider anchoring. */
+    public long peekMyLastReadSeq(@NonNull String conversationId) {
+        return inboxReadWatermarkCache.peek(conversationId);
+    }
+
+    private void rememberInboxLastReadSeq(@NonNull String conversationId, @Nullable Long lastReadSeq) {
+        if (lastReadSeq == null || lastReadSeq <= 0L) {
+            return;
+        }
+        inboxReadWatermarkCache.adopt(conversationId, lastReadSeq);
+        if (messageRepository != null) {
+            messageRepository.adoptInboxReadSeqFromCache(conversationId, lastReadSeq);
+        }
+    }
+
     /** Maps the flexible inbox wire shape into the stable Room row. */
     private ConversationEntity toEntity(ConversationInboxDto dto, @Nullable String myId) {
+        if (dto.getId() != null) {
+            rememberInboxLastReadSeq(dto.getId(), dto.getLastReadSeq());
+        }
         Long lastSeq = dto.resolvedLastSeq();
         String lastAt = dto.resolvedLastAt();
         List<ConversationMemberDto> members = dto.getMembers();
@@ -1236,6 +1261,7 @@ public final class ConversationRepository implements AutoCloseable {
         PeerPresence peer = TYPE_DIRECT.equals(row.getType()) && row.getOtherUserId() != null
                 ? presence.get(row.getOtherUserId())
                 : null;
+        long myLastReadSeq = peekMyLastReadSeq(row.getId());
         return new ConversationSummary(
                 row.getId(),
                 row.getType(),
@@ -1245,6 +1271,7 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getLastMessageAt(),
                 row.getLastMessageSeq(),
                 row.getUnreadCount(),
+                myLastReadSeq,
                 row.getOtherUserName(),
                 row.getOtherUserAvatar(),
                 row.getAvatarUrl(),
