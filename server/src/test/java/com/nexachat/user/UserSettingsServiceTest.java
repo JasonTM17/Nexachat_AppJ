@@ -37,7 +37,8 @@ class UserSettingsServiceTest {
         assertThat(service.setShowPresence(userId, false).showPresence()).isFalse();
         assertThat(service.get(userId).aiSummaryConsent()).isFalse();
         assertThat(service.updateSettings(userId, null, false, null).showSeen()).isFalse();
-        verify(repository, org.mockito.Mockito.times(6)).findById(userId);
+        verify(repository, org.mockito.Mockito.times(4)).findById(userId);
+        verify(repository, org.mockito.Mockito.times(2)).findByIdForUpdate(userId);
     }
 
     @Test

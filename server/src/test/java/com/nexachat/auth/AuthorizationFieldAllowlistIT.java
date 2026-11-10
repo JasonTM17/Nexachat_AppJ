@@ -30,7 +30,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
 
         JsonNode profile = objectMapper.readTree(getWithAuth("/api/v1/users/me", owner.accessToken())
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
-        assertKeys(profile, Set.of("id", "phone", "displayName", "avatarUrl"));
+        assertKeys(profile, Set.of("id", "phone", "displayName", "avatarUrl", "deleted"));
 
         MvcResult groupResult = postJson("/api/v1/conversations/group",
                         Map.of("title", "Field allowlist group", "memberIds", List.of(member.userId().toString())),
@@ -39,7 +39,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
         JsonNode group = objectMapper.readTree(groupResult.getResponse().getContentAsString());
         assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut"));
         for (JsonNode groupMember : group.path("members")) {
-            assertKeys(groupMember, Set.of("userId", "displayName", "phone"));
+            assertKeys(groupMember, Set.of("userId", "displayName", "phone", "deleted"));
         }
         UUID groupId = UUID.fromString(group.path("id").asText());
 
