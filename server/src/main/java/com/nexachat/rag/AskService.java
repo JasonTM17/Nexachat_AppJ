@@ -140,6 +140,7 @@ public class AskService {
             }
         }
 
+        long contentVersion = questionCache.contentVersion(conversationId);
         RetrievalResult retrieval = retrievalService.retrieve(conversationId, question, language, consented);
         if (retrieval.isEmpty()
                 || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
@@ -150,7 +151,7 @@ public class AskService {
         if (isLookupLike(question)
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted);
+                    contextOmitted, contentVersion);
         }
 
         if (consented) {
@@ -158,7 +159,7 @@ public class AskService {
                     userId, conversationId, question, language, retrieval.context(), retrieval.messages());
             if (llmAnswer != null) {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
-                        llmAnswer, retrieval.messages(), AskMode.LLM, language);
+                        llmAnswer, retrieval.messages(), AskMode.LLM, language, contentVersion);
                 if (answer != null) {
                     saveAnswer(conversationId, questionEmbedding, questionHash, answer);
                     stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
@@ -170,7 +171,7 @@ public class AskService {
 
         if (retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted);
+                    contextOmitted, contentVersion);
         }
         stats.recordNotFound();
         return AskResponse.notFound(contextOmitted);
@@ -182,8 +183,10 @@ public class AskService {
             String questionHash,
             SummaryLanguage language,
             RetrievalResult retrieval,
-            boolean contextOmitted) {
-        RagQuestionCache.CachedAsk answer = toCachedAsk(retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language);
+            boolean contextOmitted,
+            long contentVersion) {
+        RagQuestionCache.CachedAsk answer = toCachedAsk(
+                retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language, contentVersion);
         if (answer == null) {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted);
@@ -208,7 +211,11 @@ public class AskService {
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
-            RagMessage message, Map<UUID, RagMessage> messages, AskMode mode, SummaryLanguage language) {
+            RagMessage message,
+            Map<UUID, RagMessage> messages,
+            AskMode mode,
+            SummaryLanguage language,
+            long contentVersion) {
         if (message == null) {
             return null;
         }
@@ -219,11 +226,16 @@ public class AskService {
                 mode.name(),
                 List.of(message.id()),
                 RagHashes.citationsHash(List.of(message)),
-                language);
+                language,
+                contentVersion);
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
-            RagLlmAnswer llmAnswer, Map<UUID, RagMessage> messages, AskMode mode, SummaryLanguage language) {
+            RagLlmAnswer llmAnswer,
+            Map<UUID, RagMessage> messages,
+            AskMode mode,
+            SummaryLanguage language,
+            long contentVersion) {
         List<RagCitation> citations = new ArrayList<>();
         List<UUID> citedIds = new ArrayList<>();
         List<RagMessage> citedMessages = new ArrayList<>();
@@ -245,7 +257,8 @@ public class AskService {
                 mode.name(),
                 citedIds,
                 RagHashes.citationsHash(citedMessages),
-                language);
+                language,
+                contentVersion);
     }
 
     private AskResponse cachedResponse(RagQuestionCache.CachedAsk answer, boolean contextOmitted) {
