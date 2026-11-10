@@ -464,6 +464,7 @@
     <string name="conversation_pinned">Pinned to top</string>
     <string name="conversation_unpinned">Unpinned</string>
     <string name="confirm_remove_contact">Remove this contact?</string>
+    <string name="session_expired_sign_in_again">Session expired, sign in again</string>
 
 
     <!-- Cluster B message interactions -->

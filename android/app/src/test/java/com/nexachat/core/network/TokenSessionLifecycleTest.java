@@ -145,11 +145,17 @@ public final class TokenSessionLifecycleTest {
                 "{\"error\":{\"code\":\"REFRESH_RECOVERY_UNAVAILABLE\"}}");
         when(api.refresh(anyString(), any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.error(409, body));
-        TokenRefresher refresher = new TokenRefresher(store, new SessionEvents(), (Provider<AuthApi>) () -> api);
+        SessionEvents events = new SessionEvents();
+        TokenRefresher refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
         assertEquals(
                 TokenRefreshOutcome.RecoveryRequired.INSTANCE, refresher.refreshBlocking());
         assertEquals("r0", current(store).getRefreshToken());
-        new SessionEvents().getEvents().test().assertNoValues();
+        events.getEvents()
+                .test()
+                .assertValue(SessionEvents.Event.ReauthenticationRequired.INSTANCE);
+        assertEquals(
+                TokenRefreshOutcome.NoRefreshToken.INSTANCE, refresher.refreshBlocking());
+        verify(api, times(1)).refresh(anyString(), any());
     }
 
     @Test
@@ -234,5 +240,6 @@ public final class TokenSessionLifecycleTest {
         when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
         when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
         when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
+        when(store.markSessionReauthRequired(anyLong())).thenReturn(Completable.complete());
     }
 }

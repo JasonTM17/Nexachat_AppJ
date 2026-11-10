@@ -32,6 +32,12 @@ public final class LoginFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
         returnInviteToken = getArguments() == null
                 ? null : getArguments().getString("returnInviteToken");
+        boolean sessionExpired = getArguments() != null
+                && getArguments().getBoolean("showSessionExpired", false);
+        if (sessionExpired) {
+            binding.errorBanner.setVisibility(View.VISIBLE);
+            binding.errorBanner.setText(R.string.session_expired_sign_in_again);
+        }
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
         binding.passwordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });

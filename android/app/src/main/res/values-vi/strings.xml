@@ -459,6 +459,7 @@
     <string name="conversation_pinned">Đã ghim lên đầu</string>
     <string name="conversation_unpinned">Đã bỏ ghim</string>
     <string name="confirm_remove_contact">Xóa liên hệ này?</string>
+    <string name="session_expired_sign_in_again">Phiên đã hết hạn, đăng nhập lại</string>
 
 
     <!-- Cluster B message interactions -->

@@ -331,7 +331,7 @@ public final class TokenRefresher {
         if (record != null) {
             if (record.getSessionEpoch() != capturedEpoch
                     || !record.getPredecessorRefreshToken().equals(refreshToken)) {
-                return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
+                return finalizeTerminalRecovery(capturedEpoch);
             }
             requestKey = record.getRequestKey();
         } else {
@@ -381,7 +381,7 @@ public final class TokenRefresher {
         String errorCode = ErrorResponse.errorCodeOf(rawError);
         int status = response.code();
         if (TokenRefreshRules.isRecoveryUnavailable(status, errorCode)) {
-            return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
+            return finalizeTerminalRecovery(capturedEpoch);
         }
         if (TokenRefreshRules.isDefinitiveRejection(status, errorCode)) {
             return rejectIfCurrent(capturedEpoch)
@@ -430,6 +430,18 @@ public final class TokenRefresher {
                     }
                     return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
                 });
+    }
+
+    private Single<TokenRefreshOutcome> finalizeTerminalRecovery(long expectedEpoch) {
+        synchronized (lock) {
+            if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
+                return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
+            }
+        }
+        closeAdmissionSynchronously();
+        tokenStore.markSessionReauthRequired(expectedEpoch).blockingAwait();
+        sessionEvents.emitReauthenticationRequired();
+        return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
     }
 
     private Completable rejectIfCurrent(long expectedEpoch) {

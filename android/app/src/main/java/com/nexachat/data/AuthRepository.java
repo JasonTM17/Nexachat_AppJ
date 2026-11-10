@@ -132,8 +132,7 @@ public final class AuthRepository {
                 .andThen(Single.defer(tokenRefresher::refresh)).flatMap(outcome -> {
                     Result<Boolean> result = refreshMapping(outcome);
                     if (outcome instanceof TokenRefreshOutcome.FreshToken
-                            || outcome instanceof TokenRefreshOutcome.TransientFailure
-                            || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+                            || outcome instanceof TokenRefreshOutcome.TransientFailure) {
                         if (accountDataCleaner != null) accountDataCleaner.scheduleOutbox();
                         return deviceTokenRegistrationManager.onSessionAvailable()
                                 .onErrorComplete()
@@ -340,8 +339,10 @@ public final class AuthRepository {
         if (outcome instanceof TokenRefreshOutcome.FreshToken) {
             return new Result.Success<>(Boolean.TRUE);
         }
-        if (outcome instanceof TokenRefreshOutcome.TransientFailure
-                || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+        if (outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
+            return Result.failure(ApiError.SessionExpired.INSTANCE);
+        }
+        if (outcome instanceof TokenRefreshOutcome.TransientFailure) {
             return Result.failure(new ApiError.Network("refresh request failed"));
         }
         if (outcome instanceof TokenRefreshOutcome.Rejected) {

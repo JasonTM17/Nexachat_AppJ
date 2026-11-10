@@ -44,16 +44,18 @@ public final class SplashViewModelTest {
     @Test
     public void noStoredRefreshTokenNavigatesToLoginWithoutRefreshing() {
         when(tokenStore.getHasValidRefresh()).thenReturn(Flowable.just(false));
+        when(tokenStore.hasStoredRefreshCredential()).thenReturn(Single.just(false));
 
         SplashViewModel viewModel = new SplashViewModel(tokenStore, repository);
 
-        assertEquals(List.of(SplashNavEvent.ToLogin.INSTANCE), observe(viewModel));
+        assertEquals(List.of(new SplashNavEvent.ToLogin(false)), observe(viewModel));
         verify(repository, never()).refresh();
     }
 
     @Test
     public void storedTokenWithSuccessfulRefreshNavigatesToInbox() {
         when(tokenStore.getHasValidRefresh()).thenReturn(Flowable.just(true));
+        when(tokenStore.hasStoredRefreshCredential()).thenReturn(Single.just(true));
         when(repository.refresh()).thenReturn(Single.just(new Result.Success<>(true)));
 
         SplashViewModel viewModel = new SplashViewModel(tokenStore, repository);
@@ -64,12 +66,13 @@ public final class SplashViewModelTest {
     @Test
     public void storedTokenWithFailedRefreshNavigatesToLogin() {
         when(tokenStore.getHasValidRefresh()).thenReturn(Flowable.just(true));
+        when(tokenStore.hasStoredRefreshCredential()).thenReturn(Single.just(true));
         when(repository.refresh()).thenReturn(Single.just(
                 Result.failure(ApiError.InvalidCredentials.INSTANCE)));
 
         SplashViewModel viewModel = new SplashViewModel(tokenStore, repository);
 
-        assertEquals(List.of(SplashNavEvent.ToLogin.INSTANCE), observe(viewModel));
+        assertEquals(List.of(new SplashNavEvent.ToLogin(false)), observe(viewModel));
     }
 
     private static List<SplashNavEvent> observe(SplashViewModel viewModel) {
