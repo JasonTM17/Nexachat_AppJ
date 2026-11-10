@@ -5,7 +5,7 @@
   All production connections must use TLS (HTTPS/WSS).
   Cleartext overrides for the emulator and LAN development live in the debug
   and localSmoke source sets. Android applies base-config, not domain-config,
-  to IP literals, so those variants cannot list 10.0.2.2 as a domain.
+  to IP literals, so those variants cannot list the emulator host as a domain.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
