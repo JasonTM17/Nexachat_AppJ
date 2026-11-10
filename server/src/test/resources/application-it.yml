@@ -18,6 +18,7 @@ spring:
       maximum-pool-size: 2
       minimum-idle: 0
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
   flyway:
