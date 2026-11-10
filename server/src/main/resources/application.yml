@@ -54,6 +54,10 @@ nexachat:
     secret: ${JWT_SECRET:dev-secret-change-me-at-least-64-chars-long-0123456789}
     access-ttl-seconds: 900
     refresh-ttl-days: 14
+  auth:
+    refresh-replay:
+      key: ${NEXACHAT_REFRESH_REPLAY_KEY:}
+      cleanup-batch-size: 500
   security:
     # Exact browser origins allowed to call the API. Empty admits no
     # cross-origin caller (the native app sends no Origin header); set this in
