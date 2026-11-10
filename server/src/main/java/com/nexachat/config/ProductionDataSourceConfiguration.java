@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.util.StringUtils;
 
-/** Fails before bean creation if production datasource credentials are absent. */
+/** Fails before bean creation if required production coordinates are absent. */
 @Configuration(proxyBeanMethods = false)
 @Profile("prod")
 public class ProductionDataSourceConfiguration {
@@ -15,8 +15,10 @@ public class ProductionDataSourceConfiguration {
     @Bean
     static BeanFactoryPostProcessor requireProductionDatasourceCredentials(Environment environment) {
         return beanFactory -> {
+            requireResolved(environment, "spring.datasource.url");
             requireResolved(environment, "spring.datasource.username");
             requireResolved(environment, "spring.datasource.password");
+            requireResolved(environment, "nexachat.storage.root");
         };
     }
 
