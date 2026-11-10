@@ -1,8 +1,10 @@
 package com.nexachat.auth;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.sql.Timestamp;
 import java.util.Map;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,6 +16,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * rotation keeps working exactly as before.
  */
 class AccessTokenRevocationIT extends SecurityITBase {
+
+    @Autowired
+    private JwtService jwtService;
 
     @Test
     void logoutInvalidatesTheAccessTokenItWasUsedWith() throws Exception {
@@ -133,6 +138,17 @@ class AccessTokenRevocationIT extends SecurityITBase {
         getWithAuth("/api/v1/users/me", rotatedAccessToken)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+    }
+
+    @Test
+    void equalSecondIssuedAtRemainsAcceptedUntilJwtExpiry() throws Exception {
+        Registered user = register("+84905551206");
+        Timestamp issuedAt = Timestamp.from(jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt());
+        jdbcTemplate.update("UPDATE users SET tokens_valid_after = ? WHERE id = ?", issuedAt, user.userId());
+
+        // The existing one-second cutoff compares strictly before; equal-second
+        // tokens can remain valid until expiry. This is a characterized residual.
+        getWithAuth("/api/v1/users/me", user.accessToken()).andExpect(status().isOk());
     }
 
 }
