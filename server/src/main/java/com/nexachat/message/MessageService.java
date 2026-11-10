@@ -224,20 +224,24 @@ public class MessageService {
         var existing = messageRepository.findRowBySenderAndClientMessageId(
                 senderId, request.clientMessageId());
         if (existing.isPresent()) {
-            MessageRow row = existing.get();
-            if (!conversationId.equals(row.conversationId())) {
-                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                        "clientMessageId already used in a different conversation");
-            }
-            MessageResponse response = toResponse(row);
-            eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
-            return new SendResult(response, false);
+            return replayExisting(conversationId, existing.get());
         }
 
         Message.Type type = parseType(request.type());
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);
-        validateAttachmentsReady(senderId, type, attachmentIds);
+        List<MessageAttachment> lockedAttachments = lockAttachments(attachmentIds);
+        if (!attachmentIds.isEmpty()) {
+            // A concurrent retry may have committed while this send waited for
+            // the upload row lock. Preserve idempotency before checking whether
+            // the now-bound attachment can be claimed by a different message.
+            var retry = messageRepository.findRowBySenderAndClientMessageId(
+                    senderId, request.clientMessageId());
+            if (retry.isPresent()) {
+                return replayExisting(conversationId, retry.get());
+            }
+        }
+        validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         String content = normalizedContent(type, request.content());
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
@@ -271,7 +275,7 @@ public class MessageService {
             conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
             // You have trivially "read" what you sent — keep your own unread at 0.
             memberRepository.advanceReadWatermark(conversationId, senderId, row.seq());
-            bindAttachments(row.id(), senderId, type, attachmentIds);
+            bindAttachments(row.id(), lockedAttachments);
             log.info("Message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, senderId);
         }
 
@@ -280,6 +284,16 @@ public class MessageService {
         // gets its SENT signal; receivers deduplicate by message id.
         eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
         return new SendResult(response, created);
+    }
+
+    private SendResult replayExisting(UUID conversationId, MessageRow row) {
+        if (!conversationId.equals(row.conversationId())) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "clientMessageId already used in a different conversation");
+        }
+        MessageResponse response = toResponse(row);
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        return new SendResult(response, false);
     }
 
     /**
@@ -965,25 +979,26 @@ public class MessageService {
     }
 
     /**
-     * Phase-09 binding: claims each uploaded attachment for the freshly
-     * inserted message inside the same transaction. A claimable row must
-     * exist, be owned by the sender, and still be unbound
-     * ({@code message_id IS NULL} since V2) — anything else is a client error,
-     * never silently dropped. The sniffed MIME must also agree with the
-     * declared message type (a PDF cannot ride out as IMAGE).
-     *
-     * <p>Skipped on the dedup path: the original send already bound its rows
-     * and {@link #toResponse} re-reads them.</p>
+     * Locks attachment rows in stable ID order before the message INSERT, so
+     * validation and single-use binding form one claim across concurrent sends.
      */
+    private List<MessageAttachment> lockAttachments(List<UUID> attachmentIds) {
+        if (attachmentIds.isEmpty()) {
+            return List.of();
+        }
+        return attachmentRepository.findAllByIdForUpdateOrderById(attachmentIds);
+    }
+
     /**
-     * Validates attachment rows before the message INSERT so a client error
-     * cannot draw a {@code BIGSERIAL} and roll back, leaving a global gap.
+     * A claimable row must exist, belong to the sender, and remain unbound;
+     * the sniffed MIME must also match the declared message type. Runs after
+     * the row lock and before INSERT, so invalid claims cannot consume seq.
      */
-    private void validateAttachmentsReady(UUID senderId, Message.Type type, List<UUID> attachmentIds) {
+    private void validateAttachmentsReady(UUID senderId, Message.Type type, List<UUID> attachmentIds,
+                                          List<MessageAttachment> found) {
         if (attachmentIds.isEmpty()) {
             return;
         }
-        List<MessageAttachment> found = attachmentRepository.findAllById(attachmentIds);
         if (found.size() != attachmentIds.size()) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND, "Attachment not found");
         }
@@ -1003,14 +1018,13 @@ public class MessageService {
         }
     }
 
-    private void bindAttachments(UUID messageId, UUID senderId, Message.Type type,
-                                 List<UUID> attachmentIds) {
-        if (attachmentIds.isEmpty()) {
+    /** The same managed rows locked and validated before INSERT are bound here. */
+    private void bindAttachments(UUID messageId, List<MessageAttachment> lockedAttachments) {
+        if (lockedAttachments.isEmpty()) {
             return;
         }
-        validateAttachmentsReady(senderId, type, attachmentIds);
         Message target = messageRepository.getReferenceById(messageId);
-        for (MessageAttachment attachment : attachmentRepository.findAllById(attachmentIds)) {
+        for (MessageAttachment attachment : lockedAttachments) {
             attachment.bindTo(target);
         }
     }
