@@ -289,13 +289,13 @@ proxy), the REST/STOMP authentication layer, and per-conversation authorization.
 
 Access tokens are HS256 JWTs with a 15-minute lifetime. Logout, logout-all and
 password change stamp `users.tokens_valid_after` (added by Flyway `V11`); the
-JWT filter rejects any token whose `iat` is before that cutoff, so a stolen
+JWT filter rejects any token whose `iat` is at or before that cutoff, so a stolen
 access token stops working immediately instead of living out its lifetime.
 
 - The cutoff is stored at one-second resolution because JWT `iat` has no
-  sub-second precision: a token issued in the same second as the logout is
-  indistinguishable from one minted just after it, leaving at most one second of
-  slack.
+  sub-second precision: tokens whose `iat` is equal to the cutoff second fail
+  closed. A token minted in that same second after revocation may need a refresh
+  after the next second boundary.
 - The filter caches "account exists + cutoff" per user id in a bounded LRU
   (`nexachat.security.validity-cache-ttl-seconds`, default 60, capped at the
   access-token lifetime) so the hot path does no database work; a cache miss
@@ -307,8 +307,33 @@ access token stops working immediately instead of living out its lifetime.
   closes that user's tracked WebSocket sessions. The event is process-local;
   multi-instance deployments do not broadcast the close to other servers.
 
-Refresh-token rotation is unchanged: logout revokes only the presented refresh
-token, and a password change keeps the supplied session token alive.
+Logout revokes only the presented refresh-token lineage. It leaves other
+lineages' cached replay responses intact, even though the account-wide access
+cutoff also invalidates their existing access JWTs. Logout-all and password
+change still invalidate replay responses for the sessions they revoke.
+
+### Keyed refresh replay
+
+`NEXACHAT_REFRESH_REPLAY_KEY` enables response recovery for a refresh request
+that includes a canonical UUIDv4 `Idempotency-Key`. Generate a Base64 value from
+32 cryptographically random bytes (for example, `openssl rand -base64 32`),
+store it in the deployment secret manager, and inject the same value into every
+server instance. Do not commit it, print it in logs, or reuse `JWT_SECRET`.
+`.env.example` intentionally leaves the local value blank.
+
+The first keyed rotation stores the encrypted response with its predecessor for
+30 seconds. Keep the key stable across restarts and replicas. There are no key
+versions or grace-key lookup: changing or removing the key during that window
+makes an outstanding retry return `409 REFRESH_RECOVERY_UNAVAILABLE`. Rotate
+only after the previous key has been unused for at least 30 seconds.
+
+If the key is missing or malformed, startup logs one warning and keyed requests
+fall back to legacy strict rotation; they do not return `503` for configuration
+absence and do not store recovery payloads. A retry of that spent predecessor
+returns `401 TOKEN_REUSED` and revokes the family. The readiness component
+`refreshReplay` is `DOWN` in the `prod` profile while the key is unavailable;
+the process still starts and serves strict refresh rotation, so this check does
+not block the fallback request path.
 
 ### Cross-origin and headers
 
@@ -608,7 +633,7 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V24 apply
+Back up before replacing the app image. Flyway migrations V1 through V25 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
@@ -633,9 +658,10 @@ V11 introduce:
 
 `V21` is reserved for the recall-window worker and `V23` is intentionally
 unused; neither has a file. `V22__retention_cleanup_indexes.sql` adds the
-retention indexes and `V24__hot_path_perf.sql` drops the unused
-`idx_conv_inbox`. Ensure every migration file V1–V20, `V22` and `V24` is present
-in the source tree before rebuilding the dev app container; the image packages
+retention indexes, `V24__hot_path_perf.sql` drops the unused `idx_conv_inbox`,
+and `V25__refresh_rotation_replay.sql` adds encrypted refresh-response replay
+metadata and cleanup support. Ensure every migration file V1–V20, `V22`,
+`V24` and `V25` is present in the source tree before rebuilding the dev app container; the image packages
 the server migration resources used by Flyway at startup.
 
 ```sh
