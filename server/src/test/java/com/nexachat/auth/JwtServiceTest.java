@@ -54,6 +54,21 @@ class JwtServiceTest {
     }
 
     @Test
+    void everyIssuedAccessTokenHasAUniqueTokenId() {
+        User user = userWithId(UUID.randomUUID());
+
+        String first = jwtService.generateAccessToken(user);
+        String second = jwtService.generateAccessToken(user);
+        Claims firstClaims = Jwts.parser().verifyWith(KEY).build()
+                .parseSignedClaims(first).getPayload();
+        Claims secondClaims = Jwts.parser().verifyWith(KEY).build()
+                .parseSignedClaims(second).getPayload();
+
+        assertThat(firstClaims.getId()).isNotBlank();
+        assertThat(secondClaims.getId()).isNotEqualTo(firstClaims.getId());
+    }
+
+    @Test
     void parse_expiredToken_throwsExpiredJwtException() {
         String expired = Jwts.builder()
                 .subject(UUID.randomUUID().toString())
