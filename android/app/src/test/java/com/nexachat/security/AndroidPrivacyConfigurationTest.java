@@ -94,6 +94,25 @@ public final class AndroidPrivacyConfigurationTest {
     }
 
     @Test
+    public void localSmokeNetworkConfigPermitsCleartextOutsideRelease() throws Exception {
+        File localSmokeConfig = requiredFile(
+                "localSmoke/res/xml/network_security_config.xml",
+                new File(appSourceRoot().getParentFile(),
+                        "localSmoke/res/xml/network_security_config.xml"));
+        Document network = parse(localSmokeConfig);
+        Element base = (Element) network.getDocumentElement()
+                .getElementsByTagName("base-config").item(0);
+        assertNotNull("localSmoke must define a base network policy", base);
+        assertEquals("true", base.getAttribute("cleartextTrafficPermitted"));
+        assertFalse("localSmoke must not add a release hostname exemption",
+                network.getDocumentElement().getElementsByTagName("domain-config").getLength() > 0
+                        && new String(java.nio.file.Files.readAllBytes(localSmokeConfig.toPath()))
+                                .contains("nexachat.io.vn"));
+        assertTrue("localSmoke override stays out of the release source set",
+                localSmokeConfig.getPath().contains("localSmoke" + File.separator + "res"));
+    }
+
+    @Test
     public void manifestComponentsAreExplicitAndOnlySafeInviteDeepLinkIsDeclared()
             throws Exception {
         Element application = applicationElement();
