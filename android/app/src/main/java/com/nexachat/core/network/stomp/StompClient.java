@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
@@ -22,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.LongPredicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -141,6 +143,9 @@ public final class StompClient {
     private volatile java.util.function.Consumer<String> connectBearerObserver;
 
     @Nullable
+    private volatile BiConsumer<WebSocketListener, Long> testListenerCapture;
+
+    @Nullable
     private volatile WebSocket socket;
     private volatile boolean open;
     private volatile long lastInboundMs;
@@ -219,9 +224,15 @@ public final class StompClient {
     }
 
     /** Observes the bearer wired into the STOMP CONNECT frame (tests only). */
+    @VisibleForTesting
     void setConnectBearerObserverForTests(
             @Nullable java.util.function.Consumer<String> observer) {
         connectBearerObserver = observer;
+    }
+
+    @VisibleForTesting
+    void setTestListenerCapture(@Nullable BiConsumer<WebSocketListener, Long> capture) {
+        testListenerCapture = capture;
     }
 
     private void beginAttempt(
@@ -353,16 +364,19 @@ public final class StompClient {
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
+                if (!stillCurrent.test(attemptId)) {
+                    return;
+                }
                 lastInboundMs = System.currentTimeMillis();
                 for (StompFrame frame : parser.feed(text)) {
                     String command = frame.getCommand();
                     if (StompCommand.CONNECTED.equals(command)) {
-                        if (!stillCurrent.test(attemptId)) {
-                            return;
-                        }
                         open = true;
                         sink.trySend(State.Open.INSTANCE);
                     } else if (StompCommand.ERROR.equals(command)) {
+                        if (!stillCurrent.test(attemptId)) {
+                            return;
+                        }
                         incomingFrames.onNext(frame);
                         if (!open) {
                             String reason = isBlank(frame.getBody())
@@ -371,6 +385,9 @@ public final class StompClient {
                             sink.trySend(new State.Failed(reason));
                         }
                     } else {
+                        if (!stillCurrent.test(attemptId)) {
+                            return;
+                        }
                         incomingFrames.onNext(frame);
                     }
                 }
@@ -410,6 +427,10 @@ public final class StompClient {
             }
         };
 
+        BiConsumer<WebSocketListener, Long> capture = testListenerCapture;
+        if (capture != null) {
+            capture.accept(listener, attemptId);
+        }
         WebSocket webSocket = okHttpClient.newWebSocket(request, listener);
         socket = webSocket;
         ScheduledExecutorService scheduler = newAttemptScheduler();

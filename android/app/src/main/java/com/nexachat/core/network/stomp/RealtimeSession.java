@@ -116,6 +116,8 @@ public final class RealtimeSession {
     private final SerialDisposable authRecovery = new SerialDisposable();
     private final AtomicLong connectionAttemptSeq = new AtomicLong();
     private volatile long activeConnectionAttemptId;
+    /** Session epoch captured at {@link #connectOnce()} start; cleared when the attempt ends. */
+    private volatile long activeAttemptSessionEpoch = -1L;
     private volatile boolean hasSession;
     private volatile boolean tokensPresent;
     private volatile boolean sessionAdmitted;
@@ -270,9 +272,18 @@ public final class RealtimeSession {
         isOpen.onNext(false);
     }
 
-    /** Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer. */
+    /**
+     * Starts at most one socket attempt; SerialDisposable cancels the previous attempt or timer.
+     * {@link #attemptActive} is cleared when the token session epoch advances without an
+     * admission false→true transition (re-login on an already-admitted owner).
+     */
     private void launchConnectionLoop() {
         synchronized (this) {
+            if (attemptActive
+                    && activeAttemptSessionEpoch >= 0L
+                    && tokenRefresher.sessionEpoch() != activeAttemptSessionEpoch) {
+                attemptActive = false;
+            }
             if (!hasSession || !sessionAdmitted || !tokensPresent || isCurrentlyOpen() || attemptActive) {
                 return;
             }
@@ -321,6 +332,7 @@ public final class RealtimeSession {
         }
         final long attemptId = connectionAttemptSeq.incrementAndGet();
         activeConnectionAttemptId = attemptId;
+        activeAttemptSessionEpoch = sessionEpoch;
         SerialDisposable attemptHolder = new SerialDisposable();
         connection.set(attemptHolder);
         authRecovery.set(Disposable.empty());
@@ -415,6 +427,9 @@ public final class RealtimeSession {
         }
         synchronized (this) {
             attemptActive = false;
+            if (activeConnectionAttemptId == attemptId) {
+                activeAttemptSessionEpoch = -1L;
+            }
         }
         isOpen.onNext(false);
         if (!hasSession || !sessionAdmitted) {

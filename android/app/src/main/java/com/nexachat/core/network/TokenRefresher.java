@@ -2,6 +2,7 @@ package com.nexachat.core.network;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ErrorResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
@@ -15,6 +16,7 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
+import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,8 +43,8 @@ public final class TokenRefresher {
     @Nullable private final AccountDataCleaner accountDataCleaner;
     private final Object lock = new Object();
     private final AtomicLong sessionEpoch = new AtomicLong();
-    private final BehaviorProcessor<Boolean> admissionEvents =
-            BehaviorProcessor.createDefault(false);
+    private final FlowableProcessor<Boolean> admissionEvents =
+            BehaviorProcessor.createDefault(false).toSerialized();
     private volatile boolean admissionOpen;
     private volatile boolean bootstrapComplete;
     private volatile boolean closingOrClosed;
@@ -50,6 +52,10 @@ public final class TokenRefresher {
     @Nullable private volatile AuthResponse pendingSuccessResponse;
     private volatile long pendingSuccessEpoch;
     @Nullable private volatile String pendingSuccessKey;
+
+    @Nullable
+    @VisibleForTesting
+    volatile Runnable admissionTestHookBeforeTrue;
 
     @Inject
     public TokenRefresher(
@@ -143,7 +149,13 @@ public final class TokenRefresher {
             pendingSuccessResponse = null;
             bootstrapComplete = true;
         }
-        admissionEvents.onNext(true);
+        Runnable hook = admissionTestHookBeforeTrue;
+        if (hook != null) {
+            hook.run();
+        }
+        synchronized (lock) {
+            publishAdmissionTrueUnderLock();
+        }
     }
 
     /** Invalidates pending refresh writes before the session is cleared. */
@@ -187,8 +199,8 @@ public final class TokenRefresher {
             pendingSuccessResponse = null;
             pendingSuccessKey = null;
             marker = new SessionCloseMarker(activeEpoch, closingEpoch);
+            admissionEvents.onNext(false);
         }
-        admissionEvents.onNext(false);
         return marker;
     }
 
@@ -221,7 +233,14 @@ public final class TokenRefresher {
                 closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
             }
             bootstrapComplete = true;
+            if (admissionOpen) {
+                publishAdmissionTrueUnderLock();
+            }
         }
+    }
+
+    /** Caller must hold {@link #lock}; re-checks {@link #admissionOpen} before emitting. */
+    private void publishAdmissionTrueUnderLock() {
         if (admissionOpen) {
             admissionEvents.onNext(true);
         }
