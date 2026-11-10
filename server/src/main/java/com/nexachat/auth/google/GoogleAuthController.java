@@ -10,6 +10,7 @@ import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -46,13 +47,15 @@ public class GoogleAuthController {
     @PostMapping("/google/nonce")
     public GoogleNonceResponse signInNonce() {
         googleSignInService.requireEnabled();
-        return toResponse(nonceService.issue(GoogleNonceService.PURPOSE_SIGNIN, null));
+        return toResponse(nonceService.issue(GoogleNonceService.PURPOSE_SIGNIN, null, null));
     }
 
     /** Nonce for the authenticated link flow; the public nonce cannot be used here. */
     @PostMapping("/identities/google/nonce")
-    public GoogleNonceResponse linkNonce(@AuthenticationPrincipal JwtPrincipal principal) {
-        return toResponse(googleSignInService.issueLinkNonce(requireUserId(principal)));
+    public GoogleNonceResponse linkNonce(@AuthenticationPrincipal JwtPrincipal principal,
+                                         HttpServletRequest request) {
+        return toResponse(googleSignInService.issueLinkNonce(
+                requireUserId(principal), requireAccessTokenId(request)));
     }
 
     @PostMapping("/google")
@@ -69,8 +72,10 @@ public class GoogleAuthController {
     @PostMapping("/identities/google")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void link(@AuthenticationPrincipal JwtPrincipal principal,
+                     HttpServletRequest servletRequest,
                      @Valid @RequestBody GoogleLinkRequest request) {
-        googleSignInService.link(requireUserId(principal), request);
+        googleSignInService.link(
+                requireUserId(principal), requireAccessTokenId(servletRequest), request);
     }
 
     @DeleteMapping("/identities/google")
@@ -89,5 +94,13 @@ public class GoogleAuthController {
             throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
         }
         return principal.userId();
+    }
+
+    private static String requireAccessTokenId(HttpServletRequest request) {
+        Object value = request.getAttribute(com.nexachat.auth.JwtAuthFilter.ACCESS_TOKEN_ID_ATTRIBUTE);
+        if (value instanceof String tokenId && !tokenId.isBlank()) {
+            return tokenId;
+        }
+        throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
     }
 }

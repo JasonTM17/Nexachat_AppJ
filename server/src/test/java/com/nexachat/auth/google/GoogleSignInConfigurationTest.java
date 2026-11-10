@@ -1,7 +1,19 @@
 package com.nexachat.auth.google;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.web.client.ResourceAccessException;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -26,12 +38,65 @@ class GoogleSignInConfigurationTest {
     }
 
     @Test
+    void enabledFeatureWithoutTrustedAndroidClientIdsFailsStartup() {
+        assertThatThrownBy(() -> GoogleSignInConfiguration.decoderFor(
+                new GoogleSignInProperties(true, GoogleTestKeys.AUDIENCE,
+                        "https://example.invalid/certs", 300, java.util.List.of())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("android-client-ids");
+    }
+
+    @Test
     void enabledFeatureBuildsARealDecoderWithoutContactingTheNetwork() {
         JwtDecoder decoder = GoogleSignInConfiguration.decoderFor(
                 new GoogleSignInProperties(true, GoogleTestKeys.AUDIENCE,
-                        "http://127.0.0.1:1/certs", 300, java.util.List.of()));
+                        "http://127.0.0.1:1/certs", 300,
+                        java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID)));
 
         assertThat(decoder).isNotNull();
+    }
+
+    @Test
+    void jwksHttpClientStopsWaitingWhenTheResponseBodyStalls() throws Exception {
+        CountDownLatch requestReceived = new CountDownLatch(1);
+        CountDownLatch releaseResponse = new CountDownLatch(1);
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        server.createContext("/stalled", exchange -> {
+            try {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, 11);
+                requestReceived.countDown();
+                releaseResponse.await();
+                exchange.getResponseBody().write("{\"keys\":[]}".getBytes(StandardCharsets.UTF_8));
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } catch (java.io.IOException ignored) {
+                // The client is expected to close the timed-out response.
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+
+        try {
+            var request = executor.submit(() -> GoogleSignInConfiguration.jwksRestOperations()
+                    .getForObject("http://127.0.0.1:" + server.getAddress().getPort() + "/stalled", String.class));
+            assertThat(requestReceived.await(3, TimeUnit.SECONDS)).isTrue();
+            try {
+                request.get(8, TimeUnit.SECONDS);
+                throw new AssertionError("JWKS body read unexpectedly completed");
+            } catch (ExecutionException exception) {
+                assertThat(exception.getCause()).isInstanceOf(ResourceAccessException.class);
+            } catch (TimeoutException exception) {
+                throw new AssertionError("JWKS response read did not honor its timeout", exception);
+            }
+        } finally {
+            releaseResponse.countDown();
+            server.stop(0);
+            executor.shutdownNow();
+        }
     }
 
     @Test

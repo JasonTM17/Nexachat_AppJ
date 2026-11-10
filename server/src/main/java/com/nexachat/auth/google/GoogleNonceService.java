@@ -52,15 +52,19 @@ public class GoogleNonceService {
      * @param userId  the account that may consume a link nonce; {@code null} for sign-in
      * @return the raw nonce (shown once) and its lifetime in seconds
      */
-    public IssuedNonce issue(String purpose, java.util.UUID userId) {
+    public IssuedNonce issue(String purpose, java.util.UUID userId, String accessTokenId) {
+        validateBinding(purpose, userId, accessTokenId);
         byte[] bytes = new byte[NONCE_BYTES];
         SECURE_RANDOM.nextBytes(bytes);
         String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         JdbcTemplate jdbcTemplate = jdbcTemplate();
         jdbcTemplate.update(
-                "INSERT INTO google_signin_nonces (nonce_hash, purpose, user_id, expires_at)"
-                        + " VALUES (?, ?, ?, now() + (? * INTERVAL '1 second'))",
-                sha256Hex(nonce), purpose, userId, properties.nonceTtlSeconds());
+                "INSERT INTO google_signin_nonces"
+                        + " (nonce_hash, purpose, user_id, access_token_id_hash, expires_at)"
+                        + " VALUES (?, ?, ?, ?, now() + (? * INTERVAL '1 second'))",
+                sha256Hex(nonce), purpose, userId,
+                accessTokenId == null ? null : sha256Hex(accessTokenId),
+                properties.nonceTtlSeconds());
         jdbcTemplate.update(
                 "DELETE FROM google_signin_nonces WHERE id IN ("
                         + "SELECT id FROM google_signin_nonces WHERE expires_at < now() LIMIT "
@@ -78,26 +82,48 @@ public class GoogleNonceService {
      * would release the nonce for replay.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public boolean consume(String nonce, String purpose, java.util.UUID userId) {
+    public boolean consume(String nonce, String purpose, java.util.UUID userId, String accessTokenId) {
         if (nonce == null || nonce.isBlank() || nonce.length() > MAX_NONCE_LENGTH) {
+            return false;
+        }
+        if (!hasValidBinding(purpose, userId, accessTokenId)) {
             return false;
         }
         int updated;
         if (userId == null) {
-            // Public sign-in nonces have no owner.
+            // Public sign-in nonces have no user or access-token owner.
             updated = jdbcTemplate().update(
                     "UPDATE google_signin_nonces SET consumed_at = now()"
-                            + " WHERE nonce_hash = ? AND purpose = ? AND user_id IS NULL"
+                            + " WHERE nonce_hash = ? AND purpose = ?"
+                            + " AND user_id IS NULL AND access_token_id_hash IS NULL"
                             + " AND consumed_at IS NULL AND expires_at > now()",
                     sha256Hex(nonce), purpose);
         } else {
             updated = jdbcTemplate().update(
                     "UPDATE google_signin_nonces SET consumed_at = now()"
                             + " WHERE nonce_hash = ? AND purpose = ? AND user_id = ?"
+                            + " AND access_token_id_hash = ?"
                             + " AND consumed_at IS NULL AND expires_at > now()",
-                    sha256Hex(nonce), purpose, userId);
+                    sha256Hex(nonce), purpose, userId, sha256Hex(accessTokenId));
         }
         return updated == 1;
+    }
+
+    private static void validateBinding(String purpose, java.util.UUID userId, String accessTokenId) {
+        if (!hasValidBinding(purpose, userId, accessTokenId)) {
+            throw new IllegalArgumentException("Invalid Google nonce binding");
+        }
+    }
+
+    private static boolean hasValidBinding(String purpose, java.util.UUID userId, String accessTokenId) {
+        if (PURPOSE_SIGNIN.equals(purpose)) {
+            return userId == null && accessTokenId == null;
+        }
+        return PURPOSE_LINK.equals(purpose)
+                && userId != null
+                && accessTokenId != null
+                && !accessTokenId.isBlank()
+                && accessTokenId.length() <= 255;
     }
 
     private JdbcTemplate jdbcTemplate() {

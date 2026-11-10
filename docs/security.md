@@ -222,7 +222,8 @@ the implementing source file.
   answers `404 NOT_FOUND` (GoogleSignInService.requireEnabled), the decoder bean
   rejects without any network access, and the Android build without a web client
   ID never renders the entry points. Enabling the feature without
-  `nexachat.google.signin.web-client-id` fails application startup
+  `nexachat.google.signin.web-client-id` or at least one trusted Android client
+  ID fails application startup
   (GoogleSignInConfiguration.decoderFor) — there is no insecure fallback.
 - The ID token is verified with Spring Security's `NimbusJwtDecoder` over Google's
   JWKS (`https://www.googleapis.com/oauth2/v3/certs`, cached by Nimbus and
@@ -237,15 +238,18 @@ the implementing source file.
 - The identity key is the immutable `sub`; email is stored for display only and
   never used to match or link an account (UserIdentity.java). A Google account
   can belong to at most one user and a user to at most one Google account, both
-  enforced by UNIQUE constraints (V27); a concurrent link loses on the constraint
+  enforced by UNIQUE constraints (V28); a concurrent link loses on the constraint
   and receives the same generic `409` (GoogleSignInService.link).
 - Replay protection: `POST /auth/google/nonce` issues a 256-bit nonce, persists
   only its SHA-256 hex with a five-minute expiry, and the token's `nonce` claim
   must match. Each nonce is bound to its purpose (`signin` for the public route,
-  `link` for the authenticated route) and, for link nonces, to the account that
-  requested it, so a public nonce or another account's link nonce cannot be
-  replayed against the link endpoint. The service consumes it with one conditional
-  `UPDATE ... WHERE purpose = ? AND consumed_at IS NULL AND expires_at > now()`
+  `link` for the authenticated route). A link nonce is also bound to the account
+  and unique access-token `jti` that requested it, using only a SHA-256 hash;
+  a nonce cannot be spent by another account or another access-token instance.
+  New access tokens receive a random `jti`; older tokens without one may use
+  normal APIs but must refresh before starting a Google link flow. The service
+  consumes the nonce with one conditional `UPDATE ... WHERE purpose = ? AND
+  consumed_at IS NULL AND expires_at > now()`
   in a `REQUIRES_NEW` transaction, so concurrent requests and a later rollback
   of the sign-in transaction cannot both use (or release) the nonce
   (GoogleNonceService.java). All failures — malformed, wrong audience, wrong

@@ -55,6 +55,7 @@ public class JwtService {
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .issuer(ISSUER)
                 .audience().single(AUDIENCE)
                 .subject(user.getId().toString())
@@ -69,10 +70,15 @@ public class JwtService {
      * Verified access-token material: the caller id plus the second-precision
      * issue instant the revocation cutoff is compared against.
      */
-    public record AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt) {
+    public record AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt, String tokenId) {
+        /** Compatibility for verified claims that do not include a token identifier. */
+        public AccessTokenClaims(UUID userId, Instant issuedAt, Instant expiresAt) {
+            this(userId, issuedAt, expiresAt, null);
+        }
+
         /** Compatibility for callers that provide an already-verified test claim. */
         public AccessTokenClaims(UUID userId, Instant issuedAt) {
-            this(userId, issuedAt, Instant.MAX);
+            this(userId, issuedAt, Instant.MAX, null);
         }
     }
 
@@ -113,7 +119,8 @@ public class JwtService {
             return new AccessTokenClaims(
                     UUID.fromString(subject),
                     issuedAt == null ? Instant.EPOCH : issuedAt.toInstant(),
-                    expiresAt.toInstant());
+                    expiresAt.toInstant(),
+                    claims.getId());
         } catch (IllegalArgumentException e) {
             throw new JwtException("Token subject is not a user id", e);
         }

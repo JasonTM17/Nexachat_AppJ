@@ -1,4 +1,5 @@
--- V28: "Sign in with Google" identity links and single-use nonces.
+-- V28: "Sign in with Google" identity links and single-use nonces. V26 and V27
+-- are used by the account-deletion and email-OTP integration branches.
 --
 -- The Google account identity key is the OpenID Connect `sub` claim, never the
 -- email address: a Google account can change its email over time. One user may
@@ -32,13 +33,19 @@ CREATE TABLE google_signin_nonces (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nonce_hash  CHAR(64)    NOT NULL UNIQUE,
     purpose     VARCHAR(16) NOT NULL,
-    -- Link nonces are bound to the account that requested them.
-    user_id     UUID        REFERENCES users(id) ON DELETE CASCADE,
+    -- Link nonces are bound to the account and unique access-token instance that requested them.
+    user_id                UUID        REFERENCES users(id) ON DELETE CASCADE,
+    access_token_id_hash   CHAR(64),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at  TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ,
     CONSTRAINT ck_google_nonce_hash CHECK (length(btrim(nonce_hash)) = 64),
     CONSTRAINT ck_google_nonce_purpose CHECK (purpose IN ('signin', 'link')),
+    CONSTRAINT ck_google_nonce_binding CHECK (
+        (purpose = 'signin' AND user_id IS NULL AND access_token_id_hash IS NULL)
+        OR (purpose = 'link' AND user_id IS NOT NULL AND access_token_id_hash IS NOT NULL
+            AND length(btrim(access_token_id_hash)) = 64)
+    ),
     CONSTRAINT ck_google_nonce_expiry CHECK (expires_at > created_at)
 );
 

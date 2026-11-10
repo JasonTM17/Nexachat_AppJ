@@ -3,10 +3,15 @@ package com.nexachat.auth.google;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.web.client.RestOperations;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
 
 /**
  * Builds the Google ID-token decoder from the configured JWKS URI.
@@ -18,6 +23,9 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(GoogleSignInProperties.class)
 public class GoogleSignInConfiguration {
+
+    private static final Duration JWKS_CONNECT_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
 
     @Bean
     public JwtDecoder googleIdTokenDecoder(GoogleSignInProperties properties) {
@@ -36,11 +44,23 @@ public class GoogleSignInConfiguration {
             throw new IllegalStateException(
                     "nexachat.google.signin.web-client-id is required when Google sign-in is enabled");
         }
+        if (properties.androidClientIds().isEmpty()) {
+            throw new IllegalStateException(
+                    "nexachat.google.signin.android-client-ids is required when Google sign-in is enabled");
+        }
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwksUri())
                 .jwsAlgorithm(SignatureAlgorithm.RS256)
+                .restOperations(jwksRestOperations())
                 .build();
         decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(
                 properties.webClientId(), properties.androidClientIds()));
         return decoder;
+    }
+
+    static RestOperations jwksRestOperations() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(JWKS_CONNECT_TIMEOUT);
+        factory.setReadTimeout(JWKS_READ_TIMEOUT);
+        return new RestTemplate(factory);
     }
 }

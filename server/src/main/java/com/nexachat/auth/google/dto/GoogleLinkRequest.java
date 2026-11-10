@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
  * the owner of the account; the nonce makes the ID token single-use.
  *
  * @param idToken  the raw JWT returned by Credential Manager
- * @param nonce    the single-use value from {@code POST /api/v1/auth/google/nonce}
+ * @param nonce    the single-use value from {@code POST /api/v1/auth/identities/google/nonce}
  * @param password the account's current password
  */
 public record GoogleLinkRequest(

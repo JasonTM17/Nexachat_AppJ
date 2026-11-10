@@ -15,8 +15,8 @@ import java.util.List;
  * @param webClientId     expected {@code aud} of the Google ID token
  * @param jwksUri          Google's public JWKS (rotated by Google, cached by Nimbus)
  * @param nonceTtlSeconds  lifetime of an issued sign-in nonce
- * @param androidClientIds Android OAuth client IDs trusted as the token's
- *                         {@code azp} (authorized party) when Google sets it
+ * @param androidClientIds required while enabled; Android OAuth client IDs
+ *                         trusted as the token's {@code azp} when Google sets it
  */
 @ConfigurationProperties(prefix = "nexachat.google.signin")
 public record GoogleSignInProperties(

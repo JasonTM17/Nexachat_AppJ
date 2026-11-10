@@ -3,6 +3,7 @@ package com.nexachat.auth;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.auth.google.GoogleTestKeys;
 import com.nexachat.auth.google.JwksServer;
+import com.nexachat.testutil.TestAccessTokens;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,8 +11,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +42,7 @@ class GoogleSignInIT extends SecurityITBase {
     static void googleProperties(DynamicPropertyRegistry registry) {
         registry.add("nexachat.google.signin.enabled", () -> "true");
         registry.add("nexachat.google.signin.web-client-id", () -> GoogleTestKeys.AUDIENCE);
+        registry.add("nexachat.google.signin.android-client-ids", () -> GoogleTestKeys.ANDROID_CLIENT_ID);
         registry.add("nexachat.google.signin.jwks-uri", JWKS::uri);
     }
 
@@ -60,8 +67,13 @@ class GoogleSignInIT extends SecurityITBase {
 
         String stored = jdbcTemplate.queryForObject(
                 "SELECT nonce_hash FROM google_signin_nonces", String.class);
+        String storedAccessTokenIdHash = jdbcTemplate.queryForObject(
+                "SELECT access_token_id_hash FROM google_signin_nonces", String.class);
         assertThat(stored).hasSize(64).isNotEqualTo(nonce);
         assertThat(stored).isEqualTo(com.nexachat.auth.google.GoogleNonceService.sha256Hex(nonce));
+        assertThat(storedAccessTokenIdHash).hasSize(64).isNotEqualTo(user.accessToken())
+                .isEqualTo(com.nexachat.auth.google.GoogleNonceService.sha256Hex(
+                        jwtService.parseAccessTokenClaims(user.accessToken()).tokenId()));
 
         String token = GoogleTestKeys.token(nonce);
         link(user, token, nonce).andExpect(status().isNoContent());
@@ -166,6 +178,53 @@ class GoogleSignInIT extends SecurityITBase {
     }
 
     @Test
+    void linkNonceCannotBeUsedByAnotherSessionOfTheSameAccount() throws Exception {
+        Registered requestingSession = register(PHONE);
+        Registered otherSession = login(PHONE);
+        assertThat(otherSession.accessToken()).isNotEqualTo(requestingSession.accessToken());
+        String nonce = issueLinkNonce(requestingSession);
+        String token = GoogleTestKeys.token(nonce);
+
+        link(otherSession, token, nonce)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
+
+        // A failed cross-session attempt does not consume the nonce for its owner.
+        link(requestingSession, token, nonce).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void linkNonceRequiresAnAccessTokenIdentifier() throws Exception {
+        Registered user = register(PHONE);
+        String legacyAccessToken = TestAccessTokens.accessTokenIssuedAt(
+                jwtProperties, user.userId(), Instant.now());
+
+        postJson("/api/v1/auth/identities/google/nonce", Map.of(), legacyAccessToken)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void expiredLinkNonceCannotBeConsumed() throws Exception {
+        Registered user = register(PHONE);
+        String nonce = issueLinkNonce(user);
+        jdbcTemplate.update("UPDATE google_signin_nonces"
+                        + " SET expires_at = created_at + INTERVAL '1 microsecond'"
+                        + " WHERE nonce_hash = ?",
+                com.nexachat.auth.google.GoogleNonceService.sha256Hex(nonce));
+
+        link(user, GoogleTestKeys.token(nonce), nonce)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_SIGN_IN_FAILED"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT consumed_at IS NULL FROM google_signin_nonces WHERE nonce_hash = ?",
+                Boolean.class, com.nexachat.auth.google.GoogleNonceService.sha256Hex(nonce))).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_identities", Integer.class)).isZero();
+    }
+
+    @Test
     void linkRequiresTheCurrentPassword() throws Exception {
         Registered user = register(PHONE);
         String nonce = issueLinkNonce(user);
@@ -207,6 +266,48 @@ class GoogleSignInIT extends SecurityITBase {
         link(second, GoogleTestKeys.token(otherNonce), otherNonce)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("GOOGLE_ACCOUNT_ALREADY_LINKED"));
+    }
+
+    @Test
+    void concurrentLinksCannotAssignOneGoogleAccountToTwoUsers() throws Exception {
+        Registered first = register(PHONE);
+        Registered second = register("+84905556002");
+        String firstNonce = issueLinkNonce(first);
+        String secondNonce = issueLinkNonce(second);
+        String firstToken = GoogleTestKeys.token(firstNonce);
+        String secondToken = GoogleTestKeys.token(secondNonce);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<Integer> firstResponse = executor.submit(() -> linkAfterBarrier(
+                    first, firstToken, firstNonce, ready, start));
+            Future<Integer> secondResponse = executor.submit(() -> linkAfterBarrier(
+                    second, secondToken, secondNonce, ready, start));
+            assertThat(ready.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            List<Integer> statuses = List.of(
+                    firstResponse.get(20, java.util.concurrent.TimeUnit.SECONDS),
+                    secondResponse.get(20, java.util.concurrent.TimeUnit.SECONDS));
+            assertThat(statuses).containsExactlyInAnyOrder(204, 409);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM user_identities WHERE provider = 'google' AND subject = ?",
+                    Integer.class, GoogleTestKeys.SUBJECT)).isEqualTo(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private int linkAfterBarrier(Registered user, String token, String nonce,
+                                 CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        if (!start.await(10, java.util.concurrent.TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Concurrent link barrier timed out");
+        }
+        return link(user, token, nonce).andReturn().getResponse().getStatus();
     }
 
     @Test
@@ -334,6 +435,16 @@ class GoogleSignInIT extends SecurityITBase {
                         }),
                         "nonce", rotatedNonce))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void jwksFetchFailureRejectsAnUnknownSigningKeyGenerically() throws Exception {
+        JWKS.failWith(503);
+        try {
+            assertSignInRejected(claims -> claims.key = GoogleTestKeys.keyC());
+        } finally {
+            JWKS.publish(List.of(GoogleTestKeys.keyA()));
+        }
     }
 
     @Test

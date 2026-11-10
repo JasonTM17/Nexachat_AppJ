@@ -46,6 +46,7 @@ import java.util.Optional;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     public static final String AUTH_ERROR_ATTRIBUTE = "nexachat.authErrorCode";
+    public static final String ACCESS_TOKEN_ID_ATTRIBUTE = "nexachat.accessTokenId";
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
@@ -72,6 +73,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 if (isRevoked(claims)) {
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
                 } else {
+                    if (claims.tokenId() != null && !claims.tokenId().isBlank()) {
+                        request.setAttribute(ACCESS_TOKEN_ID_ATTRIBUTE, claims.tokenId());
+                    }
                     var authentication = new UsernamePasswordAuthenticationToken(
                             new JwtPrincipal(claims.userId()), null, List.of());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

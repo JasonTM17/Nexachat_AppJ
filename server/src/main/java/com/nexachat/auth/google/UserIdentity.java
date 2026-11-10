@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One external identity linked to a NexaChat account (V27).
+ * One external identity linked to a NexaChat account (V28).
  *
  * <p>{@code subject} is the provider's immutable user identifier — for Google
  * the OpenID Connect {@code sub} claim. Email is stored for display only and

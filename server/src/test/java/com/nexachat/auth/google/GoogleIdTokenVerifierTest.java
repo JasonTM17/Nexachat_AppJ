@@ -8,6 +8,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +134,19 @@ class GoogleIdTokenVerifierTest {
     }
 
     @Test
+    void rejectsAnUnsignedTokenWithAlgNone() {
+        String header = base64Url("{\"alg\":\"none\",\"typ\":\"JWT\"}");
+        String payload = base64Url("{\"iss\":\"https://accounts.google.com\","
+                + "\"aud\":\"" + GoogleTestKeys.AUDIENCE + "\","
+                + "\"sub\":\"" + GoogleTestKeys.SUBJECT + "\","
+                + "\"iat\":" + Instant.now().getEpochSecond() + ","
+                + "\"exp\":" + Instant.now().plusSeconds(300).getEpochSecond() + ","
+                + "\"nonce\":\"" + NONCE + "\"}");
+
+        assertFailed(header + "." + payload + ".", NONCE);
+    }
+
+    @Test
     void rejectsAMismatchedNonce() {
         assertFailed(GoogleTestKeys.token("another-nonce"), NONCE);
         assertFailed(GoogleTestKeys.token("another-nonce"), null);
@@ -159,6 +174,11 @@ class GoogleIdTokenVerifierTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(exception -> assertThat(((ApiException) exception).getCode())
                         .isEqualTo(ApiErrorCode.GOOGLE_SIGN_IN_FAILED));
+    }
+
+    private static String base64Url(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static JwtDecoder decoder(RSAKey key) {

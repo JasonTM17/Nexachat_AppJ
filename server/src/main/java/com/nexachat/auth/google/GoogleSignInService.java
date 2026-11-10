@@ -16,6 +16,8 @@ import com.nexachat.user.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -47,6 +49,7 @@ public class GoogleSignInService {
     private final TokenService tokenService;
     private final AuthResponseFactory responseFactory;
     private final RateLimitService rateLimitService;
+    private final TransactionTemplate transactionTemplate;
 
     public GoogleSignInService(GoogleSignInProperties properties,
                                GoogleIdTokenVerifier verifier,
@@ -56,7 +59,8 @@ public class GoogleSignInService {
                                PasswordEncoder passwordEncoder,
                                TokenService tokenService,
                                AuthResponseFactory responseFactory,
-                               RateLimitService rateLimitService) {
+                               RateLimitService rateLimitService,
+                               PlatformTransactionManager transactionManager) {
         this.properties = properties;
         this.verifier = verifier;
         this.nonceService = nonceService;
@@ -66,6 +70,7 @@ public class GoogleSignInService {
         this.tokenService = tokenService;
         this.responseFactory = responseFactory;
         this.rateLimitService = rateLimitService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /** Every endpoint of a disabled feature answers 404 — existence is not disclosed. */
@@ -75,34 +80,50 @@ public class GoogleSignInService {
         }
     }
 
-    @Transactional
     public AuthResponse signIn(GoogleSignInRequest request, String deviceLabel) {
         requireEnabled();
         GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
-        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_SIGNIN, null);
+        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_SIGNIN, null, null);
 
-        UserIdentity identity = identityRepository
-                .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
-                .orElseThrow(GoogleSignInService::notLinked);
-        User user = userRepository.findByIdForUpdate(identity.getUserId())
-                .orElseThrow(GoogleSignInService::notLinked);
+        // Keep remote JWKS access and the independently committed nonce update
+        // outside this transaction. Otherwise concurrent requests can each hold
+        // one pool connection while waiting for a REQUIRES_NEW connection.
+        return transactionTemplate.execute(status -> {
+            UserIdentity identity = identityRepository
+                    .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
+                    .orElseThrow(GoogleSignInService::notLinked);
+            User user = userRepository.findByIdForUpdate(identity.getUserId())
+                    .orElseThrow(GoogleSignInService::notLinked);
 
-        String refreshToken = tokenService.issue(user, deviceLabel);
-        return responseFactory.create(user, refreshToken);
+            String refreshToken = tokenService.issue(user, deviceLabel);
+            return responseFactory.create(user, refreshToken);
+        });
     }
 
-    @Transactional
-    public void link(UUID userId, GoogleLinkRequest request) {
+    public void link(UUID userId, String accessTokenId, GoogleLinkRequest request) {
         requireEnabled();
         enforceAccountRateLimit(userId, "google-link");
+        User initialUser = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (!passwordEncoder.matches(request.password(), initialUser.getPasswordHash())) {
+            throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+        }
+
+        GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
+        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_LINK, userId, accessTokenId);
+
+        // The password check above preserves the request contract: a wrong
+        // password does not burn a valid nonce. Recheck after locking because
+        // the password may change while the token is verified.
+        transactionTemplate.executeWithoutResult(status -> linkInTransaction(userId, request, claims));
+    }
+
+    private void linkInTransaction(UUID userId, GoogleLinkRequest request, GoogleIdTokenClaims claims) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
-
-        GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
-        consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_LINK, userId);
 
         UserIdentity existing = identityRepository
                 .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
@@ -159,14 +180,14 @@ public class GoogleSignInService {
     }
 
     /** Issues a nonce for the authenticated link flow, bounded per account. */
-    public GoogleNonceService.IssuedNonce issueLinkNonce(UUID userId) {
+    public GoogleNonceService.IssuedNonce issueLinkNonce(UUID userId, String accessTokenId) {
         requireEnabled();
         enforceAccountRateLimit(userId, "google-link-nonce");
-        return nonceService.issue(GoogleNonceService.PURPOSE_LINK, userId);
+        return nonceService.issue(GoogleNonceService.PURPOSE_LINK, userId, accessTokenId);
     }
 
-    private void consumeNonce(String nonce, String purpose, UUID userId) {
-        if (!nonceService.consume(nonce, purpose, userId)) {
+    private void consumeNonce(String nonce, String purpose, UUID userId, String accessTokenId) {
+        if (!nonceService.consume(nonce, purpose, userId, accessTokenId)) {
             throw ApiException.of(ApiErrorCode.GOOGLE_SIGN_IN_FAILED,
                     "Google sign-in could not be completed");
         }
