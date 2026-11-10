@@ -81,7 +81,7 @@ public final class Redactor {
         StringBuffer output = new StringBuffer();
         while (matcher.find()) {
             String value = matcher.group();
-            long digits = value.chars().filter(Character::isDigit).count();
+            long digits = value.codePoints().filter(Character::isDigit).count();
             matcher.appendReplacement(output, Matcher.quoteReplacement(
                     digits >= 7 && digits <= 15 ? "[REDACTED_PHONE]" : value));
         }
