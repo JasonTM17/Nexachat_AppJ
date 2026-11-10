@@ -170,11 +170,24 @@ public final class InboxFragment extends Fragment {
                 .observe(getViewLifecycleOwner(), this::renderLabels);
         viewModel.getEvents().observe(getViewLifecycleOwner(), raw -> {
             InboxEvent event = raw == null ? null : raw.consume();
-            if (event == null || binding == null) return;
-            Snackbar.make(binding.getRoot(),
-                            ChatErrorIds.messageId(event.getError()),
-                            Snackbar.LENGTH_LONG)
-                    .show();
+            if (event == null || binding == null) {
+                return;
+            }
+            if (event instanceof InboxErrorEvent failure) {
+                Snackbar.make(binding.getRoot(),
+                                ChatErrorIds.messageId(failure.getError()),
+                                Snackbar.LENGTH_LONG)
+                        .show();
+                return;
+            }
+            if (event instanceof InboxPreferenceSuccess success) {
+                Snackbar snackbar = Snackbar.make(
+                        binding.getRoot(), success.getMessageId(), Snackbar.LENGTH_LONG);
+                if (success.getUndo() != null) {
+                    snackbar.setAction(R.string.action_undo, ignored -> success.getUndo().run());
+                }
+                snackbar.show();
+            }
         });
         viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {
             if (error != null) {

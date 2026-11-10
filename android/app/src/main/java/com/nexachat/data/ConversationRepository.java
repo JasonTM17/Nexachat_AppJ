@@ -147,6 +147,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final Set<String> seenInboxCursors = new HashSet<>();
     private final Set<String> inboxWalkIds = new LinkedHashSet<>();
     @Nullable private Single<Result<Boolean>> inFlightNextInboxPage;
+    private final ConversationPreferenceLanes preferenceLanes = new ConversationPreferenceLanes();
 
     @Inject
     public ConversationRepository(
@@ -354,33 +355,33 @@ public final class ConversationRepository implements AutoCloseable {
     @NonNull
     public Single<Result<Void>> muteConversation(
             @NonNull String conversationId, @NonNull java.time.Instant until) {
-        return operationTracker.track(callVoid(settingsApi.mute(conversationId, MuteRequest.until(until)))
-                .flatMap(result -> result instanceof Result.Failure<?>
-                        ? Single.just(result)
-                        : conversationDao.updateMute(conversationId, true, until.toEpochMilli())
-                                .andThen(Single.just(successVoid())))
+        return operationTracker.track(orderedMute(
+                conversationId,
+                true,
+                until.toEpochMilli(),
+                callVoid(settingsApi.mute(conversationId, MuteRequest.until(until))))
                 .subscribeOn(Schedulers.io()));
     }
 
     /** Mutes the conversation until the caller turns notifications back on. */
     @NonNull
     public Single<Result<Void>> muteConversationForever(@NonNull String conversationId) {
-        return operationTracker.track(callVoid(settingsApi.mute(conversationId, MuteRequest.forever()))
-                .flatMap(result -> result instanceof Result.Failure<?>
-                        ? Single.just(result)
-                        : conversationDao.updateMute(conversationId, true, null)
-                                .andThen(Single.just(successVoid())))
+        return operationTracker.track(orderedMute(
+                conversationId,
+                true,
+                null,
+                callVoid(settingsApi.mute(conversationId, MuteRequest.forever())))
                 .subscribeOn(Schedulers.io()));
     }
 
     /** Clears the caller's mute; idempotent when already unmuted. */
     @NonNull
     public Single<Result<Void>> unmuteConversation(@NonNull String conversationId) {
-        return operationTracker.track(callVoid(settingsApi.unmute(conversationId))
-                .flatMap(result -> result instanceof Result.Failure<?>
-                        ? Single.just(result)
-                        : conversationDao.updateMute(conversationId, false, null)
-                                .andThen(Single.just(successVoid())))
+        return operationTracker.track(orderedMute(
+                conversationId,
+                false,
+                null,
+                callVoid(settingsApi.unmute(conversationId)))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -391,11 +392,7 @@ public final class ConversationRepository implements AutoCloseable {
         Call<Void> call = archived
                 ? settingsApi.archive(conversationId)
                 : settingsApi.unarchive(conversationId);
-        return operationTracker.track(callVoid(call)
-                .flatMap(result -> result instanceof Result.Failure<?>
-                        ? Single.just(result)
-                        : conversationDao.updateArchived(conversationId, archived)
-                                .andThen(Single.just(successVoid())))
+        return operationTracker.track(orderedArchive(conversationId, archived, callVoid(call))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -571,22 +568,10 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> pinConversation(@NonNull String conversationId) {
-        return operationTracker.track(conversationDao.byId(conversationId)
-                .flatMapSingle(existing -> {
-                    boolean prevPinned = existing.isPinned();
-                    Long prevPinnedAt = existing.getPinnedAt();
-                    long now = System.currentTimeMillis();
-                    return conversationDao.updatePin(conversationId, true, now)
-                            .andThen(callVoid(messageApi.pinConversation(conversationId)))
-                            .flatMap(result -> {
-                                if (result instanceof Result.Failure<?>) {
-                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
-                                            .andThen(Single.just(result));
-                                }
-                                return Single.just(result);
-                            });
-                })
-                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+        return operationTracker.track(orderedPin(
+                conversationId,
+                true,
+                callVoid(messageApi.pinConversation(conversationId)))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -595,21 +580,10 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> unpinConversation(@NonNull String conversationId) {
-        return operationTracker.track(conversationDao.byId(conversationId)
-                .flatMapSingle(existing -> {
-                    boolean prevPinned = existing.isPinned();
-                    Long prevPinnedAt = existing.getPinnedAt();
-                    return conversationDao.updatePin(conversationId, false, null)
-                            .andThen(callVoid(messageApi.unpinConversation(conversationId)))
-                            .flatMap(result -> {
-                                if (result instanceof Result.Failure<?>) {
-                                    return conversationDao.updatePin(conversationId, prevPinned, prevPinnedAt)
-                                            .andThen(Single.just(result));
-                                }
-                                return Single.just(result);
-                            });
-                })
-                .switchIfEmpty(Single.just(Result.<Void>failure(new ApiError.Unknown("CONVERSATION_NOT_FOUND"))))
+        return operationTracker.track(orderedPin(
+                conversationId,
+                false,
+                callVoid(messageApi.unpinConversation(conversationId)))
                 .subscribeOn(Schedulers.io()));
     }
 
@@ -1099,6 +1073,156 @@ public final class ConversationRepository implements AutoCloseable {
         });
     }
 
+    @NonNull
+    private Single<Result<Void>> orderedArchive(
+            @NonNull String conversationId,
+            boolean archived,
+            @NonNull Single<Result<Void>> request) {
+        ConversationPreferenceLanes.Ticket ticket =
+                preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.ARCHIVE);
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean previous = existing.isArchived();
+                    return conversationDao.updateArchived(conversationId, archived)
+                            .andThen(request)
+                            .flatMap(result -> resolveOrderedPreferenceResult(
+                                    conversationId,
+                                    ConversationPreferenceLanes.Kind.ARCHIVE,
+                                    ticket.version,
+                                    result,
+                                    conversationDao.updateArchived(conversationId, previous)
+                                            .andThen(Single.just(result))));
+                })
+                .switchIfEmpty(Single.just(Result.failure(
+                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+    }
+
+    @NonNull
+    private Single<Result<Void>> orderedMute(
+            @NonNull String conversationId,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            @NonNull Single<Result<Void>> request) {
+        ConversationPreferenceLanes.Ticket ticket =
+                preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.MUTE);
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean previousMuted = existing.isMuted();
+                    Long previousUntil = existing.getMutedUntilEpochMs();
+                    return conversationDao.updateMute(conversationId, muted, mutedUntilEpochMs)
+                            .andThen(request)
+                            .flatMap(result -> resolveOrderedPreferenceResult(
+                                    conversationId,
+                                    ConversationPreferenceLanes.Kind.MUTE,
+                                    ticket.version,
+                                    result,
+                                    conversationDao.updateMute(
+                                                    conversationId, previousMuted, previousUntil)
+                                            .andThen(Single.just(result))));
+                })
+                .switchIfEmpty(Single.just(Result.failure(
+                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+    }
+
+    @NonNull
+    private Single<Result<Void>> orderedPin(
+            @NonNull String conversationId,
+            boolean pinned,
+            @NonNull Single<Result<Void>> request) {
+        ConversationPreferenceLanes.Ticket ticket =
+                preferenceLanes.begin(conversationId, ConversationPreferenceLanes.Kind.PIN);
+        return conversationDao.byId(conversationId)
+                .flatMapSingle(existing -> {
+                    boolean previousPinned = existing.isPinned();
+                    Long previousPinnedAt = existing.getPinnedAt();
+                    long pinnedAt = pinned ? System.currentTimeMillis() : 0L;
+                    Long appliedPinnedAt = pinned ? pinnedAt : null;
+                    return conversationDao.updatePin(conversationId, pinned, appliedPinnedAt)
+                            .andThen(request)
+                            .flatMap(result -> resolveOrderedPreferenceResult(
+                                    conversationId,
+                                    ConversationPreferenceLanes.Kind.PIN,
+                                    ticket.version,
+                                    result,
+                                    conversationDao.updatePin(
+                                                    conversationId, previousPinned, previousPinnedAt)
+                                            .andThen(Single.just(result))));
+                })
+                .switchIfEmpty(Single.just(Result.failure(
+                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+    }
+
+    @NonNull
+    private Single<Result<Void>> resolveOrderedPreferenceResult(
+            @NonNull String conversationId,
+            @NonNull ConversationPreferenceLanes.Kind kind,
+            long version,
+            @NonNull Result<Void> result,
+            @NonNull Single<Result<Void>> rollback) {
+        if (preferenceLanes.isStale(conversationId, kind, version)) {
+            preferenceLanes.finish(conversationId, kind, version);
+            return Single.just(successVoid());
+        }
+        if (result instanceof Result.Failure<?>) {
+            return rollback.doOnSuccess(ignored ->
+                    preferenceLanes.finish(conversationId, kind, version));
+        }
+        preferenceLanes.finish(conversationId, kind, version);
+        return Single.just(successVoid());
+    }
+
+    private boolean preservePreferenceMuted(
+            @Nullable ConversationEntity old, @NonNull ConversationEntity row, @NonNull String id) {
+        if (old != null
+                && preferenceLanes.preserveLocalOverServer(
+                        id, ConversationPreferenceLanes.Kind.MUTE)) {
+            return old.isMuted();
+        }
+        return row.isMuted();
+    }
+
+    @Nullable
+    private Long preservePreferenceMutedUntil(
+            @Nullable ConversationEntity old, @NonNull ConversationEntity row, @NonNull String id) {
+        if (old != null
+                && preferenceLanes.preserveLocalOverServer(
+                        id, ConversationPreferenceLanes.Kind.MUTE)) {
+            return old.getMutedUntilEpochMs();
+        }
+        return row.getMutedUntilEpochMs();
+    }
+
+    private boolean preservePreferenceArchived(
+            @Nullable ConversationEntity old, @NonNull ConversationEntity row, @NonNull String id) {
+        if (old != null
+                && preferenceLanes.preserveLocalOverServer(
+                        id, ConversationPreferenceLanes.Kind.ARCHIVE)) {
+            return old.isArchived();
+        }
+        return row.isArchived();
+    }
+
+    private boolean preservePreferencePinned(
+            @Nullable ConversationEntity old, @NonNull ConversationEntity row, @NonNull String id) {
+        if (old != null
+                && preferenceLanes.preserveLocalOverServer(
+                        id, ConversationPreferenceLanes.Kind.PIN)) {
+            return old.isPinned();
+        }
+        return row.isPinned();
+    }
+
+    @Nullable
+    private Long preservePreferencePinnedAt(
+            @Nullable ConversationEntity old, @NonNull ConversationEntity row, @NonNull String id) {
+        if (old != null
+                && preferenceLanes.preserveLocalOverServer(
+                        id, ConversationPreferenceLanes.Kind.PIN)) {
+            return old.getPinnedAt();
+        }
+        return row.getPinnedAt();
+    }
+
     /**
      * Room uses REPLACE, so preserve client-only fields that REST does not
      * carry: {@code peerReadSeq}, an already-known role, and the peer id.
@@ -1136,12 +1260,12 @@ public final class ConversationRepository implements AutoCloseable {
                                 ? old.getLastMessageDeleted()
                                 : row.getLastMessageDeleted(),
                         old != null ? old.getPeerDeliveredSeq() : 0L,
-                        row.isMuted(),
-                        row.getMutedUntilEpochMs(),
-                        row.isArchived(),
+                        preservePreferenceMuted(old, row, row.getId()),
+                        preservePreferenceMutedUntil(old, row, row.getId()),
+                        preservePreferenceArchived(old, row, row.getId()),
                         row.isAiOptOut(),
-                        row.isPinned(),
-                        row.getPinnedAt(),
+                        preservePreferencePinned(old, row, row.getId()),
+                        preservePreferencePinnedAt(old, row, row.getId()),
                         row.getLabelIdsCsv()));
             }
             return conversationDao.upsertAll(merged);

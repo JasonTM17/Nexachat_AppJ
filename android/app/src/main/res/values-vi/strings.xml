@@ -455,5 +455,8 @@
     <string name="label_color_amber">Hổ phách</string>
     <string name="label_color_rose">Hồng đậm</string>
     <string name="label_color_purple">Tím</string>
+    <string name="action_undo">Hoàn tác</string>
+    <string name="conversation_pinned">Đã ghim lên đầu</string>
+    <string name="conversation_unpinned">Đã bỏ ghim</string>
 
 </resources>

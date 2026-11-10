@@ -20,9 +20,11 @@ import org.junit.Rule;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
@@ -325,17 +327,22 @@ public final class InboxViewModelTest {
         viewModel.muteConversation("c-1", Instant.parse("2026-11-09T01:00:00Z"));
 
         InboxEvent event = viewModel.getEvents().getValue().consume();
-        assertEquals(failure, event.getError());
+        assertTrue(event instanceof InboxErrorEvent);
+        assertEquals(failure, ((InboxErrorEvent) event).getError());
     }
 
     @Test
-    public void successfulMuteDoesNotRaiseAnErrorEvent() {
+    public void successfulMuteSurfacesUndoSnackbarEvent() {
         when(repository.muteConversation(eq("c-1"), any(Instant.class)))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));
 
         viewModel.muteConversation("c-1", Instant.parse("2026-11-09T01:00:00Z"));
 
-        assertNull(viewModel.getEvents().getValue());
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertTrue(event instanceof InboxPreferenceSuccess);
+        assertNotNull(((InboxPreferenceSuccess) event).getUndo());
     }
 
     @Test
@@ -346,6 +353,25 @@ public final class InboxViewModelTest {
         viewModel.setConversationArchived("c-1", true);
 
         verify(repository).setConversationArchived("c-1", true);
+    }
+
+    @Test
+    public void archiveSuccessSurfacesUndoSnackbarEvent() {
+        when(repository.setConversationArchived(eq("c-1"), anyBoolean()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.setConversationArchived("c-1", true);
+
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertNotNull(event);
+        assertTrue(event instanceof InboxPreferenceSuccess);
+        InboxPreferenceSuccess success = (InboxPreferenceSuccess) event;
+        assertEquals(com.nexachat.R.string.conversation_archived, success.getMessageId());
+        assertNotNull(success.getUndo());
+        success.getUndo().run();
+        verify(repository).setConversationArchived("c-1", false);
     }
 
     private static ConversationSummary conversation(String id, int unread) {

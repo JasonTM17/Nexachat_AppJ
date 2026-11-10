@@ -770,6 +770,79 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void staleArchiveResponseDoesNotOverwriteNewerUndo() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-race")).blockingAwait();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-race")).thenReturn(heldArchive);
+        when(settingsApi.unarchive("conv-race"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        java.util.concurrent.CountDownLatch firstCompleted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Result<Void>> firstResult =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-race", true).subscribe(
+                        result -> {
+                            firstResult.set(result);
+                            firstCompleted.countDown();
+                        },
+                        error -> {
+                            throw new AssertionError(error);
+                        }),
+                "archive-race");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+        assertTrue(dao().rows.get("conv-race").isArchived());
+
+        assertEquals(
+                new Result.Success<Void>(null),
+                repository.setConversationArchived("conv-race", false).blockingGet());
+        assertFalse(dao().rows.get("conv-race").isArchived());
+
+        heldArchive.completeSuccess();
+        assertTrue(firstCompleted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(firstResult.get() instanceof Result.Success<?>);
+        assertFalse("stale archive must not resurrect after undo",
+                dao().rows.get("conv-race").isArchived());
+        archiveThread.join(5_000);
+    }
+
+    @Test
+    public void failedArchiveRollsBackOnlyWhenStillCurrent() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-fail")).blockingAwait();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-fail")).thenReturn(heldArchive);
+        when(settingsApi.unarchive("conv-fail"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        java.util.concurrent.CountDownLatch firstCompleted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<Result<Void>> firstResult =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-fail", true).subscribe(
+                        result -> {
+                            firstResult.set(result);
+                            firstCompleted.countDown();
+                        },
+                        error -> {
+                            throw new AssertionError(error);
+                        }),
+                "archive-fail");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+        assertTrue(dao().rows.get("conv-fail").isArchived());
+        repository.setConversationArchived("conv-fail", false).blockingGet();
+
+        heldArchive.completeError(503);
+        assertTrue(firstCompleted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(firstResult.get() instanceof Result.Success<?>);
+        assertFalse(dao().rows.get("conv-fail").isArchived());
+        archiveThread.join(5_000);
+    }
+
+    @Test
     public void archiveAndUnarchiveWriteThroughToRoom() {
         buildRepository();
         dao().upsert(conversation("conv-a")).blockingAwait();
@@ -1425,6 +1498,64 @@ public final class ConversationRepositoryTest {
                     row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt(),
                     row.getLabelIdsCsv());
         }
+    }
+
+    private static final class HoldVoidCall implements Call<Void> {
+        private final java.util.concurrent.CountDownLatch release =
+                new java.util.concurrent.CountDownLatch(1);
+        private final java.util.concurrent.CountDownLatch reachedExecute =
+                new java.util.concurrent.CountDownLatch(1);
+        private volatile Response<Void> response = Response.success(204, null);
+        private boolean executed;
+
+        void awaitExecuteReached() throws InterruptedException {
+            assertTrue(reachedExecute.await(5, java.util.concurrent.TimeUnit.SECONDS));
+        }
+
+        void completeSuccess() {
+            response = Response.success(204, null);
+            release.countDown();
+        }
+
+        void completeError(int code) {
+            response = Response.error(code, ResponseBody.create(
+                    okhttp3.MediaType.parse("application/json"), "{}"));
+            release.countDown();
+        }
+
+        @Override
+        public Response<Void> execute() throws java.io.IOException {
+            reachedExecute.countDown();
+            try {
+                if (!release.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new java.io.IOException("timed out waiting for held archive call");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new java.io.IOException(interrupted);
+            }
+            executed = true;
+            return response;
+        }
+
+        @Override
+        public void enqueue(Callback<Void> callback) {
+            try {
+                callback.onResponse(this, execute());
+            } catch (java.io.IOException failure) {
+                callback.onFailure(this, failure);
+            }
+        }
+
+        @Override public boolean isExecuted() { return executed; }
+        @Override public void cancel() { release.countDown(); }
+        @Override public boolean isCanceled() { return false; }
+        @Override public Call<Void> clone() { return this; }
+        @Override
+        public Request request() {
+            return new Request.Builder().url("https://example.invalid/").build();
+        }
+        @Override public Timeout timeout() { return Timeout.NONE; }
     }
 
     private static final class ImmediateCall<T> implements Call<T> {
