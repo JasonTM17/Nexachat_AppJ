@@ -2,9 +2,13 @@ package com.nexachat.feature.auth;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import androidx.lifecycle.Observer;
+import com.nexachat.core.auth.FakeGoogleSignInClient;
+import com.nexachat.core.auth.GoogleSignInException;
+import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AuthResponse;
+import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import io.reactivex.rxjava3.core.Single;
@@ -42,7 +46,8 @@ public final class AuthViewModelTest {
     public void setUp() {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
         repository = mock(AuthRepository.class);
-        viewModel = new AuthViewModel(repository);
+        viewModel = new AuthViewModel(repository,
+                new GoogleSignInFlow(repository, new FakeGoogleSignInClient(true, "id-token")));
     }
 
     @After
@@ -143,6 +148,68 @@ public final class AuthViewModelTest {
         viewModel.register();
 
         assertEquals(ApiError.PhoneExists.INSTANCE, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void googleSignInSuccessPersistsTheSessionAndEmitsLoggedIn() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(true, "google-id-token"));
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        when(repository.googleSignIn("google-id-token", "nonce-1")).thenReturn(
+                Single.just(new Result.Success<>(authResponse)));
+        List<AuthViewModel.Event> events = observeEvents();
+
+        viewModel.googleSignIn(null);
+
+        assertEquals(List.of(AuthViewModel.Event.LoggedIn), events);
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void cancellingTheGoogleSheetShowsNoError() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(true,
+                new GoogleSignInException(GoogleSignInException.Reason.CANCELLED)));
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        List<AuthViewModel.Event> events = observeEvents();
+
+        viewModel.googleSignIn(null);
+
+        assertTrue(events.isEmpty());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void anUnlinkedGoogleAccountKeepsItsServerCodeInTheError() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(true, "google-id-token"));
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        when(repository.googleSignIn("google-id-token", "nonce-1")).thenReturn(
+                Single.just(Result.failure(new ApiError.Unknown("GOOGLE_ACCOUNT_NOT_LINKED", 404))));
+        List<AuthViewModel.Event> events = observeEvents();
+
+        viewModel.googleSignIn(null);
+
+        assertTrue(events.isEmpty());
+        assertEquals("GOOGLE_ACCOUNT_NOT_LINKED",
+                ((ApiError.Unknown) viewModel.getUiState().getValue().getError()).getCode());
+    }
+
+    @Test
+    public void anUnconfiguredBuildHidesAndSkipsGoogleSignIn() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(false, "google-id-token"));
+
+        assertFalse(viewModel.isGoogleSignInAvailable());
+        viewModel.googleSignIn(null);
+
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        verify(repository, never()).requestGoogleNonce();
+    }
+
+    private AuthViewModel googleViewModel(FakeGoogleSignInClient client) {
+        return new AuthViewModel(repository, new GoogleSignInFlow(repository, client));
     }
 
     private List<AuthViewModel.Event> observeEvents() {

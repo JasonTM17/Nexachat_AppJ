@@ -37,6 +37,9 @@ public final class LoginFragment extends Fragment {
         binding.passwordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.primaryAction.setText(R.string.action_sign_in);
         binding.primaryAction.setOnClickListener(v -> submit());
+        binding.googleSignIn.setVisibility(
+                viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
+        binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         binding.secondaryAction.setText(R.string.action_create_account);
         binding.secondaryAction.setOnClickListener(v -> {
             Bundle args = inviteReturnArgs();
@@ -87,6 +90,7 @@ public final class LoginFragment extends Fragment {
         binding.phoneInput.setEnabled(notLoading);
         binding.passwordInput.setEnabled(notLoading);
         binding.primaryAction.setEnabled(notLoading);
+        binding.googleSignIn.setEnabled(notLoading);
         binding.secondaryAction.setEnabled(notLoading);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;

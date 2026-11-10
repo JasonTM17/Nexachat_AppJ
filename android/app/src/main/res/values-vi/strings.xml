@@ -494,4 +494,19 @@
     <string name="system_event_group_member_removed">%1$s đã xóa %2$s khỏi nhóm</string>
     <string name="system_event_group_renamed">%1$s đã đổi tên nhóm thành “%2$s”</string>
     <string name="system_event_group_role_changed">%1$s đã đổi vai trò của %2$s</string>
+
+    <!-- Sign in with Google (hidden when the build has no web client ID) -->
+    <string name="action_continue_with_google">Tiếp tục với Google</string>
+    <string name="settings_google_account">Tài khoản Google</string>
+    <string name="settings_google_linked">Đã liên kết</string>
+    <string name="settings_google_not_linked">Chưa liên kết</string>
+    <string name="action_link_google">Liên kết Google</string>
+    <string name="action_unlink_google">Gỡ liên kết Google</string>
+    <string name="google_link_password_prompt">Nhập mật khẩu để liên kết tài khoản này.</string>
+    <string name="google_unlink_confirm">Gỡ liên kết tài khoản Google này? Bạn sẽ đăng nhập bằng số điện thoại và mật khẩu.</string>
+    <string name="error_google_sign_in">Đăng nhập Google thất bại. Vui lòng thử lại.</string>
+    <string name="error_google_not_linked">Tài khoản Google này chưa được liên kết. Hãy đăng nhập bằng số điện thoại và mật khẩu, sau đó liên kết Google trong Cài đặt.</string>
+    <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
+    <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
+    <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ cách đăng nhập này.</string>
 </resources>
