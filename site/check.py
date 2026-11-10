@@ -472,6 +472,9 @@ def test_vercel_headers(vercel_data):
     return failures
 
 
+SITE_ABSOLUTE_PREFIX = "https://nexachat.io.vn"
+
+
 def test_no_external_urls():
     failures = []
     url_pattern = re.compile(r"https?://[^\s\"'>]+")
@@ -487,11 +490,12 @@ def test_no_external_urls():
                 with open(path, "r", encoding="utf-8") as file_handle:
                     content = file_handle.read()
                 matches = url_pattern.findall(content)
-                if matches:
-                    failures.append(f"External URL(s) found in {rel_path}: {matches}")
+                disallowed = [m for m in matches if not m.startswith(SITE_ABSOLUTE_PREFIX)]
+                if disallowed:
+                    failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No external URLs found across {scanned} HTML/CSS/JS file(s)")
+        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s)")
     return failures
 
 
@@ -554,7 +558,19 @@ def test_no_inline_scripts_and_styles():
     return failures
 
 
-REQUIRED_HTML_PAGES = ("index.html", "404.html", os.path.join("join", "index.html"))
+REQUIRED_HTML_PAGES = (
+    "index.html",
+    "404.html",
+    "privacy.html",
+    "terms.html",
+    os.path.join("join", "index.html"),
+)
+
+PUBLIC_SITEMAP_URLS = (
+    "https://nexachat.io.vn/",
+    "https://nexachat.io.vn/privacy.html",
+    "https://nexachat.io.vn/terms.html",
+)
 
 
 def test_site_pages_and_assets():
@@ -578,10 +594,11 @@ def test_site_pages_and_assets():
     else:
         with open(sitemap_path, "r", encoding="utf-8") as f:
             sitemap_body = f.read()
-        if "https://nexachat.io.vn/" not in sitemap_body:
-            failures.append("sitemap.xml must list apex home URL https://nexachat.io.vn/")
+        missing_urls = [u for u in PUBLIC_SITEMAP_URLS if u not in sitemap_body]
+        if missing_urls:
+            failures.append(f"sitemap.xml missing URL(s): {missing_urls}")
         else:
-            log_pass("sitemap.xml lists home URL")
+            log_pass("sitemap.xml lists all public URLs (home, privacy, terms)")
 
     robots_path = os.path.join(SITE_DIR, "robots.txt")
     if not os.path.isfile(robots_path):
@@ -613,9 +630,36 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing favicon link to /favicon.svg")
         if 'charset="utf-8"' not in html.lower():
             failures.append(f"{rel_page} missing utf-8 charset meta")
+        if 'href="#main"' not in html or 'id="main"' not in html:
+            failures.append(f"{rel_page} missing skip link to #main")
+        if 'name="description"' not in html:
+            failures.append(f"{rel_page} missing meta description")
+        if rel_page in ("index.html", "privacy.html", "terms.html"):
+            if 'rel="canonical"' not in html:
+                failures.append(f"{rel_page} missing canonical link")
+
+    og_image_path = os.path.join(SITE_DIR, "og-image.svg")
+    if not os.path.isfile(og_image_path):
+        failures.append("Missing site/og-image.svg")
+    else:
+        log_pass("og-image.svg present")
+
+    structured_path = os.path.join(SITE_DIR, "structured-data.json")
+    if not os.path.isfile(structured_path):
+        failures.append("Missing site/structured-data.json")
+    else:
+        try:
+            with open(structured_path, "r", encoding="utf-8") as f:
+                sd = json.load(f)
+            if not isinstance(sd, list) or not sd:
+                failures.append("structured-data.json must be a non-empty JSON array")
+            else:
+                log_pass("structured-data.json parses as JSON array")
+        except Exception as e:
+            failures.append(f"Failed to parse structured-data.json: {e}")
 
     if not failures:
-        log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, and charset")
+        log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, charset, skip link, description")
     return failures
 
 
@@ -639,8 +683,10 @@ def test_bilingual_user_visible_text():
             join_html = f.read()
         if "com.nexachat" not in join_html:
             failures.append("join/index.html must mention package id com.nexachat in install instructions")
-        if "Google Play" not in join_html or "App Store" not in join_html:
-            failures.append("join/index.html must mention store install paths (Google Play / App Store)")
+        if "Google Play" not in join_html:
+            failures.append("join/index.html must mention Google Play install path")
+        if "App Store" in join_html:
+            failures.append("join/index.html must not claim an iOS App Store listing (Android-only client)")
 
     if not failures:
         log_pass("Public HTML pages include vi/en text and join install fallback copy")
@@ -650,7 +696,19 @@ def test_bilingual_user_visible_text():
 def test_internal_static_links():
     """Root-absolute href/src in HTML point to files under site/ or known Vercel routes."""
     failures = []
-    known_routes = {"/", "/join/index.html", "/style.css", "/favicon.svg", "/join/join.js", "/sitemap.xml", "/robots.txt"}
+    known_routes = {
+        "/",
+        "/join/index.html",
+        "/style.css",
+        "/favicon.svg",
+        "/join/join.js",
+        "/sitemap.xml",
+        "/robots.txt",
+        "/privacy.html",
+        "/terms.html",
+        "/og-image.svg",
+        "/structured-data.json",
+    }
 
     for rel_page in REQUIRED_HTML_PAGES:
         path = os.path.join(SITE_DIR, rel_page)
