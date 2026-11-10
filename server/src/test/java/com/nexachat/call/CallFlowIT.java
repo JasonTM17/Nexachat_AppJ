@@ -2,6 +2,7 @@ package com.nexachat.call;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.ws.dto.WsErrorResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -23,6 +24,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
@@ -81,6 +83,8 @@ class CallFlowIT {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
 
     private TestUser alice;
     private TestUser bob;
@@ -337,14 +341,20 @@ class CallFlowIT {
         sessions.add(session);
         BlockingQueue<JsonNode> calls = new LinkedBlockingQueue<>();
         BlockingQueue<WsErrorResponse> errors = new LinkedBlockingQueue<>();
-        subscribeCalls(session, calls);
-        subscribe(session, "/user/queue/errors", WsErrorResponse.class, errors);
-        Thread.sleep(400);
+        String callsSubscription = "calls-" + UUID.randomUUID();
+        String errorsSubscription = "errors-" + UUID.randomUUID();
+        subscribeCalls(session, callsSubscription, calls);
+        subscribe(session, errorsSubscription, "/user/queue/errors", WsErrorResponse.class, errors);
+        TestWaits.until("both STOMP subscriptions of " + user.id() + " to be registered", () ->
+                isSubscribed(user.id(), callsSubscription, "/user/queue/calls")
+                        && isSubscribed(user.id(), errorsSubscription, "/user/queue/errors"));
         return new Connection(session, calls, errors);
     }
 
-    private void subscribeCalls(StompSession session, BlockingQueue<JsonNode> queue) {
+    private void subscribeCalls(StompSession session, String subscriptionId,
+                                BlockingQueue<JsonNode> queue) {
         StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
         headers.setDestination("/user/queue/calls");
         session.subscribe(headers, new StompFrameHandler() {
             @Override
@@ -363,8 +373,10 @@ class CallFlowIT {
         });
     }
 
-    private <T> void subscribe(StompSession session, String destination, Class<T> type, BlockingQueue<T> queue) {
+    private <T> void subscribe(StompSession session, String subscriptionId, String destination,
+                               Class<T> type, BlockingQueue<T> queue) {
         StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
         headers.setDestination(destination);
         session.subscribe(headers, new StompFrameHandler() {
             @Override
@@ -377,6 +389,20 @@ class CallFlowIT {
                 queue.add(type.cast(payload));
             }
         });
+    }
+
+    private boolean isSubscribed(UUID userId, String subscriptionId, String destination) {
+        String brokerDestination = destination.startsWith("/user/")
+                ? destination.substring("/user".length())
+                : destination;
+        var registeredUser = simpUserRegistry.getUser(userId.toString());
+        return registeredUser != null && registeredUser.getSessions().stream()
+                .flatMap(userSession -> userSession.getSubscriptions().stream())
+                .filter(subscription -> subscriptionId.equals(subscription.getId()))
+                .map(subscription -> subscription.getDestination())
+                .anyMatch(actual -> actual != null
+                        && (actual.equals(destination) || actual.equals(brokerDestination)
+                        || actual.startsWith(brokerDestination + "-user")));
     }
 
     private static void send(Connection connection, UUID conversationId, CallSignal signal) {
