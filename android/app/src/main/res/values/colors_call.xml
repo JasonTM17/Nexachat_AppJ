@@ -22,7 +22,7 @@
     <color name="call_decline_background">#FFB91C1C</color>
     <color name="call_end_background">#FFB91C1C</color>
     <color name="call_text_primary">@color/call_avatar_foreground</color>
-    <color name="call_text_secondary">@color/slate_border</color>
+    <color name="call_text_secondary">@color/call_text_muted</color>
     <color name="call_text_muted">#FFCBD5E1</color>
     <color name="call_icon_on_control">@color/call_avatar_foreground</color>
     <color name="call_action_decline_text">#FFFCA5A5</color>

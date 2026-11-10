@@ -10,6 +10,24 @@ import static org.junit.Assert.assertTrue;
 
 /** Contrast against the actual fixed dark call surface in both app themes. */
 public final class CallContrastContractTest {
+    @Test public void callLabelsRemainLegibleAcrossTheEntireGradient() throws Exception {
+        Element gradient = (Element) DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(Path.of("src/main/res/drawable/bg_call_gradient.xml").toFile())
+                .getElementsByTagName("gradient").item(0);
+        for (boolean night : new boolean[]{false, true}) {
+            Map<String, String> colors = new HashMap<>();
+            load(colors, "values");
+            if (night) load(colors, "values-night");
+            for (String endpoint : new String[]{"startColor", "endColor"}) {
+                colors.put("gradient", gradient.getAttribute("android:" + endpoint));
+                for (String foreground : new String[]{"call_text_primary", "call_text_secondary",
+                        "call_text_muted", "call_action_accept_text", "call_action_decline_text"}) {
+                    check(colors, foreground, "gradient", 4.5);
+                }
+            }
+        }
+    }
+
     @Test public void avatarInitialsAndControlsRemainLegible() throws Exception {
         for (boolean night : new boolean[]{false, true}) {
             Map<String, String> colors = new HashMap<>();
