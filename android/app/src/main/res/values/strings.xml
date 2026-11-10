@@ -256,6 +256,7 @@
 
     <!-- Presence -->
     <string name="presence_active_now">Active now</string>
+    <string name="presence_offline">Offline</string>
     <string name="presence_minutes_ago">Active %1$d min ago</string>
     <string name="presence_hours_ago">Active %1$d hr ago</string>
     <string name="presence_yesterday">Active yesterday</string>
