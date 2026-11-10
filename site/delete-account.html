@@ -41,17 +41,22 @@
           <li>Phiên đăng nhập trên mọi thiết bị; access token hiện có bị vô hiệu hóa và kết nối realtime bị đóng.</li>
           <li>Đăng ký thiết bị nhận thông báo đẩy.</li>
           <li>Danh bạ của bạn và các mục mà người khác đã thêm bạn vào danh bạ.</li>
-          <li>Tư cách thành viên trong mọi nhóm; quyền quản trị được chuyển theo quy tắc rời nhóm hiện có.</li>
+          <li>Tư cách thành viên trong mọi nhóm; nếu bạn là quản trị viên duy nhất, quyền quản trị tự động chuyển cho thành viên còn lại tham gia sớm nhất.</li>
           <li>Ảnh đại diện.</li>
-          <li>Đồng ý tính năng AI, bộ nhớ đệm hỏi đáp và các bản tóm tắt do bạn yêu cầu.</li>
+          <li>Đồng ý tính năng AI, bộ nhớ đệm câu hỏi AI và các bản tóm tắt AI do bạn yêu cầu.</li>
+          <li>Email khôi phục và trạng thái xác minh email.</li>
           <li>Số điện thoại và tên hiển thị: số được giải phóng và không còn trong tìm kiếm; tên được đặt về giá trị trung tính.</li>
           <li>Tài khoản được đánh dấu đã xóa.</li>
         </ul>
-        <h2>Dữ liệu còn lại</h2>
+        <h2>Dữ liệu còn lại và thời gian lưu</h2>
         <ul>
-          <li>Tin nhắn, tệp đính kèm và cuộc trò chuyện trực tiếp vẫn hiển thị với người còn lại, gắn với tài khoản đã xóa.</li>
-          <li>Tin nhắn và tệp đính kèm bạn đã gửi trong nhóm vẫn ở trong nhóm.</li>
+          <li>Tin nhắn bạn đã gửi và tệp đính kèm vẫn hiển thị với người còn lại, gắn với “Deleted account”. Không có thời hạn tự động: dữ liệu còn lại chừng nào cuộc trò chuyện còn tồn tại.</li>
+          <li>Cuộc trò chuyện trực tiếp vẫn mở với người còn lại; tin nhắn trong nhóm vẫn ở trong nhóm.</li>
+          <li>Cảm xúc, bình chọn, lời nhắc, lịch sử cuộc gọi và ghim do bạn tạo vẫn nằm trong cuộc trò chuyện và hiển thị dưới “Deleted account”.</li>
+          <li>Liên kết mời nhóm do bạn tạo vẫn có hiệu lực cho đến khi bị thu hồi, hết hạn hoặc hết lượt dùng.</li>
+          <li>Bản ghi tài khoản đã xóa được giữ để tin nhắn còn lại vẫn có người gửi; bản ghi này không có số điện thoại, email hay tên thật.</li>
         </ul>
+        <p>Chính sách lưu trữ của nhà vận hành có thể dọn một số bản ghi phụ sau thời hạn mặc định: cuộc gọi đã kết thúc và bình chọn đã đóng sau 365 ngày, lời nhắc một lần đã gửi sau 30 ngày, tệp của tin nhắn đã thu hồi sau 30 ngày. Tin nhắn không tự động hết hạn.</p>
         <h2>Sau khi xóa</h2>
         <ul>
           <li>Đăng nhập bằng số điện thoại cũ được xử lý như người dùng không tồn tại.</li>
@@ -60,7 +65,7 @@
           <li>Đăng ký lại bằng cùng số điện thoại tạo tài khoản mới, không liên quan đến tài khoản đã xóa.</li>
         </ul>
         <h2>Mất thiết bị hoặc không đăng nhập được</h2>
-        <p>Nếu còn thiết bị khác, đăng nhập bằng số điện thoại và mật khẩu rồi làm theo các bước trên. Nếu đã thêm email khôi phục đã xác minh trong ứng dụng, bạn có thể xóa tài khoản trên trang này (mục bên dưới). Nếu không có email khôi phục đã xác minh, hãy dùng thông tin liên hệ của nhà phát triển trên trang Google Play của NexaChat.</p>
+        <p>Nếu còn thiết bị khác, đăng nhập bằng số điện thoại và mật khẩu rồi làm theo các bước trên. Nếu đã thêm email khôi phục đã xác minh trong ứng dụng, hãy xem mục xóa trên web bên dưới (khi mục này được bật). Nếu không có email khôi phục đã xác minh, hãy dùng thông tin liên hệ của nhà phát triển trên trang Google Play của NexaChat.</p>
       </div>
       <div class="prose" lang="en">
         <h2>In the app</h2>
@@ -76,17 +81,22 @@
           <li>Sessions on every device; existing access tokens are invalidated and realtime connections are closed.</li>
           <li>Push notification device registrations.</li>
           <li>Your contacts and the entries where other users listed you as a contact.</li>
-          <li>Membership in every group; admin rights move according to the existing leave rules.</li>
+          <li>Membership in every group; if you are the only admin, admin rights pass automatically to the longest-standing remaining member.</li>
           <li>Avatar image.</li>
-          <li>AI consent, ask cache, and summaries requested by you.</li>
+          <li>AI consent, AI ask cache, and AI summaries requested by you.</li>
+          <li>Recovery email and its verification status.</li>
           <li>Phone number and display name: the number is released and no longer searchable; the name is set to a neutral value.</li>
           <li>The account is marked deleted.</li>
         </ul>
-        <h2>Data that remains</h2>
+        <h2>Data that remains and how long it is kept</h2>
         <ul>
-          <li>Messages, attachments, and direct conversations stay visible to the other members, attributed to a deleted account.</li>
-          <li>Messages and attachments you sent in groups stay in those groups.</li>
+          <li>Messages you sent and their attachments stay visible to the other members, attributed to “Deleted account”. There is no automatic expiry: they remain for as long as the conversation exists.</li>
+          <li>Direct conversations stay open for the other member; group messages stay in the group.</li>
+          <li>Reactions, poll votes, reminders, call history, and pins you created stay with the conversation and are shown under “Deleted account”.</li>
+          <li>Group invite links you created stay valid until they are revoked, expire, or reach their use limit.</li>
+          <li>The deleted account record is kept so remaining messages still have a sender; it has no phone number, email, or real name.</li>
         </ul>
+        <p>The operator's retention policy may remove some derived records after the default periods: ended calls and closed polls after 365 days, fired one-time reminders after 30 days, and attachments of recalled messages after 30 days. Messages themselves do not expire automatically.</p>
         <h2>After deletion</h2>
         <ul>
           <li>Signing in with the old phone number is treated as an unknown user.</li>
@@ -95,11 +105,11 @@
           <li>Registering again with the same phone number creates a new, unrelated account.</li>
         </ul>
         <h2>Lost device or cannot sign in</h2>
-        <p>If you have another device, sign in with your phone number and password, then follow the steps above. If you added a verified recovery email in the app, you can delete your account on this page (section below). Without a verified recovery email, use the developer contact on the NexaChat Google Play listing.</p>
+        <p>If you have another device, sign in with your phone number and password, then follow the steps above. If you added a verified recovery email in the app, see web deletion below (when it is enabled). Without a verified recovery email, use the developer contact on the NexaChat Google Play listing.</p>
       </div>
-      <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-vi">
+      <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-vi web-deletion-heading-en">
         <h2 id="web-deletion-heading-vi" class="deletion-web__title" lang="vi">Xóa trên web (mất thiết bị)</h2>
-        <h2 class="deletion-web__title" lang="en">Web deletion (lost device)</h2>
+        <h2 id="web-deletion-heading-en" class="deletion-web__title" lang="en">Web deletion (lost device)</h2>
         <div id="web-deletion-unavailable">
           <p lang="vi">Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc liên hệ qua Google Play nếu bạn không đăng nhập được.</p>
           <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact us on Google Play if you cannot sign in.</p>
@@ -112,14 +122,18 @@
               <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
               <label class="form-label" for="deletion-phone" lang="en">Phone number</label>
               <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" required aria-describedby="deletion-phone-error">
-              <p class="form-error" id="deletion-phone-error" hidden>
+              <p class="form-error" id="deletion-phone-error" role="alert" hidden>
                 <span lang="vi">Nhập số điện thoại.</span>
                 <span lang="en">Enter your phone number.</span>
               </p>
             </div>
             <div class="form-actions">
-              <button type="button" class="btn" id="btn-send-code" lang="vi" aria-label="Gửi mã, Send code">Gửi mã</button>
+              <button type="button" class="btn" id="btn-send-code" aria-label="Gửi mã, Send code">Gửi mã · Send code</button>
             </div>
+            <p class="form-error" id="web-deletion-send-error" role="alert" tabindex="-1" hidden>
+              <span lang="vi">Không gửi được mã. Thử lại sau.</span>
+              <span lang="en">Could not send a code. Try again later.</span>
+            </p>
             <p class="deletion-web__neutral" id="request-feedback" hidden aria-live="polite">
               <span lang="vi">Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã.</span>
               <span lang="en">If this number has a verified recovery email, we sent a code.</span>
@@ -129,7 +143,7 @@
                 <label class="form-label" for="deletion-code" lang="vi">Mã 6 chữ số</label>
                 <label class="form-label" for="deletion-code" lang="en">6-digit code</label>
                 <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" aria-describedby="deletion-code-error">
-                <p class="form-error" id="deletion-code-error" hidden>
+                <p class="form-error" id="deletion-code-error" role="alert" hidden>
                   <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
                   <span lang="en">Invalid or expired code.</span>
                 </p>
@@ -142,15 +156,19 @@
                 </label>
               </div>
               <div class="form-actions">
-                <button type="button" class="btn btn-danger" id="btn-delete-account" lang="vi" disabled aria-label="Xóa tài khoản, Delete account">Xóa tài khoản</button>
+                <button type="button" class="btn btn-danger" id="btn-delete-account" disabled aria-label="Xóa tài khoản, Delete account">Xóa tài khoản · Delete account</button>
               </div>
             </div>
-            <p class="form-error form-error--global" id="web-deletion-form-error" hidden>
+            <p class="form-error" id="web-deletion-rate-error" role="alert" tabindex="-1" hidden>
+              <span lang="vi">Quá nhiều lần thử. Đợi một phút rồi thử lại.</span>
+              <span lang="en">Too many attempts. Wait a minute and try again.</span>
+            </p>
+            <p class="form-error form-error--global" id="web-deletion-form-error" role="alert" tabindex="-1" hidden>
               <span lang="vi">Không thực hiện được. Kiểm tra mã hoặc thử lại sau.</span>
               <span lang="en">Could not complete deletion. Check the code or try again later.</span>
             </p>
           </form>
-          <div id="web-deletion-success" hidden aria-live="polite">
+          <div id="web-deletion-success" hidden aria-live="polite" tabindex="-1">
             <p class="lead" lang="vi">Tài khoản đã được xóa.</p>
             <p class="lead" lang="en">Your account has been deleted.</p>
           </div>

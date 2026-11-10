@@ -18,11 +18,12 @@ Each answer is marked:
   configuration, or a product/legal decision that the repository cannot make.
 
 Account-deletion answers marked **Supported by code (branch
-`feat/server-account-deletion`)** depend on three branches that are not in
-`main` at `42831fe`: `feat/server-account-deletion` (API and data changes),
+`feat/server-account-deletion`)** depend on branches that are not in
+`main` at `42831fe`: `feat/server-account-deletion` and
+`feat/server-email-otp-deletion` (API/data and web OTP),
 `feat/android-account-deletion` (Settings > Delete account) and
 `docs/site-account-deletion` (public page). They become true for a release only
-when all three merge and the site page is deployed.
+when all merge and the site page is deployed.
 
 The form's "collected" means data transmitted off the device and stored. Data
 that exists only in app-private storage is listed separately in
@@ -49,7 +50,7 @@ under `android/app/src/main/`.
 | Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code |
 | Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code |
 | Account creation | Yes, by phone + password | `server/src/main/java/com/nexachat/auth/AuthController.java:40-45`; Android auth feature | Supported by code |
-| Account deletion | In-app `Profile (Settings) > Delete account`, confirmed with the current password, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` documents the same steps and retention. | Branch `feat/server-account-deletion` (`user/AccountDeletionService.java`, `user/UserController.java`); branch `feat/android-account-deletion` (`feature/profile/DeleteAccountFragment.java`); `site/delete-account.html` | Supported by code (branch `feat/server-account-deletion`) |
+| Account deletion | In-app `Profile (Settings) > Delete account`, confirmed with the current password, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` documents the same steps and retention. | Branch `feat/server-account-deletion` (`user/AccountDeletionService.java`, `user/UserController.java`); branch `feat/android-account-deletion` (`feature/profile/DeleteAccountFragment.java`); `site/delete-account.html` | Supported by code (branches `feat/server-account-deletion` + `feat/server-email-otp-deletion`) |
 
 ## Data the app sends to the NexaChat server
 
@@ -88,7 +89,7 @@ permission (`android/app/src/main/AndroidManifest.xml:6-16`).
 |---|---|---|---|
 | Does the app collect or share any required user data type? | Yes. Account, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the two tables above and `application.yml` configuration. | Supported by code |
 | Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:261-266` | Supported by code |
-| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password; the public page `site/delete-account.html` explains the steps and what is deleted or retained. Users with a verified recovery email can also delete from the web (phone + emailed OTP on the same page) when the site API meta and CORS are configured. Deletion revokes sessions, removes device tokens, contacts, group memberships, avatar, AI consent/cache/summary rows, clears the phone and display name, and keeps sent messages and attachments for other members attributed to a deleted account. Users without a verified recovery email who cannot sign in are routed to the developer contact on the Play listing. | Branch `feat/server-account-deletion` / `feat/server-email-otp-deletion`; branch `feat/android-account-deletion`; `site/delete-account.html` (branch `feat/site-web-account-deletion`) | Supported by code (branch `feat/server-account-deletion`) |
+| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password; the public page `site/delete-account.html` explains the steps and what is deleted or retained. Users with a verified recovery email can also delete from the web (phone + emailed OTP on the same page) when the site API meta and CORS are configured. Deletion revokes sessions, removes device tokens, contacts, group memberships, avatar, AI consent/cache/summary rows, clears the phone and display name, and keeps sent messages and attachments for other members attributed to a deleted account. Users without a verified recovery email who cannot sign in are routed to the developer contact on the Play listing. | Branch `feat/server-account-deletion` / `feat/server-email-otp-deletion`; branch `feat/android-account-deletion`; `site/delete-account.html` (branch `feat/site-web-account-deletion`) | Supported by code (branches `feat/server-account-deletion` + `feat/server-email-otp-deletion`) |
 
 ## Data safety form: data types
 

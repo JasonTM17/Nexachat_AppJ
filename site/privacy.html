@@ -29,7 +29,9 @@
         <h2>Ứng dụng</h2>
         <p>NexaChat là ứng dụng nhắn tin trên Android (<code>com.nexachat</code>). Không có ứng dụng trình duyệt đầy đủ cho nhắn tin.</p>
         <h2>Dữ liệu tài khoản</h2>
-        <p>Đăng ký dùng số điện thoại và mật khẩu (chuẩn hóa E.164). Dịch vụ không xác minh quyền sở hữu số điện thoại bằng OTP.</p>
+        <p>Đăng ký dùng số điện thoại và mật khẩu (chuẩn hóa E.164). Bạn có thể thêm email khôi phục tùy chọn và xác minh bằng mã 6 chữ số. Dịch vụ không xác minh quyền sở hữu số điện thoại bằng OTP.</p>
+        <h2>Email khôi phục và mã dùng một lần</h2>
+        <p>Email khôi phục là tùy chọn, dùng cho khôi phục tài khoản, xóa tài khoản trên web và đặt lại mật khẩu; không dùng cho quảng cáo. Mã 6 chữ số được gửi qua nhà cung cấp email giao dịch, chỉ lưu dưới dạng băm, hết hạn sau 10 phút và có giới hạn số lần gửi và số lần thử. Email đã xác minh được gỡ khỏi tài khoản khi bạn xóa email hoặc xóa tài khoản.</p>
         <h2>Tin nhắn và tệp</h2>
         <p>Nội dung tin nhắn và tệp đính kèm được lưu trên máy chủ khi bạn gửi qua ứng dụng. Tin nhắn không được mã hóa đầu cuối; bảo vệ phụ thuộc TLS khi vận chuyển và kiểm soát truy cập trên máy chủ.</p>
         <h2>Phiên đăng nhập</h2>
@@ -37,15 +39,17 @@
         <h2>Tính năng AI (tùy chọn)</h2>
         <p>Tóm tắt hội thoại và hỏi đáp trong chat có thể gọi mô hình bên ngoài chỉ khi người dùng đồng ý và nhà vận hành cấu hình khóa API. Có thể từ chối theo tài khoản hoặc theo hội thoại.</p>
         <h2>Xóa tài khoản</h2>
-        <p>Bạn có thể xóa tài khoản trong ứng dụng. Xem <a href="/delete-account.html">trang xóa tài khoản</a> để biết dữ liệu nào bị xóa và dữ liệu nào còn lại.</p>
+        <p>Bạn có thể xóa tài khoản trong ứng dụng. Nếu đã thêm email khôi phục đã xác minh, bạn cũng có thể xóa trên trang này khi nhà vận hành bật biểu mẫu web. Xem <a href="/delete-account.html">trang xóa tài khoản</a> để biết dữ liệu nào bị xóa và dữ liệu nào còn lại.</p>
         <h2>Trang web này</h2>
-        <p>nexachat.io.vn chỉ phục vụ trang giới thiệu, liên kết mời nhóm và tệp <code>assetlinks.json</code> cho App Links Android. Trang web không thu thập biểu mẫu đăng ký; đăng ký chỉ trong ứng dụng.</p>
+        <p>nexachat.io.vn phục vụ trang giới thiệu, liên kết mời nhóm, tệp <code>assetlinks.json</code> cho App Links Android và biểu mẫu xóa tài khoản. Khi được bật, biểu mẫu chỉ gửi số điện thoại và mã bạn nhập tới API qua HTTPS; trang không đặt cookie, không dùng lưu trữ cục bộ và không có trình theo dõi. Đăng ký chỉ trong ứng dụng.</p>
       </div>
       <div class="prose" lang="en">
         <h2>Application</h2>
         <p>NexaChat is an Android messaging app (<code>com.nexachat</code>). There is no full browser client for messaging.</p>
         <h2>Account data</h2>
-        <p>Registration uses a phone number and password (E.164 normalization). The service does not verify phone ownership with OTP.</p>
+        <p>Registration uses a phone number and password (E.164 normalization). You can add an optional recovery email and verify it with a 6-digit code. The service does not verify phone ownership with OTP.</p>
+        <h2>Recovery email and one-time codes</h2>
+        <p>The recovery email is optional and used for account recovery, web account deletion, and password reset; it is not used for marketing. A 6-digit code is sent through a transactional email provider, stored only as a hash, expires after 10 minutes, and is limited by send and attempt counts. A verified email is removed from the account when you remove it or delete the account.</p>
         <h2>Messages and files</h2>
         <p>Message and attachment content is stored on the server when sent through the app. There is no end-to-end encryption; protection relies on TLS in transit and server access controls.</p>
         <h2>Sessions</h2>
@@ -53,9 +57,9 @@
         <h2>Optional AI features</h2>
         <p>Conversation summary and in-chat ask may call an external model only with user consent and operator API keys. Opt-out is available per account and per conversation.</p>
         <h2>Account deletion</h2>
-        <p>You can delete your account in the app. See the <a href="/delete-account.html">account deletion page</a> for what is deleted and what remains.</p>
+        <p>You can delete your account in the app. If you added a verified recovery email, you can also delete your account on this site when the operator enables the web form. See the <a href="/delete-account.html">account deletion page</a> for what is deleted and what remains.</p>
         <h2>This website</h2>
-        <p>nexachat.io.vn serves landing pages, group invite links, and Android App Links metadata. The site does not collect registration forms; sign-up happens in the app only.</p>
+        <p>nexachat.io.vn serves landing pages, group invite links, Android App Links metadata, and the account-deletion form. When enabled, the form sends only the phone number and code you type to the API over HTTPS; the site sets no cookies, uses no local storage, and has no trackers. Sign-up happens in the app only.</p>
       </div>
       <p class="page-actions"><a class="btn btn-secondary" href="/">Trang chủ · Home</a></p>
     </div>
