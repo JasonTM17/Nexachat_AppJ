@@ -2,7 +2,7 @@
 # Rule: no hardcoded version strings inside build.gradle files.
 
 [versions]
-agp = "8.7.3"
+agp = "8.9.3"
 hilt = "2.52"
 google-services = "4.5.0"
 lifecycle = "2.8.7"

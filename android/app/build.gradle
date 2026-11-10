@@ -137,12 +137,12 @@ if (releaseVersionCode < 1 || releaseVersionCode > 2100000000) {
 
 android {
     namespace 'com.nexachat'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.nexachat'
         minSdk 26
-        targetSdk 35
+        targetSdk 36
         versionCode releaseVersionCode.intValue()
         versionName releaseVersionName
 
