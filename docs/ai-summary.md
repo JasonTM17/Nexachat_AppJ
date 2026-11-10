@@ -62,7 +62,7 @@ Limits: 10 requests/min and 60/day per user.
 
 ## Settings and consent
 
-`GET /api/v1/users/me/settings` returns `showPresence` and `aiSummaryConsent` as booleans; `aiSummaryConsent` defaults to `false`. `PATCH` accepts either field independently; an omitted field keeps its current value, and an empty object is rejected.
+`GET /api/v1/users/me/settings` returns `showPresence`, `showSeen` and `aiSummaryConsent` as booleans; `showPresence` and `showSeen` default to `true`, and `aiSummaryConsent` defaults to `false`. `PATCH` accepts any of the three fields independently; an omitted field keeps its current value, and an empty object is rejected.
 
 Provider selection uses the persisted `users.ai_summary_consent` value. The LLM adapter checks that value again immediately before its outbound request, so consent revoked after provider selection still prevents the external call.
 
@@ -99,8 +99,11 @@ excluded, the LLM is not called and the local engine answers with
 | Configuration key | Environment variable | Default |
 |---|---|---|
 | `nexachat.summary.provider` | `NEXACHAT_SUMMARY_PROVIDER` | `auto` |
+| `nexachat.summary.complexity.min-messages` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_MESSAGES` | `12` |
+| `nexachat.summary.complexity.min-chars` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_CHARS` | `1500` |
+| `nexachat.summary.complexity.min-participants` | `NEXACHAT_SUMMARY_COMPLEXITY_MIN_PARTICIPANTS` | `4` |
 | `nexachat.summary.llm.enabled` | `NEXACHAT_SUMMARY_LLM_ENABLED` | `false` |
-| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `nexachat.summary.llm.base-url` | `NEXACHAT_SUMMARY_LLM_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `nexachat.summary.llm.model` | `NEXACHAT_SUMMARY_LLM_MODEL` | `gemini-3.1-flash-lite` |
 | `nexachat.summary.llm.api-key` | `NEXACHAT_SUMMARY_LLM_API_KEY` | — (absent ⇒ provider unavailable) |
 | `nexachat.summary.llm.timeout-ms` | `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` | `30000` |
@@ -111,10 +114,16 @@ excluded, the LLM is not called and the local engine answers with
 | `nexachat.summary.llm-fallback.model` | `NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL` | `deepseek-flash` |
 | `nexachat.summary.llm-fallback.api-key` | `NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY` | — (absent ⇒ fallback unavailable) |
 | `nexachat.summary.llm-fallback.timeout-ms` | `NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` | `30000` |
+| `nexachat.summary.llm.local-enabled` | `NEXACHAT_SUMMARY_LOCAL_LLM_ENABLED` | `false` |
+| `nexachat.summary.llm.local-base-url` | `NEXACHAT_SUMMARY_LOCAL_LLM_BASE_URL` | `http://host.docker.internal:11434/v1` |
+| `nexachat.summary.llm.local-model` | `NEXACHAT_SUMMARY_LOCAL_LLM_MODEL` | `qwen2.5:3b` |
+| `nexachat.summary.llm.local-api-key` | `NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY` | `local-ollama` |
+| `nexachat.summary.llm.local-timeout-ms` | `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | `60000` |
 
 `provider` is `auto` (LLM only with a key and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
-endpoints are rejected unless the host is loopback. The provider is OpenAI-compatible
+endpoints are rejected unless the host is loopback; the local-server tier allows
+plain HTTP to its configured host. The provider is OpenAI-compatible
 (tested with Google Gemini `gemini-3.1-flash-lite` through the Gemini OpenAI-compatible
 base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, as well as standard
 OpenAI-compatible endpoints supporting JSON mode `response_format: {"type":"json_object"}`).
@@ -181,9 +190,10 @@ NexaChat supports a 3-tier hybrid AI summary architecture designed to optimize p
    - Zero external calls, zero API token spend, instant response.
    - Always used when the user has not consented (`aiSummaryConsent = false`) or as the ultimate offline fallback.
 
-2. **Tier 1: Local Server Model Tier (`LOCAL_LLM` / Ollama / vLLM)**
+2. **Tier 1: Local Server Model Tier (Ollama / vLLM)**
    - Configured via `NEXACHAT_SUMMARY_LOCAL_LLM_*` (e.g. `http://host.docker.internal:11434/v1`, model `qwen2.5:3b` or `llama3.2:3b`).
    - Handles routine AI generative summaries on the server machine without burning cloud tokens or transmitting data outside your deployment infrastructure.
+   - Both LLM tiers report `generatedBy: LLM`; the response `model` field names the endpoint that answered.
 
 3. **Tier 2: Cloud LLM Tier (`LLM` / OpenAI-compatible, Gemini tested)**
    - Configured via `NEXACHAT_SUMMARY_LLM_*` (e.g. Gemini OpenAI-compatible base URL `https://generativelanguage.googleapis.com/v1beta/openai/`, model `gemini-3.1-flash-lite`).
