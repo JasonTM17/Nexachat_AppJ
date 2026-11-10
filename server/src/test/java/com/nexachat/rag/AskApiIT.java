@@ -21,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -31,8 +32,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,6 +79,8 @@ class AskApiIT {
     private JwtService jwtService;
     @Autowired
     private MessageService messageService;
+    @MockitoSpyBean
+    private RagQuestionCache questionCache;
 
     private User caller;
     private User peer;
@@ -184,6 +196,51 @@ class AskApiIT {
 
         assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
         assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
+    }
+
+    @Test
+    void inFlightAskCannotRepublishCachedAnswerAfterNewTextInvalidation() throws Exception {
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+        CountDownLatch saveReached = new CountDownLatch(1);
+        CountDownLatch allowSave = new CountDownLatch(1);
+        AtomicBoolean pauseFirstSave = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (pauseFirstSave.compareAndSet(true, false)) {
+                saveReached.countDown();
+                if (!allowSave.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume the ask cache write");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(questionCache).save(eq(conversationId), any(String.class), any(String.class),
+                any(float[].class), any(RagQuestionCache.CachedAsk.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlightAsk = executor.submit(() -> postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(saveReached.await(10, TimeUnit.SECONDS)).isTrue();
+            messageService.send(peer.getId(), conversationId,
+                    new SendMessageRequest(UUID.randomUUID(), "TEXT",
+                            "Correction: the server migration is now scheduled for March 21 at 03:00.",
+                            null, List.of()));
+            allowSave.countDown();
+            inFlightAsk.get(10, TimeUnit.SECONDS);
+
+            MvcResult nextAsk = postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn();
+            JsonNode body = objectMapper.readTree(nextAsk.getResponse().getContentAsString());
+            assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
+            assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
+        } finally {
+            allowSave.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
