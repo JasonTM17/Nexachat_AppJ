@@ -1,6 +1,7 @@
 package com.nexachat.feature.inbox.adapter;
 
 import android.content.Context;
+import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,6 +18,7 @@ import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
+import com.nexachat.feature.inbox.InboxBadgeRules;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 import com.nexachat.feature.label.ConversationLabel;
 import com.google.android.material.chip.Chip;
@@ -140,20 +142,23 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             title.setText(displayTitle);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
-            Boolean isOnline = null;
-            if (conversation.getPeerPresence() != null) {
-                isOnline = Boolean.valueOf(conversation.getPeerPresence().getOnline());
-            } else if (!conversation.isGroup()) {
-                isOnline = Boolean.TRUE;
-            }
-            avatar.setOnlineStatus(isOnline);
+            avatar.setOnlineStatus(InboxBadgeRules.resolveOnlineStatus(conversation));
 
             boolean unread = conversation.getUnreadCount() > 0;
+            title.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
             preview.setText(ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
                     currentUserId
             ));
+            preview.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+            int previewColor = resolveThemeColor(
+                    itemView.getContext(),
+                    unread
+                            ? com.google.android.material.R.attr.colorOnSurface
+                            : com.google.android.material.R.attr.colorOnSurfaceVariant
+            );
+            preview.setTextColor(previewColor);
             InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
             int previewIcon = 0;
             if (previewKind == InboxPreviewKind.PHOTO) {
@@ -186,13 +191,14 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                         unread ? com.google.android.material.R.attr.colorPrimary : com.google.android.material.R.attr.colorOnSurfaceVariant
                 );
                 time.setTextColor(timeColor);
+                time.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
             } else {
                 time.setVisibility(View.GONE);
             }
 
             if (unread) {
                 unreadBadge.setVisibility(View.VISIBLE);
-                unreadBadge.setText(String.valueOf(conversation.getUnreadCount()));
+                unreadBadge.setText(InboxBadgeRules.formatUnreadCount(conversation.getUnreadCount()));
             } else {
                 unreadBadge.setVisibility(View.GONE);
             }
@@ -212,9 +218,17 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                     if (label == null) continue;
                     Chip chip = new Chip(itemView.getContext());
                     chip.setText(label.getName());
+                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
                     chip.setTextColor(android.graphics.Color.WHITE);
                     chip.setChipBackgroundColor(android.content.res.ColorStateList.valueOf(
                             label.getColor().getBackgroundColor()));
+                    chip.setEnsureMinTouchTargetSize(false);
+                    float density = itemView.getResources().getDisplayMetrics().density;
+                    chip.setChipMinHeight(22f * density);
+                    chip.setChipStartPadding(8f * density);
+                    chip.setChipEndPadding(8f * density);
+                    chip.setTextStartPadding(0f);
+                    chip.setTextEndPadding(0f);
                     chip.setClickable(false);
                     chip.setCheckable(false);
                     chip.setFocusable(false);

@@ -2,7 +2,11 @@ package com.nexachat.feature.inbox;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.animation.ValueAnimator;
@@ -19,6 +23,7 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.chip.Chip;
@@ -96,6 +101,7 @@ public final class InboxFragment extends Fragment {
         binding.moreButton.setOnClickListener(this::showInboxMenu);
         layoutManager = new LinearLayoutManager(requireContext());
         binding.conversationList.setLayoutManager(layoutManager);
+        attachSwipeGestureHelper();
         paginationScrollListener = new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
@@ -184,6 +190,12 @@ public final class InboxFragment extends Fragment {
 
     private void renderLabelFilters(@NonNull LabelUiState state) {
         ChipGroup group = binding.labelFilterChips;
+        int primaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorPrimary);
+        int onPrimaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnPrimary);
+        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainer);
+        int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+        int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
+
         if (!labelFiltersInitialized || !renderedLabels.equals(state.getLabels())) {
             group.removeAllViews();
             labelFiltersInitialized = true;
@@ -191,7 +203,9 @@ public final class InboxFragment extends Fragment {
             Chip all = new Chip(requireContext());
             all.setId(View.generateViewId());
             all.setCheckable(true);
+            all.setCheckedIconVisible(false);
             all.setMinHeight(dp(48));
+            all.setChipCornerRadius(dp(999));
             all.setText(R.string.label_filter_all);
             all.setTag(ALL_LABEL_FILTER);
             group.addView(all, new ChipGroup.LayoutParams(
@@ -200,9 +214,12 @@ public final class InboxFragment extends Fragment {
                 Chip chip = new Chip(requireContext());
                 chip.setId(View.generateViewId());
                 chip.setCheckable(true);
+                chip.setCheckedIconVisible(true);
+                chip.setCheckedIconTint(ColorStateList.valueOf(Color.WHITE));
                 chip.setText(label.getName());
                 chip.setTag(label.getId());
                 chip.setMinHeight(dp(48));
+                chip.setChipCornerRadius(dp(999));
                 chip.setTextColor(Color.WHITE);
                 chip.setChipBackgroundColor(ColorStateList.valueOf(label.getColor().getBackgroundColor()));
                 chip.setContentDescription(getString(R.string.label_filter_description, label.getName()));
@@ -214,6 +231,11 @@ public final class InboxFragment extends Fragment {
             manage.setCheckable(false);
             manage.setText(R.string.label_manage);
             manage.setMinHeight(dp(48));
+            manage.setChipCornerRadius(dp(999));
+            manage.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
+            manage.setTextColor(onSurfaceVariantColor);
+            manage.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
+            manage.setChipStrokeWidth(dp(1));
             manage.setContentDescription(getString(R.string.label_manage_description));
             manage.setOnClickListener(v -> LabelDialogFragment.show(requireActivity(), null));
             group.addView(manage, new ChipGroup.LayoutParams(
@@ -227,6 +249,19 @@ public final class InboxFragment extends Fragment {
                     ? ALL_LABEL_FILTER.equals(chip.getTag())
                     : state.getSelectedFilterId().equals(chip.getTag());
             chip.setChecked(selected);
+            if (ALL_LABEL_FILTER.equals(chip.getTag())) {
+                if (selected) {
+                    chip.setChipBackgroundColor(ColorStateList.valueOf(primaryColor));
+                    chip.setTextColor(onPrimaryColor);
+                    chip.setChipStrokeColor(ColorStateList.valueOf(Color.TRANSPARENT));
+                    chip.setChipStrokeWidth(0f);
+                } else {
+                    chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
+                    chip.setTextColor(onSurfaceVariantColor);
+                    chip.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
+                    chip.setChipStrokeWidth(1f);
+                }
+            }
         }
     }
 
@@ -393,9 +428,19 @@ public final class InboxFragment extends Fragment {
                 binding.emptyState.setMessage(selected == null
                         ? getString(R.string.label_empty_manage)
                         : getString(R.string.label_empty_filter, selected.getName()));
+                binding.emptyState.clearAction();
             } else {
                 binding.emptyState.setMessage(getString(emptyMessageFor(state.getSelectedFilter())));
+                if (state.getSelectedFilter() == InboxFilter.ALL) {
+                    binding.emptyState.setAction(
+                            R.string.inbox_new_chat,
+                            () -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
+                } else {
+                    binding.emptyState.clearAction();
+                }
             }
+        } else {
+            binding.emptyState.clearAction();
         }
         if (labelFilterError) {
             binding.errorState.setMessage(getString(LabelText.errorMessage(lastLabelState.getFilterError())));
@@ -571,14 +616,9 @@ public final class InboxFragment extends Fragment {
 
             peerAvatar.setName(displayTitle);
             peerAvatar.setAvatarUrl(row.getDisplayAvatar());
-            Boolean isOnline = null;
-            if (row.getPeerPresence() != null) {
-                isOnline = row.getPeerPresence().getOnline();
-            } else if (!row.isGroup()) {
-                isOnline = Boolean.TRUE;
-            }
+            Boolean isOnline = InboxBadgeRules.resolveOnlineStatus(row);
             peerAvatar.setOnlineStatus(isOnline);
-            peerAvatar.setShowStoryRing(!row.isGroup() || Boolean.TRUE.equals(isOnline));
+            peerAvatar.setShowStoryRing(Boolean.TRUE.equals(isOnline));
 
             String shortName = displayTitle.contains(" ")
                     ? displayTitle.substring(0, displayTitle.indexOf(" "))
@@ -589,6 +629,133 @@ public final class InboxFragment extends Fragment {
             binding.activeNowStrip.addView(peerView);
             count++;
         }
+    }
+
+    private void attachSwipeGestureHelper() {
+        Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        ItemTouchHelper.SimpleCallback callback = new ItemTouchHelper.SimpleCallback(
+                0, ItemTouchHelper.START | ItemTouchHelper.END) {
+            @Override
+            public boolean onMove(
+                    @NonNull RecyclerView recyclerView,
+                    @NonNull RecyclerView.ViewHolder viewHolder,
+                    @NonNull RecyclerView.ViewHolder target) {
+                return false;
+            }
+
+            @Override
+            public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+                if (adapter == null || binding == null) {
+                    return;
+                }
+                int position = viewHolder.getBindingAdapterPosition();
+                if (position == RecyclerView.NO_POSITION || position >= adapter.getItemCount()) {
+                    return;
+                }
+                ConversationSummary conversation = adapter.getCurrentList().get(position);
+                adapter.notifyItemChanged(position);
+                if (direction == ItemTouchHelper.END) {
+                    InboxBadgeRules.SwipeAction action =
+                            InboxBadgeRules.resolveStartSwipeAction(conversation);
+                    if (action == InboxBadgeRules.SwipeAction.PIN
+                            || action == InboxBadgeRules.SwipeAction.UNPIN) {
+                        viewModel.togglePin(conversation);
+                    }
+                } else if (direction == ItemTouchHelper.START) {
+                    InboxBadgeRules.SwipeAction action =
+                            InboxBadgeRules.resolveEndSwipeAction(conversation);
+                    boolean archive = action == InboxBadgeRules.SwipeAction.ARCHIVE;
+                    viewModel.setConversationArchived(conversation.getId(), archive);
+                    Snackbar.make(
+                                    binding.getRoot(),
+                                    archive
+                                            ? R.string.conversation_archived
+                                            : R.string.conversation_unarchived,
+                                    Snackbar.LENGTH_LONG)
+                            .setAction(
+                                    archive
+                                            ? R.string.conversation_unarchive
+                                            : R.string.conversation_archive,
+                                    v -> viewModel.setConversationArchived(
+                                            conversation.getId(), !archive))
+                            .show();
+                }
+            }
+
+            @Override
+            public void onChildDraw(
+                    @NonNull Canvas c,
+                    @NonNull RecyclerView recyclerView,
+                    @NonNull RecyclerView.ViewHolder viewHolder,
+                    float dX,
+                    float dY,
+                    int actionState,
+                    boolean isCurrentlyActive) {
+                View itemView = viewHolder.itemView;
+                if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE && dX != 0f) {
+                    boolean swipeRight = dX > 0f;
+                    int bgColor = resolveThemeColor(
+                            requireContext(),
+                            swipeRight
+                                    ? com.google.android.material.R.attr.colorPrimaryContainer
+                                    : com.google.android.material.R.attr.colorSecondaryContainer);
+                    int iconTint = resolveThemeColor(
+                            requireContext(),
+                            swipeRight
+                                    ? com.google.android.material.R.attr.colorOnPrimaryContainer
+                                    : com.google.android.material.R.attr.colorOnSecondaryContainer);
+                    backgroundPaint.setColor(bgColor);
+                    RectF rect = swipeRight
+                            ? new RectF(
+                                    itemView.getLeft(),
+                                    itemView.getTop(),
+                                    itemView.getLeft() + dX,
+                                    itemView.getBottom())
+                            : new RectF(
+                                    itemView.getRight() + dX,
+                                    itemView.getTop(),
+                                    itemView.getRight(),
+                                    itemView.getBottom());
+                    c.drawRect(rect, backgroundPaint);
+
+                    Drawable icon = ContextCompat.getDrawable(
+                            requireContext(),
+                            swipeRight ? R.drawable.ic_push_pin : R.drawable.ic_check_circle);
+                    if (icon != null) {
+                        icon = icon.mutate();
+                        icon.setTint(iconTint);
+                        int iconSize = dp(24);
+                        int margin = dp(20);
+                        int top = itemView.getTop() + (itemView.getHeight() - iconSize) / 2;
+                        int bottom = top + iconSize;
+                        if (swipeRight && dX > margin + iconSize) {
+                            icon.setBounds(
+                                    itemView.getLeft() + margin,
+                                    top,
+                                    itemView.getLeft() + margin + iconSize,
+                                    bottom);
+                            icon.draw(c);
+                        } else if (!swipeRight && -dX > margin + iconSize) {
+                            icon.setBounds(
+                                    itemView.getRight() - margin - iconSize,
+                                    top,
+                                    itemView.getRight() - margin,
+                                    bottom);
+                            icon.draw(c);
+                        }
+                    }
+                }
+                super.onChildDraw(
+                        c,
+                        recyclerView,
+                        viewHolder,
+                        dX * 0.5f,
+                        dY,
+                        actionState,
+                        isCurrentlyActive);
+            }
+        };
+        new ItemTouchHelper(callback).attachToRecyclerView(binding.conversationList);
     }
 
     private void syncFilterChip(@NonNull InboxFilter filter) {
