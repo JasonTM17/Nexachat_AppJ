@@ -54,7 +54,11 @@ public final class MediaViewerFragment extends Fragment {
                     try (var input = new java.io.FileInputStream(file);
                          var output = context.getContentResolver().openOutputStream(uri)) {
                         if (output == null) throw new java.io.IOException("Unavailable document output");
-                        input.transferTo(output);
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) {
+                            output.write(buffer, 0, count);
+                        }
                     }
                 }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
                         .subscribe(() -> {
