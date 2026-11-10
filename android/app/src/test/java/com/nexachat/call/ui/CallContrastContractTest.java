@@ -21,7 +21,7 @@ public final class CallContrastContractTest {
                 Element button = (Element) buttons.item(i);
                 String id = button.getAttribute("android:id");
                 if (!id.equals("@+id/call_mute") && !id.equals("@+id/call_speaker")) continue;
-                String tint = button.getAttribute("android:backgroundTint");
+                String tint = button.getAttribute("app:backgroundTint");
                 assertTrue(dir + " " + id + " must override Material's theme tint", tint.startsWith("@color/"));
                 for (boolean night : new boolean[]{false, true}) {
                     Map<String, String> colors = new HashMap<>();
