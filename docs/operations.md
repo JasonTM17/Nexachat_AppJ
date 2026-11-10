@@ -78,6 +78,26 @@ The `server/Dockerfile` runs as the non-root `nexachat` user and adds
 `-XX:+ExitOnOutOfMemoryError` to `JAVA_OPTS`, so a container is replaced rather
 than left alive after an OOM.
 
+The default Compose `app` service uses a read-only root filesystem: uploads
+persist only on the `app-uploads` volume mounted at `/app/data`, and a
+`tmpfs` at `/tmp` (uid/gid `10001`) covers JVM and multipart scratch I/O.
+`cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and
+`stop_grace_period: 25s` (above the prod graceful-shutdown budget of 20s) apply
+to the app container. The Postgres service image is pinned by the linux/amd64
+manifest digest in `docker-compose.yml` (not the floating `postgres:16-alpine`
+tag). **ARM64 hosts** (Apple Silicon or Linux aarch64) cannot run that digest as
+written: Docker pulls a platform-specific manifest, so `docker compose up` fails
+unless you change the pin (for example use the multi-arch index digest from the
+registry, pin the `linux/arm64` manifest for that tag, or set `platform:
+linux/amd64` on the `db` service and accept QEMU emulation).
+
+The Compose `app` service declares `deploy.resources.limits` of **2 CPUs** and
+**2G RAM** plus the cgroup hardening above. On a plain `docker compose up`
+without Swarm, those limits are not always enforced the same way as on a cluster;
+this repository has **not** re-measured effective limits with `docker stats`.
+Treat the YAML values as a starting budget and tune for your host before
+production.
+
 ### Feature configuration and retention
 
 The V12–V20 feature flags, rate limits and ceilings are listed in
