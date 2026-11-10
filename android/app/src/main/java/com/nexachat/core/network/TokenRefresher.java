@@ -12,7 +12,9 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.nexachat.data.AccountDataCleaner;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,8 @@ public final class TokenRefresher {
     @Nullable private final AccountDataCleaner accountDataCleaner;
     private final Object lock = new Object();
     private final AtomicLong sessionEpoch = new AtomicLong();
+    private final BehaviorProcessor<Boolean> admissionEvents =
+            BehaviorProcessor.createDefault(false);
     private volatile boolean admissionOpen;
     private volatile boolean bootstrapComplete;
     private volatile boolean closingOrClosed;
@@ -81,6 +85,16 @@ public final class TokenRefresher {
      */
     public boolean isSessionCurrent(long expectedEpoch) {
         return admissionOpen && sessionEpoch.get() == expectedEpoch;
+    }
+
+    /**
+     * Replaying admission signal for realtime callers; never performs bootstrap or IO.
+     * Starts false until a durable session is active, closes at logout/clear entry,
+     * and opens only after establishment or coherent bootstrap.
+     */
+    @NonNull
+    public Flowable<Boolean> sessionAdmission() {
+        return admissionEvents.distinctUntilChanged().onBackpressureLatest();
     }
 
     /** Forced rotation used when restoring a session at startup. */
@@ -129,6 +143,7 @@ public final class TokenRefresher {
             pendingSuccessResponse = null;
             bootstrapComplete = true;
         }
+        admissionEvents.onNext(true);
     }
 
     /** Invalidates pending refresh writes before the session is cleared. */
@@ -160,6 +175,7 @@ public final class TokenRefresher {
     }
 
     private SessionCloseMarker closeAdmissionSynchronously() {
+        SessionCloseMarker marker;
         synchronized (lock) {
             long activeEpoch = sessionEpoch.get();
             long closingEpoch = activeEpoch + 1L;
@@ -170,8 +186,10 @@ public final class TokenRefresher {
             inFlight = null;
             pendingSuccessResponse = null;
             pendingSuccessKey = null;
-            return new SessionCloseMarker(activeEpoch, closingEpoch);
+            marker = new SessionCloseMarker(activeEpoch, closingEpoch);
         }
+        admissionEvents.onNext(false);
+        return marker;
     }
 
     private void ensureBootstrap() {
@@ -203,6 +221,9 @@ public final class TokenRefresher {
                 closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
             }
             bootstrapComplete = true;
+        }
+        if (admissionOpen) {
+            admissionEvents.onNext(true);
         }
     }
 

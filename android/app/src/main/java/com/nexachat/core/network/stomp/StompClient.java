@@ -21,6 +21,8 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongPredicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import okhttp3.HttpUrl;
@@ -133,6 +135,10 @@ public final class StompClient {
     private final FlowableProcessor<StompFrame> incomingFrames = PublishProcessor.<StompFrame>create().toSerialized();
     private final ConcurrentHashMap<String, String> subscriptionIds = new ConcurrentHashMap<>();
     private final AtomicInteger subscriptionCounter = new AtomicInteger();
+    private final AtomicLong connectAttemptSeq = new AtomicLong();
+
+    @Nullable
+    private volatile java.util.function.Consumer<String> connectBearerObserver;
 
     @Nullable
     private volatile WebSocket socket;
@@ -152,55 +158,107 @@ public final class StompClient {
         return incomingFrames.onBackpressureBuffer(256, () -> { }, io.reactivex.rxjava3.core.BackpressureOverflowStrategy.DROP_OLDEST);
     }
 
-    /** Opens a socket and reports states until it closes, fails, or collection is cancelled. */
+    /** Opens a socket using the persisted access token. */
     @NonNull
     public Flowable<State> connect() {
+        return connect(null);
+    }
+
+    /**
+     * Opens a socket with an explicit attempt bearer after realtime preflight.
+     * When {@code accessToken} is null, falls back to {@link TokenStore#readTokens()}.
+     */
+    @NonNull
+    public Flowable<State> connect(@Nullable String accessToken) {
+        final long attemptId = connectAttemptSeq.incrementAndGet();
+        LongPredicate stillCurrent = ignored -> connectAttemptSeq.get() == attemptId;
         return Flowable.create(emitter -> {
             SerialDisposable lifecycle = new SerialDisposable();
             emitter.setCancellable(lifecycle::dispose);
+            if (!stillCurrent.test(attemptId)) {
+                emitter.onComplete();
+                return;
+            }
             emitter.onNext(State.Connecting.INSTANCE);
             SerialDisposable readHolder = new SerialDisposable();
             lifecycle.set(readHolder);
+            if (accessToken != null) {
+                beginAttempt(accessToken, attemptId, stillCurrent, emitter, lifecycle);
+                return;
+            }
             Disposable read = tokenStore.readTokens()
                     .subscribeOn(Schedulers.io())
                     .doOnComplete(() -> {
-                        if (!emitter.isCancelled()) {
+                        if (!emitter.isCancelled() && stillCurrent.test(attemptId)) {
                             emitter.onNext(new State.Failed(REASON_NO_TOKEN));
                             emitter.onComplete();
                         }
                     })
                     .subscribe(tokens -> {
+                        if (!stillCurrent.test(attemptId)) {
+                            emitter.onComplete();
+                            return;
+                        }
                         String token = tokens.getAccessToken();
                         if (token.isBlank()) {
                             emitter.onNext(new State.Failed(REASON_NO_TOKEN));
                             emitter.onComplete();
                             return;
                         }
-                        StateSink sink = new StateSink() {
-                            @Override public boolean trySend(@NonNull State state) {
-                                if (emitter.isCancelled()) return false;
-                                emitter.onNext(state);
-                                return true;
-                            }
-                            @Override public void close() {
-                                if (!emitter.isCancelled()) emitter.onComplete();
-                            }
-                        };
-                        try {
-                            AutoCloseable cleanup = startConnection(token, sink);
-                            lifecycle.set(Disposable.fromAction(() -> {
-                                try { cleanup.close(); } catch (Exception ignored) { }
-                            }));
-                        } catch (RuntimeException failure) {
-                            emitter.onNext(new State.Failed(failure.getMessage()));
-                            emitter.onComplete();
-                        }
+                        beginAttempt(token, attemptId, stillCurrent, emitter, lifecycle);
                     }, failure -> {
+                        if (!stillCurrent.test(attemptId)) {
+                            emitter.onComplete();
+                            return;
+                        }
                         emitter.onNext(new State.Failed(failure.getMessage()));
                         emitter.onComplete();
                     });
             readHolder.set(read);
         }, BackpressureStrategy.LATEST);
+    }
+
+    /** Observes the bearer wired into the STOMP CONNECT frame (tests only). */
+    void setConnectBearerObserverForTests(
+            @Nullable java.util.function.Consumer<String> observer) {
+        connectBearerObserver = observer;
+    }
+
+    private void beginAttempt(
+            @NonNull String token,
+            long attemptId,
+            @NonNull LongPredicate stillCurrent,
+            @NonNull io.reactivex.rxjava3.core.FlowableEmitter<State> emitter,
+            @NonNull SerialDisposable lifecycle) {
+        StateSink sink = new StateSink() {
+            @Override public boolean trySend(@NonNull State state) {
+                if (emitter.isCancelled() || !stillCurrent.test(attemptId)) {
+                    return false;
+                }
+                emitter.onNext(state);
+                return true;
+            }
+
+            @Override public void close() {
+                if (!emitter.isCancelled() && stillCurrent.test(attemptId)) {
+                    emitter.onComplete();
+                }
+            }
+        };
+        try {
+            AutoCloseable cleanup = startConnection(token, sink, stillCurrent, attemptId);
+            lifecycle.set(Disposable.fromAction(() -> {
+                try {
+                    cleanup.close();
+                } catch (Exception ignored) {
+                }
+            }));
+        } catch (RuntimeException failure) {
+            if (stillCurrent.test(attemptId)) {
+                emitter.onNext(new State.Failed(failure.getMessage()));
+                emitter.onComplete();
+            }
+        }
     }
 
     /** Queues a STOMP SEND. False means there is no open socket to accept it. */
@@ -262,8 +320,14 @@ public final class StompClient {
 
     private AutoCloseable startConnection(
             @NonNull String token,
-            @NonNull StateSink sink
+            @NonNull StateSink sink,
+            @NonNull LongPredicate stillCurrent,
+            long attemptId
     ) {
+        java.util.function.Consumer<String> bearerObserver = connectBearerObserver;
+        if (bearerObserver != null) {
+            bearerObserver.accept(token);
+        }
         StompParser parser = new StompParser();
         Request request = new Request.Builder()
                 .url(wsUrl)
@@ -273,6 +337,10 @@ public final class StompClient {
         WebSocketListener listener = new WebSocketListener() {
             @Override
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
+                if (!stillCurrent.test(attemptId)) {
+                    webSocket.cancel();
+                    return;
+                }
                 socket = webSocket;
                 lastInboundMs = System.currentTimeMillis();
                 LinkedHashMap<String, String> headers = new LinkedHashMap<>();
@@ -289,6 +357,9 @@ public final class StompClient {
                 for (StompFrame frame : parser.feed(text)) {
                     String command = frame.getCommand();
                     if (StompCommand.CONNECTED.equals(command)) {
+                        if (!stillCurrent.test(attemptId)) {
+                            return;
+                        }
                         open = true;
                         sink.trySend(State.Open.INSTANCE);
                     } else if (StompCommand.ERROR.equals(command)) {
@@ -312,6 +383,9 @@ public final class StompClient {
 
             @Override
             public void onClosed(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
+                if (!stillCurrent.test(attemptId)) {
+                    return;
+                }
                 open = false;
                 sink.trySend(new State.Closed(code, reason));
                 sink.close();
@@ -323,6 +397,9 @@ public final class StompClient {
                     @NonNull Throwable failure,
                     @Nullable Response response
             ) {
+                if (!stillCurrent.test(attemptId)) {
+                    return;
+                }
                 open = false;
                 Integer httpStatus = response == null ? null : response.code();
                 boolean auth = httpStatus != null
