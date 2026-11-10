@@ -9,6 +9,8 @@ import android.view.ViewGroup;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -16,6 +18,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -131,6 +135,12 @@ public final class ProfileFragment extends Fragment {
     private void render(ProfileViewModel.UiState state) {
         UserDto user = state.getUser();
         if (user != null) { binding.profileAvatar.setName(user.getDisplayName()); binding.profileAvatar.setAvatarUrl(user.getAvatarUrl()); binding.profileName.setText(user.getDisplayName()); binding.profilePhone.setText(user.getPhone()); }
+        binding.profileAvatar.setContentDescription(getString(R.string.profile_change_avatar));
+        binding.profileAvatar.setEnabled(!state.isAvatarUploading());
+        if (binding.cameraBadge != null) {
+            binding.cameraBadge.setEnabled(!state.isAvatarUploading());
+            binding.cameraBadge.setAlpha(state.isAvatarUploading() ? 0.5f : 1f);
+        }
         binding.nameLayout.setVisibility(state.isEditingName() ? View.VISIBLE : View.GONE);
         binding.nameActions.setVisibility(state.isEditingName() ? View.VISIBLE : View.GONE);
         binding.editName.setVisibility(state.isEditingName() ? View.GONE : View.VISIBLE);
@@ -151,18 +161,64 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void showPasswordDialog() {
-        LinearLayout form = new LinearLayout(requireContext()); form.setOrientation(LinearLayout.VERTICAL); int pad = (int)(20 * getResources().getDisplayMetrics().density); form.setPadding(pad, 0, pad, 0);
-        EditText old = passwordInput(R.string.auth_current_password_label); EditText next = passwordInput(R.string.auth_new_password_label); EditText confirm = passwordInput(R.string.auth_confirm_password_label);
-        form.addView(old); form.addView(next); form.addView(confirm);
-        AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.profile_change_password).setView(form).setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPasswordDialog()).setPositiveButton(R.string.action_save, null).setOnCancelListener(d -> viewModel.dismissPasswordDialog()).create();
+        LinearLayout form = new LinearLayout(requireContext());
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        form.setPadding(pad, spaceSm, pad, 0);
+
+        TextInputLayout oldLayout = passwordInputLayout(R.string.auth_current_password_label);
+        TextInputEditText old = (TextInputEditText) oldLayout.getEditText();
+        TextInputLayout nextLayout = passwordInputLayout(R.string.auth_new_password_label);
+        TextInputEditText next = (TextInputEditText) nextLayout.getEditText();
+        TextInputLayout confirmLayout = passwordInputLayout(R.string.auth_confirm_password_label);
+        TextInputEditText confirm = (TextInputEditText) confirmLayout.getEditText();
+
+        LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp1.bottomMargin = spaceSm;
+        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp2.bottomMargin = spaceSm;
+        LinearLayout.LayoutParams lp3 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+
+        form.addView(oldLayout, lp1);
+        form.addView(nextLayout, lp2);
+        form.addView(confirmLayout, lp3);
+        ScrollView scroll = new ScrollView(requireContext());
+        scroll.addView(form);
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.profile_change_password)
+                .setView(scroll)
+                .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPasswordDialog())
+                .setPositiveButton(R.string.action_save, null)
+                .setOnCancelListener(d -> viewModel.dismissPasswordDialog())
+                .create();
         dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String oldValue = old.getText().toString();
-            String newValue = next.getText().toString();
-            String confirmValue = confirm.getText().toString();
+            String oldValue = old == null || old.getText() == null ? "" : old.getText().toString();
+            String newValue = next == null || next.getText() == null ? "" : next.getText().toString();
+            String confirmValue = confirm == null || confirm.getText() == null ? "" : confirm.getText().toString();
             boolean valid = true;
-            if (oldValue.isEmpty()) { old.setError(getString(R.string.error_current_password_required)); valid = false; }
-            if (newValue.length() < 8) { next.setError(getString(R.string.error_password_short)); valid = false; }
-            if (!newValue.equals(confirmValue)) { confirm.setError(getString(R.string.error_password_mismatch)); valid = false; }
+            if (oldValue.isEmpty()) {
+                oldLayout.setError(getString(R.string.error_current_password_required));
+                valid = false;
+            } else {
+                oldLayout.setError(null);
+            }
+            if (newValue.length() < 8) {
+                nextLayout.setError(getString(R.string.error_password_short));
+                valid = false;
+            } else {
+                nextLayout.setError(null);
+            }
+            if (!newValue.equals(confirmValue)) {
+                confirmLayout.setError(getString(R.string.error_password_mismatch));
+                valid = false;
+            } else {
+                confirmLayout.setError(null);
+            }
             if (valid) {
                 viewModel.onOldPasswordChange(oldValue);
                 viewModel.onNewPasswordChange(newValue);
@@ -196,7 +252,26 @@ public final class ProfileFragment extends Fragment {
                 .show();
     }
 
-    private EditText passwordInput(int hint) { EditText input = new EditText(requireContext()); input.setHint(hint); input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); return input; }
+    private TextInputLayout passwordInputLayout(int hint) {
+        TextInputLayout layout = new TextInputLayout(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.textInputOutlinedStyle);
+        float radius = getResources().getDimension(R.dimen.corner_md);
+        layout.setBoxCornerRadii(radius, radius, radius, radius);
+        layout.setHint(getString(hint));
+        layout.setEndIconMode(TextInputLayout.END_ICON_PASSWORD_TOGGLE);
+        layout.setEndIconContentDescription(getString(R.string.cd_password_visibility));
+        TextInputEditText input = new TextInputEditText(layout.getContext());
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setAutofillHints(hint == R.string.auth_current_password_label
+                ? View.AUTOFILL_HINT_PASSWORD : "newPassword");
+        input.setImeOptions(hint == R.string.auth_confirm_password_label
+                ? EditorInfo.IME_ACTION_DONE : EditorInfo.IME_ACTION_NEXT);
+        layout.addView(input);
+        return layout;
+    }
     @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
 
     private static final class SimpleTextWatcher implements android.text.TextWatcher {

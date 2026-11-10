@@ -78,7 +78,7 @@ public final class ContactListAdapter extends ListAdapter<Contact, ContactListAd
             }
             avatar.setName(label);
             avatar.setAvatarUrl(contact.getAvatarUrl());
-            avatar.setOnlineStatus(Boolean.TRUE);
+            avatar.setOnlineStatus(null);
             itemView.setOnClickListener(v -> listener.onContactClick(contact.getUserId()));
         }
     }
