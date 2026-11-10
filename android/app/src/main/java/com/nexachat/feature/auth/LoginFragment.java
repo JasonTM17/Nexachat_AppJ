@@ -50,9 +50,7 @@ public final class LoginFragment extends Fragment {
                         ? R.id.inboxFragment : R.id.inviteJoinFragment;
                 Bundle args = returnInviteToken == null ? null : new Bundle();
                 if (args != null) args.putString("token", returnInviteToken);
-                NavHostFragment.findNavController(this).navigate(destination, args,
-                        new androidx.navigation.NavOptions.Builder()
-                                .setPopUpTo(R.id.loginFragment, true).build());
+                NavHostFragment.findNavController(this).navigate(destination, args, AuthNav.signedInOptions());
             }
         });
     }
