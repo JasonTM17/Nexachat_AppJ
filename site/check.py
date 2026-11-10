@@ -666,6 +666,8 @@ DELETION_PAGE_VI_PHRASES = (
     "Dữ liệu bị xóa",
     "Dữ liệu còn lại",
     "Google Play",
+    "email khôi phục đã xác minh",
+    "Xóa trên web chưa khả dụng",
 )
 DELETION_PAGE_EN_PHRASES = (
     "Settings",
@@ -674,7 +676,11 @@ DELETION_PAGE_EN_PHRASES = (
     "Data that is deleted",
     "Data that remains",
     "Google Play",
+    "verified recovery email",
+    "Web deletion is not available yet",
 )
+DELETION_NEUTRAL_REQUEST_VI = "Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã."
+DELETION_NEUTRAL_REQUEST_EN = "If this number has a verified recovery email, we sent a code."
 
 
 def test_site_pages_and_assets():
@@ -980,8 +986,74 @@ def test_account_deletion_page():
         if 'href="/delete-account.html"' not in page_html:
             failures.append(f"{rel_page} footer must link /delete-account.html")
 
+    if DELETION_NEUTRAL_REQUEST_VI not in html:
+        failures.append(f"{DELETION_PAGE} missing neutral post-request copy (vi)")
+    if DELETION_NEUTRAL_REQUEST_EN not in html:
+        failures.append(f"{DELETION_PAGE} missing neutral post-request copy (en)")
+
+    if 'name="nexachat-api-base"' not in html:
+        failures.append(f"{DELETION_PAGE} must declare meta name=\"nexachat-api-base\"")
+    if 'src="/delete-account.js"' not in html or "defer" not in html:
+        failures.append(f"{DELETION_PAGE} must load /delete-account.js with defer")
+
+    js_path = os.path.join(SITE_DIR, "delete-account.js")
+    if not os.path.isfile(js_path):
+        failures.append("Missing site/delete-account.js")
+    else:
+        with open(js_path, "r", encoding="utf-8") as js_file:
+            js_body = js_file.read()
+        for needle in (
+            "/api/v1/account-deletion/request",
+            "/api/v1/account-deletion/confirm",
+            'meta[name="nexachat-api-base"]',
+        ):
+            if needle not in js_body:
+                failures.append(f"delete-account.js missing required fragment: {needle}")
+
     if not failures:
         log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
+    return failures
+
+
+def test_delete_account_web_deployment_contract():
+    """Repo gate: OTP web flow assets, strict default CSP, and operator deploy notes."""
+    failures = []
+
+    vercel_path = os.path.join(SITE_DIR, "vercel.json")
+    if os.path.isfile(vercel_path):
+        with open(vercel_path, "r", encoding="utf-8") as f:
+            vercel_data = json.load(f)
+        headers_list = vercel_data.get("headers", [])
+        global_csp = ""
+        for entry in headers_list:
+            if entry.get("source") == "/(.*)":
+                for hdr in entry.get("headers", []):
+                    if hdr.get("key", "").lower() == "content-security-policy":
+                        global_csp = hdr.get("value", "")
+        if "connect-src 'none'" not in global_csp:
+            failures.append(
+                "vercel.json default CSP must keep connect-src 'none' until the API origin is added at deploy time"
+            )
+        if "script-src 'self'" not in global_csp:
+            failures.append("vercel.json CSP must allow script-src 'self' for delete-account.js")
+
+    ops_path = os.path.join(REPO_DIR, "docs", "operations.md")
+    if not os.path.isfile(ops_path):
+        failures.append("Missing docs/operations.md for web-deletion deploy notes")
+    else:
+        with open(ops_path, "r", encoding="utf-8") as f:
+            ops_body = f.read()
+        for needle in (
+            "nexachat-api-base",
+            "connect-src",
+            "NEXACHAT_CORS_ALLOWED_ORIGINS",
+            "delete-account.html",
+        ):
+            if needle not in ops_body:
+                failures.append(f"docs/operations.md must document web deletion deploy item: {needle}")
+
+    if not failures:
+        log_pass("Web account-deletion flow: meta/script gate, default CSP, operations deploy notes")
     return failures
 
 
@@ -994,6 +1066,7 @@ def test_internal_static_links():
         "/style.css",
         "/favicon.svg",
         "/join/join.js",
+        "/delete-account.js",
         "/sitemap.xml",
         "/robots.txt",
         "/privacy.html",
@@ -1182,6 +1255,9 @@ def main():
 
     f_deletion = test_account_deletion_page()
     all_failures.extend(f_deletion)
+
+    f_deletion_web = test_delete_account_web_deployment_contract()
+    all_failures.extend(f_deletion_web)
 
     f_ld = test_index_inline_json_ld()
     all_failures.extend(f_ld)

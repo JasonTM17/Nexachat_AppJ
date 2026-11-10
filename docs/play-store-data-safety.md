@@ -88,7 +88,7 @@ permission (`android/app/src/main/AndroidManifest.xml:6-16`).
 |---|---|---|---|
 | Does the app collect or share any required user data type? | Yes. Account, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the two tables above and `application.yml` configuration. | Supported by code |
 | Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:261-266` | Supported by code |
-| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password; the public page `site/delete-account.html` explains the steps and what is deleted or retained. Deletion revokes sessions, removes device tokens, contacts, group memberships, avatar, AI consent/cache/summary rows, clears the phone and display name, and keeps sent messages and attachments for other members attributed to a deleted account. Users who cannot sign in are routed to the developer contact on the Play listing. | Branch `feat/server-account-deletion`; branch `feat/android-account-deletion`; `site/delete-account.html` | Supported by code (branch `feat/server-account-deletion`) |
+| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password; the public page `site/delete-account.html` explains the steps and what is deleted or retained. Users with a verified recovery email can also delete from the web (phone + emailed OTP on the same page) when the site API meta and CORS are configured. Deletion revokes sessions, removes device tokens, contacts, group memberships, avatar, AI consent/cache/summary rows, clears the phone and display name, and keeps sent messages and attachments for other members attributed to a deleted account. Users without a verified recovery email who cannot sign in are routed to the developer contact on the Play listing. | Branch `feat/server-account-deletion` / `feat/server-email-otp-deletion`; branch `feat/android-account-deletion`; `site/delete-account.html` (branch `feat/site-web-account-deletion`) | Supported by code (branch `feat/server-account-deletion`) |
 
 ## Data safety form: data types
 
@@ -245,10 +245,11 @@ Deletion actions that exist:
 Deletion actions that do **not** exist:
 
 - No self-service data export.
-- No separate "delete my data" request form. `site/delete-account.html` is
-  informational: deletion runs only through the authenticated in-app endpoint,
-  and users who cannot sign in are routed to the developer contact on the
-  Google Play listing.
+- No generic "delete my data" request form. `site/delete-account.html` documents
+  in-app deletion and, when deployed with a configured API base, a lost-device
+  flow that sends a one-time code to a verified recovery email. Users without a
+  verified recovery email who cannot sign in are routed to the developer contact on
+  the Google Play listing.
 - No hard-delete endpoint for an individual message; recall is a soft delete
   (author within 24 h, group admin any time).
 
@@ -315,10 +316,12 @@ These are owner decisions; do not infer them from code:
    `feat/server-account-deletion` (API and data changes),
    `feat/android-account-deletion` (Settings > Delete account) and
    `docs/site-account-deletion` (public page at `site/delete-account.html`).
-   Merge all three and deploy the page before submission. The site publishes no
-   support address; the page routes users who lost their device to the developer
-   contact on the Google Play listing, so that contact must be live and
-   monitored.
+   Merge all three (and the OTP web-deletion branches when used) and deploy the page
+   before submission. Configure `nexachat-api-base`, CSP `connect-src`, and
+   `NEXACHAT_CORS_ALLOWED_ORIGINS` for web OTP deletion (see `docs/operations.md`).
+   The site publishes no support address; users without a verified recovery email
+   who lost their device are routed to the developer contact on the Google Play
+   listing, so that contact must be live and monitored.
 3. **Target audience and content rating** — no target-age declaration or content
    rating questionnaire is in the repository.
 4. **Ads declaration** — no ad SDK exists, but the owner must still answer the
