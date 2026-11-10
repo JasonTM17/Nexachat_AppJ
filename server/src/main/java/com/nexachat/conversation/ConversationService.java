@@ -104,7 +104,8 @@ public class ConversationService {
 
         if (conversation == null) {
             try {
-                conversation = directConversationCreator.createDirect(caller, other, directKey);
+                conversation = directConversationCreator.createDirect(
+                        callerId, other.getId(), directKey);
                 created = true;
                 log.info("Direct conversation {} created by {} with {}",
                         conversation.getId(), callerId, other.getId());

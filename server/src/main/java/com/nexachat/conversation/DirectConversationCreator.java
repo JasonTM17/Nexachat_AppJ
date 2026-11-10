@@ -1,11 +1,13 @@
 package com.nexachat.conversation;
 
 import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Writes one DIRECT conversation + its two member rows atomically.
@@ -25,15 +27,20 @@ public class DirectConversationCreator {
 
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
+    private final UserRepository userRepository;
 
     public DirectConversationCreator(ConversationRepository conversationRepository,
-                                     ConversationMemberRepository memberRepository) {
+                                     ConversationMemberRepository memberRepository,
+                                     UserRepository userRepository) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Conversation createDirect(User caller, User other, String directKey) {
+    public Conversation createDirect(UUID callerId, UUID otherId, String directKey) {
+        User caller = userRepository.getReferenceById(callerId);
+        User other = userRepository.getReferenceById(otherId);
         Conversation conversation = Conversation.direct(caller, directKey);
         // saveAndFlush, not save: the INSERT must hit the direct_key UNIQUE
         // NOW — save() alone defers the flush to commit, after the caller has
