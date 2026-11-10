@@ -21,4 +21,5 @@
     <dimen name="bubble_max_width">280dp</dimen>
     <dimen name="attachment_chip_max_width">240dp</dimen>
     <dimen name="media_dismiss_distance">96dp</dimen>
+    <dimen name="inbox_swipe_text_size">14sp</dimen>
 </resources>

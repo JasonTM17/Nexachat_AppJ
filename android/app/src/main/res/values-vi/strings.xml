@@ -455,6 +455,7 @@
     <string name="label_color_amber">Hổ phách</string>
     <string name="label_color_rose">Hồng đậm</string>
     <string name="label_color_purple">Tím</string>
+    <string name="confirm_remove_contact">Xóa liên hệ này?</string>
 
 
     <!-- Cluster B message interactions -->

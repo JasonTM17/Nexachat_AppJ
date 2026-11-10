@@ -98,7 +98,7 @@
         <TextView
             android:id="@+id/unreadBadge"
             android:layout_width="wrap_content"
-            android:layout_height="24dp"
+            android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
             android:background="@drawable/bg_unread_badge"
             android:gravity="center"

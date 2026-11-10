@@ -460,6 +460,7 @@
     <string name="label_color_amber">Amber</string>
     <string name="label_color_rose">Rose</string>
     <string name="label_color_purple">Purple</string>
+    <string name="confirm_remove_contact">Remove this contact?</string>
 
 
     <!-- Cluster B message interactions -->
