@@ -75,6 +75,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V22 | `V22__retention_cleanup_indexes.sql` | Partial indexes to keep `RetentionJobRunner` batch discovery bounded (tokens, invite links, polls, attachments, tombstones, reaction events). |
 | V23 | — | Intentionally unused/reserved; no file exists. |
 | V24 | `V24__hot_path_perf.sql` | Drops the unused `idx_conv_inbox` index; no table or column change. |
+| V25 | `V25__refresh_rotation_replay.sql` | Adds encrypted keyed-refresh response replay metadata and bounded cleanup support. |
 
 ## Operational notes
 
@@ -83,6 +84,7 @@ Android client can consume the API but no dedicated screen is merged into
 | Key | Default | Meaning |
 |---|---|---|
 | `nexachat.message.recall-window` | `PT24H` | Author recall window; inclusive boundary; valid `PT1M`–`P7D`; a current group admin bypasses it. |
+| `nexachat.auth.refresh-replay.key` (`NEXACHAT_REFRESH_REPLAY_KEY`) | empty | Optional Base64 encoding of exactly 32 random bytes; enables encrypted response recovery for matching keyed refresh retries during the fixed 30-second window. |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
 | `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window; an older `since` forces `reactionsFullRefresh`. |
 | `nexachat.reminders.enabled` | `true` | Enables the due-time reminder poll (`ReminderScheduler`); the purge job is configured separately under `nexachat.retention.jobs`. |
@@ -170,6 +172,8 @@ These keys are Spring properties; override them with the matching
 | `TOKEN_EXPIRED` | 401 | Access/refresh token past its TTL |
 | `TOKEN_INVALID` | 401 | Malformed, unknown or revoked token |
 | `TOKEN_REUSED` | 401 | Rotated refresh token presented again (family revoked) |
+| `REFRESH_RECOVERY_UNAVAILABLE` | 409 | Keyed retry cannot recover the original response; this error does not itself revoke the refresh family |
+| `REFRESH_SERVICE_UNAVAILABLE` | 503 | Replay-response encryption failed during rotation |
 | `UNAUTHORIZED` | 401 | Missing/invalid Bearer token |
 | `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
@@ -253,10 +257,18 @@ These keys are Spring properties; override them with the matching
   replay returns `200` with the original reminder, while the first create
   returns `201`. A key reused for a different reminder payload is
   `409 IDEMPOTENCY_KEY_REUSED`.
-- `POST /auth/refresh` is **not** idempotent: each success rotates the token
-  pair. Replaying an already-rotated refresh token returns
-  `401 TOKEN_REUSED` and revokes the whole refresh family plus its existing
-  access tokens.
+- `POST /auth/refresh` accepts an optional canonical UUIDv4 `Idempotency-Key`.
+  With a valid `NEXACHAT_REFRESH_REPLAY_KEY`, a matching retry of a committed
+  rotation returns the original response during the fixed 30-second recovery
+  window. Headerless refreshes keep legacy strict rotation: replaying a spent
+  refresh token returns `401 TOKEN_REUSED` and revokes the refresh family plus
+  its existing access tokens. If the replay key is missing or malformed, keyed
+  requests also use that strict behavior; the first rotation succeeds without
+  recovery metadata, and retrying its spent predecessor returns
+  `401 TOKEN_REUSED`. Production readiness reports `refreshReplay` as `DOWN`
+  while the key is unavailable, but the application continues serving legacy
+  refresh behavior. `409 REFRESH_RECOVERY_UNAVAILABLE` means a keyed replay
+  cannot return the original response and does not itself revoke the family.
 
 ## Response wire formats
 
@@ -355,7 +367,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 |---|---|---|---|---|
 | `POST /auth/register` | Public | `{phone, password, displayName}` — password 8+ chars and ≤72 UTF-8 bytes, no NUL; displayName ≤60 | `201` `AuthResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
 | `POST /auth/login` | Public | `{phone, password}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 |
-| `POST /auth/refresh` | Public | `{refreshToken}` | `200` `AuthResponse` (new token pair) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `RATE_LIMITED` 429 |
+| `POST /auth/refresh` | Public | `{refreshToken}`; optional canonical UUIDv4 `Idempotency-Key` | `200` `AuthResponse` (new token pair or original response replay) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `REFRESH_RECOVERY_UNAVAILABLE` 409 · `REFRESH_SERVICE_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 |
@@ -373,7 +385,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
-**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` precedes that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` is at or before that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
 ## Users — `/api/v1/users`
 

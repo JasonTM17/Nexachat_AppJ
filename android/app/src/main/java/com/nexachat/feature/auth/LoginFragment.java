@@ -83,7 +83,11 @@ public final class LoginFragment extends Fragment {
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
         binding.errorBanner.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
         if (state.getError() != null) binding.errorBanner.setText(ApiErrorText.text(requireContext(), state.getError()));
-        binding.primaryAction.setEnabled(!state.getLoading());
+        boolean notLoading = !state.getLoading();
+        binding.phoneInput.setEnabled(notLoading);
+        binding.passwordInput.setEnabled(notLoading);
+        binding.primaryAction.setEnabled(notLoading);
+        binding.secondaryAction.setEnabled(notLoading);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;
     }

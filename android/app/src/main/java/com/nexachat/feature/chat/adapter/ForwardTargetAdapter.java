@@ -102,6 +102,10 @@ public final class ForwardTargetAdapter extends ListAdapter<ConversationSummary,
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
             boolean selected = conversation.getId().equals(selectedId);
             radio.setChecked(selected);
+            itemView.setSelected(selected);
+            androidx.core.view.ViewCompat.setStateDescription(itemView,
+                    itemView.getContext().getString(selected ? R.string.forward_selected : R.string.forward_not_selected));
+            itemView.setContentDescription(label);
             itemView.setOnClickListener(v -> {
                 notifier.onSelected(conversation.getId());
                 listener.onTargetSelected(conversation.getId());

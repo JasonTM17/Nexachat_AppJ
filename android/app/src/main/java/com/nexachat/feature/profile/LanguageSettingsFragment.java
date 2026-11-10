@@ -27,9 +27,22 @@ public final class LanguageSettingsFragment extends Fragment {
         LanguageOption selected = AppLocaleManager.current(requireContext());
         LanguageOption[] options = {LanguageOption.SYSTEM, LanguageOption.VIETNAMESE, LanguageOption.ENGLISH};
         int[] labels = {R.string.language_system_default, R.string.language_name_vietnamese, R.string.language_name_english};
-        for (int i=0; i<options.length; i++) {
-            RadioButton button = new RadioButton(requireContext()); button.setId(View.generateViewId()); button.setText(labels[i]); button.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target)); button.setChecked(selected == options[i]);
-            LanguageOption option = options[i]; binding.languageOptions.addView(button);
+        int padH = getResources().getDimensionPixelSize(R.dimen.space_md);
+        int padV = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        for (int i = 0; i < options.length; i++) {
+            RadioButton button = new RadioButton(requireContext());
+            button.setId(View.generateViewId());
+            button.setText(labels[i]);
+            button.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge);
+            button.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
+            button.setPadding(padH, padV, padH, padV);
+            button.setChecked(selected == options[i]);
+            LanguageOption option = options[i];
+            binding.languageOptions.addView(
+                    button,
+                    new ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
             button.setOnClickListener(v -> AppLocaleManager.apply(requireContext(), option));
         }
     }

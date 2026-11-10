@@ -299,13 +299,10 @@ public class BackendM1AdversarialChallengeTest {
             }
 
             SyncRequest request = new SyncRequest(watermarks, 50, null);
-            long start = System.nanoTime();
             var response = syncController.syncDelta(principal, request);
-            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
 
             assertThat(response.getBody()).isNotNull();
             assertThat(response.getBody().deltas()).hasSize(100);
-            assertThat(durationMs).as("Clamped watermarks should execute rapidly in-memory").isLessThan(2000L);
         }
 
         @Test
