@@ -43,12 +43,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +66,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CallFlowIT {
 
     private static final long TIMEOUT_SECONDS = 10;
+    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(40_000);
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -147,6 +150,7 @@ class CallFlowIT {
         send(callee, conversationId, new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
         assertThat(awaitEvent(caller, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
         assertThat(awaitEvent(callee, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
+        Instant connectedAt = Instant.now();
 
         CallSignal.Sdp sdp = new CallSignal.Sdp("offer", "v=0\\r\\no=nexachat 1 1 IN IP4 127.0.0.1");
         send(caller, conversationId, new CallSignal(CallSignal.Type.SDP, callId, sdp, null));
@@ -165,12 +169,14 @@ class CallFlowIT {
         JsonNode completed = callHistoryItem(history, callId);
         assertThat(completed.get("state").asText()).isEqualTo("ENDED");
         assertThat(completed.get("endReason").asText()).isEqualTo("COMPLETED");
-        assertThat(completed.get("durationSeconds").asLong()).isGreaterThanOrEqualTo(0);
+        long durationSeconds = completed.get("durationSeconds").asLong();
+        long elapsedBound = Duration.between(connectedAt, Instant.now()).getSeconds() + 1L;
+        assertThat(durationSeconds).isBetween(0L, elapsedBound);
 
         List<JsonNode> callLines = callLinesAfter(conversationId, alice, beforeSeq);
         assertThat(callLines).hasSize(1);
         assertThat(callLines.get(0).get("content").asText()).isEqualTo("CALL|COMPLETED|"
-                + completed.get("durationSeconds").asLong() + "|" + alice.id());
+                + durationSeconds + "|" + alice.id());
         assertThat(getJson("/api/v1/calls/ice-config", alice).get("iceServers")).isNotEmpty();
     }
 
@@ -435,7 +441,7 @@ class CallFlowIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8498" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = "+8498" + String.format("%07d", PHONE_SEQ.incrementAndGet());
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

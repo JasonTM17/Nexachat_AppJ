@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,6 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class P1InviteApprovalMaxUsesIT {
+
+    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(10_000);
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -111,6 +113,10 @@ class P1InviteApprovalMaxUsesIT {
                 alice.accessToken(), null)
                 .andExpect(status().isOk());
 
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT use_count FROM group_invite_links WHERE id = ?", Integer.class, linkId))
+                .isEqualTo(1);
+
         // The link is now used up (maxUses=1). Approving a second pending
         // request must not add another member or raise use_count past 1.
         postJson("/api/v1/conversations/" + groupId + "/join-requests/" + carolRequestId + "/approve",
@@ -123,12 +129,11 @@ class P1InviteApprovalMaxUsesIT {
                 "SELECT use_count FROM group_invite_links WHERE id = ?", Integer.class, linkId);
 
         assertThat(carolMembership).isZero();
-        assertThat(useCount).isLessThanOrEqualTo(1);
+        assertThat(useCount).isEqualTo(1);
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = "+8496" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = "+8496" + String.format("%07d", PHONE_SEQ.incrementAndGet());
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));
