@@ -6,6 +6,7 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
+import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
@@ -192,22 +193,36 @@ public final class InboxViewModel extends ViewModel {
 
     /** Mutes one conversation for the given preset instant. */
     public void muteConversation(@NonNull String conversationId, @NonNull java.time.Instant until) {
-        runPreference(conversationRepository.muteConversation(conversationId, until));
+        runPreference(
+                conversationRepository.muteConversation(conversationId, until),
+                R.string.conversation_muted,
+                () -> unmuteConversation(conversationId));
     }
 
     /** Mutes one conversation until the caller turns notifications back on. */
     public void muteConversationForever(@NonNull String conversationId) {
-        runPreference(conversationRepository.muteConversationForever(conversationId));
+        runPreference(
+                conversationRepository.muteConversationForever(conversationId),
+                R.string.conversation_muted,
+                () -> unmuteConversation(conversationId));
     }
 
     /** Clears the mute in one tap. */
     public void unmuteConversation(@NonNull String conversationId) {
-        runPreference(conversationRepository.unmuteConversation(conversationId));
+        runPreference(
+                conversationRepository.unmuteConversation(conversationId),
+                R.string.conversation_unmuted,
+                null);
     }
 
     /** Archives or restores one conversation for the caller. */
     public void setConversationArchived(@NonNull String conversationId, boolean archived) {
-        runPreference(conversationRepository.setConversationArchived(conversationId, archived));
+        runPreference(
+                conversationRepository.setConversationArchived(conversationId, archived),
+                archived
+                        ? R.string.conversation_archived
+                        : R.string.conversation_unarchived,
+                () -> setConversationArchived(conversationId, !archived));
     }
 
     /** Sets the caller's AI opt-out for one conversation. */
@@ -217,24 +232,31 @@ public final class InboxViewModel extends ViewModel {
                 .subscribe(
                         result -> {
                             if (result instanceof Result.Failure<?> failure) {
-                                events.postEvent(new InboxEvent(failure.getError()));
+                                events.postEvent(new InboxErrorEvent(failure.getError()));
                             }
                         },
                         error -> events.postEvent(
-                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+                                new InboxErrorEvent(new ApiError.Network(error.getMessage())))));
     }
 
-    private void runPreference(Single<Result<Void>> request) {
+    private void runPreference(
+            Single<Result<Void>> request,
+            int successMessageId,
+            @Nullable Runnable undo) {
         disposables.add(Objects.requireNonNull(request, "request")
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> {
                             if (result instanceof Result.Failure<?> failure) {
-                                events.postEvent(new InboxEvent(failure.getError()));
+                                events.postEvent(new InboxErrorEvent(failure.getError()));
+                            } else if (undo != null) {
+                                events.postEvent(new InboxPreferenceSuccess(successMessageId, undo));
+                            } else {
+                                events.postEvent(new InboxPreferenceSuccess(successMessageId, null));
                             }
                         },
                         error -> events.postEvent(
-                                new InboxEvent(new ApiError.Network(error.getMessage())))));
+                                new InboxErrorEvent(new ApiError.Network(error.getMessage())))));
     }
 
     private synchronized boolean isPageOperationCurrent(long generation) {
@@ -295,12 +317,18 @@ public final class InboxViewModel extends ViewModel {
                 .subscribe(result -> {
                     if (result instanceof Result.Failure<?> failure) {
                         pinError.postValue(failure.getError());
-                        events.postEvent(new InboxEvent(failure.getError()));
+                        events.postEvent(new InboxErrorEvent(failure.getError()));
+                    } else {
+                        int messageId = pin
+                                ? R.string.conversation_pinned
+                                : R.string.conversation_unpinned;
+                        events.postEvent(new InboxPreferenceSuccess(
+                                messageId, () -> setConversationPinned(conversationId, !pin)));
                     }
                 }, error -> {
                     ApiError net = new ApiError.Network(error.getMessage());
                     pinError.postValue(net);
-                    events.postEvent(new InboxEvent(net));
+                    events.postEvent(new InboxErrorEvent(net));
                 }));
     }
 
@@ -311,16 +339,39 @@ public final class InboxViewModel extends ViewModel {
     }
 }
 
-/** One-shot inbox preference failure; consumed once so rotation does not replay it. */
-final class InboxEvent {
+/** One-shot inbox surface events; consumed once so rotation does not replay them. */
+sealed interface InboxEvent permits InboxErrorEvent, InboxPreferenceSuccess {
+}
+
+/** Preference failure surfaced as a snackbar. */
+final class InboxErrorEvent implements InboxEvent {
     private final ApiError error;
 
-    InboxEvent(ApiError error) {
+    InboxErrorEvent(ApiError error) {
         this.error = Objects.requireNonNull(error, "error");
     }
 
     ApiError getError() {
         return error;
+    }
+}
+
+/** Successful preference write with an optional Undo action. */
+final class InboxPreferenceSuccess implements InboxEvent {
+    private final int messageId;
+    @Nullable private final Runnable undo;
+
+    InboxPreferenceSuccess(int messageId, @Nullable Runnable undo) {
+        this.messageId = messageId;
+        this.undo = undo;
+    }
+
+    int getMessageId() {
+        return messageId;
+    }
+
+    @Nullable Runnable getUndo() {
+        return undo;
     }
 }
 

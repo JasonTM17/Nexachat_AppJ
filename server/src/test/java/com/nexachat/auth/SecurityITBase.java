@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.TestAccessTokens;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -76,6 +78,8 @@ abstract class SecurityITBase {
     protected ObjectMapper objectMapper;
     @Autowired
     protected JdbcTemplate jdbcTemplate;
+    @Autowired
+    protected JwtProperties jwtProperties;
     @Autowired
     private RateLimitService rateLimitService;
 
@@ -172,13 +176,21 @@ abstract class SecurityITBase {
     }
 
     /**
-     * The access-token cutoff is stored at one-second resolution (JWT {@code iat}
-     * has no sub-second precision), so a token issued in the same second as the
-     * logout is indistinguishable from one minted just after it. Waiting for the
-     * next second makes "issued before the cutoff" deterministic.
+     * A signed access token for {@code userId} stamped five seconds before now.
+     *
+     * <p>The access-token cutoff is stored at one-second resolution (JWT
+     * {@code iat} has no sub-second precision), so tokens at or before the
+     * cutoff second fail closed. Stamping the token explicitly makes
+     * "issued before the cutoff" deterministic without sleeping across a
+     * second boundary.
      */
-    protected static void letTheTokenFallInThePreviousSecond() throws InterruptedException {
-        Thread.sleep(1_100L);
+    protected String accessTokenIssuedBeforeRevocation(UUID userId) {
+        return accessTokenIssuedBeforeRevocation(userId, 5);
+    }
+
+    protected String accessTokenIssuedBeforeRevocation(UUID userId, long secondsAgo) {
+        return TestAccessTokens.accessTokenIssuedAt(
+                jwtProperties, userId, Instant.now().minusSeconds(secondsAgo));
     }
 
     /** Sets the client IP the rate limiter sees. */

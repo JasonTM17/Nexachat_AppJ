@@ -103,6 +103,8 @@ class LlmClientTest {
         client = null;
         server.stop(0);
         startServer(exchange -> {
+            // Deliberate fake-server delay: the slow response is what must
+            // exceed the client timeout.
             try {
                 Thread.sleep(1_000);
                 respond(exchange, 200, response("{\"ok\":true}"));

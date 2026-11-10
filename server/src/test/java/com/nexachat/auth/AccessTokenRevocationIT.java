@@ -1,12 +1,12 @@
 package com.nexachat.auth;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.sql.Timestamp;
@@ -44,16 +44,17 @@ class AccessTokenRevocationIT extends SecurityITBase {
     @Test
     void logoutInvalidatesTheAccessTokenItWasUsedWith() throws Exception {
         Registered user = register("+84905551201");
+        String issuedBeforeLogout = accessTokenIssuedBeforeRevocation(user.userId());
 
-        getWithAuth("/api/v1/users/me", user.accessToken())
+        getWithAuth("/api/v1/users/me", issuedBeforeLogout)
                 .andExpect(status().isOk());
 
-        pinCutoffAtOrAfterTokens(user.accessToken());
+        pinCutoffAtOrAfterTokens(issuedBeforeLogout);
         postJson("/api/v1/auth/logout", Map.of("refreshToken", user.refreshToken()),
-                user.accessToken())
+                issuedBeforeLogout)
                 .andExpect(status().isNoContent());
 
-        getWithAuth("/api/v1/users/me", user.accessToken())
+        getWithAuth("/api/v1/users/me", issuedBeforeLogout)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
@@ -62,15 +63,17 @@ class AccessTokenRevocationIT extends SecurityITBase {
     void logoutAllInvalidatesEveryAccessTokenOfTheUser() throws Exception {
         Registered user = register("+84905551202");
         Registered secondSession = login("+84905551202");
+        String firstToken = accessTokenIssuedBeforeRevocation(user.userId());
+        String secondToken = accessTokenIssuedBeforeRevocation(secondSession.userId());
 
-        pinCutoffAtOrAfterTokens(user.accessToken(), secondSession.accessToken());
-        postJson("/api/v1/auth/logout-all", Map.of(), user.accessToken())
+        pinCutoffAtOrAfterTokens(firstToken, secondToken);
+        postJson("/api/v1/auth/logout-all", Map.of(), firstToken)
                 .andExpect(status().isNoContent());
 
-        getWithAuth("/api/v1/users/me", user.accessToken())
+        getWithAuth("/api/v1/users/me", firstToken)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
-        getWithAuth("/api/v1/users/me", secondSession.accessToken())
+        getWithAuth("/api/v1/users/me", secondToken)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
@@ -78,16 +81,17 @@ class AccessTokenRevocationIT extends SecurityITBase {
     @Test
     void passwordChangeInvalidatesExistingAccessTokensButKeepsRotationAlive() throws Exception {
         Registered user = register("+84905551203");
+        String issuedBeforeChange = accessTokenIssuedBeforeRevocation(user.userId());
 
-        pinCutoffAtOrAfterTokens(user.accessToken());
+        pinCutoffAtOrAfterTokens(issuedBeforeChange);
         patchWithAuth("/api/v1/auth/password", Map.of(
                         "oldPassword", "secret123",
                         "newPassword", "newsecret456",
                         "refreshToken", user.refreshToken()),
-                user.accessToken())
+                issuedBeforeChange)
                 .andExpect(status().isNoContent());
 
-        getWithAuth("/api/v1/users/me", user.accessToken())
+        getWithAuth("/api/v1/users/me", issuedBeforeChange)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
 
@@ -99,8 +103,8 @@ class AccessTokenRevocationIT extends SecurityITBase {
         String rotatedAccessToken = objectMapper.readTree(
                         refreshed.andReturn().getResponse().getContentAsString())
                 .get("accessToken").asText();
-
         setCutoffOneSecondBefore(user.userId(), rotatedAccessToken);
+
         getWithAuth("/api/v1/users/me", rotatedAccessToken)
                 .andExpect(status().isOk());
     }
@@ -109,17 +113,19 @@ class AccessTokenRevocationIT extends SecurityITBase {
     void logoutOfOneSessionDoesNotRevokeAnotherSessionsRefreshToken() throws Exception {
         Registered first = register("+84905551204");
         Registered second = login("+84905551204");
+        String firstToken = accessTokenIssuedBeforeRevocation(first.userId());
+        String secondToken = accessTokenIssuedBeforeRevocation(second.userId());
 
-        pinCutoffAtOrAfterTokens(first.accessToken(), second.accessToken());
+        pinCutoffAtOrAfterTokens(firstToken, secondToken);
         postJson("/api/v1/auth/logout", Map.of("refreshToken", first.refreshToken()),
-                first.accessToken())
+                firstToken)
                 .andExpect(status().isNoContent());
 
         // The logged-out session's access token is dead, and so is the other
         // session's until it rotates.
-        getWithAuth("/api/v1/users/me", first.accessToken())
+        getWithAuth("/api/v1/users/me", firstToken)
                 .andExpect(status().isUnauthorized());
-        getWithAuth("/api/v1/users/me", second.accessToken())
+        getWithAuth("/api/v1/users/me", secondToken)
                 .andExpect(status().isUnauthorized());
 
         // ... but the second session's refresh token is untouched: rotation
@@ -146,19 +152,21 @@ class AccessTokenRevocationIT extends SecurityITBase {
         ResultActions rotated = postJson("/api/v1/auth/refresh",
                 Map.of("refreshToken", user.refreshToken()));
         rotated.andExpect(status().isOk());
-        String rotatedAccessToken = objectMapper.readTree(
-                        rotated.andReturn().getResponse().getContentAsString())
-                .get("accessToken").asText();
 
-        pinCutoffAtOrAfterTokens(user.accessToken(), rotatedAccessToken);
+        // Stamp equivalent access tokens before the reuse cutoff so the
+        // assertion does not depend on crossing a wall-clock second.
+        String originalSessionToken = accessTokenIssuedBeforeRevocation(user.userId(), 10);
+        String rotatedSessionToken = accessTokenIssuedBeforeRevocation(user.userId(), 5);
+
+        pinCutoffAtOrAfterTokens(originalSessionToken, rotatedSessionToken);
         postJson("/api/v1/auth/refresh", Map.of("refreshToken", user.refreshToken()))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
 
-        getWithAuth("/api/v1/users/me", user.accessToken())
+        getWithAuth("/api/v1/users/me", originalSessionToken)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
-        getWithAuth("/api/v1/users/me", rotatedAccessToken)
+        getWithAuth("/api/v1/users/me", rotatedSessionToken)
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }

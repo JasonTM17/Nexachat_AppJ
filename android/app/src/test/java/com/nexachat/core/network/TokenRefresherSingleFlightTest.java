@@ -13,8 +13,10 @@ import static org.mockito.Mockito.when;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.storage.SessionSnapshot;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
+import static org.mockito.ArgumentMatchers.anyLong;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -45,6 +47,7 @@ public final class TokenRefresherSingleFlightTest {
         AuthApi api = mock(AuthApi.class);
         Call<AuthResponse> call = mock(Call.class);
         when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -69,7 +72,7 @@ public final class TokenRefresherSingleFlightTest {
         assertTrue(outcomes[0] instanceof TokenRefreshOutcome.FreshToken);
         assertEquals(outcomes[0], outcomes[1]);
         assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) outcomes[0]).getAccessToken());
-        verify(api, times(1)).refresh(any());
+        verify(api, times(1)).refresh(anyString(), any());
         assertEquals(1, refreshCalls.get());
         assertEquals("rt-rotated", store.readTokens().blockingGet().getRefreshToken());
     }
@@ -85,6 +88,7 @@ public final class TokenRefresherSingleFlightTest {
         AuthApi api = mock(AuthApi.class);
         Call<AuthResponse> call = mock(Call.class);
         when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -110,7 +114,7 @@ public final class TokenRefresherSingleFlightTest {
         assertTrue(outcomes[0] instanceof TokenRefreshOutcome.FreshToken);
         assertEquals(outcomes[0], outcomes[1]);
         assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) outcomes[0]).getAccessToken());
-        verify(api, times(1)).refresh(any());
+        verify(api, times(1)).refresh(anyString(), any());
         assertEquals(1, refreshCalls.get());
         assertEquals("rt-rotated", store.readTokens().blockingGet().getRefreshToken());
     }
@@ -236,9 +240,27 @@ public final class TokenRefresherSingleFlightTest {
                         invocation.getArgument(0),
                         invocation.getArgument(1),
                         invocation.getArgument(2)))));
+        when(store.commitRefreshRotation(
+                        anyLong(),
+                        anyString(),
+                        anyString(),
+                        anyLong(),
+                        anyString(),
+                        any(RecallWindowConfig.class)))
+                .thenAnswer(invocation -> Completable.fromAction(() -> state.set(new Tokens(
+                        invocation.getArgument(2),
+                        invocation.getArgument(3),
+                        invocation.getArgument(4)))));
         when(store.clear()).thenAnswer(ignored -> Completable.fromAction(() -> state.set(null)));
         when(store.getHasValidRefresh()).thenReturn(Flowable.defer(() ->
                 Flowable.just(state.get() != null)));
+        when(store.readSessionSnapshot())
+                .thenReturn(Single.just(new SessionSnapshot(1L, SessionSnapshot.Lifecycle.ACTIVE)));
+        when(store.bootstrapLegacySessionIfNeeded()).thenReturn(Single.just(1L));
+        when(store.readPendingRefresh()).thenReturn(Maybe.empty());
+        when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
+        when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
+        when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 }

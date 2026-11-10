@@ -211,6 +211,17 @@ public final class TokenStoreTest {
     }
 
     @Test
+    public void establishNewSessionAdvancesEpochAndClearsPendingMarkers() {
+        store.establishNewSession("access-1", 1L, "refresh-1",
+                        new RecallWindowConfig(86_400L, false))
+                .test()
+                .assertValue(1L);
+        store.readSessionSnapshot().test().assertValue(
+                new SessionSnapshot(1L, SessionSnapshot.Lifecycle.ACTIVE));
+        store.hasValidRefresh().test().assertValue(true);
+    }
+
+    @Test
     public void fcmAndPendingUnregisterTokensRemainEncryptedAcrossLogoutClear() {
         store.saveTokens("a", 1L, "r")
                 .andThen(store.saveFcmDeviceToken("device-token-fixture"))

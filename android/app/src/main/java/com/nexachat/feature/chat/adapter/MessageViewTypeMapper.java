@@ -12,6 +12,7 @@ import java.util.List;
 public final class MessageViewTypeMapper {
 
     public static final int VIEW_TYPE_DATE_SEPARATOR = 0;
+    public static final int VIEW_TYPE_UNREAD_DIVIDER = 1;
 
     private MessageViewTypeMapper() {
     }
@@ -21,7 +22,8 @@ public final class MessageViewTypeMapper {
             return false;
         }
         String content = message.getContent();
-        return content != null && content.startsWith("CALL|");
+        return "SYSTEM".equalsIgnoreCase(message.getType())
+                || content != null && content.startsWith("CALL|");
     }
 
     public static MessageContentKind resolveContentKind(@Nullable ChatMessage message) {
@@ -123,6 +125,9 @@ public final class MessageViewTypeMapper {
     public static int layoutResForViewType(int viewType) {
         if (viewType == VIEW_TYPE_DATE_SEPARATOR) {
             return R.layout.item_date_separator;
+        }
+        if (viewType == VIEW_TYPE_UNREAD_DIVIDER) {
+            return R.layout.item_unread_divider;
         }
         boolean outgoing = (viewType & 1) == 1;
         int bucket = viewType - (outgoing ? 1 : 0);
