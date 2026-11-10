@@ -369,6 +369,8 @@ class ObservabilityAspectsTest {
             ProceedingJoinPoint slow = mock(ProceedingJoinPoint.class);
             Signature slowSignature = signature("MessageRepository", "findRowsAfter");
             when(slow.getSignature()).thenReturn(slowSignature);
+            // Deliberate delay: the fake call has to exceed the 1 ms slow-call
+            // threshold, which is the behaviour under test.
             when(slow.proceed()).thenAnswer(invocation -> {
                 Thread.sleep(5L);
                 return null;

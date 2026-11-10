@@ -298,10 +298,10 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             assertTokenRejected(route, expiredToken, ApiErrorCode.TOKEN_EXPIRED.getCode());
         }
 
-        letTheTokenFallInThePreviousSecond();
+        String issuedBeforeLogout = accessTokenIssuedBeforeRevocation(registered.userId());
         authService.logoutAll(registered.userId());
         for (Route route : protectedRoutes) {
-            assertTokenRejected(route, registered.accessToken(), ApiErrorCode.TOKEN_INVALID.getCode());
+            assertTokenRejected(route, issuedBeforeLogout, ApiErrorCode.TOKEN_INVALID.getCode());
         }
     }
 
