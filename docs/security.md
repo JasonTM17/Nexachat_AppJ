@@ -9,7 +9,8 @@ the implementing source file.
 - Passwords use BCrypt cost 12 (`new BCryptPasswordEncoder(12)`,
   SecurityConfig.java). Register and change-password reject a secret that bcrypt
   cannot hash in full — more than 72 UTF-8 bytes, or containing NUL — and login
-  of such a secret is `INVALID_CREDENTIALS` without a hash comparison
+  of such a secret is `INVALID_CREDENTIALS` without comparing it to the account
+  hash; it still pays one dummy bcrypt compare for timing
   (PasswordPolicy.java, AuthService.java).
 - Phones are normalized to E.164 with Google libphonenumber before any lookup or
   storage (PhoneNormalizer.java, default region VN). Register maps a bad number

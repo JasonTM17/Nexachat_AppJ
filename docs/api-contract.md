@@ -348,7 +348,8 @@ login 10 req / 5 min, refresh 30 req / 5 min (keyed per client IP and per phone)
 
 **Password limits:** register and change-password reject a secret that bcrypt cannot
 hash in full (more than 72 UTF-8 bytes, or containing NUL) with `400 VALIDATION_FAILED`;
-login treats the same input as `401 INVALID_CREDENTIALS` and does not compare it.
+login treats the same input as `401 INVALID_CREDENTIALS` without comparing it to the
+account hash (it still pays one dummy bcrypt compare for timing).
 
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
