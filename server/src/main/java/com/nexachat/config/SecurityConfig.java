@@ -1,6 +1,7 @@
 package com.nexachat.config;
 
 import com.nexachat.auth.AuthSecurityErrorHandler;
+import com.nexachat.auth.BcryptBoundedPasswordEncoder;
 import com.nexachat.auth.JwtAuthFilter;
 import com.nexachat.auth.JwtProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -63,7 +64,7 @@ public class SecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
+        return new BcryptBoundedPasswordEncoder(new BCryptPasswordEncoder(12));
     }
 
     @Bean
