@@ -14,7 +14,7 @@
         android:id="@+id/replyIcon"
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:contentDescription="@string/action_reply"
+        android:importantForAccessibility="no"
         android:src="@drawable/ic_reply"
         app:tint="?attr/colorPrimary" />
 
