@@ -1,0 +1,359 @@
+package com.nexachat.security;
+
+import static org.junit.Assert.assertTrue;
+
+import com.nexachat.core.network.dto.MessageDto;
+import com.squareup.moshi.Json;
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.junit.Test;
+
+/**
+ * Fails when a reflective Moshi model can lose the field names or no-arg
+ * constructor R8 must preserve. Gson {@code @SerializedName} and Moshi
+ * {@code @Json} are accepted only when every instance field is annotated and
+ * the annotation keep rule is present; otherwise the class needs a full
+ * {@code -keep class ... { *; }} rule.
+ */
+public final class ReflectiveDtoKeepCoverageTest {
+
+    private static final Pattern KEEP_RULE = Pattern.compile(
+            "-keep(?:classmembers)?\\s+(?:class|interface)\\s+(\\S+)\\s*\\{([^}]*)}",
+            Pattern.DOTALL);
+    private static final Pattern TYPE_TOKEN = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\b");
+    private static final Set<String> NON_MODELS = Set.of(
+            "Call", "Single", "Completable", "Response", "ResponseBody", "Header",
+            "Body", "Path", "Query", "Part", "PartMap", "Field", "HTTP", "GET",
+            "POST", "PUT", "PATCH", "DELETE", "Headers", "Streaming", "Url",
+            "Nullable", "NonNull", "List", "Map", "Set", "Void", "String",
+            "Integer", "Long", "Boolean", "Double", "Float", "Object", "Override");
+
+    @Test
+    public void reflectiveWireModelsKeepFieldNamesOrAnnotateEveryField() throws Exception {
+        String rules = new String(Files.readAllBytes(proguardRules().toPath()), StandardCharsets.UTF_8);
+        List<KeepPattern> fullKeeps = new ArrayList<>();
+        boolean jsonFieldRule = false;
+        Matcher matcher = KEEP_RULE.matcher(rules);
+        while (matcher.find()) {
+            String body = matcher.group(2);
+            if (body.contains("@com.squareup.moshi.Json") && body.contains("<fields>")) {
+                jsonFieldRule = true;
+            }
+            if (body.contains("*;")) {
+                fullKeeps.add(KeepPattern.compile(matcher.group(1)));
+            }
+        }
+
+        List<String> failures = new ArrayList<>();
+        for (Class<?> model : discoverWireModels()) {
+            if (coveredByFullKeep(fullKeeps, model.getName())) {
+                continue;
+            }
+            List<String> bareFields = unannotatedInstanceFields(model);
+            if (bareFields.isEmpty() && jsonFieldRule && hasJsonAdapterEscape(model)) {
+                continue;
+            }
+            if (bareFields.isEmpty() && !hasInstanceField(model)) {
+                continue;
+            }
+            failures.add(model.getName() + " is not covered by a full -keep rule"
+                    + (bareFields.isEmpty() ? "" : " and has unannotated fields " + bareFields));
+        }
+
+        assertTrue(
+                "Reflective Moshi models lost R8 name coverage:\n" + String.join("\n", failures),
+                failures.isEmpty());
+    }
+
+    private static boolean hasJsonAdapterEscape(Class<?> model) {
+        for (Field field : model.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) {
+                continue;
+            }
+            if (!field.isAnnotationPresent(Json.class)
+                    && field.getAnnotation(serializedNameAnnotation()) == null) {
+                return false;
+            }
+        }
+        return model.getDeclaredFields().length > 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Class<? extends java.lang.annotation.Annotation> serializedNameAnnotation() {
+        try {
+            return (Class<? extends java.lang.annotation.Annotation>)
+                    Class.forName("com.google.gson.annotations.SerializedName");
+        } catch (ClassNotFoundException ignored) {
+            return Json.class;
+        }
+    }
+
+    private static List<String> unannotatedInstanceFields(Class<?> model) {
+        List<String> bare = new ArrayList<>();
+        for (Field field : model.getDeclaredFields()) {
+            if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) {
+                continue;
+            }
+            if (!field.isAnnotationPresent(Json.class)
+                    && field.getAnnotation(serializedNameAnnotation()) == null) {
+                bare.add(field.getName());
+            }
+        }
+        return bare;
+    }
+
+    private static boolean hasInstanceField(Class<?> model) {
+        for (Field field : model.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean coveredByFullKeep(List<KeepPattern> patterns, String binaryName) {
+        for (KeepPattern pattern : patterns) {
+            if (pattern.matches(binaryName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<Class<?>> discoverWireModels() throws Exception {
+        Set<Class<?>> models = new LinkedHashSet<>();
+        models.addAll(classesUnder(MessageDto.class, "com/nexachat/core/network/dto"));
+        models.addAll(classesUnder(MessageDto.class, "com/nexachat/core/network/stomp/dto"));
+
+        ArrayDeque<Class<?>> pending = new ArrayDeque<>();
+        for (File api : retrofitApis(sourceRoot())) {
+            String source = new String(Files.readAllBytes(api.toPath()), StandardCharsets.UTF_8);
+            if (!source.contains("retrofit2.http.")) {
+                continue;
+            }
+            for (String simpleName : referencedModels(source)) {
+                Class<?> resolved = resolveClass(api, source, simpleName);
+                if (resolved != null) {
+                    pending.add(resolved);
+                }
+            }
+        }
+        while (!pending.isEmpty()) {
+            Class<?> type = pending.removeFirst();
+            if (!include(type) || !models.add(type)) {
+                continue;
+            }
+            for (Class<?> nested : type.getDeclaredClasses()) {
+                pending.add(nested);
+            }
+            for (Field field : type.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                pending.add(field.getType());
+                if (field.getGenericType() instanceof ParameterizedType parameterized) {
+                    for (Type argument : parameterized.getActualTypeArguments()) {
+                        if (argument instanceof Class<?> argumentClass) {
+                            pending.add(argumentClass);
+                        }
+                    }
+                }
+            }
+        }
+        models.removeIf(type -> !include(type) || !hasInstanceField(type));
+        return models;
+    }
+
+    private static boolean include(Class<?> type) {
+        return type != null
+                && !type.isPrimitive()
+                && !type.isEnum()
+                && !type.isInterface()
+                && !type.isArray()
+                && type.getName().startsWith("com.nexachat.")
+                && !type.getName().contains("$$")
+                && !type.isSynthetic();
+    }
+
+    private static Set<Class<?>> classesUnder(Class<?> anchor, String relativePackage) throws Exception {
+        URL location = anchor.getProtectionDomain().getCodeSource().getLocation();
+        File root = new File(location.toURI());
+        File folder = new File(root, relativePackage);
+        Set<Class<?>> classes = new LinkedHashSet<>();
+        if (!folder.isDirectory()) {
+            return classes;
+        }
+        String prefix = relativePackage.replace('/', '.');
+        try (var stream = Files.walk(folder.toPath())) {
+            for (File classFile : stream
+                    .map(path -> path.toFile())
+                    .filter(file -> file.getName().endsWith(".class"))
+                    .toList()) {
+                String name = classFile.getName().substring(0, classFile.getName().length() - 6);
+                if (name.contains("$") && name.substring(name.lastIndexOf('$') + 1).matches("\\d+")) {
+                    continue;
+                }
+                classes.add(Class.forName(prefix + "." + name));
+            }
+        }
+        return classes;
+    }
+
+    private static List<File> retrofitApis(File sourceRoot) throws IOException {
+        List<File> apis = new ArrayList<>();
+        try (var stream = Files.walk(sourceRoot.toPath())) {
+            for (File file : stream.map(path -> path.toFile()).filter(File::isFile).toList()) {
+                if (file.getName().endsWith("Api.java")) {
+                    apis.add(file);
+                }
+            }
+        }
+        return apis;
+    }
+
+    private static Set<String> referencedModels(String source) {
+        Set<String> names = new LinkedHashSet<>();
+        int search = 0;
+        while (search < source.length()) {
+            int call = source.indexOf("Call<", search);
+            int body = source.indexOf("@Body", search);
+            if (call < 0 && body < 0) {
+                break;
+            }
+            if (body >= 0 && (call < 0 || body < call)) {
+                Matcher type = Pattern.compile("@Body\\s+(?:@[\\w.]+\\s+)*([A-Z][A-Za-z0-9_]*)")
+                        .matcher(source);
+                if (type.find(body) && type.start() == body) {
+                    names.add(type.group(1));
+                }
+                search = body + 5;
+                continue;
+            }
+            int open = call + "Call<".length();
+            int close = closeGeneric(source, open);
+            if (close < 0) {
+                break;
+            }
+            Matcher tokens = TYPE_TOKEN.matcher(source.substring(open, close));
+            while (tokens.find()) {
+                if (!NON_MODELS.contains(tokens.group(1))) {
+                    names.add(tokens.group(1));
+                }
+            }
+            search = close + 1;
+        }
+        return names;
+    }
+
+    private static int closeGeneric(String source, int open) {
+        int depth = 1;
+        for (int i = open; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if (c == '>' && --depth == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static Class<?> resolveClass(File apiFile, String source, String simpleName) {
+        Matcher imported = Pattern.compile(
+                "(?m)^import\\s+([\\w.]+\\." + Pattern.quote(simpleName) + ")\\s*;").matcher(source);
+        if (imported.find()) {
+            return forName(imported.group(1));
+        }
+        Matcher pkg = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;").matcher(source);
+        if (!pkg.find()) {
+            return null;
+        }
+        String packageName = pkg.group(1);
+        Class<?> samePackage = forName(packageName + "." + simpleName);
+        if (samePackage != null) {
+            return samePackage;
+        }
+        Class<?> nested = forName(packageName + "." + apiFile.getName().replace(".java", "")
+                + "$" + simpleName);
+        if (nested != null) {
+            return nested;
+        }
+        return null;
+    }
+
+    private static Class<?> forName(String name) {
+        try {
+            return Class.forName(name);
+        } catch (ClassNotFoundException | ExceptionInInitializerError | NoClassDefFoundError ignored) {
+            return null;
+        }
+    }
+
+    private static File proguardRules() {
+        File module = moduleDir();
+        File rules = new File(module, "proguard-rules.pro");
+        assertTrue("proguard-rules.pro must exist", rules.isFile());
+        return rules;
+    }
+
+    private static File sourceRoot() {
+        File root = new File(moduleDir(), "src/main/java");
+        assertTrue("app java sources must exist", root.isDirectory());
+        return root;
+    }
+
+    private static File moduleDir() {
+        File current = new File("").getAbsoluteFile();
+        while (current != null) {
+            if (new File(current, "proguard-rules.pro").isFile()
+                    && new File(current, "src/main/java").isDirectory()) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+        throw new IllegalStateException("Could not locate the Android app module");
+    }
+
+    private static final class KeepPattern {
+        private final Pattern regex;
+
+        private KeepPattern(Pattern regex) {
+            this.regex = regex;
+        }
+
+        static KeepPattern compile(String proguardPattern) {
+            StringBuilder regex = new StringBuilder();
+            for (int i = 0; i < proguardPattern.length();) {
+                if (proguardPattern.startsWith("**", i)) {
+                    regex.append(".*");
+                    i += 2;
+                } else if (proguardPattern.charAt(i) == '*') {
+                    regex.append("[^.]*");
+                    i++;
+                } else {
+                    regex.append(Pattern.quote(String.valueOf(proguardPattern.charAt(i))));
+                    i++;
+                }
+            }
+            return new KeepPattern(Pattern.compile(regex.toString()));
+        }
+
+        boolean matches(String binaryName) {
+            return regex.matcher(binaryName).matches();
+        }
+    }
+}

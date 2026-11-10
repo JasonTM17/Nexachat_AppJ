@@ -35,6 +35,30 @@
 -keep class com.nexachat.feature.ask.AskResponse { *; }
 -keep class com.nexachat.feature.ask.AskCitation { *; }
 -keep class com.nexachat.feature.ask.AskUsage { *; }
+# Feature wire beans are not in core.network.dto. R8 full mode otherwise
+# deletes response types and the fields Moshi binds by name.
+-keep class com.nexachat.feature.reminder.ReminderDto { *; }
+-keep class com.nexachat.feature.reminder.ReminderRequest { *; }
+-keep class com.nexachat.feature.poll.PollDto { *; }
+-keep class com.nexachat.feature.poll.PollOptionDto { *; }
+-keep class com.nexachat.feature.poll.PollPageDto { *; }
+-keep class com.nexachat.feature.poll.PollChangesDto { *; }
+-keep class com.nexachat.feature.poll.PollChangesDto$ChangeDto { *; }
+-keep class com.nexachat.feature.poll.CreatePollRequest { *; }
+-keep class com.nexachat.feature.poll.VoteRequest { *; }
+-keep class com.nexachat.feature.label.LabelDto { *; }
+-keep class com.nexachat.feature.label.LabelWriteRequest { *; }
+-keep class com.nexachat.feature.invite.InviteLinkRequest { *; }
+-keep class com.nexachat.feature.invite.InviteLinkResponse { *; }
+-keep class com.nexachat.feature.invite.InviteApprovalRequest { *; }
+-keep class com.nexachat.feature.invite.InvitePreviewResponse { *; }
+-keep class com.nexachat.feature.invite.JoinResponse { *; }
+-keep class com.nexachat.feature.invite.JoinRequestResponse { *; }
+-keep class com.nexachat.feature.invite.JoinRequestResponse$UserSummary { *; }
+-keep class com.nexachat.feature.archive.ArchivePage { *; }
+-keep class com.nexachat.feature.archive.ArchivePage$Item { *; }
+-keep class com.nexachat.feature.archive.ArchivePage$Attachment { *; }
+-keep class com.nexachat.feature.archive.ArchivePage$Link { *; }
 -keep class com.nexachat.call.core.CallFrameCodec$* { *; }
 -keepclassmembers class * {
     @com.squareup.moshi.Json <fields>;
@@ -50,7 +74,7 @@
 -keep interface com.nexachat.summary.*Api { *; }
 -keep interface com.nexachat.feature.archive.ArchiveApi { *; }
 -keep interface com.nexachat.feature.ask.AskApi { *; }
--keep interface com.nexachat..*Api { *; }
+-keep interface com.nexachat.**.*Api { *; }
 -keepclassmembers,allowobfuscation interface * {
     @retrofit2.http.* <methods>;
 }

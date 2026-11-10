@@ -22,7 +22,32 @@ COMPILED = (
     / "classes"
 )
 MAPPING = ROOT / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "mapping.txt"
+USAGE = ROOT / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "usage.txt"
 RULES = ROOT / "android" / "app" / "proguard-rules.pro"
+WIRE_MODELS = (
+    "com.nexachat.feature.archive.ArchivePage",
+    "com.nexachat.feature.archive.ArchivePage$Item",
+    "com.nexachat.feature.archive.ArchivePage$Attachment",
+    "com.nexachat.feature.archive.ArchivePage$Link",
+    "com.nexachat.feature.invite.InviteLinkRequest",
+    "com.nexachat.feature.invite.InviteLinkResponse",
+    "com.nexachat.feature.invite.InviteApprovalRequest",
+    "com.nexachat.feature.invite.InvitePreviewResponse",
+    "com.nexachat.feature.invite.JoinResponse",
+    "com.nexachat.feature.invite.JoinRequestResponse",
+    "com.nexachat.feature.invite.JoinRequestResponse$UserSummary",
+    "com.nexachat.feature.label.LabelDto",
+    "com.nexachat.feature.label.LabelWriteRequest",
+    "com.nexachat.feature.poll.PollDto",
+    "com.nexachat.feature.poll.PollOptionDto",
+    "com.nexachat.feature.poll.PollPageDto",
+    "com.nexachat.feature.poll.PollChangesDto",
+    "com.nexachat.feature.poll.PollChangesDto$ChangeDto",
+    "com.nexachat.feature.poll.CreatePollRequest",
+    "com.nexachat.feature.poll.VoteRequest",
+    "com.nexachat.feature.reminder.ReminderDto",
+    "com.nexachat.feature.reminder.ReminderRequest",
+)
 
 
 def fail(message: str) -> int:
@@ -43,15 +68,58 @@ def source_package(java_file: Path) -> str | None:
     return match.group(1) if match else None
 
 
+def mapping_members(text: str) -> tuple[dict[str, str], dict[str, list[tuple[str, str]]]]:
+    mapped: dict[str, str] = {}
+    field_renames: dict[str, list[tuple[str, str]]] = {}
+    current: str | None = None
+    for line in text.splitlines():
+        match = re.match(r"^(\S+) -> (\S+):$", line)
+        if match:
+            current = match.group(1)
+            mapped[current] = match.group(2)
+            field_renames[current] = []
+            continue
+        if current is None or not line.startswith("    ") or line.startswith("      "):
+            continue
+        member = line.strip()
+        if "->" not in member:
+            continue
+        left, right = member.split("->", 1)
+        if "(" in left:
+            continue
+        source = left.strip().split()[-1]
+        target = right.strip()
+        if source.startswith("$") or source.startswith("<"):
+            continue
+        if source != target:
+            field_renames[current].append((source, target))
+    return mapped, field_renames
+
+
+def removed_wire_members(usage_text: str) -> list[str]:
+    removed: list[str] = []
+    current: str | None = None
+    watched = set(WIRE_MODELS)
+    for line in usage_text.splitlines():
+        if line and not line.startswith(" "):
+            current = line.rstrip(":")
+            continue
+        if current not in watched:
+            continue
+        member = line.strip()
+        if not member or member.endswith(")"):
+            if "<init>" in member:
+                removed.append(f"{current} {member}")
+            continue
+        removed.append(f"{current} {member}")
+    return removed
+
+
 def main() -> int:
     if not COMPILED.is_dir() or not MAPPING.is_file():
         return fail("build the release variant first; compiled classes or mapping.txt are missing")
 
-    mapped: dict[str, str] = {}
-    for line in MAPPING.read_text(encoding="utf-8").splitlines():
-        match = re.match(r"^(\S+) -> (\S+):$", line)
-        if match:
-            mapped[match.group(1)] = match.group(2)
+    mapped, field_renames = mapping_members(MAPPING.read_text(encoding="utf-8"))
 
     expected: set[str] = set()
     package_groups = {
@@ -111,15 +179,40 @@ def main() -> int:
         expected.update(name for name in mapped if name.startswith(prefix))
     group_counts["runtime bridge types"] = len(runtime_bridges)
     expected.update(runtime_bridges)
+    expected.update(WIRE_MODELS)
+    group_counts["feature wire models"] = len(WIRE_MODELS)
 
     missing = sorted(name for name in expected if name not in mapped)
     renamed = sorted((name, mapped[name]) for name in expected if name in mapped and mapped[name] != name)
-    if missing or renamed:
+    renamed_fields = [
+        (name, source, target)
+        for name in sorted(expected)
+        if name in mapped and mapped[name] == name
+        for source, target in field_renames.get(name, [])
+    ]
+    if missing or renamed or renamed_fields:
         for name in missing[:20]:
             print(f"MISSING {name}", file=sys.stderr)
         for original, target in renamed[:20]:
             print(f"RENAMED {original} -> {target}", file=sys.stderr)
-        return fail(f"release mapping missing {len(missing)} classes and renamed {len(renamed)} required classes")
+        for name, source, target in renamed_fields[:20]:
+            print(f"FIELD {name}.{source} -> {target}", file=sys.stderr)
+        return fail(
+            "release mapping missing "
+            f"{len(missing)} classes, renamed {len(renamed)} required classes, "
+            f"and renamed {len(renamed_fields)} serialized fields"
+        )
+
+    if USAGE.is_file():
+        removed_members = removed_wire_members(USAGE.read_text(encoding="utf-8"))
+        if removed_members:
+            for member in removed_members[:20]:
+                print(f"REMOVED {member}", file=sys.stderr)
+            return fail(
+                f"usage.txt removed {len(removed_members)} reflective wire members"
+            )
+    else:
+        return fail("usage.txt is missing; cannot prove reflective fields were retained")
 
     rules = RULES.read_text(encoding="utf-8")
     required_rules = (
