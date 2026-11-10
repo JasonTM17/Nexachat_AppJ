@@ -1,7 +1,6 @@
 package com.nexachat.feature.inbox.adapter;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -19,6 +18,7 @@ import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.inbox.InboxBadgeRules;
+import com.nexachat.feature.inbox.InboxRowTypography;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 import com.nexachat.feature.label.ConversationLabel;
 import com.google.android.material.chip.Chip;
@@ -145,13 +145,13 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             avatar.setOnlineStatus(InboxBadgeRules.resolveOnlineStatus(conversation));
 
             boolean unread = conversation.getUnreadCount() > 0;
-            title.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+            InboxRowTypography.applyUnreadWeight(title, unread);
             preview.setText(ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
                     currentUserId
             ));
-            preview.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+            InboxRowTypography.applyUnreadWeight(preview, unread);
             int previewColor = resolveThemeColor(
                     itemView.getContext(),
                     unread
@@ -191,7 +191,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                         unread ? com.google.android.material.R.attr.colorPrimary : com.google.android.material.R.attr.colorOnSurfaceVariant
                 );
                 time.setTextColor(timeColor);
-                time.setTypeface(null, unread ? Typeface.BOLD : Typeface.NORMAL);
+                InboxRowTypography.applyUnreadWeight(time, unread);
             } else {
                 time.setVisibility(View.GONE);
             }
