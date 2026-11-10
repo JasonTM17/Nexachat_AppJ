@@ -18,6 +18,7 @@ spring:
       maximum-pool-size: 2
       minimum-idle: 0
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
   flyway:
@@ -163,3 +164,8 @@ nexachat:
   jwt:
     # Fixed HS256 secret (>= 32 bytes) — ITs must not depend on env vars.
     secret: "it-only-secret-0123456789abcdef-not-for-prod"
+  auth:
+    refresh-replay:
+      # Refresh replay ITs supply deterministic synthetic key bytes in test setup.
+      key: ""
+      cleanup-batch-size: 50

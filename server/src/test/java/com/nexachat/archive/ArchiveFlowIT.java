@@ -2,6 +2,8 @@ package com.nexachat.archive;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.JwtProperties;
+import com.nexachat.testutil.TestAccessTokens;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -29,7 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -58,6 +60,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ArchiveFlowIT {
+
+    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(20_000);
 
     /** Minimal PNG (signature + IHDR start) — passes the magic-byte whitelist. */
     private static final byte[] PNG_BYTES = hex("89504E470D0A1A0A"
@@ -94,6 +98,8 @@ class ArchiveFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private JwtProperties jwtProperties;
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {
     }
@@ -122,8 +128,7 @@ class ArchiveFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8495" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        return "+8495" + String.format("%07d", PHONE_SEQ.incrementAndGet());
     }
 
     private TestUser registerUser(String displayName) throws Exception {
@@ -320,16 +325,19 @@ class ArchiveFlowIT {
     void revokedAccessTokenIsRejected() throws Exception {
         UUID conversationId = openGroup(bob, dana);
 
-        archive(conversationId, dana, "type=MEDIA").andExpect(status().isOk());
+        // Access tokens carry second-granularity iat; stamp this one before the
+        // revocation cutoff instead of sleeping into the next wall-clock second.
+        TestUser issuedBeforeLogout = new TestUser(dana.id(), dana.phone(), dana.displayName(),
+                TestAccessTokens.accessTokenIssuedAt(
+                        jwtProperties, dana.id(), Instant.now().minusSeconds(5)));
 
-        // Access tokens carry second-granularity iat; let the cookie fall in a
-        // previous second so the revocation cutoff is strictly later.
-        Thread.sleep(1_100L);
+        archive(conversationId, issuedBeforeLogout, "type=MEDIA").andExpect(status().isOk());
+
         mockMvc.perform(post("/api/v1/auth/logout-all")
-                        .header("Authorization", "Bearer " + dana.accessToken()))
+                        .header("Authorization", "Bearer " + issuedBeforeLogout.accessToken()))
                 .andExpect(status().isNoContent());
 
-        archive(conversationId, dana, "type=MEDIA")
+        archive(conversationId, issuedBeforeLogout, "type=MEDIA")
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }

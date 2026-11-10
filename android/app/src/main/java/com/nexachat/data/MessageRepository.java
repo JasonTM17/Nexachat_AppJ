@@ -1,5 +1,6 @@
 package com.nexachat.data;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
@@ -364,6 +365,27 @@ public final class MessageRepository {
     public void closeConversation(String conversationId) {
         if (Objects.equals(activeConversation.get(), conversationId)) activeConversation.set(null);
         session.unwatchConversation(conversationId);
+    }
+
+    /** In-memory read watermark used before a chat marks messages read; for UI anchoring only. */
+    public long peekLocalReadSeq(@NonNull String conversationId) {
+        Long seq = lastMarkedRead.get(conversationId);
+        return seq == null ? 0L : seq;
+    }
+
+    /**
+     * Seeds the local read watermark from inbox or delta payloads without
+     * sending a read receipt. Values only move forward.
+     */
+    public void adoptInboxReadSeq(@NonNull String conversationId, long lastReadSeq) {
+        if (lastReadSeq <= 0L) {
+            return;
+        }
+        lastMarkedRead.merge(conversationId, lastReadSeq, Math::max);
+    }
+
+    void adoptInboxReadSeqFromCache(@NonNull String conversationId, long lastReadSeq) {
+        adoptInboxReadSeq(conversationId, lastReadSeq);
     }
 
     /** Hides a message on this signed-in device without changing server history. */

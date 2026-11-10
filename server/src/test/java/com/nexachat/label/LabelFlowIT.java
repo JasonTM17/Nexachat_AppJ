@@ -2,6 +2,7 @@ package com.nexachat.label;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.TestWaits;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -475,9 +476,8 @@ class LabelFlowIT {
         return values;
     }
 
-    private void awaitLabelLockWaiters(int minimum) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (System.nanoTime() < deadline) {
+    private void awaitLabelLockWaiters(int minimum) {
+        TestWaits.until(minimum + " label transaction(s) to block on the label row lock", () -> {
             Integer waiting = jdbcTemplate.queryForObject("""
                     SELECT count(*) FROM pg_stat_activity
                     WHERE datname = current_database()
@@ -485,19 +485,8 @@ class LabelFlowIT {
                       AND wait_event_type = 'Lock'
                       AND query ILIKE '%conversation_label%'
                     """, Integer.class);
-            if (waiting != null && waiting >= minimum) {
-                return;
-            }
-            Thread.sleep(10);
-        }
-        Integer waiting = jdbcTemplate.queryForObject("""
-                SELECT count(*) FROM pg_stat_activity
-                WHERE datname = current_database()
-                  AND pid <> pg_backend_pid()
-                  AND wait_event_type = 'Lock'
-                  AND query ILIKE '%conversation_label%'
-                """, Integer.class);
-        assertThat(waiting).isGreaterThanOrEqualTo(minimum);
+            return waiting != null && waiting >= minimum;
+        });
     }
 
     private org.springframework.test.web.servlet.ResultActions postJson(
@@ -540,6 +529,6 @@ class LabelFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8493" + String.format("%07d", (int) (Math.random() * 10_000_000));
+        return "+8493" + String.format("%07d", REGISTRATION_IP.incrementAndGet());
     }
 }

@@ -26,6 +26,21 @@ public final class ClusterALayoutTest {
         assertEquals("24dp", badge.getAttributeNS(ANDROID, "minHeight"));
     }
 
+    @Test public void minTouchTargetContractIs48dp() throws Exception {
+        File dimens = dimensFile();
+        var nodes = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(dimens)
+                .getElementsByTagName("dimen");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element node = (Element) nodes.item(i);
+            if (!"min_touch_target".equals(node.getAttribute("name"))) {
+                continue;
+            }
+            assertEquals("48dp", node.getTextContent().trim());
+            return;
+        }
+        throw new AssertionError("Missing min_touch_target in dimens_nexachat.xml");
+    }
+
     private static void assertTouchTarget(Element view) {
         for (String axis : new String[] {"layout_width", "layout_height"}) {
             String value = view.getAttributeNS(ANDROID, axis);
@@ -33,6 +48,20 @@ public final class ClusterALayoutTest {
                     || (value.endsWith("dp")
                     && Integer.parseInt(value.substring(0, value.length() - 2)) >= 48));
         }
+    }
+
+    private static File dimensFile() {
+        for (String relative : new String[] {
+                "src/main/res/values/dimens_nexachat.xml",
+                "android/app/src/main/res/values/dimens_nexachat.xml",
+                "app/src/main/res/values/dimens_nexachat.xml"
+        }) {
+            File file = new File(relative);
+            if (file.isFile()) {
+                return file;
+            }
+        }
+        throw new AssertionError("Missing dimens_nexachat.xml");
     }
 
     private static Element element(String layout, String id) throws Exception {

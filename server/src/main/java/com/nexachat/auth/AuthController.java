@@ -52,8 +52,9 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public AuthResponse refresh(@Valid @RequestBody RefreshRequest request,
-                                @RequestHeader(name = "User-Agent", required = false) String userAgent) {
-        return authService.refresh(request, userAgent);
+                                @RequestHeader(name = "User-Agent", required = false) String userAgent,
+                                @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+        return authService.refresh(request, userAgent, parseIdempotencyKey(idempotencyKey));
     }
 
     @PostMapping("/logout")
@@ -81,5 +82,24 @@ public class AuthController {
             throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
         }
         return principal.userId();
+    }
+
+    private static UUID parseIdempotencyKey(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw.length() != 36) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Idempotency-Key must be a canonical UUIDv4");
+        }
+        try {
+            UUID key = UUID.fromString(raw);
+            if (key.version() != 4 || key.variant() != 2 || !key.toString().equals(raw)) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Idempotency-Key must be a canonical UUIDv4");
+            }
+            return key;
+        } catch (IllegalArgumentException exception) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Idempotency-Key must be a canonical UUIDv4");
+        }
     }
 }

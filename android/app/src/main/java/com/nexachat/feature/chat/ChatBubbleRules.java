@@ -23,7 +23,8 @@ public final class ChatBubbleRules {
     }
 
     public static boolean isMessageReplyable(DeliveryStatus status) {
-        return status == DeliveryStatus.SENT;
+        return status == DeliveryStatus.SENT || status == DeliveryStatus.DELIVERED
+                || status == DeliveryStatus.READ;
     }
 
     public static boolean isRetryAffordanceVisible(DeliveryStatus status) {

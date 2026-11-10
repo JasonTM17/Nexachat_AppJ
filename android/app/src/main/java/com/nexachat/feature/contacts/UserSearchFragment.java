@@ -11,6 +11,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -171,8 +172,12 @@ public final class UserSearchFragment extends Fragment {
     private void showOrUpdateDetailDialog(@NonNull ContactsViewModel.UiState state) {
         if (detailDialog == null) {
             LinearLayout root = buildDetailContent(state);
+            ScrollView scroll = new ScrollView(requireContext());
+            scroll.addView(root, new ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT));
             detailDialog = new MaterialAlertDialogBuilder(requireContext())
-                    .setView(root)
+                    .setView(scroll)
                     .setOnDismissListener(d -> {
                         viewModel.closeDetail();
                         detailDialog = null;
@@ -330,7 +335,7 @@ public final class UserSearchFragment extends Fragment {
             secondary.setText(R.string.action_remove_contact);
             secondary.setOnClickListener(v -> {
                 new MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(getString(R.string.action_remove_contact) + "?")
+                        .setMessage(R.string.confirm_remove_contact)
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(R.string.action_remove_contact, (d, w) -> viewModel.removeSelectedContact())
                         .show();

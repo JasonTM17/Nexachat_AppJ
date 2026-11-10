@@ -2,6 +2,7 @@ package com.nexachat.call;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.ws.dto.WsErrorResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -14,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.CompositeMessageConverter;
@@ -23,6 +25,7 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.concurrent.ConcurrentTaskScheduler;
 import org.springframework.test.context.ActiveProfiles;
@@ -41,12 +44,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,6 +67,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CallFlowIT {
 
     private static final long TIMEOUT_SECONDS = 10;
+    private static final String PHONE_PREFIX = "+8498";
+    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(40_000);
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -81,6 +88,10 @@ class CallFlowIT {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private SimpUserRegistry simpUserRegistry;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private TestUser alice;
     private TestUser bob;
@@ -98,6 +109,15 @@ class CallFlowIT {
 
     @BeforeAll
     void registerTestUsers() throws Exception {
+        String like = "phone LIKE '" + PHONE_PREFIX + "%'";
+        jdbcTemplate.update(
+                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+
         alice = registerUser("Call Alice");
         bob = registerUser("Call Bob");
         carol = registerUser("Call Carol");
@@ -143,6 +163,9 @@ class CallFlowIT {
         send(callee, conversationId, new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
         assertThat(awaitEvent(caller, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
         assertThat(awaitEvent(callee, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
+        Instant connectedAt = Instant.now();
+        TestWaits.until("call active for at least one second", Duration.ofSeconds(5),
+                () -> Duration.between(connectedAt, Instant.now()).getSeconds() >= 1L);
 
         CallSignal.Sdp sdp = new CallSignal.Sdp("offer", "v=0\\r\\no=nexachat 1 1 IN IP4 127.0.0.1");
         send(caller, conversationId, new CallSignal(CallSignal.Type.SDP, callId, sdp, null));
@@ -161,12 +184,14 @@ class CallFlowIT {
         JsonNode completed = callHistoryItem(history, callId);
         assertThat(completed.get("state").asText()).isEqualTo("ENDED");
         assertThat(completed.get("endReason").asText()).isEqualTo("COMPLETED");
-        assertThat(completed.get("durationSeconds").asLong()).isGreaterThanOrEqualTo(0);
+        long durationSeconds = completed.get("durationSeconds").asLong();
+        long elapsedBound = Duration.between(connectedAt, Instant.now()).getSeconds() + 1L;
+        assertThat(durationSeconds).isBetween(1L, elapsedBound);
 
         List<JsonNode> callLines = callLinesAfter(conversationId, alice, beforeSeq);
         assertThat(callLines).hasSize(1);
         assertThat(callLines.get(0).get("content").asText()).isEqualTo("CALL|COMPLETED|"
-                + completed.get("durationSeconds").asLong() + "|" + alice.id());
+                + durationSeconds + "|" + alice.id());
         assertThat(getJson("/api/v1/calls/ice-config", alice).get("iceServers")).isNotEmpty();
     }
 
@@ -337,14 +362,20 @@ class CallFlowIT {
         sessions.add(session);
         BlockingQueue<JsonNode> calls = new LinkedBlockingQueue<>();
         BlockingQueue<WsErrorResponse> errors = new LinkedBlockingQueue<>();
-        subscribeCalls(session, calls);
-        subscribe(session, "/user/queue/errors", WsErrorResponse.class, errors);
-        Thread.sleep(400);
+        String callsSubscription = "calls-" + UUID.randomUUID();
+        String errorsSubscription = "errors-" + UUID.randomUUID();
+        subscribeCalls(session, callsSubscription, calls);
+        subscribe(session, errorsSubscription, "/user/queue/errors", WsErrorResponse.class, errors);
+        TestWaits.until("both STOMP subscriptions of " + user.id() + " to be registered", () ->
+                isSubscribed(user.id(), callsSubscription, "/user/queue/calls")
+                        && isSubscribed(user.id(), errorsSubscription, "/user/queue/errors"));
         return new Connection(session, calls, errors);
     }
 
-    private void subscribeCalls(StompSession session, BlockingQueue<JsonNode> queue) {
+    private void subscribeCalls(StompSession session, String subscriptionId,
+                                BlockingQueue<JsonNode> queue) {
         StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
         headers.setDestination("/user/queue/calls");
         session.subscribe(headers, new StompFrameHandler() {
             @Override
@@ -363,8 +394,10 @@ class CallFlowIT {
         });
     }
 
-    private <T> void subscribe(StompSession session, String destination, Class<T> type, BlockingQueue<T> queue) {
+    private <T> void subscribe(StompSession session, String subscriptionId, String destination,
+                               Class<T> type, BlockingQueue<T> queue) {
         StompHeaders headers = new StompHeaders();
+        headers.setId(subscriptionId);
         headers.setDestination(destination);
         session.subscribe(headers, new StompFrameHandler() {
             @Override
@@ -377,6 +410,20 @@ class CallFlowIT {
                 queue.add(type.cast(payload));
             }
         });
+    }
+
+    private boolean isSubscribed(UUID userId, String subscriptionId, String destination) {
+        String brokerDestination = destination.startsWith("/user/")
+                ? destination.substring("/user".length())
+                : destination;
+        var registeredUser = simpUserRegistry.getUser(userId.toString());
+        return registeredUser != null && registeredUser.getSessions().stream()
+                .flatMap(userSession -> userSession.getSubscriptions().stream())
+                .filter(subscription -> subscriptionId.equals(subscription.getId()))
+                .map(subscription -> subscription.getDestination())
+                .anyMatch(actual -> actual != null
+                        && (actual.equals(destination) || actual.equals(brokerDestination)
+                        || actual.startsWith(brokerDestination + "-user")));
     }
 
     private static void send(Connection connection, UUID conversationId, CallSignal signal) {
@@ -409,7 +456,7 @@ class CallFlowIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8498" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = PHONE_PREFIX + String.format("%07d", PHONE_SEQ.incrementAndGet());
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

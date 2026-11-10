@@ -22,6 +22,13 @@ import static org.junit.Assert.assertTrue;
 public final class MessageViewTypeMapperTest {
 
     @Test
+    public void serverSystemTypeUsesNeutralSystemLayout() {
+        ChatMessage system = message("SYSTEM", "An created the group", true);
+        assertTrue(MessageViewTypeMapper.isSystemMessage(system));
+        assertEquals(R.layout.item_message_system, MessageViewTypeMapper.layoutResForMessage(system));
+    }
+
+    @Test
     public void mapsTextIncomingAndOutgoingLayouts() {
         ChatMessage incoming = message(MessageDto.TYPE_TEXT, "hello", false);
         ChatMessage outgoing = message(MessageDto.TYPE_TEXT, "hi", true);
