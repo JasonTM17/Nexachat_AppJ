@@ -182,12 +182,12 @@ class StompAuthChannelInterceptorTest {
     void connect_revokedAccessToken_rejected() {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
         accessor.setNativeHeader("Authorization", "Bearer revoked-token");
-        // Issued before the cutoff stamped by the last logout/password change.
+        Instant issuedAt = Instant.parse("2026-11-10T00:00:00Z");
         when(jwtService.parseAccessTokenClaims("revoked-token"))
-                .thenReturn(new JwtService.AccessTokenClaims(userId, Instant.now().minusSeconds(60)));
+                .thenReturn(new JwtService.AccessTokenClaims(userId, issuedAt));
         when(userRepository.existsById(userId)).thenReturn(true);
         when(userRepository.findAuthValidityById(userId))
-                .thenReturn(Optional.of(new UserAuthValidity(userId, Instant.now())));
+                .thenReturn(Optional.of(new UserAuthValidity(userId, issuedAt)));
 
         assertThat(interceptor.preSend(message(accessor), channel)).isNull();
     }

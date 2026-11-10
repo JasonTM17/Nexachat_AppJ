@@ -529,6 +529,6 @@ class LabelFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8493" + String.format("%07d", (int) (Math.random() * 10_000_000));
+        return "+8493" + String.format("%07d", REGISTRATION_IP.incrementAndGet());
     }
 }

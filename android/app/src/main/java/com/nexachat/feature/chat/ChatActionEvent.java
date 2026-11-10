@@ -1,6 +1,7 @@
 package com.nexachat.feature.chat;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import java.util.Objects;
 
 /** One-shot chat action results that the UI may surface, such as a forward toast. */
@@ -69,13 +70,23 @@ public sealed interface ChatActionEvent
         public enum Kind { MUTED, UNMUTED, ARCHIVED, UNARCHIVED }
 
         private final Kind kind;
+        @Nullable private final Runnable undo;
 
         public PreferenceChanged(@NonNull Kind kind) {
+            this(kind, null);
+        }
+
+        public PreferenceChanged(@NonNull Kind kind, @Nullable Runnable undo) {
             this.kind = Objects.requireNonNull(kind, "kind");
+            this.undo = undo;
         }
 
         @NonNull public Kind getKind() {
             return kind;
+        }
+
+        @Nullable public Runnable getUndo() {
+            return undo;
         }
 
         @Override

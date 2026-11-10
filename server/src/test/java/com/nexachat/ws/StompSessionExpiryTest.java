@@ -1,6 +1,7 @@
 package com.nexachat.ws;
 
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.user.UserAuthValidity;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -78,9 +79,9 @@ class StompSessionExpiryTest {
         // The token is still valid at bind time.
         assertThat(registry.isAuthenticatedSession(sessionId)).isTrue();
 
-        // Deliberate wall-clock wait: token expiry is the behaviour under test
-        // and the registry derives its schedule from the real clock.
-        Thread.sleep(2_300L);
+        TestWaits.until(
+                "access token must expire and unbind the STOMP session",
+                () -> !registry.isAuthenticatedSession(sessionId));
 
         assertThat(outbound.preSend(topicFrame(), channel))
                 .as("an expired access token must not retain an authenticated receive path")
