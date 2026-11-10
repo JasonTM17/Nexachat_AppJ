@@ -172,9 +172,12 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
                 .andExpect(jsonPath("$[0].phone").doesNotExist());
 
-        // Partial / wrong phone does not prefix-match — empty list, not a near miss.
+        // Valid E.164 that is not bob's exact number → empty list (no prefix match).
+        char last = bob.phone().charAt(bob.phone().length() - 1);
+        char flipped = last == '0' ? '1' : '0';
+        String nearMiss = bob.phone().substring(0, bob.phone().length() - 1) + flipped;
         mockMvc.perform(get("/api/v1/users/search")
-                        .param("phone", bob.phone().substring(0, bob.phone().length() - 2))
+                        .param("phone", nearMiss)
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
@@ -196,6 +199,29 @@ class ContactConversationIT {
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void userSearch_displayNameRevealsPhoneForExistingContactOnly() throws Exception {
+        mockMvc.perform(delete("/api/v1/contacts/" + bob.id())
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("q", uniqueTag)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phone").doesNotExist());
+
+        postJson("/api/v1/contacts", alice.accessToken(), Map.of("phone", bob.phone()))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("q", uniqueTag)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phone").value(bob.phone()));
+
     }
 
     // -------------------------------------------------------------- contacts
