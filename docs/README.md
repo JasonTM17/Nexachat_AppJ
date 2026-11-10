@@ -49,4 +49,5 @@ Every engineering document in the repository, grouped by domain. Start with
 | Doc | Contents |
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, JDK 21 LTS build & test gates, repository layout, branching and PR rules |
+| [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, signing, image publishing, rollout, smoke tests and rollback |
 | [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased changes |
