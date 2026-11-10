@@ -78,6 +78,14 @@ The `server/Dockerfile` runs as the non-root `nexachat` user and adds
 `-XX:+ExitOnOutOfMemoryError` to `JAVA_OPTS`, so a container is replaced rather
 than left alive after an OOM.
 
+The default Compose `app` service uses a read-only root filesystem: uploads
+persist only on the `app-uploads` volume mounted at `/app/data`, and a
+`tmpfs` at `/tmp` (uid/gid `10001`) covers JVM and multipart scratch I/O.
+`cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and
+`stop_grace_period: 25s` (above the prod graceful-shutdown budget of 20s) apply
+to the app container. The Postgres service image is pinned by linux/amd64 digest
+(`postgres:16-alpine@sha256:…` in `docker-compose.yml`).
+
 ### Feature configuration and retention
 
 The V12–V20 feature flags, rate limits and ceilings are listed in
