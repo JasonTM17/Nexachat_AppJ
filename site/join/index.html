@@ -4,32 +4,55 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>NexaChat</title>
+  <title>NexaChat — Lời mời tham gia nhóm</title>
+  <meta name="description" content="Mở lời mời nhóm NexaChat trong ứng dụng Android.">
+  <link rel="canonical" href="https://nexachat.io.vn/join/">
+  <meta name="robots" content="noindex, nofollow">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="vi_VN">
+  <meta property="og:url" content="https://nexachat.io.vn/join/">
+  <meta property="og:title" content="NexaChat — Group invite">
+  <meta property="og:description" content="Open this group invite in the NexaChat Android app.">
+  <meta property="og:image" content="https://nexachat.io.vn/og-image.svg">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="NexaChat invite">
+  <meta name="twitter:description" content="Open in the NexaChat Android app.">
+  <meta name="twitter:image" content="https://nexachat.io.vn/og-image.svg">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/style.css">
   <script src="/join/join.js" defer></script>
 </head>
 <body>
-  <main class="container">
+  <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
+  <main id="main" class="container">
     <div class="card">
       <h1 class="brand">NexaChat</h1>
-      <div id="invite-valid" class="state-container" hidden>
-        <p class="tagline" lang="vi">Bạn nhận được lời mời tham gia nhóm trên NexaChat.</p>
-        <p class="tagline" lang="en">You have been invited to a NexaChat group.</p>
-        <a id="btn-open-app" class="btn" href="#">Mở trong ứng dụng / Open app</a>
-        <p class="install-hint" lang="vi">Nếu ứng dụng không mở, cài đặt NexaChat (<code>com.nexachat</code>) từ Google Play hoặc App Store, rồi mở lại liên kết này.</p>
-        <p class="install-hint" lang="en">If the app does not open, install NexaChat (<code>com.nexachat</code>) from Google Play or the App Store, then open this link again.</p>
+      <div id="invite-valid" class="state-container" hidden aria-live="polite">
+        <p class="lead" lang="vi">Lời mời nhóm.</p>
+        <p class="lead" lang="en">Group invite.</p>
+        <a id="btn-open-app" class="btn" href="#" lang="vi" aria-label="Mở ứng dụng, Open app">Mở ứng dụng</a>
+        <p class="install-hint" lang="en">Open app</p>
+        <p class="install-hint" lang="vi">Chưa cài? Tải <code>com.nexachat</code> từ Google Play, rồi mở lại liên kết.</p>
+        <p class="install-hint" lang="en">Not installed? Get <code>com.nexachat</code> on Google Play, then reopen this link.</p>
       </div>
-      <div id="invite-invalid" class="state-container" hidden>
-        <p class="error-msg" lang="vi">Liên kết mời không hợp lệ hoặc đã hết hạn.</p>
-        <p class="error-msg" lang="en">This invite link is invalid or has expired.</p>
-        <a class="btn btn-secondary" href="/">Về trang chủ / Home</a>
+      <div id="invite-invalid" class="state-container" hidden aria-live="polite">
+        <p class="error-msg" lang="vi">Liên kết không hợp lệ.</p>
+        <p class="error-msg" lang="en">Invalid invite link.</p>
+        <a class="btn btn-secondary" href="/">Trang chủ · Home</a>
       </div>
       <noscript>
-        <p class="error-msg" lang="vi">Trình duyệt cần bật JavaScript để mở liên kết mời.</p>
-        <p class="error-msg" lang="en">Enable JavaScript to open this invite link.</p>
+        <p class="error-msg" lang="vi">Bật JavaScript để mở lời mời.</p>
+        <p class="error-msg" lang="en">Enable JavaScript to open this invite.</p>
       </noscript>
     </div>
   </main>
+  <footer class="site-footer">
+    <nav aria-label="Pháp lý">
+      <a href="/privacy.html" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html" lang="en">Privacy</a>
+      <a href="/terms.html" lang="vi">Điều khoản</a>
+      <a href="/terms.html" lang="en">Terms</a>
+    </nav>
+  </footer>
 </body>
 </html>
