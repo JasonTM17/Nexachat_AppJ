@@ -25,6 +25,8 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
 SITE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(SITE_DIR)
@@ -472,12 +474,85 @@ def test_vercel_headers(vercel_data):
     return failures
 
 
-SITE_ABSOLUTE_PREFIX = "https://nexachat.io.vn"
+SITE_HOST = "nexachat.io.vn"
+SITE_ABSOLUTE_PREFIX = f"https://{SITE_HOST}"
+LD_JSON_ALLOWED_HOSTS = frozenset({"schema.org", "www.w3.org"})
+
+LD_JSON_SCRIPT_RE = re.compile(
+    r'<script\s+[^>]*type\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+MIN_CONTRAST_RATIO = 4.5
+
+
+def is_nexachat_site_url(url: str) -> bool:
+    """True only when the URL host is exactly nexachat.io.vn (not a lookalike prefix)."""
+    try:
+        parts = urlsplit(url.strip().rstrip(".,;)]}"))
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    hostname = (parts.hostname or "").lower()
+    return hostname == SITE_HOST
+
+
+def is_allowed_ldjson_url(url: str) -> bool:
+    try:
+        hostname = (urlsplit(url.strip().rstrip(".,;)]}")).hostname or "").lower()
+    except ValueError:
+        return False
+    return hostname in LD_JSON_ALLOWED_HOSTS
+
+
+def strip_ld_json_blocks(html: str) -> str:
+    return LD_JSON_SCRIPT_RE.sub("", html)
+
+
+def hex_to_rgb(hex_color: str):
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"expected #RRGGBB, got {hex_color}")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def relative_luminance(hex_color: str) -> float:
+    def channel(c):
+        c = c / 255.0
+        if c <= 0.03928:
+            return c / 12.92
+        return ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = hex_to_rgb(hex_color)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast_ratio(fg_hex: str, bg_hex: str) -> float:
+    l1 = relative_luminance(fg_hex)
+    l2 = relative_luminance(bg_hex)
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def collect_urls_for_external_scan(content: str, ext: str):
+    """Extract http(s) URLs from markup; allow schema.org only inside JSON-LD blocks."""
+    url_pattern = re.compile(r"https?://[^\s\"'<>]+")
+    if ext == ".html":
+        ld_blocks = LD_JSON_SCRIPT_RE.findall(content)
+        scan_body = strip_ld_json_blocks(content)
+        urls = url_pattern.findall(scan_body)
+        for block in ld_blocks:
+            for match in url_pattern.findall(block):
+                if not is_allowed_ldjson_url(match) and not is_nexachat_site_url(match):
+                    urls.append(match)
+        return urls
+    return url_pattern.findall(content)
 
 
 def test_no_external_urls():
     failures = []
-    url_pattern = re.compile(r"https?://[^\s\"'>]+")
     scanned = 0
 
     for root, _, files in os.walk(SITE_DIR):
@@ -489,8 +564,8 @@ def test_no_external_urls():
                 rel_path = os.path.relpath(path, SITE_DIR)
                 with open(path, "r", encoding="utf-8") as file_handle:
                     content = file_handle.read()
-                matches = url_pattern.findall(content)
-                disallowed = [m for m in matches if not m.startswith(SITE_ABSOLUTE_PREFIX)]
+                matches = collect_urls_for_external_scan(content, ext)
+                disallowed = [m for m in matches if not is_nexachat_site_url(m)]
                 if disallowed:
                     failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
@@ -506,6 +581,7 @@ class InlineChecker(html.parser.HTMLParser):
         self.failures = []
         self.current_tag = None
         self.script_src = None
+        self.script_type = None
         self.in_script = False
         self.in_style = False
 
@@ -514,6 +590,11 @@ class InlineChecker(html.parser.HTMLParser):
         if tag == "script":
             self.in_script = True
             self.script_src = attr_dict.get("src")
+            self.script_type = (attr_dict.get("type") or "").lower()
+            if self.script_type == "application/ld+json" and self.script_src:
+                self.failures.append(
+                    f"JSON-LD must be inline in {self.filename}; external src on application/ld+json is not consumed"
+                )
         elif tag == "style":
             self.in_style = True
             self.failures.append(f"Inline <style> tag found in {self.filename}")
@@ -529,11 +610,14 @@ class InlineChecker(html.parser.HTMLParser):
         if tag == "script":
             self.in_script = False
             self.script_src = None
+            self.script_type = None
         elif tag == "style":
             self.in_style = False
 
     def handle_data(self, data):
         if self.in_script and data.strip():
+            if self.script_type == "application/ld+json":
+                return
             self.failures.append(f"Inline script content found in {self.filename}: {data.strip()[:40]}...")
         if self.in_style and data.strip():
             self.failures.append(f"Inline style content found in {self.filename}")
@@ -642,7 +726,13 @@ def test_site_pages_and_assets():
     if not os.path.isfile(og_image_path):
         failures.append("Missing site/og-image.svg")
     else:
-        log_pass("og-image.svg present")
+        try:
+            with open(og_image_path, "r", encoding="utf-8") as og_file:
+                og_body = og_file.read()
+            ET.fromstring(og_body)
+            log_pass("og-image.svg is well-formed UTF-8 XML")
+        except Exception as e:
+            failures.append(f"og-image.svg must be valid UTF-8 XML: {e}")
 
     structured_path = os.path.join(SITE_DIR, "structured-data.json")
     if not os.path.isfile(structured_path):
@@ -660,6 +750,143 @@ def test_site_pages_and_assets():
 
     if not failures:
         log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, charset, skip link, description")
+    return failures
+
+
+def test_index_inline_json_ld():
+    """index.html must ship JSON-LD inline (not via script src)."""
+    failures = []
+    index_path = os.path.join(SITE_DIR, "index.html")
+    if not os.path.isfile(index_path):
+        return ["Missing site/index.html"]
+    with open(index_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    if 'type="application/ld+json" src=' in html or "type='application/ld+json' src=" in html:
+        failures.append("index.html must not load JSON-LD via script src")
+    blocks = LD_JSON_SCRIPT_RE.findall(html)
+    if not blocks:
+        failures.append("index.html missing inline application/ld+json block")
+    else:
+        try:
+            data = json.loads(blocks[0].strip())
+        except json.JSONDecodeError as e:
+            failures.append(f"index.html JSON-LD must parse as JSON: {e}")
+        else:
+            if not isinstance(data, list) or not data:
+                failures.append("index.html JSON-LD must be a non-empty array")
+            else:
+                types = {item.get("@type") for item in data if isinstance(item, dict)}
+                if "Organization" not in types or "SoftwareApplication" not in types:
+                    failures.append("index.html JSON-LD must include Organization and SoftwareApplication")
+                else:
+                    log_pass("index.html has inline JSON-LD (Organization + SoftwareApplication)")
+    return failures
+
+
+def test_dark_theme_contrast_tokens():
+    """Dark-theme button and prose link tokens must meet MIN_CONTRAST_RATIO on card background."""
+    failures = []
+    css_path = os.path.join(SITE_DIR, "style.css")
+    if not os.path.isfile(css_path):
+        return ["Missing site/style.css"]
+    with open(css_path, "r", encoding="utf-8") as f:
+        css = f.read()
+
+    def token_value(name: str) -> str | None:
+        match = re.search(rf"--{re.escape(name)}:\s*(#[0-9a-fA-F]{{6}})", css)
+        return match.group(1) if match else None
+
+    card_bg = token_value("card-bg")
+    btn_bg = token_value("btn-bg")
+    primary = token_value("primary")
+    if not card_bg or not btn_bg or not primary:
+        failures.append("style.css must define --card-bg, --btn-bg, and --primary for contrast gate")
+        return failures
+
+    btn_ratio = contrast_ratio("#ffffff", btn_bg)
+    link_ratio = contrast_ratio(primary, card_bg)
+    if btn_ratio < MIN_CONTRAST_RATIO:
+        failures.append(
+            f"Dark .btn contrast {btn_ratio:.2f}:1 (#ffffff on {btn_bg}) below {MIN_CONTRAST_RATIO}:1"
+        )
+    if link_ratio < MIN_CONTRAST_RATIO:
+        failures.append(
+            f"Dark .prose a contrast {link_ratio:.2f}:1 ({primary} on {card_bg}) below {MIN_CONTRAST_RATIO}:1"
+        )
+    if not failures:
+        log_pass(
+            f"Dark-theme contrast OK: btn {btn_ratio:.2f}:1, prose links {link_ratio:.2f}:1 (min {MIN_CONTRAST_RATIO}:1)"
+        )
+    return failures
+
+
+def test_no_contradictory_hreflang():
+    """Bilingual single-URL pages must not declare hreflang vi/en pointing at the same href."""
+    failures = []
+    pages = ("index.html", "privacy.html", "terms.html")
+    hreflang_re = re.compile(
+        r'<link[^>]+rel=["\']alternate["\'][^>]+hreflang=["\']([^"\']+)["\'][^>]+href=["\']([^"\']+)["\']',
+        re.IGNORECASE,
+    )
+    for rel_page in pages:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+        by_href: dict[str, set[str]] = {}
+        for lang, href in hreflang_re.findall(html):
+            by_href.setdefault(href, set()).add(lang.lower())
+        for href, langs in by_href.items():
+            if langs >= {"vi", "en"}:
+                failures.append(f"{rel_page}: hreflang vi and en both point to {href}")
+    if not failures:
+        log_pass("No contradictory hreflang on bilingual single-URL pages")
+    return failures
+
+
+def test_terms_sign_out_copy():
+    failures = []
+    terms_path = os.path.join(SITE_DIR, "terms.html")
+    if not os.path.isfile(terms_path):
+        return ["Missing site/terms.html"]
+    with open(terms_path, "r", encoding="utf-8") as f:
+        html = f.read().lower()
+    if "sign-out or password change revokes other sessions" in html:
+        failures.append("terms.html must distinguish single-device sign-out from password change / sign-out-all")
+    if "đăng xuất hoặc đổi mật khẩu thu hồi phiên khác" in html:
+        failures.append("terms.html (vi) must distinguish single-device sign-out from password change / sign-out-all")
+    if not failures:
+        log_pass("terms.html account session copy matches AuthService behaviour")
+    return failures
+
+
+def run_gate_self_tests():
+    """Regression tests for gate helpers (deterministic, no network)."""
+    failures = []
+
+    if is_nexachat_site_url("https://nexachat.io.vn.evil.example/x"):
+        failures.append("is_nexachat_site_url must reject lookalike host by prefix")
+    if is_nexachat_site_url("https://nexachat.io.vn@evil.example/x"):
+        failures.append("is_nexachat_site_url must reject userinfo lookalike host")
+    if not is_nexachat_site_url("https://nexachat.io.vn/privacy.html"):
+        failures.append("is_nexachat_site_url must allow real site URLs")
+
+    if contrast_ratio("#ffffff", "#3b82f6") >= MIN_CONTRAST_RATIO:
+        failures.append("self-test: old dark btn colour should fail the 4.5:1 bar (regression sentinel)")
+    if contrast_ratio("#ffffff", "#1d4ed8") < MIN_CONTRAST_RATIO:
+        failures.append("self-test: expected white on #1d4ed8 to meet 4.5:1")
+
+    sample_html = (
+        '<script type="application/ld+json">{"@context":"https://schema.org"}</script>'
+        '<a href="https://evil.example/x">x</a>'
+    )
+    urls = collect_urls_for_external_scan(sample_html, ".html")
+    if "https://evil.example/x" not in urls:
+        failures.append("collect_urls_for_external_scan must still flag non-ld+json URLs")
+
+    if not failures:
+        log_pass("Gate helper regression self-tests passed")
     return failures
 
 
@@ -838,7 +1065,22 @@ def main():
         "--url",
         help="Base URL to verify live HTTP serving of assetlinks (e.g., https://nexachat-site.vercel.app)",
     )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run deterministic regression tests for site gate helpers only",
+    )
     args = parser.parse_args()
+
+    if args.self_test:
+        print("=== Site check gate self-tests ===")
+        failures = run_gate_self_tests()
+        if failures:
+            for fail in failures:
+                log_fail(fail)
+            sys.exit(1)
+        print("ALL SELF-TESTS PASSED!")
+        sys.exit(0)
 
     print("=== Running NexaChat Site & Digital Asset Links Checks ===")
     all_failures = []
@@ -872,6 +1114,18 @@ def main():
 
     f_i18n = test_bilingual_user_visible_text()
     all_failures.extend(f_i18n)
+
+    f_ld = test_index_inline_json_ld()
+    all_failures.extend(f_ld)
+
+    f_contrast = test_dark_theme_contrast_tokens()
+    all_failures.extend(f_contrast)
+
+    f_hreflang = test_no_contradictory_hreflang()
+    all_failures.extend(f_hreflang)
+
+    f_terms = test_terms_sign_out_copy()
+    all_failures.extend(f_terms)
 
     f_links = test_internal_static_links()
     all_failures.extend(f_links)
