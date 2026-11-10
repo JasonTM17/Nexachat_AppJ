@@ -5,7 +5,7 @@
     </plurals>
     <string name="unread_banner_dismiss">Đóng thông báo</string>
     <string name="summary_title">Tóm tắt trò chuyện</string>
-    <string name="summary_badge_local">Trực tiếp</string>
+    <string name="summary_badge_local">Cục bộ</string>
     <string name="summary_badge_ai">AI</string>
     <string name="summary_scope_unread">Chưa đọc</string>
     <string name="summary_scope_last_n">50 tin gần nhất</string>
@@ -31,10 +31,10 @@
     <string name="summary_error_generic">Không tạo được tóm tắt. Hãy thử lại.</string>
     <string name="summary_copied_to_clipboard">Đã sao chép tóm tắt</string>
     <string name="summary_loading_content_desc">Đang tạo tóm tắt…</string>
-    <string name="settings_ai_summary_consent_title">Tóm tắt bằng AI</string>
-    <string name="settings_ai_summary_consent_desc">Ẩn thông tin nhạy cảm trước khi gửi đến dịch vụ AI</string>
+    <string name="settings_ai_summary_consent_title">Tóm tắt bằng AI bên ngoài</string>
+    <string name="settings_ai_summary_consent_desc">Ẩn thông tin nhạy cảm trước khi gửi đến dịch vụ AI bên ngoài</string>
     <string name="dialog_ai_consent_title">Bật tóm tắt bằng AI?</string>
-    <string name="dialog_ai_consent_message">Nội dung tin nhắn sẽ được ẩn danh hóa và lược bỏ thông tin nhạy cảm trước khi gửi đến dịch vụ AI. Bạn có muốn bật không?</string>
+    <string name="dialog_ai_consent_message">Nội dung tin nhắn sẽ được ẩn danh hóa và lược bỏ thông tin nhạy cảm trước khi gửi đến dịch vụ AI bên ngoài. Bạn có muốn bật không?</string>
     <string name="dialog_ai_consent_confirm">Đồng ý</string>
     <string name="dialog_ai_consent_dismiss">Hủy</string>
     <string name="settings_consent_update_failed">Không cập nhật được cài đặt AI. Hãy thử lại.</string>

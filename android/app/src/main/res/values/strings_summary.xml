@@ -32,10 +32,10 @@
     <string name="summary_error_generic">Could not generate summary. Try again.</string>
     <string name="summary_copied_to_clipboard">Summary copied</string>
     <string name="summary_loading_content_desc">Generating summary…</string>
-    <string name="settings_ai_summary_consent_title">AI summaries</string>
-    <string name="settings_ai_summary_consent_desc">Sensitive info is redacted before sending to the AI service</string>
+    <string name="settings_ai_summary_consent_title">External AI summaries</string>
+    <string name="settings_ai_summary_consent_desc">Sensitive info is redacted before sending to an external AI service</string>
     <string name="dialog_ai_consent_title">Enable AI summaries?</string>
-    <string name="dialog_ai_consent_message">When enabled, message text is anonymized and sensitive information is redacted before being sent to the AI service. Enable AI summaries?</string>
+    <string name="dialog_ai_consent_message">When enabled, message text is anonymized and sensitive information is redacted before being sent to an external AI service. Enable AI summaries?</string>
     <string name="dialog_ai_consent_confirm">Agree</string>
     <string name="dialog_ai_consent_dismiss">Cancel</string>
     <string name="settings_consent_update_failed">Could not update AI settings. Try again.</string>
