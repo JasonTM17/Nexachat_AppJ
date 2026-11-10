@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,11 +62,13 @@ class AskServiceStampedeTest {
     private final Map<String, RagQuestionCache.CachedAsk> cachedByQuestionHash = new ConcurrentHashMap<>();
     private final AtomicInteger embeddingCalls = new AtomicInteger();
     private final AtomicInteger answerProviderCalls = new AtomicInteger();
+    private final AtomicBoolean consented = new AtomicBoolean();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private AskService service;
     private UUID conversationId;
     private UUID userId;
+    private CountDownLatch nonConsentedRetrievalReached;
     private RagMessage fact;
     private RetrievalResult retrieval;
 
@@ -73,6 +76,8 @@ class AskServiceStampedeTest {
     void setUp() {
         conversationId = UUID.randomUUID();
         userId = UUID.randomUUID();
+        consented.set(true);
+        nonConsentedRetrievalReached = new CountDownLatch(1);
         fact = RagTestSupport.message(conversationId, UUID.randomUUID(), 1, UUID.randomUUID(),
                 "User", "The core migration is scheduled for March 14 at 02:00.");
         retrieval = new RetrievalResult(
@@ -82,12 +87,18 @@ class AskServiceStampedeTest {
 
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(eq(conversationId), any())).thenReturn(true);
-        when(consentRepository.isConsented(any())).thenReturn(true);
+        when(consentRepository.isConsented(any())).thenAnswer(invocation -> consented.get());
         when(embeddingService.embedQuestion(any(), anyBoolean())).thenAnswer(invocation -> {
             embeddingCalls.incrementAndGet();
             return new RagEmbeddingService.EmbeddingOutcome(new float[] {1f, 0f}, "test-embedding-model");
         });
-        when(retrievalService.retrieve(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> retrieval);
+        when(retrievalService.retrieve(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+            Boolean allowExternal = invocation.getArgument(3);
+            if (!allowExternal) {
+                nonConsentedRetrievalReached.countDown();
+            }
+            return retrieval;
+        });
         when(questionCache.findExact(any(), any(), any())).thenAnswer(invocation ->
                 Optional.ofNullable(cachedByQuestionHash.get(invocation.getArgument(2))));
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of());
@@ -162,6 +173,32 @@ class AskServiceStampedeTest {
         assertThat(answerProviderCalls.get()).isEqualTo(2);
         verify(rateLimiter).consume(userId);
         verify(rateLimiter).consume(otherUserId);
+    }
+
+    @Test
+    void requestWithoutConsentDoesNotJoinConsentedInFlightAsk() throws Exception {
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        answerWith(releaseProvider, providerEntered);
+
+        Future<AskResponse> consentedAsk = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(providerEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            consented.set(false);
+
+            Future<AskResponse> nonConsentedAsk = executor.submit(
+                    () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+            assertThat(nonConsentedRetrievalReached.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(nonConsentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode())
+                    .isEqualTo(AskMode.NOT_FOUND);
+        } finally {
+            releaseProvider.countDown();
+        }
+
+        assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.LLM);
+        assertThat(answerProviderCalls.get()).isEqualTo(1);
+        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean());
     }
 
     @Test

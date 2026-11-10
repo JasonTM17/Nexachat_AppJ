@@ -56,8 +56,9 @@ public class AskService {
     /**
      * One cold-cache computation per identical ask. Followers wait for the
      * leader's response instead of repeating the embedding, retrieval and
-     * provider work. The key is user-scoped so two members never share an
-     * answer produced under different consent or opt-out state.
+     * provider work. Conversation and user identify the membership scope, and
+     * consent state prevents a request from joining work started under a
+     * different consent decision.
      */
     private final ConcurrentHashMap<AskKey, CompletableFuture<AskResponse>> inFlight =
             new ConcurrentHashMap<>();
@@ -129,7 +130,7 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(RagQuestionNormalizer.normalize(question));
 
-        AskKey key = new AskKey(conversationId, userId, questionHash, language);
+        AskKey key = new AskKey(conversationId, userId, questionHash, language, consented);
         return computeOnce(key, () -> compute(
                 conversationId, userId, question, language, questionHash, consented, contextOmitted));
     }
@@ -186,23 +187,25 @@ public class AskService {
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(question, consented);
 
-        Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
-                conversationId, questionEmbedding.model(), questionHash);
-        if (exact.isPresent()
-                && exact.get().language() == language
-                && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
-            stats.recordCacheHit();
-            return cachedResponse(exact.get(), contextOmitted);
-        }
-
-        double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-        for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
-                conversationId, questionEmbedding.model())) {
-            if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
-                    && candidate.ask().language() == language
-                    && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
+        if (consented) {
+            Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
+                    conversationId, questionEmbedding.model(), questionHash);
+            if (exact.isPresent()
+                    && exact.get().language() == language
+                    && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
                 stats.recordCacheHit();
-                return cachedResponse(candidate.ask(), contextOmitted);
+                return cachedResponse(exact.get(), contextOmitted);
+            }
+
+            double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
+            for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
+                    conversationId, questionEmbedding.model())) {
+                if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                        && candidate.ask().language() == language
+                        && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
+                    stats.recordCacheHit();
+                    return cachedResponse(candidate.ask(), contextOmitted);
+                }
             }
         }
 
@@ -372,6 +375,11 @@ public class AskService {
         return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
     }
 
-    private record AskKey(UUID conversationId, UUID userId, String questionHash, SummaryLanguage language) {
+    private record AskKey(
+            UUID conversationId,
+            UUID userId,
+            String questionHash,
+            SummaryLanguage language,
+            boolean consented) {
     }
 }

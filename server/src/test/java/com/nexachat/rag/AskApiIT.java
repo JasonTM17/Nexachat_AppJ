@@ -30,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -43,6 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -159,6 +163,7 @@ class AskApiIT {
 
     @Test
     void theSameQuestionIsReplayedFromTheCache() throws Exception {
+        grantAiConsent(caller);
         addMessage(peer.getId(), "The budget was approved at 1,200 dollars.");
 
         postAsk(caller, "{\"question\":\"How much budget was approved?\"}")
@@ -173,7 +178,33 @@ class AskApiIT {
     }
 
     @Test
+    void memberWithoutConsentCannotReplayAnotherMembersCachedLlmAnswer() throws Exception {
+        TestMessage fact = addMessage(peer.getId(),
+                "The server migration is scheduled for March 14 at 02:00.");
+        String providerAnswer = "A provider answer from another member's consented request.";
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                providerAnswer,
+                List.of(new RagCitation(fact.id(), fact.seq(), "The server migration is scheduled.")),
+                "LLM", List.of(fact.id()), "valid-for-this-fixture", com.nexachat.summary.SummaryLanguage.EN);
+        doReturn(Optional.of(cached)).when(questionCache)
+                .findExact(eq(conversationId), any(String.class), any(String.class));
+        doReturn(true).when(questionCache).citationsValid(any(), any());
+
+        MvcResult result = postAsk(caller,
+                "{\"question\":\"When is the server migration scheduled?\",\"language\":\"EN\"}")
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        assertThat(body.path("mode").asText()).isEqualTo("EXTRACTIVE");
+        assertThat(body.path("answer").asText()).contains("March 14");
+        assertThat(body.path("answer").asText()).doesNotContain(providerAnswer);
+        verify(questionCache, never()).findExact(eq(conversationId), any(String.class), any(String.class));
+    }
+
+    @Test
     void newTextMessageInvalidatesCachedAnswer() throws Exception {
+        grantAiConsent(caller);
         addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
         String question = "{\"question\":\"When is the server migration scheduled?\"}";
 
@@ -200,6 +231,7 @@ class AskApiIT {
 
     @Test
     void inFlightAskCannotRepublishCachedAnswerAfterNewTextInvalidation() throws Exception {
+        grantAiConsent(caller);
         addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
         String question = "{\"question\":\"When is the server migration scheduled?\"}";
         CountDownLatch saveReached = new CountDownLatch(1);
@@ -289,6 +321,10 @@ class AskApiIT {
     private User createUser(String displayName) {
         String phone = "+849" + String.format("%09d", Math.floorMod(System.nanoTime(), 1_000_000_000L));
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
+    }
+
+    private void grantAiConsent(User user) {
+        jdbcTemplate.update("UPDATE users SET ai_summary_consent = TRUE WHERE id = ?", user.getId());
     }
 
     private void addMember(UUID userId) {
