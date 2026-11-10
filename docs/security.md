@@ -7,8 +7,10 @@ the implementing source file.
 ## 1. Credential security
 
 - Passwords use BCrypt cost 12 (`new BCryptPasswordEncoder(12)`,
-  SecurityConfig.java); registration caps them at 8–72 chars because bcrypt
-  truncates beyond 72 bytes (RegisterRequest.java).
+  SecurityConfig.java). Register and change-password reject a secret that bcrypt
+  cannot hash in full — more than 72 UTF-8 bytes, or containing NUL — and login
+  of such a secret is `INVALID_CREDENTIALS` without a hash comparison
+  (PasswordPolicy.java, AuthService.java).
 - Phones are normalized to E.164 with Google libphonenumber before any lookup or
   storage (PhoneNormalizer.java, default region VN). Register maps a bad number
   to `VALIDATION_FAILED`, while login deliberately maps the same failure to
@@ -24,12 +26,16 @@ the implementing source file.
 
 ## 2. Token model
 
-- Access tokens are HS256 JWTs (`sub` = userId, `iat`, `exp` = iat + 900 s),
-  15-minute lifetime (`access-ttl-seconds: 900`, application.yml;
-  JwtService.java). HS256 is deliberate: one service signs and verifies, so
-  RS256 would add key distribution without trust boundaries. The secret must be
-  >= 32 bytes or boot fails fast; application-prod.yml drops the dev default. A
-  `type=access` claim is verified on parse, blocking replay of other material.
+- Access tokens are HS256 JWTs (`sub` = userId, `iat`, `exp` = iat + 900 s,
+  `iss` = `nexachat`, `aud` = `nexachat-api`), 15-minute lifetime
+  (`access-ttl-seconds: 900`, application.yml; JwtService.java). HS256 is
+  deliberate: one service signs and verifies, so RS256 would add key
+  distribution without trust boundaries. The secret must be >= 32 bytes or boot
+  fails fast; application-prod.yml has no default, and `ProductionJwtSecretGuard`
+  refuses to boot the `prod` profile with the repository's development secret or
+  a secret with fewer than eight distinct characters. A `type=access` claim is
+  verified on parse, and a token without the expected issuer or audience is
+  rejected, blocking replay of other material.
 - Refresh tokens are opaque: 48 SecureRandom bytes → 64 base64url characters,
   generated per session (TokenService.generateOpaqueToken). Only
   `SHA-256(token)` hex is stored (`token_hash CHAR(64) UNIQUE`,
@@ -58,9 +64,10 @@ the implementing source file.
 - REST is stateless: CSRF disabled, no HTTP session. Only register/login/refresh,
   actuator health, `/error`, and the WebSocket upgrade `/ws` are permitAll;
   every other request requires a Bearer token (SecurityConfig.java).
-- Actuator endpoints share the API port `8080` by default; only `/actuator/health` is public.
-  Metrics and Prometheus endpoints require opt-in via `MANAGEMENT_EXPOSURE`. Moving the management
-  endpoints to an isolated loopback port is opt-in via `MANAGEMENT_SERVER_PORT` and `MANAGEMENT_SERVER_ADDRESS`.
+- Actuator endpoints share the API port `8080` by default; only `/actuator/health` (including its
+  liveness/readiness groups) is public. Metrics and Prometheus endpoints require opt-in via
+  `MANAGEMENT_EXPOSURE`. Moving the management endpoints to an isolated loopback port is opt-in via
+  `MANAGEMENT_SERVER_PORT` and `MANAGEMENT_SERVER_ADDRESS`.
 - CORS uses an explicit allow-list (`nexachat.security.cors-allowed-origins`, env `NEXACHAT_CORS_ALLOWED_ORIGINS`).
   The default is empty (admitting no cross-origin browser caller, safe for native mobile clients).
   Wildcard `*` is rejected at boot, and credentials are never enabled.
@@ -73,9 +80,12 @@ the implementing source file.
   the entry point answers 401 (`UNAUTHORIZED`/`TOKEN_EXPIRED`/`TOKEN_INVALID`)
   in the standard envelope (JwtAuthFilter.java, AuthSecurityErrorHandler.java).
 - STOMP does not trust the HTTP handshake for identity: `/ws` is permitAll and
-  the JWT travels in the CONNECT frame's native `Authorization` header — never a
-  URL query param, which would leak into access logs
-  (StompAuthChannelInterceptor.onConnect, SecurityConfig.java).
+  the JWT travels in the CONNECT (or STOMP 1.2 `STOMP`) frame's native
+  `Authorization` header — never a URL query param, which would leak into access
+  logs (StompAuthChannelInterceptor.onConnect, SecurityConfig.java). A rejected
+  handshake closes the socket, a socket that never authenticates is closed after
+  10 s, and one account may hold at most 32 authenticated sockets per node
+  (StompSessionRegistry.java).
 - SUBSCRIBE authZ: `/topic/conversations.{uuid}` is allowed only when
   `conversation_members` contains `(conversationId, userId)`;
   only `/user/queue/inbox`, `/user/queue/errors`, `/user/queue/presence`, and
@@ -104,8 +114,11 @@ the implementing source file.
   re-sniffs the leading bytes against fixed signatures and an allow-list
   (JPEG/PNG/WEBP/GIF/MP4/M4A/MP3/OGG/PDF/ZIP/DOC plus OOXML prefixes); unknown
   bytes yield 415 `MIME_NOT_ALLOWED` (MagicBytes.java, LocalStorageService
-  .store). Fail-closed: no recognizable signature (including plain text, though
-  `text/plain` is listed in ALLOWED_MIMES) means rejection, never guessing.
+  .store). Text formats carry no signature: they are accepted only when declared
+  as `text/plain`, `text/markdown` or `text/csv`, decode as strict UTF-8, and do
+  not start with HTML, SVG, script or XML markup; those bytes would be served
+  inline from this origin, so they are `415 MIME_NOT_ALLOWED`
+  (LocalStorageService.sniffTextContent).
 - ISO-BMFF track sniffing: Android `MediaRecorder` voice notes produce generic `.m4a`
   files with compatible brands (`isom`, `mp42`, `mp41`). A brand-only check would
   misclassify them as `video/mp4`. `MagicBytes.java` walks the ISO-BMFF box tree and
@@ -127,6 +140,11 @@ the implementing source file.
   same transaction only if it exists, belongs to the sender, is still unbound,
   and its sniffed MIME family matches the declared type
   (MessageService.validateAttachmentContract / bindAttachments).
+- Group avatars: `PATCH /conversations/{id}` accepts only a relative
+  `/api/v1/files/` path. An absolute URL whose path is already under that prefix
+  is rewritten to the relative form; another host, scheme, user-info, `..` or
+  `\` is `400 VALIDATION_FAILED` (AvatarUrlPolicy.java). Stored avatars therefore
+  cannot send members' devices to another origin.
 - Member-checked download: `GET /api/v1/attachments/{id}/content` needs Bearer;
   owner OR member of the bound conversation may read (unbound → owner-only);
   unknown id → 404 `ATTACHMENT_NOT_FOUND`, otherwise 403 `NOT_MEMBER`
@@ -135,8 +153,8 @@ the implementing source file.
   the other (FileController.serve → AttachmentService.assertStorageKeyReadable);
   avatar keys stay public to any authenticated user. Content-Type is the
   upload-time sniff; the inline filename is re-sanitized, and both serve paths
-  send `X-Content-Type-Options: nosniff` (AttachmentController.java:74,
-  FileController.java:58) so a browser cannot re-interpret a uploaded payload.
+  send `X-Content-Type-Options: nosniff` (`AttachmentController.content`,
+  `FileController.serve`) so a browser cannot re-interpret a uploaded payload.
 
 ## 5. Rate limits
 
@@ -168,7 +186,9 @@ the implementing source file.
   (application.yml). A denial drops the frame and reports `RATE_LIMITED` to
   the originating session as a `/user/queue/errors` frame carrying the
   correlated `clientMessageId` (typing and acks carry none)
-  (StompAuthChannelInterceptor.java:188-255).
+  (StompAuthChannelInterceptor.consumeSendAllowance). Inbound STOMP frames are capped
+  at 64 KiB (`StompSessionRegistry.MAX_MESSAGE_BYTES` applied as the WebSocket
+  transport message-size limit); a larger frame is closed by the transport.
 - Buckets are Bucket4j greedy-refill token buckets in a bounded in-memory LRU
   map (RateLimitService.java): the budget trickles back continuously instead of
   bursting at a window boundary; at most 10,000 keys are retained and an idle
@@ -200,8 +220,9 @@ the implementing source file.
   views, ViewBinding, Hilt `annotationProcessor`). In production, cleartext HTTP/WS
   is disabled globally (`android/app/src/main/res/xml/network_security_config.xml`
   sets `cleartextTrafficPermitted="false"` with zero exemptions); cleartext access
-  to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds
-  (`android/app/src/debug/res/xml/network_security_config.xml`). Session tokens
+  to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to the `debug`
+  and `localSmoke` variants (`android/app/src/debug/res/xml/network_security_config.xml`,
+  `android/app/src/localSmoke/res/xml/network_security_config.xml`). Session tokens
   are stored by `TokenStore` on RxDataStore as Base64 of `IV || AES-GCM`
   ciphertext; the key is `AES/GCM/NoPadding` in AndroidKeyStore
   (`core/storage/AesGcmTokenCipher.java`). Production needs TLS termination
@@ -214,9 +235,10 @@ the implementing source file.
 - Access-token revocation is immediate on a single node and propagates across multiple
   instances within the validity cache TTL (`nexachat.security.validity-cache-ttl-seconds`,
   default 60 s). Refresh-token families rotate on use with reuse detection.
-- The prod profile fails fast when datasource credentials are missing or
-  unresolved (`ProductionDataSourceConfiguration.java:16-34`); compose supplies
-  `SPRING_DATASOURCE_*` so a fresh clone still boots.
+- The prod profile fails fast when datasource or storage coordinates are
+  missing or unresolved (`ProductionDataSourceConfiguration`); compose supplies
+  `DATABASE_URL` / `DATABASE_USER` / `DATABASE_PASSWORD` and `STORAGE_ROOT` so a
+  configured checkout still boots.
 - Kicked/removed members: after a member removal or self-leave commits,
   `GroupService` revokes existing `/topic/conversations.{uuid}` subscriptions.
   Every outbound conversation-topic frame also rechecks the recipient's current

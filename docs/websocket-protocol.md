@@ -9,7 +9,11 @@
   HTTP upgrade; handshake allowed origins are restricted to `NEXACHAT_CORS_ALLOWED_ORIGINS`
   (empty by default; wildcard `*` is rejected at boot); no session cookie and no query-string token.
 - Transport: raw WebSocket speaking STOMP 1.2 frames.
-- Frame size: incoming raw WebSocket text messages are effectively limited to 16,640 bytes by Spring WebSocket 6.2.1 over Tomcat 10.1.34 (Tomcat's own default is 8,192 bytes). The assembled STOMP decoder limit is 65,536 bytes, but the lower transport limit may close an oversized raw frame before STOMP can return an ERROR frame.
+- Frame size: inbound STOMP frames are capped at 64 KiB
+  (`StompSessionRegistry.MAX_MESSAGE_BYTES`, applied as the WebSocket transport
+  message-size limit). An oversized frame is closed by the WebSocket transport
+  before a handler sees it; the session is not expected to receive an STOMP
+  `ERROR` frame.
 - **No SockJS.** The only client is the native Android app (OkHttp
   WebSocket + STOMP frames). SockJS exists to give browsers a fallback when
   WebSocket is blocked; with no browser client there is no fallback to
@@ -37,12 +41,16 @@ Why a header and not `?token=` on the URL:
   logged URL.
 
 The server validates the JWT in the inbound channel interceptor before it
-processes CONNECT, checking signature, expiry, and the revocation cutoff
+processes CONNECT (or the STOMP 1.2 `STOMP` command), checking signature,
+issuer `nexachat`, audience `nexachat-api`, expiry, and the revocation cutoff
 (`users.tokens_valid_after`, Flyway V11). A token issued before the user's
-revocation cutoff (after logout or password change) or an otherwise invalid/expired
-token is rejected: the rejected CONNECT is dropped and the server does not
-guarantee an `ERROR` frame; the client may see the CONNECT acknowledgement
-timeout instead. Before every socket attempt, `RealtimeSession` checks the
+revocation cutoff (after logout or password change) or an otherwise
+invalid/expired token is rejected: the rejected handshake closes the socket and
+the server does not guarantee an `ERROR` frame; the client may see the CONNECT
+acknowledgement timeout instead. A raw socket that has not completed an
+authenticated handshake within 10 s is also closed. One account may hold at
+most 32 authenticated sockets per server node; a further CONNECT is rejected
+and closed (`StompSessionRegistry`). Before every socket attempt, `RealtimeSession` checks the
 stored access-token expiry and calls the shared, mutex-protected
 `TokenRefresher.refreshIfNeeded()` when it has expired. The authenticated user
 is bound to the session so `/user/**` destinations resolve.
@@ -58,7 +66,8 @@ continue using a token revoked after CONNECT.
 with `Bearer `. Send the STOMP header as `Authorization:Bearer <access-token>`
 with no space after the colon. A header serialized as
 `Authorization: Bearer <access-token>` is rejected because that leading value
-space remains. A rejected CONNECT has no guaranteed `ERROR` frame.
+space remains and the socket is closed. A rejected CONNECT has no guaranteed
+`ERROR` frame.
 
 ## 3. Heartbeat
 
@@ -185,7 +194,7 @@ the live stream, closing the gap for events missed while offline.
 and returns the existing row, so no duplicate is created — and the server
 **re-broadcasts** `MESSAGE_CREATED` for the deduplicated row, because that
 frame is the retrying sender's SENT acknowledgment. Receivers deduplicate by
-message id, so the re-broadcast is harmless (`MessageService.java:121-149`).
+message id, so the re-broadcast is harmless (`MessageService.send`).
 The sender flips its optimistic Room row from `SENDING` to `SENT` by matching
 `clientMessageId`. Reusing the key in a *different* conversation is
 `VALIDATION_FAILED`, not a silent cross-room dedup.
@@ -256,6 +265,11 @@ external dependency — enough for the demo and a single-instance deployment,
 but not horizontally scalable (events reach only sessions on the same JVM).
 When multi-instance is needed, replace it with a broker relay
 (RabbitMQ/ActiveMQ); the frame contract above does not change.
+
+On graceful shutdown (`server.shutdown=graceful`), the server closes every
+tracked socket with WebSocket status `GOING_AWAY` before the process exits, so
+clients take the reconnect path instead of treating the drop as a silent loss
+(`StompSessionRegistry.shutdown`).
 
 ## 9. Example frames
 
