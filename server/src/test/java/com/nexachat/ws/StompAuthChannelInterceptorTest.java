@@ -21,6 +21,10 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -636,6 +640,26 @@ class StompAuthChannelInterceptorTest {
         Message<?> chatMessage = sendMessage("/app/conversations/" + conversationId + "/messages",
                 userId, UUID.randomUUID());
         assertThat(interceptor.preSend(chatMessage, channel)).isSameAs(chatMessage);
+    }
+
+    @Test
+    void stompCommandWithoutCredentialsIsRejectedAndClosesTheSocket() throws Exception {
+        UserRepository users = mock(UserRepository.class);
+        StompSessionRegistry registry = new StompSessionRegistry(users);
+        WebSocketSession socket = mock(WebSocketSession.class);
+        when(socket.getId()).thenReturn("ws-1");
+        when(socket.isOpen()).thenReturn(true);
+        WebSocketHandlerDecorator handler = (WebSocketHandlerDecorator) registry.decorate(mock(WebSocketHandler.class));
+        handler.afterConnectionEstablished(socket);
+
+        StompAuthChannelInterceptor gated = new StompAuthChannelInterceptor(
+                jwtService, userRepository, memberRepository, rateLimitService, messaging,
+                new ObjectMapper(), 2, 60, 3, 10, 3, 10, registry);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.STOMP);
+        accessor.setSessionId("ws-1");
+
+        assertThat(gated.preSend(message(accessor), channel)).isNull();
+        verify(socket).close(CloseStatus.POLICY_VIOLATION);
     }
 
     @Test

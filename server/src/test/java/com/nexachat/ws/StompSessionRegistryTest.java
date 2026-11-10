@@ -12,6 +12,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 
 import java.time.Instant;
@@ -56,5 +57,36 @@ class StompSessionRegistryTest {
 
         verify(socket).close(CloseStatus.POLICY_VIOLATION);
         assertThat(registry.isAuthenticatedSession(sessionId)).isFalse();
+    }
+
+    @Test
+    void inboundFrameSizeIsCapped() {
+        StompSessionRegistry registry = new StompSessionRegistry(mock(UserRepository.class));
+        ReadableRegistration registration = new ReadableRegistration();
+
+        registry.configureWebSocketTransport(registration);
+
+        assertThat(registration.messageSizeLimit()).isEqualTo(StompSessionRegistry.MAX_MESSAGE_BYTES);
+    }
+
+    private static final class ReadableRegistration extends WebSocketTransportRegistration {
+        int messageSizeLimit() {
+            return getMessageSizeLimit();
+        }
+    }
+
+    @Test
+    void handshakeThatNeverAuthenticatesIsClosed() throws Exception {
+        StompSessionRegistry registry = new StompSessionRegistry(mock(UserRepository.class));
+        WebSocketSession socket = mock(WebSocketSession.class);
+        when(socket.getId()).thenReturn("pending");
+        when(socket.isOpen()).thenReturn(true);
+        WebSocketHandlerDecorator handler = (WebSocketHandlerDecorator)
+                registry.decorate(mock(WebSocketHandler.class));
+        handler.afterConnectionEstablished(socket);
+
+        registry.closeIfHandshakeIncomplete("pending");
+
+        verify(socket).close(CloseStatus.POLICY_VIOLATION);
     }
 }
