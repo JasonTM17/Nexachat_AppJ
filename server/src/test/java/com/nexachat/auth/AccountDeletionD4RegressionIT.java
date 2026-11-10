@@ -1,8 +1,13 @@
 package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.nexachat.attachment.StorageService;
+import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.AccountDeletionCoordination;
 import com.nexachat.user.DeletedAccountPolicy;
+import com.nexachat.user.UserRepository;
+import com.nexachat.user.dto.UserResponse;
+import com.nexachat.ws.StompAuthChannelInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,7 +16,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -24,6 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -34,8 +47,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(AccountDeletionD4RegressionIT.PauseConfig.class)
 class AccountDeletionD4RegressionIT extends SecurityITBase {
 
+    private static final byte[] PNG_BYTES = new byte[] {
+            (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52
+    };
+
     @Autowired
     private TestAccountDeletionPause pause;
+
+    @Autowired
+    private StorageService storageService;
+
+    @Autowired
+    private AccountDeletionService accountDeletionService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private StompAuthChannelInterceptor stompAuthChannelInterceptor;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void resetPause() {
@@ -112,6 +145,20 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     }
 
     @Test
+    void deletionRejectsPreviouslyIssuedAccessTokenOnStompConnect() throws Exception {
+        Registered user = register("+84905553117", "secret123");
+        deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
+        accessor.setNativeHeader("Authorization", "Bearer " + user.accessToken());
+        accessor.setLeaveMutable(true);
+        Message<?> connect = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+        MessageChannel channel = org.mockito.Mockito.mock(MessageChannel.class);
+
+        assertThat(stompAuthChannelInterceptor.preSend(connect, channel)).isNull();
+    }
+
+    @Test
     void deletionScrubsAiTablesAndCaches() throws Exception {
         Registered user = register("+84905553103", "secret123");
         Registered peer = register("+84905553104", "secret123");
@@ -185,28 +232,66 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     void deletionRemovesUnboundUploadsLabelsAndPasswordHash() throws Exception {
         Registered user = register("+84905553107", "secret123");
         UUID attachmentId = UUID.randomUUID();
-        String storageKey = "attachments/" + UUID.randomUUID() + "/probe.bin";
+        StorageService.StoredFile stored = storageService.store(
+                "attachments", "secret.png", "image/png", PNG_BYTES);
         jdbcTemplate.update("""
                 INSERT INTO message_attachments
                 (id, owner_id, storage_key, original_name, mime_type, size_bytes, created_at)
-                VALUES (?, ?, ?, 'secret.txt', 'text/plain', 4, now())
-                """, attachmentId, user.userId(), storageKey);
+                VALUES (?, ?, ?, 'secret.png', 'image/png', ?, now())
+                """, attachmentId, user.userId(), stored.storageKey(), stored.sizeBytes());
         UUID labelId = UUID.randomUUID();
         jdbcTemplate.update(
                 "INSERT INTO conversation_labels (id, user_id, name, color_id) VALUES (?, ?, 'Private', 'INDIGO')",
                 labelId, user.userId());
+        Registered peer = register("+84905553118", "secret123");
+        UUID conversationId = openDirect(user, peer);
+        jdbcTemplate.update("""
+                INSERT INTO conversation_label_assignments (conversation_id, user_id, label_id)
+                VALUES (?, ?, ?)
+                """, conversationId, user.userId(), labelId);
+        assertThat(storageService.exists(stored.storageKey())).isTrue();
 
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM message_attachments WHERE owner_id = ?",
                 Integer.class, user.userId())).isZero();
+        assertThat(storageService.exists(stored.storageKey())).isFalse();
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM conversation_labels WHERE user_id = ?",
                 Integer.class, user.userId())).isZero();
         assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_label_assignments WHERE user_id = ?",
+                Integer.class, user.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
                 "SELECT password_hash FROM users WHERE id = ?", String.class, user.userId()))
                 .isEqualTo(DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH);
+    }
+
+    @Test
+    void avatarFileIsDeletedOnlyAfterAccountDeletionTransactionCommits() throws Exception {
+        Registered user = register("+84905553119", "secret123");
+        StorageService.StoredFile avatar = storageService.store(
+                "avatars", "avatar.png", "image/png", PNG_BYTES);
+        jdbcTemplate.update("UPDATE users SET avatar_url = ? WHERE id = ?",
+                storageService.resolveUrl(avatar.storageKey()), user.userId());
+        assertThat(storageService.exists(avatar.storageKey())).isTrue();
+
+        try {
+            assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
+                accountDeletionService.deleteAccount(user.userId(), "secret123");
+                throw new IllegalStateException("rollback account deletion after scheduling file cleanup");
+            }))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("rollback account deletion after scheduling file cleanup");
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT deleted_at IS NULL FROM users WHERE id = ?", Boolean.class, user.userId()))
+                    .isTrue();
+            assertThat(storageService.exists(avatar.storageKey())).isTrue();
+        } finally {
+            storageService.deleteIfExists(avatar.storageKey());
+        }
     }
 
     @Test
@@ -219,9 +304,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         deleteMe(member.accessToken(), "secret123").andExpect(status().isNoContent());
 
         List<JsonNode> system = systemMessages(groupId, admin);
-        assertThat(system.stream().map(n -> n.get("content").asText()).anyMatch(text ->
-                text.contains(DeletedAccountPolicy.DISPLAY_NAME)
-                        && !text.contains("Real Member Name"))).isTrue();
+        List<String> systemText = system.stream().map(n -> n.get("content").asText()).toList();
+        assertThat(systemText).anyMatch(text -> text.contains(DeletedAccountPolicy.DISPLAY_NAME));
+        assertThat(systemText).noneMatch(text -> text.contains("Real Member Name"));
     }
 
     @Test
@@ -257,6 +342,11 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         assertThat(member).isNotNull();
         assertThat(member.get("deleted").asBoolean()).isTrue();
         assertThat(member.has("phone")).isFalse();
+
+        var deletedUser = userRepository.findById(user.userId()).orElseThrow();
+        JsonNode userResponse = objectMapper.valueToTree(UserResponse.from(deletedUser));
+        assertThat(userResponse.get("deleted").asBoolean()).isTrue();
+        assertThat(userResponse.has("phone")).isFalse();
     }
 
     @Test
@@ -280,14 +370,24 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         Registered placeholder = register("+84905553116", "secret123");
         UUID groupId = createGroup(owner, List.of(placeholder.userId()));
         String inviteToken = createInviteLink(owner, groupId);
-        postJson("/api/v1/invite-links/" + inviteToken + "/join", Map.of(), requester.accessToken())
-                .andExpect(status().isCreated());
+        var join = postJson("/api/v1/invite-links/" + inviteToken + "/join", Map.of(), requester.accessToken())
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID requestId = UUID.fromString(objectMapper.readTree(
+                join.getResponse().getContentAsString()).get("requestId").asText());
 
         deleteMe(requester.accessToken(), "secret123").andExpect(status().isNoContent());
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM group_join_requests WHERE user_id = ?",
                 Integer.class, requester.userId())).isZero();
+        postJson("/api/v1/conversations/" + groupId + "/join-requests/" + requestId + "/approve",
+                Map.of(), owner.accessToken())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
+                Integer.class, groupId, requester.userId())).isZero();
     }
 
     @TestConfiguration
