@@ -76,7 +76,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V23 | — | Intentionally unused/reserved; no file exists. |
 | V24 | `V24__hot_path_perf.sql` | Drops the unused `idx_conv_inbox` index; no table or column change. |
 | V25 | `V25__refresh_rotation_replay.sql` | Adds encrypted keyed-refresh response replay metadata and bounded cleanup support. |
-| V27 | `V27__google_signin.sql` | `user_identities` (one external identity per provider per user, `ON DELETE CASCADE`) and hashed single-use `google_signin_nonces`. |
+| V28 | `V28__google_signin.sql` | `user_identities` (one external identity per provider per user, `ON DELETE CASCADE`) and hashed single-use `google_signin_nonces`. |
 
 ## Operational notes
 
@@ -88,6 +88,7 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.auth.refresh-replay.key` (`NEXACHAT_REFRESH_REPLAY_KEY`) | empty | Optional Base64 encoding of exactly 32 random bytes; enables encrypted response recovery for matching keyed refresh retries during the fixed 30-second window. |
 | `nexachat.google.signin.enabled` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`) | `false` | Enables the Google Identity endpoints; every one answers 404 while off. |
 | `nexachat.google.signin.web-client-id` (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`) | empty | Required when the feature is on; the expected `aud` of the ID token and the client ID the Android app passes to Credential Manager. |
+| `nexachat.google.signin.android-client-ids` (`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) | empty | Comma-separated Android OAuth client IDs trusted as the ID token's `azp`; set the Android client ID(s) or tokens that carry `azp` are rejected. |
 | `nexachat.google.signin.jwks-uri` (`NEXACHAT_GOOGLE_JWKS_URI`) | `https://www.googleapis.com/oauth2/v3/certs` | Google's rotating public keys; override only for tests. |
 | `nexachat.google.signin.nonce-ttl-seconds` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS`) | `300` | Single-use nonce lifetime. |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
@@ -384,6 +385,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled |
 | `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 · `RATE_LIMITED` 429 |
 | `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
+| `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose; the public sign-in nonce is rejected here) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
 | `POST /auth/identities/google` | Bearer | `{idToken, nonce, password}` — password re-authenticates the owner | `204` empty (idempotent for the same Google account) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_ALREADY_LINKED` 409 · `RATE_LIMITED` 429 |
 | `DELETE /auth/identities/google` | Bearer | `{password}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `LAST_SIGN_IN_METHOD` 409 |
 
@@ -395,14 +397,17 @@ Credential Manager return a Google ID token carrying that nonce, exchange it for
 a normal access/refresh pair. The server verifies the signature against Google's
 JWKS, `iss` (`accounts.google.com` or `https://accounts.google.com`), `aud` (the
 configured web client ID), `exp` (60 s skew) and the single-use nonce; then it
-maps the immutable `sub` claim to `user_identities`. An unlinked Google account
+maps the immutable `sub` claim to `user_identities`. The token must carry exactly
+one audience (the configured web client ID), a trustworthy `azp` when present, and
+an `iat` no more than 60 s in the future. An unlinked Google account
 returns `404 GOOGLE_ACCOUNT_NOT_LINKED` (the generic message never says whether
 the Google account exists); automatic account creation and email-based linking
 are not implemented. Linking requires the account password and refuses to move a
 Google account already linked to another user (`409`); unlinking also requires
 the password and is refused with `409 LAST_SIGN_IN_METHOD` when the account has
-no password left. Nonces are stored as SHA-256 hex and consumed by one
-conditional `UPDATE`.
+no password left. Nonces are stored as SHA-256 hex, bound to their purpose
+(`signin` or `link`) and consumed by one conditional `UPDATE` in its own
+transaction, so a failed sign-in cannot release a nonce for replay.
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
 `UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: per client

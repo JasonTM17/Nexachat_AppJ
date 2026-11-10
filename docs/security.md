@@ -229,7 +229,10 @@ the implementing source file.
   refreshed when Google rotates to an unknown key ID). RS256 is the only accepted
   algorithm; the validator chain requires `exp`/`nbf` within a 60-second skew,
   `iss` equal to `accounts.google.com` or `https://accounts.google.com`, `aud`
-  equal to the configured web client ID, and a non-blank `sub`
+  exactly equal to the configured web client ID (a token with any additional
+  audience is rejected), a `sub`, an `iat` no more than 60 s in the future, and —
+  when Google sets it — an `azp` that is the web client or one of the configured
+  Android client IDs (`nexachat.google.signin.android-client-ids`)
   (GoogleIdTokenValidators.java). There is no custom crypto.
 - The identity key is the immutable `sub`; email is stored for display only and
   never used to match or link an account (UserIdentity.java). A Google account
@@ -238,9 +241,12 @@ the implementing source file.
   and receives the same generic `409` (GoogleSignInService.link).
 - Replay protection: `POST /auth/google/nonce` issues a 256-bit nonce, persists
   only its SHA-256 hex with a five-minute expiry, and the token's `nonce` claim
-  must match. The service then consumes the nonce with one conditional
-  `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now()`, so concurrent
-  requests with the same nonce cannot both issue a session
+  must match. Each nonce is bound to its purpose (`signin` for the public route,
+  `link` for the authenticated route), so a public nonce cannot be replayed
+  against the link endpoint. The service consumes it with one conditional
+  `UPDATE ... WHERE purpose = ? AND consumed_at IS NULL AND expires_at > now()`
+  in a `REQUIRES_NEW` transaction, so concurrent requests and a later rollback
+  of the sign-in transaction cannot both use (or release) the nonce
   (GoogleNonceService.java). All failures — malformed, wrong audience, wrong
   issuer, expired, bad signature, wrong nonce — collapse to
   `401 GOOGLE_SIGN_IN_FAILED`.
