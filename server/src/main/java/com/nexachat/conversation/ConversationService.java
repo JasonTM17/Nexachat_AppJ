@@ -84,6 +84,10 @@ public class ConversationService {
             throw ApiException.of(
                     ApiErrorCode.VALIDATION_FAILED, "Provide exactly one of phone or userId");
         }
+        if (hasUserId && request.userId().equals(callerId)) {
+            throw ApiException.of(
+                    ApiErrorCode.VALIDATION_FAILED, "Cannot open a direct conversation with yourself");
+        }
 
         User other;
         if (hasUserId) {

@@ -249,7 +249,7 @@ class AuthServiceTest {
     @Test
     void changePassword_wrongOld_throwsWrongPasswordAndKeepsSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("bad-old", "stored-hash")).thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -264,7 +264,7 @@ class AuthServiceTest {
     @Test
     void changePassword_success_rehashesAndRevokesAllSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("old-pass", "stored-hash")).thenReturn(true);
 
         authService.changePassword(user.getId(), new ChangePasswordRequest("old-pass", "newpass123", null));
@@ -278,7 +278,7 @@ class AuthServiceTest {
     @Test
     void changePassword_withKeepToken_revokesOnlyOtherSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("old-pass", "stored-hash")).thenReturn(true);
 
         authService.changePassword(user.getId(), new ChangePasswordRequest("old-pass", "newpass123", "rt-current"));
@@ -291,7 +291,7 @@ class AuthServiceTest {
     @Test
     void changePassword_unknownUser_throwsUserNotFound404() {
         UUID ghost = UUID.randomUUID();
-        when(userRepository.findById(ghost)).thenReturn(Optional.empty());
+        when(userRepository.findByIdForUpdate(ghost)).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> authService.changePassword(ghost, new ChangePasswordRequest("old", "newpass123", null)));

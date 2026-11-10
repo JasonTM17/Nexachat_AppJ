@@ -57,7 +57,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_trimsAndPersists() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), "  Lan Nguyen  ");
 
@@ -68,7 +68,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_blank_throwsValidationFailed() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> userService.updateDisplayName(user.getId(), "   "));
@@ -81,7 +81,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_null_isNoOp() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), null);
 

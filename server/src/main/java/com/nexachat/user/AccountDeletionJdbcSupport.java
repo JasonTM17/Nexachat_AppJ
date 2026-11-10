@@ -1,9 +1,10 @@
 package com.nexachat.user;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,13 +12,21 @@ import java.util.UUID;
 @Component
 class AccountDeletionJdbcSupport {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
-    AccountDeletionJdbcSupport(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    AccountDeletionJdbcSupport(ObjectProvider<JdbcTemplate> jdbcTemplateProvider) {
+        this.jdbcTemplateProvider = jdbcTemplateProvider;
+    }
+
+    private JdbcTemplate jdbc() {
+        return jdbcTemplateProvider.getIfAvailable();
     }
 
     void scrubAiData(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
         jdbcTemplate.update("DELETE FROM conversation_ai_opt_outs WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM summary_request_limits WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM rag_ask_request_limits WHERE user_id = ?", userId);
@@ -36,14 +45,26 @@ class AccountDeletionJdbcSupport {
     }
 
     void deleteGroupJoinRequests(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
         jdbcTemplate.update("DELETE FROM group_join_requests WHERE user_id = ?", userId);
     }
 
     void deleteLabels(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
         jdbcTemplate.update("DELETE FROM conversation_labels WHERE user_id = ?", userId);
     }
 
     List<String> findUnboundAttachmentStorageKeys(UUID ownerId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return Collections.emptyList();
+        }
         return jdbcTemplate.queryForList("""
                 SELECT storage_key FROM message_attachments
                 WHERE owner_id = ? AND message_id IS NULL
@@ -51,6 +72,10 @@ class AccountDeletionJdbcSupport {
     }
 
     void deleteUnboundAttachments(UUID ownerId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
         jdbcTemplate.update(
                 "DELETE FROM message_attachments WHERE owner_id = ? AND message_id IS NULL", ownerId);
     }
