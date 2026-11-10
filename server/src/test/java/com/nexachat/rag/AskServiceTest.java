@@ -175,6 +175,44 @@ class AskServiceTest {
     }
 
     @Test
+    void exactCacheEntryInDifferentLanguageIsNotReplayed() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "La migration est le 14 mars.",
+                List.of(new RagCitation(fact.id(), 1, fact.content())),
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("When is the server migration scheduled?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
+    }
+
+    @Test
+    void semanticCacheEntryInDifferentLanguageIsNotReplayed() {
+        String question = "When is the server migration scheduled?";
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "La migration est le 14 mars.",
+                List.of(new RagCitation(fact.id(), 1, fact.content())),
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+        RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
+        when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
+                new RagQuestionCache.CachedQuestion(cached, embedding.vector(), "other-question")));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest(question, SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
+    }
+
+    @Test
     void promptInjectionInAMessageDoesNotLeakAnotherConversation() {
         UUID otherConversation = UUID.randomUUID();
         RagMessage secret = addMessage(otherConversation, senderId, 1, "The other team secret is alpha-bravo.");
