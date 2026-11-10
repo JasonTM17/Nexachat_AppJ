@@ -434,7 +434,6 @@ def test_vercel_headers(vercel_data):
         "default-src 'none'",
         "style-src 'self'",
         "script-src 'self'",
-        "connect-src 'none'",
         "img-src 'self'",
         "base-uri 'none'",
         "form-action 'none'",
@@ -445,6 +444,11 @@ def test_vercel_headers(vercel_data):
         log_pass("Strict Content-Security-Policy with all required directives present")
     else:
         failures.append(f"CSP missing directives: {csp_missing} (actual: {csp})")
+    csp_pair_failures = validate_deletion_csp_pair(read_deletion_api_base(), csp)
+    if not csp_pair_failures:
+        log_pass("CSP connect-src matches the delete-account API meta state")
+    else:
+        failures.extend(csp_pair_failures)
 
     # Cache-Control: no-store for /join/*
     join_hdrs = headers_by_source.get("/join/(.*)", {})
@@ -484,6 +488,7 @@ LD_JSON_SCRIPT_RE = re.compile(
 )
 
 MIN_CONTRAST_RATIO = 4.5
+MIN_NON_TEXT_CONTRAST_RATIO = 3.0
 
 
 def is_nexachat_site_url(url: str) -> bool:
@@ -542,6 +547,7 @@ def collect_urls_for_external_scan(content: str, ext: str):
     if ext == ".html":
         ld_blocks = LD_JSON_SCRIPT_RE.findall(content)
         scan_body = strip_ld_json_blocks(content)
+        scan_body = DELETION_META_RE.sub("", scan_body)
         urls = url_pattern.findall(scan_body)
         for block in ld_blocks:
             for match in url_pattern.findall(block):
@@ -664,7 +670,8 @@ DELETION_PAGE_VI_PHRASES = (
     "Xóa tài khoản",
     "mật khẩu hiện tại",
     "Dữ liệu bị xóa",
-    "Dữ liệu còn lại",
+    "Dữ liệu còn lại và thời gian lưu",
+    "quản trị viên duy nhất",
     "Google Play",
     "email khôi phục đã xác minh",
     "Xóa trên web chưa khả dụng",
@@ -674,13 +681,63 @@ DELETION_PAGE_EN_PHRASES = (
     "Delete account",
     "current password",
     "Data that is deleted",
-    "Data that remains",
+    "Data that remains and how long it is kept",
+    "only admin",
     "Google Play",
     "verified recovery email",
     "Web deletion is not available yet",
 )
 DELETION_NEUTRAL_REQUEST_VI = "Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã."
 DELETION_NEUTRAL_REQUEST_EN = "If this number has a verified recovery email, we sent a code."
+DELETION_META_RE = re.compile(
+    r'<meta\s+name="nexachat-api-base"\s+content="([^"]*)"', re.IGNORECASE
+)
+CONNECT_SRC_RE = re.compile(r"(?:^|;)\s*connect-src\s+([^;]+)", re.IGNORECASE)
+
+
+def read_deletion_api_base() -> str:
+    """Return the configured API base from the deletion page, or '' when the form is off."""
+    path = os.path.join(SITE_DIR, DELETION_PAGE)
+    if not os.path.isfile(path):
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+    match = DELETION_META_RE.search(html)
+    return match.group(1).strip() if match else ""
+
+
+def validate_deletion_csp_pair(meta_content: str, csp: str) -> list[str]:
+    """Empty meta requires connect-src 'none'; an https origin meta requires that origin."""
+    match = CONNECT_SRC_RE.search(csp)
+    if not match:
+        return ["Content-Security-Policy must define connect-src"]
+    sources = match.group(1).split()
+    meta = meta_content.strip()
+    if not meta:
+        if sources != ["'none'"]:
+            return [
+                "Default deployment (empty nexachat-api-base) must keep connect-src exactly 'none'"
+            ]
+        return []
+    try:
+        parsed = urlsplit(meta)
+    except ValueError:
+        parsed = None
+    if (
+        parsed is None
+        or parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        return ["nexachat-api-base must be an https origin with no path, query, or fragment"]
+    origin = f"https://{parsed.netloc}"
+    if "'none'" in sources or origin not in sources:
+        return [f"Configured nexachat-api-base {origin} must appear in connect-src without 'none'"]
+    return []
 
 
 def test_site_pages_and_assets():
@@ -809,8 +866,18 @@ def test_index_inline_json_ld():
     return failures
 
 
+def css_theme_block(css: str, pattern: str) -> str:
+    match = re.search(pattern, css, re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def css_theme_token(block: str, name: str) -> str | None:
+    match = re.search(rf"--{re.escape(name)}:\s*(#[0-9a-fA-F]{{6}})\b", block)
+    return match.group(1) if match else None
+
+
 def test_dark_theme_contrast_tokens():
-    """Dark-theme button and prose link tokens must meet MIN_CONTRAST_RATIO on card background."""
+    """Light and dark text/link/error/input-border tokens must meet WCAG AA on their surfaces."""
     failures = []
     css_path = os.path.join(SITE_DIR, "style.css")
     if not os.path.isfile(css_path):
@@ -818,31 +885,65 @@ def test_dark_theme_contrast_tokens():
     with open(css_path, "r", encoding="utf-8") as f:
         css = f.read()
 
-    def token_value(name: str) -> str | None:
-        match = re.search(rf"--{re.escape(name)}:\s*(#[0-9a-fA-F]{{6}})", css)
-        return match.group(1) if match else None
+    dark_block = css_theme_block(css, r":root\s*\{(.*?)\}")
+    light_block = css_theme_block(
+        css, r"@media\s*\(prefers-color-scheme:\s*light\)\s*\{\s*:root\s*\{(.*?)\}"
+    )
+    if not dark_block or not light_block:
+        return ["style.css must define :root tokens and a prefers-color-scheme: light :root block"]
 
-    card_bg = token_value("card-bg")
-    btn_bg = token_value("btn-bg")
-    primary = token_value("primary")
-    if not card_bg or not btn_bg or not primary:
-        failures.append("style.css must define --card-bg, --btn-bg, and --primary for contrast gate")
-        return failures
+    for theme, block in (("dark", dark_block), ("light", light_block)):
+        theme_failures = []
+        card_bg = css_theme_token(block, "card-bg")
+        body_bg = css_theme_token(block, "bg-color")
+        btn_bg = css_theme_token(block, "btn-bg")
+        primary = css_theme_token(block, "primary")
+        input_border = css_theme_token(block, "input-border")
+        error = css_theme_token(block, "error")
+        missing = [
+            name for name, value in (
+                ("card-bg", card_bg),
+                ("bg-color", body_bg),
+                ("btn-bg", btn_bg),
+                ("primary", primary),
+                ("input-border", input_border),
+                ("error", error),
+            ) if not value
+        ]
+        if missing:
+            failures.append(f"{theme} theme missing contrast tokens: {missing}")
+            continue
 
-    btn_ratio = contrast_ratio("#ffffff", btn_bg)
-    link_ratio = contrast_ratio(primary, card_bg)
-    if btn_ratio < MIN_CONTRAST_RATIO:
-        failures.append(
-            f"Dark .btn contrast {btn_ratio:.2f}:1 (#ffffff on {btn_bg}) below {MIN_CONTRAST_RATIO}:1"
-        )
-    if link_ratio < MIN_CONTRAST_RATIO:
-        failures.append(
-            f"Dark .prose a contrast {link_ratio:.2f}:1 ({primary} on {card_bg}) below {MIN_CONTRAST_RATIO}:1"
-        )
-    if not failures:
-        log_pass(
-            f"Dark-theme contrast OK: btn {btn_ratio:.2f}:1, prose links {link_ratio:.2f}:1 (min {MIN_CONTRAST_RATIO}:1)"
-        )
+        btn_ratio = contrast_ratio("#ffffff", btn_bg)
+        link_ratio = contrast_ratio(primary, card_bg)
+        error_card_ratio = contrast_ratio(error, card_bg)
+        error_body_ratio = contrast_ratio(error, body_bg)
+        border_ratio = contrast_ratio(input_border, body_bg)
+        if btn_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .btn contrast {btn_ratio:.2f}:1 (#ffffff on {btn_bg}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if link_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .prose a contrast {link_ratio:.2f}:1 ({primary} on {card_bg}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if error_card_ratio < MIN_CONTRAST_RATIO or error_body_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .form-error contrast {error_card_ratio:.2f}:1 on card and "
+                f"{error_body_ratio:.2f}:1 on body ({error}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if border_ratio < MIN_NON_TEXT_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .form-input border contrast {border_ratio:.2f}:1 ({input_border} on {body_bg}) "
+                f"below {MIN_NON_TEXT_CONTRAST_RATIO}:1"
+            )
+        if theme_failures:
+            failures.extend(theme_failures)
+        else:
+            log_pass(
+                f"{theme}-theme contrast OK: btn {btn_ratio:.2f}:1, prose links {link_ratio:.2f}:1, "
+                f"error {error_card_ratio:.2f}:1, input border {border_ratio:.2f}:1"
+            )
     return failures
 
 
@@ -902,6 +1003,32 @@ def run_gate_self_tests():
         failures.append("self-test: old dark btn colour should fail the 4.5:1 bar (regression sentinel)")
     if contrast_ratio("#ffffff", "#1d4ed8") < MIN_CONTRAST_RATIO:
         failures.append("self-test: expected white on #1d4ed8 to meet 4.5:1")
+    if contrast_ratio("#f87171", "#ffffff") >= MIN_CONTRAST_RATIO:
+        failures.append("self-test: old light .form-error colour should fail the 4.5:1 bar")
+    if contrast_ratio("#b91c1c", "#ffffff") < MIN_CONTRAST_RATIO:
+        failures.append("self-test: new light .form-error colour should meet 4.5:1")
+    if contrast_ratio("#e2e8f0", "#ffffff") >= MIN_NON_TEXT_CONTRAST_RATIO:
+        failures.append("self-test: old light input border should fail the 3:1 bar")
+    if contrast_ratio("#64748b", "#ffffff") < MIN_NON_TEXT_CONTRAST_RATIO:
+        failures.append("self-test: new light input border should meet 3:1")
+
+    csp_cases = (
+        ("", "default-src 'none'; connect-src 'none'", True),
+        ("", "default-src 'none'; connect-src https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'; connect-src https://api.example.com", True),
+        ("https://api.example.com", "default-src 'none'; connect-src 'none'", False),
+        ("http://api.example.com", "default-src 'none'; connect-src http://api.example.com", False),
+        ("https://api.example.com/path", "default-src 'none'; connect-src https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'; connect-src 'none' https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'", False),
+    )
+    for meta, csp, should_pass in csp_cases:
+        result = validate_deletion_csp_pair(meta, csp)
+        if (not result) != should_pass:
+            failures.append(
+                f"self-test: CSP pair meta={meta!r} csp={csp!r} expected "
+                f"{'pass' if should_pass else 'fail'}, got {result}"
+            )
 
     sample_html = (
         '<script type="application/ld+json">{"@context":"https://schema.org"}</script>'
@@ -910,6 +1037,16 @@ def run_gate_self_tests():
     urls = collect_urls_for_external_scan(sample_html, ".html")
     if "https://evil.example/x" not in urls:
         failures.append("collect_urls_for_external_scan must still flag non-ld+json URLs")
+
+    meta_html = (
+        '<meta name="nexachat-api-base" content="https://api.nexachat.io.vn">'
+        '<a href="https://evil.example/x">x</a>'
+    )
+    meta_urls = collect_urls_for_external_scan(meta_html, ".html")
+    if "https://api.nexachat.io.vn" in meta_urls:
+        failures.append("collect_urls_for_external_scan must allow the configured API base meta")
+    if "https://evil.example/x" not in meta_urls:
+        failures.append("collect_urls_for_external_scan must still scan the rest of the page")
 
     if not failures:
         log_pass("Gate helper regression self-tests passed")
@@ -1006,9 +1143,21 @@ def test_account_deletion_page():
             "/api/v1/account-deletion/request",
             "/api/v1/account-deletion/confirm",
             'meta[name="nexachat-api-base"]',
+            "phoneInput.addEventListener('input'",
+            "ev.key !== 'Enter'",
+            "res.status === 429",
+            "web-deletion-send-error",
+            "web-deletion-rate-error",
         ):
             if needle not in js_body:
                 failures.append(f"delete-account.js missing required fragment: {needle}")
+
+    if html.count('role="alert"') < 5:
+        failures.append(f"{DELETION_PAGE} must expose form errors and rate-limit feedback with role=\"alert\"")
+    if 'aria-labelledby="web-deletion-heading-vi web-deletion-heading-en"' not in html:
+        failures.append(f"{DELETION_PAGE} web-deletion section must be labelled by both language headings")
+    if "Gửi mã · Send code" not in html or "Xóa tài khoản · Delete account" not in html:
+        failures.append(f"{DELETION_PAGE} form buttons must show bilingual visible labels")
 
     if not failures:
         log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
@@ -1030,12 +1179,13 @@ def test_delete_account_web_deployment_contract():
                 for hdr in entry.get("headers", []):
                     if hdr.get("key", "").lower() == "content-security-policy":
                         global_csp = hdr.get("value", "")
-        if "connect-src 'none'" not in global_csp:
-            failures.append(
-                "vercel.json default CSP must keep connect-src 'none' until the API origin is added at deploy time"
-            )
         if "script-src 'self'" not in global_csp:
             failures.append("vercel.json CSP must allow script-src 'self' for delete-account.js")
+        csp_pair_failures = validate_deletion_csp_pair(read_deletion_api_base(), global_csp)
+        if csp_pair_failures:
+            failures.extend(csp_pair_failures)
+        else:
+            log_pass("delete-account API meta and CSP connect-src form a consistent pair")
 
     ops_path = os.path.join(REPO_DIR, "docs", "operations.md")
     if not os.path.isfile(ops_path):
