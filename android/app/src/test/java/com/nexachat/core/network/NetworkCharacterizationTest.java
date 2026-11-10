@@ -86,7 +86,7 @@ public final class NetworkCharacterizationTest {
         Flowable<StompClient.State> openedAndClosed = Flowable.just(
                 StompClient.State.Open.INSTANCE,
                 new StompClient.State.Closed(1000, "test"));
-        when(stomp.connect(any())).thenReturn(openedAndClosed, openedAndClosed);
+        when(stomp.connect(any(), any())).thenReturn(openedAndClosed, openedAndClosed);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         TokenRefresher refresher = mock(TokenRefresher.class);

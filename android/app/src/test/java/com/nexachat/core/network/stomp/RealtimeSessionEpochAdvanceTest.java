@@ -122,7 +122,7 @@ public final class RealtimeSessionEpochAdvanceTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenAnswer(ignored -> {
+        when(stomp.connect(any(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.never();
         });

@@ -96,6 +96,17 @@ public final class TokenRefresher {
         return admissionOpen && sessionEpoch.get() == expectedEpoch;
     }
 
+    /** Runs a short realtime callback atomically with session epoch changes. */
+    public boolean runIfSessionCurrent(long expectedEpoch, @NonNull Runnable action) {
+        synchronized (lock) {
+            if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
+    }
+
     /** Replaying admission state for realtime callers; never performs bootstrap or IO. */
     @NonNull
     public Flowable<Boolean> sessionAdmission() {

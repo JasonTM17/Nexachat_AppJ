@@ -363,7 +363,9 @@ public final class RealtimeSession {
                     String storedBearer = tokens.getAccessToken();
                     if (!tokens.isAccessExpired()) {
                         attemptAccessToken = storedBearer;
-                        return stompClient.connect(storedBearer);
+                        return stompClient.connect(
+                                storedBearer,
+                                action -> tokenRefresher.runIfSessionCurrent(sessionEpoch, action));
                     }
                     return tokenRefresher.refreshOutcomeIfNeeded(storedBearer)
                             .flatMapPublisher(outcome -> {
@@ -373,7 +375,10 @@ public final class RealtimeSession {
                                 if (outcome instanceof TokenRefreshOutcome.FreshToken fresh) {
                                     String rotated = fresh.getAccessToken();
                                     attemptAccessToken = rotated;
-                                    return stompClient.connect(rotated);
+                                    return stompClient.connect(
+                                            rotated,
+                                            action -> tokenRefresher.runIfSessionCurrent(
+                                                    sessionEpoch, action));
                                 }
                                 if (outcome instanceof TokenRefreshOutcome.Rejected) {
                                     tearDownLoggedOutSession();

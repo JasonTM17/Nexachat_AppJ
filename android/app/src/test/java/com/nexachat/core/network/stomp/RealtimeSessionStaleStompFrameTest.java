@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -68,8 +69,11 @@ public final class RealtimeSessionStaleStompFrameTest {
         scheduler.triggerActions();
 
         TestSubscriber<ChatEvent> events = session.getEvents().test(0L);
+        long attemptsBeforeFirst = latestAttemptId(listeners);
         stomp.connect("first").test();
-        WebSocketListener stale = listeners.get(1L);
+        long firstAttempt = latestAttemptId(listeners);
+        assertTrue(firstAttempt > attemptsBeforeFirst);
+        WebSocketListener stale = listeners.get(firstAttempt);
         stomp.connect("second").test();
 
         String body = "{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":1,\"payload\":{}}";
@@ -80,5 +84,9 @@ public final class RealtimeSessionStaleStompFrameTest {
         WebSocket socket = mock(WebSocket.class);
         stale.onMessage(socket, StompCodec.encode(frame));
         events.assertNoValues();
+    }
+
+    private static long latestAttemptId(Map<Long, WebSocketListener> listeners) {
+        return listeners.keySet().stream().mapToLong(Long::longValue).max().orElse(0L);
     }
 }

@@ -145,7 +145,7 @@ public final class RealtimeSessionReArmTest {
                 invocation -> admission.getValue() && invocation.getArgument(0, Long.class) == 1L);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(anyString())).thenReturn(Flowable.concat(
+        when(stomp.connect(anyString(), any())).thenReturn(Flowable.concat(
                 Flowable.just(StompClient.State.Open.INSTANCE), Flowable.never()));
         RealtimeSession session = session(store, stomp, BehaviorProcessor.createDefault(false),
                 BehaviorProcessor.createDefault(false), refresher, scheduler);
@@ -185,7 +185,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(anyString())).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -210,7 +210,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(anyString())).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -236,7 +236,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(anyString())).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed(StompClient.REASON_CONNECT_TIMEOUT));
         });
@@ -292,7 +292,7 @@ public final class RealtimeSessionReArmTest {
     private static StompClient failedClient(AtomicInteger count) {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(anyString())).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             count.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("offline"));
         });

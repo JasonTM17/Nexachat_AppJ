@@ -38,6 +38,12 @@ import okhttp3.WebSocketListener;
 /** Raw OkHttp WebSocket plus STOMP 1.2 client. Reconnect policy stays in RealtimeSession. */
 @Singleton
 public final class StompClient {
+    @FunctionalInterface
+    public interface SessionActionGate {
+        /** Runs the action only while this connection's session is current. */
+        boolean runIfCurrent(@NonNull Runnable action);
+    }
+
 
     /** One connection attempt lifecycle. Terminal states are {@link State.Failed} or {@link State.Closed}. */
     public sealed interface State permits State.Connecting, State.Open, State.Failed, State.Closed {
@@ -179,8 +185,19 @@ public final class StompClient {
      */
     @NonNull
     public Flowable<State> connect(@Nullable String accessToken) {
+        return connect(accessToken, action -> {
+            action.run();
+            return true;
+        });
+    }
+
+    @NonNull
+    public Flowable<State> connect(
+            @Nullable String accessToken,
+            @NonNull SessionActionGate sessionActionGate) {
         final long attemptId = connectAttemptSeq.incrementAndGet();
-        AttemptLiveness liveness = new AttemptLiveness(connectAttemptSeq, attemptId);
+        AttemptLiveness liveness = new AttemptLiveness(
+                connectAttemptSeq, attemptId, sessionActionGate);
         LongPredicate stillCurrent = ignored -> liveness.isCurrent();
         return Flowable.create(emitter -> {
             SerialDisposable lifecycle = new SerialDisposable();
@@ -523,23 +540,39 @@ public final class StompClient {
     private static final class AttemptLiveness {
         private final AtomicLong attemptSequence;
         private final long attemptId;
+        private final SessionActionGate sessionActionGate;
         private boolean active = true;
 
-        private AttemptLiveness(AtomicLong attemptSequence, long attemptId) {
+        private AttemptLiveness(
+                AtomicLong attemptSequence,
+                long attemptId,
+                SessionActionGate sessionActionGate) {
             this.attemptSequence = attemptSequence;
             this.attemptId = attemptId;
+            this.sessionActionGate = sessionActionGate;
         }
 
-        private synchronized boolean isCurrent() {
-            return active && attemptSequence.get() == attemptId;
+        private boolean isCurrent() {
+            AtomicBoolean current = new AtomicBoolean();
+            boolean sessionCurrent = sessionActionGate.runIfCurrent(() -> {
+                synchronized (this) {
+                    current.set(active && attemptSequence.get() == attemptId);
+                }
+            });
+            return sessionCurrent && current.get();
         }
 
-        private synchronized boolean runIfCurrent(Runnable action) {
-            if (!active || attemptSequence.get() != attemptId) {
-                return false;
-            }
-            action.run();
-            return true;
+        private boolean runIfCurrent(Runnable action) {
+            AtomicBoolean ran = new AtomicBoolean();
+            boolean sessionCurrent = sessionActionGate.runIfCurrent(() -> {
+                synchronized (this) {
+                    if (active && attemptSequence.get() == attemptId) {
+                        action.run();
+                        ran.set(true);
+                    }
+                }
+            });
+            return sessionCurrent && ran.get();
         }
 
         private synchronized void invalidate() {

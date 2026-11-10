@@ -64,7 +64,7 @@ public final class RealtimeSessionEventDecodeTest {
     public void everyOpenResubscribesPresenceQueue() {
         TokenStore store = tokenStore(true);
         StompClient stomp = stomp();
-        when(stomp.connect(any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
+        when(stomp.connect(any(), any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
         session(store, stomp, null, true);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
     }
@@ -173,7 +173,7 @@ public final class RealtimeSessionEventDecodeTest {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(frames.onBackpressureBuffer());
         when(stomp.subscribe(any())).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenReturn(Flowable.never());
+        when(stomp.connect(any(), any())).thenReturn(Flowable.never());
         return stomp;
     }
 

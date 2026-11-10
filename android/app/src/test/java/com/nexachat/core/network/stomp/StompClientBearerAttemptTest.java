@@ -2,6 +2,7 @@ package com.nexachat.core.network.stomp;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -11,6 +12,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.nexachat.core.network.SessionEvents;
+import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Maybe;
@@ -22,6 +25,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
@@ -143,6 +148,128 @@ public final class StompClientBearerAttemptTest {
         assertTrue("no frame, including CONNECT, may be sent after disposal", sentFrames.isEmpty());
         verify(socket, never()).send(anyString());
         verify(socket, never()).close(anyInt(), anyString());
+    }
+
+    @Test
+    public void changedSessionEpochRejectsListenerBeforeAttemptDisposal() {
+        TokenStore store = mock(TokenStore.class);
+        TokenRefresher refresher = new TokenRefresher(
+                store, mock(SessionEvents.class), () -> null);
+        refresher.onSessionEstablished(1L);
+
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
+        List<String> sentFrames = new ArrayList<>();
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> {
+            WebSocket socket = mock(WebSocket.class);
+            when(socket.send(anyString())).thenAnswer(invocation -> {
+                sentFrames.add(invocation.getArgument(0));
+                return true;
+            });
+            sockets.put(attemptId, socket);
+            return socket;
+        });
+
+        TestSubscriber<StompClient.State> attempt = client.connect(
+                "account-a", action -> refresher.runIfSessionCurrent(1L, action)).test();
+        TestSubscriber<StompFrame> inbound = client.getFrames().test();
+        refresher.onSessionEstablished(2L);
+
+        WebSocket socket = sockets.get(1L);
+        WebSocketListener listener = listeners.get(1L);
+        listener.onOpen(socket, mock(Response.class));
+        listener.onMessage(socket, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        listener.onMessage(socket, StompCodec.encode(new StompFrame(
+                StompCommand.MESSAGE, Map.of("destination", "/user/queue/inbox"), "late")));
+
+        inbound.assertNoValues();
+        assertFalse("a prior epoch's CONNECTED callback must not open the socket", client.isOpen());
+        assertTrue("a prior epoch's onOpen callback must not send CONNECT", sentFrames.isEmpty());
+        attempt.assertValueCount(1);
+        attempt.cancel();
+    }
+
+    @Test
+    public void sessionEpochAdvanceWaitsForInFlightSocketCallback() throws Exception {
+        TokenStore store = mock(TokenStore.class);
+        TokenRefresher refresher = new TokenRefresher(
+                store, mock(SessionEvents.class), () -> null);
+        refresher.onSessionEstablished(1L);
+
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
+        List<String> sentFrames = new ArrayList<>();
+        CountDownLatch connectSendStarted = new CountDownLatch(1);
+        CountDownLatch releaseConnectSend = new CountDownLatch(1);
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> {
+            WebSocket socket = mock(WebSocket.class);
+            when(socket.send(anyString())).thenAnswer(invocation -> {
+                sentFrames.add(invocation.getArgument(0));
+                connectSendStarted.countDown();
+                if (!releaseConnectSend.await(5L, TimeUnit.SECONDS)) {
+                    throw new AssertionError("test did not release the CONNECT send");
+                }
+                return true;
+            });
+            sockets.put(attemptId, socket);
+            return socket;
+        });
+
+        TestSubscriber<StompClient.State> attempt = client.connect(
+                "account-a", action -> refresher.runIfSessionCurrent(1L, action)).test();
+        TestSubscriber<StompFrame> inbound = client.getFrames().test();
+        WebSocket socket = sockets.get(1L);
+        WebSocketListener listener = listeners.get(1L);
+        AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
+        Thread callback = new Thread(() -> {
+            try {
+                listener.onOpen(socket, mock(Response.class));
+            } catch (Throwable failure) {
+                callbackFailure.set(failure);
+            }
+        });
+        callback.start();
+        assertTrue(connectSendStarted.await(5L, TimeUnit.SECONDS));
+
+        CountDownLatch epochAdvanceStarted = new CountDownLatch(1);
+        CountDownLatch epochAdvanceFinished = new CountDownLatch(1);
+        Thread epochAdvance = new Thread(() -> {
+            epochAdvanceStarted.countDown();
+            refresher.onSessionEstablished(2L);
+            epochAdvanceFinished.countDown();
+        });
+        epochAdvance.start();
+        assertTrue(epochAdvanceStarted.await(5L, TimeUnit.SECONDS));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
+        while (epochAdvance.isAlive() && epochAdvance.getState() != Thread.State.BLOCKED
+                && System.nanoTime() < deadline) {
+            Thread.yield();
+        }
+        boolean epochAdvanceBlocked = epochAdvance.getState() == Thread.State.BLOCKED;
+        boolean oldEpochCurrentDuringCallback = refresher.isSessionCurrent(1L);
+
+        releaseConnectSend.countDown();
+        callback.join(TimeUnit.SECONDS.toMillis(5L));
+        epochAdvance.join(TimeUnit.SECONDS.toMillis(5L));
+        assertFalse("socket callback should finish", callback.isAlive());
+        assertFalse("epoch advance should finish", epochAdvance.isAlive());
+        assertTrue("epoch advancement must wait for the guarded callback", epochAdvanceBlocked);
+        assertTrue(oldEpochCurrentDuringCallback);
+        assertNull(callbackFailure.get());
+        assertEquals(0L, epochAdvanceFinished.getCount());
+        assertFalse(refresher.isSessionCurrent(1L));
+
+        listener.onOpen(socket, mock(Response.class));
+        listener.onMessage(socket, StompCodec.encode(new StompFrame(
+                StompCommand.MESSAGE, Map.of("destination", "/user/queue/inbox"), "late")));
+        assertEquals("the only send happened before the epoch changed", 1, sentFrames.size());
+        inbound.assertNoValues();
+        assertFalse(client.isOpen());
+        attempt.cancel();
     }
 
     @Test

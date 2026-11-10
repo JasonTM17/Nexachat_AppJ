@@ -53,7 +53,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(eq("a1"))).thenAnswer(ignored -> {
+        when(stomp.connect(eq("a1"), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -61,7 +61,7 @@ public final class RealtimeSessionTokenEpochTest {
         scheduler.triggerActions();
         verify(refresher, times(1)).refreshOutcomeIfNeeded("a0");
         verify(refresher, times(1)).refreshOutcomeIfNeeded("a1");
-        verify(stomp, times(1)).connect(eq("a1"));
+        verify(stomp, times(1)).connect(eq("a1"), any());
         assertEquals("a1", authRecoveryToken.get());
         assertEquals(1, connects.get());
     }
@@ -89,7 +89,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicInteger connectsForB = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenAnswer(invocation -> {
+        when(stomp.connect(any(), any())).thenAnswer(invocation -> {
             String bearer = invocation.getArgument(0);
             if ("access-a".equals(bearer)) {
                 return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
@@ -135,7 +135,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicInteger connectCalls = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenAnswer(ignored -> {
+        when(stomp.connect(any(), any())).thenAnswer(ignored -> {
             if (connectCalls.getAndIncrement() == 0) {
                 return firstAttempt.toFlowable(BackpressureStrategy.LATEST);
             }
@@ -167,7 +167,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenAnswer(ignored -> {
+        when(stomp.connect(any(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.never();
         });
@@ -192,7 +192,7 @@ public final class RealtimeSessionTokenEpochTest {
                 admission.getValue() && invocation.getArgument(0, Long.class) == 4L);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenReturn(Flowable.concat(
+        when(stomp.connect(any(), any())).thenReturn(Flowable.concat(
                 Flowable.just(StompClient.State.Open.INSTANCE),
                 Flowable.never()));
         RealtimeSession session = session(loggedInStore(tokens), stomp, refresher, scheduler);
@@ -215,7 +215,7 @@ public final class RealtimeSessionTokenEpochTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect(any())).thenAnswer(ignored -> {
+        when(stomp.connect(any(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.never();
         });
