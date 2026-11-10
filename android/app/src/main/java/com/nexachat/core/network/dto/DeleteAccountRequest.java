@@ -7,10 +7,6 @@ import java.util.Objects;
 public final class DeleteAccountRequest {
     private final String password;
 
-    public DeleteAccountRequest() {
-        this(null);
-    }
-
     public DeleteAccountRequest(@NonNull String password) {
         this.password = password;
     }

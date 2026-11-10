@@ -52,7 +52,8 @@
                 android:autofillHints="password"
                 android:imeOptions="actionDone"
                 android:importantForAutofill="yes"
-                android:inputType="textPassword" />
+                android:inputType="textPassword"
+                android:saveEnabled="false" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <TextView
@@ -61,6 +62,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="12dp"
+            android:accessibilityLiveRegion="polite"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorError"
             android:visibility="gone" />
@@ -72,7 +74,6 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="24dp"
-            android:contentDescription="@string/cd_delete_account_confirm"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/delete_account_confirm"
             app:backgroundTint="?attr/colorError"
@@ -84,6 +85,8 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="16dp"
+            android:accessibilityLiveRegion="polite"
+            android:contentDescription="@string/delete_account_confirm"
             android:indeterminate="true"
             android:visibility="gone"
             app:indicatorColor="?attr/colorError" />

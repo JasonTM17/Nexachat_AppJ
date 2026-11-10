@@ -19,6 +19,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.DELETE;
 import retrofit2.http.GET;
+import retrofit2.http.HTTP;
 import retrofit2.http.Multipart;
 import retrofit2.http.POST;
 import retrofit2.http.PATCH;
@@ -53,7 +54,7 @@ public interface UserApi {
     @PATCH("api/v1/users/me")
     Call<UserDto> updateMe(@Body UpdateProfileRequest body);
 
-    @DELETE("api/v1/users/me")
+    @HTTP(method = "DELETE", path = "api/v1/users/me", hasBody = true)
     Call<Void> deleteMe(@Body DeleteAccountRequest body);
 
     @Multipart

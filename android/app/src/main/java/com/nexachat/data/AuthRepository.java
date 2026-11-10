@@ -6,6 +6,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.PhoneNormalizer;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.common.WhitespaceTrim;
+import com.nexachat.core.media.MediaCacheCleaner;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AuthApi;
 import com.nexachat.core.network.UserApi;
@@ -52,6 +53,7 @@ public final class AuthRepository {
     private final TokenRefresher tokenRefresher;
     private final DeviceTokenRegistrationManager deviceTokenRegistrationManager;
     @Nullable private final AccountDataCleaner accountDataCleaner;
+    @Nullable private final MediaCacheCleaner mediaCacheCleaner;
     @Nullable private final Moshi moshi;
     @Nullable private final LoginNotice loginNotice;
 
@@ -64,6 +66,7 @@ public final class AuthRepository {
             @NonNull TokenRefresher tokenRefresher,
             @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
             @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull MediaCacheCleaner mediaCacheCleaner,
             @NonNull Moshi moshi,
             @NonNull LoginNotice loginNotice) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
@@ -74,6 +77,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.mediaCacheCleaner = Objects.requireNonNull(mediaCacheCleaner, "mediaCacheCleaner");
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
     }
@@ -94,6 +98,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = null;
     }
@@ -115,6 +120,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.mediaCacheCleaner = null;
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = null;
     }
@@ -136,6 +142,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = Objects.requireNonNull(accountDataCleaner, "accountDataCleaner");
+        this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
     }
@@ -155,6 +162,7 @@ public final class AuthRepository {
         this.deviceTokenRegistrationManager = Objects.requireNonNull(
                 deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
         this.accountDataCleaner = null;
+        this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = null;
     }
@@ -272,20 +280,40 @@ public final class AuthRepository {
             return Single.just(Result.failure(new ApiError.Unknown("NO_USER_API")));
         }
         return Single.defer(() -> authCallUnit(userApi.deleteMe(deleteAccountRequest(password)))
-                .flatMap(result -> {
-                    if (!(result instanceof Result.Success<?>)) {
-                        return Single.just(result);
-                    }
-                    return Completable.fromAction(tokenRefresher::onLogout)
-                            .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
-                                    .onErrorComplete()
-                                    .andThen(tokenStore.clear())
-                                    .andThen(Completable.fromAction(this::markAccountDeletedNotice))
-                                    .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))))
-                            .andThen(Single.<Result<Unit>>fromCallable(
-                                    () -> new Result.Success<>(Unit.INSTANCE)));
-                }))
+                .flatMap(result -> result instanceof Result.Success<?>
+                        ? finalizeAccountDeletion()
+                        : Single.just(result)))
                 .subscribeOn(Schedulers.io());
+    }
+
+    @NonNull
+    private Single<Result<Unit>> finalizeAccountDeletion() {
+        return clearPendingDeviceUnregisterResidue()
+                .andThen(Completable.fromAction(tokenRefresher::onLogout))
+                .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
+                        .onErrorComplete(), true)
+                        .onErrorComplete())
+                .andThen(clearMediaCaches())
+                .andThen(tokenStore.clear().onErrorComplete())
+                .andThen(Completable.fromAction(this::markAccountDeletedNotice))
+                .andThen(Completable.fromAction(sessionEvents::emitLoggedOut))
+                .onErrorComplete()
+                .andThen(Single.fromCallable(() -> new Result.Success<>(Unit.INSTANCE)));
+    }
+
+    @NonNull
+    private Completable clearPendingDeviceUnregisterResidue() {
+        return tokenStore.readPendingDeviceTokenUnregister()
+                .flatMapCompletable(pending -> tokenStore.clearPendingDeviceTokenUnregister(
+                        pending.getToken(), pending.getOwnerUserId()))
+                .onErrorComplete();
+    }
+
+    @NonNull
+    private Completable clearMediaCaches() {
+        return mediaCacheCleaner == null
+                ? Completable.complete()
+                : mediaCacheCleaner.clearForAccountDeletion().onErrorComplete();
     }
 
     private void markAccountDeletedNotice() {

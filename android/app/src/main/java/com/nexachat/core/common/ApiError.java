@@ -13,12 +13,36 @@ import java.util.Objects;
  */
 public sealed interface ApiError
         permits ApiError.InvalidCredentials,
+                ApiError.WrongPassword,
                 ApiError.PhoneExists,
                 ApiError.RateLimited,
                 ApiError.Network,
                 ApiError.Unknown {
 
-    /** 401 {@code INVALID_CREDENTIALS} (also reused for {@code WRONG_PASSWORD}). */
+    /** 401 {@code WRONG_PASSWORD} on credential-confirm routes (e.g. account deletion). */
+    final class WrongPassword implements ApiError {
+        public static final WrongPassword INSTANCE = new WrongPassword();
+
+        private WrongPassword() {
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof WrongPassword;
+        }
+
+        @Override
+        public int hashCode() {
+            return WrongPassword.class.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "WrongPassword";
+        }
+    }
+
+    /** 401 {@code INVALID_CREDENTIALS} on sign-in. */
     final class InvalidCredentials implements ApiError {
         public static final InvalidCredentials INSTANCE = new InvalidCredentials();
 
@@ -171,8 +195,11 @@ public sealed interface ApiError
     }
 
     static ApiError from(int httpStatus, @Nullable String serverCode) {
-        if ("INVALID_CREDENTIALS".equals(serverCode) || "WRONG_PASSWORD".equals(serverCode)) {
+        if ("INVALID_CREDENTIALS".equals(serverCode)) {
             return InvalidCredentials.INSTANCE;
+        }
+        if ("WRONG_PASSWORD".equals(serverCode)) {
+            return WrongPassword.INSTANCE;
         }
         if ("PHONE_EXISTS".equals(serverCode)) {
             return PhoneExists.INSTANCE;

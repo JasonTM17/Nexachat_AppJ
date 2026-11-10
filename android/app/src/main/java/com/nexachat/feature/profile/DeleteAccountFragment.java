@@ -7,6 +7,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -15,7 +16,6 @@ import androidx.navigation.fragment.NavHostFragment;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.databinding.FragmentDeleteAccountBinding;
-import com.nexachat.feature.auth.ApiErrorText;
 import dagger.hilt.android.AndroidEntryPoint;
 
 @AndroidEntryPoint
@@ -23,6 +23,7 @@ public final class DeleteAccountFragment extends Fragment {
 
     private FragmentDeleteAccountBinding binding;
     private DeleteAccountViewModel viewModel;
+    private OnBackPressedCallback backPressedCallback;
     private boolean rendering;
 
     @Nullable
@@ -36,8 +37,20 @@ public final class DeleteAccountFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(DeleteAccountViewModel.class);
-        binding.deleteAccountToolbar.setNavigationOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigateUp());
+        backPressedCallback = new OnBackPressedCallback(false) {
+            @Override
+            public void handleOnBackPressed() {
+                // Block system back while the delete request is in flight.
+            }
+        };
+        requireActivity().getOnBackPressedDispatcher().addCallback(
+                getViewLifecycleOwner(), backPressedCallback);
+        binding.deleteAccountToolbar.setNavigationOnClickListener(v -> {
+            DeleteAccountViewModel.UiState uiState = viewModel.getUiState().getValue();
+            if (uiState == null || !uiState.isDeleting()) {
+                NavHostFragment.findNavController(this).navigateUp();
+            }
+        });
         binding.passwordInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -81,11 +94,14 @@ public final class DeleteAccountFragment extends Fragment {
         ApiError error = state.getError();
         if (error != null) {
             binding.inlineError.setVisibility(View.VISIBLE);
-            binding.inlineError.setText(ApiErrorText.text(requireContext(), error));
+            binding.inlineError.setText(DeleteAccountErrorText.text(requireContext(), error));
         } else {
             binding.inlineError.setVisibility(View.GONE);
         }
         boolean busy = state.isDeleting();
+        if (backPressedCallback != null) {
+            backPressedCallback.setEnabled(busy);
+        }
         binding.confirmDelete.setEnabled(!busy);
         binding.passwordInput.setEnabled(!busy);
         binding.deleteProgress.setVisibility(busy ? View.VISIBLE : View.GONE);

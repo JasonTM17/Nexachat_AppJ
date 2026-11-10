@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -21,6 +22,7 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.feature.auth.LoginNotice;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Maybe;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -47,6 +49,7 @@ public final class AuthRepositoryDeleteAccountTest {
         when(call.execute()).thenReturn(Response.success(204, null));
         when(tokenManager.onLogout()).thenReturn(Completable.complete());
         when(tokenStore.clear()).thenReturn(Completable.complete());
+        when(tokenStore.readPendingDeviceTokenUnregister()).thenReturn(Maybe.empty());
 
         AuthRepository repository = new AuthRepository(
                 authApi, userApi, tokenStore, sessionEvents, tokenRefresher,
@@ -66,8 +69,43 @@ public final class AuthRepositoryDeleteAccountTest {
                 loginNotice.consume());
 
         InOrder order = inOrder(database, sessionEvents);
-        order.verify(database).clearAccountDataPreservingOutbox();
+        order.verify(database).clearAllTables();
         order.verify(sessionEvents).emitLoggedOut();
+    }
+
+    @Test
+    public void localCleanupFailureAfterServerDeleteStillSucceeds() throws Exception {
+        AuthApi authApi = mock(AuthApi.class);
+        UserApi userApi = mock(UserApi.class);
+        TokenStore tokenStore = mock(TokenStore.class);
+        SessionEvents sessionEvents = mock(SessionEvents.class);
+        TokenRefresher tokenRefresher = mock(TokenRefresher.class);
+        DeviceTokenRegistrationManager tokenManager = mock(DeviceTokenRegistrationManager.class);
+        AppDatabase database = mock(AppDatabase.class);
+        LoginNotice loginNotice = new LoginNotice();
+        AccountDataCleaner cleaner = new AccountDataCleaner(
+                database, new SessionOperationTracker(), Completable::complete);
+
+        Call<Void> call = mock(Call.class);
+        when(userApi.deleteMe(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(204, null));
+        when(tokenManager.onLogout()).thenReturn(Completable.complete());
+        when(tokenStore.clear()).thenReturn(Completable.complete());
+        when(tokenStore.readPendingDeviceTokenUnregister()).thenReturn(Maybe.empty());
+        doThrow(new RuntimeException("room down")).when(database).clearAllTables();
+
+        AuthRepository repository = new AuthRepository(
+                authApi, userApi, tokenStore, sessionEvents, tokenRefresher,
+                tokenManager, cleaner, loginNotice);
+
+        Result<com.nexachat.core.common.Unit> result =
+                repository.deleteAccount("current-pass").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        verify(tokenStore).clear();
+        verify(sessionEvents).emitLoggedOut();
+        assertEquals(Integer.valueOf(com.nexachat.R.string.login_account_deleted_notice),
+                loginNotice.consume());
     }
 
     @Test
@@ -87,7 +125,7 @@ public final class AuthRepositoryDeleteAccountTest {
         when(userApi.deleteMe(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.error(401,
                 okhttp3.ResponseBody.create(
-                        "{\"error\":{\"code\":\"INVALID_CREDENTIALS\"}}",
+                        "{\"error\":{\"code\":\"WRONG_PASSWORD\"}}",
                         okhttp3.MediaType.get("application/json"))));
 
         AuthRepository repository = new AuthRepository(

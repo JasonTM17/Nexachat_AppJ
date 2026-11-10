@@ -20,13 +20,18 @@ import javax.inject.Inject;
 public final class DeleteAccountViewModel extends ViewModel {
 
     private final AuthRepository authRepository;
+    private final AccountDeletionCoordinator accountDeletionCoordinator;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
     private UiState currentState = mutableUiState.getValue();
 
     @Inject
-    public DeleteAccountViewModel(@NonNull AuthRepository authRepository) {
+    public DeleteAccountViewModel(
+            @NonNull AuthRepository authRepository,
+            @NonNull AccountDeletionCoordinator accountDeletionCoordinator) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
+        this.accountDeletionCoordinator = Objects.requireNonNull(
+                accountDeletionCoordinator, "accountDeletionCoordinator");
     }
 
     public LiveData<UiState> getUiState() {
@@ -52,7 +57,7 @@ public final class DeleteAccountViewModel extends ViewModel {
             return;
         }
         updateState(current -> current.withDeleting(true).withError(null));
-        disposables.add(authRepository.deleteAccount(password)
+        accountDeletionCoordinator.retain(authRepository.deleteAccount(password)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> updateState(current -> {
