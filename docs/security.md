@@ -160,9 +160,10 @@ the implementing source file.
 ## 5. Rate limits
 
 - Pre-auth credential endpoints are IP-keyed (login 10/5 min, register 10/5 min,
-  refresh 30/5 min; RateLimitInterceptor.java) **and** phone-keyed (login and
-  register 20/5 min per normalized E.164 phone; AuthService.java), preventing
-  distributed IP rotation from brute-forcing an account. Without
+  refresh 30/5 min, Google nonce 30/5 min, Google sign-in 20/5 min;
+  RateLimitInterceptor.java) **and** phone-keyed (login and register 20/5 min per
+  normalized E.164 phone; AuthService.java), preventing distributed IP rotation
+  from brute-forcing an account. Without
   `NEXACHAT_TRUSTED_PROXY_CIDRS`, rate limits key off the socket peer and
   `X-Forwarded-For` is treated as client-spoofable; when the immediate peer
   matches a configured CIDR, `ClientIpResolver` uses the forwarded client IP for
@@ -214,6 +215,43 @@ the implementing source file.
   `INTERNAL_ERROR`, and logs no exception message, stack trace, or payload.
 - Validation errors are structured and stable: field violations become an
   insertion-ordered `details` map (GlobalExceptionHandler.handleValidation).
+
+## 7. Google sign-in (OpenID Connect)
+
+- Off by default (`nexachat.google.signin.enabled`). While off, every endpoint
+  answers `404 NOT_FOUND` (GoogleSignInService.requireEnabled), the decoder bean
+  rejects without any network access, and the Android build without a web client
+  ID never renders the entry points. Enabling the feature without
+  `nexachat.google.signin.web-client-id` fails application startup
+  (GoogleSignInConfiguration.decoderFor) — there is no insecure fallback.
+- The ID token is verified with Spring Security's `NimbusJwtDecoder` over Google's
+  JWKS (`https://www.googleapis.com/oauth2/v3/certs`, cached by Nimbus and
+  refreshed when Google rotates to an unknown key ID). RS256 is the only accepted
+  algorithm; the validator chain requires `exp`/`nbf` within a 60-second skew,
+  `iss` equal to `accounts.google.com` or `https://accounts.google.com`, `aud`
+  equal to the configured web client ID, and a non-blank `sub`
+  (GoogleIdTokenValidators.java). There is no custom crypto.
+- The identity key is the immutable `sub`; email is stored for display only and
+  never used to match or link an account (UserIdentity.java). A Google account
+  can belong to at most one user and a user to at most one Google account, both
+  enforced by UNIQUE constraints (V27); a concurrent link loses on the constraint
+  and receives the same generic `409` (GoogleSignInService.link).
+- Replay protection: `POST /auth/google/nonce` issues a 256-bit nonce, persists
+  only its SHA-256 hex with a five-minute expiry, and the token's `nonce` claim
+  must match. The service then consumes the nonce with one conditional
+  `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now()`, so concurrent
+  requests with the same nonce cannot both issue a session
+  (GoogleNonceService.java). All failures — malformed, wrong audience, wrong
+  issuer, expired, bad signature, wrong nonce — collapse to
+  `401 GOOGLE_SIGN_IN_FAILED`.
+- Linking and unlinking require the account password (bcrypt comparison) and are
+  rate-limited per user (10/5 min); an unlinked Google account gets the generic
+  `404 GOOGLE_ACCOUNT_NOT_LINKED` and the message never reveals whether the
+  Google account or the NexaChat account exists. Automatic account creation from
+  Google and email-based linking are intentionally absent (account-takeover
+  risk). Deleting a user cascades the identity row in the schema; the
+  account-deletion flow must delete identity rows because it tombstones users
+  instead of deleting them.
 
 ## Known limits & future work
 
