@@ -12,7 +12,7 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `DATABASE_URL` | Yes outside Compose; Compose supplies a default | `jdbc:postgresql://db:5432/nexachat` | `jdbc:postgresql://db:5432/nexachat` |
 | `DATABASE_USER` | Yes | None; set in `.env` | `nexachat` |
 | `DATABASE_PASSWORD` | Yes | None; set in `.env` | `replace-with-a-local-only-password` |
-| `JWT_SECRET` | Yes; at least 32 UTF-8 bytes | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
+| `JWT_SECRET` | Yes; at least 32 UTF-8 bytes, not the repository development value, at least 8 distinct characters | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
 | `STORAGE_ROOT` | Yes outside Compose; Compose supplies a default | `/app/data/uploads` | `/app/data/uploads` |
 | `MANAGEMENT_SERVER_PORT` | No (opt-in loopback isolation; shares API port 8080 by default) | Empty | `8081` |
 | `MANAGEMENT_SERVER_ADDRESS` | No (bind address for management server) | Empty | `127.0.0.1` |
@@ -58,6 +58,25 @@ if overriding environment variables for that process, use the host address.
 The database stores its initial role/password in the named volume on first
 initialization, so changing `DATABASE_PASSWORD` alone does not rotate an
 already-initialized database role.
+
+### Production profile
+
+Compose starts the app with `SPRING_PROFILES_ACTIVE=prod,json-logs`. In
+`server/src/main/resources/application-prod.yml` the prod profile also:
+
+- has no defaults for `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`,
+  `JWT_SECRET` or `STORAGE_ROOT` (startup fails if one is unset),
+- validates Flyway checksums (`validate-on-migrate: true`) and turns
+  `spring.jpa.open-in-view` off,
+- caps Hikari at 10 connections per instance (two instances stay below the
+  default Postgres `max_connections=100`) and enables gzip response compression,
+- keeps only `/actuator/health` exposed; the Compose and image health checks
+  probe its `liveness` group, while `readiness` covers database, Flyway and
+  storage space.
+
+The `server/Dockerfile` runs as the non-root `nexachat` user and adds
+`-XX:+ExitOnOutOfMemoryError` to `JAVA_OPTS`, so a container is replaced rather
+than left alive after an OOM.
 
 ### Feature configuration and retention
 
@@ -115,6 +134,12 @@ on the first send.
 
 `FCM_TOKEN_URI` and `FCM_API_URL` are optional overrides for running the server
 against a local fake Google endpoint; leave them empty in production.
+
+Compose interpolates `${FCM_ENABLED:-false}` from the **host environment before**
+the `.env` file. An exported host `FCM_ENABLED=true` therefore overrides the
+`.env` value and selects the real Google gateway; if you want the mock gateway,
+unset it in the shell (`env -u FCM_ENABLED docker compose up -d app`) before
+starting Compose.
 
 Real delivery requires an active Firebase project, a service account with the
 Firebase Cloud Messaging API enabled, and an Android client with a matching
@@ -276,8 +301,9 @@ token, and a password change keeps the supplied session token alive.
 - Every response carries `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. Auth responses
   additionally carry `Cache-Control: no-store`.
-- Only `/actuator/health` is public. Every other actuator endpoint requires a
-  Bearer token and only `health` is exposed.
+- Only `/actuator/health` (including its `liveness` and `readiness` groups) is
+  public. Every other actuator endpoint requires a Bearer token and only
+  `health` is exposed.
 
 ### Admin-only telemetry
 
@@ -407,9 +433,10 @@ point the Compose and Dockerfile health checks at it too.
   with a configurable threshold (`MANAGEMENT_DISK_THRESHOLD`, default `1GB`).
 - `ping` — liveness.
 
-Two groups are exposed:
+Two groups are exposed and both are public:
 
-- `/actuator/health/liveness` — `ping`.
+- `/actuator/health/liveness` — `ping`; this is what the Compose and Dockerfile
+  health checks call.
 - `/actuator/health/readiness` — `db`, `flyway`, `diskSpace`.
 
 ### Metrics
@@ -480,8 +507,9 @@ sum(rate(nexachat_llm_duration_seconds_count{outcome="FAILURE"}[15m]))
 
 ### Structured JSON logs
 
-Set `SPRING_PROFILES_ACTIVE=prod,json-logs` (or add `json-logs` to the active
-profiles) to emit one JSON object per line:
+Compose already sets `SPRING_PROFILES_ACTIVE=prod,json-logs`. For a standalone
+deployment, set the same value (or add `json-logs` to the active profiles) to
+emit one JSON object per line:
 
 ```json
 {"timestamp":"2026-11-08T12:00:00Z","level":"INFO","logger":"com.nexachat.auth.AuthService","thread":"http-nio-8080-exec-1","traceId":"6f1c2e0e-...","message":"Registered new account"}
@@ -560,7 +588,7 @@ LAN address printed by the demo script and be on the same network.
 
 ## Upgrade
 
-Back up before replacing the app image. Flyway migrations V1 through V22 apply
+Back up before replacing the app image. Flyway migrations V1 through V24 apply
 on app startup and are forward-only: add a new versioned SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
@@ -583,12 +611,12 @@ V11 introduce:
 - `V20__group_invite_links.sql`: `group_invite_links`, `group_join_requests`,
   `group_invite_bans`.
 
-`V21` is reserved for the recall-window worker; no schema change was required,
-so no V21 file exists. `V22__retention_cleanup_indexes.sql` is present on
-`main` and must ship with the app image. Ensure every migration file V1–V20 and
-`V22` is present in
-the source tree before rebuilding the dev app container; the image packages the
-server migration resources used by Flyway at startup.
+`V21` is reserved for the recall-window worker and `V23` is intentionally
+unused; neither has a file. `V22__retention_cleanup_indexes.sql` adds the
+retention indexes and `V24__hot_path_perf.sql` drops the unused
+`idx_conv_inbox`. Ensure every migration file V1–V20, `V22` and `V24` is present
+in the source tree before rebuilding the dev app container; the image packages
+the server migration resources used by Flyway at startup.
 
 ```sh
 bash demo/backup.sh
@@ -682,9 +710,12 @@ compare the dry-run counts with your organization's retention requirements.
 
 ## JWT secret rotation
 
-`JWT_SECRET` signs access JWTs. Replacing it and restarting the app invalidates
-all access JWTs signed with the old value; clients must refresh or sign in
-again. Refresh tokens are separate opaque values stored in the database as
+`JWT_SECRET` signs access JWTs. In the `prod` profile,
+`ProductionJwtSecretGuard` refuses to start with the repository's development
+default or a secret with fewer than eight distinct characters; HS256 still
+requires at least 32 bytes. Replacing the secret and restarting the app
+invalidates all access JWTs signed with the old value; clients must refresh or
+sign in again. Refresh tokens are separate opaque values stored in the database as
 SHA-256 hashes, so rotating the signing secret does not revoke those refresh
 tokens. All app instances in a deployment must use the same current secret.
 
@@ -721,8 +752,8 @@ Direct Gradle builds can set `-PreleaseVersionName` and
 ### Hardening and security boundaries
 
 1. **R8 full mode and resource shrinking**: Enabled via `android.enableR8.fullMode=true` in `gradle.properties`, and `minifyEnabled true`, `shrinkResources true` in `build.gradle`. Dead code, unused resources, and unneeded metadata are stripped.
-2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (`com.nexachat.core.network.dto.**`, `com.nexachat.feature.ask.**`, `com.nexachat.summary.**`), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
-3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to debug builds (`android/app/src/debug/res/xml/network_security_config.xml`).
+2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (network/STOMP, ask, summary, archive, poll, label, invite and reminder models), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
+3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to the `debug` and `localSmoke` variants (`android/app/src/debug/res/xml/network_security_config.xml`, `android/app/src/localSmoke/res/xml/network_security_config.xml`).
 4. **App backup disabled (`android:allowBackup="false"`)**: Backups are disabled to prevent extraction of sensitive local data via `adb backup` or cloud sync. Allowing backup would expose:
    - Decrypted SQLite database containing cached messages, contact lists, conversation watermarks, and drafts.
    - Session tokens and user authentication state stored in DataStore preferences.
@@ -732,13 +763,16 @@ Direct Gradle builds can set `-PreleaseVersionName` and
 ## Run CI checks locally
 
 The GitHub workflow runs Maven verification with a job-local PostgreSQL 16
-service, Android unit tests/lint/debug assembly, Markdown link checking, shell
-syntax checks, and a committed-secret scan. Equivalent local commands are:
+service, Android unit tests/lint/debug assembly, Markdown link and static-site
+checks, Android string/plural/a11y checks, `actionlint`, shell syntax checks,
+and a committed-secret scan. Equivalent local commands are:
 
 ```sh
 (cd server && mvn -B verify)
 (cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)
 python tools/check-markdown-links.py
+python site/check.py
+python tools/check-android-strings.py
 bash -n demo/*.sh tools/*.sh
 ```
 

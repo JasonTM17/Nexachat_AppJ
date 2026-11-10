@@ -124,7 +124,9 @@ cache are scoped by the same identity.
 | Background backfill | 200 messages/minute |
 | Ask rate limit | 20/minute, 200/day per user |
 
-The background backfill uses the deployment's primary provider. Enabling the
+The background backfill uses the deployment's primary provider. It holds a
+PostgreSQL advisory lock (`ScheduledAdvisoryLock`), so with several application
+instances only the node that acquires the lock runs a tick. Enabling the
 external embedding provider therefore sends message text to the configured
 embedding endpoint; operators must have a lawful basis (for example user
 consent) before setting `NEXACHAT_RAG_EMBEDDING_PROVIDER=openai-compatible`.

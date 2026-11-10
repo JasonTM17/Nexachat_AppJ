@@ -33,3 +33,26 @@ scratch databases used by migration and poll tests remain unique within and
 across runs. If both Maven processes use this checkout, also pass a different
 `-Dnexachat.test.build-directory=target/<run-name>` to each command so their
 compiled classes and reports stay separate.
+
+## Live end-to-end scripts
+
+`tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
+parallel joins at `maxUses`, revoke during a join, approval limits, recall
+purging the ask cache, and a spoofed `X-Forwarded-For` (plus the opt-in
+retention seed/observe phases). `tools/e2e/final/final_extended.py` adds
+idempotent send, recall/edit cache invalidation, STOMP receipt and removed-member
+handling, labels/pin/mute/archive isolation, mentions, reminders, polls, a
+500-message delta gap, 20-client fan-out, and an app-container restart. The
+extended script needs `websocket-client`; both scripts need Docker and a DB
+container whose name starts with `nexachat_e2e_grok2` (the scripts refuse the
+demo containers).
+
+Pass the stack coordinates with `--base-url`, `--db-container`, `--db-user` and
+`--db-name`; `final_extended.py` also takes `--app-container` for the
+`MockFcmGateway` push counts and `--only` for a subset of scenarios. See
+`python tools/e2e/final/<script>.py --help`.
+
+Known tooling caveat: the spoofed-XFF check in `final_live.py` stops at the 61st
+invite preview and is too strict because Bucket4j refills greedily. The `xff`
+scenario in `final_extended.py` keeps going to the first real `429` and is the
+corrected assertion.
