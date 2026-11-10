@@ -11,7 +11,7 @@
     <string name="auth_confirm_password_label">Confirm password</string>
     <string name="auth_current_password_label">Current password</string>
     <string name="auth_new_password_label">New password</string>
-    <string name="profile_password_changed">Password changed — other devices were signed out</string>
+    <string name="profile_password_changed">Password changed. Other devices were signed out.</string>
     <string name="profile_change_avatar">Change avatar</string>
     <string name="group_change_avatar">Change group avatar</string>
     <string name="error_current_password_required">Enter your current password</string>
@@ -40,7 +40,7 @@
     <string name="inbox_empty_groups">No group chats</string>
     <string name="inbox_search_hint">Search chats</string>
     <string name="inbox_active_now_header">ACTIVE NOW</string>
-    <string name="inbox_view_all">View All</string>
+    <string name="inbox_view_all">View all</string>
     <string name="inbox_filter_all">All</string>
     <string name="inbox_filter_unread">Unread</string>
     <string name="inbox_filter_groups">Groups</string>
@@ -52,7 +52,7 @@
     <string name="mute_for_four_hours">For 4 hours</string>
     <string name="mute_until_eight_am">Until 8:00 AM</string>
     <string name="mute_until_turned_on">Until turned back on</string>
-    <string name="unmute">Turn off mute</string>
+    <string name="unmute">Unmute notifications</string>
     <string name="conversation_archive">Archive</string>
     <string name="conversation_unarchive">Unarchive</string>
     <string name="conversation_muted">Notifications muted</string>
@@ -171,7 +171,7 @@
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="action_jump_to_message">Go to message</string>
-    <string name="error_pin_limit">Pinned-message limit reached</string>
+    <string name="error_pin_limit">You can pin at most 3 messages</string>
     <string name="error_conversation_pin_limit">You can pin at most 5 conversations</string>
     <string name="cd_pinned_conversation">Pinned conversation</string>
 
@@ -215,7 +215,7 @@
     <string name="action_delete">Delete</string>
     <string name="action_recall">Recall</string>
     <string name="action_delete_for_me">Delete for me</string>
-    <string name="action_admin_delete">Admin delete</string>
+    <string name="action_admin_delete">Remove message</string>
     <string name="action_more_options">More options</string>
     <string name="attachment_picker_title">Add attachment</string>
     <string name="attachment_pick_image">Photo</string>
@@ -238,7 +238,7 @@
     <string name="dialog_admin_delete_title">Remove message?</string>
     <string name="dialog_admin_delete_body">As a group admin, remove this message for everyone?</string>
     <string name="message_deleted">This message was deleted</string>
-    <string name="recall_window_expired">The recall window passed. The conversation was refreshed.</string>
+    <string name="recall_window_expired">The recall window has passed.</string>
 
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Search in conversation…</string>
@@ -318,9 +318,9 @@
     <string name="ask_from_message">From a message</string>
     <string name="ask_citations_label">Sources</string>
     <string name="ask_citation_accessibility">Open message: %1$s</string>
-    <string name="mention_all_picker">@all — everyone</string>
+    <string name="mention_all_picker">@all · Everyone</string>
     <string name="mention_person_picker">Mention %1$s</string>
-    <string name="mention_limit_exceeded">A message can mention up to 20 people. The message was cleared.</string>
+    <string name="mention_limit_exceeded">You can mention up to 20 people per message.</string>
     <string name="message_mentions_you">You were mentioned.</string>
     <string name="message_has_mentions">This message includes mentions.</string>
     <string name="error_mention_validation">The mentions in this message are no longer valid. Review them and try again.</string>
@@ -347,7 +347,7 @@
     <string name="reminder_error_not_found">This reminder no longer exists.</string>
     <string name="reminder_error_validation">Check the reminder details and try again.</string>
     <string name="reminder_error_limit">A conversation can have up to 50 reminders. Delete one first.</string>
-    <string name="reminder_error_conflict">This request conflicted with an earlier one. Try again.</string>
+    <string name="reminder_error_conflict">Duplicate request. Try again.</string>
     <string name="reminder_options">Reminder options</string>
     <string name="reminder_delete_confirm">Delete this reminder?</string>
     <string name="reminder_repeat_none">No repeat</string>
@@ -411,8 +411,8 @@
     <string name="poll_create">Create poll</string>
     <string name="poll_error_question">Enter a question</string>
     <string name="poll_error_question_long">Question is too long</string>
-    <string name="poll_error_options_min">Add at least two options</string>
-    <string name="poll_error_options_max">Use at most ten options</string>
+    <string name="poll_error_options_min">Add at least 2 options</string>
+    <string name="poll_error_options_max">Use at most 10 options</string>
     <string name="poll_error_option_blank">Fill in every option</string>
     <string name="poll_error_option_long">Option is too long</string>
     <string name="poll_error_option_duplicate">Options must be different</string>
@@ -425,7 +425,7 @@
     <string name="label_filter_all">All</string>
     <string name="label_manage">Manage labels</string>
     <string name="label_manage_description">Manage conversation labels</string>
-    <string name="label_assign_menu">Classify conversation</string>
+    <string name="label_assign_menu">Assign labels</string>
     <string name="label_assign_title">Conversation labels</string>
     <string name="label_manage_title">Manage labels</string>
     <string name="label_empty_manage">No labels yet. Create one to organize conversations.</string>
