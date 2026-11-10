@@ -28,7 +28,8 @@ public final class MessageListMapper {
             @NonNull DateSeparatorLabels dateLabels,
             long nowEpochMs
     ) {
-        return buildDisplayItems(chronological, isGroup, peerReadSeq, 0L, pulsingMessageId, dateLabels, nowEpochMs);
+        return buildDisplayItems(
+                chronological, isGroup, peerReadSeq, 0L, pulsingMessageId, dateLabels, nowEpochMs, -1, 0);
     }
 
     @NonNull
@@ -41,11 +42,35 @@ public final class MessageListMapper {
             @NonNull DateSeparatorLabels dateLabels,
             long nowEpochMs
     ) {
+        return buildDisplayItems(
+                chronological, isGroup, peerReadSeq, peerDeliveredSeq,
+                pulsingMessageId, dateLabels, nowEpochMs, -1, 0);
+    }
+
+    /**
+     * @param unreadDividerBeforeMessageIndex message index to place the unread divider before, or -1
+     * @param unreadDividerCount              label count when the divider is shown
+     */
+    @NonNull
+    public static List<MessageListItem> buildDisplayItems(
+            @NonNull List<ChatMessage> chronological,
+            boolean isGroup,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String pulsingMessageId,
+            @NonNull DateSeparatorLabels dateLabels,
+            long nowEpochMs,
+            int unreadDividerBeforeMessageIndex,
+            int unreadDividerCount
+    ) {
         if (chronological.isEmpty()) {
             return Collections.emptyList();
         }
         List<MessageListItem> rows = new ArrayList<>();
         for (int index = 0; index < chronological.size(); index++) {
+            if (index == unreadDividerBeforeMessageIndex && unreadDividerCount > 0) {
+                rows.add(MessageListItem.unreadDivider(unreadDividerCount));
+            }
             ChatMessage message = chronological.get(index);
             ChatMessage previous = index > 0 ? chronological.get(index - 1) : null;
             if (ChatUiRules.shouldShowDateSeparator(

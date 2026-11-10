@@ -177,6 +177,18 @@ public final class MessageBubbleBinder {
         }
     }
 
+    public void bindUnreadDivider(@NonNull View root, int unreadCount) {
+        TextView label = root.findViewById(R.id.unreadDividerLabel);
+        View dividerRoot = root.findViewById(R.id.unreadDividerRoot);
+        if (label != null) {
+            label.setText(com.nexachat.res.QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+        }
+        if (dividerRoot != null) {
+            dividerRoot.setContentDescription(
+                    com.nexachat.res.QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+        }
+    }
+
     private void wireGestures(View root, ChatMessage message) {
         if (MessageViewTypeMapper.isSystemMessage(message)) {
             root.setOnLongClickListener(null);

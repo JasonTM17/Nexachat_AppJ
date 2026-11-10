@@ -38,6 +38,28 @@ public final class MessageListMapperTest {
     }
 
     @Test
+    public void insertsUnreadDividerBeforeFirstUnreadMessage() {
+        ChatMessage read = msg("read", 1L, 1L, false);
+        ChatMessage unread = msg("unread", 2L, 2L, false);
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
+                Arrays.asList(read, unread),
+                false,
+                0L,
+                0L,
+                null,
+                new DateSeparatorLabels("T", "Y"),
+                100_000L,
+                1,
+                1);
+        assertEquals(4, rows.size());
+        assertEquals(MessageListItem.Kind.DATE_SEPARATOR, rows.get(0).getKind());
+        assertEquals(MessageListItem.Kind.MESSAGE, rows.get(1).getKind());
+        assertEquals(MessageListItem.Kind.UNREAD_DIVIDER, rows.get(2).getKind());
+        assertEquals(1, rows.get(2).getUnreadDividerCount());
+        assertEquals(MessageListItem.Kind.MESSAGE, rows.get(3).getKind());
+    }
+
+    @Test
     public void groupChatShowsSenderOnFirstInCluster() {
         ChatMessage first = msg("a", 1L, false);
         ChatMessage second = msg("b", 60_000L, false);
@@ -60,10 +82,14 @@ public final class MessageListMapperTest {
     }
 
     private static ChatMessage msg(String id, long at, boolean mine) {
+        return msg(id, 1L, at, mine);
+    }
+
+    private static ChatMessage msg(String id, long seq, long at, boolean mine) {
         return new ChatMessage(
                 id,
                 "conv",
-                1L,
+                seq,
                 "peer",
                 "Peer",
                 MessageDto.TYPE_TEXT,

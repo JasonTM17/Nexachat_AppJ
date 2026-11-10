@@ -118,6 +118,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private int pinIndex;
     private boolean settingDraft;
     private boolean searchOpen;
+    @Nullable private Long unreadDividerLocalReadSeq;
+    private boolean unreadDividerDismissed;
     private final ActivityResultLauncher<PickVisualMediaRequest> visualPicker =
             registerForActivityResult(
                     new ActivityResultContracts.PickMultipleVisualMedia(10),
@@ -189,6 +191,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             attachAskListener(existingAskSheet);
         }
         inboxViewModel.refresh();
+        InboxUiState initialInbox = inboxViewModel.getUiState().getValue();
+        if (initialInbox != null) {
+            captureUnreadDividerBaseline(initialInbox);
+        }
         String archiveJumpMessageId = getArguments() == null
                 ? null
                 : getArguments().getString(ARG_ARCHIVE_JUMP_MESSAGE_ID);
@@ -214,8 +220,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 if (binding == null || adapter == null) return;
                 LinearLayoutManager manager = (LinearLayoutManager) recyclerView.getLayoutManager();
                 if (manager != null && searchOpen && manager.findLastVisibleItemPosition() >= adapter.getItemCount() - 3 && searchState.getHasMore()) viewModel.loadMoreSearch();
-                else if (manager != null && manager.findFirstVisibleItemPosition() <= 1 && state.getHasMore()) viewModel.loadOlder();
+                else                 if (manager != null && manager.findFirstVisibleItemPosition() <= 1 && state.getHasMore()) viewModel.loadOlder();
                 binding.scrollDownFab.setVisibility(manager != null && manager.findLastVisibleItemPosition() < adapter.getItemCount() - 3 ? View.VISIBLE : View.GONE);
+                updateUnreadDividerReached(manager);
             }
         });
         binding.scrollDownFab.setOnClickListener(v -> binding.messageList.smoothScrollToPosition(Math.max(0, adapter.getItemCount() - 1)));
@@ -618,6 +625,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             if (next != null) {
                 if (adapter != null) adapter.setCurrentUserId(next.getCurrentUserId());
                 renderUnread(next);
+                captureUnreadDividerBaseline(next);
                 if (binding != null) updateMentionPicker(
                         binding.composerBar.messageInput.getText().toString(),
                         binding.composerBar.messageInput.getSelectionStart());
@@ -752,16 +760,149 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             if (anchor >= 0 && anchor < oldCount) anchorId = adapter.getCurrentList().get(anchor).getStableId();
         }
         long effectivePeerReadSeq = state != null && state.isShowSeen() ? state.getPeerReadSeq() : 0L;
-        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(messages, state.isGroup(), effectivePeerReadSeq, state.getPeerDeliveredSeq(), pulsingMessageId,
-                new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)), System.currentTimeMillis());
+        long localReadSeq = resolveUnreadDividerLocalReadSeq();
+        int unreadBeforeIndex = -1;
+        int unreadCount = 0;
+        if (localReadSeq >= 0L) {
+            unreadCount = UnreadDividerRule.countUnreadIncoming(messages, localReadSeq);
+            unreadBeforeIndex = UnreadDividerRule.indexOfFirstUnread(messages, localReadSeq);
+        }
+        boolean firstUnreadVisible = isFirstUnreadVisible(messages, localReadSeq, manager, oldCount);
+        boolean showDivider = localReadSeq >= 0L
+                && UnreadDividerRule.shouldShowDivider(unreadCount, unreadDividerDismissed, firstUnreadVisible);
+        int dividerIndex = showDivider ? unreadBeforeIndex : -1;
+        int dividerCount = showDivider ? unreadCount : 0;
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
+                messages,
+                state.isGroup(),
+                effectivePeerReadSeq,
+                state.getPeerDeliveredSeq(),
+                pulsingMessageId,
+                new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)),
+                System.currentTimeMillis(),
+                dividerIndex,
+                dividerCount);
         String stableAnchor = anchorId;
+        boolean dividerShown = showDivider;
         adapter.submitList(rows, () -> {
             if (binding == null || rows.isEmpty()) return;
             if (wasAtBottom) binding.messageList.scrollToPosition(rows.size() - 1);
             else if (stableAnchor != null) {
                 for (int i = 0; i < rows.size(); i++) if (stableAnchor.equals(rows.get(i).getStableId())) { binding.messageList.scrollToPosition(i); break; }
             }
+            LinearLayoutManager layoutManager = (LinearLayoutManager) binding.messageList.getLayoutManager();
+            if (dividerShown && wasAtBottom) {
+                binding.messageList.post(() -> {
+                    if (binding == null || unreadDividerDismissed) return;
+                    if (isFirstUnreadVisible(messages, localReadSeq, layoutManager, adapter.getItemCount())) {
+                        submitMessages(messages);
+                        return;
+                    }
+                    updateUnreadDividerReached(layoutManager);
+                });
+            } else {
+                updateUnreadDividerReached(layoutManager);
+            }
         });
+    }
+
+    private void captureUnreadDividerBaseline(@NonNull InboxUiState inbox) {
+        if (unreadDividerLocalReadSeq != null) {
+            return;
+        }
+        ConversationSummary row = null;
+        for (ConversationSummary candidate : inbox.getConversations()) {
+            if (conversationId.equals(candidate.getId())) {
+                row = candidate;
+                break;
+            }
+        }
+        if (row == null || row.getUnreadCount() <= 0) {
+            return;
+        }
+        long fromInbox = UnreadDividerRule.localLastReadSeq(row);
+        long fromMemory = viewModel.peekLocalReadSeq();
+        unreadDividerLocalReadSeq = Math.max(fromInbox, fromMemory);
+    }
+
+    private long resolveUnreadDividerLocalReadSeq() {
+        if (unreadDividerLocalReadSeq != null) {
+            return unreadDividerLocalReadSeq;
+        }
+        ConversationSummary row = currentConversation();
+        if (row != null && row.getUnreadCount() > 0) {
+            return UnreadDividerRule.localLastReadSeq(row);
+        }
+        return viewModel.peekLocalReadSeq();
+    }
+
+    private boolean isFirstUnreadVisible(
+            @NonNull List<ChatMessage> messages,
+            long localReadSeq,
+            @Nullable LinearLayoutManager manager,
+            int previousItemCount
+    ) {
+        if (manager == null || previousItemCount <= 0 || localReadSeq < 0L) {
+            return false;
+        }
+        int firstUnreadPos = indexOfFirstUnreadAdapterPosition(messages, localReadSeq, false);
+        if (firstUnreadPos < 0) {
+            return false;
+        }
+        int firstVisible = manager.findFirstVisibleItemPosition();
+        int lastVisible = manager.findLastVisibleItemPosition();
+        return firstUnreadPos >= firstVisible && firstUnreadPos <= lastVisible;
+    }
+
+    private void updateUnreadDividerReached(@Nullable LinearLayoutManager manager) {
+        if (unreadDividerDismissed || unreadDividerLocalReadSeq == null || manager == null || binding == null) {
+            return;
+        }
+        long localReadSeq = unreadDividerLocalReadSeq;
+        int dividerPos = indexOfFirstUnreadAdapterPosition(state.getMessages(), localReadSeq, true);
+        int firstUnreadPos = indexOfFirstUnreadAdapterPosition(state.getMessages(), localReadSeq, false);
+        int target = dividerPos >= 0 ? dividerPos : firstUnreadPos;
+        if (target < 0) {
+            return;
+        }
+        if (manager.findLastVisibleItemPosition() >= target) {
+            unreadDividerDismissed = true;
+            submitMessages(state.getMessages());
+        }
+    }
+
+    private int indexOfFirstUnreadAdapterPosition(
+            @NonNull List<ChatMessage> messages,
+            long localReadSeq,
+            boolean dividerRow
+    ) {
+        int messageIndex = UnreadDividerRule.indexOfFirstUnread(messages, localReadSeq);
+        if (messageIndex < 0) {
+            return -1;
+        }
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
+                messages,
+                state.isGroup(),
+                state.isShowSeen() ? state.getPeerReadSeq() : 0L,
+                state.getPeerDeliveredSeq(),
+                null,
+                new DateSeparatorLabels("", ""),
+                0L,
+                dividerRow ? messageIndex : -1,
+                dividerRow ? UnreadDividerRule.countUnreadIncoming(messages, localReadSeq) : 0);
+        for (int i = 0; i < rows.size(); i++) {
+            if (dividerRow) {
+                if (rows.get(i).getKind() == MessageListItem.Kind.UNREAD_DIVIDER) {
+                    return i;
+                }
+            } else {
+                ChatMessage message = rows.get(i).getMessage();
+                if (UnreadDividerRule.countsAsUnread(message, localReadSeq)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     private void setSearchOpen(boolean open) {
@@ -1137,6 +1278,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         adapter = null;
         binding = null;
+        unreadDividerLocalReadSeq = null;
+        unreadDividerDismissed = false;
         super.onDestroyView();
     }
 }

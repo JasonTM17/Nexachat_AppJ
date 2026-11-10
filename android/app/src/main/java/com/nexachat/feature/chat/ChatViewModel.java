@@ -402,6 +402,11 @@ public final class ChatViewModel extends ViewModel {
         return state == null ? new AiOptOutState() : state;
     }
 
+    /** Read watermark retained for the unread divider before this screen marks messages read. */
+    public long peekLocalReadSeq() {
+        return conversationId.isBlank() ? 0L : messageRepository.peekLocalReadSeq(conversationId);
+    }
+
     private void markNewestIncomingRead(List<ChatMessage> messages) {
         long newestIncoming = -1L;
         for (ChatMessage message : messages) {

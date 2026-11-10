@@ -476,4 +476,9 @@
     <string name="media_zoom_level">Thu phóng %1$d%%</string>
     <string name="media_saved">Đã lưu tệp</string>
     <string name="media_save_failed">Không thể lưu tệp</string>
+
+    <plurals name="chat_unread_divider">
+        <item quantity="other">%d tin nhắn chưa đọc</item>
+    </plurals>
+    <string name="cd_chat_unread_divider" translatable="false">Vạch phân cách tin chưa đọc</string>
 </resources>

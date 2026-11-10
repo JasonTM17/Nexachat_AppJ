@@ -481,4 +481,10 @@
     <string name="media_zoom_level">Zoom %1$d%%</string>
     <string name="media_saved">File saved</string>
     <string name="media_save_failed">Could not save file</string>
+
+    <plurals name="chat_unread_divider">
+        <item quantity="one">%d unread message</item>
+        <item quantity="other">%d unread messages</item>
+    </plurals>
+    <string name="cd_chat_unread_divider" translatable="false">Unread messages divider</string>
 </resources>
