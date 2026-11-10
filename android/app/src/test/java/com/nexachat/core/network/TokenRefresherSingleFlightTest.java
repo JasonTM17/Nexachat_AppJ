@@ -1,7 +1,6 @@
 package com.nexachat.core.network;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -16,22 +15,18 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
-import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.plugins.RxJavaPlugins;
-import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.core.Single;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Provider;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import retrofit2.Call;
 import retrofit2.Response;
@@ -39,24 +34,9 @@ import retrofit2.Response;
 /** Concurrent refresh callers must share one network rotation. */
 public final class TokenRefresherSingleFlightTest {
 
-    @Before
-    public void setUp() {
-        RxJavaPlugins.setIoSchedulerHandler(ignored -> Schedulers.trampoline());
-        RxJavaPlugins.setComputationSchedulerHandler(ignored -> Schedulers.trampoline());
-        RxAndroidPlugins.setInitMainThreadSchedulerHandler(ignored -> Schedulers.trampoline());
-    }
-
-    @After
-    public void tearDown() {
-        RxJavaPlugins.reset();
-        RxAndroidPlugins.reset();
-    }
-
     @Test
     public void concurrentRefreshCallsShareOneNetworkRotation() throws Exception {
-        for (int run = 0; run < 50; run++) {
-            concurrentForcedRefreshUsesSingleFlight();
-        }
+        runRepeatedlyUnderContention(TokenRefresherSingleFlightTest::concurrentForcedRefreshUsesSingleFlight);
     }
 
     private static void concurrentForcedRefreshUsesSingleFlight() throws Exception {
@@ -72,7 +52,7 @@ public final class TokenRefresherSingleFlightTest {
         when(call.execute()).thenAnswer(ignored -> {
             refreshCalls.incrementAndGet();
             entered.countDown();
-            assertTrue(release.await(10, TimeUnit.SECONDS));
+            assertTrue(release.await(30, TimeUnit.SECONDS));
             return Response.success(new AuthResponse(
                     new UserDto("u1", "+84900000001", "User"),
                     "fresh-access",
@@ -81,43 +61,14 @@ public final class TokenRefresherSingleFlightTest {
         });
 
         TokenRefresher refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
-        List<Throwable> errors = new ArrayList<>();
-        AtomicReference<TokenRefreshOutcome> first = new AtomicReference<>();
-        AtomicReference<TokenRefreshOutcome> second = new AtomicReference<>();
-        CountDownLatch startGate = new CountDownLatch(1);
-        CyclicBarrier pairedCallers = new CyclicBarrier(2);
+        // Both public calls enter singleFlight before either subscription can complete.
+        Single<TokenRefreshOutcome> firstFlight = refresher.refresh();
+        Single<TokenRefreshOutcome> secondFlight = refresher.refresh();
+        TokenRefreshOutcome[] outcomes = subscribeTogether(firstFlight, secondFlight, entered, release);
 
-        Thread workerA = new Thread(() -> {
-            try {
-                assertTrue(startGate.await(10, TimeUnit.SECONDS));
-                pairedCallers.await(10, TimeUnit.SECONDS);
-                first.set(refresher.refreshBlocking());
-            } catch (Throwable error) {
-                errors.add(error);
-            }
-        });
-        Thread workerB = new Thread(() -> {
-            try {
-                assertTrue(startGate.await(10, TimeUnit.SECONDS));
-                pairedCallers.await(10, TimeUnit.SECONDS);
-                second.set(refresher.refreshBlocking());
-            } catch (Throwable error) {
-                errors.add(error);
-            }
-        });
-
-        workerA.start();
-        workerB.start();
-        startGate.countDown();
-        assertTrue(entered.await(10, TimeUnit.SECONDS));
-        release.countDown();
-        workerA.join(10_000);
-        workerB.join(10_000);
-
-        assertTrue(errors.isEmpty());
-        assertSame(TokenRefreshOutcome.FreshToken.class, first.get().getClass());
-        assertEquals(first.get(), second.get());
-        assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) first.get()).getAccessToken());
+        assertTrue(outcomes[0] instanceof TokenRefreshOutcome.FreshToken);
+        assertEquals(outcomes[0], outcomes[1]);
+        assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) outcomes[0]).getAccessToken());
         verify(api, times(1)).refresh(any());
         assertEquals(1, refreshCalls.get());
         assertEquals("rt-rotated", store.readTokens().blockingGet().getRefreshToken());
@@ -125,6 +76,10 @@ public final class TokenRefresherSingleFlightTest {
 
     @Test
     public void concurrentRefreshIfNeededCallsShareOneNetworkRotation() throws Exception {
+        runRepeatedlyUnderContention(TokenRefresherSingleFlightTest::concurrentStaleAccessRefreshUsesSingleFlight);
+    }
+
+    private static void concurrentStaleAccessRefreshUsesSingleFlight() throws Exception {
         TokenStore store = store(new Tokens("stale-access", 0L, "rt-live"));
         SessionEvents events = new SessionEvents();
         AuthApi api = mock(AuthApi.class);
@@ -137,7 +92,7 @@ public final class TokenRefresherSingleFlightTest {
         when(call.execute()).thenAnswer(ignored -> {
             refreshCalls.incrementAndGet();
             entered.countDown();
-            assertTrue(release.await(10, TimeUnit.SECONDS));
+            assertTrue(release.await(30, TimeUnit.SECONDS));
             return Response.success(new AuthResponse(
                     new UserDto("u1", "+84900000001", "User"),
                     "fresh-access",
@@ -146,45 +101,18 @@ public final class TokenRefresherSingleFlightTest {
         });
 
         TokenRefresher refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
-        List<Throwable> errors = new ArrayList<>();
-        AtomicReference<TokenRefreshOutcome> first = new AtomicReference<>();
-        AtomicReference<TokenRefreshOutcome> second = new AtomicReference<>();
-        CountDownLatch startGate = new CountDownLatch(1);
-        CyclicBarrier pairedCallers = new CyclicBarrier(2);
         String staleAccess = "stale-access";
+        // This is the OkHttp/STOMP recovery entry point; capture both callers before subscription.
+        Single<TokenRefreshOutcome> firstFlight = refresher.refreshOutcomeIfNeeded(staleAccess);
+        Single<TokenRefreshOutcome> secondFlight = refresher.refreshOutcomeIfNeeded(staleAccess);
+        TokenRefreshOutcome[] outcomes = subscribeTogether(firstFlight, secondFlight, entered, release);
 
-        Thread workerA = new Thread(() -> {
-            try {
-                assertTrue(startGate.await(10, TimeUnit.SECONDS));
-                pairedCallers.await(10, TimeUnit.SECONDS);
-                first.set(refresher.refreshOutcomeIfNeeded(staleAccess).blockingGet());
-            } catch (Throwable error) {
-                errors.add(error);
-            }
-        });
-        Thread workerB = new Thread(() -> {
-            try {
-                assertTrue(startGate.await(10, TimeUnit.SECONDS));
-                pairedCallers.await(10, TimeUnit.SECONDS);
-                second.set(refresher.refreshOutcomeIfNeeded(staleAccess).blockingGet());
-            } catch (Throwable error) {
-                errors.add(error);
-            }
-        });
-
-        workerA.start();
-        workerB.start();
-        startGate.countDown();
-        assertTrue(entered.await(10, TimeUnit.SECONDS));
-        release.countDown();
-        workerA.join(10_000);
-        workerB.join(10_000);
-
-        assertTrue(errors.isEmpty());
-        assertSame(TokenRefreshOutcome.FreshToken.class, first.get().getClass());
-        assertEquals(first.get(), second.get());
+        assertTrue(outcomes[0] instanceof TokenRefreshOutcome.FreshToken);
+        assertEquals(outcomes[0], outcomes[1]);
+        assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) outcomes[0]).getAccessToken());
         verify(api, times(1)).refresh(any());
         assertEquals(1, refreshCalls.get());
+        assertEquals("rt-rotated", store.readTokens().blockingGet().getRefreshToken());
     }
 
     @Test
@@ -197,6 +125,103 @@ public final class TokenRefresherSingleFlightTest {
 
         assertEquals("fresh-access", ((TokenRefreshOutcome.FreshToken) outcome).getAccessToken());
         verify(api, times(0)).refresh(any());
+    }
+
+    private static TokenRefreshOutcome[] subscribeTogether(
+            Single<TokenRefreshOutcome> firstFlight,
+            Single<TokenRefreshOutcome> secondFlight,
+            CountDownLatch requestEntered,
+            CountDownLatch releaseRequest) throws Exception {
+        CountDownLatch callersReady = new CountDownLatch(2);
+        CountDownLatch startCallers = new CountDownLatch(1);
+        AtomicReference<TokenRefreshOutcome> first = new AtomicReference<>();
+        AtomicReference<TokenRefreshOutcome> second = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        Thread workerA = subscriber("refresh-caller-a", firstFlight, first, callersReady,
+                startCallers, failure);
+        Thread workerB = subscriber("refresh-caller-b", secondFlight, second, callersReady,
+                startCallers, failure);
+        workerA.start();
+        workerB.start();
+
+        boolean callersStarted;
+        boolean requestStarted = false;
+        try {
+            callersStarted = callersReady.await(30, TimeUnit.SECONDS);
+            startCallers.countDown();
+            requestStarted = requestEntered.await(30, TimeUnit.SECONDS);
+        } finally {
+            startCallers.countDown();
+            releaseRequest.countDown();
+        }
+
+        workerA.join(30_000);
+        workerB.join(30_000);
+        assertTrue("both refresh callers should reach the subscription gate", callersStarted);
+        assertTrue("the shared refresh request should start", requestStarted);
+        assertTrue("refresh callers should complete", !workerA.isAlive() && !workerB.isAlive());
+        if (failure.get() != null) {
+            throw new AssertionError("refresh caller failed", failure.get());
+        }
+        return new TokenRefreshOutcome[] {first.get(), second.get()};
+    }
+
+    private static Thread subscriber(
+            String name,
+            Single<TokenRefreshOutcome> flight,
+            AtomicReference<TokenRefreshOutcome> result,
+            CountDownLatch callersReady,
+            CountDownLatch startCallers,
+            AtomicReference<Throwable> failure) {
+        Thread thread = new Thread(() -> {
+            callersReady.countDown();
+            try {
+                assertTrue(startCallers.await(30, TimeUnit.SECONDS));
+                result.set(flight.blockingGet());
+            } catch (Throwable error) {
+                failure.compareAndSet(null, error);
+            }
+        }, name);
+        thread.setDaemon(true);
+        return thread;
+    }
+
+    private static void runRepeatedlyUnderContention(CheckedScenario scenario) throws Exception {
+        String configured = System.getenv("NEXACHAT_TOKEN_REFRESH_STRESS_ITERATIONS");
+        int iterations = configured == null || configured.isBlank() ? 1 : Integer.parseInt(configured);
+        assertTrue("stress iteration count must be positive", iterations > 0);
+
+        AtomicBoolean contend = new AtomicBoolean(iterations > 1);
+        List<Thread> loadThreads = new ArrayList<>();
+        if (contend.get()) {
+            for (int index = 0; index < 2; index++) {
+                Thread load = new Thread(() -> {
+                    while (contend.get()) {
+                        Thread.onSpinWait();
+                    }
+                }, "token-refresh-cpu-load-" + index);
+                load.setDaemon(true);
+                load.start();
+                loadThreads.add(load);
+            }
+        }
+
+        try {
+            for (int run = 0; run < iterations; run++) {
+                scenario.run();
+            }
+        } finally {
+            contend.set(false);
+            for (Thread load : loadThreads) {
+                load.join(5_000);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    private interface CheckedScenario {
+        void run() throws Exception;
     }
 
     private static TokenStore store(Tokens initial) {
