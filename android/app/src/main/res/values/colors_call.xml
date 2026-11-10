@@ -27,4 +27,5 @@
     <color name="call_icon_on_control">@color/call_avatar_foreground</color>
     <color name="call_action_decline_text">#FFFCA5A5</color>
     <color name="call_action_accept_text">#FF6EE7B7</color>
+    <color name="call_control_background">#FF2E3748</color>
 </resources>

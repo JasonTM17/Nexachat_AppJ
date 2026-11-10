@@ -10,6 +10,31 @@ import static org.junit.Assert.assertTrue;
 
 /** Contrast against the actual fixed dark call surface in both app themes. */
 public final class CallContrastContractTest {
+    @Test public void materialMuteAndSpeakerTintIsExplicitAndContrasting() throws Exception {
+        for (String dir : new String[]{"layout", "layout-land"}) {
+            Path layout = Path.of("src/main/res", dir, "activity_call.xml");
+            if (!Files.exists(layout)) continue;
+            NodeList buttons = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                    .parse(layout.toFile()).getElementsByTagName("com.google.android.material.button.MaterialButton");
+            int checked = 0;
+            for (int i = 0; i < buttons.getLength(); i++) {
+                Element button = (Element) buttons.item(i);
+                String id = button.getAttribute("android:id");
+                if (!id.equals("@+id/call_mute") && !id.equals("@+id/call_speaker")) continue;
+                String tint = button.getAttribute("android:backgroundTint");
+                assertTrue(dir + " " + id + " must override Material's theme tint", tint.startsWith("@color/"));
+                for (boolean night : new boolean[]{false, true}) {
+                    Map<String, String> colors = new HashMap<>();
+                    load(colors, "values");
+                    if (night) load(colors, "values-night");
+                    check(colors, "call_icon_on_control", tint.substring(7), 4.5);
+                }
+                checked++;
+            }
+            assertTrue(dir + " must retain both call controls", checked == 2);
+        }
+    }
+
     @Test public void callLabelsRemainLegibleAcrossTheEntireGradient() throws Exception {
         Element gradient = (Element) DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(Path.of("src/main/res/drawable/bg_call_gradient.xml").toFile())
