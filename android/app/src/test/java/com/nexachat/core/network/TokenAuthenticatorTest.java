@@ -16,11 +16,13 @@ import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.storage.SessionSnapshot;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -46,6 +48,7 @@ public final class TokenAuthenticatorTest {
         AuthApi api = mock(AuthApi.class);
         Call<AuthResponse> call = mock(Call.class);
         when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
         when(call.execute()).thenAnswer(ignored -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -63,7 +66,7 @@ public final class TokenAuthenticatorTest {
         first.join(10_000);
         second.join(10_000);
 
-        verify(api, times(1)).refresh(new RefreshRequest("rt-stale"));
+        verify(api, times(1)).refresh(anyString(), any(RefreshRequest.class));
         assertEquals(2, results.size());
         for (Request request : results) {
             assertEquals("Bearer " + NEW, request.header(AuthInterceptor.HEADER_AUTHORIZATION));
@@ -87,6 +90,7 @@ public final class TokenAuthenticatorTest {
         AuthApi api = mock(AuthApi.class);
         Call<AuthResponse> call = mock(Call.class);
         when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.error(401,
                 okhttp3.ResponseBody.create(okhttp3.MediaType.parse("application/json"),
                         "{\"error\":{\"code\":\"TOKEN_REUSED\"}}")));
@@ -132,8 +136,29 @@ public final class TokenAuthenticatorTest {
             value.set(new Tokens(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
             return Completable.complete();
         });
+        when(store.commitRefreshRotation(
+                        anyLong(),
+                        anyString(),
+                        anyString(),
+                        anyLong(),
+                        anyString(),
+                        any(RecallWindowConfig.class)))
+                .thenAnswer(invocation -> {
+                    value.set(new Tokens(
+                            invocation.getArgument(2),
+                            invocation.getArgument(3),
+                            invocation.getArgument(4)));
+                    return Completable.complete();
+                });
         when(store.clear()).thenAnswer(ignored -> Completable.fromAction(() -> value.set(null)));
         when(store.getHasValidRefresh()).thenReturn(Flowable.defer(() -> Flowable.just(value.get() != null)));
+        when(store.readSessionSnapshot())
+                .thenReturn(Single.just(new SessionSnapshot(1L, SessionSnapshot.Lifecycle.ACTIVE)));
+        when(store.bootstrapLegacySessionIfNeeded()).thenReturn(Single.just(1L));
+        when(store.readPendingRefresh()).thenReturn(Maybe.empty());
+        when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
+        when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
+        when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 

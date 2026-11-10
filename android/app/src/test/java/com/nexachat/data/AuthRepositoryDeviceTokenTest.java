@@ -27,6 +27,7 @@ import com.squareup.moshi.Moshi;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 import java.util.concurrent.TimeUnit;
 import org.junit.Assert;
 import org.junit.Test;
@@ -51,8 +52,9 @@ public final class AuthRepositoryDeviceTokenTest {
         Call<AuthResponse> call = mock(Call.class);
         when(authApi.login(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(response));
-        when(tokenStore.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
-                .thenReturn(Completable.complete());
+        when(tokenStore.establishNewSession(
+                        anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
+                .thenReturn(Single.just(1L));
         when(tokenManager.onSessionAvailable()).thenReturn(Completable.complete());
 
         AuthRepository repository = new AuthRepository(
@@ -62,7 +64,9 @@ public final class AuthRepositoryDeviceTokenTest {
                 .blockingGet();
 
         assertTrue(result instanceof Result.Success<?>);
-        verify(tokenStore).saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class));
+        verify(tokenStore).establishNewSession(
+                anyString(), anyLong(), anyString(), any(RecallWindowConfig.class));
+        verify(tokenRefresher).onSessionEstablished(1L);
         verify(tokenManager).onSessionAvailable();
     }
 
@@ -197,8 +201,9 @@ public final class AuthRepositoryDeviceTokenTest {
         Call<AuthResponse> call = mock(Call.class);
         when(authApi.login(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(response));
-        when(tokenStore.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
-                .thenReturn(Completable.complete());
+        when(tokenStore.establishNewSession(
+                        anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
+                .thenReturn(Single.just(2L));
         when(tokenManager.onSessionAvailable()).thenReturn(Completable.complete());
         AccountDataCleaner cleaner = new AccountDataCleaner(
                 database, new SessionOperationTracker(), Completable::complete);
@@ -209,10 +214,10 @@ public final class AuthRepositoryDeviceTokenTest {
 
         assertTrue(result instanceof Result.Success<?>);
         verify(database).clearAccountDataPreservingOutbox();
-        InOrder order = inOrder(outboxDao, tokenStore);
-        order.verify(outboxDao, org.mockito.Mockito.times(2)).sealUnassignedLegacyOwners();
-        order.verify(tokenStore).saveSession(anyString(), anyLong(), anyString(),
+        verify(outboxDao, org.mockito.Mockito.times(2)).sealUnassignedLegacyOwners();
+        verify(tokenStore).establishNewSession(anyString(), anyLong(), anyString(),
                 any(RecallWindowConfig.class));
+        verify(tokenRefresher).onSessionEstablished(2L);
         verify(outboxDao, never()).assignLegacyOwner(anyString());
     }
 
@@ -236,8 +241,9 @@ public final class AuthRepositoryDeviceTokenTest {
         Call<AuthResponse> call = mock(Call.class);
         when(authApi.login(any())).thenReturn(call);
         when(call.execute()).thenReturn(Response.success(response));
-        when(tokenStore.saveSession(anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
-                .thenReturn(Completable.complete());
+        when(tokenStore.establishNewSession(
+                        anyString(), anyLong(), anyString(), any(RecallWindowConfig.class)))
+                .thenReturn(Single.just(3L));
         when(tokenManager.onSessionAvailable()).thenReturn(Completable.complete());
         AccountDataCleaner cleaner = new AccountDataCleaner(
                 database, new SessionOperationTracker(), Completable::complete);
@@ -248,11 +254,12 @@ public final class AuthRepositoryDeviceTokenTest {
                 .blockingGet();
 
         assertTrue(result instanceof Result.Success<?>);
-        InOrder order = inOrder(outboxDao, tokenStore);
+        InOrder order = inOrder(outboxDao);
         order.verify(outboxDao).assignLegacyOwner("user-a");
         order.verify(outboxDao).sealUnassignedLegacyOwners();
-        order.verify(tokenStore).saveSession(anyString(), anyLong(), anyString(),
+        verify(tokenStore).establishNewSession(anyString(), anyLong(), anyString(),
                 any(RecallWindowConfig.class));
+        verify(tokenRefresher).onSessionEstablished(3L);
         verify(outboxDao, never()).assignLegacyOwner("user-b");
     }
 

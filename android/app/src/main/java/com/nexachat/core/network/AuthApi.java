@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import retrofit2.Call;
 import retrofit2.http.Body;
+import retrofit2.http.Header;
 import retrofit2.http.PATCH;
 import retrofit2.http.POST;
 
@@ -32,6 +33,10 @@ public interface AuthApi {
 
     @POST("api/v1/auth/refresh")
     Call<AuthResponse> refresh(@Body RefreshRequest body);
+
+    @POST("api/v1/auth/refresh")
+    Call<AuthResponse> refresh(
+            @Header("Idempotency-Key") String idempotencyKey, @Body RefreshRequest body);
 
     @POST("api/v1/auth/logout")
     Call<Void> logout(@Body LogoutRequest body);

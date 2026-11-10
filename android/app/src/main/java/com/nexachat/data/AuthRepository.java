@@ -132,7 +132,8 @@ public final class AuthRepository {
                 .andThen(Single.defer(tokenRefresher::refresh)).flatMap(outcome -> {
                     Result<Boolean> result = refreshMapping(outcome);
                     if (outcome instanceof TokenRefreshOutcome.FreshToken
-                            || outcome instanceof TokenRefreshOutcome.TransientFailure) {
+                            || outcome instanceof TokenRefreshOutcome.TransientFailure
+                            || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
                         if (accountDataCleaner != null) accountDataCleaner.scheduleOutbox();
                         return deviceTokenRegistrationManager.onSessionAvailable()
                                 .onErrorComplete()
@@ -226,12 +227,17 @@ public final class AuthRepository {
             }
             AuthResponse response = (AuthResponse) success.getValue();
             return bindLegacyOutboxToStoredSession().andThen(Single.defer(() -> {
-                Completable saveSession = Completable.defer(() -> tokenStore.saveSession(
-                        response.getAccessToken(),
-                        System.currentTimeMillis() + response.getAccessTokenExpiresIn() * 1_000L,
-                        response.getRefreshToken(),
-                        new RecallWindowConfig(response.getRecallWindowSeconds(),
-                                response.getGroupAdminMayRecallAfterWindow())));
+                RecallWindowConfig recall = new RecallWindowConfig(
+                        response.getRecallWindowSeconds(),
+                        response.getGroupAdminMayRecallAfterWindow());
+                Completable saveSession = tokenStore.establishNewSession(
+                                response.getAccessToken(),
+                                System.currentTimeMillis()
+                                        + response.getAccessTokenExpiresIn() * 1_000L,
+                                response.getRefreshToken(),
+                                recall)
+                        .doOnSuccess(tokenRefresher::onSessionEstablished)
+                        .ignoreElement();
                 Completable establishSession = accountDataCleaner == null
                         ? saveSession.andThen(Completable.fromAction(sessionEvents::emitSessionAvailable))
                         : accountDataCleaner.startSession(saveSession,
@@ -334,7 +340,8 @@ public final class AuthRepository {
         if (outcome instanceof TokenRefreshOutcome.FreshToken) {
             return new Result.Success<>(Boolean.TRUE);
         }
-        if (outcome instanceof TokenRefreshOutcome.TransientFailure) {
+        if (outcome instanceof TokenRefreshOutcome.TransientFailure
+                || outcome instanceof TokenRefreshOutcome.RecoveryRequired) {
             return Result.failure(new ApiError.Network("refresh request failed"));
         }
         if (outcome instanceof TokenRefreshOutcome.Rejected) {

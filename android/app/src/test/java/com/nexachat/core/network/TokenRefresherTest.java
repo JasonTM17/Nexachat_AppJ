@@ -13,12 +13,15 @@ import static org.mockito.Mockito.when;
 
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.core.storage.SessionSnapshot;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.Tokens;
+import static org.mockito.ArgumentMatchers.anyLong;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.observers.TestObserver;
 import java.io.IOException;
 import java.net.ConnectException;
@@ -45,7 +48,10 @@ public final class TokenRefresherTest {
     public void ioExceptionPreservesTokensAndDoesNotLogOut() throws Exception {
         Harness harness = new Harness();
         Call<AuthResponse> call = mock(Call.class);
-        when(harness.api.refresh(any())).thenReturn(call);
+        when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
         when(call.execute()).thenThrow(new IOException("offline"));
         assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
         assertEquals("rt-live", harness.current().getRefreshToken());
@@ -60,7 +66,10 @@ public final class TokenRefresherTest {
                 new ConnectException("no route"))) {
             Harness harness = new Harness();
             Call<AuthResponse> call = mock(Call.class);
-            when(harness.api.refresh(any())).thenReturn(call);
+            when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
             try {
                 when(call.execute()).thenThrow(failure);
             } catch (IOException impossible) {
@@ -94,7 +103,10 @@ public final class TokenRefresherTest {
         Harness harness = new Harness();
         CancellationException cancelled = new CancellationException("cancelled");
         Call<AuthResponse> call = mock(Call.class);
-        when(harness.api.refresh(any())).thenReturn(call);
+        when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
         when(call.execute()).thenThrow(cancelled);
         try {
             harness.refresher.refreshBlocking();
@@ -109,7 +121,10 @@ public final class TokenRefresherTest {
     private static void assertPreserved(int status) {
         Harness harness = new Harness();
         Call<AuthResponse> call = responseCall(status);
-        when(harness.api.refresh(any())).thenReturn(call);
+        when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(call);
         assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
         assertEquals("access-live", harness.current().getAccessToken());
         assertEquals("rt-live", harness.current().getRefreshToken());
@@ -118,7 +133,10 @@ public final class TokenRefresherTest {
 
     private static void assertRejected(int status, String code) {
         Harness harness = new Harness();
-        when(harness.api.refresh(any())).thenReturn(responseCall(status, code));
+        when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(responseCall(status, code));
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(responseCall(status, code));
         assertSame(TokenRefreshOutcome.Rejected.INSTANCE, harness.refresher.refreshBlocking());
         assertNull(harness.current());
         harness.events.getEvents().test().assertValue(SessionEvents.Event.LoggedOut.INSTANCE);
@@ -126,7 +144,10 @@ public final class TokenRefresherTest {
 
     private static void assertTransient(int status, String code) {
         Harness harness = new Harness();
-        when(harness.api.refresh(any())).thenReturn(responseCall(status, code));
+        when(harness.api.refresh(any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(responseCall(status, code));
+        when(harness.api.refresh(anyString(), any(com.nexachat.core.network.dto.RefreshRequest.class)))
+                .thenReturn(responseCall(status, code));
         assertSame(TokenRefreshOutcome.TransientFailure.INSTANCE, harness.refresher.refreshBlocking());
         assertEquals("rt-live", harness.current().getRefreshToken());
         harness.events.getEvents().test().assertNoValues();
@@ -171,8 +192,27 @@ public final class TokenRefresherTest {
                 .thenAnswer(invocation ->
                 Completable.fromAction(() -> state.set(new Tokens(
                         invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)))));
+        when(store.commitRefreshRotation(
+                        anyLong(),
+                        anyString(),
+                        anyString(),
+                        anyLong(),
+                        anyString(),
+                        any(RecallWindowConfig.class)))
+                .thenAnswer(invocation ->
+                        Completable.fromAction(() -> state.set(new Tokens(
+                                invocation.getArgument(2),
+                                invocation.getArgument(3),
+                                invocation.getArgument(4)))));
         when(store.clear()).thenAnswer(ignored -> Completable.fromAction(() -> state.set(null)));
         when(store.getHasValidRefresh()).thenReturn(Flowable.defer(() -> Flowable.just(state.get() != null)));
+        when(store.readSessionSnapshot())
+                .thenReturn(Single.just(new SessionSnapshot(1L, SessionSnapshot.Lifecycle.ACTIVE)));
+        when(store.bootstrapLegacySessionIfNeeded()).thenReturn(Single.just(1L));
+        when(store.readPendingRefresh()).thenReturn(Maybe.empty());
+        when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
+        when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
+        when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 }
