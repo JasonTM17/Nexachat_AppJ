@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.CompositeMessageConverter;
@@ -66,6 +67,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CallFlowIT {
 
     private static final long TIMEOUT_SECONDS = 10;
+    private static final String PHONE_PREFIX = "+8498";
     private static final AtomicInteger PHONE_SEQ = new AtomicInteger(40_000);
 
     @DynamicPropertySource
@@ -88,6 +90,8 @@ class CallFlowIT {
     private ObjectMapper objectMapper;
     @Autowired
     private SimpUserRegistry simpUserRegistry;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private TestUser alice;
     private TestUser bob;
@@ -105,6 +109,15 @@ class CallFlowIT {
 
     @BeforeAll
     void registerTestUsers() throws Exception {
+        String like = "phone LIKE '" + PHONE_PREFIX + "%'";
+        jdbcTemplate.update(
+                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+
         alice = registerUser("Call Alice");
         bob = registerUser("Call Bob");
         carol = registerUser("Call Carol");
@@ -151,6 +164,8 @@ class CallFlowIT {
         assertThat(awaitEvent(caller, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
         assertThat(awaitEvent(callee, "CALL_ACCEPTED").path("callId").asText()).isEqualTo(callId.toString());
         Instant connectedAt = Instant.now();
+        TestWaits.until("call active for at least one second", Duration.ofSeconds(5),
+                () -> Duration.between(connectedAt, Instant.now()).getSeconds() >= 1L);
 
         CallSignal.Sdp sdp = new CallSignal.Sdp("offer", "v=0\\r\\no=nexachat 1 1 IN IP4 127.0.0.1");
         send(caller, conversationId, new CallSignal(CallSignal.Type.SDP, callId, sdp, null));
@@ -171,7 +186,7 @@ class CallFlowIT {
         assertThat(completed.get("endReason").asText()).isEqualTo("COMPLETED");
         long durationSeconds = completed.get("durationSeconds").asLong();
         long elapsedBound = Duration.between(connectedAt, Instant.now()).getSeconds() + 1L;
-        assertThat(durationSeconds).isBetween(0L, elapsedBound);
+        assertThat(durationSeconds).isBetween(1L, elapsedBound);
 
         List<JsonNode> callLines = callLinesAfter(conversationId, alice, beforeSeq);
         assertThat(callLines).hasSize(1);
@@ -441,7 +456,7 @@ class CallFlowIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8498" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        String phone = PHONE_PREFIX + String.format("%07d", PHONE_SEQ.incrementAndGet());
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

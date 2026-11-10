@@ -39,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class P1InviteApprovalMaxUsesIT {
 
+    /** Suite-owned prefix; {@code +8496} is reserved for reminder ITs. */
+    private static final String PHONE_PREFIX = "+8499";
     private static final AtomicInteger PHONE_SEQ = new AtomicInteger(10_000);
 
     @DynamicPropertySource
@@ -76,6 +78,21 @@ class P1InviteApprovalMaxUsesIT {
 
     @BeforeAll
     void setUp() {
+        String like = "phone LIKE '" + PHONE_PREFIX + "%'";
+        jdbcTemplate.update("DELETE FROM group_invite_bans WHERE conversation_id IN "
+                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
+        jdbcTemplate.update("DELETE FROM group_join_requests WHERE conversation_id IN "
+                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
+        jdbcTemplate.update("DELETE FROM group_invite_links WHERE conversation_id IN "
+                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
+        jdbcTemplate.update(
+                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update(
+                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
+        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+
         alice = createTestUser("MaxUses Alice");
         dave = createTestUser("MaxUses Dave");
         bob = createTestUser("MaxUses Bob");
@@ -120,7 +137,8 @@ class P1InviteApprovalMaxUsesIT {
         // The link is now used up (maxUses=1). Approving a second pending
         // request must not add another member or raise use_count past 1.
         postJson("/api/v1/conversations/" + groupId + "/join-requests/" + carolRequestId + "/approve",
-                alice.accessToken(), null);
+                alice.accessToken(), null)
+                .andExpect(status().isNotFound());
 
         Integer carolMembership = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
@@ -133,7 +151,7 @@ class P1InviteApprovalMaxUsesIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = "+8496" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        String phone = PHONE_PREFIX + String.format("%07d", PHONE_SEQ.incrementAndGet());
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

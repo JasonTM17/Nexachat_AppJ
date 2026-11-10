@@ -279,7 +279,7 @@ class MagicBytesTest {
     }
 
     @Test
-    void largeHostileFtypFileIsBounded() {
+    void largeHostileFtypFileIsNotMisclassifiedAsConcreteMedia() {
         byte[] data = new byte[1024 * 1024];
         new Random(7).nextBytes(data);
         data[4] = 'f';
@@ -292,7 +292,7 @@ class MagicBytesTest {
     }
 
     @Test
-    void adversarialSuffixFullOfMoovMarkersIsBounded() {
+    void adversarialSuffixFullOfMoovMarkersStillSniffsAudioMp4() {
         byte[] filler = new byte[200_000];
         for (int i = 0; i + 4 <= filler.length; i += 4) {
             filler[i] = 'm';
