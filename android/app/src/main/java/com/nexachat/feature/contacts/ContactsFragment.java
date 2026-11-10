@@ -5,12 +5,15 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,6 +28,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentContactsBinding;
 import com.nexachat.feature.contacts.adapter.ContactListAdapter;
@@ -145,41 +149,73 @@ public final class ContactsFragment extends Fragment {
         LinearLayout root = new LinearLayout(requireContext());
         root.setOrientation(LinearLayout.VERTICAL);
         int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
+        int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        int spaceMd = getResources().getDimensionPixelSize(R.dimen.space_md);
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(requireContext());
         title.setText(R.string.add_by_phone_title);
-        title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium);
-        root.addView(title);
+        title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        titleLp.bottomMargin = spaceMd;
+        root.addView(title, titleLp);
 
-        TextInputLayout phoneLayout = new TextInputLayout(requireContext());
-        addPhoneInput = new TextInputEditText(requireContext());
+        TextInputLayout phoneLayout = new TextInputLayout(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.textInputOutlinedStyle);
+        float radius = getResources().getDimension(R.dimen.corner_md);
+        phoneLayout.setBoxCornerRadii(radius, radius, radius, radius);
+        phoneLayout.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);
+        addPhoneInput = new TextInputEditText(phoneLayout.getContext());
         addPhoneInput.setSingleLine(true);
         addPhoneInput.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
+        addPhoneInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         phoneLayout.setHint(getString(R.string.auth_phone_label));
         phoneLayout.addView(addPhoneInput);
-        root.addView(phoneLayout, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        phoneLp.bottomMargin = spaceSm;
+        root.addView(phoneLayout, phoneLp);
 
         addErrorText = new TextView(requireContext());
+        addErrorText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
         addErrorText.setVisibility(View.GONE);
-        root.addView(addErrorText);
+        LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        errLp.bottomMargin = spaceSm;
+        root.addView(addErrorText, errLp);
 
         addResultText = new TextView(requireContext());
+        addResultText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge);
         addResultText.setVisibility(View.GONE);
-        root.addView(addResultText);
+        LinearLayout.LayoutParams resLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        resLp.bottomMargin = spaceSm;
+        root.addView(addResultText, resLp);
 
         addDoneText = new TextView(requireContext());
+        addDoneText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
         addDoneText.setVisibility(View.GONE);
         addDoneText.setText(R.string.contact_added);
-        root.addView(addDoneText);
+        LinearLayout.LayoutParams doneLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        doneLp.bottomMargin = spaceSm;
+        root.addView(addDoneText, doneLp);
 
         addActionButton = new MaterialButton(requireContext());
         addActionButton.setText(R.string.action_search);
-        root.addView(addActionButton, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams actionLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        actionLp.topMargin = spaceSm;
+        root.addView(addActionButton, actionLp);
 
         addPhoneInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -187,6 +223,16 @@ public final class ContactsFragment extends Fragment {
                 viewModel.onAddPhoneChange(s.toString());
             }
             @Override public void afterTextChanged(Editable s) {}
+        });
+
+        addPhoneInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                if (addActionButton != null && addActionButton.isEnabled()) {
+                    addActionButton.performClick();
+                }
+                return true;
+            }
+            return false;
         });
 
         addActionButton.setOnClickListener(v -> {
@@ -268,8 +314,12 @@ public final class ContactsFragment extends Fragment {
             int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
             detailRoot.setPadding(pad, pad, pad, pad);
             bindDetailView(detailRoot, state);
+            ScrollView scroll = new ScrollView(requireContext());
+            scroll.addView(detailRoot, new ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT));
             detailDialog = new MaterialAlertDialogBuilder(requireContext())
-                    .setView(detailRoot)
+                    .setView(scroll)
                     .setOnDismissListener(d -> {
                         viewModel.closeDetail();
                         detailDialog = null;
@@ -306,26 +356,58 @@ public final class ContactsFragment extends Fragment {
         detailBoundIsContact = isContact;
         detailAliasInput = null;
         root.removeAllViews();
+        int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        int spaceMd = getResources().getDimensionPixelSize(R.dimen.space_md);
+
+        String displayTitle = contact != null ? contact.getPrimaryLabel() : user.getDisplayName();
+        AvatarView avatar = new AvatarView(requireContext());
+        avatar.setName(displayTitle);
+        avatar.setAvatarUrl(contact != null ? contact.getAvatarUrl() : user.getAvatarUrl());
+        int avatarSize = Math.round(64 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(avatarSize, avatarSize);
+        avatarLp.gravity = Gravity.CENTER_HORIZONTAL;
+        avatarLp.bottomMargin = spaceSm;
+        root.addView(avatar, avatarLp);
+
         TextView name = new TextView(requireContext());
         name.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
-        name.setText(contact != null ? contact.getPrimaryLabel() : user.getDisplayName());
-        root.addView(name);
+        name.setGravity(Gravity.CENTER_HORIZONTAL);
+        name.setText(displayTitle);
+        root.addView(name, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView phone = new TextView(requireContext());
+        phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+        phone.setGravity(Gravity.CENTER_HORIZONTAL);
         phone.setText(user.getPhone());
-        root.addView(phone);
+        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        phoneLp.bottomMargin = spaceMd;
+        root.addView(phone, phoneLp);
 
         ApiError detailError = state.getDetailError();
         if (detailError != null) {
             TextView err = new TextView(requireContext());
             err.setText(getString(ContactErrorIds.messageId(detailError)));
-            root.addView(err);
+            LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            errLp.bottomMargin = spaceSm;
+            root.addView(err, errLp);
         }
 
         if (contact != null) {
-            EditText alias = new EditText(requireContext());
+            TextInputLayout aliasLayout = new TextInputLayout(
+                    requireContext(),
+                    null,
+                    com.google.android.material.R.attr.textInputOutlinedStyle);
+            aliasLayout.setHint(getString(R.string.contact_alias_label));
+            float radius = getResources().getDimension(R.dimen.corner_md);
+            aliasLayout.setBoxCornerRadii(radius, radius, radius, radius);
+            TextInputEditText alias = new TextInputEditText(aliasLayout.getContext());
             alias.setSingleLine(true);
-            alias.setHint(R.string.contact_alias_label);
             renderingDetailAlias = true;
             alias.setText(state.getAliasInput());
             renderingDetailAlias = false;
@@ -339,25 +421,40 @@ public final class ContactsFragment extends Fragment {
                 @Override public void afterTextChanged(Editable s) {}
             });
             detailAliasInput = alias;
-            root.addView(alias, new LinearLayout.LayoutParams(
+            aliasLayout.addView(alias);
+            LinearLayout.LayoutParams aliasLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            aliasLp.bottomMargin = spaceSm;
+            root.addView(aliasLayout, aliasLp);
 
-            MaterialButton saveAlias = new MaterialButton(requireContext());
+            MaterialButton saveAlias = new MaterialButton(
+                    requireContext(),
+                    null,
+                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
             saveAlias.setText(R.string.action_save);
             saveAlias.setOnClickListener(v -> viewModel.saveAlias());
-            root.addView(saveAlias);
+            LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            saveLp.bottomMargin = spaceSm;
+            root.addView(saveAlias, saveLp);
         }
 
         MaterialButton message = new MaterialButton(requireContext());
         message.setText(R.string.action_message);
         message.setEnabled(!state.isDetailBusy());
         message.setOnClickListener(v -> viewModel.messageSelected());
-        root.addView(message, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams messageLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        messageLp.bottomMargin = spaceSm;
+        root.addView(message, messageLp);
 
-        MaterialButton secondary = new MaterialButton(requireContext());
+        MaterialButton secondary = new MaterialButton(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle);
         secondary.setEnabled(!state.isDetailBusy());
         if (contact == null) {
             secondary.setText(R.string.action_add_contact);
@@ -366,17 +463,24 @@ public final class ContactsFragment extends Fragment {
             secondary.setText(R.string.action_remove_contact);
             secondary.setOnClickListener(v -> {
                 new MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(getString(R.string.action_remove_contact) + "?")
+                        .setMessage(R.string.confirm_remove_contact)
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(R.string.action_remove_contact, (d, w) -> viewModel.removeSelectedContact())
                         .show();
             });
         }
-        root.addView(secondary);
+        root.addView(secondary, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         if (state.isDetailBusy()) {
             ProgressBar bar = new ProgressBar(requireContext());
-            root.addView(bar);
+            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            barLp.gravity = Gravity.CENTER_HORIZONTAL;
+            barLp.topMargin = spaceSm;
+            root.addView(bar, barLp);
         }
     }
 

@@ -13,6 +13,7 @@ public final class MessageListItem {
 
     public enum Kind {
         DATE_SEPARATOR,
+        UNREAD_DIVIDER,
         MESSAGE
     }
 
@@ -22,6 +23,7 @@ public final class MessageListItem {
     private final String stableId;
     @Nullable
     private final String dateSeparatorLabel;
+    private final int unreadDividerCount;
     @Nullable
     private final ChatMessage message;
     @Nullable
@@ -35,6 +37,7 @@ public final class MessageListItem {
             @NonNull Kind kind,
             @NonNull String stableId,
             @Nullable String dateSeparatorLabel,
+            int unreadDividerCount,
             @Nullable ChatMessage message,
             @Nullable MessageGroupPosition groupPosition,
             boolean showSenderName,
@@ -45,6 +48,7 @@ public final class MessageListItem {
         this.kind = kind;
         this.stableId = stableId;
         this.dateSeparatorLabel = dateSeparatorLabel;
+        this.unreadDividerCount = unreadDividerCount;
         this.message = message;
         this.groupPosition = groupPosition;
         this.showSenderName = showSenderName;
@@ -59,6 +63,22 @@ public final class MessageListItem {
                 Kind.DATE_SEPARATOR,
                 id,
                 label,
+                0,
+                null,
+                null,
+                false,
+                false,
+                false,
+                false
+        );
+    }
+
+    public static MessageListItem unreadDivider(int unreadCount) {
+        return new MessageListItem(
+                Kind.UNREAD_DIVIDER,
+                "unread-divider",
+                null,
+                unreadCount,
                 null,
                 null,
                 false,
@@ -80,6 +100,7 @@ public final class MessageListItem {
                 Kind.MESSAGE,
                 message.getId(),
                 null,
+                0,
                 message,
                 groupPosition,
                 showSenderName,
@@ -112,6 +133,10 @@ public final class MessageListItem {
     @Nullable
     public String getDateSeparatorLabel() {
         return dateSeparatorLabel;
+    }
+
+    public int getUnreadDividerCount() {
+        return unreadDividerCount;
     }
 
     @Nullable
@@ -148,6 +173,7 @@ public final class MessageListItem {
         return kind == item.kind
                 && stableId.equals(item.stableId)
                 && Objects.equals(dateSeparatorLabel, item.dateSeparatorLabel)
+                && unreadDividerCount == item.unreadDividerCount
                 && Objects.equals(message, item.message)
                 && groupPosition == item.groupPosition
                 && showSenderName == item.showSenderName
@@ -162,6 +188,7 @@ public final class MessageListItem {
                 kind,
                 stableId,
                 dateSeparatorLabel,
+                unreadDividerCount,
                 message,
                 groupPosition,
                 showSenderName,

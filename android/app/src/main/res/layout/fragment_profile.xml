@@ -34,12 +34,12 @@
 
             <ImageView
                 android:id="@+id/cameraBadge"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="bottom|end"
                 android:background="@drawable/bg_camera_badge"
                 android:contentDescription="@string/profile_change_avatar"
-                android:padding="6dp"
+                android:padding="@dimen/space_sm"
                 android:src="@drawable/ic_camera_alt"
                 app:tint="@android:color/white" />
         </FrameLayout>
@@ -119,10 +119,19 @@
             app:cornerRadius="12dp" />
 
         <!-- Preferences Group Card (16dp radius) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="6dp"
+            android:text="@string/settings_section_appearance"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorPrimary" />
+
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
             app:cardBackgroundColor="?attr/colorSurface"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"
@@ -364,10 +373,19 @@
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Sign out Group Card in Error styling (16dp radius) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="6dp"
+            android:text="@string/settings_section_session"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorPrimary" />
+
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
             app:cardBackgroundColor="?attr/colorSurface"
             app:cardCornerRadius="16dp"
             app:cardElevation="0dp"

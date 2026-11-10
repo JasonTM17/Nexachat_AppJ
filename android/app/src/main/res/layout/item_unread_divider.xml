@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/unreadDividerRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:importantForAccessibility="yes"
+    android:accessibilityLiveRegion="polite"
+    android:focusable="false"
+    android:clickable="false"
+    android:orientation="horizontal"
+    android:paddingHorizontal="@dimen/space_sm"
+    android:paddingVertical="@dimen/space_sm">
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1"
+        android:background="?attr/colorOutlineVariant"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/unreadDividerLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_sm"
+        android:background="@drawable/bg_date_separator"
+        android:backgroundTint="?attr/colorSurfaceContainerHigh"
+        android:gravity="center"
+        android:maxLines="2"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textColor="?attr/colorPrimary"
+        android:importantForAccessibility="no" />
+
+    <View
+        android:layout_width="0dp"
+        android:layout_height="1dp"
+        android:layout_weight="1"
+        android:background="?attr/colorOutlineVariant"
+        android:importantForAccessibility="no" />
+</LinearLayout>

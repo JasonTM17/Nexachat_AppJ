@@ -81,7 +81,7 @@ class PollFlowTest {
         registry.add("spring.datasource.url", TEST_DATABASE::jdbcUrl);
         registry.add("spring.datasource.username", TEST_DATABASE::username);
         registry.add("spring.datasource.password", TEST_DATABASE::password);
-        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "2");
         // The suite exercises many mutations from the same fixture users; keep
         // the production buckets but give the test run headroom.
         registry.add("nexachat.rate-limit.polls.create-per-minute", () -> "1000");
@@ -91,11 +91,14 @@ class PollFlowTest {
 
     @AfterAll
     void dropDatabase() {
-        javax.sql.DataSource dataSource = jdbcTemplate.getDataSource();
-        if (dataSource instanceof com.zaxxer.hikari.HikariDataSource hikari) {
-            hikari.close();
+        try {
+            javax.sql.DataSource dataSource = jdbcTemplate.getDataSource();
+            if (dataSource instanceof com.zaxxer.hikari.HikariDataSource hikari) {
+                hikari.close();
+            }
+        } finally {
+            TEST_DATABASE.close();
         }
-        TEST_DATABASE.close();
     }
 
     @Autowired

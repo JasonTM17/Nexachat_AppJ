@@ -40,7 +40,11 @@
             app:boxCornerRadiusTopEnd="28dp"
             app:boxCornerRadiusTopStart="28dp"
             app:boxStrokeWidth="0dp"
+            app:endIconContentDescription="@string/cd_clear_search"
+            app:endIconMode="clear_text"
+            app:endIconTint="?attr/colorOnSurfaceVariant"
             app:hintTextColor="?attr/colorOnSurfaceVariant"
+            app:startIconContentDescription="@string/search_title"
             app:startIconDrawable="@drawable/ic_search"
             app:startIconTint="?attr/colorOnSurfaceVariant">
 
@@ -53,6 +57,18 @@
                 android:textColor="?attr/colorOnSurface"
                 android:textColorHint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/sectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_md"
+            android:layout_marginBottom="@dimen/space_xs"
+            android:text="@string/contacts_title"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorPrimary"
+            android:visibility="gone" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/resultsList"
