@@ -163,13 +163,21 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
                 .andExpect(jsonPath("$[0].phone").value(bob.phone()));
 
-        // Prefix search on the unique displayName tag → bob found, caller excluded.
+        // Prefix search on the unique displayName tag → bob found, caller excluded; phone hidden.
         mockMvc.perform(get("/api/v1/users/search")
                         .param("q", uniqueTag)
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(bob.id().toString()));
+                .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
+                .andExpect(jsonPath("$[0].phone").doesNotExist());
+
+        // Partial / wrong phone does not prefix-match — empty list, not a near miss.
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("phone", bob.phone().substring(0, bob.phone().length() - 2))
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
 
         // Neither param / both params → 400 VALIDATION_FAILED.
         getJson("/api/v1/users/search", alice.accessToken())
