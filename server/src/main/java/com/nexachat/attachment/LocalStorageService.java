@@ -250,14 +250,54 @@ public class LocalStorageService implements StorageService {
                     .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
                     .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
                     .decode(java.nio.ByteBuffer.wrap(bytes));
-            return contentTypeDeclared;
         } catch (java.nio.charset.CharacterCodingException ex) {
             return null;
         }
+        // A text/* label must not smuggle an HTML or SVG document. Those bytes
+        // are served inline from this origin; nosniff is not a substitute for
+        // keeping active markup out of the allow-list.
+        if (looksLikeActiveMarkup(bytes)) {
+            return null;
+        }
+        return contentTypeDeclared;
     }
 
     private static final java.util.Set<String> TEXT_FALLBACK_MIMES =
             java.util.Set.of("text/plain", "text/markdown", "text/csv");
+
+    /**
+     * True when the leading non-whitespace bytes are an HTML, SVG, or XML
+     * document. A note that merely mentions those words later in the file is
+     * left alone.
+     */
+    private static boolean looksLikeActiveMarkup(byte[] bytes) {
+        int start = 0;
+        if (bytes.length >= 3
+                && (bytes[0] & 0xFF) == 0xEF
+                && (bytes[1] & 0xFF) == 0xBB
+                && (bytes[2] & 0xFF) == 0xBF) {
+            start = 3;
+        }
+        while (start < bytes.length) {
+            byte current = bytes[start];
+            if (current != ' ' && current != '\n' && current != '\r' && current != '\t') {
+                break;
+            }
+            start++;
+        }
+        int length = Math.min(bytes.length - start, 16);
+        if (length <= 0) {
+            return false;
+        }
+        String head = new String(bytes, start, length, java.nio.charset.StandardCharsets.UTF_8)
+                .toLowerCase(java.util.Locale.ROOT);
+        return head.startsWith("<!doctype")
+                || head.startsWith("<html")
+                || head.startsWith("<svg")
+                || head.startsWith("<script")
+                || head.startsWith("<xhtml")
+                || head.startsWith("<?xml");
+    }
 
     private static String safeSubdir(String subdir) {
         if (subdir == null || subdir.isBlank()
