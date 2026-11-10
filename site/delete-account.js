@@ -62,6 +62,12 @@
     }
   }
 
+  function focusElement(el) {
+    if (el && typeof el.focus === 'function') {
+      el.focus();
+    }
+  }
+
   function clearFieldError(input) {
     if (!input) {
       return;
@@ -130,13 +136,26 @@
     var btnDelete = document.getElementById('btn-delete-account');
     var requestFeedback = document.getElementById('request-feedback');
     var postSendFields = document.getElementById('post-send-fields');
+    var sendError = document.getElementById('web-deletion-send-error');
+    var rateError = document.getElementById('web-deletion-rate-error');
     var formError = document.getElementById('web-deletion-form-error');
     var successBlock = document.getElementById('web-deletion-success');
 
     var codeRequested = false;
+    var focusAfterBusy = null;
 
-    function hideFormError() {
+    function hideErrors() {
       setHidden(formError, true);
+      setHidden(sendError, true);
+      setHidden(rateError, true);
+    }
+
+    function showSendError() {
+      setHidden(sendError, false);
+    }
+
+    function showRateError() {
+      setHidden(rateError, false);
     }
 
     function showFormError() {
@@ -154,36 +173,118 @@
       btnDelete.disabled = !ok;
     }
 
-    btnSend.addEventListener('click', function () {
-      hideFormError();
+    function finish() {
+      setBusy(form, false);
+      updateDeleteEnabled();
+      var target = focusAfterBusy;
+      focusAfterBusy = null;
+      focusElement(target);
+    }
+
+    function resetRequestState() {
+      hideErrors();
+      if (!codeRequested) {
+        return;
+      }
+      codeRequested = false;
+      setHidden(postSendFields, true);
+      setHidden(requestFeedback, true);
+      if (codeInput) {
+        codeInput.value = '';
+        clearFieldError(codeInput);
+      }
+      updateDeleteEnabled();
+    }
+
+    function requestCode() {
+      hideErrors();
       var phone = normalizePhone(phoneInput.value);
       if (!phone) {
         showFieldError(phoneInput, true);
+        focusElement(phoneInput);
         return;
       }
       clearFieldError(phoneInput);
       setBusy(form, true);
       postJson(apiBase, '/api/v1/account-deletion/request', { phone: phone })
         .then(function (res) {
-          if (res.status !== 202) {
-            throw new Error('unexpected status');
+          if (res.status === 202) {
+            codeRequested = true;
+            setHidden(requestFeedback, false);
+            setHidden(postSendFields, false);
+            updateDeleteEnabled();
+            focusAfterBusy = codeInput;
+            return;
           }
-          codeRequested = true;
-          setHidden(requestFeedback, false);
-          setHidden(postSendFields, false);
-          if (codeInput) {
-            codeInput.focus();
+          if (res.status === 429) {
+            showRateError();
+            focusAfterBusy = rateError;
+            return;
           }
-          updateDeleteEnabled();
+          throw new Error('unexpected status');
+        })
+        .catch(function () {
+          showSendError();
+          focusAfterBusy = sendError;
+        })
+        .finally(finish);
+    }
+
+    function confirmDeletion() {
+      hideErrors();
+      var phone = normalizePhone(phoneInput.value);
+      var code = codeInput ? codeInput.value.trim() : '';
+      if (!phone) {
+        showFieldError(phoneInput, true);
+        focusElement(phoneInput);
+        return;
+      }
+      if (!validateCode(code)) {
+        showFieldError(codeInput, true);
+        focusElement(codeInput);
+        return;
+      }
+      if (!confirmCheck || !confirmCheck.checked) {
+        return;
+      }
+      clearFieldError(phoneInput);
+      clearFieldError(codeInput);
+      setBusy(form, true);
+      postJson(apiBase, '/api/v1/account-deletion/confirm', { phone: phone, code: code })
+        .then(function (res) {
+          if (res.status === 204) {
+            setHidden(form, true);
+            setHidden(successBlock, false);
+            focusAfterBusy = successBlock;
+            return;
+          }
+          if (res.status === 400) {
+            showFieldError(codeInput, true);
+            focusAfterBusy = codeInput;
+            return;
+          }
+          if (res.status === 429) {
+            showRateError();
+            focusAfterBusy = rateError;
+            return;
+          }
+          throw new Error('unexpected status');
         })
         .catch(function () {
           showFormError();
+          focusAfterBusy = formError;
         })
-        .finally(function () {
-          setBusy(form, false);
-          updateDeleteEnabled();
-        });
-    });
+        .finally(finish);
+    }
+
+    btnSend.addEventListener('click', requestCode);
+
+    if (phoneInput) {
+      phoneInput.addEventListener('input', function () {
+        clearFieldError(phoneInput);
+        resetRequestState();
+      });
+    }
 
     if (codeInput) {
       codeInput.addEventListener('input', function () {
@@ -201,48 +302,33 @@
       confirmCheck.addEventListener('change', updateDeleteEnabled);
     }
 
+    function wireEnter(input, action) {
+      if (!input) {
+        return;
+      }
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') {
+          return;
+        }
+        ev.preventDefault();
+        action();
+      });
+    }
+
+    wireEnter(phoneInput, function () {
+      btnSend.click();
+    });
+    wireEnter(codeInput, function () {
+      if (btnDelete && !btnDelete.disabled) {
+        btnDelete.click();
+      }
+    });
+
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
     });
 
-    btnDelete.addEventListener('click', function () {
-      hideFormError();
-      var phone = normalizePhone(phoneInput.value);
-      var code = codeInput ? codeInput.value.trim() : '';
-      if (!phone) {
-        showFieldError(phoneInput, true);
-        return;
-      }
-      if (!validateCode(code)) {
-        showFieldError(codeInput, true);
-        return;
-      }
-      if (!confirmCheck || !confirmCheck.checked) {
-        return;
-      }
-      clearFieldError(phoneInput);
-      clearFieldError(codeInput);
-      setBusy(form, true);
-      postJson(apiBase, '/api/v1/account-deletion/confirm', { phone: phone, code: code })
-        .then(function (res) {
-          if (res.status === 204) {
-            setHidden(form, true);
-            setHidden(successBlock, false);
-            return;
-          }
-          if (res.status === 400) {
-            showFormError();
-            return;
-          }
-          throw new Error('unexpected status');
-        })
-        .catch(function () {
-          showFormError();
-        })
-        .finally(function () {
-          setBusy(form, false);
-        });
-    });
+    btnDelete.addEventListener('click', confirmDeletion);
 
     updateDeleteEnabled();
   }
