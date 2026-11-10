@@ -143,8 +143,9 @@ These keys are Spring properties; override them with the matching
 - **Base URL:** `http://localhost:8080` · **Path prefix:** `/api/v1`
 - **Auth:** JWT access token in the `Authorization: Bearer <accessToken>`
   header. Public (no token): `POST /auth/register`, `POST /auth/login`,
-  `POST /auth/refresh`, `/actuator/health`, and the `/ws` handshake (the JWT
-  travels in the STOMP CONNECT frame there instead).
+  `POST /auth/refresh`, `POST /auth/google`, `POST /auth/google/nonce`
+  (Google sign-in; 404 while disabled), `/actuator/health`, and the `/ws`
+  handshake (the JWT travels in the STOMP CONNECT frame there instead).
 - **Tokens:** access TTL 900 s (`accessTokenExpiresIn`); refresh TTL 14 days;
   refresh tokens rotate on use; `PATCH /auth/password` revokes other sessions
   by design.

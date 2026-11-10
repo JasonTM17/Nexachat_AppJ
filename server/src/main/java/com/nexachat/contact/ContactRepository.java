@@ -6,10 +6,22 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 public interface ContactRepository extends JpaRepository<Contact, ContactId> {
+
+    /**
+     * Which of {@code contactUserIds} the owner already has in their address book.
+     * Used to decide whether display-name search may disclose phone numbers.
+     */
+    @Query("""
+            SELECT c.contactUser.id FROM Contact c
+            WHERE c.owner.id = :ownerId AND c.contactUser.id IN :contactUserIds
+            """)
+    List<UUID> findContactUserIdsAmong(@Param("ownerId") UUID ownerId,
+                                       @Param("contactUserIds") Collection<UUID> contactUserIds);
 
     /**
      * Contact-list read model: one JOIN to {@code users} per row, returning the

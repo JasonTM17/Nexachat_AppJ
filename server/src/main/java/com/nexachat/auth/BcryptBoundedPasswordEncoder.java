@@ -1,0 +1,44 @@
+package com.nexachat.auth;
+
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+/**
+ * Guards every {@link PasswordEncoder#matches} call against bcrypt's 72-byte limit.
+ * Spring Security 6.5 throws on {@link #encode} for secrets over 72 bytes but still
+ * performs a truncating {@code matches} for backward compatibility; this wrapper
+ * makes {@code matches} fail closed for this application. Over-long or NUL-containing
+ * raw secrets return {@code false} instead of throwing, so authenticated flows
+ * (password change, future account deletion) behave like a wrong password.
+ * {@link #encode} is delegated unchanged so registration and password policy still
+ * reject secrets bcrypt cannot hash.
+ */
+public final class BcryptBoundedPasswordEncoder implements PasswordEncoder {
+
+    private final PasswordEncoder delegate;
+
+    public BcryptBoundedPasswordEncoder(PasswordEncoder delegate) {
+        this.delegate = delegate;
+    }
+
+    @Override
+    public String encode(CharSequence rawPassword) {
+        return delegate.encode(rawPassword);
+    }
+
+    @Override
+    public boolean matches(CharSequence rawPassword, String encodedPassword) {
+        if (rawPassword == null) {
+            return false;
+        }
+        String raw = rawPassword.toString();
+        if (!PasswordPolicy.fitsBcrypt(raw)) {
+            return false;
+        }
+        return delegate.matches(raw, encodedPassword);
+    }
+
+    @Override
+    public boolean upgradeEncoding(String encodedPassword) {
+        return delegate.upgradeEncoding(encodedPassword);
+    }
+}
