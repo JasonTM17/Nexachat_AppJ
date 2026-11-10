@@ -631,11 +631,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
             binding.chatHeaderAvatar.setOnlineStatus(peerOnline);
         }
-        String subtitle = state.getPeerTyping() ? getString(R.string.chat_typing)
-                : !state.getConnected() ? getString(R.string.chat_offline)
-                : !state.isGroup() && state.getPeerPresence() != null
-                    ? getString(state.getPeerPresence().getOnline() ? R.string.presence_active_now : R.string.chat_offline) : "";
-        binding.chatToolbar.setSubtitle(subtitle);
+        Boolean peerForSubtitle = !state.isGroup() && state.getPeerPresence() != null
+                ? Boolean.valueOf(state.getPeerPresence().getOnline()) : null;
+        int subtitleRes = ChatSubtitle.textRes(
+                state.getPeerTyping(), state.getConnected(), state.isGroup(), peerForSubtitle);
+        binding.chatToolbar.setSubtitle(subtitleRes == 0 ? "" : getString(subtitleRes));
         binding.callButton.setVisibility(state.isGroup() ? View.GONE : View.VISIBLE);
         binding.infoButton.setVisibility(state.isGroup() ? View.VISIBLE : View.GONE);
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);

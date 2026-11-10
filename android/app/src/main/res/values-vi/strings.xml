@@ -254,6 +254,7 @@
 
     <!-- Presence -->
     <string name="presence_active_now">Đang hoạt động</string>
+    <string name="presence_offline">Không hoạt động</string>
     <string name="presence_minutes_ago">Hoạt động %1$d phút trước</string>
     <string name="presence_hours_ago">Hoạt động %1$d giờ trước</string>
     <string name="presence_yesterday">Hoạt động hôm qua</string>
