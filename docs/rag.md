@@ -81,6 +81,10 @@ cache are scoped by the same identity.
   re-checks the persisted flag immediately before the outbound call.
 - Without consent, retrieval and extractive answers still work using the
   offline lexical provider; no external call is made.
+- The requester’s consent is checked before reading the shared ask-answer cache
+  or joining an in-flight ask. Without consent, the request skips cache reads
+  and computes locally so a member cannot receive an answer produced by an
+  external-model request made under another member’s consent.
 - **Per-conversation opt-out (Flyway V13).** Any member can call
   `PUT /api/v1/conversations/{id}/ai-opt-out` to exclude their own messages
   from AI processing in that conversation; `DELETE` clears it. Both are
@@ -103,9 +107,10 @@ cache are scoped by the same identity.
   instructs the model to treat it and the question as data. Prompt injection
   in a message cannot redirect the model or leak another conversation.
 - Cached answers store the question hash and vector, the answer payload and
-  the cited message ids/hashes. A cache hit is replayed only when every cited
-  message still exists, is not deleted, its content hash matches, and its
-  author has not opted out of AI processing in that conversation.
+  the cited message ids/hashes. A cache hit is available only to a requester
+  with account-level AI consent and is replayed only when every cited message
+  still exists, is not deleted, its content hash matches, and its author has
+  not opted out of AI processing in that conversation.
 - Vectors are never exposed by any API. `GET /api/v1/rag/stats` returns
   aggregate counters only. This endpoint is operator telemetry restricted
   to authorized administrator phone numbers (`NEXACHAT_ADMIN_PHONES`);

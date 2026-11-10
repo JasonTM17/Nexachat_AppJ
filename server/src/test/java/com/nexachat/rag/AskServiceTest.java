@@ -143,6 +143,7 @@ class AskServiceTest {
         when(embeddingService.embedQuestion(any(), anyBoolean()))
                 .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
                         new float[256], "openai-compatible:gemini-embedding-001"));
+        when(consentRepository.isConsented(userId)).thenReturn(true);
         AskService modelAwareService = new AskService(
                 rateLimiter, conversationRepository, memberRepository, consentRepository,
                 embeddingService, retrieval, questionCache, llmAnswerService, properties, stats,
@@ -163,6 +164,7 @@ class AskServiceTest {
                 "The budget is 1,200 dollars.",
                 List.of(new RagCitation(fact.id(), 1, "The budget is 1,200 dollars.")),
                 "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN);
+        when(consentRepository.isConsented(userId)).thenReturn(true);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -172,6 +174,67 @@ class AskServiceTest {
         assertThat(response.usage().cached()).isTrue();
         assertThat(response.usage().llmCalls()).isZero();
         verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void withoutConsentDoesNotReadOrReplayTheSharedAskCache() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "Provider answer from another member's consented request.",
+                List.of(new RagCitation(fact.id(), fact.seq(), fact.content())),
+                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("When is the server migration scheduled?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
+        assertThat(response.answer()).doesNotContain("Provider answer");
+        verify(questionCache, never()).findExact(any(), any(), any());
+        verify(questionCache, never()).findCandidates(any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void exactCacheEntryInDifferentLanguageIsNotReplayed() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "La migration est le 14 mars.",
+                List.of(new RagCitation(fact.id(), 1, fact.content())),
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+        when(consentRepository.isConsented(userId)).thenReturn(true);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("When is the server migration scheduled?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
+    }
+
+    @Test
+    void semanticCacheEntryInDifferentLanguageIsNotReplayed() {
+        String question = "When is the server migration scheduled?";
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "La migration est le 14 mars.",
+                List.of(new RagCitation(fact.id(), 1, fact.content())),
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+        when(consentRepository.isConsented(userId)).thenReturn(true);
+        RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
+        when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
+                new RagQuestionCache.CachedQuestion(cached, embedding.vector(), "other-question")));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest(question, SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
     }
 
     @Test
