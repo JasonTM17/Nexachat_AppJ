@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.SendMessageRequest;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -17,7 +18,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Pins the documented message-sequence contract: global {@code BIGSERIAL},
  * monotonic per conversation, gaps allowed, no duplicate rows for one
- * {@code clientMessageId}, and no sequence draw on idempotent replay.
+ * {@code clientMessageId}, and no sequence draw on a committed idempotent
+ * replay. A concurrent insert conflict may still consume a global sequence.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -66,6 +71,8 @@ class MessageSequenceGuaranteeIT {
     private MessageService messageService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private record TestUser(UUID id, String accessToken) {
     }
@@ -132,10 +139,9 @@ class MessageSequenceGuaranteeIT {
     }
 
     @Test
-    void concurrentDuplicateClientMessageIdDrawsOneSequenceOnly() throws Exception {
+    void concurrentDuplicateClientMessageIdReturnsOneStoredMessage() throws Exception {
         UUID conversationId = createGroup(alice, "Seq-race-" + System.nanoTime(), bob);
         UUID clientMessageId = UUID.randomUUID();
-        long maxSeqBefore = maxSeqInConversation(conversationId);
         int rowsBefore = countMessages(conversationId);
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -166,11 +172,104 @@ class MessageSequenceGuaranteeIT {
             assertThat(rows).isEqualTo(1);
 
             assertThat(countMessages(conversationId)).isEqualTo(rowsBefore + 1);
-            assertThat(maxSeqInConversation(conversationId) - maxSeqBefore).isEqualTo(1);
         } finally {
             start.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void concurrentSendsCannotClaimOneAttachmentOrInsertBeforeClaim() throws Exception {
+        UUID conversationId = createGroup(alice, "Seq-attachment-race-" + System.nanoTime(), bob);
+        UUID attachmentId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO message_attachments
+                    (id, owner_id, storage_key, original_name, mime_type, size_bytes)
+                VALUES (?, ?, ?, 'shared.png', 'image/png', 8)
+                """, attachmentId, alice.id(), "seq-race/" + attachmentId);
+        long seqBefore = currentSequenceValue();
+        UUID firstClientMessageId = UUID.randomUUID();
+        UUID secondClientMessageId = UUID.randomUUID();
+        CountDownLatch rowLocked = new CountDownLatch(1);
+        CountDownLatch releaseLock = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+
+        Future<?> lockHolder = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+            jdbcTemplate.queryForObject("""
+                    SELECT id FROM message_attachments WHERE id = ? FOR UPDATE
+                    """, UUID.class, attachmentId);
+            rowLocked.countDown();
+            try {
+                if (!releaseLock.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting to release attachment row lock");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while holding attachment row lock", interrupted);
+            }
+            return null;
+        }));
+
+        try {
+            assertThat(rowLocked.await(5, TimeUnit.SECONDS)).isTrue();
+            List<Future<MessageResponse>> sends = List.of(
+                    executor.submit(() -> sendAttachment(conversationId, firstClientMessageId, attachmentId)),
+                    executor.submit(() -> sendAttachment(conversationId, secondClientMessageId, attachmentId)));
+            awaitAttachmentClaimWaiters();
+
+            // Both send transactions must still be claiming the attachment;
+            // neither may have allocated a message sequence yet.
+            assertThat(currentSequenceValue()).isEqualTo(seqBefore);
+
+            releaseLock.countDown();
+            lockHolder.get(10, TimeUnit.SECONDS);
+
+            List<MessageResponse> successful = new ArrayList<>();
+            int rejected = 0;
+            for (Future<MessageResponse> send : sends) {
+                try {
+                    successful.add(send.get(10, TimeUnit.SECONDS));
+                } catch (java.util.concurrent.ExecutionException failure) {
+                    assertThat(failure.getCause()).isInstanceOf(ApiException.class);
+                    rejected++;
+                }
+            }
+
+            assertThat(successful).hasSize(1);
+            assertThat(rejected).isEqualTo(1);
+            MessageResponse winner = successful.get(0);
+            List<UUID> storedClientMessageIds = jdbcTemplate.queryForList("""
+                    SELECT client_message_id FROM messages
+                    WHERE conversation_id = ? AND client_message_id IN (?, ?)
+                    """, UUID.class, conversationId, firstClientMessageId, secondClientMessageId);
+            assertThat(storedClientMessageIds).containsExactly(winner.clientMessageId());
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT message_id FROM message_attachments WHERE id = ?", UUID.class, attachmentId))
+                    .isEqualTo(winner.id());
+            assertThat(currentSequenceValue()).isEqualTo(seqBefore + 1);
+        } finally {
+            releaseLock.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private MessageResponse sendAttachment(UUID conversationId, UUID clientMessageId, UUID attachmentId) {
+        return messageService.send(alice.id(), conversationId,
+                new SendMessageRequest(clientMessageId, "IMAGE", null, null, List.of(attachmentId)))
+                .message();
+    }
+
+    private void awaitAttachmentClaimWaiters() {
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            Integer waiting = jdbcTemplate.queryForObject("""
+                    SELECT count(*)
+                    FROM pg_stat_activity activity
+                    WHERE activity.pid <> pg_backend_pid()
+                      AND activity.datname = current_database()
+                      AND activity.wait_event_type = 'Lock'
+                    """, Integer.class);
+            assertThat(waiting).isEqualTo(2);
+        });
     }
 
     @Test
@@ -218,12 +317,6 @@ class MessageSequenceGuaranteeIT {
 
     private long currentSequenceValue() {
         return jdbcTemplate.queryForObject("SELECT last_value FROM messages_seq_seq", Long.class);
-    }
-
-    private long maxSeqInConversation(UUID conversationId) {
-        return jdbcTemplate.queryForObject(
-                "SELECT COALESCE(MAX(seq), 0) FROM messages WHERE conversation_id = ?",
-                Long.class, conversationId);
     }
 
     private int countMessages(UUID conversationId) {

@@ -334,10 +334,11 @@ class MessageServiceTest {
         UUID attachmentId = attachment.getId();
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
-        stubNewSendWithReadBack(stored);
+        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
+                .thenReturn(Optional.empty(), Optional.empty(), Optional.of(stored));
         when(messageRepository.getReferenceById(stored.id())).thenReturn(newMessageWithId(stored.id()));
-        when(attachmentRepository.findAllById(List.of(attachmentId)))
-                .thenReturn(List.of(attachment), List.of(attachment));
+        when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(attachmentId)))
+                .thenReturn(List.of(attachment));
 
         MessageService.SendResult result = messageService.send(senderId, conversationId,
                 new SendMessageRequest(clientMessageId, "IMAGE", null, null, List.of(attachmentId)));
@@ -351,7 +352,8 @@ class MessageServiceTest {
     void send_attachmentOwnedByAnotherUser_throwsValidation() {
         memberOk();
         MessageAttachment attachment = uploadAttachment(UUID.randomUUID() /* other owner */, "image/png");
-        when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
+        when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(attachment.getId())))
+                .thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> messageService.send(senderId, conversationId,
@@ -368,7 +370,8 @@ class MessageServiceTest {
         memberOk();
         MessageAttachment attachment = uploadAttachment(senderId, "image/png");
         attachment.bindTo(newMessageWithId(UUID.randomUUID())); // bound elsewhere
-        when(attachmentRepository.findAllById(List.of(attachment.getId()))).thenReturn(List.of(attachment));
+        when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(attachment.getId())))
+                .thenReturn(List.of(attachment));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> messageService.send(senderId, conversationId,
@@ -384,7 +387,8 @@ class MessageServiceTest {
     void send_mimeTypeMismatch_throwsValidation() {
         memberOk();
         MessageAttachment pdf = uploadAttachment(senderId, "application/pdf");
-        when(attachmentRepository.findAllById(List.of(pdf.getId()))).thenReturn(List.of(pdf));
+        when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(pdf.getId())))
+                .thenReturn(List.of(pdf));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> messageService.send(senderId, conversationId,
@@ -399,7 +403,7 @@ class MessageServiceTest {
     void send_unknownAttachmentId_throwsFileNotFound() {
         memberOk();
         UUID attachmentId = UUID.randomUUID();
-        when(attachmentRepository.findAllById(List.of(attachmentId))).thenReturn(List.of());
+        when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(attachmentId))).thenReturn(List.of());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> messageService.send(senderId, conversationId,
