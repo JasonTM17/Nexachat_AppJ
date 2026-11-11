@@ -136,7 +136,7 @@ class AuthServiceTest {
     void register_uniqueConstraintRaceOnSave_mapsToPhoneExists() {
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
         when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(false);
-        when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_phone_key"));
+        when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_phone_active_key"));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.register(new RegisterRequest("0912345678", "secret123", "Minh"), null));

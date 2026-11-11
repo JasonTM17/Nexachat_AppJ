@@ -105,8 +105,8 @@ public class AuthService {
             // method returns, and the violation would escape the catch.
             user = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
-            // Two concurrent registers can both pass existsByPhone — the UNIQUE
-            // constraint is the final arbiter, mapped back to the same contract.
+            // Two concurrent registers can both pass the existence check — the
+            // UNIQUE constraint is the final arbiter, mapped back to the same contract.
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         log.info("Registered new account");
@@ -139,7 +139,7 @@ public class AuthService {
             passwordEncoder.matches(request.password(), dummyHash);
             throw invalidCredentials();
         }
-        // findByPhone may already have placed a pre-lock snapshot in this persistence context.
+        // The unlocked read above may already have placed a pre-lock snapshot in this persistence context.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw invalidCredentials();
