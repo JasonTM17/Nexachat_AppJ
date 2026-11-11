@@ -12,11 +12,13 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
 import org.springframework.web.socket.handler.WebSocketHandlerDecoratorFactory;
+import org.springframework.web.socket.handler.WebSocketSessionDecorator;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
@@ -49,11 +51,18 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     public static final int MAX_SESSIONS_PER_USER = 32;
     /** How long a raw socket may sit before a successful STOMP CONNECT. */
     static final long HANDSHAKE_DEADLINE_SECONDS = 10;
+    /** Fixed lock stripes serialize each user's CONNECT bind with revocation without retaining user locks forever. */
+    private static final int USER_LIFECYCLE_LOCK_STRIPES = 64;
+    /** Fixed lock stripes serialize a raw socket write with its revocation close. */
+    private static final int SESSION_TRANSPORT_LOCK_STRIPES = 64;
 
     private final UserRepository userRepository;
+    private final Object[] userLifecycleLocks = createUserLifecycleLocks();
+    private final Object[] sessionTransportLocks = createSessionTransportLocks();
     private final ConcurrentHashMap<String, WebSocketSession> socketsBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, UUID> userBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Set<String>> sessionsByUser = new ConcurrentHashMap<>();
+    private final Set<String> closedSessions = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Instant> expiresBySession = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> expiryTasks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> handshakeDeadlines = new ConcurrentHashMap<>();
@@ -81,22 +90,51 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         return new WebSocketHandlerDecorator(handler) {
             @Override
             public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-                socketsBySession.put(session.getId(), session);
-                scheduleHandshakeDeadline(session.getId());
+                String sessionId = session.getId();
+                // Broker writes may be queued after outbound channel checks, so guard the raw socket write too.
+                WebSocketSession guardedSession = new WebSocketSessionDecorator(session) {
+                    @Override
+                    public void sendMessage(WebSocketMessage<?> message) throws IOException {
+                        boolean expired = false;
+                        synchronized (sessionTransportLock(sessionId)) {
+                            if (closedSessions.contains(sessionId)) {
+                                return;
+                            }
+                            Instant expiresAt = expiresBySession.get(sessionId);
+                            if (expiresAt != null && !Instant.now().isBefore(expiresAt)) {
+                                expired = true;
+                            } else {
+                                super.sendMessage(message);
+                            }
+                        }
+                        if (expired) {
+                            closeSession(sessionId);
+                        }
+                    }
+                };
+                socketsBySession.put(sessionId, guardedSession);
+                scheduleHandshakeDeadline(sessionId);
                 try {
-                    super.afterConnectionEstablished(session);
+                    super.afterConnectionEstablished(guardedSession);
                 } catch (Exception e) {
-                    cancelHandshakeDeadline(session.getId());
-                    socketsBySession.remove(session.getId(), session);
+                    cancelHandshakeDeadline(sessionId);
+                    socketsBySession.remove(sessionId, guardedSession);
                     throw e;
                 }
             }
 
             @Override
             public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) throws Exception {
-                socketsBySession.remove(session.getId(), session);
-                unbind(session.getId());
-                super.afterConnectionClosed(session, closeStatus);
+                String sessionId = session.getId();
+                synchronized (sessionTransportLock(sessionId)) {
+                    socketsBySession.remove(sessionId);
+                    unbind(sessionId);
+                }
+                try {
+                    super.afterConnectionClosed(session, closeStatus);
+                } finally {
+                    closedSessions.remove(sessionId);
+                }
             }
         };
     }
@@ -108,36 +146,47 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         if (sessionId == null || !(accessor.getUser() instanceof StompUserPrincipal principal)) {
             return;
         }
-        WebSocketSession socket = socketsBySession.get(sessionId);
-        if (socket == null || !socket.isOpen()) {
-            return;
+        synchronized (userLifecycleLock(principal.userId())) {
+            WebSocketSession socket = socketsBySession.get(sessionId);
+            if (socket == null || !socket.isOpen()) {
+                return;
+            }
+            if (isExpired(principal) || (principal.issuedAt() != null && isRevoked(principal))) {
+                closeSession(sessionId);
+                return;
+            }
+            if (!canOpenSession(principal.userId())) {
+                closeSession(sessionId);
+                return;
+            }
+            bind(sessionId, principal.userId(), principal.expiresAt());
+            if (!socket.isOpen()) {
+                closeSession(sessionId);
+            }
         }
-        if (isExpired(principal) || (principal.issuedAt() != null && isRevoked(principal))) {
-            closeSession(sessionId);
-            return;
-        }
-        if (!canOpenSession(principal.userId())) {
-            closeSession(sessionId);
-            return;
-        }
-        bind(sessionId, principal.userId(), principal.expiresAt());
     }
 
     @EventListener
     public void onSessionDisconnected(SessionDisconnectEvent event) {
-        unbind(event.getSessionId());
-        socketsBySession.remove(event.getSessionId());
+        String sessionId = event.getSessionId();
+        synchronized (sessionTransportLock(sessionId)) {
+            closedSessions.add(sessionId);
+            unbind(sessionId);
+            socketsBySession.remove(sessionId);
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onAccessTokensRevoked(AccessTokensRevokedEvent event) {
-        Set<String> sessionIds = sessionsByUser.remove(event.userId());
-        if (sessionIds == null) {
-            return;
-        }
-        for (String sessionId : Set.copyOf(sessionIds)) {
-            if (event.userId().equals(userBySession.get(sessionId))) {
-                closeSession(sessionId);
+        synchronized (userLifecycleLock(event.userId())) {
+            Set<String> sessionIds = sessionsByUser.remove(event.userId());
+            if (sessionIds == null) {
+                return;
+            }
+            for (String sessionId : Set.copyOf(sessionIds)) {
+                if (event.userId().equals(userBySession.get(sessionId))) {
+                    closeSession(sessionId);
+                }
             }
         }
     }
@@ -162,8 +211,10 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     /** False once {@code userId} already holds {@link #MAX_SESSIONS_PER_USER} sockets. */
     public boolean canOpenSession(UUID userId) {
-        Set<String> sessions = sessionsByUser.get(userId);
-        return sessions == null || sessions.size() < MAX_SESSIONS_PER_USER;
+        synchronized (userLifecycleLock(userId)) {
+            Set<String> sessions = sessionsByUser.get(userId);
+            return sessions == null || sessions.size() < MAX_SESSIONS_PER_USER;
+        }
     }
 
     /** Closes a socket whose STOMP CONNECT was rejected. */
@@ -184,15 +235,21 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
 
     /** True while the STOMP session is still bound to a user with a live access token. */
     public boolean isAuthenticatedSession(String sessionId) {
-        if (!userBySession.containsKey(sessionId)) {
+        UUID userId = userBySession.get(sessionId);
+        if (userId == null) {
             return false;
         }
-        Instant expiresAt = expiresBySession.get(sessionId);
-        if (expiresAt != null && !Instant.now().isBefore(expiresAt)) {
-            closeSession(sessionId);
-            return false;
+        synchronized (userLifecycleLock(userId)) {
+            if (!userId.equals(userBySession.get(sessionId))) {
+                return false;
+            }
+            Instant expiresAt = expiresBySession.get(sessionId);
+            if (expiresAt != null && !Instant.now().isBefore(expiresAt)) {
+                closeSession(sessionId);
+                return false;
+            }
+            return true;
         }
-        return true;
     }
 
     private static boolean isExpired(StompUserPrincipal principal) {
@@ -208,21 +265,50 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         return userRepository.findAuthValidityById(principal.userId())
                 .map(validity -> {
                     Instant cutoff = validity.tokensValidAfter();
-                    return cutoff != null && principal.issuedAt().isBefore(cutoff);
+                    return cutoff != null && !principal.issuedAt().isAfter(cutoff);
                 })
                 .orElse(true);
     }
 
-    private void bind(String sessionId, UUID userId, Instant expiresAt) {
-        cancelHandshakeDeadline(sessionId);
-        UUID previous = userBySession.putIfAbsent(sessionId, userId);
-        if (previous != null) {
-            return;
+    private static Object[] createUserLifecycleLocks() {
+        Object[] locks = new Object[USER_LIFECYCLE_LOCK_STRIPES];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new Object();
         }
-        sessionsByUser.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet()).add(sessionId);
-        if (expiresAt != null) {
-            expiresBySession.put(sessionId, expiresAt);
-            scheduleExpiry(sessionId, expiresAt);
+        return locks;
+    }
+
+    private Object userLifecycleLock(UUID userId) {
+        return userLifecycleLocks[Math.floorMod(userId.hashCode(), userLifecycleLocks.length)];
+    }
+
+    private static Object[] createSessionTransportLocks() {
+        Object[] locks = new Object[SESSION_TRANSPORT_LOCK_STRIPES];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new Object();
+        }
+        return locks;
+    }
+
+    private Object sessionTransportLock(String sessionId) {
+        return sessionTransportLocks[Math.floorMod(sessionId.hashCode(), sessionTransportLocks.length)];
+    }
+
+    private void bind(String sessionId, UUID userId, Instant expiresAt) {
+        synchronized (sessionTransportLock(sessionId)) {
+            if (closedSessions.contains(sessionId)) {
+                return;
+            }
+            cancelHandshakeDeadline(sessionId);
+            UUID previous = userBySession.putIfAbsent(sessionId, userId);
+            if (previous != null) {
+                return;
+            }
+            sessionsByUser.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet()).add(sessionId);
+            if (expiresAt != null) {
+                expiresBySession.put(sessionId, expiresAt);
+                scheduleExpiry(sessionId, expiresAt);
+            }
         }
     }
 
@@ -284,12 +370,16 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
     }
 
     private void closeSession(String sessionId) {
-        unbind(sessionId);
-        closeSocket(sessionId);
+        WebSocketSession socket;
+        synchronized (sessionTransportLock(sessionId)) {
+            closedSessions.add(sessionId);
+            unbind(sessionId);
+            socket = socketsBySession.get(sessionId);
+        }
+        closeSocket(socket);
     }
 
-    private void closeSocket(String sessionId) {
-        WebSocketSession socket = socketsBySession.get(sessionId);
+    private void closeSocket(WebSocketSession socket) {
         if (socket == null || !socket.isOpen()) {
             return;
         }
