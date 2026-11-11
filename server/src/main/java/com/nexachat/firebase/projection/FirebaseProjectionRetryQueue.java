@@ -20,28 +20,38 @@ public class FirebaseProjectionRetryQueue {
 
     private final Clock clock;
     private final FirebaseProjectionMetrics metrics;
+    private final int maxPending;
     private final Map<String, Retry> pending = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean();
 
     public FirebaseProjectionRetryQueue(Clock clock, FirebaseProjectionMetrics metrics) {
-        this.clock = clock;
-        this.metrics = metrics;
+        this(clock, metrics, MAX_PENDING);
     }
 
-    public synchronized void enqueue(String key, Runnable operation) {
-        pending.compute(key, (ignored, existing) -> {
-            if (existing != null) {
-                return existing;
-            }
-            if (pending.size() >= MAX_PENDING) {
-                metrics.retry("overflow");
-                log.error("Firebase authorization retry queue reached its capacity");
-                return null;
-            }
-            metrics.retry("queued");
-            return new Retry(operation, clock.instant().plusMillis(jitter(1_000)), 0);
-        });
+    FirebaseProjectionRetryQueue(Clock clock, FirebaseProjectionMetrics metrics, int maxPending) {
+        if (maxPending < 1) {
+            throw new IllegalArgumentException("Firebase projection retry capacity must be positive");
+        }
+        this.clock = clock;
+        this.metrics = metrics;
+        this.maxPending = maxPending;
+    }
+
+    public synchronized boolean enqueue(String key, Runnable operation) {
+        if (pending.containsKey(key)) {
+            metrics.retryBacklog(pending.size());
+            return true;
+        }
+        if (pending.size() >= maxPending) {
+            metrics.retry("overflow");
+            metrics.retryBacklog(pending.size());
+            log.error("Firebase authorization retry queue reached its capacity");
+            return false;
+        }
+        pending.put(key, new Retry(operation, clock.instant().plusMillis(jitter(1_000)), 0));
+        metrics.retry("queued");
         metrics.retryBacklog(pending.size());
+        return true;
     }
 
     @Scheduled(fixedDelayString = "${nexachat.firebase.projection.retry-interval-ms:1000}")

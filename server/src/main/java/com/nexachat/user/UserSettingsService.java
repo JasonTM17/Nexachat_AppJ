@@ -50,7 +50,9 @@ public class UserSettingsService {
         if (showPresence != null) {
             boolean changed = user.isShowPresence() != showPresence;
             user.changeShowPresence(showPresence);
-            if (changed) {
+            // A repeated hide is also a retry: the previous after-commit RTDB
+            // deny may have failed after this SQL preference was committed.
+            if (changed || !showPresence) {
                 eventPublisher.publishEvent(new UserPresenceVisibilityChangedEvent(userId, showPresence));
             }
             if (changed && sessionState.isOnline(userId)) {

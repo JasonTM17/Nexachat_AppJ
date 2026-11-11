@@ -13,8 +13,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
@@ -147,6 +151,25 @@ class UserSettingsServiceTest {
         verify(eventPublisher).publishEvent(new UserPresenceVisibilityChangedEvent(userId, false));
         verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.isA(UserPresenceChangedEvent.class));
         verifyNoInteractions(memberRepository);
+    }
+
+    @Test
+    void repeatedPresenceHideRetriesAfterTheCommittedProjectionFailed() {
+        UserRepository repository = mock(UserRepository.class);
+        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
+        UserSettingsService service = service(repository, mock(ConversationMemberRepository.class),
+                mock(PresenceSessionState.class), eventPublisher);
+        UUID userId = UUID.randomUUID();
+        User user = User.create("+84901112238", "hash", "User");
+        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        doThrow(new IllegalStateException("provider failure")).doNothing()
+                .when(eventPublisher).publishEvent(any(UserPresenceVisibilityChangedEvent.class));
+
+        assertThatThrownBy(() -> service.updateSettings(userId, false, null, null))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(service.updateSettings(userId, false, null, null).showPresence()).isFalse();
+
+        verify(eventPublisher, times(2)).publishEvent(new UserPresenceVisibilityChangedEvent(userId, false));
     }
 
     private static UserSettingsService service(UserRepository repository,

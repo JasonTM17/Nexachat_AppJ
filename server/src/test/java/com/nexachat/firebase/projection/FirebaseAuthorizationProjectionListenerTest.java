@@ -57,6 +57,23 @@ class FirebaseAuthorizationProjectionListenerTest {
     }
 
     @Test
+    void failedPrivacyHideAtQueueCapacityIsRejectedAndDoesNotReturnSuccess() {
+        FirebaseAuthorizationProjectionService projections = mock(FirebaseAuthorizationProjectionService.class);
+        FirebaseProjectionRetryQueue retries = new FirebaseProjectionRetryQueue(
+                Clock.systemUTC(), new FirebaseProjectionMetrics(new SimpleMeterRegistry()), 1);
+        retries.enqueue("other:pending", () -> { });
+        FirebaseAuthorizationProjectionListener listener =
+                new FirebaseAuthorizationProjectionListener(projections, retries);
+        doThrow(new IllegalStateException("provider failure")).when(projections).refreshAccount(USER_ID);
+
+        assertThatThrownBy(() -> listener.onPresenceVisibilityChanged(
+                new UserPresenceVisibilityChangedEvent(USER_ID, false)))
+                .isInstanceOf(FirebaseProviderException.class)
+                .hasMessage("Firebase authorization deny update could not be queued");
+        org.assertj.core.api.Assertions.assertThat(retries.pendingCount()).isEqualTo(1);
+    }
+
+    @Test
     void accountCreationAndDeletionEventsReachTheirProjectionHooks() {
         FirebaseAuthorizationProjectionService projections = mock(FirebaseAuthorizationProjectionService.class);
         FirebaseProjectionRetryQueue retries = new FirebaseProjectionRetryQueue(

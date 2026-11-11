@@ -56,10 +56,18 @@ public class FirebaseAuthorizationProjectionListener {
         try {
             operation.run();
         } catch (RuntimeException failure) {
-            retries.enqueue(key, operation);
-            log.warn("Firebase authorization projection deferred ({})", failure.getClass().getSimpleName());
+            boolean queued = retries.enqueue(key, operation);
+            if (queued) {
+                log.warn("Firebase authorization projection deferred ({})",
+                        failure.getClass().getSimpleName());
+            } else {
+                log.error("Firebase authorization projection retry was rejected ({})",
+                        failure.getClass().getSimpleName());
+            }
             if (denyMustSucceed) {
-                throw new FirebaseProviderException("Firebase authorization deny update did not complete");
+                throw new FirebaseProviderException(queued
+                        ? "Firebase authorization deny update did not complete"
+                        : "Firebase authorization deny update could not be queued");
             }
         }
     }
