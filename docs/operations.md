@@ -42,6 +42,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
+| `NEXACHAT_CLIENT_IP_HEADER` | No (header read for the client address when the peer is a trusted proxy; `X-Forwarded-For` is read right to left) | `X-Forwarded-For` | `CF-Connecting-IP` |
 | `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | No (optional "Sign in with Google"; all Google routes answer 404 while off) | `false` | `false` |
 | `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Yes when Google sign-in is enabled; startup fails closed without it | Empty | `<id>.apps.googleusercontent.com` |
 | `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Yes when Google sign-in is enabled (comma-separated Android OAuth client IDs trusted as token `azp`) | Empty while disabled | `<id>.apps.googleusercontent.com` |
@@ -657,10 +658,15 @@ Per-IP rate-limit buckets (credential endpoints, invite resolve/join, and the
 small IP fallbacks on authenticated interceptors) therefore use the **socket peer
 address** captured before the forwarded-header filter runs. Only when the peer
 matches an entry in `nexachat.security.trusted-proxy-cidrs` (env
-`NEXACHAT_TRUSTED_PROXY_CIDRS`, comma-separated CIDRs or exact IPs) does the
-service use the framework-rewritten client address. The default empty list is
-safe for direct exposure; set it to the subnet your reverse proxy connects from
-when TLS terminates in front of the JVM.
+`NEXACHAT_TRUSTED_PROXY_CIDRS`, comma-separated CIDRs or exact IPs) does
+`ClientIpResolver` read the client address from `nexachat.security.client-ip-header`
+(env `NEXACHAT_CLIENT_IP_HEADER`). The default `X-Forwarded-For` is walked right to
+left and the first address outside the trusted ranges wins, so a caller-supplied
+left-most entry is never used. A single-value header such as `CF-Connecting-IP`
+(Render) must hold exactly one address; anything else falls back to the peer. The
+default empty list is safe for direct exposure; set it to the subnet your reverse
+proxy connects from when TLS terminates in front of the JVM. Render's values are in
+[deploy-render.md](deploy-render.md).
 
 ### Rate limits and body bounds
 

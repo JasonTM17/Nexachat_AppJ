@@ -219,8 +219,10 @@ the implementing source file.
   from brute-forcing an account. Without
   `NEXACHAT_TRUSTED_PROXY_CIDRS`, rate limits key off the socket peer and
   `X-Forwarded-For` is treated as client-spoofable; when the immediate peer
-  matches a configured CIDR, `ClientIpResolver` uses the forwarded client IP for
-  invite and other IP-keyed buckets (`ClientIpCaptureThenForwardedHeaderFilter`).
+  matches a configured CIDR, `ClientIpResolver` reads `NEXACHAT_CLIENT_IP_HEADER`
+  (`X-Forwarded-For` right to left, skipping trusted hops, or a single-value header
+  such as `CF-Connecting-IP` on Render) for invite and other IP-keyed buckets.
+  The socket peer is captured by `ClientIpCaptureThenForwardedHeaderFilter`.
 - Body bounds: JSON request bodies are bounded by `nexachat.security.max-json-body-bytes`
   (`NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB); oversized payloads are rejected
   with `413 PAYLOAD_TOO_LARGE` before Jackson deserialization (RequestBodySizeLimitFilter.java).
