@@ -59,4 +59,5 @@ Every engineering document in the repository, grouped by domain. Start with
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, JDK 21 LTS build & test gates, repository layout, branching and PR rules |
 | [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, R8 mapping verification (`tools/check-release-r8-mapping.py`), signing, rollout, smoke tests and rollback |
+| [docs/android-release.md](android-release.md) | GitHub Actions signed APK release, signing secrets, certificate fingerprints, tags and checksum verification |
 | [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased changes |
