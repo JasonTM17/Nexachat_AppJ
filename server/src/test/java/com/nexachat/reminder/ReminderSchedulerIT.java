@@ -3,6 +3,8 @@ package com.nexachat.reminder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.notification.MockFcmGateway;
+import com.nexachat.reminder.dto.CreateReminderRequest;
+import com.nexachat.reminder.dto.UpdateReminderRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,8 +17,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -34,6 +39,10 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -58,7 +67,8 @@ class ReminderSchedulerIT {
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
-        registry.add("nexachat.reminders.enabled", () -> "false");
+        registry.add("nexachat.reminders.enabled", () -> "true");
+        registry.add("nexachat.reminders.max-idle-ms", () -> "604800000");
     }
 
     private static String env(String name, String fallback) {
@@ -74,6 +84,12 @@ class ReminderSchedulerIT {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private ReminderScheduler scheduler;
+    @Autowired
+    private ReminderService reminderService;
+    @MockitoSpyBean
+    private ConversationReminderRepository reminderRepository;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
     @Autowired
     private MockFcmGateway mockFcmGateway;
 
@@ -273,6 +289,71 @@ class ReminderSchedulerIT {
                 .containsExactlyInAnyOrder("mixed-alice", "mixed-carol");
     }
 
+    @Test
+    void nextWakeTimeUsesUnclaimedDueAtOrClaimLeaseExpiry() throws Exception {
+        UUID conversationId = createGroup(alice, "Wake times", bob);
+        UUID reminderId = createReminder(alice, conversationId, "Wake time", "NONE");
+        Instant dbNow = databaseNow();
+        Instant dueAt = dbNow.plus(10, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MICROS);
+        makeDue(reminderId, dueAt, dueAt);
+
+        assertThat(reminderRepository.findNextWakeDelayMillis(600)).isBetween(598_000L, 600_000L);
+
+        Instant claimedAt = databaseNow().truncatedTo(ChronoUnit.MICROS);
+        jdbcTemplate.update("""
+                UPDATE conversation_reminders
+                SET remind_at = ?, claimed_at = ?, claim_token = ?
+                WHERE id = ?
+                """, timestamptz(Instant.now().minus(1, ChronoUnit.MINUTES)),
+                timestamptz(claimedAt), UUID.randomUUID(), reminderId);
+
+        assertThat(reminderRepository.findNextWakeDelayMillis(600)).isBetween(598_000L, 600_000L);
+    }
+
+    @Test
+    void committedEarlierCreateRearmsTimerButRolledBackCreateDoesNot() throws Exception {
+        UUID conversationId = createGroup(alice, "Wake event", bob);
+        clearInvocations(reminderRepository);
+
+        Instant laterAt = Instant.now().plus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
+        UUID laterId = new TransactionTemplate(transactionManager).execute(status ->
+                reminderService.create(alice.id(), conversationId,
+                        new CreateReminderRequest("Later", laterAt, "NONE"), null)
+                        .reminder().id());
+        verify(reminderRepository, times(1)).findNextWakeDelayMillis(600);
+
+        clearInvocations(reminderRepository);
+        Instant earlierAt = Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                reminderService.create(alice.id(), conversationId,
+                        new CreateReminderRequest("Earlier", earlierAt, "NONE"), null));
+        verify(reminderRepository, times(1)).findNextWakeDelayMillis(600);
+
+        clearInvocations(reminderRepository);
+        Instant updatedAt = Instant.now().plus(6, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                reminderService.update(alice.id(), conversationId, laterId,
+                        new UpdateReminderRequest(null, updatedAt, null)));
+        verify(reminderRepository, times(1)).findNextWakeDelayMillis(600);
+
+        clearInvocations(reminderRepository);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                reminderService.delete(alice.id(), conversationId, laterId));
+        verify(reminderRepository, times(1)).findNextWakeDelayMillis(600);
+
+        clearInvocations(reminderRepository);
+        Instant rolledBackAt = Instant.now().plus(30, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MICROS);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            reminderService.create(alice.id(), conversationId,
+                    new CreateReminderRequest("Rolled back", rolledBackAt, "NONE"), null);
+            status.setRollbackOnly();
+        });
+        verify(reminderRepository, never()).findNextWakeDelayMillis(600);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conversation_reminders WHERE conversation_id = ?",
+                Integer.class, conversationId)).isEqualTo(1);
+    }
+
     // ----------------------------------------------------------------- helpers
 
     private List<MockFcmGateway.SentPush> reminderPushes(UUID reminderId) {
@@ -308,6 +389,11 @@ class ReminderSchedulerIT {
                 "SELECT last_fired_at FROM conversation_reminders WHERE id = ?",
                 OffsetDateTime.class, reminderId);
         return value == null ? null : value.toInstant();
+    }
+
+    private Instant databaseNow() {
+        return jdbcTemplate.queryForObject(
+                "SELECT statement_timestamp()", OffsetDateTime.class).toInstant();
     }
 
     private static OffsetDateTime timestamptz(Instant instant) {
@@ -366,7 +452,7 @@ class ReminderSchedulerIT {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(Map.of(
                                         "title", title,
-                                        "remindAt", Instant.now().plus(1, ChronoUnit.HOURS)
+                                        "remindAt", Instant.now().plus(30, ChronoUnit.DAYS)
                                                 .truncatedTo(ChronoUnit.SECONDS).toString(),
                                         "repeat", repeat))))
                 .andExpect(status().isCreated())

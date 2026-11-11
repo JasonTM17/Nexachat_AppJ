@@ -39,6 +39,32 @@ public interface ConversationReminderRepository extends JpaRepository<Conversati
     long countActive(@Param("conversationId") UUID conversationId);
 
     /**
+     * Milliseconds until the earliest active reminder wake-up, calculated
+     * against PostgreSQL's clock so app/database clock skew cannot cause an
+     * early polling loop. Unclaimed rows wake at {@code remind_at}; a claimed
+     * row wakes when its claim lease expires. Both ordered branches can use
+     * the reminder indexes rather than sorting the full table.
+     */
+    @Query(value = """
+            SELECT CEIL(EXTRACT(EPOCH FROM (MIN(wake_at) - statement_timestamp())) * 1000)::bigint
+            FROM (
+                (SELECT remind_at AS wake_at
+                 FROM conversation_reminders
+                 WHERE fired_at IS NULL AND claimed_at IS NULL
+                 ORDER BY remind_at ASC, id ASC
+                 LIMIT 1)
+                UNION ALL
+                (SELECT claimed_at
+                        + CAST(:leaseSeconds AS double precision) * interval '1 second' AS wake_at
+                 FROM conversation_reminders
+                 WHERE fired_at IS NULL AND claimed_at IS NOT NULL
+                 ORDER BY claimed_at ASC, id ASC
+                 LIMIT 1)
+            ) AS reminder_wake_candidates
+            """, nativeQuery = true)
+    Long findNextWakeDelayMillis(@Param("leaseSeconds") long leaseSeconds);
+
+    /**
      * Row lock used by edit/delete and by the scheduler's advance step. Taking
      * the reminder row lock (never the conversation lock) keeps the scheduler
      * from deadlocking with CRUD.

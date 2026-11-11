@@ -37,6 +37,9 @@ spring:
 # not keep the Neon compute awake. RAG indexes lazily at query time; expired
 # refresh-replay payloads are already unusable.
 nexachat:
+  reminders:
+    # Let Neon suspend while ensuring this instance rechecks for work created elsewhere.
+    max-idle-ms: 1800000
   rag:
     index:
       backfill-interval-ms: 1800000

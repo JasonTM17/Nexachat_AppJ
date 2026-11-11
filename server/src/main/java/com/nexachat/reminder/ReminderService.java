@@ -13,6 +13,7 @@ import com.nexachat.reminder.dto.ReminderResponse;
 import com.nexachat.reminder.dto.UpdateReminderRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,15 +62,18 @@ public class ReminderService {
     private final ConversationMemberRepository memberRepository;
     private final ConversationReminderRepository reminderRepository;
     private final RequestIdempotencyRepository idempotencyRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReminderService(ConversationRepository conversationRepository,
                            ConversationMemberRepository memberRepository,
                            ConversationReminderRepository reminderRepository,
-                           RequestIdempotencyRepository idempotencyRepository) {
+                           RequestIdempotencyRepository idempotencyRepository,
+                           ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.reminderRepository = reminderRepository;
         this.idempotencyRepository = idempotencyRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -163,8 +167,10 @@ public class ReminderService {
         }
 
         log.info("Reminder {} created in conversation {}", reminder.getId(), conversationId);
-        return new ReminderCreateResult(
+        ReminderCreateResult result = new ReminderCreateResult(
                 toResponse(reminder, conversation.getType(), member, userId), true);
+        eventPublisher.publishEvent(new ReminderScheduleChangedEvent(reminder.getId()));
+        return result;
     }
 
     /**
@@ -204,7 +210,9 @@ public class ReminderService {
 
         reminder.edit(title, remindAt, repeat, remindAtProvided || repeatChanged, Instant.now());
         log.info("Reminder {} updated in conversation {}", reminderId, conversationId);
-        return toResponse(reminder, conversation.getType(), member, userId);
+        ReminderResponse result = toResponse(reminder, conversation.getType(), member, userId);
+        eventPublisher.publishEvent(new ReminderScheduleChangedEvent(reminder.getId()));
+        return result;
     }
 
     /**
@@ -223,6 +231,7 @@ public class ReminderService {
         ConversationReminder reminder = requireActiveReminder(conversationId, reminderId);
         requireEditRole(conversation, member, reminder, userId);
         reminderRepository.delete(reminder);
+        eventPublisher.publishEvent(new ReminderScheduleChangedEvent(reminderId));
         log.info("Reminder {} deleted in conversation {}", reminderId, conversationId);
     }
 
