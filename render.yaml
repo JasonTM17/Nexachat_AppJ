@@ -1,0 +1,141 @@
+# Render Blueprint for the NexaChat API (owner decision 2026-11-11).
+#
+# One Free web service built from server/Dockerfile, with Neon Postgres and
+# Cloudflare R2 (S3) behind it. Render Free is 0.1 CPU / 512 MB, has an
+# ephemeral filesystem and sleeps after 15 minutes without traffic. The
+# `render` Spring profile (server/src/main/resources/application-render.yml)
+# tunes Tomcat and Hikari for that box; JAVA_OPTS below tunes the JVM.
+#
+# Blueprint reference: https://render.com/docs/blueprint-spec
+# Owner guide: docs/deploy-render.md
+
+services:
+  - type: web
+    name: nexachat-api
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    # Deploy only commits pushed to main, never pull-request branches.
+    autoDeployTrigger: commit
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    healthCheckPath: /actuator/health/liveness
+    maxShutdownDelaySeconds: 30
+    # Rebuild only when the server image or this Blueprint can change.
+    buildFilter:
+      paths:
+        - server/**
+        - render.yaml
+    envVars:
+      # ---- Process / runtime ------------------------------------------------
+      # Render defaults PORT to 10000; the app and the image health check use
+      # 8080 (application.yml:2, server/Dockerfile:44-45).
+      - key: PORT
+        value: "8080"
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod,render,json-logs
+      # Replaces the image default (server/Dockerfile:42). MaxRAMPercentage=60
+      # leaves room for metaspace, code cache, thread stacks and direct buffers
+      # inside the 512 MB cgroup; SerialGC and C1-only compilation avoid
+      # competing GC/JIT threads on 0.1 CPU.
+      - key: JAVA_OPTS
+        value: >-
+          -XX:MaxRAMPercentage=60.0
+          -XX:+UseSerialGC
+          -Xss512k
+          -XX:MaxMetaspaceSize=128m
+          -XX:ActiveProcessorCount=1
+          -XX:TieredStopAtLevel=1
+          -XX:+ExitOnOutOfMemoryError
+          -Djava.security.egd=file:/dev/./urandom
+
+      # ---- Database (Neon Postgres) ----------------------------------------
+      # Use the DIRECT Neon connection string, not the "-pooler" one: Flyway
+      # and ScheduledAdvisoryLock use session-level advisory locks, which
+      # PgBouncer transaction mode does not support. See docs/deploy-render.md.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+
+      # ---- Secrets ---------------------------------------------------------
+      # Render generates one base64 256-bit value per service and keeps it
+      # stable across deploys. JWT_SECRET needs >= 32 bytes; the refresh-replay
+      # key needs exactly 32 base64-encoded bytes.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NEXACHAT_REFRESH_REPLAY_KEY
+        generateValue: true
+
+      # ---- HTTP surface ----------------------------------------------------
+      # The web account-deletion page (site/delete-account.html) calls the API
+      # from https://nexachat.io.vn. Android sends no Origin header.
+      - key: NEXACHAT_CORS_ALLOWED_ORIGINS
+        value: https://nexachat.io.vn
+      # Render terminates TLS at its edge and the container is not directly
+      # reachable, but Render publishes no proxy CIDR. Leave this empty: rate
+      # limits then key on the proxy peer (one shared bucket) instead of
+      # trusting a spoofable X-Forwarded-For. See docs/deploy-render.md.
+      - key: NEXACHAT_TRUSTED_PROXY_CIDRS
+        value: ""
+
+      # ---- Storage ---------------------------------------------------------
+      # Kept for the diskSpace health probe (application.yml:63). With the s3
+      # provider S1 no longer requires it at startup, but a writable path must
+      # still exist for /actuator/health/readiness.
+      - key: STORAGE_ROOT
+        value: /app/data/uploads
+      # R2 via the S3-compatible provider added by brief 336 S1
+      # (feat/server-s3-storage). Do not deploy before that branch is merged:
+      # until then the server ignores these keys and uploads stay ephemeral.
+      # Names match S1's application.yml storage.s3 block; S1 always uses
+      # path-style addressing for R2, so there is no path-style env var.
+      - key: NEXACHAT_STORAGE_PROVIDER
+        value: s3
+      - key: NEXACHAT_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: NEXACHAT_STORAGE_S3_REGION
+        value: auto
+      - key: NEXACHAT_STORAGE_S3_BUCKET
+        value: nexachat-uploads
+      - key: NEXACHAT_STORAGE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY
+        sync: false
+
+      # ---- Email (account deletion / recovery OTP) -------------------------
+      # Render Free blocks outbound ports 25/465/587, so SMTP cannot work
+      # here; Resend uses HTTPS.
+      - key: NEXACHAT_MAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+
+      # ---- Push / realtime (optional) --------------------------------------
+      # Keep FCM off until FCM_PROJECT_ID and FCM_SERVICE_ACCOUNT_JSON are set:
+      # enabling it with empty credentials fails startup (FcmTokenProvider.java:54-63).
+      # FCM_SERVICE_ACCOUNT_JSON accepts the full JSON inline, so no file is
+      # needed on the ephemeral disk (GoogleServiceAccountCredentialsFactory.java:58-101).
+      - key: FCM_ENABLED
+        value: "false"
+      - key: FCM_PROJECT_ID
+        sync: false
+      - key: FCM_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: FIREBASE_REALTIME_ENABLED
+        value: "false"
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+
+      # ---- Google sign-in (optional) ---------------------------------------
+      - key: NEXACHAT_GOOGLE_SIGNIN_ENABLED
+        value: "false"
+      - key: NEXACHAT_GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS
+        sync: false
