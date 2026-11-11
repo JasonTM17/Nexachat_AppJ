@@ -8,6 +8,9 @@ import static org.mockito.Mockito.when;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
+import com.nexachat.core.realtime.ephemeral.EphemeralTransport;
+import com.nexachat.core.realtime.ephemeral.PresenceUpdate;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import java.util.Map;
@@ -26,6 +29,7 @@ public final class PresenceRepositoryTest {
     private final PublishProcessor<ChatEvent> chatEvents = PublishProcessor.create();
     private final BehaviorProcessor<SessionEvents.Event> sessionSignals =
             BehaviorProcessor.create();
+    private final PublishProcessor<SessionEvents.Event> lifecycleSignals = PublishProcessor.create();
 
     private PresenceRepository repository;
 
@@ -33,6 +37,7 @@ public final class PresenceRepositoryTest {
     public void setUp() {
         when(session.getEvents()).thenReturn(chatEvents);
         when(sessionEvents.getEvents()).thenReturn(sessionSignals);
+        when(sessionEvents.getLifecycleEvents()).thenReturn(lifecycleSignals);
         repository = new PresenceRepository(session, sessionEvents);
     }
 
@@ -122,6 +127,30 @@ public final class PresenceRepositoryTest {
         chatEvents.onNext(offline); // exact duplicate delivery
 
         assertEquals(expectedOffline, current().get("u-1"));
+    }
+
+    @Test
+    public void firebaseSnapshotWinsOverInboxSeedAndTransportSwitchClearsIt() {
+        EphemeralStateRouter router = mock(EphemeralStateRouter.class);
+        BehaviorProcessor<EphemeralTransport> selected =
+                BehaviorProcessor.createDefault(EphemeralTransport.FIREBASE);
+        PublishProcessor<PresenceUpdate> firebaseEvents = PublishProcessor.create();
+        when(router.selectionChanges()).thenReturn(selected);
+        when(router.presenceEvents()).thenReturn(firebaseEvents);
+        when(router.isFirebaseSelected()).thenReturn(true);
+        PresenceRepository integrated = new PresenceRepository(router, new SessionEvents());
+        try {
+            firebaseEvents.onNext(new PresenceUpdate("u-1", new PeerPresence(true, null), 10L));
+            integrated.seed(Map.of("u-1", new PeerPresence(false, 5L)));
+            assertEquals(new PeerPresence(true, null),
+                    integrated.getPresences().blockingFirst().get("u-1"));
+
+            selected.onNext(EphemeralTransport.STOMP);
+
+            assertTrue(integrated.getPresences().blockingFirst().isEmpty());
+        } finally {
+            integrated.close();
+        }
     }
 
     private Map<String, PeerPresence> current() {

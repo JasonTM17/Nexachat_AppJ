@@ -140,6 +140,8 @@ public final class ConversationRepository implements AutoCloseable {
     private final Set<String> locallyCreatedIds = ConcurrentHashMap.newKeySet();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private final Object inboxPagingLock = new Object();
+    /** Current walk's visible, privacy-authorized direct peers for Firebase presence. */
+    private final Map<String, String> inboxPresenceObservers = new LinkedHashMap<>();
     private long inboxPageGeneration;
     @Nullable private String nextInboxCursor;
     private boolean hasMoreInboxPages;
@@ -869,6 +871,9 @@ public final class ConversationRepository implements AutoCloseable {
                         if (isInboxPageGenerationCurrent(generation)) {
                             presenceRepository.seed(presenceSeeds);
                             clearHiddenDirectPeers(fetch.items, presenceSeeds, myId);
+                            if (!archived) {
+                                updatePresenceObservers(fetch.items, myId, firstPage, generation);
+                            }
                         }
                     }))
                     .andThen(Completable.defer(() ->
@@ -933,6 +938,27 @@ public final class ConversationRepository implements AutoCloseable {
                     TimeAndJwt.isoToEpochMsOrNull(presence.getLastSeenAt())));
         }
         return seeds;
+    }
+
+    private void updatePresenceObservers(
+            List<ConversationInboxDto> items,
+            @Nullable String myId,
+            boolean firstPage,
+            long generation) {
+        Map<String, String> pageObservers = new LinkedHashMap<>();
+        for (ConversationInboxDto dto : items) {
+            if (!TYPE_DIRECT.equals(dto.getType()) || dto.getPeerPresence() == null) continue;
+            String peerId = dto.resolvedOtherId(myId);
+            if (peerId != null) pageObservers.put(peerId, dto.getId());
+        }
+        Map<String, String> currentObservers;
+        synchronized (inboxPagingLock) {
+            if (generation != inboxPageGeneration) return;
+            if (firstPage) inboxPresenceObservers.clear();
+            inboxPresenceObservers.putAll(pageObservers);
+            currentObservers = new LinkedHashMap<>(inboxPresenceObservers);
+        }
+        presenceRepository.setPresenceObservers(currentObservers);
     }
 
     private void clearHiddenDirectPeers(

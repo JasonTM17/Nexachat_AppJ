@@ -218,6 +218,7 @@ public final class TokenRefresher {
             marker = new SessionCloseMarker(activeEpoch, closingEpoch);
             admissionEvents.onNext(false);
         }
+        sessionEvents.emitSessionClosing();
         return marker;
     }
 
@@ -422,6 +423,7 @@ public final class TokenRefresher {
                     pendingSuccessResponse = null;
                     pendingSuccessKey = null;
                     detachMatchingFlight(capturedEpoch);
+                    sessionEvents.emitSessionRefreshed();
                     return new TokenRefreshOutcome.FreshToken(body.getAccessToken());
                 }))
                 .onErrorResumeNext(error -> {

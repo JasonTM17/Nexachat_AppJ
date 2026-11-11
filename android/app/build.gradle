@@ -75,6 +75,10 @@ File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePa
 
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
+def firebaseRealtimeEnabled = providers.gradleProperty('firebaseRealtimeEnabled')
+    .map { it.toBoolean() }
+    .orElse(false)
+    .get()
 
 // Web OAuth client ID for "Sign in with Google". Fed by -PgoogleWebClientId=
 // (or GOOGLE_WEB_CLIENT_ID in local.properties); empty hides every Google entry
@@ -173,6 +177,7 @@ android {
         // Backend base URL — override in local.properties (LAN demo) or via
         // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
         buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
+        buildConfigField 'boolean', 'FIREBASE_REALTIME_ENABLED', "${firebaseRealtimeEnabled}"
         buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', "\"${googleWebClientId}\""
         buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
         manifestPlaceholders = [inviteLinkHttpsHost: '']
@@ -384,6 +389,11 @@ dependencies {
     // WorkManager (Outbox sync worker)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.work.rxjava3)
+
+    // Firebase Auth/RTDB are isolated to the optional ephemeral transport.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.database)
 
     // Firebase Cloud Messaging (Push notifications)
     implementation(libs.firebase.messaging)

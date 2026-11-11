@@ -28,7 +28,7 @@ glide = "4.16.0"
 mockito = "5.14.2"
 arch-core-testing = "2.2.0"
 work = "2.9.1"
-firebase-messaging = "24.0.0"
+firebase-bom = "33.1.2"
 credentials = "1.6.0"
 # googleid 1.2.1 is compiled with Kotlin 2.4 metadata; AGP 8.9.3's lint embeds the
 # Kotlin 2.1.0 compiler and logs "Module was compiled with an incompatible version
@@ -105,8 +105,11 @@ libphonenumber = { group = "com.googlecode.libphonenumber", name = "libphonenumb
 androidx-work-runtime = { group = "androidx.work", name = "work-runtime", version.ref = "work" }
 androidx-work-rxjava3 = { group = "androidx.work", name = "work-rxjava3", version.ref = "work" }
 
-# Firebase Cloud Messaging
-firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebase-messaging" }
+# Firebase. BoM 33.1.2 preserves the existing Messaging 24.0.0 dependency.
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebase-bom" }
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
+firebase-database = { group = "com.google.firebase", name = "firebase-database" }
+firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 
 # Sign in with Google (Credential Manager)
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }

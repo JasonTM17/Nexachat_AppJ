@@ -390,6 +390,28 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void inactiveTypingEventClearsIndicatorImmediately() {
+        typingFlow.onNext(new TypingEvent(CONVERSATION_ID, "u-other", "Lan"));
+        assertTrue(state().isPeerTyping());
+
+        typingFlow.onNext(new TypingEvent(CONVERSATION_ID, "u-other", null, false, null));
+
+        assertFalse(state().isPeerTyping());
+    }
+
+    @Test
+    public void oneGroupMemberStoppingDoesNotHideAnotherActiveTyper() {
+        typingFlow.onNext(new TypingEvent(CONVERSATION_ID, "u-other", "Lan"));
+        typingFlow.onNext(new TypingEvent(CONVERSATION_ID, "u-third", "Minh"));
+
+        typingFlow.onNext(new TypingEvent(CONVERSATION_ID, "u-other", null, false, null));
+
+        assertTrue(state().isPeerTyping());
+        timerScheduler.advanceTimeBy(ChatViewModel.PEER_TYPING_TTL_MS + 1, TimeUnit.MILLISECONDS);
+        assertFalse(state().isPeerTyping());
+    }
+
+    @Test
     public void typingEventForAnotherConversationIsIgnored() {
         typingFlow.onNext(new TypingEvent("other-conv", "u-other", "Lan"));
         assertFalse(state().isPeerTyping());
