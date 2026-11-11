@@ -54,7 +54,7 @@ branch, not from `main`.
 | Locales | English (default) and Vietnamese | `android/app/src/main/res/values/`, `android/app/src/main/res/values-vi/`; `core/common/AppLocaleManager.java:19-24` | Supported by code (main) |
 | ABI filters | `arm64-v8a`, `x86_64` | `android/app/build.gradle:170` | Supported by code (main) |
 | Ads / in-app purchases | No ad, billing, or purchase SDK in the dependency catalog | `android/gradle/libs.versions.toml:31-108`, `android/app/build.gradle:332-400` | Supported by code (main; owner still declares "No ads") |
-| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code; `firebase-messaging` is the only Firebase module. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:31-108`, `android/app/build.gradle:389`; imports are Firebase core (`notification/FirebaseConfigDetector.java:7`), `firebase-messaging` (`notification/NexaFirebaseMessagingService.java:6-7`), and GMS `Tasks` (`notification/FirebaseTokenSource.java:4`) only; no analytics or crash SDK | Supported by code (main) |
+| Analytics / crash SDK | No analytics or crash SDK is declared or called by app code. Firebase dependencies include `firebase-messaging` (for push notifications) and `firebase-auth` / `firebase-database` (isolated to the optional ephemeral presence and typing transport, disabled by default via buildConfigField `FIREBASE_REALTIME_ENABLED`); no analytics (`firebase-analytics`), crash reporting (`firebase-crashlytics`), or performance SDK is declared. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:108`, `android/app/build.gradle:398-405`; imports are Firebase core, FCM (`notification/NexaFirebaseMessagingService.java:6-7`), GMS `Tasks` (`notification/FirebaseTokenSource.java:4`), and ephemeral transport (`core/realtime/ephemeral/FirebaseEphemeralStateSource.java:8-17`; `call/ui/FirebaseCallStatusDisplayAdapter.java:4`); no analytics or crash SDK | Supported by code (main) |
 | Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code (main) |
 | Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code (main) |
 | Account creation | Yes, by phone + password (`POST /api/v1/auth/register`). Google sign-in does not create an account; an unlinked Google account is refused. | `server/src/main/java/com/nexachat/auth/AuthController.java:40-44`; `auth/google/GoogleSignInService.java:84-101`; `db/migration/V28__google_signin.sql` | Supported by code (main) |
@@ -151,7 +151,7 @@ paths; the owner must confirm the shipped configuration and the processor terms.
 | Google Firebase Cloud Messaging | Device registration token; data-only payload: conversation/message ids, sequence, sender display name, call ids/names/timestamps, reminder ids and repeat rule. Message text and attachment bytes are not in the payload, but the sender's display name is. | The client contacts Firebase and obtains a token when the build has `google-services.json`; the server sends a payload only when `FCM_ENABLED=true` with a service account | `android/app/build.gradle:9-17`; `application.yml:225-236`; `notification/DefaultFcmPushService.java:65-77`, `:89-98`; `reminder/FcmReminderPushSender.java:29-31`, `:67-71` | Needs owner decision for the shipped build |
 | Google Identity Services (Credential Manager) | Google account email and Google `sub` identifier, returned to the app in an ID token when the user chooses Sign in with Google or links an account. The app sends the ID token and a server nonce to NexaChat; NexaChat stores only `sub` and the email at link time. The ID token itself is not stored. | Only when a user links or signs in with Google; the feature is off unless `NEXACHAT_GOOGLE_SIGNIN_ENABLED=true` and client IDs are configured | `android/app/src/main/java/com/nexachat/core/auth/CredentialManagerGoogleSignIn.java:52-95`; `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `server/src/main/java/com/nexachat/auth/google/GoogleIdTokenVerifier.java`; `user_identities` in `db/migration/V28__google_signin.sql` | Supported by code (main); owner must complete the OAuth consent screen and decide the form disclosure |
 | Transactional email provider (SMTP relay or Resend) | The verified recovery email address, the 6-digit code, and a bilingual message that states the purpose and the 10-minute validity. No marketing mail exists. | Only when the operator configures `NEXACHAT_MAIL_PROVIDER=smtp` or `resend` and a user requests a code; the default empty provider disables mail and makes authenticated email endpoints answer `503 MAIL_UNAVAILABLE`, while public requests still return `202` without sending | `branch feat/server-email-otp-deletion:mail/MailConfiguration.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48`; `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailContent.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailDispatcher.java` | Pending merge; provider name depends on configuration |
-| Google Firebase Realtime Database and Firebase Auth (opt-in bridge) | NexaChat UUID, a server-minted bridge UUID, conversation UUIDs, and lease-expiry timestamps under `sessions/` and `members/`; on revocation the bridge also deletes `presence/` and `typing/` paths. No phone number, email address, message text, attachment bytes, or NexaChat token is written. The custom Firebase token uses the NexaChat UUID as the Firebase UID and a `bridgeId` claim. | Only when `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL` is non-empty; the Android client in this repository has no Realtime Database dependency and does not call the bridge | `server/src/main/java/com/nexachat/firebase/auth/FirebaseRealtimeAuthService.java:54-100`; `firebase/client/FirebaseRtdbRestClient.java:68-95`; `firebase/config/FirebaseRealtimeAvailableCondition.java`; `application.yml:237-243`; `docs/operations.md:186-236` | Supported by code (main), disabled by default; owner decision to enable |
+| Google Firebase Realtime Database and Firebase Auth (opt-in ephemeral bridge) | When enabled: (1) Auth: NexaChat user UUID as Firebase UID (`auth.uid`) and a server-minted `bridgeId` claim. (2) Server-projected state: `/control/enabled`, `/control/presencePrivacyVersion` (v2); `/accounts/{uid}/{active,showPresence}`; session lease (`/sessions/{uid}/{bridgeId}/until`, <=120s); membership lease (`/members/{cid}/{uid}`, <=120s, <=30 conversations); 1:1 direct presence readers (`/presenceReaders/{subjectUid}/{viewerUid}`); reserved `/blocked`; passive call status (`/calls/{callId}` with `cid`, `callerId`, `calleeId`, `state`, `updatedAt`, `expiresAt`; client writes denied; no WebRTC SDP/ICE or audio). (3) Client-written ephemeral state: `/presence/{uid}/{bridgeId}` (`online` boolean, `updatedAt`, `leaseUntil`; `lastSeen` is strictly 0 under Presence Privacy v2; real `lastSeen` remains on server); `/typing/{cid}/{uid}` (`updatedAt`, `expiresAt` with max 5s TTL, 1 write/3s throttle). Excluded: no phone, email, password, display name, message text, attachment bytes, media, contacts, call audio, or NexaChat auth tokens. Retention: ephemeral only (5s–120s); cleared on disconnect/logout/revocation; purged on account deletion. Play classification: Collected by the app via its service provider for App Functionality (or Shared if service-provider DPA is not executed). | Only when `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL` is set on the server, AND `firebaseRealtimeEnabled=true` is enabled in Android; call status projection additionally requires `FIREBASE_CALL_STATUS_ENABLED=true` and `firebaseCallStatusEnabled=true`. Both server and Android flags are OFF by default; STOMP over WebSocket remains the default and authoritative transport | `android/app/build.gradle:78-85`, `:184-185`, `:398-402`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:154-207`, `:323-352`, `:397-410`, `:819-826`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/EphemeralStateRouter.java:42-55`, `:74-76`; `android/app/src/main/java/com/nexachat/call/ui/FirebaseCallStatusDisplayAdapter.java:28-74`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseRealtimeAuthService.java:54-102`; `server/src/main/java/com/nexachat/firebase/client/FirebaseRtdbRestClient.java:55-58`, `:289-297`; `server/src/main/java/com/nexachat/firebase/call/FirebaseCallStatusProjectionService.java:58-115`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationProjectionService.java:110-129`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationLeaseSweepJob.java:45-69`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseSessionRevocationListener.java:35-60`; `server/src/main/resources/application.yml:279-285`; `tools/firebase-rules/database.rules.json:1-125`; `docs/firebase-realtime.md:8-195` | Supported by code (main), disabled by default; owner decision to enable |
 | External summary LLM | Redacted eligible message text and the summary request; sender names become `U1..Un`, message ids and phone/email/URL tokens are removed | Only when an operator configures a summary key, the provider is enabled, and the requesting user has `aiSummaryConsent=true`. Text from other participants in the window is included unless they opted out in that conversation; their own `aiSummaryConsent` flag is not checked. Primary is Gemini-compatible; optional fallback is DeepSeek-compatible; a local server model can be configured instead. | `application.yml:162-190`; `docs/ai-summary.md:91-96`; `docs/known-limitations.md:33`; `docs/rag.md:77-112` | Needs owner decision; default config makes no external call |
 | External embedding provider | Redacted question and candidate message text for embedding | The ask path uses an external provider only when the requesting user consents. The background backfill uses the deployment's primary provider (external when configured) and filters only per-conversation opt-outs, not each author's `aiSummaryConsent`; enabling it therefore sends non-opted-out message text without per-author consent. The default `lexical` provider stays on the server. | `application.yml:190-224`; `docs/rag.md:44-52`, `:77-98`, `:127-133`; `rag/RagEmbeddingService.java:63-75`, `:101-124`, `:140-149`, `:199-201`; `rag/RagEmbeddingProviders.java:48-51` | Needs owner decision; default config is offline |
 | Google public STUN | Source IP and ICE candidates during call setup; no message or account content | During a call when the default ICE configuration is used; there is no TURN server. This is a network dependency, not an app data-sharing feature. | `docs/calls.md:115-116`, `:165` | Supported by code (main) |
@@ -177,13 +177,129 @@ text from every non-opted-out author is sent to that provider even if that autho
 never set `aiSummaryConsent=true`. This needs a privacy-policy disclosure and a
 legal basis, or the operator should keep the default `lexical` provider.
 
+### Firebase Realtime Database and Auth: Data Safety details
+
+The Firebase Realtime Database (RTDB) and Firebase Auth bridge provides an optional,
+ephemeral realtime transport for online presence, typing indicators, and passive call
+status projection. Both server-side components (`server/src/main/java/com/nexachat/firebase/`)
+and Android client components (`android/app/src/main/java/com/nexachat/core/realtime/ephemeral/`
+and `com.nexachat.call.ui.FirebaseCallStatusDisplayAdapter`) are implemented in the codebase,
+governed by contract-tested security rules (`tools/firebase-rules/database.rules.json`).
+
+#### 1. Play Store classification: Collection vs Sharing
+
+- **Play definition of "Collection"**: Data transmitted off the device is considered
+  collected by the app. When the Firebase flags are enabled, the Android client
+  transmits ephemeral presence and typing state off-device to Firebase RTDB via
+  `FirebaseEphemeralStateSource.java`.
+- **Play definition of "Sharing" vs Service Provider**: Play states that transferring
+  data to a third party that processes it solely on behalf of the developer (a "service
+  provider") under written data processing terms (such as Google Cloud / Firebase Data
+  Processing and Security Terms) is disclosed as **Collected** for **App functionality**,
+  rather than **Shared**.
+- **Owner action**: If the operator maintains standard Google Cloud / Firebase service-provider
+  terms, this data is declared as **Collected** for App functionality. If the operator
+  has not executed or verified service provider terms with Google, the transfer must be
+  declared as **Shared** with Google.
+
+#### 2. Feature flags and default configuration
+
+- **Backend flags** (`server/src/main/resources/application.yml:279-285`):
+  - `nexachat.firebase.realtime-enabled: ${FIREBASE_REALTIME_ENABLED:false}` (default `false`)
+  - `nexachat.firebase.call-status-enabled: ${FIREBASE_CALL_STATUS_ENABLED:false}` (default `false`)
+  - `nexachat.firebase.database-url: ${FIREBASE_DATABASE_URL:}` (default empty `""`)
+  - `nexachat.firebase.realtime-default: ${FIREBASE_REALTIME_DEFAULT:stomp}` (default `stomp`)
+- **Android client flags** (`android/app/build.gradle:78-85`, `:184-185`):
+  - `firebaseRealtimeEnabled` (default `false`, sets `BuildConfig.FIREBASE_REALTIME_ENABLED`)
+  - `firebaseCallStatusEnabled` (default `false`, sets `BuildConfig.FIREBASE_CALL_STATUS_ENABLED`)
+- **Default state**: Both server and client flags are **OFF by default**. With the flags off,
+  the Android app attaches no Firebase listeners, initiates no Firebase Auth or RTDB connections,
+  and STOMP over WebSocket remains the sole, authoritative realtime transport.
+
+#### 3. Exact data reaching Firebase when flags are enabled
+
+When the feature flags are explicitly turned on, the following data reaches Firebase:
+
+- **Authentication / Firebase Auth**:
+  - The server issues a custom token with the NexaChat user UUID as the Firebase UID (`auth.uid`)
+    and a fresh server-minted `bridgeId` UUID as a custom claim (`FirebaseRealtimeAuthService.java:59-63`).
+  - The Android client exchanges this token via `FirebaseAuth.signInWithCustomToken(token)`
+    (`FirebaseEphemeralStateSource.java:193-195`).
+- **Presence (`/presence/{uid}/{bridgeId}`)**:
+  - *Online payload*: `{online: true, lastSeen: 0, updatedAt: ServerValue.TIMESTAMP, leaseUntil: leaseUntilEpochMs}`
+    (`FirebaseEphemeralStateSource.java:397-402`).
+  - *Offline payload* (`onDisconnect()` or clean shutdown): `{online: false, lastSeen: 0, updatedAt: 0, leaseUntil: 0}`
+    (`FirebaseEphemeralStateSource.java:819-826`).
+  - *Presence Privacy v2 (`control/presencePrivacyVersion: 2`)*: In RTDB, the `lastSeen`
+    timestamp field is **always strictly 0 (zero)** (`FirebaseEphemeralStateSource.java:400`, `:822`).
+    Real `last_seen_at` timestamps are never written to Firebase; PostgreSQL remains the sole
+    authority for last-seen times. Security rules strictly enforce `data.child('lastSeen').val() == 0`
+    for offline records.
+  - *Reader authorization*: Peer presence reads are restricted to 1:1 DIRECT conversation
+    partners who hold active membership leases via `/presenceReaders/{subjectUid}/{viewerUid}`
+    (`tools/firebase-rules/database.rules.json:71-82`; `FirebaseAuthorizationProjectionService.java:80-92`).
+    Group members cannot read presence through RTDB without an independent DIRECT conversation.
+- **Typing indicators (`/typing/{conversationId}/{uid}`)**:
+  - *Payload*: `{bridgeId, updatedAt: ServerValue.TIMESTAMP, expiresAt: now + 5000}`
+    (`FirebaseEphemeralStateSource.java:345-349`).
+  - *Throttling and TTL*: Writes are rate-limited to 1 per 3 seconds; TTL is at most 5 seconds
+    (`EphemeralTimeRules.java`). Client deletion is denied by security rules (`newData.exists()`)
+    to prevent resetting the throttle. Stale records are cleared by TTL expiration or the server sweeper.
+- **Call status projection (`/calls/{callId}`)**:
+  - *When enabled*: Requires `FIREBASE_CALL_STATUS_ENABLED=true` on the server and
+    `firebaseCallStatusEnabled=true` on Android.
+  - *Payload*: Projected by server REST client with `{cid, callerId, calleeId, state, updatedAt, expiresAt}`
+    where `state` is `RINGING`, `ACTIVE`, or `ENDED` (`FirebaseCallStatusProjectionService.java:105-115`).
+  - *Permissions*: Read-only for call participants (`auth.uid == callerId || auth.uid == calleeId`);
+    client writes are completely denied (`.write: false`).
+  - *Passive UI only*: Consumed by `FirebaseCallStatusDisplayAdapter.java:37-74` for header/list
+    display only. WebRTC signaling (SDP offers/answers, ICE candidates) and call audio NEVER
+    touch Firebase; they remain relayed in-memory and via STOMP (`/topic/call.*`).
+- **Server authorization & lease mirrors**:
+  - `/control/enabled`: global kill switch boolean (`tools/firebase-rules/database.rules.json:28`).
+  - `/control/presencePrivacyVersion`: integer version `2` gate (`docs/firebase-realtime.md:29-30`).
+  - `/accounts/{uid}/{active,showPresence}`: active account state and presence visibility preference.
+  - `/sessions/{uid}/{bridgeId}/until`: bridge lease epoch ms (<= 120s, bounded by access token expiry).
+  - `/members/{conversationId}/{uid}`: membership lease epoch ms (<= 120s, up to 30 active conversations).
+  - `/presenceReaders/{subjectUid}/{viewerUid}`: 1:1 direct conversation reader authorization grants.
+  - `/blocked/{uid}/{otherUid}`: reserved mutual block mirror.
+
+#### 4. Data that NEVER reaches Firebase
+
+- **No personal credentials or contact info**: No phone numbers, email addresses, passwords,
+  or display names (display name is present only in FCM push payloads when FCM is enabled, not in RTDB).
+- **No message content or media**: No message text, attachment bytes, image/voice/video files, or file URLs.
+- **No address book or contacts**: Device contacts are not read; NexaChat contact edges are not mirrored.
+- **No WebRTC audio or signaling**: Call SDP payloads, ICE candidates, and audio media never reach Firebase.
+- **No user interactions or social data**: No read/delivered receipts, reaction emojis, polls/votes,
+  reminders, labels, or pins.
+- **No NexaChat auth credentials**: NexaChat access tokens and refresh tokens stay strictly off Firebase.
+
+#### 5. Retention and deletion
+
+- **Strictly ephemeral lifetimes**:
+  - Typing indicators: TTL <= 5 seconds.
+  - Session leases: <= 120 seconds.
+  - Membership leases: <= 120 seconds.
+  - Call status projections: `RINGING` <= 45s; `ACTIVE` <= 120s (renewed every 60s); `ENDED` <= 60s.
+- **Disconnect cleanup**: Client disconnect triggers `onDisconnect().setValue(offlinePresencePayload())`,
+  setting `online: false` and zeroing all timestamp fields (`FirebaseEphemeralStateSource.java:403-408`).
+- **Periodic sweeper**: `FirebaseAuthorizationLeaseSweepJob.java:45-69` runs periodically
+  (default interval 60s) to delete expired `members/`, `typing/`, `sessions/`, and `presence/` records.
+- **Session revocation / logout**: `FirebaseSessionRevocationListener.java:35-60` deletes `sessions/`,
+  `presence/`, and `typing/` paths and revokes Firebase Auth refresh tokens when access tokens are revoked.
+- **Account deletion**: `FirebaseAuthorizationProjectionService.onAccountDeleted`
+  (`FirebaseAuthorizationProjectionService.java:110-129`) immediately purges all user nodes in
+  RTDB (`accounts/{uid}`, `sessions/{uid}`, `presence/{uid}`, `presenceReaders/{uid}`,
+  `blocked/{uid}`, `members/*/{uid}`, `typing/*/{uid}`, and participant calls at `calls/{callId}`).
+
 ## Data processed only in memory
 
 | Data | Where it lives | Evidence |
 |---|---|---|
-| Call SDP and ICE payloads | In-memory call registry/relay, not a database table | `docs/calls.md:45-46`; `db/migration/V5__calls.sql` stores only call metadata |
-| Typing indicators | STOMP frame only | `docs/websocket-protocol.md` |
-| Online presence | In-memory session registry; `users.last_seen_at` is persisted separately | `docs/known-limitations.md:14-15` |
+| Call SDP and ICE payloads | In-memory call registry/relay, not a database table; WebRTC signaling never reaches Firebase even when optional call-status projection is enabled | `docs/calls.md:45-46`; `docs/firebase-realtime.md:38`, `:113-114`; `db/migration/V5__calls.sql` stores only call metadata |
+| Typing indicators | STOMP frame by default; when optional `FIREBASE_REALTIME_ENABLED` is on, ephemeral `/typing/{cid}/{uid}` indicator with max 5s TTL | `docs/websocket-protocol.md`; `docs/firebase-realtime.md:37`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:323-352` |
+| Online presence | In-memory session registry and STOMP by default; `users.last_seen_at` is persisted separately in PostgreSQL. When optional `FIREBASE_REALTIME_ENABLED` is on, ephemeral online/offline state is mirrored to Firebase RTDB (`/presence/{uid}/{bridgeId}`) with `lastSeen` strictly set to 0 (Presence Privacy v2) | `docs/known-limitations.md:14-15`; `docs/firebase-realtime.md:36`, `:137-140`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:397-402`, `:819-826` |
 | Rate-limit buckets and client IPs | In-memory bounded buckets; not persisted by the rate-limit code | `docs/security.md:216-221`; `config/ClientIpResolver.java` |
 | Raw AI prompts and model output | Not stored; only the validated summary/answer payload is cached | `docs/ai-summary.md:96`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql` |
 | OTP plaintext code | Generated in memory and sent in the email; the database stores only the HMAC-SHA256 hash. The recipient's mailbox and the email provider necessarily see the code. | `branch feat/server-email-otp-deletion:recovery/OtpCodeHasher.java:31-37`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:141-149`; `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:13-24` |
@@ -250,6 +366,7 @@ Account deletion is an explicit user action, not a retention job.
 | Polls | Optional job redacts aged payloads and removes options/votes after 365 days; the poll tombstone remains | `application.yml:133-135`; `docs/operations.md:796-797` |
 | Summaries and RAG caches | 24 h TTL by default; expired rows are only purged when the optional summaries/rag-cache job is enabled. Account deletion deletes the summary and ask caches of every conversation the user belonged to (the caches are conversation-scoped, not requester-scoped). | `db/migration/V6__conversation_summaries.sql`; `V9__conversation_rag.sql`; `application.yml:148-159`; `branch feat/server-account-deletion:user/AccountDeletionJdbcSupport.java:25-45` |
 | Derived copies of message text | Recall or edit deletes cached summaries whose sequence window contains the changed message, and recall purges the RAG ask cache for the conversation; the ask cache also refuses a replay when a cited message is gone or its author opted out. Expired rows remain until the optional summaries/rag-cache job runs. | `message/MessageService.java:406-449`; `summary/MessageSummaryCacheInvalidationListener.java:10-33`; `summary/SummaryCacheRepository.java:103-121`; `rag/MessageRecallAskCacheListener.java:12-22`; `docs/rag.md:108-113`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql`; `application.yml:148-159` |
+| Firebase ephemeral state (leases, presence, typing, call status) | Disabled by default. When enabled, strictly ephemeral: typing TTL <= 5s; session/membership leases <= 120s; active call status lease <= 120s (renewed every 60s); presence cleared on disconnect via `onDisconnect()`. Swept by periodic lease job (`FirebaseAuthorizationLeaseSweepJob`), cleared on session revocation / logout (`FirebaseSessionRevocationListener`), and completely purged on account deletion (`FirebaseAuthorizationProjectionService`). | `docs/firebase-realtime.md:27-39`, `:118-122`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationLeaseSweepJob.java:45-69`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseSessionRevocationListener.java:35-60`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationProjectionService.java:110-129` |
 | Server backups | `demo/backup.sh` creates SQL dumps on demand; no backup retention period is defined in the repository | `docs/operations.md:650-674` |
 
 Deletion actions that exist:
@@ -262,8 +379,11 @@ Deletion actions that exist:
   membership through the leave path (admin hand-over rules apply, including the
   sole-admin promotion), deletes the avatar file after commit, deletes unbound
   uploads (file and metadata), private labels, group join requests, AI
-  consent/request-limit rows, and the summary and ask caches of the user's
-  conversations, then sets `users.deleted_at`, clears the phone (released for
+  consent/request-limit rows, the summary and ask caches of the user's
+  conversations, and (when Firebase is enabled) purges all user nodes in
+  Firebase RTDB (`accounts/`, `sessions/`, `presence/`, `presenceReaders/`,
+  `blocked/`, `members/`, `typing/`, and calls involving the user at `calls/`),
+  then sets `users.deleted_at`, clears the phone (released for
   re-registration), replaces the display name with a neutral value, clears
   profile/privacy fields and overwrites the password hash with an unusable
   tombstone. Direct conversations and sent messages/attachments stay visible to
@@ -335,7 +455,7 @@ Deletion actions that do **not** exist:
 | Server to FCM / LLM | HTTPS endpoints; summary/RAG base URLs reject plain `http://` except loopback | `docs/ai-summary.md:125-128`; `docs/rag.md:63-66` |
 | Recovery email delivery | SMTP uses STARTTLS with a required upgrade on the configured port (default 587); Resend uses HTTPS `https://api.resend.com/emails`. The code is sent in the email body and is visible to the mailbox provider. | `branch feat/server-email-otp-deletion:application.yml` (spring.mail STARTTLS); `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48` |
 | Google identity verification | The server fetches Google's rotating public keys over HTTPS and verifies the ID token signature, issuer, audience and expiry; no client secret is stored in the app. | `auth/google/GoogleIdTokenVerifier.java`; `application.yml:69` |
-| Firebase bridge | HTTPS Realtime Database REST calls and Firebase Admin SDK calls; the service-account key stays server-side. | `firebase/client/FirebaseRtdbRestClient.java`; `firebase/config/FirebaseRealtimeConfiguration.java` |
+| Firebase bridge and ephemeral transport | HTTPS Realtime Database REST calls and Firebase Admin SDK calls from server; TLS (HTTPS and WSS) from Android client to Firebase Auth and Realtime Database; service-account key stays server-side. | `server/src/main/java/com/nexachat/firebase/client/FirebaseRtdbRestClient.java`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:172-196`; `docs/firebase-realtime.md:42-45` |
 | At rest on device | Room and SharedPreferences are not encrypted; session and FCM tokens are Keystore-encrypted | `core/database/DatabaseModule.java:24-38`; `core/storage/TokenStore.java:23-31` |
 | At rest on server | PostgreSQL and the attachment volume are not encrypted by the app; recovery email, OTP hashes and Google identity rows are plain database columns protected by database access controls. No end-to-end encryption. | `docs/known-limitations.md:58`; `db/migration/V1__init.sql`; `db/migration/V27__account_recovery_email_otp.sql`; `db/migration/V28__google_signin.sql` |
 
@@ -441,11 +561,23 @@ These are owner decisions; do not infer them from code:
     password) or Resend, verify the sending domain, and confirm the provider's
     retention/DPA terms. Mail is disabled by default and the public deletion
     request still returns `202` without sending.
-17. **Firebase bridge** — keep it off until the Realtime Database rules,
-    account/membership projections and emulator authorization checks exist. If
-    enabled, disclose the opt-in bridge metadata. The Android client in this
-    repository does not use the bridge yet; presence/typing projections remain
-    design work, not shipped behaviour.
+17. **Firebase bridge and ephemeral transport** — The Firebase Realtime Database
+    security rules (`tools/firebase-rules/database.rules.json`), server
+    projections and backfill/sweep jobs (`server/src/main/java/com/nexachat/firebase/`),
+    and Android client ephemeral transport (`FirebaseEphemeralStateSource`,
+    `EphemeralStateRouter`, `FirebaseCallStatusDisplayAdapter`) are implemented
+    and contract-tested. However, the feature is disabled by default on both
+    backend (`FIREBASE_REALTIME_ENABLED=false`, `FIREBASE_CALL_STATUS_ENABLED=false`)
+    and Android (`firebaseRealtimeEnabled=false`, `firebaseCallStatusEnabled=false`),
+    with STOMP over WebSocket remaining the default and authoritative transport.
+    The owner must decide whether to enable Firebase RTDB for production builds.
+    If enabled, the owner must deploy `database.rules.json` to the production
+    Firebase project, confirm Google Cloud / Firebase service provider (Data
+    Processing Addendum) terms so that ephemeral presence/typing processing is
+    classified as Collected for App Functionality rather than a third-party
+    share, and disclose the ephemeral collection in the Data Safety form and
+    privacy policy. If kept disabled (default), no Realtime Database connection
+    is initiated.
 18. **OTP row cleanup** — decide whether to add a retention job for consumed or
     expired `email_otps` rows, and whether account deletion should delete them.
     The current branch does neither; the rows keep the recipient address and an
@@ -468,8 +600,11 @@ These are owner decisions; do not infer them from code:
   Keystore storage, attachment/media caches, auth/logout/deletion flow, Google
   Credential Manager client, server Flyway migrations V1–V28, controllers,
   account-deletion and email-OTP services, the mail adapters, Firebase bridge
-  code, retention runner, FCM/LLM configuration, and the linked
-  architecture/security/operations/RAG/summary docs at `15bb91e`.
+  and RTDB projection code (`server/src/main/java/com/nexachat/firebase/`),
+  Android ephemeral transport (`core/realtime/ephemeral/` and
+  `FirebaseCallStatusDisplayAdapter`), RTDB security rules and contract tests
+  (`tools/firebase-rules/`), retention runner, FCM/LLM configuration, and the
+  linked architecture/security/operations/RAG/summary/firebase-realtime docs at `15bb91e`.
 - Branch sources inspected via `git show`: `feat/server-account-deletion`
   (`ac27f39`), `feat/server-email-otp-deletion` (`4d8afbc`),
   `feat/android-account-deletion` (`3249ec7`),
