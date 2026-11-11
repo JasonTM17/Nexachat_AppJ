@@ -43,3 +43,7 @@ nexachat:
   auth:
     refresh-replay:
       cleanup-interval-ms: 1800000
+  # Each in-flight upload buffers up to 25 MB on a heap already near 380 MB
+  # after boot; two at a time keeps a burst under the 512 MB limit.
+  uploads:
+    max-concurrent: 2

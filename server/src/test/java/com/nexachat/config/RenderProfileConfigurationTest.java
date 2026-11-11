@@ -88,6 +88,14 @@ class RenderProfileConfigurationTest {
     }
 
     @Test
+    void renderBoundsConcurrentUploadBuffersToTheSmallHeap() throws IOException {
+        assertThat(renderProfile().getProperty("nexachat.uploads.max-concurrent"))
+                .as("uploads.max-concurrent: each buffers up to 25 MB on a 512 MB box")
+                .isInstanceOf(Integer.class)
+                .satisfies(value -> assertThat((Integer) value).isBetween(1, 2));
+    }
+
+    @Test
     void renderBackgroundJobsRunLessOftenThanNeonsSuspendThreshold() throws IOException {
         PropertySource<?> render = renderProfile();
 
