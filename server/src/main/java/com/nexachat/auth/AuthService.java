@@ -17,7 +17,9 @@ import jakarta.persistence.LockModeType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.util.Map;
@@ -53,6 +55,7 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
+    private final TransactionTemplate postRotationTransaction;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -69,7 +72,8 @@ public class AuthService {
                        AccessTokenRevocationService accessTokenRevocationService,
                        RateLimitService rateLimitService,
                        AuthResponseFactory responseFactory,
-                       RefreshReplayConfiguration.BoundaryHook boundaryHook) {
+                       RefreshReplayConfiguration.BoundaryHook boundaryHook,
+                       PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -79,6 +83,7 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
+        this.postRotationTransaction = new TransactionTemplate(transactionManager);
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -171,9 +176,11 @@ public class AuthService {
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_REFRESH_TRANSACTION_COMMIT,
                 RefreshReplayConfiguration.Operation.ROTATE, rotation.userId(), rotation.predecessorId());
 
-        User user = userRepository.findByIdForUpdate(rotation.userId())
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid"));
-        if (user.getDeletedAt() != null) {
+        boolean ownerUnavailable = Boolean.TRUE.equals(postRotationTransaction.execute(status ->
+                userRepository.findByIdForUpdate(rotation.userId())
+                        .map(user -> user.getDeletedAt() != null)
+                        .orElse(true)));
+        if (ownerUnavailable) {
             tokenService.revokeIfOwned(rotation.response().refreshToken(), rotation.userId());
             throw ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid");
         }

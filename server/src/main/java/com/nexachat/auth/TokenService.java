@@ -97,6 +97,9 @@ public class TokenService {
         if (user == null) {
             throw RefreshTokenException.invalid(null);
         }
+        if (user.getDeletedAt() != null) {
+            throw RefreshTokenException.invalid(userId);
+        }
         // No token entity is read before the owner lock; this query sees current row state.
         RefreshToken predecessor = refreshTokenRepository.findByTokenHashForUpdate(predecessorHash)
                 .orElseThrow(() -> RefreshTokenException.invalid(null));

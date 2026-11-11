@@ -23,6 +23,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +59,8 @@ class AuthServiceTest {
     private RateLimitService rateLimitService;
     @Mock
     private AccessTokenRevocationService accessTokenRevocationService;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private AuthService authService;
 
@@ -71,10 +76,12 @@ class AuthServiceTest {
         lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
         authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
-                (boundary, operation, userId, tokenId) -> { });
+                (boundary, operation, userId, tokenId) -> { }, transactionManager);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {

@@ -68,11 +68,15 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     private StompAuthChannelInterceptor stompAuthChannelInterceptor;
 
     @Autowired
+    private TestRefreshBoundaryProbe refreshBoundaryProbe;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void resetPause() {
         pause.reset();
+        refreshBoundaryProbe.reset();
     }
 
     @Test
@@ -142,6 +146,68 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
                 SELECT count(*) = 0 FROM refresh_tokens
                 WHERE user_id = ? AND revoked_at IS NULL
                 """, Boolean.class, user.userId())).isTrue();
+    }
+
+    @Test
+    void refreshWaitingBehindDeletionFailsAsInvalidWithoutCreatingASession() throws Exception {
+        Registered user = register("+84905553119", "secret123");
+        CountDownLatch deletionAtTombstone = new CountDownLatch(1);
+        CountDownLatch refreshAtOwnerLock = new CountDownLatch(1);
+        CountDownLatch allowRefreshToLockOwner = new CountDownLatch(1);
+        pause.whenBeforeTombstone = () -> {
+            deletionAtTombstone.countDown();
+            try {
+                pause.awaitResume();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        };
+        refreshBoundaryProbe.beforeRotateUserLock = () -> {
+            refreshAtOwnerLock.countDown();
+            try {
+                if (!allowRefreshToLockOwner.await(30, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out before refresh could lock its owner");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> deletion = executor.submit(() -> deleteMe(user.accessToken(), "secret123")
+                    .andReturn().getResponse().getStatus());
+            assertThat(deletionAtTombstone.await(30, TimeUnit.SECONDS)).isTrue();
+
+            Future<org.springframework.test.web.servlet.MvcResult> refresh = executor.submit(() -> {
+                try {
+                    return postJson("/api/v1/auth/refresh", Map.of(
+                            "refreshToken", user.refreshToken())).andReturn();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            assertThat(refreshAtOwnerLock.await(30, TimeUnit.SECONDS)).isTrue();
+
+            pause.resume();
+            assertThat(deletion.get(60, TimeUnit.SECONDS)).isEqualTo(204);
+            allowRefreshToLockOwner.countDown();
+
+            var refreshResult = refresh.get(60, TimeUnit.SECONDS);
+            assertThat(refreshResult.getResponse().getStatus()).isEqualTo(401);
+            assertThat(objectMapper.readTree(refreshResult.getResponse().getContentAsString())
+                    .path("error").path("code").asText()).isEqualTo("TOKEN_INVALID");
+        } finally {
+            pause.resume();
+            allowRefreshToLockOwner.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL
+                """, Integer.class, user.userId())).isZero();
     }
 
     @Test
@@ -396,6 +462,31 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         @Primary
         TestAccountDeletionPause testAccountDeletionPause() {
             return new TestAccountDeletionPause();
+        }
+
+        @Bean
+        @Primary
+        TestRefreshBoundaryProbe testRefreshBoundaryProbe() {
+            return new TestRefreshBoundaryProbe();
+        }
+    }
+
+    static final class TestRefreshBoundaryProbe implements RefreshReplayConfiguration.BoundaryHook {
+        volatile Runnable beforeRotateUserLock = () -> {};
+
+        void reset() {
+            beforeRotateUserLock = () -> {};
+        }
+
+        @Override
+        public void reached(RefreshReplayConfiguration.Boundary boundary,
+                            RefreshReplayConfiguration.Operation operation,
+                            UUID userId,
+                            UUID tokenId) {
+            if (boundary == RefreshReplayConfiguration.Boundary.BEFORE_USER_LOCK
+                    && operation == RefreshReplayConfiguration.Operation.ROTATE) {
+                beforeRotateUserLock.run();
+            }
         }
     }
 
