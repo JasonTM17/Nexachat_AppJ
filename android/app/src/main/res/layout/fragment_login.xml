@@ -143,6 +143,20 @@
                     android:textStyle="bold"
                     app:cornerRadius="12dp" />
 
+                <!-- Sign in with Google (hidden when no web client ID was compiled in) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/googleSignIn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="54dp"
+                    android:text="@string/action_continue_with_google"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    app:cornerRadius="12dp"
+                    tools:visibility="visible" />
+
                 <!-- Text link -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/secondaryAction"

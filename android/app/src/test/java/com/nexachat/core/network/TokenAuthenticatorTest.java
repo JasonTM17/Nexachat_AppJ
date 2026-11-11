@@ -85,6 +85,25 @@ public final class TokenAuthenticatorTest {
     }
 
     @Test
+    public void terminalRecoveryEmitsReauthenticationAndPreservesTokens() throws Exception {
+        TokenStore store = store(new Tokens(OLD, 0, "rt-stale"));
+        AuthApi api = mock(AuthApi.class);
+        Call<AuthResponse> call = mock(Call.class);
+        when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.error(409,
+                okhttp3.ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"REFRESH_RECOVERY_UNAVAILABLE\"}}")));
+        SessionEvents events = new SessionEvents();
+        io.reactivex.rxjava3.subscribers.TestSubscriber<SessionEvents.Event> observer =
+                events.getEvents().test();
+        Request retry = authenticator(store, api, events).authenticate(null, unauthorized(OLD));
+        assertNull(retry);
+        assertEquals("rt-stale", current(store).getRefreshToken());
+        observer.assertValue(SessionEvents.Event.ReauthenticationRequired.INSTANCE);
+    }
+
+    @Test
     public void definitiveRefreshRejectionClearsSessionAndEmitsLogout() throws Exception {
         TokenStore store = store(new Tokens(OLD, 0, "rt-dead"));
         AuthApi api = mock(AuthApi.class);
@@ -181,6 +200,7 @@ public final class TokenAuthenticatorTest {
         when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
         when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
         when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
+        when(store.markSessionReauthRequired(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 

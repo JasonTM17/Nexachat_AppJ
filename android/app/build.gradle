@@ -75,6 +75,18 @@ File resolvedStoreFile = hasReleaseSigning ? resolveStoreFile(releaseStoreFilePa
 
 def apiBaseUrl = providers.gradleProperty('apiBaseUrl')
     .orElse(localProps.getProperty('API_BASE_URL') ?: 'http://10.0.2.2:8080')
+
+// Web OAuth client ID for "Sign in with Google". Fed by -PgoogleWebClientId=
+// (or GOOGLE_WEB_CLIENT_ID in local.properties); empty hides every Google entry
+// point so a build without OAuth clients still works.
+def googleWebClientId = providers.gradleProperty('googleWebClientId')
+    .orElse(localProps.getProperty('GOOGLE_WEB_CLIENT_ID') ?: '')
+    .get().trim()
+if (!googleWebClientId.isEmpty()
+        && !googleWebClientId.endsWith('.apps.googleusercontent.com')) {
+    throw new GradleException(
+        'googleWebClientId must be the OAuth Web application client ID ending in .apps.googleusercontent.com.')
+}
 // Host for verified App Links (Phase 1 owned domain).
 // Configured for the release build type only. Debug and localSmoke keep the host
 // empty so local developers are not tied to the owned domain.
@@ -161,6 +173,7 @@ android {
         // Backend base URL — override in local.properties (LAN demo) or via
         // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
         buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
+        buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', "\"${googleWebClientId}\""
         buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
         manifestPlaceholders = [inviteLinkHttpsHost: '']
         resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern
@@ -374,6 +387,11 @@ dependencies {
 
     // Firebase Cloud Messaging (Push notifications)
     implementation(libs.firebase.messaging)
+
+    // Sign in with Google (Credential Manager; no Google Play Services needed at build time)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
     // Unit tests
     testImplementation(libs.bundles.unit.test)

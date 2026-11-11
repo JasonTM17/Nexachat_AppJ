@@ -41,6 +41,7 @@ public final class ProfileFragment extends Fragment {
 
     private FragmentProfileBinding binding;
     private ProfileViewModel viewModel;
+    private LinkedAccountsViewModel linkedAccountsViewModel;
     private AppSettingsViewModel settingsViewModel;
     private ActivityResultLauncher<String> avatarPicker;
     private boolean syncingAiConsent;
@@ -56,6 +57,7 @@ public final class ProfileFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(ProfileViewModel.class);
+        linkedAccountsViewModel = new ViewModelProvider(this).get(LinkedAccountsViewModel.class);
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
         binding.profileToolbar.setTitle(R.string.profile_title);
         binding.profileToolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
@@ -138,6 +140,10 @@ public final class ProfileFragment extends Fragment {
         binding.deleteAccountRow.setContentDescription(getString(R.string.action_delete_account));
         binding.deleteAccountRow.setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigate(R.id.deleteAccountFragment));
+        binding.googleAccountRow.setTitle(getString(R.string.settings_google_account));
+        binding.googleAccountRow.setLeadingIcon(R.drawable.ic_check_circle);
+        binding.googleAccountRow.setOnClickListener(v -> onGoogleAccountClicked());
+        linkedAccountsViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderLinkedAccounts);
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
         viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> binding.showSeen.setChecked(Boolean.TRUE.equals(value)));
@@ -184,6 +190,71 @@ public final class ProfileFragment extends Fragment {
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
+    }
+
+    private void renderLinkedAccounts(LinkedAccountsViewModel.UiState state) {
+        boolean visible = state.isConfigured();
+        binding.googleAccountRow.setVisibility(visible ? View.VISIBLE : View.GONE);
+        binding.googleAccountDivider.setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (!visible) {
+            return;
+        }
+        binding.googleAccountRow.setEnabled(!state.isLoading());
+        binding.googleAccountRow.setTrailingValue(state.isLinked()
+                ? (state.getEmail() != null ? state.getEmail()
+                        : getString(R.string.settings_google_linked))
+                : getString(R.string.settings_google_not_linked));
+        if (state.getError() != null) {
+            Toast.makeText(requireContext(),
+                    ApiErrorText.text(requireContext(), state.getError()),
+                    Toast.LENGTH_SHORT).show();
+            linkedAccountsViewModel.consumeError();
+        }
+    }
+
+    private void onGoogleAccountClicked() {
+        LinkedAccountsViewModel.UiState state =
+                linkedAccountsViewModel.getUiState().getValue();
+        if (state == null || state.isLoading()) {
+            return;
+        }
+        if (state.isLinked()) {
+            showGooglePasswordDialog(R.string.action_unlink_google,
+                    R.string.google_unlink_confirm,
+                    password -> linkedAccountsViewModel.unlink(password));
+        } else {
+            showGooglePasswordDialog(R.string.action_link_google,
+                    R.string.google_link_password_prompt,
+                    password -> linkedAccountsViewModel.link(requireActivity(), password));
+        }
+    }
+
+    private void showGooglePasswordDialog(int titleRes, int messageRes,
+                                          java.util.function.Consumer<String> onConfirm) {
+        TextInputLayout layout = passwordInputLayout(R.string.auth_password_label);
+        TextInputEditText input = (TextInputEditText) layout.getEditText();
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        layout.setPadding(pad, getResources().getDimensionPixelSize(R.dimen.space_sm), pad, 0);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(titleRes)
+                .setMessage(messageRes)
+                .setView(layout)
+                .setNegativeButton(R.string.action_cancel, null)
+                .setPositiveButton(titleRes, null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    String value = input == null || input.getText() == null
+                            ? "" : input.getText().toString();
+                    if (value.isEmpty()) {
+                        layout.setError(getString(R.string.error_current_password_required));
+                        return;
+                    }
+                    layout.setError(null);
+                    dialog.dismiss();
+                    onConfirm.accept(value);
+                }));
+        dialog.show();
     }
 
     private void showThemeDialog() {

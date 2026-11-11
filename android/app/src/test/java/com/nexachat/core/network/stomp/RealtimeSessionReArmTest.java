@@ -4,6 +4,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -132,19 +135,31 @@ public final class RealtimeSessionReArmTest {
     public void logoutCancelsLoopAndClosesSocket() {
         TestScheduler scheduler = new TestScheduler();
         BehaviorProcessor<Boolean> loggedIn = BehaviorProcessor.createDefault(true);
+        BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
         TokenStore store = loggedInStore(Long.MAX_VALUE, loggedIn);
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(anyLong())).thenAnswer(
+                invocation -> admission.getValue() && invocation.getArgument(0, Long.class) == 1L);
+        stubSessionActionGate(refresher, admission);
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenReturn(Flowable.concat(
+        when(stomp.connect(anyString(), any())).thenReturn(Flowable.concat(
                 Flowable.just(StompClient.State.Open.INSTANCE), Flowable.never()));
         RealtimeSession session = session(store, stomp, BehaviorProcessor.createDefault(false),
-                BehaviorProcessor.createDefault(false), mock(TokenRefresher.class), scheduler);
+                BehaviorProcessor.createDefault(false), refresher, scheduler);
         scheduler.triggerActions();
         assertTrue(session.isCurrentlyOpen());
+        // Logout closes admission while refresh bytes may still be present, then clears tokens.
+        admission.onNext(false);
+        scheduler.triggerActions();
         loggedIn.onNext(false);
         scheduler.triggerActions();
         assertFalse(session.isCurrentlyOpen());
-        verify(stomp, times(1)).close();
+        // One close at the admission boundary; one when tokens are cleared.
+        verify(stomp, times(2)).close();
     }
 
     @Test
@@ -171,7 +186,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -196,7 +211,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("HTTP_401", true));
         });
@@ -222,7 +237,7 @@ public final class RealtimeSessionReArmTest {
         AtomicInteger connects = new AtomicInteger();
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             connects.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed(StompClient.REASON_CONNECT_TIMEOUT));
         });
@@ -261,14 +276,37 @@ public final class RealtimeSessionReArmTest {
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(online);
         AppForegroundState foregroundState = () -> foreground;
+        stubEpochAdmission(refresher);
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 reconnectPolicy, monitor, foregroundState, scheduler);
+    }
+
+    private static void stubEpochAdmission(TokenRefresher refresher) {
+        BehaviorProcessor<Boolean> admitted = BehaviorProcessor.createDefault(true);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(anyLong())).thenAnswer(
+                invocation -> admitted.getValue() && invocation.getArgument(0, Long.class) == 1L);
+        stubSessionActionGate(refresher, admitted);
+    }
+
+    private static void stubSessionActionGate(
+            TokenRefresher refresher, BehaviorProcessor<Boolean> admitted) {
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (!admitted.getValue()
+                    || invocation.getArgument(0, Long.class) != 1L) {
+                return false;
+            }
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
     }
 
     private static StompClient failedClient(AtomicInteger count) {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenAnswer(ignored -> {
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
             count.incrementAndGet();
             return Flowable.just(new StompClient.State.Failed("offline"));
         });

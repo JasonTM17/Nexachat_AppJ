@@ -2,12 +2,15 @@ package com.nexachat.user;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.contact.ContactRepository;
 import com.nexachat.user.dto.UserResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -22,10 +25,14 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PhoneService phoneService;
+    private final ContactRepository contactRepository;
 
-    public UserService(UserRepository userRepository, PhoneService phoneService) {
+    public UserService(UserRepository userRepository,
+                       PhoneService phoneService,
+                       ContactRepository contactRepository) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
+        this.contactRepository = contactRepository;
     }
 
     @Transactional(readOnly = true)
@@ -87,10 +94,16 @@ public class UserService {
         }
 
         String escaped = escapeLike(q.trim());
-        return userRepository
-                .searchByDisplayNamePrefix(escaped, callerId, PageRequest.of(0, SEARCH_LIMIT))
-                .stream()
-                .map(UserResponse::from)
+        List<User> matches = userRepository.searchByDisplayNamePrefix(
+                escaped, callerId, PageRequest.of(0, SEARCH_LIMIT));
+        if (matches.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> matchIds = matches.stream().map(User::getId).toList();
+        Set<UUID> disclosePhoneFor = new HashSet<>(
+                contactRepository.findContactUserIdsAmong(callerId, matchIds));
+        return matches.stream()
+                .map(user -> UserResponse.forSearchResult(user, disclosePhoneFor.contains(user.getId())))
                 .toList();
     }
 

@@ -2,6 +2,7 @@ package com.nexachat;
 
 import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.JwtProperties;
+import com.nexachat.auth.google.UserIdentityRepository;
 import com.nexachat.auth.JwtService;
 import com.nexachat.auth.RefreshTokenRepository;
 import com.nexachat.contact.ContactRepository;
@@ -42,6 +43,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private RefreshTokenRepository refreshTokenRepository;
+
+    @MockitoBean
+    private UserIdentityRepository userIdentityRepository;
 
     @MockitoBean
     private ContactRepository contactRepository;

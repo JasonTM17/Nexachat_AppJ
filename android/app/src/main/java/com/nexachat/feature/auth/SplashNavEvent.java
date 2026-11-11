@@ -5,13 +5,29 @@ public sealed interface SplashNavEvent
         permits SplashNavEvent.ToLogin, SplashNavEvent.ToInbox {
 
     final class ToLogin implements SplashNavEvent {
-        public static final ToLogin INSTANCE = new ToLogin();
+        private final boolean sessionExpired;
 
-        private ToLogin() {}
+        public ToLogin(boolean sessionExpired) {
+            this.sessionExpired = sessionExpired;
+        }
+
+        public boolean showSessionExpiredMessage() {
+            return sessionExpired;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof ToLogin login && sessionExpired == login.sessionExpired;
+        }
+
+        @Override
+        public int hashCode() {
+            return Boolean.hashCode(sessionExpired);
+        }
 
         @Override
         public String toString() {
-            return "ToLogin";
+            return "ToLogin(sessionExpired=" + sessionExpired + ")";
         }
     }
 

@@ -129,6 +129,37 @@ public final class PasswordResetRepositoryTest {
     public Call<Void> confirmPasswordReset(PasswordResetConfirmRequest body) {
       return confirm;
     }
+
+    @Override
+    public Call<com.nexachat.core.network.dto.GoogleNonceResponse> googleNonce() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<com.nexachat.core.network.dto.GoogleNonceResponse> googleLinkNonce() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<com.nexachat.core.network.dto.AuthResponse> googleSignIn(
+            com.nexachat.core.network.dto.GoogleSignInRequest body) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<com.nexachat.core.network.dto.LinkedIdentitiesResponse> linkedIdentities() {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<Void> linkGoogle(com.nexachat.core.network.dto.GoogleLinkRequest body) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<Void> unlinkGoogle(com.nexachat.core.network.dto.GoogleUnlinkRequest body) {
+      throw new UnsupportedOperationException();
+    }
   }
 
   private static final class FakeCall<T> implements Call<T> {
