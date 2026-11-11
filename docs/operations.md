@@ -101,6 +101,26 @@ environment, then revoke the old key. Never place SMTP passwords or Resend
 keys in source control or logs. OTPs are short-lived, and the application logs
 do not include codes, recipient addresses, phone numbers, or provider keys.
 
+#### Local development with Mailpit
+
+To test OTP emails locally without external provider credentials, run [Mailpit](https://github.com/axllent/mailpit):
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+Configure `.env`:
+```properties
+NEXACHAT_MAIL_PROVIDER=smtp
+MAIL_SMTP_HOST=localhost
+MAIL_SMTP_PORT=1025
+MAIL_SMTP_USERNAME=
+MAIL_SMTP_PASSWORD=
+MAIL_FROM=noreply@nexachat.io.vn
+```
+
+Open `http://localhost:8025` to view delivered OTP emails for email verification, password reset, and web account deletion.
+
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
 if overriding environment variables for that process, use the host address.
@@ -390,6 +410,43 @@ The server stores account credentials (bcrypt password hashes, E.164 phones),
 refresh-token hashes, message and attachment content, and short-lived access
 JWTs. The trust boundaries are the network edge (TLS terminated at the reverse
 proxy), the REST/STOMP authentication layer, and per-conversation authorization.
+
+### Google sign-in (OpenID Connect)
+
+Google sign-in is disabled by default (`NEXACHAT_GOOGLE_SIGNIN_ENABLED=false`). While disabled,
+all `/api/v1/auth/google/*` endpoints answer `404 NOT_FOUND`.
+
+#### Key Properties & Security Controls
+- **No client secret needed:** Token validation uses Google's public JWKS (`https://www.googleapis.com/oauth2/v3/certs`) via Spring Security's `NimbusJwtDecoder`. Only the Web Client ID (expected `aud`) and trusted Android OAuth Client IDs (expected `azp`) are configured.
+- **Link-first policy:** To protect against account takeover, Google sign-in only works for Google accounts already linked to an existing NexaChat account. Users cannot register new accounts directly through Google sign-in, and auto-linking by email is disallowed. Linking requires the account's password.
+- **Single-use nonces:** Replay is prevented via `POST /api/v1/auth/google/nonce` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS: 300`). Nonces are bound to their purpose (`signin` or `link`) and the requester's identity.
+
+#### Server Configuration (`.env`)
+```properties
+NEXACHAT_GOOGLE_SIGNIN_ENABLED=true
+NEXACHAT_GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS=your-android-client-id.apps.googleusercontent.com
+NEXACHAT_GOOGLE_JWKS_URI=https://www.googleapis.com/oauth2/v3/certs
+NEXACHAT_GOOGLE_NONCE_TTL_SECONDS=300
+```
+Startup fails closed if `NEXACHAT_GOOGLE_SIGNIN_ENABLED=true` but `NEXACHAT_GOOGLE_WEB_CLIENT_ID` or `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` is blank.
+
+#### Android Configuration
+In `android/local.properties` (or via `./gradlew -PgoogleWebClientId=...`):
+```properties
+GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+```
+When `GOOGLE_WEB_CLIENT_ID` is empty, Google sign-in UI buttons are automatically hidden.
+
+### Account deletion (app and web page)
+
+NexaChat supports self-service account deletion across two channels:
+1. **In-app deletion:** Authenticated user navigates to Profile / Settings -> Delete account, confirms with their password (`DELETE /api/v1/users/me`).
+2. **Web self-service deletion:** For users without device access, `site/delete-account.html` enables deletion using a 6-digit OTP sent to their verified recovery email (`POST /api/v1/auth/recovery/delete-account/request` and `confirm`).
+
+#### What is deleted and what is preserved:
+- **Tombstoned / Deleted:** User row is soft-deleted (`users.deleted_at = now()`, Flyway V26), `users.phone` is set to `NULL` (freeing the E.164 phone number for re-registration), display name resets to `Deleted account`, and avatar URL is cleared. Active sessions are revoked via `users.tokens_valid_after` and refresh token families are cleared. The user automatically leaves all group chats (promoting a successor admin if needed). Contacts, push device tokens, private labels, group join requests, linked Google identities, email OTPs, unbound uploads, and AI caches are scrubbed. The stored avatar file is deleted from disk after commit.
+- **Preserved:** Direct and group chat messages and bound attachments remain visible to the other conversation participants to avoid broken history, rendered under the neutral author label `Deleted account`.
 
 ### Access-token revocation
 

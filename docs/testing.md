@@ -75,3 +75,77 @@ Pass the stack coordinates with `--base-url`, `--db-container`, `--db-user` and
 `MockFcmGateway` push counts and `--only` for a subset of scenarios. See
 `python tools/e2e/final/<script>.py --help` for the required environment,
 including the literal `FCM_ENABLED=false`, retention settings and admin phone.
+
+## Local development with Mailpit (Email OTP & Account Deletion)
+
+For testing recovery-email verification (`POST /api/v1/users/me/email/request`),
+password reset (`POST /api/v1/auth/recovery/reset-password/request`), and
+self-service account deletion (`POST /api/v1/auth/recovery/delete-account/request`)
+without external email service credentials, use [Mailpit](https://github.com/axllent/mailpit)
+as a local SMTP sink:
+
+```bash
+# Run Mailpit in Docker (SMTP on 1025, web UI on 8025)
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+In `.env` (or environment variables for Spring Boot):
+```properties
+NEXACHAT_MAIL_PROVIDER=smtp
+MAIL_SMTP_HOST=localhost
+MAIL_SMTP_PORT=1025
+MAIL_SMTP_USERNAME=
+MAIL_SMTP_PASSWORD=
+MAIL_FROM=noreply@nexachat.io.vn
+```
+
+Open `http://localhost:8025` in your browser to view incoming 6-digit OTP codes and test
+the verification and confirmation flows.
+
+## Android testing & Release R8 verification
+
+```bash
+# JVM unit tests (Robolectric and pure unit tests)
+cd android && ./gradlew testDebugUnitTest
+
+# Lint check
+cd android && ./gradlew lintDebug
+
+# Build unsigned release APK to produce ProGuard/R8 mapping files
+cd android && ./gradlew :app:assembleRelease -PskipSigning
+
+# Verify R8 keep rules preserved reflection-dependent classes
+python tools/check-release-r8-mapping.py
+```
+
+`tools/check-release-r8-mapping.py` inspects `mapping.txt` and `usage.txt` to verify
+that ProGuard/R8 did not rename or remove reflection-dependent wire models
+(Retrofit APIs, Moshi/Gson DTOs, Room DAOs/migrations, Google ID token credentials,
+and WorkManager workers). See [docs/release-checklist.md](release-checklist.md).
+
+## Static site validation & JavaScript unit tests
+
+```bash
+# Node-free validation of site HTML, security headers, assetlinks, and ignoreCommand
+python site/check.py
+
+# Headless unit tests for site/delete-account.js (DOM shim + Node native test runner)
+cd tools/site-tests && npm test
+```
+
+- `site/check.py`: Validates HTML formatting, Digital Asset Links (`.well-known/assetlinks.json`)
+  SHA-256 fingerprint syntax, Vercel security headers (`vercel.json`), invite token parsing,
+  and Vercel `ignoreCommand` execution logic.
+- `tools/site-tests`: Runs 23 automated tests against `site/delete-account.js` covering
+  form validation, OTP step transitions, rate-limit messages (429), error states, and URL
+  parameter safety (ensuring phone and OTP credentials are never exposed in query strings).
+  See [tools/site-tests/README.md](../tools/site-tests/README.md).
+
+## Markdown link verification
+
+```bash
+python tools/check-markdown-links.py
+```
+
+Validates that all relative Markdown links in repository documentation resolve to real files
+and anchors, preventing documentation drift.

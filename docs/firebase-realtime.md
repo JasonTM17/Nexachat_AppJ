@@ -5,9 +5,13 @@ ephemeral state: presence, typing indicators and an optional call-status
 projection. PostgreSQL and the Spring API remain the only durable authority for
 accounts, messages, receipts, membership, privacy settings and call history.
 
-**Status: candidate, disabled by default.** The server auth bridge (S1) is on
-`main`. The authorization-mirror projection writer (S2) and the Android
-transport (S3) are not. Do not install the rules or enable
+**Status: candidate, disabled by default.** The server auth bridge (S1),
+authorization-mirror projection writer (S2, `server/src/main/java/com/nexachat/firebase/projection/`),
+and Android ephemeral router/source (S3, `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/`)
+are implemented in the codebase. However, the feature remains **disabled by default**
+(`FIREBASE_REALTIME_ENABLED=false`, `FIREBASE_PROJECTION_ENABLED=false`, and Android
+`firebaseRealtimeEnabled=false`), and STOMP over WebSocket remains the authoritative and default
+realtime transport for presence and typing indicators. Do not install the rules or enable
 `FIREBASE_REALTIME_ENABLED` for real users until every rollout gate below is
 met. `docs/operations.md` owns the environment variables and the Compose
 caveat; this page owns the rules contract, its tests and the known gaps.

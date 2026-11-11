@@ -9,8 +9,10 @@ message sending available offline.
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v13`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.5** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24` + `V25` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls, consent-gated
-> **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24–V28` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls,
+> Google sign-in (link-first, public JWKS), email OTP recovery/deletion, self-service account deletion,
+> consent-gated **AI conversation summaries**, conversation RAG with the Android “Ask this chat” entry,
+> and optional Firebase ephemeral state (flags off, STOMP default)).
 > Every architectural claim below links directly to its executable source and verification suite.
 
 ## Demo & UI Showcase (Dark & Light Mode)
@@ -79,7 +81,12 @@ Architecture, protocol contracts, and security boundaries are documented in
 
 | Domain / Capability | Shipped | Where |
 |---|---|---|
-| Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password, access-token revocation cutoff (`tokens_valid_after`, V11) | `server/auth`, `app/feature/auth`, `core/storage` |
+| Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password, access-token revocation cutoff (`tokens_valid_after`, V11), keyed refresh replay (V25) | `server/auth`, `app/feature/auth`, `core/storage` |
+| Google Sign-In | Link-first OpenID Connect via Google's public JWKS (no secret needed, client IDs from env, V28); single-use nonces; Android Credential Manager integration | `server/auth/google`, `app/core/auth`, `docs/operations.md` |
+| Account Recovery & Email OTP | Recovery email verification, password reset OTP, account deletion OTP via HMAC-SHA256 digests (V27), cooldown & rate limits, pluggable `MailSender` (SMTP, Resend, local Mailpit for dev) | `server/recovery`, `server/mail`, `app/feature/profile`, `docs/operations.md` |
+| Self-Service Account Deletion | Soft-delete / tombstoning (V26), E.164 phone released for re-registration, session invalidation, group auto-leave with admin promotion, PII/avatar scrubbed, historical messages preserved under neutral `Deleted account` label; in-app (`DELETE /api/v1/users/me`) and web flow (`site/delete-account.html`) | `server/user`, `site/delete-account.html`, `app/feature/profile`, `docs/operations.md` |
+| Realtime & Ephemeral Routing | STOMP over WebSocket as default for presence, typing, delivery/read receipts; candidate Firebase RTDB bridge and projections (flags off by default, STOMP fallback via `EphemeralStateRouter`) | `server/firebase`, `app/core/realtime/ephemeral`, `docs/firebase-realtime.md` |
+| Static Site & App Links | Bilingual static site on Vercel with Digital Asset Links (`.well-known/assetlinks.json`), self-service web account deletion (`site/delete-account.html`), strict CSP, and repo-owned Vercel build-skip `ignoreCommand` | `site/`, `site/vercel.json`, `docs/domain-and-app-links.md`, `site/README.md` |
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
 | Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, account-scoped durable offline outbox (Room v13) with WorkManager drain, caller-owned inbox labels, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
@@ -104,7 +111,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 | AI Conversation Summary | Extractive local engine + optional OpenAI-compatible LLM (Gemini primary `gemini-3.1-flash-lite`, DeepSeek `deepseek-flash` fallback) behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
 | Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), Android Ask screen, hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` | `server/rag`, `app/feature/ask`, `docs/rag.md`, `tools/rag-eval` |
 | Push Notifications | FCM HTTP v1 OAuth2 service-account authentication (server), Android device token registration and persisted sync cursor | `server/notification`, `app/notification` |
-| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, and automated server/client test suites | `core/ui`, `server/src/test`, `app/src/test` |
+| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, automated server/client test suites, R8 mapping check (`tools/check-release-r8-mapping.py`), site tests (`site/check.py`, `tools/site-tests`), and markdown link check | `core/ui`, `server/src/test`, `app/src/test`, `docs/testing.md` |
 
 ## Architecture
 
@@ -115,6 +122,7 @@ flowchart LR
         VM --> REPO["Repositories"]
         REPO --> ROOM[("Room v13 — SSOT<br/>messages · conversations · labels<br/>owner-scoped outbox · offline_outbox · reactions · pins · preferences · mentions")]
         REPO --> TS["TokenStore<br/>AES/GCM @ AndroidKeyStore"]
+        REPO --> ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
         REPO --> ST["StompClient<br/>(OkHttp raw WS)"]
         REPO --> RT["Retrofit APIs"]
     end
@@ -122,12 +130,12 @@ flowchart LR
     subgraph Server["server/ — Spring Boot 3.5.16 modular monolith"]
         SEC["SecurityConfig<br/>JWT filter · stateless"]
         INT["StompAuthChannelInterceptor<br/>CONNECT authN · SUB/SEND authZ"]
-        SVC["Services: auth · user · contact<br/>conversation · message · attachment · retention · presence · call signaling · summary · notification · rag · reminder · poll · label · invite · archive"]
+        SVC["Services: auth · recovery · google · user · contact<br/>conversation · message · attachment · retention · presence · firebase bridge · call signaling · summary · notification · rag · reminder · poll · label · invite · archive"]
         EVT["@TransactionalEventListener<br/>AFTER_COMMIT broadcast"]
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24 + V25<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -154,9 +162,9 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 |---|---|---|
 | Language | Java 21 LTS | Java 21 LTS |
 | Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
-| Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
-| Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24 + V25, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes, Google OpenID Connect (public JWKS), HMAC-SHA256 OTPs | AES/GCM/NoPadding via AndroidKeyStore, Credential Manager |
+| Realtime | spring-websocket + STOMP (default), optional Firebase RTDB bridge | OkHttp 4.12 WebSocket + STOMP, EphemeralStateRouter |
+| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24–V28, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + AGP 8.9.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -195,6 +203,12 @@ cd server
 mvn spring-boot:run           # Flyway migrates on first boot
 ```
 
+For testing email OTP recovery and deletion locally without external SMTP credentials,
+run local [Mailpit](https://github.com/axllent/mailpit) (`docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit`)
+and set `NEXACHAT_MAIL_PROVIDER=smtp`, `MAIL_SMTP_HOST=localhost`, `MAIL_SMTP_PORT=1025` in `.env`.
+Open `http://localhost:8025` to view incoming OTP codes. Google sign-in is disabled by default
+(`NEXACHAT_GOOGLE_SIGNIN_ENABLED=false`); see [docs/operations.md](docs/operations.md) for enabling it with public JWKS validation.
+
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
 REST base: `http://localhost:8080/api/v1` · WebSocket: `ws://localhost:8080/ws`.
 From the repository root, seed data (demo accounts below) is optional:
@@ -219,10 +233,13 @@ psql -h localhost -p 5433 -U nexachat -d nexachat < demo/seed.sql
    # emulator → host loopback alias (default): http://10.0.2.2:8080
    # physical device on LAN → your laptop's IP:
    API_BASE_URL=http://192.168.x.x:8080
+   # Optional: Google Web OAuth client ID (empty hides Google sign-in buttons):
+   GOOGLE_WEB_CLIENT_ID=
    ```
 
-   (`API_BASE_URL` can also be passed as `./gradlew -PapiBaseUrl=…`; the value
-   lands in `BuildConfig.API_BASE_URL`, `app/build.gradle` (`defaultConfig`).)
+   (`API_BASE_URL` can also be passed as `./gradlew -PapiBaseUrl=…` and Google client ID as
+   `-PgoogleWebClientId=…`. Realtime defaults to STOMP over WebSocket; optional Firebase
+   ephemeral state is disabled by default via `-PfirebaseRealtimeEnabled=false`.)
 
 3. Build and install:
 
@@ -264,6 +281,19 @@ cd server && mvn verify
 # Android — JVM unit tests
 cd android && ./gradlew testDebugUnitTest
 
+# Android release R8 keep-rule reflection verification
+python tools/check-release-r8-mapping.py
+
+# Static site checks and JavaScript unit tests
+python site/check.py
+cd tools/site-tests && npm test
+
+# Firebase rules offline emulator contract suite
+cd tools/firebase-rules && npm test
+
+# Markdown relative link verification
+python tools/check-markdown-links.py
+
 # RAG benchmark evaluation (synthetic corpus)
 bash tools/rag-eval/run-benchmark.sh
 ```
@@ -279,7 +309,7 @@ and a committed-secret scan on every PR and push to `main`/`develop`.
 nexachat/
 ├─ android/   Pure Java 21 LTS app (XML Views, Fragments, ViewBinding, RxJava 3)
 │  ├─ app/src/main/java/com/nexachat/
-│  │  ├─ core/       common · database (Room RxJava 3) · network (Retrofit, stomp/) · storage · ui
+│  │  ├─ core/       auth (Google sign-in) · common · database (Room RxJava 3) · network · storage · ui · realtime/ephemeral
 │  │  ├─ call/       call core/media/service/UI (Java)
 │  │  ├─ data/       repositories (Room write-through, outbox, resync; RxJava 3)
 │  │  ├─ di/         Hilt modules (`annotationProcessor`)
@@ -289,15 +319,16 @@ nexachat/
 │  ├─ app/schemas/   Room-exported schema JSON (migration-test assets)
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
-│  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V25 # Flyway migrations
+│  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,recovery,firebase,mail,ws,common,config}/
+│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V28 # Flyway migrations
 │  └─ Dockerfile + pom.xml
+├─ site/      Static site on Vercel (delete-account web flow, assetlinks, check.py, vercel.json)
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
 │  ├─ design/       design tokens + design-system references
 │  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
-├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/ · rag-eval/ · firebase-rules/ · gif/
+├─ tools/     check-release-r8-mapping.py · check-markdown-links.py · sign-release.sh · site-tests/ · e2e/ · summary-eval/ · rag-eval/ · firebase-rules/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
 ├─ README.md · CONTRIBUTING.md · CHANGELOG.md
 └─ docker-compose.yml
@@ -314,6 +345,11 @@ points: [docs/architecture.md](docs/architecture.md) ·
 [docs/security.md](docs/security.md) ·
 [docs/operations.md](docs/operations.md) ·
 [docs/firebase-realtime.md](docs/firebase-realtime.md) ·
+[docs/domain-and-app-links.md](docs/domain-and-app-links.md) ·
+[docs/play-store-data-safety.md](docs/play-store-data-safety.md) ·
+[docs/testing.md](docs/testing.md) ·
+[docs/release-checklist.md](docs/release-checklist.md) ·
+[site/README.md](site/README.md) ·
 [docs/media/README.md](docs/media/README.md) ·
 [docs/known-limitations.md](docs/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).

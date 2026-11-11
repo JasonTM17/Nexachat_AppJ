@@ -44,3 +44,24 @@ When deploying the app to Google Play with Google Play App Signing enabled, Goog
 
 > **CRITICAL**: The debug key (`android/debug.keystore`) must **never** be added to `assetlinks.json`.
 > The debug keystore uses public, well-known credentials (`androiddebugkey` / `android`). Adding it would allow any rogue debug build installed on an Android device to claim URL handling for `nexachat.io.vn`. Only genuine release credentials (the upload key and the Google Play App Signing key) may be listed.
+
+## Account Deletion Web Flow (`delete-account.html`)
+
+For users who uninstalled the app or lost access to their device, `site/delete-account.html` provides a self-service web deletion path:
+1. User enters their registered E.164 phone number.
+2. The page calls `POST /api/v1/auth/recovery/delete-account/request` to issue a 6-digit OTP to the verified recovery email.
+3. User enters the OTP code and confirms deletion via `POST /api/v1/auth/recovery/delete-account/confirm`.
+4. Logic is encapsulated in `site/delete-account.js` with zero external dependencies and strict CSP (`connect-src` limited to configured API origin, default empty).
+
+## Vercel Build Skip (`ignoreCommand`)
+
+In `site/vercel.json`, the deployment ignore command is configured as:
+```json
+"ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- . 2>/dev/null && exit 0; exit 1'"
+```
+This ensures multi-commit pushes do not mistakenly skip builds when changes touch `site/`, while skipping builds safely when only non-site files change. See [docs/domain-and-app-links.md](../docs/domain-and-app-links.md#8-vercel-build-skip-ignorecommand) for details.
+
+## Site Validation & Testing
+
+- **Static site checks:** `python site/check.py` validates HTML validity, link resolution, digital asset links JSON/fingerprints, security headers in `vercel.json`, token formats, and ignore-command execution.
+- **JavaScript unit tests:** `cd tools/site-tests && npm test` runs headless Node tests verifying `site/delete-account.js` form validation, OTP state transitions, rate-limit handling, and URL parameter safety. See [tools/site-tests/README.md](../tools/site-tests/README.md).
