@@ -158,8 +158,8 @@ here. Resend uses HTTPS and is the configured provider.
   container provisioning: in a local run capped at 512 MB / 0.1 CPU, the app
   reached readiness in about **200 s** (198–220 s depending on Flyway migration
   execution) and readiness reported `db`, `flyway`,
-  `diskSpace` and `refreshReplay` UP. Live Render cold-start duration has not yet
-  been measured directly on the live platform. Render allows 15 minutes for a new
+  `diskSpace` and `refreshReplay` UP. The first live deploy (Singapore, Free) measured **123 s** from container start to a healthy check; Spring Boot itself reported started in 106.6 s, including the first Flyway run on Neon. The Android client waits
+  up to 150 s for health before an auth request. Render allows 15 minutes for a new
   deploy to pass its health check.
 - **Supported keep-alive setup:** An uptime monitor pings
   `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes. It keeps
