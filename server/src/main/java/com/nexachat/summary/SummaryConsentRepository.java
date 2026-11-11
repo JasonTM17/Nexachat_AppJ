@@ -4,10 +4,18 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public class SummaryConsentRepository {
+
+    private static final String SNAPSHOT_SQL = """
+            SELECT ai_summary_consent, ai_summary_consent_epoch
+            FROM users
+            WHERE id = ?
+            """;
+    private static final String LOCKED_SNAPSHOT_SQL = SNAPSHOT_SQL + " FOR SHARE";
 
     private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
 
@@ -16,14 +24,36 @@ public class SummaryConsentRepository {
     }
 
     public boolean isConsented(UUID userId) {
+        return snapshot(userId).consented();
+    }
+
+    public ConsentSnapshot snapshot(UUID userId) {
+        return readSnapshot(userId, SNAPSHOT_SQL);
+    }
+
+    /**
+     * Reads the current consent snapshot while holding a shared row lock until
+     * the caller's transaction completes. Settings updates use a conflicting
+     * write lock, so callers can serialize the response under this lock and
+     * perform HTTP I/O after the transaction completes.
+     */
+    public ConsentSnapshot lockForResponse(UUID userId) {
+        return readSnapshot(userId, LOCKED_SNAPSHOT_SQL);
+    }
+
+    private ConsentSnapshot readSnapshot(UUID userId, String sql) {
         JdbcTemplate jdbcTemplate = jdbcTemplateProvider.getIfAvailable();
         if (jdbcTemplate == null) {
-            return false;
+            return new ConsentSnapshot(false, -1);
         }
-        Boolean consented = jdbcTemplate.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM users WHERE id = ? AND ai_summary_consent IS TRUE)",
-                Boolean.class,
+        List<ConsentSnapshot> snapshots = jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> new ConsentSnapshot(rs.getBoolean("ai_summary_consent"),
+                        rs.getLong("ai_summary_consent_epoch")),
                 userId);
-        return Boolean.TRUE.equals(consented);
+        return snapshots.stream().findFirst().orElse(new ConsentSnapshot(false, -1));
+    }
+
+    public record ConsentSnapshot(boolean consented, long epoch) {
     }
 }

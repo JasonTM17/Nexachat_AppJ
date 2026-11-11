@@ -7,8 +7,15 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.message.dto.SendMessageRequest;
+import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.user.UserSettingsService;
+import com.zaxxer.hikari.HikariDataSource;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.HttpServletResponseWrapper;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -25,6 +33,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -40,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -84,6 +96,14 @@ class AskApiIT {
     private JwtService jwtService;
     @Autowired
     private MessageService messageService;
+    @Autowired
+    private UserSettingsService userSettingsService;
+    @Autowired
+    private AskResponseWriter responseWriter;
+    @Autowired
+    private DataSource dataSource;
+    @MockitoSpyBean
+    private SummaryConsentRepository consentRepository;
     @MockitoSpyBean
     private RagQuestionCache questionCache;
     @MockitoSpyBean
@@ -248,8 +268,10 @@ class AskApiIT {
                 }
             }
             return invocation.callRealMethod();
-        }).when(questionCache).save(eq(conversationId), any(String.class), any(String.class),
-                any(float[].class), any(RagQuestionCache.CachedAsk.class));
+        }).when(questionCache).saveIfConsentSnapshotMatches(any(),
+                any(SummaryConsentRepository.ConsentSnapshot.class), eq(conversationId),
+                any(String.class), any(String.class), any(float[].class),
+                any(RagQuestionCache.CachedAsk.class));
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -276,6 +298,133 @@ class AskApiIT {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    @Test
+    void inFlightAskCannotPersistOrReturnAnswerAfterConsentRevocation() throws Exception {
+        grantAiConsent(caller);
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+        CountDownLatch saveReached = new CountDownLatch(1);
+        CountDownLatch allowSave = new CountDownLatch(1);
+        AtomicBoolean pauseFirstSave = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (pauseFirstSave.compareAndSet(true, false)) {
+                saveReached.countDown();
+                if (!allowSave.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume the consented ask cache write");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(questionCache).saveIfConsentSnapshotMatches(any(),
+                any(SummaryConsentRepository.ConsentSnapshot.class), eq(conversationId),
+                any(String.class), any(String.class), any(float[].class),
+                any(RagQuestionCache.CachedAsk.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlightAsk = executor.submit(() -> postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(saveReached.await(10, TimeUnit.SECONDS)).isTrue();
+            userSettingsService.updateSettings(caller.getId(), null, null, false);
+            allowSave.countDown();
+
+            JsonNode revokedResponse = objectMapper.readTree(
+                    inFlightAsk.get(10, TimeUnit.SECONDS).getResponse().getContentAsString());
+            assertThat(revokedResponse.path("mode").asText()).isEqualTo("NOT_FOUND");
+            assertThat(revokedResponse.path("answer").isNull()).isTrue();
+            Integer cacheRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                    Integer.class,
+                    conversationId);
+            assertThat(cacheRows).isZero();
+            Long consentEpoch = jdbcTemplate.queryForObject(
+                    "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, caller.getId());
+            assertThat(consentEpoch).isEqualTo(1);
+
+            JsonNode nonConsentingMemberResponse = objectMapper.readTree(
+                    postAsk(peer, question).andExpect(status().isOk()).andReturn()
+                            .getResponse().getContentAsString());
+            assertThat(nonConsentingMemberResponse.path("mode").asText()).isNotEqualTo("CACHE");
+            assertThat(nonConsentingMemberResponse.path("usage").path("cached").asBoolean()).isFalse();
+            Integer cacheRowsAfterNonConsentingAsk = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                    Integer.class,
+                    conversationId);
+            assertThat(cacheRowsAfterNonConsentingAsk).isZero();
+        } finally {
+            allowSave.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void blockedClientWriteReleasesConsentConnectionAndAllowsRevocation() throws Exception {
+        userSettingsService.updateSettings(caller.getId(), null, null, true);
+        SummaryConsentRepository.ConsentSnapshot snapshot = consentRepository.snapshot(caller.getId());
+        AskResponse answer = new AskResponse("The migration is on March 14.", List.of(), AskMode.EXTRACTIVE,
+                false, new AskResponse.Usage(0, 0, false));
+        CountDownLatch responseWriteEntered = new CountDownLatch(1);
+        CountDownLatch allowResponseWrite = new CountDownLatch(1);
+        CountDownLatch revocationStarted = new CountDownLatch(1);
+        CountDownLatch revocationFinished = new CountDownLatch(1);
+        BlockingHttpServletResponse response = new BlockingHttpServletResponse(
+                responseWriteEntered, allowResponseWrite);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Future<?> responseWrite = null;
+        Future<?> revocation = null;
+        int activeConnectionsBefore = activeDatabaseConnections();
+        int activeConnectionsWhileWriteBlocked = -1;
+        boolean revocationFinishedWhileWriteBlocked = false;
+        try {
+            responseWrite = executor.submit(() -> {
+                responseWriter.write(caller.getId(), new AskExecution(snapshot, answer), response);
+                return null;
+            });
+            assertThat(responseWriteEntered.await(10, TimeUnit.SECONDS)).isTrue();
+
+            revocation = executor.submit(() -> {
+                revocationStarted.countDown();
+                try {
+                    return userSettingsService.updateSettings(caller.getId(), null, null, false);
+                } finally {
+                    revocationFinished.countDown();
+                }
+            });
+            assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+            revocationFinishedWhileWriteBlocked = revocationFinished.await(5, TimeUnit.SECONDS);
+            activeConnectionsWhileWriteBlocked = activeDatabaseConnections();
+        } finally {
+            allowResponseWrite.countDown();
+            if (responseWrite != null) {
+                responseWrite.get(10, TimeUnit.SECONDS);
+            }
+            if (revocation != null) {
+                revocation.get(10, TimeUnit.SECONDS);
+            }
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        boolean updateCompletedBeforeResponseWriteResumed = revocationFinishedWhileWriteBlocked;
+        int connectionsWhileResponseWriteBlocked = activeConnectionsWhileWriteBlocked;
+        SoftAssertions.assertSoftly(softly -> {
+            softly.assertThat(updateCompletedBeforeResponseWriteResumed)
+                    .as("consent revocation completes while the response write is blocked")
+                    .isTrue();
+            softly.assertThat(connectionsWhileResponseWriteBlocked)
+                    .as("the blocked response write holds no database connection")
+                    .isEqualTo(activeConnectionsBefore);
+        });
+        JsonNode responseBody = objectMapper.readTree(response.bodyAsString());
+        assertThat(responseBody.path("mode").asText()).isEqualTo("EXTRACTIVE");
+        assertThat(responseBody.path("answer").asText()).contains("March 14");
+        Long consentEpoch = jdbcTemplate.queryForObject(
+                "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, caller.getId());
+        assertThat(consentEpoch).isEqualTo(2);
     }
 
     @Test
@@ -374,5 +523,59 @@ class AskApiIT {
     }
 
     private record TestMessage(UUID id, long seq) {
+    }
+
+    private int activeDatabaseConnections() throws Exception {
+        return dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean().getActiveConnections();
+    }
+
+    private static final class BlockingHttpServletResponse extends HttpServletResponseWrapper {
+
+        private final ByteArrayOutputStream body = new ByteArrayOutputStream();
+        private final ServletOutputStream outputStream;
+
+        private BlockingHttpServletResponse(
+                CountDownLatch writeEntered,
+                CountDownLatch allowWrite) {
+            super(new MockHttpServletResponse());
+            this.outputStream = new ServletOutputStream() {
+                private final AtomicBoolean firstWrite = new AtomicBoolean(true);
+
+                @Override
+                public void write(int value) throws IOException {
+                    if (firstWrite.compareAndSet(true, false)) {
+                        writeEntered.countDown();
+                        try {
+                            if (!allowWrite.await(10, TimeUnit.SECONDS)) {
+                                throw new IOException("Timed out waiting to resume the blocked response write");
+                            }
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("Interrupted while waiting to resume the response write", exception);
+                        }
+                    }
+                    body.write(value);
+                }
+
+                @Override
+                public boolean isReady() {
+                    return true;
+                }
+
+                @Override
+                public void setWriteListener(WriteListener writeListener) {
+                    throw new UnsupportedOperationException("Non-blocking writes are not used by this test");
+                }
+            };
+        }
+
+        @Override
+        public ServletOutputStream getOutputStream() {
+            return outputStream;
+        }
+
+        private String bodyAsString() {
+            return body.toString(StandardCharsets.UTF_8);
+        }
     }
 }
