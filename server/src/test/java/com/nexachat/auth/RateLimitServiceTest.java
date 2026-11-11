@@ -1,5 +1,6 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.MutableTimeMeter;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -72,5 +73,27 @@ class RateLimitServiceTest {
 
         assertThat(rateLimitService.bucketCount()).isZero();
         assertThat(rateLimitService.tryConsume("login|10.0.0.1", 10, window).allowed()).isTrue();
+    }
+
+    @Test
+    void aFrozenTimeMeterDeniesExactlyAtCapacityAndRefillsOnlyWhenTimeMoves() {
+        MutableTimeMeter meter = new MutableTimeMeter();
+        RateLimitService service = new RateLimitService(10, Duration.ofMinutes(15), meter);
+        Duration window = Duration.ofMinutes(1);
+        String key = "invite-resolve|ip:127.0.0.1";
+
+        for (int i = 0; i < 60; i++) {
+            assertThat(service.tryConsume(key, 60, window).allowed())
+                    .as("attempt %d within capacity", i + 1)
+                    .isTrue();
+        }
+        assertThat(service.tryConsume(key, 60, window).allowed())
+                .as("frozen clock means no token trickles back")
+                .isFalse();
+
+        meter.advance(Duration.ofSeconds(2));
+        assertThat(service.tryConsume(key, 60, window).allowed()).isTrue();
+        assertThat(service.tryConsume(key, 60, window).allowed()).isTrue();
+        assertThat(service.tryConsume(key, 60, window).allowed()).isFalse();
     }
 }
