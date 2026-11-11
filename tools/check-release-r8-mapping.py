@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 import sys
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 
@@ -24,6 +26,45 @@ COMPILED = (
 MAPPING = ROOT / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "mapping.txt"
 USAGE = ROOT / "android" / "app" / "build" / "outputs" / "mapping" / "release" / "usage.txt"
 RULES = ROOT / "android" / "app" / "proguard-rules.pro"
+MERGED_MANIFEST_CANDIDATES = (
+    ROOT
+    / "android"
+    / "app"
+    / "build"
+    / "intermediates"
+    / "merged_manifests"
+    / "release"
+    / "processReleaseManifest"
+    / "AndroidManifest.xml",
+    ROOT
+    / "android"
+    / "app"
+    / "build"
+    / "intermediates"
+    / "merged_manifest"
+    / "release"
+    / "processReleaseMainManifest"
+    / "AndroidManifest.xml",
+)
+RELEASE_BUILD_CONFIG = (
+    ROOT
+    / "android"
+    / "app"
+    / "build"
+    / "generated"
+    / "source"
+    / "buildConfig"
+    / "release"
+    / "com"
+    / "nexachat"
+    / "BuildConfig.java"
+)
+RELEASE_APK_DIR = ROOT / "android" / "app" / "build" / "outputs" / "apk" / "release"
+ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+GOOGLE_ID_TOKEN_TYPE = (
+    b"com.google.android.libraries.identity.googleid.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL"
+)
+COMPONENT_TAGS = {"application", "activity", "activity-alias", "service", "receiver", "provider"}
 WIRE_MODELS = (
     "com.nexachat.feature.archive.ArchivePage",
     "com.nexachat.feature.archive.ArchivePage$Item",
@@ -113,6 +154,51 @@ def removed_wire_members(usage_text: str) -> list[str]:
             continue
         removed.append(f"{current} {member}")
     return removed
+
+
+def manifest_class_lookups() -> dict[str, str]:
+    """Class names Android or a library resolves by string, not by reference."""
+    manifest = next((path for path in MERGED_MANIFEST_CANDIDATES if path.is_file()), None)
+    if manifest is None:
+        return {}
+    root = ET.parse(manifest).getroot()
+    lookups: dict[str, str] = {}
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]
+        if tag in COMPONENT_TAGS:
+            name = element.get(ANDROID_NS + "name")
+            if name and "." in name and not name.startswith(("android.", "java.")):
+                lookups.setdefault(name, f"manifest <{tag}>")
+        elif tag == "meta-data":
+            value = (element.get(ANDROID_NS + "value") or "").strip()
+            if (
+                value.startswith(("androidx.", "com.google.", "com.nexachat."))
+                and "." in value
+                and re.fullmatch(r"[\w.$]+", value)
+            ):
+                lookups.setdefault(value, "manifest meta-data class name")
+    # androidx.startup is a provider-authority suffix, not a class.
+    lookups.pop("androidx.startup", None)
+    return lookups
+
+
+def google_web_client_id() -> str | None:
+    if not RELEASE_BUILD_CONFIG.is_file():
+        return None
+    text = RELEASE_BUILD_CONFIG.read_text(encoding="utf-8")
+    match = re.search(r'GOOGLE_WEB_CLIENT_ID\s*=\s*"([^"]*)"', text)
+    return match.group(1) if match else None
+
+
+def release_apk_dex_has_google_id_type() -> bool | None:
+    apks = sorted(RELEASE_APK_DIR.glob("*.apk")) if RELEASE_APK_DIR.is_dir() else []
+    if not apks:
+        return None
+    with zipfile.ZipFile(apks[0]) as archive:
+        dex_names = [
+            name for name in archive.namelist() if re.fullmatch(r"classes\d*\.dex", name)
+        ]
+        return any(GOOGLE_ID_TOKEN_TYPE in archive.read(name) for name in dex_names)
 
 
 def main() -> int:
@@ -221,6 +307,40 @@ def main() -> int:
     )
     if any(rule not in rules for rule in required_rules):
         return fail("Room migration or Parcelable class-identity keep rule is missing")
+
+    lookups = manifest_class_lookups()
+    if not lookups:
+        return fail("merged release manifest is missing; cannot verify manifest class names")
+    broken = sorted(
+        (name, mapped.get(name)) for name in lookups if mapped.get(name) != name
+    )
+    if broken:
+        for name, target in broken[:20]:
+            print(
+                f"MANIFEST {lookups[name]}: {name} -> {target or 'ABSENT'}",
+                file=sys.stderr,
+            )
+        return fail(f"{len(broken)} manifest or meta-data class names are not preserved by R8")
+    print(f"  manifest/metadata class lookups: {len(lookups)} verified in mapping.txt")
+
+    client_id = google_web_client_id()
+    if client_id is None:
+        print("  Google ID token path: NOT_CHECKED (release BuildConfig is missing)")
+    elif not client_id:
+        print("  Google ID token path: not configured; R8 removes it by design")
+    else:
+        has_type = release_apk_dex_has_google_id_type()
+        if has_type is None:
+            return fail(
+                "GOOGLE_WEB_CLIENT_ID is configured but no release APK exists; "
+                "run :app:assembleRelease first"
+            )
+        if not has_type:
+            return fail(
+                "GOOGLE_WEB_CLIENT_ID is configured but the release APK lost the "
+                "Google ID token type constant"
+            )
+        print("  Google ID token path: type constant present in the release APK")
 
     print(f"PASS: {len(expected)} release classes retain original names in mapping.txt")
     for label, count in group_counts.items():

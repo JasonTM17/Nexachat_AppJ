@@ -79,6 +79,73 @@ public final class ReflectiveDtoKeepCoverageTest {
                 failures.isEmpty());
     }
 
+    @Test
+    public void moshiAdaptersCreatedFromClassLiteralsAreCoveredByKeepRules() throws Exception {
+        String rules = new String(Files.readAllBytes(proguardRules().toPath()), StandardCharsets.UTF_8);
+        List<KeepPattern> keeps = new ArrayList<>();
+        Matcher matcher = KEEP_RULE.matcher(rules);
+        while (matcher.find()) {
+            if (matcher.group(2).contains("*;")) {
+                keeps.add(KeepPattern.compile(matcher.group(1)));
+            }
+        }
+
+        List<String> failures = new ArrayList<>();
+        for (File sourceFile : javaSources(sourceRoot())) {
+            String source = new String(Files.readAllBytes(sourceFile.toPath()), StandardCharsets.UTF_8);
+            for (String literal : moshiAdapterClassLiterals(source)) {
+                Class<?> model = resolveClass(sourceFile, source, literal);
+                if (model == null
+                        || !model.getName().startsWith("com.nexachat.")
+                        || !hasInstanceField(model)
+                        || coveredByFullKeep(keeps, model.getName())) {
+                    continue;
+                }
+                failures.add(model.getName() + " in " + sourceFile.getName());
+            }
+        }
+
+        assertTrue(
+                "Moshi adapters built from class literals have no R8 keep coverage:\n"
+                        + String.join("\n", failures),
+                failures.isEmpty());
+    }
+
+    /**
+     * Collects {@code moshi.adapter(X.class)} and
+     * {@code moshi.adapter(Types.newParameterizedType(..., X.class))} arguments.
+     * Adapters built from a variable {@code Type} are covered by the package
+     * rules or the mapping check and cannot be resolved statically here.
+     */
+    private static Set<String> moshiAdapterClassLiterals(String source) {
+        Set<String> names = new LinkedHashSet<>();
+        Matcher direct = Pattern.compile(
+                "\\.adapter\\(\\s*([A-Za-z_$][\\w.$]*)\\.class\\s*\\)").matcher(source);
+        while (direct.find()) {
+            names.add(direct.group(1));
+        }
+        Matcher parameterized = Pattern.compile(
+                "\\.adapter\\(\\s*Types\\.newParameterizedType\\(([^)]*)\\)\\s*\\)",
+                Pattern.DOTALL).matcher(source);
+        while (parameterized.find()) {
+            Matcher literal = Pattern.compile(
+                    "([A-Za-z_$][\\w.$]*)\\.class").matcher(parameterized.group(1));
+            while (literal.find()) {
+                names.add(literal.group(1));
+            }
+        }
+        return names;
+    }
+
+    private static List<File> javaSources(File sourceRoot) throws IOException {
+        try (var stream = Files.walk(sourceRoot.toPath())) {
+            return stream
+                    .map(path -> path.toFile())
+                    .filter(file -> file.isFile() && file.getName().endsWith(".java"))
+                    .toList();
+        }
+    }
+
     private static boolean hasJsonAdapterEscape(Class<?> model) {
         for (Field field : model.getDeclaredFields()) {
             if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) {
@@ -273,6 +340,9 @@ public final class ReflectiveDtoKeepCoverageTest {
     }
 
     private static Class<?> resolveClass(File apiFile, String source, String simpleName) {
+        if (simpleName.contains(".")) {
+            return forName(simpleName);
+        }
         Matcher imported = Pattern.compile(
                 "(?m)^import\\s+([\\w.]+\\." + Pattern.quote(simpleName) + ")\\s*;").matcher(source);
         if (imported.find()) {
