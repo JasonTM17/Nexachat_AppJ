@@ -11,6 +11,9 @@ import java.util.UUID;
 
 public interface CallRecordRepository extends JpaRepository<CallRecord, UUID> {
 
+    @Query("SELECT c.callId FROM CallRecord c WHERE c.callerId = :userId OR c.calleeId = :userId")
+    List<UUID> findCallIdsByParticipantId(@Param("userId") UUID userId);
+
     @Query("""
             SELECT c FROM CallRecord c
             WHERE c.conversationId = :conversationId

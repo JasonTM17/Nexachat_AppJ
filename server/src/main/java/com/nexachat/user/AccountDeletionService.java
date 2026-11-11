@@ -1,6 +1,7 @@
 package com.nexachat.user;
 
 import com.nexachat.auth.AccessTokensRevokedEvent;
+import com.nexachat.call.CallRecordRepository;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -12,6 +13,7 @@ import com.nexachat.auth.TokenService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,7 @@ public class AccountDeletionService {
     private final TokenService tokenService;
     private final UserDeviceTokenRepository deviceTokenRepository;
     private final ConversationMemberRepository memberRepository;
+    private final CallRecordRepository callRecordRepository;
     private final GroupService groupService;
     private final StorageService storageService;
     private final ContactRepository contactRepository;
@@ -55,6 +58,7 @@ public class AccountDeletionService {
                                   TokenService tokenService,
                                   UserDeviceTokenRepository deviceTokenRepository,
                                   ConversationMemberRepository memberRepository,
+                                  @Lazy CallRecordRepository callRecordRepository,
                                   GroupService groupService,
                                   StorageService storageService,
                                   ContactRepository contactRepository,
@@ -67,6 +71,7 @@ public class AccountDeletionService {
         this.tokenService = tokenService;
         this.deviceTokenRepository = deviceTokenRepository;
         this.memberRepository = memberRepository;
+        this.callRecordRepository = callRecordRepository;
         this.groupService = groupService;
         this.storageService = storageService;
         this.contactRepository = contactRepository;
@@ -86,6 +91,12 @@ public class AccountDeletionService {
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
+
+        List<UUID> firebaseConversationIds = memberRepository.findConversationIdsByUserId(userId).stream()
+                .distinct().sorted().toList();
+        List<UUID> firebaseDirectPeerIds = memberRepository.findDirectPeerUserIdsByUserId(userId);
+        List<UUID> firebaseCallIds = callRecordRepository.findCallIdsByParticipantId(userId).stream()
+                .distinct().sorted().toList();
 
         String avatarStorageKey = avatarStorageKey(user.getAvatarUrl());
         List<String> unboundKeys = new ArrayList<>(jdbcSupport.findUnboundAttachmentStorageKeys(userId));
@@ -113,6 +124,8 @@ public class AccountDeletionService {
 
         deleteStorageAfterCommit(avatarStorageKey, unboundKeys);
         eventPublisher.publishEvent(new AccessTokensRevokedEvent(userId));
+        eventPublisher.publishEvent(new UserAccountDeletedEvent(
+                userId, firebaseConversationIds, firebaseDirectPeerIds, List.of(), firebaseCallIds));
         log.info("Account deleted for user {}", userId);
     }
 

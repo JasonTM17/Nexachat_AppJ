@@ -44,6 +44,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u FROM User u WHERE u.id = :id")
     Optional<User> findByIdForUpdate(@Param("id") UUID id);
 
+    /** Bounded UUID keyset page used by opt-in Firebase projection backfill. */
+    @Query("SELECT u.id FROM User u WHERE (:afterId IS NULL OR u.id > :afterId) ORDER BY u.id")
+    List<UUID> findIdsAfter(@Param("afterId") UUID afterId, Pageable pageable);
+
     /**
      * Case-insensitive {@code displayName} prefix search for GET /users/search?q=.
      * The caller is always excluded. {@code prefix} must arrive LIKE-escaped

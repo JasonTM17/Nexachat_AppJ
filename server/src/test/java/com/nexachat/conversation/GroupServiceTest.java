@@ -186,6 +186,7 @@ class GroupServiceTest {
         assertThat(event.payload().change()).isEqualTo("CREATED");
         assertThat(event.payload().title()).isEqualTo("Team");
         assertThat(event.extraAudienceUserIds()).isEmpty();
+        verify(eventPublisher).publishEvent(new ConversationMembershipChangedEvent(conversationId, List.of()));
     }
 
     @Test
@@ -419,6 +420,8 @@ class GroupServiceTest {
                 eq(adminId), eq(conversationId), eq("Admin Alice removed Bob"), eq(bobId));
         ConversationUpdatedEvent event = updateEvent().getValue();
         assertThat(event.payload().change()).isEqualTo("MEMBER_REMOVED");
+        verify(eventPublisher).publishEvent(
+                new ConversationMembershipChangedEvent(conversationId, List.of(bobId)));
         // The kicked user is no longer a member at fan-out time — they are
         // pushed explicitly so their inbox drops the conversation.
         assertThat(event.extraAudienceUserIds()).containsExactly(bobId);

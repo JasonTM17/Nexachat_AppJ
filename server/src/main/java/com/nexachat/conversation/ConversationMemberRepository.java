@@ -104,6 +104,21 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     @Query("SELECT m.conversation.id FROM ConversationMember m WHERE m.user.id = :userId")
     List<UUID> findConversationIdsByUserId(@Param("userId") UUID userId);
 
+    /** Direct peers whose reverse presence-reader edges must be removed when a user is deleted. */
+    @Query("""
+            SELECT DISTINCT peer.user.id
+            FROM ConversationMember peer
+            WHERE peer.user.id <> :userId
+              AND peer.conversation.id IN (
+                  SELECT own.conversation.id
+                  FROM ConversationMember own
+                  WHERE own.user.id = :userId
+                    AND own.conversation.type = com.nexachat.conversation.Conversation.Type.DIRECT
+              )
+            ORDER BY peer.user.id
+            """)
+    List<UUID> findDirectPeerUserIdsByUserId(@Param("userId") UUID userId);
+
     /**
      * Members whose mute is currently effective: {@code muted = true} and either
      * forever ({@code mutedUntil IS NULL}) or not yet expired. Used by push

@@ -111,6 +111,29 @@ class FirebaseRealtimeAuthServiceTest {
     }
 
     @Test
+    void refusesATokenIssuedAtTheInclusiveCutoffBeforeSigningOrWriting() {
+        when(user.getTokensValidAfter()).thenReturn(NOW.minusSeconds(10));
+
+        assertInvalidToken(() -> service.issue(new JwtPrincipal(
+                USER_ID, NOW.minusSeconds(10), NOW.plusSeconds(900))));
+
+        verify(admin, never()).createCustomToken(eq(USER_ID.toString()), anyMap());
+        verify(rtdb, never()).writeSessionLease(eq(USER_ID), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(), anyMap());
+    }
+
+    @Test
+    void refusesATombstonedAccountBeforeSigningOrWriting() {
+        when(user.getDeletedAt()).thenReturn(NOW.minusSeconds(1));
+
+        assertInvalidToken(() -> service.issue(principal(NOW.plusSeconds(900))));
+
+        verify(admin, never()).createCustomToken(eq(USER_ID.toString()), anyMap());
+        verify(rtdb, never()).writeSessionLease(eq(USER_ID), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(), anyMap());
+    }
+
+    @Test
     void refusesMissingUsersAndExpiredJwtClaims() {
         when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.empty());
         assertInvalidToken(() -> service.issue(principal(NOW.plusSeconds(900))));

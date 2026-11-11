@@ -155,6 +155,8 @@ public class GroupService {
                     conversation, member, ConversationMember.Role.MEMBER));
         }
         memberRepository.saveAll(rows);
+        eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
+                conversation.getId(), List.of()));
 
         messageService.postSystemMessage(creatorId, conversation.getId(),
                 creator.getDisplayName() + " created the group");
@@ -207,6 +209,8 @@ public class GroupService {
             memberRepository.save(ConversationMember.join(
                     conversation, user, ConversationMember.Role.MEMBER));
         }
+        eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
+                conversationId, List.of()));
         for (User user : toAdd) {
             messageService.postSystemMessage(callerId, conversationId,
                     actorName + " added " + user.getDisplayName());
@@ -234,6 +238,8 @@ public class GroupService {
         }
         memberRepository.saveAndFlush(ConversationMember.join(
                 conversation, user, ConversationMember.Role.MEMBER));
+        eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
+                conversationId, List.of()));
 
         String text;
         if (approverId != null) {
@@ -336,6 +342,8 @@ public class GroupService {
                 : actorName + " removed " + target.getUser().getDisplayName(),
                 selfRemoval ? null : targetUserId);
         memberRepository.delete(target);
+        eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
+                conversationId, List.of(targetUserId)));
         revokeTopicSubscriptionsAfterCommit(targetUserId, conversationId);
         publishUpdate(conversation,
                 selfRemoval ? "MEMBER_LEFT" : "MEMBER_REMOVED", List.of(targetUserId));

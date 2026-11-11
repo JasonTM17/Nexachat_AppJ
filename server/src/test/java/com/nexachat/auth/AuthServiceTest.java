@@ -10,6 +10,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.message.MessageRecallProperties;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
+import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
 import com.nexachat.user.dto.UserResponse;
 import jakarta.persistence.EntityManager;
@@ -23,6 +24,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
@@ -61,6 +63,8 @@ class AuthServiceTest {
     @Mock
     private AccessTokenRevocationService accessTokenRevocationService;
     @Mock
+    private ApplicationEventPublisher eventPublisher;
+    @Mock
     private PlatformTransactionManager transactionManager;
     @Mock
     private ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
@@ -76,7 +80,16 @@ class AuthServiceTest {
         lenient().when(jwtService.generateAccessToken(any())).thenReturn("access-jwt");
         lenient().when(jwtService.accessTokenExpiresIn()).thenReturn(900L);
         lenient().when(tokenService.issue(any(), any())).thenReturn("refresh-opaque");
-        lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> {
+            User user = inv.getArgument(0);
+            if (user == null) {
+                return null;
+            }
+            if (user.getId() == null) {
+                ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+            }
+            return user;
+        });
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
@@ -85,7 +98,7 @@ class AuthServiceTest {
         authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
-                (boundary, operation, userId, tokenId) -> { }, transactionManagerProvider);
+                (boundary, operation, userId, tokenId) -> { }, eventPublisher, transactionManagerProvider);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
@@ -114,6 +127,7 @@ class AuthServiceTest {
 
         ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(saved.capture());
+        verify(eventPublisher).publishEvent(new UserAccountCreatedEvent(saved.getValue().getId()));
         assertThat(saved.getValue().getPhone()).isEqualTo("+84912345678");
         assertThat(saved.getValue().getPasswordHash()).isEqualTo("hashed:secret123");
         verify(tokenService).issue(saved.getValue(), "JUnit-Agent");

@@ -2,6 +2,7 @@ package com.nexachat.conversation;
 
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,13 +29,16 @@ public class DirectConversationCreator {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DirectConversationCreator(ConversationRepository conversationRepository,
                                      ConversationMemberRepository memberRepository,
-                                     UserRepository userRepository) {
+                                     UserRepository userRepository,
+                                     ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -49,6 +53,8 @@ public class DirectConversationCreator {
         memberRepository.saveAllAndFlush(List.of(
                 ConversationMember.join(conversation, caller, ConversationMember.Role.MEMBER),
                 ConversationMember.join(conversation, other, ConversationMember.Role.MEMBER)));
+        eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
+                conversation.getId(), List.of()));
         return conversation;
     }
 }
