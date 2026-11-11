@@ -33,6 +33,10 @@ which Neon's PgBouncer transaction mode does not support. The Render profile
 caps Hikari at 5 connections (`server/src/main/resources/application-render.yml`),
 far below Neon's 105 available application connections on 0.25 CU.
 
+Neon Free includes **100 CU-hours per project per month** — 400 hours at
+0.25 CU. Let the compute scale to zero when idle (it suspends after 5 minutes);
+an always-on database would exhaust the monthly allowance in about 16 days.
+
 Flyway runs on every boot (`application.yml:33`, validation at
 `application-prod.yml:46-47`), so the first start applies all migrations; there
 is no separate migration command.
@@ -160,8 +164,11 @@ here. Resend uses HTTPS and is the configured provider.
   so that first request can fail and is retried by the app or the offline
   outbox. A keep-alive ping every 10 minutes to
   `https://api.nexachat.io.vn/actuator/health/liveness` (any uptime monitor)
-  keeps the service awake during the day; 750 free instance hours cover an
-  always-on month (~730 hours).
+  keeps the service awake during the day. Render's 750 free instance hours cover
+  an always-on month (~730 h), but Neon Free gives only 100 CU-hours per project
+  per month — 400 h at 0.25 CU — so a 24/7 keep-alive would exhaust the database
+  compute in about 16 days. Keep the ping to a bounded daily window or accept
+  the cold start.
 - RSS was **362.5 MiB** after startup and **413.9 MiB** after 200 concurrent
   conversation reads, with no OOM restart; 512 MB holds the app but leaves
   little room for attachments buffered in memory
