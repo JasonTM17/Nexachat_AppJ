@@ -8,7 +8,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -111,6 +113,84 @@ public class LocalStorageService implements StorageService {
         } catch (NoSuchFileException ex) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    @Override
+    public PrefixRead readPrefix(String storageKey, int maxBytes) {
+        requirePositive(maxBytes, "maxBytes");
+        Path target = resolveExactPath(storageKey);
+        try (InputStream content = Files.newInputStream(target)) {
+            long size = Files.size(target);
+            byte[] prefix = content.readNBytes(maxBytes);
+            return new PrefixRead(prefix, size);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    @Override
+    public byte[] readSuffix(String storageKey, long sizeBytes, int maxBytes) {
+        requirePositive(maxBytes, "maxBytes");
+        Path target = resolveExactPath(storageKey);
+        final long actualSize;
+        try {
+            actualSize = Files.size(target);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+        if (actualSize != sizeBytes) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Stored file changed while serving");
+        }
+        if (actualSize == 0) {
+            return new byte[0];
+        }
+        int suffixLength = (int) Math.min(actualSize, maxBytes);
+        long skip = actualSize - suffixLength;
+        try (InputStream content = Files.newInputStream(target)) {
+            content.skipNBytes(skip);
+            byte[] suffix = content.readNBytes(suffixLength);
+            if (suffix.length != suffixLength) {
+                throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+            }
+            return suffix;
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+    }
+
+    @Override
+    public StreamHandle openRange(String storageKey, long start, long length) {
+        requireRange(start, length);
+        Path target = resolveExactPath(storageKey);
+        final long size;
+        try {
+            size = Files.size(target);
+        } catch (NoSuchFileException ex) {
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        }
+        if (start > size || length > size - start) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Stored file changed while serving");
+        }
+        InputStream content = null;
+        try {
+            content = Files.newInputStream(target);
+            content.skipNBytes(start);
+            return new StreamHandle(new ExactLengthInputStream(content, length), size);
+        } catch (NoSuchFileException ex) {
+            closeQuietly(content);
+            throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+        } catch (IOException ex) {
+            closeQuietly(content);
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
         }
     }
@@ -244,5 +324,75 @@ public class LocalStorageService implements StorageService {
     @Override
     public String resolveUrl(String storageKey) {
         return "/api/v1/files/" + storageKey;
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+    }
+
+    private static void requireRange(long start, long length) {
+        if (start < 0 || length <= 0 || start > Long.MAX_VALUE - length) {
+            throw new IllegalArgumentException("Invalid byte range");
+        }
+    }
+
+    private static void closeQuietly(InputStream content) {
+        if (content == null) {
+            return;
+        }
+        try {
+            content.close();
+        } catch (IOException ignored) {
+            // Best-effort release on an error path.
+        }
+    }
+
+    /** Local counterpart of the bounded slice a remote range request returns. */
+    private static final class ExactLengthInputStream extends FilterInputStream {
+
+        private long remaining;
+
+        ExactLengthInputStream(InputStream in, long length) {
+            super(in);
+            this.remaining = length;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int value = super.read();
+            if (value >= 0) {
+                remaining--;
+            }
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (remaining <= 0) {
+                return -1;
+            }
+            int read = super.read(buffer, offset, (int) Math.min(length, remaining));
+            if (read > 0) {
+                remaining -= read;
+            }
+            return read;
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            long skipped = super.skip(Math.min(n, remaining));
+            remaining -= skipped;
+            return skipped;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return (int) Math.min(super.available(), remaining);
+        }
     }
 }

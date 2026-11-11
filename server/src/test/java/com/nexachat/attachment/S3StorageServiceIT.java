@@ -43,7 +43,7 @@ class S3StorageServiceIT {
     static void createBucket() {
         URI endpoint = URI.create("http://" + S3MOCK.getHost() + ":" + S3MOCK.getMappedPort(9090));
         S3StorageProperties properties = new S3StorageProperties(
-                endpoint.toString(), "us-east-1", BUCKET, ACCESS_KEY, SECRET_KEY);
+                endpoint.toString(), "us-east-1", BUCKET, ACCESS_KEY, SECRET_KEY, null, null, null, null);
         client = new S3StorageConfiguration().s3StorageClient(properties);
         client.createBucket(CreateBucketRequest.builder().bucket(BUCKET).build());
         storage = new S3StorageService(client, properties);
@@ -77,5 +77,33 @@ class S3StorageServiceIT {
         assertThat(storage.deleteIfExists(stored.storageKey())).isTrue();
         assertThat(storage.deleteIfExists(stored.storageKey())).isFalse();
         assertThat(storage.exists(stored.storageKey())).isFalse();
+    }
+
+    @Test
+    void boundedPrefixSuffixAndRangeReadsMatchTheStoredBytes() throws Exception {
+        byte[] content = new byte[200 * 1024];
+        System.arraycopy(PNG_BYTES, 0, content, 0, PNG_BYTES.length);
+        for (int i = PNG_BYTES.length; i < content.length; i++) {
+            content[i] = (byte) ('a' + (i % 26));
+        }
+        StorageService.StoredFile stored =
+                storage.store("attachments", "ignored.png", "image/png", content);
+
+        StorageService.PrefixRead prefix = storage.readPrefix(stored.storageKey(), 64 * 1024);
+        assertThat(prefix.sizeBytes()).isEqualTo(content.length);
+        assertThat(prefix.bytes()).containsExactly(java.util.Arrays.copyOf(content, 64 * 1024));
+
+        byte[] suffix = storage.readSuffix(stored.storageKey(), content.length, 4096);
+        assertThat(suffix).containsExactly(java.util.Arrays.copyOfRange(
+                content, content.length - 4096, content.length));
+
+        try (StorageService.StreamHandle handle =
+                     storage.openRange(stored.storageKey(), content.length - 1024, 1024)) {
+            assertThat(handle.sizeBytes()).isEqualTo(content.length);
+            assertThat(handle.content().readAllBytes()).containsExactly(
+                    java.util.Arrays.copyOfRange(content, content.length - 1024, content.length));
+        }
+
+        storage.deleteIfExists(stored.storageKey());
     }
 }
