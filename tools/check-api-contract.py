@@ -10,6 +10,7 @@ serves any more.
 
 Usage:
     python tools/check-api-contract.py [--root REPO_ROOT] [--verbose]
+    python tools/check-api-contract.py --self-test
 
 Exit code 0 when the contract covers every route and has no stale entries.
 """
@@ -19,6 +20,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 CONTROLLER_DIR = Path("server/src/main/java")
@@ -143,20 +146,128 @@ def contract_routes(root: Path, contract: Path) -> set[tuple[str, str]]:
     return routes
 
 
+def route_drift(
+    code: set[tuple[str, str]], documented: set[tuple[str, str]]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Return sorted missing and stale route entries."""
+    return sorted(code - documented), sorted(documented - code)
+
+
+class ApiContractCheckerSelfTest(unittest.TestCase):
+    def test_controller_routes_expand_prefixes_and_normalize_variables(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            controller_dir = root / CONTROLLER_DIR / "sample"
+            controller_dir.mkdir(parents=True)
+            (controller_dir / "WidgetController.java").write_text(
+                """
+                @RestController
+                @RequestMapping(value = {"/api/v1/widgets", "/api/v1/gadgets"})
+                public class WidgetController {
+                    @GetMapping
+                    public void list() {}
+
+                    @PostMapping(path = "/{widgetId}")
+                    public void create() {}
+
+                    @RequestMapping(value = "/{widgetId}/archive", method = RequestMethod.DELETE)
+                    public void archive() {}
+                }
+                """,
+                encoding="utf-8",
+            )
+            (controller_dir / "ExplicitPathController.java").write_text(
+                """
+                @RestController
+                @RequestMapping("/api/v1")
+                public class ExplicitPathController {
+                    @PutMapping("/api/v1/widgets/{widgetId}")
+                    public void update() {}
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                {
+                    ("GET", "/api/v1/widgets"),
+                    ("GET", "/api/v1/gadgets"),
+                    ("POST", "/api/v1/widgets/{}"),
+                    ("POST", "/api/v1/gadgets/{}"),
+                    ("DELETE", "/api/v1/widgets/{}/archive"),
+                    ("DELETE", "/api/v1/gadgets/{}/archive"),
+                    ("PUT", "/api/v1/widgets/{}"),
+                },
+                controller_routes(root),
+            )
+
+    def test_contract_routes_normalize_paths_and_find_both_drift_directions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            contract = Path("docs/api-contract.md")
+            contract_path = root / contract
+            contract_path.parent.mkdir(parents=True)
+            contract_path.write_text(
+                """
+                | `GET /api/v1/widgets/{widgetId}/` | documented |
+                | `POST /auth/login` | documented shorthand |
+                | `DELETE /api/v1/old-resource` | stale |
+                """,
+                encoding="utf-8",
+            )
+            documented = contract_routes(root, contract)
+            self.assertEqual(
+                {
+                    ("GET", "/api/v1/widgets/{}"),
+                    ("POST", "/api/v1/auth/login"),
+                    ("DELETE", "/api/v1/old-resource"),
+                },
+                documented,
+            )
+
+            missing, stale = route_drift(
+                {("GET", "/api/v1/widgets/{}"), ("PATCH", "/api/v1/widgets/{}")},
+                documented,
+            )
+            self.assertEqual([("PATCH", "/api/v1/widgets/{}")], missing)
+            self.assertEqual(
+                [
+                    ("DELETE", "/api/v1/old-resource"),
+                    ("POST", "/api/v1/auth/login"),
+                ],
+                stale,
+            )
+
+
+def run_self_test() -> int:
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(
+        ApiContractCheckerSelfTest
+    )
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    return 0 if result.wasSuccessful() else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".", help="repository root")
     parser.add_argument("--contract", default=str(CONTRACT),
                         help="contract path relative to --root (default: docs/api-contract.md)")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--self-test", action="store_true", help="run the built-in checker self-tests"
+    )
     args = parser.parse_args()
+    if args.self_test:
+        return run_self_test()
+
     root = Path(args.root).resolve()
     contract = Path(args.contract)
 
     code = controller_routes(root)
     documented = contract_routes(root, contract)
-    missing = sorted(code - documented)
-    stale = sorted(documented - code)
+    missing, stale = route_drift(code, documented)
 
     for method, path in missing:
         print(f"MISSING from {contract}: {method} {path}")
