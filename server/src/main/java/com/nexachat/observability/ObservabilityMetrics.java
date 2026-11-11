@@ -43,12 +43,24 @@ public class ObservabilityMetrics {
             "type", "outcome", "event", "size_bucket", "result", "action",
             "to", "reason", "mode", "provider", "fallback", "source", "method");
 
+    /**
+     * Tag value of the zero-valued warm-up series of a tagged meter.
+     *
+     * <p>Prometheus requires every series of one meter name to declare the
+     * same tag keys. Registering a tagged meter eagerly without tags makes the
+     * first real observation fail registration, so the warm-up series carries
+     * the full tag key set with this value. It is never incremented or
+     * recorded and does not appear among the real tag values.
+     */
+    static final String UNRECORDED = "none";
+
     private final MeterRegistry registry;
 
     public ObservabilityMetrics(MeterRegistry registry) {
         this.registry = registry;
         Counter.builder(MESSAGES_SENT)
                 .description("User and system messages accepted by the send path")
+                .tags("type", UNRECORDED, "outcome", UNRECORDED)
                 .register(registry);
         Counter.builder(OUTBOX_REPLAYS)
                 .description("Message sends deduplicated by clientMessageId (outbox replay)")
@@ -58,37 +70,49 @@ public class ObservabilityMetrics {
                 .register(registry);
         Counter.builder(STOMP_EVENTS)
                 .description("STOMP connection, subscription and disconnection events")
+                .tags("event", UNRECORDED)
                 .register(registry);
         Timer.builder(DELTA_SYNC_DURATION)
                 .description("Delta-sync request duration")
                 .publishPercentileHistogram()
+                .tags("outcome", UNRECORDED)
                 .register(registry);
         DistributionSummary.builder(DELTA_SYNC_BYTES)
                 .description("Delta-sync response size")
+                .tags("size_bucket", UNRECORDED)
                 .register(registry);
         Counter.builder(PUSH_SENDS)
                 .description("Push notification dispatch results")
+                .tags("result", UNRECORDED)
                 .register(registry);
         Counter.builder(CALL_TRANSITIONS)
                 .description("Call state machine transitions")
+                .tags("action", UNRECORDED, "to", UNRECORDED, "reason", UNRECORDED)
                 .register(registry);
         Counter.builder(RAG_REQUESTS)
                 .description("RAG ask requests by answer mode and embedding provider")
+                .tags("mode", UNRECORDED, "provider", UNRECORDED)
                 .register(registry);
         Counter.builder(SUMMARY_REQUESTS)
                 .description("Summary requests by provider, mode and fallback reason")
+                .tags("provider", UNRECORDED, "mode", UNRECORDED, "fallback", UNRECORDED)
                 .register(registry);
         Timer.builder(LLM_DURATION)
                 .description("LLM completion latency by source and provider")
+                .tags("source", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED,
+                        "fallback", UNRECORDED)
                 .register(registry);
         Counter.builder(RATE_LIMIT_REJECTIONS)
                 .description("Rate-limit rejections by rule")
+                .tags("reason", UNRECORDED)
                 .register(registry);
         Counter.builder(AUTH_FAILURES)
                 .description("Security-layer authentication and authorization failures by reason")
+                .tags("reason", UNRECORDED)
                 .register(registry);
         Timer.builder(REPOSITORY_CALLS)
                 .description("Repository call duration by method")
+                .tags("method", UNRECORDED, "outcome", UNRECORDED)
                 .register(registry);
     }
 

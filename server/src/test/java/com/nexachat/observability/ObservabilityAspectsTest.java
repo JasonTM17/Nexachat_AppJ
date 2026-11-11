@@ -226,6 +226,7 @@ class ObservabilityAspectsTest {
                 .filter(meter -> ObservabilityMetrics.RATE_LIMIT_REJECTIONS.equals(meter.getId().getName()))
                 .map(meter -> meter.getId().getTag("reason"))
                 .filter(java.util.Objects::nonNull)
+                .filter(reason -> !ObservabilityMetrics.UNRECORDED.equals(reason))
                 .collect(Collectors.toSet());
         assertThat(reasons).containsExactlyInAnyOrder("call:invite", "stomp:messages", "OTHER");
         assertThat(reasons).doesNotContain(firstUser.toString(), secondUser.toString());
