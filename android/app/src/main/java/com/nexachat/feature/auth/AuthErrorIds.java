@@ -15,6 +15,9 @@ public final class AuthErrorIds {
         if (error instanceof ApiError.InvalidCredentials) {
             return R.string.error_invalid_credentials;
         }
+        if (error instanceof ApiError.WrongPassword) {
+            return R.string.error_wrong_password;
+        }
         if (error instanceof ApiError.PhoneExists) {
             return R.string.error_phone_exists;
         }

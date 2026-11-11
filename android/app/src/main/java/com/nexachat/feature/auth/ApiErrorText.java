@@ -12,6 +12,7 @@ public final class ApiErrorText {
 
     @StringRes public static int resource(@NonNull ApiError error) {
         if (error instanceof ApiError.InvalidCredentials) return R.string.error_invalid_credentials;
+        if (error instanceof ApiError.WrongPassword) return R.string.error_wrong_password;
         if (error instanceof ApiError.PhoneExists) return R.string.error_phone_exists;
         if (error instanceof ApiError.RateLimited) return R.string.error_rate_limited;
         if (error instanceof ApiError.MailUnavailable) return R.string.recovery_email_mail_unavailable;
