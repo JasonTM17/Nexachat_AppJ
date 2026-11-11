@@ -208,9 +208,12 @@ Before enabling the bridge in a Firebase project:
 2. Review and install the complete rules candidate at
    `tools/firebase-rules/database.rules.json`. The default rules deny access;
    user accounts, control state, and current conversation memberships must be
-   projected before authorized Firebase reads can succeed. The projection and
-   Firebase Emulator authorization checks are owned by later rollout steps;
-   this S1 bridge alone does not make a client data path ready for production.
+   projected before authorized Firebase reads can succeed. The projection
+   writer and Android transport remain later rollout steps; this S1 bridge
+   alone does not make a client data path ready for production. The rules
+   contract, its offline emulator suite and its known gaps are documented in
+   [firebase-realtime.md](firebase-realtime.md); the `firebase-rules` CI job
+   runs that suite without credentials.
 3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
    `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
    service-account project, installed rules, and projection before directing

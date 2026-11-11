@@ -18,6 +18,7 @@ from pathlib import Path
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 REF_DEF_RE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 SKIP_PREFIXES = ("http://", "https://", "mailto:", "tel:", "data:", "//")
+SKIP_DIRS = frozenset({"node_modules", ".git"})
 
 
 def iter_markdown_files(paths: list[Path]) -> list[Path]:
@@ -25,7 +26,10 @@ def iter_markdown_files(paths: list[Path]) -> list[Path]:
     for raw in paths:
         path = Path(raw)
         if path.is_dir():
-            files.extend(sorted(p for p in path.rglob("*.md") if p.is_file()))
+            files.extend(sorted(
+                p for p in path.rglob("*.md")
+                if p.is_file() and not SKIP_DIRS.intersection(p.parts)
+            ))
         elif path.is_file():
             files.append(path)
         else:

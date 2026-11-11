@@ -297,7 +297,7 @@ nexachat/
 │  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
-├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/ · rag-eval/ · gif/
+├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/ · rag-eval/ · firebase-rules/ · gif/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
 ├─ README.md · CONTRIBUTING.md · CHANGELOG.md
 └─ docker-compose.yml
@@ -313,6 +313,7 @@ points: [docs/architecture.md](docs/architecture.md) ·
 [docs/ai-summary.md](docs/ai-summary.md) ·
 [docs/security.md](docs/security.md) ·
 [docs/operations.md](docs/operations.md) ·
+[docs/firebase-realtime.md](docs/firebase-realtime.md) ·
 [docs/media/README.md](docs/media/README.md) ·
 [docs/known-limitations.md](docs/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).

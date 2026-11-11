@@ -80,7 +80,11 @@ the implementing source file.
   downloaded copy cannot be recalled.
   Firebase remains disabled by default; install and verify the complete RTDB rules and server-side
   account/membership projections before enabling clients. The S1 bridge does not include those
-  projections or Firebase Emulator authorization evidence.
+  projections. The rules candidate has an offline emulator contract suite and a credential-free CI
+  job (`tools/firebase-rules`, `firebase-rules`); review the two MEDIUM rule gaps it records
+  (multi-device last-seen exposure and the DIRECT-only reader-edge invariant) in
+  `docs/firebase-realtime.md`. Projection correctness, real Firebase Auth/IAM exchange and device
+  behavior remain rollout gates.
 
 ## 3. Transport authorization
 
