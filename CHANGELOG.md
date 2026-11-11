@@ -6,7 +6,10 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
-Changes after the `v1.0.0` tag through 2026-11-10.
+## [1.1.0] - 2026-11-11
+
+First public Android release (`v1.1.0`), distributed as a signed APK via
+GitHub Releases and `site/download.html`.
 
 ### Server
 
@@ -31,6 +34,20 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 - Conversation archive browsing for media, files and links; reaction delta
   cursors; durable reminder claims; versioned poll change feed; retention
   cleanup jobs and indexes (`V22`).
+- Self-service account deletion and tombstoning (`V26__user_account_deletion.sql`)
+  via `DELETE /api/v1/users/me`, releasing the phone number for re-registration,
+  invalidating active sessions, promoting group admin successors, and anonymizing PII.
+- Email OTP account recovery and password reset (`V27__account_recovery_email_otp.sql`).
+- Google Sign-In with link-first account association, single-use link nonces,
+  and ID token verification against Google JWKS (`V28__google_signin.sql`).
+- AI summary consent epoch (`V29__user_ai_summary_consent_epoch.sql`) immediately
+  invalidating cached answers and in-flight responses on consent revocation.
+- Opt-in Firebase auth bridge and server-side authorization mirroring to Firebase
+  RTDB (`control/presencePrivacyVersion` v2).
+- WebRTC 1-to-1 call status projection to Firebase RTDB (`callStatus/<callId>`)
+  with lease expiration.
+- Avatar orphan sweep coordinator (`AvatarOrphanSweepCoordinator`) for scheduled
+  cleanup of unreferenced avatar objects with fail-closed safety.
 - FCM HTTP v1 delivery with an OAuth2 service-account flow, token caching,
   bounded retries and a mock gateway for local/test runs.
 - Conversation summary engines: local extractive, OpenAI-compatible cloud
@@ -58,6 +75,9 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   characters; recalls default to a 24-hour author window.
 - FCM, summary providers, RAG embeddings and retention jobs are opt-in and
   default to local or disabled behaviour.
+- Refresh token owner lookups re-indexed via composite index on
+  `(user_id, id, revoked_at)` (`V30__refresh_token_user_index.sql`), replacing
+  the partial index.
 
 **Fixed**
 
@@ -76,6 +96,19 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   editing a message purges cached answers and its stored embedding.
 - Attachment uploads reject active markup disguised as text and case-variant
   storage keys; oversized bodies are rejected before buffering.
+- Lock ordering and deadlock prevention: acquired Firebase bridge locks in stripe
+  order, kept RAG backfill and avatar orphan sweep advisory locks on dedicated
+  pooled connections, and serialized account deletion with attachment uploads.
+- STOMP token revocation serialized with outbound message delivery to prevent
+  frame leaks to revoked sessions.
+- In-flight ask request stampede coalesced; prompt JSON encoding secured against
+  injection; Unicode phone number redaction in summary and RAG pipelines.
+- Auto-configured HTTP client pinned to JDK HttpClient without unbounded background
+  retry.
+- Rate-limit IT isolation using injected time sources to eliminate integration
+  test flakiness.
+- Avatar reference queries and summary deletion races protected against concurrent
+  account deletions.
 
 **Security**
 
@@ -88,6 +121,13 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   membership-checked; expired sessions stop receiving frames.
 - Attachment downloads stay member-scoped and carry `nosniff`;
   `Content-Disposition` is explicit.
+- Persistent administrative kill switch for Firebase realtime bridge
+  (`control/bridgeDisabled`).
+- Hardened email OTP verification: rate-limited requests, single-use tokens,
+  automatic purge during account deletion, and invalidation of pending OTPs.
+- Ephemeral presence privacy rules in Firebase RTDB (presence v2 direct and group
+  reader edge scoping).
+- Google JWKS fetch bounded with an absolute deadline.
 
 ### Android
 
@@ -99,6 +139,13 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   attachments, voice notes, edit/delete/recall, search, replies, reactions,
   pins, forwarding, mentions, labels, mute/archive, reminders, polls, invite
   links, archive browsing and seen-privacy settings.
+- Google Sign-In with Credential Manager / Google ID, link-first account binding
+  in Profile Settings, and link-scoped nonce validation.
+- Forgot password and account recovery flow with email OTP.
+- Recovery email settings in Profile (add, verify, delete).
+- In-app self-service account deletion flow with confirmation and session cleanup.
+- Opt-in Firebase realtime presence, typing indicators, and call status display
+  on the active call screen.
 - Offline-first messaging: Room outbox with optimistic sends, durable
   reaction/pin actions, delta sync with tombstones and gap handling, and
   WorkManager draining.
@@ -125,17 +172,28 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 
 - Release builds enable R8 full mode and resource shrinking, with keep rules
   for Moshi DTOs, Retrofit interfaces, Room migrations, Hilt, WorkManager,
-  Media3, Glide, WebRTC and Firebase.
+  Media3, Glide, WebRTC, Firebase RTDB models, call status, presence v2, and
+  Google ID DTOs.
 - Release networking rejects cleartext; debug and `localSmoke` variants keep
   LAN exceptions. Backups are disabled and release logging excludes tokens
   and payload bodies.
 - Release versioning uses `MAJOR.MINOR.PATCH` tags and
   `versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH`.
+- Accessibility & UI polish: live region announcements on error banners, IME
+  action handling, improved 4.5:1 button contrast, and Vietnamese translation
+  parity across auth and settings screens.
 
 **Fixed**
 
 - Token refresh is single-flight and fenced by a session epoch; transient or
   throttled refreshes no longer sign the user out.
+- Realtime session epoch fences: serialized connect/disconnect, attempt-scoped
+  socket cleanup, and invalidation of disposed STOMP callbacks to eliminate stale
+  token and session leaks.
+- Authentication secrets: cleared and redacted in-memory passwords and tokens;
+  excluded passwords from saved instance state.
+- Refresh token terminal recovery: routed expired or unrecoverable refresh attempts
+  cleanly to the sign-in screen.
 - Offline outbox rows are owner-scoped and survive account cache clears; the
   same account keeps queued messages while another account cannot see them.
 - Inbox first-page refresh no longer drops conversations created while a
@@ -157,6 +215,14 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 - Static landing site for `nexachat.io.vn` with bilingual content, 404 page,
   robots/sitemap, favicon and a `/join/*` fallback page that opens the app or
   shows install instructions.
+- APK download page (`site/download.html`) with direct release downloads, system
+  requirements (Android 8.0+), SHA-256 verification instructions, and sitemap entry.
+- Web-based account deletion flow (`site/delete-account.html`) for lost-device
+  recovery via email OTP, validated against API contracts.
+- Terms of Service (`site/terms.html`), updated Privacy Policy (`site/privacy.html`),
+  and JSON-LD structured metadata aligned with Play Store Data Safety declarations.
+- JavaScript unit tests (`test/site-delete-account-js`) and CI validation for
+  deletion form behaviour, WCAG AA contrast, and CSP compliance.
 - `/.well-known/assetlinks.json` with the upload-key SHA-256 fingerprint and
   the `com.nexachat` package name.
 - Vercel configuration for security headers (CSP, HSTS, `nosniff`,
@@ -168,10 +234,21 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 - Domain tooling (`tools/domain/check-domain.sh`) for DNS, TLS and App Links
   verification, plus the domain/App Links runbook.
 
+**Fixed**
+
+- Vercel `ignoreCommand` fixed to prevent Git fatal exit 128 on shallow clones
+  and kept within Vercel's 256-character schema limit.
+
 ### Operations and tooling
 
 **Added**
 
+- Signed APK release workflow (`.github/workflows/android-release.yml`) triggered
+  on version tags (`v*`) to build, sign, checksum, and publish releases to GitHub
+  Releases.
+- CI API contract check (`tools/check-api-contract.py`) integrated into
+  `repo-hygiene` with self-test verification.
+- Offline Firebase RTDB rules contract verification in CI.
 - Multi-stage `server/Dockerfile` with pinned base-image digests, non-root
   `nexachat` user, layered Spring Boot extraction, health check and JVM
   `MaxRAMPercentage`/`ExitOnOutOfMemoryError` flags.
@@ -196,6 +273,9 @@ Changes after the `v1.0.0` tag through 2026-11-10.
   default.
 - Schedulers use database claims or advisory locks and bounded batches so
   multiple instances do not duplicate work.
+- Deployment configuration forwarded Firebase realtime settings, service-account
+  key mounts, and avatar orphan sweep settings to Docker Compose and deployment
+  templates.
 
 **Fixed**
 
@@ -210,6 +290,12 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 
 **Added**
 
+- Release notes for v1.1.0 (`docs/release-notes/v1.1.0.md`) in Vietnamese and English.
+- Firebase rollout guide (`docs/firebase-rollout.md`) and updated realtime
+  architecture (`docs/firebase-realtime.md`) covering presence privacy v2,
+  call status paths, and safe rollout order.
+- Play Store Data Safety mapping (`docs/play-store-data-safety.md`) updated for
+  Firebase RTDB ephemeral transport, recovery email, and account deletion.
 - Architecture, REST API contract, STOMP protocol, security, operations,
   testing, calls, AI summary, RAG, known-limitations and design-system
   documentation.
@@ -220,7 +306,7 @@ Changes after the `v1.0.0` tag through 2026-11-10.
 
 - README, architecture, API contract, protocol, security, operations and
   testing pages reconciled with the shipped Java 21 Android client, Flyway
-  V1-V20/V22/V24, Room v13 and the current security controls.
+  V1-V20/V22/V24–V30, Room v13 and the current security controls.
 - Documentation now records FCM delivery, live LLM/embedding calls, call
   audio and device-only test scopes that were not verified in CI.
 
@@ -259,3 +345,7 @@ First tagged release (`v1.0.0`).
 
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
+
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/JasonTM17/Nexachat_AppJ/releases/tag/v1.0.0
