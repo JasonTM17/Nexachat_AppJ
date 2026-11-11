@@ -1254,6 +1254,9 @@ def test_vercel_ignore_command(vercel_data):
     cmd = vercel_data.get("ignoreCommand", "")
     if not cmd:
         failures.append("vercel.json missing ignoreCommand (Vercel dashboard ignore must be cleared)")
+    elif len(cmd) > 256:
+        # Vercel rejects the whole deployment when ignoreCommand exceeds its schema limit.
+        failures.append(f"ignoreCommand is {len(cmd)} characters; Vercel allows at most 256")
     elif "VERCEL_GIT_PREVIOUS_SHA" not in cmd:
         failures.append("ignoreCommand must reference VERCEL_GIT_PREVIOUS_SHA")
     elif "VERCEL_GIT_COMMIT_SHA" not in cmd:
