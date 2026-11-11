@@ -4,6 +4,7 @@ import com.nexachat.attachment.AvatarController.AvatarResponse;
 import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.attachment.AvatarUrlPolicy;
 import com.nexachat.attachment.StorageService;
+import com.nexachat.attachment.UploadAdmission;
 import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -97,6 +98,7 @@ public class GroupService {
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
     private final AvatarReferenceCoordinator avatarReferenceCoordinator;
+    private final UploadAdmission uploadAdmission;
     private final SimpUserRegistry simpUserRegistry;
     private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
 
@@ -108,6 +110,7 @@ public class GroupService {
                         ApplicationEventPublisher eventPublisher,
                         StorageService storageService,
                         AvatarReferenceCoordinator avatarReferenceCoordinator,
+                        UploadAdmission uploadAdmission,
                         SimpUserRegistry simpUserRegistry,
                         AbstractBrokerMessageHandler simpleBrokerMessageHandler) {
         this.conversationRepository = conversationRepository;
@@ -118,6 +121,7 @@ public class GroupService {
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
         this.avatarReferenceCoordinator = avatarReferenceCoordinator;
+        this.uploadAdmission = uploadAdmission;
         this.simpUserRegistry = simpUserRegistry;
         this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
     }
@@ -482,7 +486,9 @@ public class GroupService {
      * {@code POST /users/me/avatar} — only image content passes, the file is
      * kept under {@code avatars/} and served from the authed files endpoint.
      * {@code CONVERSATION_UPDATED} carries the new {@code avatarUrl} so every
-     * member resyncs without a pull.
+     * member resyncs without a pull. The whole-file buffer is admitted by
+     * {@link UploadAdmission}; a saturated gate answers {@code 429
+     * RATE_LIMITED} with a {@code Retry-After} header.
      */
     @Transactional
     public AvatarResponse setGroupAvatar(
@@ -495,18 +501,22 @@ public class GroupService {
         if (file.getSize() > StorageService.MAX_FILE_SIZE_BYTES) {
             throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
         }
-        byte[] bytes = file.getBytes();
-        String sniffed = MagicBytes.sniff(bytes);
-        if (sniffed == null || !sniffed.startsWith("image/")) {
-            throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
+        // The whole-file copy and the store that consumes it share one
+        // admission slot so a burst of group avatars cannot exhaust the heap.
+        try (UploadAdmission.Permit permit = uploadAdmission.acquire()) {
+            byte[] bytes = file.getBytes();
+            String sniffed = MagicBytes.sniff(bytes);
+            if (sniffed == null || !sniffed.startsWith("image/")) {
+                throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
+            }
+            avatarReferenceCoordinator.lockForTransaction();
+            StorageService.StoredFile stored = storageService.store(
+                    "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+            conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
+            publishUpdate(conversation, "UPDATED", List.of());
+            log.info("Group {} avatar set by {}", conversationId, callerId);
+            return new AvatarResponse(conversation.getAvatarUrl());
         }
-        avatarReferenceCoordinator.lockForTransaction();
-        StorageService.StoredFile stored = storageService.store(
-                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-        conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
-        publishUpdate(conversation, "UPDATED", List.of());
-        log.info("Group {} avatar set by {}", conversationId, callerId);
-        return new AvatarResponse(conversation.getAvatarUrl());
     }
 
     // ------------------------------------------------------------- internals

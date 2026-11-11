@@ -1,7 +1,9 @@
 package com.nexachat.conversation;
 
+import com.nexachat.attachment.AvatarController.AvatarResponse;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.attachment.AvatarReferenceCoordinator;
+import com.nexachat.attachment.UploadAdmission;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.AddMemberRequest;
@@ -34,6 +36,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -86,6 +93,7 @@ class GroupServiceTest {
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService,
                 avatarReferenceCoordinator,
+                new UploadAdmission(16, 1000),
                 simpUserRegistry, simpleBrokerMessageHandler);
     }
 
@@ -869,5 +877,48 @@ class GroupServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_TOO_LARGE);
         verify(oversized, never()).getBytes();
         verify(storageService, never()).store(any(), any(), any(), any());
+    }
+
+    @Test
+    void setGroupAvatar_beyondUploadAdmission_rejectsExtraCaller() throws Exception {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+        UploadAdmission admission = new UploadAdmission(1, 200);
+        GroupService limited = new GroupService(
+                conversationRepository, memberRepository, userRepository, attachmentRepository,
+                messageService, eventPublisher, storageService, avatarReferenceCoordinator,
+                admission, simpUserRegistry, simpleBrokerMessageHandler);
+
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(storageService.store(eq("avatars"), any(), any(), any(byte[].class)))
+                .thenAnswer(invocation -> {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("test release latch timed out");
+                    }
+                    return new StorageService.StoredFile("avatars/k.png", 16, "image/png");
+                });
+        when(storageService.resolveUrl("avatars/k.png"))
+                .thenReturn("/api/v1/files/avatars/k.png");
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<AvatarResponse> first = executor.submit(
+                    () -> limited.setGroupAvatar(adminId, conversationId, pngFile()));
+            assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+
+            ApiException rejection = catchThrowableOfType(ApiException.class,
+                    () -> limited.setGroupAvatar(adminId, conversationId, pngFile()));
+            assertThat(rejection.getCode()).isEqualTo(ApiErrorCode.RATE_LIMITED);
+            assertThat(rejection.getHttpStatus()).isEqualTo(429);
+
+            release.countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS).avatarUrl())
+                    .isEqualTo("/api/v1/files/avatars/k.png");
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
     }
 }

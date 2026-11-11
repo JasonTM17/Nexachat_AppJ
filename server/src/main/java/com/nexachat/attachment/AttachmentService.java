@@ -64,15 +64,18 @@ public class AttachmentService {
     private final ConversationMemberRepository memberRepository;
     private final StorageService storageService;
     private final UserRepository userRepository;
+    private final UploadAdmission uploadAdmission;
 
     public AttachmentService(MessageAttachmentRepository attachmentRepository,
                              ConversationMemberRepository memberRepository,
                              StorageService storageService,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             UploadAdmission uploadAdmission) {
         this.attachmentRepository = attachmentRepository;
         this.memberRepository = memberRepository;
         this.storageService = storageService;
         this.userRepository = userRepository;
+        this.uploadAdmission = uploadAdmission;
     }
 
     /**
@@ -100,7 +103,9 @@ public class AttachmentService {
      * @throws ApiException {@code VALIDATION_FAILED} (missing/empty file or bad
      *                      dimensions), {@code FILE_TOO_LARGE} (413),
      *                      {@code MIME_NOT_ALLOWED} (415 — e.g. an .exe
-     *                      renamed .png), {@code USER_NOT_FOUND}
+     *                      renamed .png), {@code RATE_LIMITED} (429 — the
+     *                      upload admission gate is saturated),
+     *                      {@code USER_NOT_FOUND}
      */
     @Transactional
     public AttachmentResponse upload(UUID ownerId, MultipartFile file,
@@ -117,49 +122,54 @@ public class AttachmentService {
         validateDimension("duration", duration);
         String validatedBlurHash = validateBlurHash(blurHash);
 
-        final byte[] bytes;
-        try {
-            bytes = file.getBytes();
-        } catch (IOException ex) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Could not read uploaded file");
-        }
-        if (bytes.length > MAX_FILE_SIZE_BYTES) {
-            throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
-        }
-        // A blur hash describes an image placeholder; reject it before the bytes
-        // are written so a bad claim never leaves a stored file behind.
-        if (validatedBlurHash != null) {
-            String sniffed = MagicBytes.sniff(bytes);
-            if (sniffed == null || !sniffed.startsWith("image/")) {
-                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                        "Only image attachments may carry a blurHash");
+        // Everything from the first whole-file copy to the last use of the
+        // byte array runs under one admission slot; the slot is returned on
+        // success, validation failure, storage failure and client abort.
+        try (UploadAdmission.Permit permit = uploadAdmission.acquire()) {
+            final byte[] bytes;
+            try {
+                bytes = file.getBytes();
+            } catch (IOException ex) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Could not read uploaded file");
             }
-        }
-
-        // Serialize with account deletion before writing the external file.
-        User owner = userRepository.findByIdForUpdate(ownerId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        if (owner.getDeletedAt() != null) {
-            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
-        }
-
-        // store() re-sniffs the bytes and applies the magic-byte whitelist —
-        // a disguised executable dies there with MIME_NOT_ALLOWED.
-        StorageService.StoredFile stored = storageService.store(
-                STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
-        boolean transactionActive = TransactionSynchronizationManager.isSynchronizationActive();
-        StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
-        try {
-            MessageAttachment attachment = MessageAttachment.upload(
-                    owner, stored.storageKey(), sanitizeOriginalName(file.getOriginalFilename()),
-                    stored.mimeType(), stored.sizeBytes(), width, height, duration, validatedBlurHash);
-            attachmentRepository.save(attachment);
-            return toResponse(attachment);
-        } catch (RuntimeException | Error ex) {
-            if (!transactionActive) {
-                storageService.deleteIfExists(stored.storageKey());
+            if (bytes.length > MAX_FILE_SIZE_BYTES) {
+                throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
             }
-            throw ex;
+            // A blur hash describes an image placeholder; reject it before the bytes
+            // are written so a bad claim never leaves a stored file behind.
+            if (validatedBlurHash != null) {
+                String sniffed = MagicBytes.sniff(bytes);
+                if (sniffed == null || !sniffed.startsWith("image/")) {
+                    throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                            "Only image attachments may carry a blurHash");
+                }
+            }
+
+            // Serialize with account deletion before writing the external file.
+            User owner = userRepository.findByIdForUpdate(ownerId)
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+            if (owner.getDeletedAt() != null) {
+                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+            }
+
+            // store() re-sniffs the bytes and applies the magic-byte whitelist —
+            // a disguised executable dies there with MIME_NOT_ALLOWED.
+            StorageService.StoredFile stored = storageService.store(
+                    STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
+            boolean transactionActive = TransactionSynchronizationManager.isSynchronizationActive();
+            StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
+            try {
+                MessageAttachment attachment = MessageAttachment.upload(
+                        owner, stored.storageKey(), sanitizeOriginalName(file.getOriginalFilename()),
+                        stored.mimeType(), stored.sizeBytes(), width, height, duration, validatedBlurHash);
+                attachmentRepository.save(attachment);
+                return toResponse(attachment);
+            } catch (RuntimeException | Error ex) {
+                if (!transactionActive) {
+                    storageService.deleteIfExists(stored.storageKey());
+                }
+                throw ex;
+            }
         }
     }
 

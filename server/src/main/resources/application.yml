@@ -36,6 +36,10 @@ spring:
     multipart:
       max-file-size: 25MB
       max-request-size: 25MB
+      # Keep the multipart body on disk: a 25 MB part must never sit in heap
+      # twice (container buffer plus MultipartFile.getBytes()). Upload service
+      # code copies the file once, under nexachat.uploads admission.
+      file-size-threshold: 0B
 
 management:
   # Actuator shares the API port by default so existing health checks keep working.
@@ -138,6 +142,12 @@ nexachat:
       bucket: ${NEXACHAT_STORAGE_S3_BUCKET:}
       access-key-id: ${NEXACHAT_STORAGE_S3_ACCESS_KEY_ID:}
       secret-access-key: ${NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY:}
+  uploads:
+    # Uploads buffer the whole file on the heap (25 MB max). Bound how many may
+    # do so at once; the rest wait acquire-timeout-ms, then get 429
+    # RATE_LIMITED with Retry-After. Lower this on a small heap (Render: 2).
+    max-concurrent: ${NEXACHAT_UPLOADS_MAX_CONCURRENT:16}
+    acquire-timeout-ms: ${NEXACHAT_UPLOADS_ACQUIRE_TIMEOUT_MS:1000}
   avatar-sweep:
     # Orphaned-avatar cleanup is opt-in; dry-run counts candidates until an
     # operator explicitly disables it. Only server-generated avatars/ keys

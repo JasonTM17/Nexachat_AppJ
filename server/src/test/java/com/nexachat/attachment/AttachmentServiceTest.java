@@ -57,7 +57,9 @@ class AttachmentServiceTest {
     @BeforeEach
     void setUp() {
         attachmentService = new AttachmentService(
-                attachmentRepository, memberRepository, storageService, userRepository);
+                attachmentRepository, memberRepository, storageService, userRepository,
+                new UploadAdmission(UploadAdmission.DEFAULT_MAX_CONCURRENT,
+                        UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS));
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findByIdForUpdate(ownerId)).thenReturn(Optional.of(user(ownerId)));

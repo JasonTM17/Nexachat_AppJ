@@ -5,6 +5,7 @@ import com.nexachat.common.dto.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -40,7 +41,29 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex) {
-        return ResponseEntity.status(ex.getHttpStatus()).body(ErrorResponse.of(ex));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.getHttpStatus());
+        Long retryAfterSeconds = retryAfterSeconds(ex);
+        if (retryAfterSeconds != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
+        }
+        return response.body(ErrorResponse.of(ex));
+    }
+
+    /**
+     * Mirrors a rate-limit {@code retryAfterSeconds} detail into the standard
+     * HTTP {@code Retry-After} header, so a generic client (and any proxy) can
+     * back off without parsing the envelope. Non-rate-limit errors carry no
+     * header.
+     */
+    private static Long retryAfterSeconds(ApiException ex) {
+        if (ex.getCode() != ApiErrorCode.RATE_LIMITED) {
+            return null;
+        }
+        Object value = ex.getDetails().get("retryAfterSeconds");
+        if (value instanceof Number number && number.longValue() > 0) {
+            return number.longValue();
+        }
+        return null;
     }
 
     @ExceptionHandler(CallException.class)
