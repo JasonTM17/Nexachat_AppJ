@@ -53,13 +53,11 @@ class RenderProfileConfigurationTest {
      * requires that flag and a database URL. The jobs therefore cannot wake
      * Neon even though their intervals are short when the bridge is enabled.
      *
-     * <p>Reminders must fire on time, so their poll interval cannot be
-     * stretched while the code still polls. The event-driven wake-up change
-     * replaces the fixed poll; until it lands this entry stays.
+     * <p>Reminders no longer use {@code @Scheduled}: they arm one timer for the
+     * next due moment, bounded by {@code nexachat.reminders.max-idle-ms}, which
+     * {@link #renderRemindersIdleLongerThanNeonsSuspendThreshold} checks.
      */
     private static final Map<String, String> SCHEDULE_ALLOWLIST = Map.of(
-            "ReminderScheduler#poll",
-            "Reminders must fire on time; the fixed 1 s poll is replaced by the event-driven wake-up change",
             "FirebaseCallStatusProjectionService#renewActiveCallProjections",
             "Firebase bridge is disabled on Render (FIREBASE_REALTIME_ENABLED=false), so the bean is absent",
             "FirebaseAuthorizationLeaseSweepJob#scheduledSweep",
@@ -88,6 +86,13 @@ class RenderProfileConfigurationTest {
     }
 
     @Test
+    void renderRemindersIdleLongerThanNeonsSuspendThreshold() throws IOException {
+        assertThat(resolveIntervalMs(renderProfile(), "${nexachat.reminders.max-idle-ms:1000}"))
+                .as("reminder safety re-check while no reminder is due")
+                .isGreaterThanOrEqualTo(MIN_RENDER_INTERVAL_MS);
+    }
+
+    @Test
     void renderBoundsConcurrentUploadBuffersToTheSmallHeap() throws IOException {
         assertThat(renderProfile().getProperty("nexachat.uploads.max-concurrent"))
                 .as("uploads.max-concurrent: each buffers up to 25 MB on a 512 MB box")
@@ -112,7 +117,7 @@ class RenderProfileConfigurationTest {
         List<ScheduledMethod> discovered = discoverScheduledMethods();
         assertThat(discovered)
                 .as("the source scan must find the known scheduled methods")
-                .hasSizeGreaterThanOrEqualTo(9);
+                .hasSizeGreaterThanOrEqualTo(8);
 
         PropertySource<?> render = renderProfile();
         Map<String, String> seen = new LinkedHashMap<>();
