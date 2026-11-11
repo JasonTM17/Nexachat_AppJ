@@ -26,7 +26,7 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
    - JVM flags configure cgroup memory allocation: `JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"` (`server/Dockerfile:42`).
    - `ProductionDataSourceConfiguration` validates that required credentials (`spring.datasource.url`, `spring.datasource.username`, `spring.datasource.password`, `nexachat.storage.root`) are present and non-empty (`server/src/main/java/com/nexachat/config/ProductionDataSourceConfiguration.java:18-21`).
    - `ProductionJwtSecretGuard` validates that `JWT_SECRET` is not the development default and has at least 8 distinct characters (`server/src/main/java/com/nexachat/config/ProductionJwtSecretGuard.java:48`).
-   - Flyway executes forward migrations (`V1` through `V30`) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
+   - Flyway executes forward migrations (`V1`–`V20`, `V22`, and `V24`–`V30`; `V21` and `V23` are reserved and have no files) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
 4. **Liveness Probe**: Render checks container liveness via `curl -fsS http://localhost:8080/actuator/health/liveness` (`server/Dockerfile:45`).
 5. **Post-Deploy Smoke Check**: Run `tools/prod-smoke.sh` immediately after deployment completes.
 
@@ -42,6 +42,9 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
      1. Create a new commit on `main` that keeps database schema compatibility (or applies a compensating migration `V{N+1}`).
      2. Deploy this new commit to Render.
      3. Never manually delete rows from `flyway_schema_history` in production without explicit schema reconciliation.
+3. **Backup Topology and Paired Recovery Scope**:
+   - **Demo Script Limitation**: `demo/backup.sh` is strictly scoped to local Docker Compose (`docker compose ps -q db`). It cannot connect to hosted Neon Postgres and cannot back up Supabase S3 object storage. Running it on production either fails or dumps an unintended local container.
+   - **Paired Database and Object Storage Recovery**: Production chat history and media span two systems: Neon Postgres (relational metadata, messages, users) and Supabase Storage S3 (attachment and avatar binaries). Backups and restores must be coordinated as a consistent pair. Restoring database state without corresponding object storage recovery causes dangling attachment references or unrecoverable media loss.
 
 ---
 
@@ -219,7 +222,10 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
   - HikariCP pool exhaustion: Ensure configured pool sizes (`maximum-pool-size: 5` on Render via `application-render.yml:26`, `10` in default prod via `application-prod.yml:60`) remain intact and `leak-detection-threshold: 60000` catches leaked connections.
 - **Operator Actions & Mitigation**:
   - Always use the Neon pooled connection string (`...-pooler.neon.tech`) using PgBouncer.
-  - Enable bounded data retention cleanup (`NEXACHAT_RETENTION_ENABLED=true`) to purge expired tokens, tombstones, and inactive records (`docs/operations.md:122-161`).
+  - Enable bounded data retention cleanup to purge expired tokens, tombstones, and inactive records (`server/src/main/resources/application.yml:153-208`). Note: retention cleanup is **not** a single flag. It requires:
+    1. Global enablement: `NEXACHAT_RETENTION_ENABLED=true` (`RetentionJobRunner.java:66`).
+    2. Disabling dry-run mode: `NEXACHAT_RETENTION_DRY_RUN=false` (`RetentionJobRunner.java:84,233-246`; dry-run defaults to `true`, which only logs/counts candidate rows without deleting them).
+    3. Per-job enablement: `NEXACHAT_RETENTION_<JOB>_ENABLED=true` for each target entity (`REFRESH_TOKENS`, `DEVICE_TOKENS`, `MESSAGE_TOMBSTONES`, `REMINDERS`, `POLLS`, `CALL_RECORDS`, `ATTACHMENTS`, etc., all default to `false`).
 - **Upgrade Path**:
   - Neon **Launch** plan ($19/month): 10 GiB storage, 300 compute hours, autoscaling up to 4 Compute Units (CU), configurable auto-suspend timer.
 
@@ -235,7 +241,7 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
   - Attachment file leaks: Soft-deleted messages retain stored bytes unless cleaned up.
 - **Operator Actions & Mitigation**:
   - Enable avatar sweep (`NEXACHAT_AVATAR_SWEEP_ENABLED=true`, `NEXACHAT_AVATAR_SWEEP_DRY_RUN=false`) to delete unreferenced avatar files older than 24 hours (`server/src/main/resources/application.yml:138-142`).
-  - Enable attachment retention cleanup (`NEXACHAT_RETENTION_ATTACHMENTS_ENABLED=true`, `NEXACHAT_RETENTION_DRY_RUN=false`) to remove orphaned and soft-deleted attachment binaries (`server/src/main/resources/application.yml:182-184`).
+  - Enable attachment retention cleanup by setting `NEXACHAT_RETENTION_ENABLED=true`, `NEXACHAT_RETENTION_DRY_RUN=false`, and `NEXACHAT_RETENTION_ATTACHMENTS_ENABLED=true` (`server/src/main/resources/application.yml:153-156,189-191`). Both global and per-job flags must be active and dry-run disabled to remove unreferenced and soft-deleted attachment binaries (`RetentionJobRunner.java:66,71,84`).
 - **Upgrade Path**:
   - Supabase **Pro** plan ($25/month): 100 GB storage included, 250 GB monthly egress bandwidth, $0.021/GB extra storage.
 

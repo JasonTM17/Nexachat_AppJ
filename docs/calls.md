@@ -122,9 +122,11 @@ by the STOMP authorization interceptor before it reaches the controller.
   Success body: `{callId, sdp: {type, description}, iceConfig}` (`CallOfferResponse`).
   The offer is served only while the registry still holds it for that `callId`;
   after terminal eviction or when no offer was stored, the route fails with the
-  same domain error as a missing call. `CallException` from this route is not
-  mapped in `GlobalExceptionHandler`, so those domain failures currently return
-  `500 INTERNAL_ERROR` instead of structured call codes on REST.
+  same domain error as a missing call. `CallException` is mapped in
+  `GlobalExceptionHandler` (`server/src/main/java/com/nexachat/common/error/GlobalExceptionHandler.java:46-61`),
+  so domain failures return structured error envelopes with standard codes:
+  `CALL_NOT_FOUND` (404), `NOT_MEMBER` (403), `CALL_STATE_INVALID` (409),
+  `VALIDATION_FAILED` (400), and `RATE_LIMITED` (429).
 - `GET /api/v1/conversations/{id}/calls?limit=20&cursor=` returns
   `{items:[...],nextCursor}` for a conversation member. Each item includes
   `callId`, `callerId`, `calleeId`, `state`, `endReason`, `startedAt`,
@@ -166,8 +168,17 @@ negotiated by the Android client; signaling does not carry audio bytes.
   or mobile networks may not establish media; a shared LAN/Wi-Fi path is the
   expected demo environment.
 - Calls are audio-only. Group calls are out of scope.
-- An offline callee receives no push notification. The ring expires as a
-  missed call and leaves a history row and localized chat line.
+- Call delivery while offline: token registration and server high-priority
+  `CALL_INVITE` FCM dispatch exist with OAuth2 service-account authentication
+  (`DefaultFcmPushService.java:82-99`, `NotificationEventListener.java:138-146`),
+  and the Android client implements payload hydration and incoming call UI
+  (`FcmMessageProcessor.java:159-200`, `IncomingCallActivity.java`). However,
+  live push delivery requires an external Firebase project and credentials
+  (`FCM_SERVICE_ACCOUNT_JSON` on the server and `google-services.json` on
+  Android, none bundled in the repository). Without external Firebase
+  credentials configured, an offline or backgrounded callee receives no
+  over-the-air ring notification; the ring expires as a missed call after the
+  45-second timeout and leaves a history row plus a localized chat line.
 - If Android notification permission is denied while NexaChat is backgrounded,
   a direct activity launch may be blocked by Android; the incoming call may
   expire as missed.

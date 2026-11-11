@@ -266,6 +266,12 @@ the implementing source file.
   sanitized error envelope. `WsMessageController` maps payload conversion or
   validation failures to `VALIDATION_FAILED`, unexpected handler failures to
   `INTERNAL_ERROR`, and logs no exception message, stack trace, or payload.
+- Call domain exceptions (`CallException`, `CallException.Code`) are explicitly
+  mapped in `GlobalExceptionHandler.handleCall`
+  (`server/src/main/java/com/nexachat/common/error/GlobalExceptionHandler.java:46-61`),
+  translating `NOT_MEMBER` to 403, `VALIDATION_FAILED` to 400, `RATE_LIMITED` to 429,
+  `CALL_NOT_FOUND` to 404, and `CALL_STATE_INVALID` to 409, so call domain
+  failures return structured error envelopes rather than unhandled 500 errors.
 - Validation errors are structured and stable: field violations become an
   insertion-ordered `details` map (GlobalExceptionHandler.handleValidation).
 
@@ -291,6 +297,14 @@ the implementing source file.
   show the server neutral label `Deleted account` with no phone. **Removed from
   discovery:** phone number, contacts, push tokens, avatar, and AI consent
   state tied to the deleted user.
+- Background data retention cleanup (`RetentionJobRunner.java`) purges expired
+  tokens, unreferenced attachments, invite links, and tombstones in bounded
+  batches, but is strictly opt-in and disabled by default. Safe execution
+  requires three explicit configuration settings: global enablement
+  (`NEXACHAT_RETENTION_ENABLED=true`), dry-run disabled
+  (`NEXACHAT_RETENTION_DRY_RUN=false`; dry-run defaults to `true` and only
+  counts candidates without deleting rows), and per-job toggles
+  (`NEXACHAT_RETENTION_<JOB>_ENABLED=true`).
 
 ## 8. Google sign-in (OpenID Connect)
 
@@ -357,7 +371,10 @@ the implementing source file.
   (WebSocketConfig.java): correct for one instance; horizontal scaling needs a
   broker relay, and RateLimitService's in-memory buckets need Redis/JDBC.
 - No end-to-end encryption: message and file content is plaintext at rest and
-  protected only in transit (TLS in production).
+  protected only in transit (TLS in production). Production disaster recovery
+  requires paired backups of Neon database snapshots and Supabase S3 object
+  storage; scripts like `demo/backup.sh` are strictly scoped to the local
+  Docker Compose demo.
 - Access-token revocation is immediate on a single node and propagates across multiple
   instances within the validity cache TTL (`nexachat.security.validity-cache-ttl-seconds`,
   default 60 s). Refresh-token families rotate on use with reuse detection.

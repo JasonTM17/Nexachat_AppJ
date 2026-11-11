@@ -122,12 +122,23 @@ gates in step 2 are the test evidence.
 
 ## 5. Roll out the database migration and server
 
-Flyway runs on application startup and is forward-only: V1-V20, V22 and V24
-are the current files; V21 and V23 are reserved and have no file. There is no
-down-migration.
+Flyway runs on application startup and is forward-only: `V1`–`V20`, `V22`, and
+`V24`–`V30` are the current files (`server/src/main/resources/db/migration/`);
+`V21` and `V23` are reserved and have no files. There is no down-migration.
 
 1. **Backup first** (destructive restore is the only rollback):
-   `bash demo/backup.sh`.
+   - **Local Compose demo only:** `bash demo/backup.sh` (or PowerShell
+     `demo/backup.ps1`). This script inspects `docker compose ps -q db` and
+     dumps only the local container database to `demo/backups/`. It does
+     **not** connect to hosted Neon Postgres and does **not** back up Supabase
+     S3 object storage.
+   - **Hosted production (Neon + Supabase S3):** `demo/backup.sh` must **not**
+     be used for production releases. Production requires an explicit target
+     identity verification, a hosted database snapshot/dump (e.g. Neon branch
+     or `pg_dump` targeting the Neon endpoint), and paired object storage
+     inventory/backup (Supabase S3 `avatars/` and `attachments/`). Restoring a
+     database snapshot without paired object storage recovery causes dangling
+     references or unrecoverable attachment loss.
 2. Keep the current image tag recorded so it can be redeployed.
 3. Start one instance of the new image with the production profile
    (`SPRING_PROFILES_ACTIVE=prod,json-logs`) and the production environment
@@ -177,7 +188,9 @@ On a staging deployment or a disposable Compose stack:
 
 - **Database:** restore the pre-upgrade backup from step 5; do not attempt a
   reverse migration. Stop the app first (`docs/operations.md` §Backup and
-  restore).
+  restore). Note that `demo/backup.sh` applies solely to the local Compose demo;
+  hosted Neon database recovery must be coordinated with Supabase S3 object
+  storage to maintain database-to-attachment referential consistency.
 - **Server:** redeploy the previous image tag/digest and keep the database
   compatible with it.
 - **Android:** Play cannot un-publish a version; ship a higher `versionCode`
@@ -197,7 +210,11 @@ On a staging deployment or a disposable Compose stack:
   `/.well-known/assetlinks.json` returns `200 application/json`.
 - [ ] **owner** Decide whether retention jobs, external summary LLM, RAG
   embeddings or FCM are enabled in this environment; they are off or local by
-  default.
+  default. Note: data retention cleanup requires three explicit settings:
+  (1) global toggle `NEXACHAT_RETENTION_ENABLED=true`, (2) disabling dry-run
+  `NEXACHAT_RETENTION_DRY_RUN=false` (defaults to `true`, which counts candidates
+  without deleting), and (3) per-job toggles `NEXACHAT_RETENTION_<JOB>_ENABLED=true`
+  (`server/src/main/resources/application.yml:153-208`).
 - [ ] Record the image digest, APK/AAB checksum, migration version and smoke
   results in the release notes or deployment log.
 
