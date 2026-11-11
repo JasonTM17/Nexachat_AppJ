@@ -22,9 +22,19 @@ public interface FirebaseRtdbClient {
         throw new UnsupportedOperationException("Firebase lease sweeping is not supported by this client");
     }
 
-    /** Converts expired online presence leaves to offline with an ETag guard and keeps the latest offline marker. */
+    /** Deletes lease-expired presence records with an ETag guard. */
     default int expirePresenceEntries(UUID userId, long cutoffMillis, int limit) {
         throw new UnsupportedOperationException("Firebase presence expiry is not supported by this client");
+    }
+
+    /** Returns whether all legacy offline last-seen values have been removed before peer reads are admitted. */
+    default boolean presencePrivacyMigrationComplete() {
+        return false;
+    }
+
+    /** Removes at most {@code limit} legacy presence records containing a last-seen timestamp. */
+    default int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
+        throw new UnsupportedOperationException("Firebase presence privacy migration is not supported by this client");
     }
 
     Long readSessionLease(UUID userId, UUID bridgeId);

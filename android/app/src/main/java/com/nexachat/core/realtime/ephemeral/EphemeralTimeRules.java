@@ -21,7 +21,7 @@ public final class EphemeralTimeRules {
             if (record == null) continue;
             if (record.online && record.leaseUntilEpochMs > serverNowEpochMs) {
                 online = true;
-            } else if (!record.online && record.lastSeenEpochMs != null
+            } else if (!record.online && record.lastSeenEpochMs != null && record.lastSeenEpochMs > 0L
                     && (newestLastSeen == null || record.lastSeenEpochMs > newestLastSeen)) {
                 newestLastSeen = record.lastSeenEpochMs;
             }

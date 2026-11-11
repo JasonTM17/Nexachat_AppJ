@@ -26,13 +26,14 @@ denied by the rules.
 | Path | Writer | Lifetime / contract |
 |---|---|---|
 | `/control/enabled` | server | Global kill switch. Every client rule requires `true`. |
+| `/control/presencePrivacyVersion` | server | Peer presence reads require version `2`. The authorization backfill removes legacy offline timestamp rows before publishing this marker; it is written atomically with reopening the global gate. |
 | `/accounts/{uid}/{active,showPresence}` | server | Account state mirror. `showPresence=false` denies peers, not the owner. |
 | `/sessions/{uid}/{bridgeId}/until` | server | Bridge lease in epoch milliseconds, at most 120 seconds and never beyond the Nexa access-token expiry. |
 | `/members/{conversationId}/{uid}` | server | Membership lease in epoch milliseconds, at most 120 seconds, regenerated from PostgreSQL. |
-| `/presenceReaders/{subjectUid}/{viewerUid}` | server | Value is the DIRECT conversation id that authorizes the viewer. **Only DIRECT conversations may be projected here.** |
+| `/presenceReaders/{subjectUid}/{viewerUid}` | server | `{cid,type:"DIRECT"}` identifies the DIRECT conversation that authorizes the viewer. Rules require the explicit type and active membership for both users. |
 | `/blocked/{uid}/{otherUid}` | server | Reserved block mirror. Empty until an authoritative block feature exists; both directions deny. |
-| `/presence/{uid}/{bridgeId}` | owning client | `{online,lastSeen,updatedAt,leaseUntil}`. One record per connection, so multiple devices coexist. |
-| `/typing/{conversationId}/{uid}` | member client | `{bridgeId,updatedAt,expiresAt}`; `expiresAt` is at most five seconds after the server time and writes are throttled to one per three seconds. |
+| `/presence/{uid}/{bridgeId}` | owning client | `{online,lastSeen,updatedAt,leaseUntil}`. One record per connection, so multiple devices coexist. Offline records use zero for all timestamp and lease fields; the server presence path remains authoritative for last-seen time. |
+| `/typing/{conversationId}/{uid}` | member client | `{bridgeId,updatedAt,expiresAt}`; `expiresAt` is at most five seconds after server time and writes are throttled to one per three seconds. Clients cannot delete the leaf to reset the throttle; TTL and the server sweeper clear it. |
 | `/calls/{callId}` | server | Read-only participant projection with `expiresAt`; never signaling or call authority. |
 
 ## Server endpoints
@@ -87,14 +88,15 @@ The matrix covers:
 - anonymous denial on every path, parent/list reads, and unknown paths;
 - server-only mirror reads, writes and deletes (including self-granted grants);
 - presence: owner publish/read, DIRECT peer reads without a contacts mirror,
+  denial until legacy-data migration is marked complete,
   `showPresence`, inactive/missing accounts, either-direction blocks, group-only
   peers, membership and session expiry, bridge-claim binding, online/offline
-  payload validation, partial writes, unknown fields, node deletion, revoked
-  leases, and per-device records;
+  payload validation, zeroed offline metadata, partial writes, unknown fields,
+  denied client deletion, revoked leases, and per-device records;
 - typing: owner publish, three-second throttle, five-second TTL ceiling,
   bridge binding, forged timestamps, non-members, expired memberships, block
-  and account gates, own-bridge deletion, expired/stale reads, and group typing
-  independent of `showPresence`;
+  and account gates, denied client deletion and delete/recreate bypass, expired/stale
+  reads, and group typing independent of `showPresence`;
 - calls: participant reads, non-participant and non-member denial, expiry,
   block and account gates, membership revocation, and denial of every client
   write;
@@ -105,25 +107,33 @@ Admin SDK/IAM path, the S2 projection writer, the Android client, sweeper and
 failed-PATCH recovery, billing, or real-device behavior. Those stay separate
 rollout gates.
 
-## Known rule gaps
+## Presence and typing privacy guarantees
 
-These are properties of the reviewed candidate rules, not of the tests. Tests
-marked `KNOWN GAP` assert the current behaviour so a future rules change is
-visible. S5 does not edit production rules; the owners of the projection writer
-and a future rules revision must decide whether to change them.
-
-| Severity | Gap | Consequence / required mitigation |
-|---|---|---|
-| MEDIUM | A permitted viewer can read an offline device's `lastSeen` while another device of the same user is online (`/presence/{uid}` returns every bridge record and rules cannot hide a field). | This contradicts the "hide last-seen while online" policy for a modified client. Keep client-side hiding, and either zero the offline markers in the projection or add a server-maintained aggregate that exposes only the logical value. |
-| MEDIUM | Rules cannot tell a DIRECT reader edge from a group one: if the server writes a group conversation id to `/presenceReaders`, every member with that id passes the presence check. | S2 must never project a non-DIRECT conversation into `presenceReaders`; add a conversation-type field to the mirror before any other writer exists, or validate the edge in the writer with a test. |
-| LOW | Deleting a typing leaf and recreating it bypasses the three-second throttle (`delete` is not rate-limited; `validate` does not run on delete). | Quota/abuse only, acknowledged by the design. Keep operational quotas and alerting. |
-| LOW | A client may delete its own presence node instead of writing the offline payload; absence is treated as offline but the last-seen marker is lost. | No cross-user effect. The client contract uses `onDisconnect` with the offline payload; privileged cleanup remains authoritative. |
+- Offline per-device presence carries no time or lease information: `lastSeen`,
+  `updatedAt` and `leaseUntil` must all be zero. Firebase presence therefore
+  reports online/offline state only; last-seen time remains on the authoritative
+  server presence path.
+- Peer reads remain denied until the server backfill has removed legacy
+  offline `lastSeen` rows from every account and atomically publishes
+  `control/presencePrivacyVersion: 2` with `control/enabled: true`. A failed or
+  partial migration leaves peer reads closed. The marker is one-time; current
+  rules prevent clients from recreating timestamp-bearing offline rows.
+- Presence readers carry an explicit `type:"DIRECT"` and `cid`; rules require
+  both active membership leases. Legacy string edges and group edges are denied.
+- Client presence deletion is denied. `onDisconnect` writes the zeroed offline
+  payload, while server revocation and the bounded lease sweeper can remove rows.
+- Client typing deletion is denied because RTDB does not validate deletes and
+  that would reset the three-second throttle. The Android client leaves a
+  five-second TTL record; the server sweeper removes expired leaves.
 
 ## Rollout checklist
 
 - [ ] S2 projections merged and tested (including DIRECT-only presence edges).
 - [ ] S3 Android transport merged with STOMP fallback and session-epoch fencing.
 - [ ] `tools/firebase-rules` suite green in CI on the exact rules file.
+- [ ] Install the exact reviewed rules before enabling the server backfill; peer reads stay closed until privacy version 2 is published.
+- [ ] Drain older server instances that can write timestamped offline presence before the one-time privacy backfill runs.
+- [ ] Capture a runtime receipt proving peer reads are denied before migration and admitted only after cleanup and marker publication.
 - [ ] Service-account IAM and database URL verified for the target project.
 - [ ] `FIREBASE_REALTIME_ENABLED` and client flag enabled for a small cohort.
 - [ ] Metrics/alerts for bootstrap, renew, mirror retries and fallback count.
