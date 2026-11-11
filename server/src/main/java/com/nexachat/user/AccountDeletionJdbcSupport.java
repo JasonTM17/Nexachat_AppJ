@@ -60,6 +60,15 @@ class AccountDeletionJdbcSupport {
         jdbcTemplate.update("DELETE FROM conversation_labels WHERE user_id = ?", userId);
     }
 
+    void deleteGoogleIdentityData(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update("DELETE FROM google_signin_nonces WHERE user_id = ?", userId);
+        jdbcTemplate.update("DELETE FROM user_identities WHERE user_id = ?", userId);
+    }
+
     List<String> findUnboundAttachmentStorageKeys(UUID ownerId) {
         JdbcTemplate jdbcTemplate = jdbc();
         if (jdbcTemplate == null) {

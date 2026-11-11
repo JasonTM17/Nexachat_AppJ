@@ -95,6 +95,9 @@ public class GoogleSignInService {
                     .orElseThrow(GoogleSignInService::notLinked);
             User user = userRepository.findByIdForUpdate(identity.getUserId())
                     .orElseThrow(GoogleSignInService::notLinked);
+            if (user.getDeletedAt() != null) {
+                throw notLinked();
+            }
 
             String refreshToken = tokenService.issue(user, deviceLabel);
             return responseFactory.create(user, refreshToken);

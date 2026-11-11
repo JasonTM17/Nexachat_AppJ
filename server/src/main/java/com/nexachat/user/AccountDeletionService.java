@@ -96,6 +96,7 @@ public class AccountDeletionService {
         jdbcSupport.scrubAiData(userId);
         jdbcSupport.deleteGroupJoinRequests(userId);
         jdbcSupport.deleteLabels(userId);
+        jdbcSupport.deleteGoogleIdentityData(userId);
         jdbcSupport.deleteUnboundAttachments(userId);
 
         tokenService.revokeAllForUser(userId);

@@ -21,6 +21,7 @@ import java.util.concurrent.Future;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -386,6 +387,62 @@ class GoogleSignInIT extends SecurityITBase {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_identities WHERE user_id = ?", Integer.class,
                 user.userId())).isZero();
+    }
+
+    @Test
+    void accountDeletionRemovesGoogleDataAndDeletedIdentityCannotSignIn() throws Exception {
+        Registered user = register(PHONE);
+        String linkNonce = issueLinkNonce(user);
+        link(user, GoogleTestKeys.token(linkNonce), linkNonce).andExpect(status().isNoContent());
+        String unusedLinkNonce = issueLinkNonce(user);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM google_signin_nonces
+                WHERE user_id = ? AND nonce_hash = ?
+                """, Integer.class, user.userId(),
+                com.nexachat.auth.google.GoogleNonceService.sha256Hex(unusedLinkNonce))).isEqualTo(1);
+        int refreshRowsBeforeDeletion = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class, user.userId());
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + user.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "secret123"))))
+                .andExpect(status().isNoContent());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_identities WHERE user_id = ?", Integer.class,
+                user.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM google_signin_nonces WHERE user_id = ?", Integer.class,
+                user.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsBeforeDeletion);
+
+        int refreshRowsAfterDeletion = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class, user.userId());
+        assertGoogleSignInFailsWithoutIssuingSession();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsAfterDeletion);
+
+        // Simulate a stale identity row to exercise the deleted-user guard itself.
+        jdbcTemplate.update("""
+                INSERT INTO user_identities (user_id, provider, subject, email_at_link)
+                VALUES (?, 'google', ?, ?)
+                """, user.userId(), GoogleTestKeys.SUBJECT, GoogleTestKeys.EMAIL);
+        assertGoogleSignInFailsWithoutIssuingSession();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsAfterDeletion);
+    }
+
+    private void assertGoogleSignInFailsWithoutIssuingSession() throws Exception {
+        String signInNonce = issueNonce();
+        postJson("/api/v1/auth/google", Map.of(
+                        "idToken", GoogleTestKeys.token(signInNonce), "nonce", signInNonce))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_ACCOUNT_NOT_LINKED"));
     }
 
     @Test
