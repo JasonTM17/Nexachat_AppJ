@@ -43,7 +43,12 @@ public class ScheduledAdvisoryLock {
      *
      * <p><b>Pool note:</b> the lock connection stays checked out for the
      * duration of {@code action}; the data source needs at least two
-     * connections when the action itself queries the database.</p>
+     * connections when the action itself queries the database. Callers that
+     * need to read the database must use
+     * {@link #withLock(long, ConnectionCallback)} and run those statements on
+     * the supplied connection instead: otherwise a holder of the last free
+     * connection that waits for this lock can starve the action's own query
+     * (a pool-level deadlock).
      *
      * @param lockId stable advisory lock id
      * @param action work to run under the lock
@@ -51,12 +56,27 @@ public class ScheduledAdvisoryLock {
      * @return the action result, or {@code null} when the lock was not acquired
      */
     public <T> T withLock(long lockId, Supplier<T> action) {
+        return withLock(lockId, connection -> action.get());
+    }
+
+    /**
+     * Connection-aware variant of {@link #withLock(long, Supplier)}. The
+     * callback's statements run on the lock-owning connection, so the action
+     * never waits for a second pooled connection while other sessions wait for
+     * the advisory lock.
+     *
+     * @param lockId stable advisory lock id
+     * @param action work to run under the lock; receives the owning connection
+     * @param <T>    result type; the action must not return {@code null}
+     * @return the action result, or {@code null} when the lock was not acquired
+     */
+    public <T> T withLock(long lockId, ConnectionCallback<T> action) {
         return jdbcTemplate.execute((ConnectionCallback<T>) connection -> {
             if (!tryAcquire(connection, lockId)) {
                 return null;
             }
             try {
-                return action.get();
+                return action.doInConnection(connection);
             } finally {
                 release(connection, lockId);
             }

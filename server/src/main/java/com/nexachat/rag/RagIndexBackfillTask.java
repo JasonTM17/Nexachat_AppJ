@@ -38,16 +38,19 @@ public class RagIndexBackfillTask {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        if (!advisoryLock.tryAcquire(ScheduledLockIds.RAG_INDEX_BACKFILL)) {
-            running.set(false);
-            return;
-        }
         try {
-            embeddings.backfill();
+            // Acquire, run and release on the SAME pooled connection. Acquiring
+            // and releasing through separate JdbcTemplate calls can land on two
+            // different connections: the unlock then reports false and the
+            // session-level lock stays held by a pooled connection that never
+            // releases it, so later ticks silently stop backfilling.
+            advisoryLock.withLock(ScheduledLockIds.RAG_INDEX_BACKFILL, () -> {
+                embeddings.backfill();
+                return Boolean.TRUE;
+            });
         } catch (RuntimeException exception) {
             // Degrade: the lazy path still indexes at query time.
         } finally {
-            advisoryLock.release(ScheduledLockIds.RAG_INDEX_BACKFILL);
             running.set(false);
         }
     }
