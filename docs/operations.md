@@ -42,8 +42,8 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_GOOGLE_JWKS_URI` | No (Google's rotating public keys; override only for tests) | `https://www.googleapis.com/oauth2/v3/certs` | `https://www.googleapis.com/oauth2/v3/certs` |
 | `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | No (single-use sign-in nonce lifetime) | `300` | `300` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
-| `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
-| `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
+| `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` or the Firebase bridge is enabled | Empty | `your-firebase-project-id` |
+| `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` or the Firebase bridge is enabled | Empty | Inline service-account JSON or a path to the key file |
 | `FCM_TOKEN_URI` | No (local testing only) | Empty (Google token endpoint) | `https://oauth2.googleapis.com/token` |
 | `FCM_API_URL` | No (local testing only) | Empty (Google FCM endpoint) | `https://fcm.googleapis.com/v1/projects/<id>/messages:send` |
 | `FCM_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
