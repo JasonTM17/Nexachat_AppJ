@@ -172,3 +172,15 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# ------------------------------------------------------------------------------
+# 12. Credential Manager and Google ID token (no app-level keep required)
+# credentials-1.6.0 ships an intentionally empty consumer rule (shrink-safe),
+# credentials-play-services-auth keeps CredentialProviderPlayServicesImpl, and
+# AGP keeps every class named by the merged manifest: the credential provider
+# holder service, the hidden activities, and Firebase's components. The
+# googleid AAR has no reflective lookup: GoogleIdTokenCredential is built from
+# Bundle string keys, and its type constant is compared as a string.
+# tools/check-release-r8-mapping.py asserts the manifest/meta-data class names
+# and the Google ID token type constant in the packaged release APK.
+# ------------------------------------------------------------------------------
