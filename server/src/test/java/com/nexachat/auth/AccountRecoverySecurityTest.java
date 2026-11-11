@@ -169,6 +169,55 @@ class AccountRecoverySecurityTest extends SecurityITBase {
     }
 
     @Test
+    void otpDeletionUsesHardenedAccountDeletionAndClearsRecoveryData() throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552012", "delete@example.com");
+        requestCode("+84905552012");
+        AccountRecoveryFlowTest.SentOtp deletion = mailSender.take();
+        assertThat(deletion).isNotNull();
+
+        Instant now = Instant.now();
+        insertOtp(user.userId(), OtpPurpose.VERIFY_EMAIL, "pending@example.com", now);
+        insertOtp(user.userId(), OtpPurpose.RESET_PASSWORD, "delete@example.com", now);
+
+        jdbcTemplate.update("""
+                INSERT INTO user_identities (id, user_id, provider, subject, email_at_link, linked_at)
+                VALUES (?, ?, 'google', ?, 'linked@example.com', ?)
+                """, java.util.UUID.randomUUID(), user.userId(), "deleted-subject-" + user.userId(),
+                Timestamp.from(now));
+        jdbcTemplate.update("""
+                INSERT INTO google_signin_nonces
+                    (id, nonce_hash, purpose, user_id, access_token_id_hash, created_at, expires_at)
+                VALUES (?, ?, 'link', ?, ?, ?, ?)
+                """, java.util.UUID.randomUUID(), hash64("a"), user.userId(), hash64("b"),
+                Timestamp.from(now), Timestamp.from(now.plusSeconds(60)));
+
+        confirmDeletion("+84905552012", deletion.code()).andExpect(status().isNoContent());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at IS NOT NULL FROM users WHERE id = ?", Boolean.class, user.userId()))
+                .isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT phone IS NULL AND email IS NULL AND email_verified_at IS NULL"
+                        + " FROM users WHERE id = ?", Boolean.class, user.userId())).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT tokens_valid_after IS NOT NULL FROM users WHERE id = ?",
+                Boolean.class, user.userId())).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM email_otps WHERE user_id = ?", Integer.class, user.userId()))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM user_identities WHERE user_id = ?", Integer.class, user.userId()))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM google_signin_nonces WHERE user_id = ?", Integer.class, user.userId()))
+                .isZero();
+
+        getWithAuth("/api/v1/users/me", user.accessToken())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+    }
+
+    @Test
     void newerOtpInvalidatesTheOldCodeAndVerifyCodeCannotDeleteAccount() throws Exception {
         Registered user = register("+84905552007");
         putEmail(user, "cross-purpose@example.com").andExpect(status().isAccepted());
@@ -354,5 +403,18 @@ class AccountRecoverySecurityTest extends SecurityITBase {
                         + " WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL",
                 Timestamp.from(Instant.now().minusSeconds(61)),
                 Timestamp.from(Instant.now().plusSeconds(600)), userId, purpose.name());
+    }
+
+    private void insertOtp(java.util.UUID userId, OtpPurpose purpose, String email, Instant now) {
+        jdbcTemplate.update("""
+                INSERT INTO email_otps
+                    (id, user_id, purpose, email, code_hash, expires_at, attempts, consumed_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?)
+                """, java.util.UUID.randomUUID(), userId, purpose.name(), email, hash64("c"),
+                Timestamp.from(now.plusSeconds(600)), Timestamp.from(now));
+    }
+
+    private static String hash64(String digit) {
+        return digit.repeat(64);
     }
 }
