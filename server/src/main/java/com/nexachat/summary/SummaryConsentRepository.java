@@ -34,8 +34,8 @@ public class SummaryConsentRepository {
     /**
      * Reads the current consent snapshot while holding a shared row lock until
      * the caller's transaction completes. Settings updates use a conflicting
-     * write lock, allowing an HTTP response writer to order revocation against
-     * the final response flush.
+     * write lock, so callers can serialize the response under this lock and
+     * perform HTTP I/O after the transaction completes.
      */
     public ConsentSnapshot lockForResponse(UUID userId) {
         return readSnapshot(userId, LOCKED_SNAPSHOT_SQL);

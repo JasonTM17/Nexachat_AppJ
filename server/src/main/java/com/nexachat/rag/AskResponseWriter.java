@@ -14,7 +14,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Writes the small ask response while consent revocation is serialized on the user row. */
+/** Serializes the ask response under the consent lock, then writes it after releasing the database transaction. */
 @Component
 @Profile("!test")
 public class AskResponseWriter {
@@ -36,8 +36,9 @@ public class AskResponseWriter {
     }
 
     public void write(UUID userId, AskExecution execution, HttpServletResponse response) throws IOException {
+        byte[] body;
         try {
-            transactionTemplate.executeWithoutResult(status -> {
+            body = transactionTemplate.execute(status -> {
                 SummaryConsentRepository.ConsentSnapshot current = consentRepository.lockForResponse(userId);
                 boolean consentUnchanged = execution.consentSnapshot().equals(current);
                 if (!consentUnchanged) {
@@ -47,13 +48,7 @@ public class AskResponseWriter {
                         ? execution.response()
                         : AskResponse.notFound(execution.response().contextOmitted());
                 try {
-                    byte[] body = objectMapper.writeValueAsBytes(responseBody);
-                    response.setStatus(HttpServletResponse.SC_OK);
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-                    response.setContentLength(body.length);
-                    response.getOutputStream().write(body);
-                    response.flushBuffer();
+                    return objectMapper.writeValueAsBytes(responseBody);
                 } catch (IOException exception) {
                     throw new UncheckedIOException(exception);
                 }
@@ -61,5 +56,12 @@ public class AskResponseWriter {
         } catch (UncheckedIOException exception) {
             throw exception.getCause();
         }
+
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentLength(body.length);
+        response.getOutputStream().write(body);
+        response.flushBuffer();
     }
 }
