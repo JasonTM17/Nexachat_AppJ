@@ -78,6 +78,12 @@ public class User {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "email", length = 254)
+    private String email;
+
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
     protected User() {
         // JPA only
     }
@@ -181,6 +187,32 @@ public class User {
         return deletedAt;
     }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public boolean hasVerifiedEmail() {
+        return email != null && emailVerifiedAt != null;
+    }
+
+    public void changeEmail(String email) {
+        this.email = email;
+        this.emailVerifiedAt = null;
+    }
+
+    public void verifyEmail(Instant verifiedAt) {
+        this.emailVerifiedAt = verifiedAt;
+    }
+
+    public void removeEmail() {
+        this.email = null;
+        this.emailVerifiedAt = null;
+    }
+
     /**
      * Marks the account deleted: frees {@link #phone}, scrubs profile fields and
      * stamps {@link #deletedAt}. Called only from account deletion.
@@ -194,6 +226,8 @@ public class User {
         this.showSeen = false;
         this.aiSummaryConsent = false;
         this.lastSeenAt = null;
+        this.email = null;
+        this.emailVerifiedAt = null;
         this.passwordHash = DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH;
     }
 }

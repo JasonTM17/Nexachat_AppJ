@@ -2,6 +2,21 @@ server:
   port: 8080
 
 spring:
+  mail:
+    host: ${MAIL_SMTP_HOST:smtp.gmail.com}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_SMTP_USERNAME:}
+    password: ${MAIL_SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+          starttls:
+            enable: true
+            required: true
   # firebase-admin brings Apache HttpClient 5 onto the classpath; its default strategy silently
   # re-sends 429/503 responses. Pin auto-configured RestClient/RestTemplate to the JDK client.
   http:
@@ -42,6 +57,8 @@ management:
         readiness:
           include: db,flyway,diskSpace,refreshReplay
   health:
+    mail:
+      enabled: false
     diskspace:
       path: ${nexachat.storage.root}
       threshold: ${MANAGEMENT_DISK_THRESHOLD:1GB}
@@ -59,6 +76,17 @@ nexachat:
     secret: ${JWT_SECRET:dev-secret-change-me-at-least-64-chars-long-0123456789}
     access-ttl-seconds: 900
     refresh-ttl-days: 14
+  mail:
+    provider: ${NEXACHAT_MAIL_PROVIDER:}
+    from: ${RESEND_FROM:}
+    smtp:
+      host: ${MAIL_SMTP_HOST:smtp.gmail.com}
+      port: ${MAIL_SMTP_PORT:587}
+      username: ${MAIL_SMTP_USERNAME:}
+      password: ${MAIL_SMTP_PASSWORD:}
+      from: ${MAIL_FROM:}
+    resend:
+      api-key: ${RESEND_API_KEY:}
   auth:
     refresh-replay:
       key: ${NEXACHAT_REFRESH_REPLAY_KEY:}

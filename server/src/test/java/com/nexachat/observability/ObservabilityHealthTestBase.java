@@ -27,6 +27,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -101,6 +102,9 @@ abstract class ObservabilityHealthTestBase {
 
     @MockitoBean
     protected EntityManager entityManager;
+
+    @MockitoBean
+    protected JdbcTemplate jdbcTemplate;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {

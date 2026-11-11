@@ -78,6 +78,10 @@ public class SecurityConfig {
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh",
+                                "/api/v1/auth/password-reset/request",
+                                "/api/v1/auth/password-reset/confirm",
+                                "/api/v1/account-deletion/request",
+                                "/api/v1/account-deletion/confirm",
                                 "/api/v1/auth/google",
                                 "/api/v1/auth/google/nonce").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/error").permitAll()
@@ -102,10 +106,10 @@ public class SecurityConfig {
     }
 
     /**
-     * CORS allow-list from {@code nexachat.security.cors-allowed-origins}
-     * (env {@code NEXACHAT_CORS_ALLOWED_ORIGINS}, comma-separated). The secure
-     * default is an empty list — no cross-origin caller admitted — which is
-     * correct for a native-client deployment that sends no {@code Origin}.
+     * CORS is available only on the two public web account-deletion routes.
+     * Their origin allow-list comes from {@code nexachat.security.cors-allowed-origins}
+     * (env {@code NEXACHAT_CORS_ALLOWED_ORIGINS}, comma-separated). Other API
+     * routes, including the public password-reset routes, do not enable browser CORS.
      *
      * <p>Credentials are never enabled and the wildcard origin is rejected at
      * startup: a browser could otherwise replay a logged-in session from any
@@ -127,7 +131,8 @@ public class SecurityConfig {
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
+        source.registerCorsConfiguration("/api/v1/account-deletion/request", config);
+        source.registerCorsConfiguration("/api/v1/account-deletion/confirm", config);
         return source;
     }
 }

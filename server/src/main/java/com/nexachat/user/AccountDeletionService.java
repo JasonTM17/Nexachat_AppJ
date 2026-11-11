@@ -92,6 +92,23 @@ public class AccountDeletionService {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
 
+        deleteLockedAccount(user);
+    }
+
+    /** Uses the same tombstoning path after the recovery-email OTP is consumed. */
+    @Transactional
+    public void deleteAccountByVerifiedRecovery(UUID userId) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE,
+                        "Code is invalid or expired"));
+        if (user.getDeletedAt() != null || !user.hasVerifiedEmail()) {
+            throw ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "Code is invalid or expired");
+        }
+        deleteLockedAccount(user);
+    }
+
+    private void deleteLockedAccount(User user) {
+        UUID userId = user.getId();
         List<UUID> firebaseConversationIds = memberRepository.findConversationIdsByUserId(userId).stream()
                 .distinct().sorted().toList();
         List<UUID> firebaseDirectPeerIds = memberRepository.findDirectPeerUserIdsByUserId(userId);
@@ -110,6 +127,7 @@ public class AccountDeletionService {
         jdbcSupport.deleteGroupJoinRequests(userId);
         jdbcSupport.deleteLabels(userId);
         jdbcSupport.deleteGoogleIdentityData(userId);
+        jdbcSupport.deleteEmailOtps(userId);
         jdbcSupport.deleteUnboundAttachments(userId);
 
         tokenService.revokeAllForUser(userId);

@@ -7,8 +7,8 @@ import com.nexachat.user.User;
 import java.util.UUID;
 
 /**
- * Public profile shape — the {@code user} object in auth responses and /users/me
- * (plan §10.3). Deliberately excludes passwordHash; entities never leave the service layer.
+ * Public user shape — the {@code user} object in auth responses, profile updates, and search results.
+ * Deliberately excludes passwordHash; entities never leave the service layer.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record UserResponse(UUID id, String phone, String displayName, String avatarUrl, boolean deleted) {

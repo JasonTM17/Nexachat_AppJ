@@ -241,6 +241,21 @@ public class AuthService {
         log.info("Password changed");
     }
 
+    @Transactional
+    public void resetPassword(UUID userId, String newPassword) {
+        PasswordPolicy.requireRegisterable(newPassword);
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
+        user.changePasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        tokenService.revokeAllForUser(userId);
+        accessTokenRevocationService.revoke(userId);
+        log.info("Password reset");
+    }
+
     private AuthResponse issueSession(User user, String deviceLabel) {
         String refreshToken = tokenService.issue(user, deviceLabel);
         return responseFactory.create(user, refreshToken);

@@ -25,6 +25,29 @@ the implementing source file.
   constraint immediately and the resulting `DataIntegrityViolationException` is
   mapped back to the same `PHONE_EXISTS` contract (AuthService.java).
 
+### Recovery email and OTPs
+
+- Recovery addresses are trimmed and lowercased. Only the authenticated owner's
+  profile includes `email` and `emailVerified`; `UserResponse` used by search and
+  other-user views contains neither field.
+- Verification, account-deletion, and password-reset codes are six-digit
+  `SecureRandom` values with a 10-minute lifetime. The database stores an
+  HMAC-SHA256 digest bound to user id and purpose, compared in constant time;
+  raw codes exist only for delivery. Wrong attempts are counted atomically and
+  the fifth attempt consumes the code. A replacement invalidates older active
+  codes of the same purpose, with a 60-second per-user/per-purpose send cooldown.
+- Within the rate-limit allowance, public request routes return the same
+  `202 {}` response for known, unknown, deleted, and no-verified-email
+  accounts. Phone lookup, OTP issuance, and delivery are deferred to the
+  bounded background executor so account/email state does not affect the
+  response path. Each public recovery route has a 30/5-minute IP bucket;
+  requests also have a 10/5-minute per-normalized-phone bucket and
+  confirmations a 20/5-minute per-phone bucket. Authenticated email operations
+  return `503 MAIL_UNAVAILABLE` when no provider is configured.
+- Application logs never include OTPs, recipient addresses, phone numbers, or
+  provider keys. Delivery failures are reported without raw provider response
+  details (`EmailRecoveryService`, `OtpMailDispatcher`, and the mail senders).
+
 ## 2. Token model
 
 - Access tokens are HS256 JWTs (`sub` = userId, `iat`, `exp` = iat + 900 s,
@@ -98,6 +121,10 @@ the implementing source file.
 - CORS uses an explicit allow-list (`nexachat.security.cors-allowed-origins`, env `NEXACHAT_CORS_ALLOWED_ORIGINS`).
   The default is empty (admitting no cross-origin browser caller, safe for native mobile clients).
   Wildcard `*` is rejected at boot, and credentials are never enabled.
+- REST CORS is registered only for `POST /api/v1/account-deletion/request` and
+  `POST /api/v1/account-deletion/confirm`, using that exact-origin allow-list.
+  Public password-reset routes and all authenticated routes do not enable
+  browser CORS (`SecurityConfig.corsConfigurationSource`).
 - The WebSocket handshake (`/ws`) enforces the same CORS allow-list.
 - Operator telemetry (`GET /api/v1/rag/stats`) is restricted to administrator phone numbers
   in `nexachat.security.admin-phones` (`NEXACHAT_ADMIN_PHONES`) via `RagStatsAuthorizationManager`;

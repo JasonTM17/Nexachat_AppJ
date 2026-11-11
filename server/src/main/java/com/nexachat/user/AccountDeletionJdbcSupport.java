@@ -69,6 +69,14 @@ class AccountDeletionJdbcSupport {
         jdbcTemplate.update("DELETE FROM user_identities WHERE user_id = ?", userId);
     }
 
+    void deleteEmailOtps(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update("DELETE FROM email_otps WHERE user_id = ?", userId);
+    }
+
     List<String> findUnboundAttachmentStorageKeys(UUID ownerId) {
         JdbcTemplate jdbcTemplate = jdbc();
         if (jdbcTemplate == null) {

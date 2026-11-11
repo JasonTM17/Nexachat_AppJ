@@ -97,3 +97,10 @@ POST	/api/v1/auth/google	PUBLIC_AUTH	public_auth	rest-094
 POST	/api/v1/auth/google/nonce	PUBLIC_AUTH	public_auth	rest-095
 POST	/api/v1/auth/identities/google	AUTHENTICATED	authenticated_self	rest-096
 POST	/api/v1/auth/identities/google/nonce	AUTHENTICATED	authenticated_self	rest-097
+DELETE	/api/v1/users/me/email	AUTHENTICATED	authenticated_self	rest-099
+POST	/api/v1/account-deletion/confirm	PUBLIC_AUTH	public_auth	rest-100
+POST	/api/v1/account-deletion/request	PUBLIC_AUTH	public_auth	rest-101
+POST	/api/v1/auth/password-reset/confirm	PUBLIC_AUTH	public_auth	rest-102
+POST	/api/v1/auth/password-reset/request	PUBLIC_AUTH	public_auth	rest-103
+POST	/api/v1/users/me/email/verify	AUTHENTICATED	authenticated_self	rest-104
+PUT	/api/v1/users/me/email	AUTHENTICATED	authenticated_self	rest-105

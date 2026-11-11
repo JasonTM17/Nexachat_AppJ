@@ -30,7 +30,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
 
         JsonNode profile = objectMapper.readTree(getWithAuth("/api/v1/users/me", owner.accessToken())
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
-        assertKeys(profile, Set.of("id", "phone", "displayName", "avatarUrl", "deleted"));
+        assertKeys(profile, Set.of("id", "phone", "displayName", "avatarUrl", "email", "emailVerified"));
 
         MvcResult groupResult = postJson("/api/v1/conversations/group",
                         Map.of("title", "Field allowlist group", "memberIds", List.of(member.userId().toString())),
