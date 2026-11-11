@@ -29,6 +29,14 @@ public final class EphemeralTimeRulesTest {
     }
 
     @Test
+    public void zeroedOfflineFirebaseMarkerDoesNotBecomeAnEpochLastSeen() {
+        PeerPresence presence = EphemeralTimeRules.aggregatePresence(List.of(
+                new EphemeralTimeRules.PresenceRecord(false, 0L, 0L)), 10_000L);
+
+        assertEquals(new PeerPresence(false, null), presence);
+    }
+
+    @Test
     public void typingIsActiveOnlyBeforeAbsoluteExpiryAndTtlIsBounded() {
         assertTrue(EphemeralTimeRules.isTypingActive(5_001L, 5_000L));
         assertFalse(EphemeralTimeRules.isTypingActive(5_000L, 5_000L));

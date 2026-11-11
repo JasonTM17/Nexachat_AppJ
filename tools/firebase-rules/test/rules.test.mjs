@@ -10,9 +10,7 @@
  * presenceReaders, blocked) is seeded through withSecurityRulesDisabled(),
  * which is the test stand-in for the privileged server projection writer.
  *
- * Tests marked "KNOWN GAP" assert the behaviour of the reviewed candidate
- * rules, not the desired end state. They exist so a future rules change is
- * visible; see reports/r4-322-w6.md for the findings.
+ * The previously documented W6 rule gaps are covered as denial regressions.
  */
 import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -85,8 +83,8 @@ function onlinePresence(until = leaseUntil) {
   return { online: true, lastSeen: 0, updatedAt: SERVER_TIMESTAMP, leaseUntil: until };
 }
 
-function offlinePresence(until = leaseUntil) {
-  return { online: false, lastSeen: SERVER_TIMESTAMP, updatedAt: SERVER_TIMESTAMP, leaseUntil: until };
+function offlinePresence() {
+  return { online: false, lastSeen: 0, updatedAt: 0, leaseUntil: 0 };
 }
 
 function typingPayload(overrides = {}) {
@@ -197,6 +195,23 @@ describe('presence', () => {
     assert.equal(snapshot.val()['bob-b1'].online, true);
   });
 
+  test('denies peer reads of legacy offline timestamps until server migration completes', async () => {
+    const legacyLastSeen = Date.now() - 1_000;
+    await adminSet('control/presencePrivacyVersion', null);
+    await adminSet('presence/bob', {
+      'bob-b1': onlinePresence(),
+      'bob-b2': {
+        online: false,
+        lastSeen: legacyLastSeen,
+        updatedAt: legacyLastSeen,
+        leaseUntil,
+      },
+    });
+
+    await assertFails(read('alice', 'alice-a1', 'presence/bob'));
+    await assertSucceeds(read('bob', 'bob-b1', 'presence/bob'));
+  });
+
   test('denies a peer when the subject hides presence', async () => {
     await adminSet('accounts/bob/showPresence', false);
     await assertFails(read('alice', 'alice-a1', 'presence/bob'));
@@ -305,12 +320,17 @@ describe('presence', () => {
     await assertFails(write('alice', 'alice-a1', 'presence/alice/alice-a1', payload));
   });
 
-  test('allows the disconnect payload with a server lastSeen', async () => {
+  test('allows the disconnect payload with zeroed timestamp and lease sentinels', async () => {
     await assertSucceeds(write('alice', 'alice-a1', 'presence/alice/alice-a1', offlinePresence()));
   });
 
-  test('denies a disconnect payload with a forged lastSeen', async () => {
-    const payload = { ...offlinePresence(), lastSeen: Date.now() - 60_000 };
+  test('denies timestamp metadata in an offline payload', async () => {
+    const payload = {
+      online: false,
+      lastSeen: SERVER_TIMESTAMP,
+      updatedAt: SERVER_TIMESTAMP,
+      leaseUntil,
+    };
     await assertFails(write('alice', 'alice-a1', 'presence/alice/alice-a1', payload));
   });
 
@@ -320,8 +340,8 @@ describe('presence', () => {
     await assertFails(write('alice', 'alice-a1', 'presence/alice/alice-a1', { online: true }));
   });
 
-  test('allows the owner to delete the own node but denies another user', async () => {
-    await assertSucceeds(remove('alice', 'alice-a1', 'presence/alice/alice-a1'));
+  test('denies deleting a presence node, including the owner node', async () => {
+    await assertFails(remove('alice', 'alice-a1', 'presence/alice/alice-a1'));
     await assertFails(remove('alice', 'alice-a1', 'presence/bob/bob-b1'));
     await adminRemove('sessions/alice/alice-a1');
     await assertFails(remove('alice', 'alice-a1', 'presence/alice/alice-a2'));
@@ -351,22 +371,28 @@ describe('presence', () => {
     assert.equal(value['alice-a2'].online, true);
   });
 
-  test('KNOWN GAP: a permitted viewer can read an offline device lastSeen while another device is online', async () => {
-    await adminSet('presence/bob/bob-b2', {
+  test('denies offline timestamp markers while another device is online', async () => {
+    await assertFails(write('bob', 'bob-b2', 'presence/bob/bob-b2', {
       online: false,
-      lastSeen: Date.now() - 30_000,
-      updatedAt: Date.now() - 30_000,
-      leaseUntil: leaseUntil,
-    });
+      lastSeen: SERVER_TIMESTAMP,
+      updatedAt: SERVER_TIMESTAMP,
+      leaseUntil,
+    }));
+    await assertSucceeds(write('bob', 'bob-b2', 'presence/bob/bob-b2', offlinePresence()));
     const snapshot = await assertSucceeds(read('alice', 'alice-a1', 'presence/bob'));
     const value = snapshot.val();
     assert.equal(value['bob-b1'].online, true);
-    assert.equal(typeof value['bob-b2'].lastSeen, 'number');
+    assert.deepEqual(value['bob-b2'], offlinePresence());
   });
 
-  test('KNOWN GAP: rules cannot tell a DIRECT reader edge from a group one', async () => {
+  test('denies a non-DIRECT reader edge even when the viewer belongs to that group', async () => {
     await adminSet('presenceReaders/bob/carol', 'group-abc');
-    await assertSucceeds(read('carol', 'carol-c1', 'presence/bob'));
+    await assertFails(read('carol', 'carol-c1', 'presence/bob'));
+  });
+
+  test('denies a typed GROUP reader edge even when the viewer belongs to that group', async () => {
+    await adminSet('presenceReaders/bob/carol', { cid: 'group-abc', type: 'GROUP' });
+    await assertFails(read('carol', 'carol-c1', 'presence/bob'));
   });
 
   test('cancels a live listener when the reader grant is revoked', async () => {
@@ -446,8 +472,8 @@ describe('typing', () => {
     await assertFails(write('bob', 'bob-b1', 'typing/direct-ab/bob', typingPayload()));
   });
 
-  test('owner may delete only the own bridge record', async () => {
-    await assertSucceeds(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
+  test('denies client deletion so typing throttle state cannot be reset', async () => {
+    await assertFails(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
     await adminSet('typing/direct-ab/bob', {
       bridgeId: 'bob-b2',
       updatedAt: Date.now() - 4_000,
@@ -457,19 +483,19 @@ describe('typing', () => {
     await assertFails(remove('alice', 'alice-a1', 'typing/direct-ab/bob'));
   });
 
-  test('allows a no-op delete of an absent leaf', async () => {
+  test('denies client deletion of an absent typing leaf', async () => {
     await adminRemove('typing/direct-ab/bob');
-    await assertSucceeds(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
+    await assertFails(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
   });
 
-  test('KNOWN GAP: delete then recreate bypasses the three second throttle', async () => {
+  test('deleting cannot reset the three second typing throttle', async () => {
     await adminSet('typing/direct-ab/bob', {
       bridgeId: 'bob-b1',
       updatedAt: Date.now() - 1_000,
       expiresAt: Date.now() + 4_500,
     });
-    await assertSucceeds(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
-    await assertSucceeds(write('bob', 'bob-b1', 'typing/direct-ab/bob', typingPayload()));
+    await assertFails(remove('bob', 'bob-b1', 'typing/direct-ab/bob'));
+    await assertFails(write('bob', 'bob-b1', 'typing/direct-ab/bob', typingPayload()));
   });
 
   test('a member may read an unexpired typing leaf and an absent one', async () => {

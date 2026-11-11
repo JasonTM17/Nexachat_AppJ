@@ -27,6 +27,7 @@ public class FirebaseAuthorizationBackfillJob {
     private final FirebaseRtdbClient rtdb;
     private final FirebaseProjectionMetrics metrics;
     private final AtomicBoolean running = new AtomicBoolean();
+    private static final int PRESENCE_MIGRATION_BATCH_SIZE = 100;
 
     public FirebaseAuthorizationBackfillJob(UserRepository users,
                                             ConversationRepository conversations,
@@ -68,6 +69,7 @@ public class FirebaseAuthorizationBackfillJob {
         }
         try {
             rtdb.applyAuthorizationProjection(Map.of("control/enabled", false));
+            boolean migratePresencePrivacy = !rtdb.presencePrivacyMigrationComplete();
             UUID afterUserId = null;
             while (true) {
                 var page = users.findIdsAfter(afterUserId, PageRequest.of(0, PAGE_SIZE));
@@ -75,6 +77,12 @@ public class FirebaseAuthorizationBackfillJob {
                     break;
                 }
                 for (UUID userId : page) {
+                    if (migratePresencePrivacy) {
+                        while (rtdb.removeLegacyOfflinePresenceEntries(userId, PRESENCE_MIGRATION_BATCH_SIZE)
+                                == PRESENCE_MIGRATION_BATCH_SIZE) {
+                            // Keep requesting bounded pages until every legacy timestamp row has been handled.
+                        }
+                    }
                     projections.refreshAccount(userId);
                 }
                 metrics.backfillRows("accounts", page.size());
@@ -94,7 +102,12 @@ public class FirebaseAuthorizationBackfillJob {
                 metrics.backfillRows("direct-readers", page.size());
                 afterConversationId = page.get(page.size() - 1);
             }
-            metrics.write("control", () -> rtdb.applyAuthorizationProjection(Map.of("control/enabled", true)));
+            Map<String, Object> admission = new java.util.LinkedHashMap<>();
+            admission.put("control/enabled", true);
+            if (migratePresencePrivacy) {
+                admission.put("control/presencePrivacyVersion", 2);
+            }
+            metrics.write("control", () -> rtdb.applyAuthorizationProjection(admission));
         } finally {
             running.set(false);
         }

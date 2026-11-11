@@ -75,9 +75,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     @Nullable private FirebaseAuth firebaseAuth;
     @Nullable private FirebaseDatabase database;
     @Nullable private DatabaseReference ownPresenceRef;
-    @Nullable private DatabaseReference ownTypingRef;
     @Nullable private OnDisconnect ownPresenceDisconnect;
-    @Nullable private OnDisconnect ownTypingDisconnect;
     @Nullable private ValueEventListener connectionListener;
     @Nullable private ValueEventListener serverOffsetListener;
     @Nullable private Disposable leaseRenewal;
@@ -263,7 +261,6 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         final FirebaseAuth currentAuth;
         final FirebaseUser currentUser;
         final DatabaseReference presenceRef;
-        final DatabaseReference typingRef;
         final String oldUserId;
         final boolean wasConnected;
         final Map<String, Object> offlinePayload;
@@ -281,7 +278,6 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             currentAuth = firebaseAuth;
             currentUser = currentAuth == null ? null : currentAuth.getCurrentUser();
             presenceRef = ownPresenceRef;
-            typingRef = ownTypingRef;
             removeListenersLocked();
             if (leaseRenewal != null) {
                 leaseRenewal.dispose();
@@ -297,16 +293,13 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             firebaseApp = null;
             firebaseAuth = null;
             ownPresenceRef = null;
-            ownTypingRef = null;
             ownPresenceDisconnect = null;
-            ownTypingDisconnect = null;
             currentPresence.clear();
             currentTyping.clear();
         }
         Completable cleanup = Completable.complete();
         if (currentDatabase != null) {
             if (wasConnected && currentUser != null && currentUser.getUid().equals(oldUserId)) {
-                if (typingRef != null) cleanup = cleanup.andThen(taskCompletable(typingRef.removeValue()));
                 if (presenceRef != null) cleanup = cleanup.andThen(taskCompletable(
                         presenceRef.setValue(offlinePayload)));
             }
@@ -360,12 +353,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
 
     @Override
     public void clearTyping(@NonNull String conversationId) {
-        DatabaseReference reference;
-        synchronized (lock) {
-            if (!active || !connected || database == null || userId == null) return;
-            reference = database.getReference("typing").child(conversationId).child(userId);
-        }
-        reference.removeValue();
+        // Client deletes would reset the server-enforced write throttle. The leaf expires within five seconds.
     }
 
     private Single<FirebaseLeaseResponse> renewLease(
@@ -390,7 +378,6 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
 
     private Completable activateLease(
             FirebaseLeaseResponse lease,
-            EphemeralScope requestedScope,
             long expectedEpoch,
             long expectedGeneration) {
         DatabaseReference presenceRef;
@@ -419,44 +406,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
                         ownPresenceDisconnect = presenceRef.onDisconnect();
                     }
                 }))
-                .andThen(taskCompletable(presenceRef.setValue(online)))
-                .andThen(registerTypingDisconnect(requestedScope, uid, expectedEpoch, expectedGeneration));
-    }
-
-    private Completable registerTypingDisconnect(
-            EphemeralScope requestedScope, String uid, long expectedEpoch, long expectedGeneration) {
-        String conversationId = requestedScope.getTypingConversationId();
-        DatabaseReference nextRef = conversationId == null
-                ? null : database.getReference("typing").child(conversationId).child(uid);
-        Completable cancelOld;
-        DatabaseReference oldRef;
-        synchronized (lock) {
-            oldRef = ownTypingRef;
-            if (oldRef != null && !oldRef.equals(nextRef)) {
-                cancelOld = taskCompletable(oldRef.onDisconnect().cancel())
-                        .andThen(taskCompletable(oldRef.removeValue()));
-            } else {
-                cancelOld = Completable.complete();
-            }
-        }
-        if (nextRef == null) {
-            return cancelOld.andThen(Completable.fromAction(() -> {
-                synchronized (lock) {
-                    ownTypingRef = null;
-                    ownTypingDisconnect = null;
-                }
-            }));
-        }
-        OnDisconnect disconnect = nextRef.onDisconnect();
-        return cancelOld.andThen(taskCompletable(disconnect.removeValue()))
-                .andThen(Completable.fromAction(() -> {
-                    synchronized (lock) {
-                        if (isCurrentLocked(expectedEpoch, expectedGeneration)) {
-                            ownTypingRef = nextRef;
-                            ownTypingDisconnect = disconnect;
-                        }
-                    }
-                }));
+                .andThen(taskCompletable(presenceRef.setValue(online)));
     }
 
     private Completable installScope(
@@ -585,7 +535,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
                         return renewLease(renewalScope, expectedEpoch, expectedGeneration)
                                 .flatMapCompletable(lease -> isCurrentScope(
                                                 expectedEpoch, expectedGeneration, renewalRevision)
-                                        ? activateLease(lease, renewalScope,
+                                        ? activateLease(lease,
                                                 expectedEpoch, expectedGeneration)
                                         : Completable.complete());
                     })
@@ -639,7 +589,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
                 requestedRevision = scopeRevision;
             }
             return renewLease(requestedScope, expectedEpoch, expectedGeneration)
-                    .flatMapCompletable(lease -> activateLease(lease, requestedScope,
+                    .flatMapCompletable(lease -> activateLease(lease,
                                     expectedEpoch, expectedGeneration)
                             .andThen(installScope(requestedScope, expectedEpoch,
                                     expectedGeneration, requestedRevision)))
@@ -869,9 +819,9 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     private Map<String, Object> offlinePresencePayload() {
         Map<String, Object> value = new HashMap<>();
         value.put("online", Boolean.FALSE);
-        value.put("lastSeen", ServerValue.TIMESTAMP);
-        value.put("updatedAt", ServerValue.TIMESTAMP);
-        value.put("leaseUntil", leaseUntilEpochMs);
+        value.put("lastSeen", 0L);
+        value.put("updatedAt", 0L);
+        value.put("leaseUntil", 0L);
         return value;
     }
 

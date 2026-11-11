@@ -45,9 +45,33 @@ class FirebaseAuthorizationBackfillJobTest {
 
         InOrder order = inOrder(rtdb, projections);
         order.verify(rtdb).applyAuthorizationProjection(Map.of("control/enabled", false));
+        order.verify(rtdb).presencePrivacyMigrationComplete();
+        order.verify(rtdb).removeLegacyOfflinePresenceEntries(USER_ID, 100);
         order.verify(projections).refreshAccount(USER_ID);
         order.verify(projections).reconcileConversation(CONVERSATION_ID);
-        order.verify(rtdb).applyAuthorizationProjection(Map.of("control/enabled", true));
+        order.verify(rtdb).applyAuthorizationProjection(Map.of(
+                "control/enabled", true, "control/presencePrivacyVersion", 2));
+    }
+
+    @Test
+    void skipsOneTimePresenceCleanupAfterPrivacyVersionIsPublished() {
+        UserRepository users = mock(UserRepository.class);
+        ConversationRepository conversations = mock(ConversationRepository.class);
+        FirebaseAuthorizationProjectionService projections = mock(FirebaseAuthorizationProjectionService.class);
+        FirebaseRtdbClient rtdb = mock(FirebaseRtdbClient.class);
+        when(rtdb.presencePrivacyMigrationComplete()).thenReturn(true);
+        when(users.findIdsAfter(null, PageRequest.of(0, FirebaseAuthorizationBackfillJob.PAGE_SIZE)))
+                .thenReturn(List.of(USER_ID));
+        when(users.findIdsAfter(USER_ID, PageRequest.of(0, FirebaseAuthorizationBackfillJob.PAGE_SIZE)))
+                .thenReturn(List.of());
+        when(conversations.findIdsAfterByType(null, Conversation.Type.DIRECT,
+                PageRequest.of(0, FirebaseAuthorizationBackfillJob.PAGE_SIZE))).thenReturn(List.of());
+
+        new FirebaseAuthorizationBackfillJob(users, conversations, projections, rtdb,
+                new FirebaseProjectionMetrics(new SimpleMeterRegistry())).backfill();
+
+        verify(rtdb, never()).removeLegacyOfflinePresenceEntries(USER_ID, 100);
+        verify(rtdb).applyAuthorizationProjection(Map.of("control/enabled", true));
     }
 
     @Test

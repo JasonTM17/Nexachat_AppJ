@@ -36,6 +36,24 @@ class FirebaseRtdbRestClientProjectionValidationTest {
     }
 
     @Test
+    void presenceReaderProjectionRequiresExplicitDirectConversationMetadata() {
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(Map.of(
+                "presenceReaders/" + USER_ID + "/" + USER_ID, USER_ID.toString())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(Map.of(
+                "presenceReaders/" + USER_ID + "/" + USER_ID,
+                Map.of("cid", USER_ID.toString(), "type", "GROUP"))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void presencePrivacyMigrationMarkerOnlyAcceptsVersionTwo() {
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(
+                Map.of("control/presencePrivacyVersion", 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void patchesCannotContainOverlappingParentAndChildPaths() {
         Map<String, Object> updates = new LinkedHashMap<>();
         updates.put("sessions/" + USER_ID, null);
