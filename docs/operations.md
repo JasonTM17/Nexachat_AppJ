@@ -707,6 +707,12 @@ with the reserved fake phone `+84908000000` → `202 {}`; and the `/ws` STOMP
 upgrade (`101`). A failed CORS preflight means the origin is missing from
 `NEXACHAT_CORS_ALLOWED_ORIGINS`.
 
+In the `prod` profile, `/actuator/health` is `DOWN` (HTTP 503) while
+`NEXACHAT_REFRESH_REPLAY_KEY` is unset, because the aggregate includes the
+`refreshReplay` component. Set a valid 32-byte base64 key (see
+[Keyed refresh replay](#keyed-refresh-replay)) before the post-deploy run; the
+smoke prints the failing component body instead of only the status code.
+
 `--write` additionally registers two disposable accounts in the reserved
 `+84908` phone range, logs in, uploads a 1×1 PNG avatar through
 `POST /users/me/avatar`, fetches it back byte-for-byte, deletes both accounts,
