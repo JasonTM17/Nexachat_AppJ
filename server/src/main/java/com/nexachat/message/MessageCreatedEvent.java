@@ -13,12 +13,23 @@ import java.util.UUID;
  * removed member, or the member whose role changed). It exists only for push
  * gating — it is never persisted or put on the wire — and is {@code null} for
  * messages without a member subject.
+ *
+ * <p>{@code replay} is {@code true} when the send call returned an already
+ * stored {@code (sender, clientMessageId)} row instead of creating one. The
+ * event is still published so a retrying sender receives its SENT signal over
+ * the WebSocket, but push fan-out must skip it: the recipient was already
+ * notified when the row was created.
  */
 public record MessageCreatedEvent(UUID conversationId, MessageResponse message,
-                                  UUID subjectUserId) {
+                                  UUID subjectUserId, boolean replay) {
 
-    /** Convenience constructor for messages without a SYSTEM subject member. */
+    /** Convenience constructor for a newly created message without a SYSTEM subject member. */
     public MessageCreatedEvent(UUID conversationId, MessageResponse message) {
-        this(conversationId, message, null);
+        this(conversationId, message, null, false);
+    }
+
+    /** Convenience constructor for a newly created SYSTEM event. */
+    public MessageCreatedEvent(UUID conversationId, MessageResponse message, UUID subjectUserId) {
+        this(conversationId, message, subjectUserId, false);
     }
 }

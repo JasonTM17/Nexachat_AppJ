@@ -104,6 +104,7 @@ class SystemMessageTest {
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
         assertThat(event.getValue().message().type()).isEqualTo("SYSTEM");
         assertThat(event.getValue().subjectUserId()).isNull();
+        assertThat(event.getValue().replay()).isFalse();
     }
 
     @Test
@@ -125,6 +126,7 @@ class SystemMessageTest {
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().subjectUserId()).isEqualTo(subjectId);
+        assertThat(event.getValue().replay()).isFalse();
     }
 
     @Test

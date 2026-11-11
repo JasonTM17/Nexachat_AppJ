@@ -59,9 +59,16 @@ public class NotificationEventListener {
      * A removed subject is no longer a member at fan-out time, so they are
      * added back to the recipient set for that one event.
      * {@link #onCallRinging} is never gated — a call must ring.
+     *
+     * <p>A replay (an idempotent send retry) still broadcasts so the sender
+     * reaches SENT, but it must not push again: the stored row's first send
+     * already notified these devices.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onMessageCreated(MessageCreatedEvent event) {
+        if (event.replay()) {
+            return;
+        }
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         UUID subjectUserId = event.subjectUserId();

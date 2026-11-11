@@ -2,6 +2,7 @@ package com.nexachat.message;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.notification.MockFcmGateway;
 import com.nexachat.rag.RagMessageIndex;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.summary.SummaryRequest;
@@ -68,6 +69,7 @@ class MessageFeatureFlowIT {
     @Autowired private MessageService messageService;
     @Autowired private SummaryWindowRepository summaryWindowRepository;
     @Autowired private RagMessageIndex ragMessageIndex;
+    @Autowired private MockFcmGateway mockFcmGateway;
 
     private record TestUser(UUID id, String accessToken) { }
 
@@ -81,11 +83,13 @@ class MessageFeatureFlowIT {
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
         carol = registerUser(tag + " Carol");
+        registerDeviceToken(bob, "it-bob-device-token-" + tag);
     }
 
     @BeforeEach
     void clearPreviousTestConversations() {
         jdbcTemplate.update("DELETE FROM conversations WHERE created_by = ?", alice.id());
+        mockFcmGateway.clear();
     }
 
     @Test
@@ -612,6 +616,118 @@ class MessageFeatureFlowIT {
             start.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void identicalRetryStoresOneMessageAndDispatchesOnePush() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        UUID clientMessageId = UUID.randomUUID();
+        Map<String, Object> request = textRequest(clientMessageId, "retry-once");
+
+        MvcResult first = postMessage(conversationId, alice, request)
+                .andExpect(status().isCreated()).andReturn();
+        MvcResult retry = postMessage(conversationId, alice, request)
+                .andExpect(status().isOk()).andReturn();
+
+        JsonNode firstBody = objectMapper.readTree(first.getResponse().getContentAsString());
+        JsonNode retryBody = objectMapper.readTree(retry.getResponse().getContentAsString());
+        // The retry still carries the stored row: that body is the sender's ack.
+        assertThat(retryBody.get("id").asText()).isEqualTo(firstBody.get("id").asText());
+        assertThat(retryBody.get("seq").asLong()).isEqualTo(firstBody.get("seq").asLong());
+        assertThat(retryBody.get("clientMessageId").asText()).isEqualTo(clientMessageId.toString());
+
+        assertThat(storedMessageCount(alice, clientMessageId)).isEqualTo(1);
+        assertThat(mockFcmGateway.getSentPushes())
+                .as("one stored message must produce exactly one push dispatch")
+                .hasSize(1);
+    }
+
+    @Test
+    void concurrentIdenticalRetryStoresOneMessageAndDispatchesOnePush() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        UUID clientMessageId = UUID.randomUUID();
+        Map<String, Object> request = textRequest(clientMessageId, "retry-race");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<MvcResult> first = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Concurrent send gate timed out");
+                }
+                return postMessage(conversationId, alice, request).andReturn();
+            });
+            Future<MvcResult> retry = executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Concurrent send gate timed out");
+                }
+                return postMessage(conversationId, alice, request).andReturn();
+            });
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            MvcResult firstResult = first.get(30, TimeUnit.SECONDS);
+            MvcResult retryResult = retry.get(30, TimeUnit.SECONDS);
+            assertThat(List.of(firstResult.getResponse().getStatus(), retryResult.getResponse().getStatus()))
+                    .containsExactlyInAnyOrder(201, 200);
+
+            JsonNode firstBody = objectMapper.readTree(firstResult.getResponse().getContentAsString());
+            JsonNode retryBody = objectMapper.readTree(retryResult.getResponse().getContentAsString());
+            assertThat(retryBody.get("id").asText()).isEqualTo(firstBody.get("id").asText());
+            assertThat(storedMessageCount(alice, clientMessageId)).isEqualTo(1);
+            assertThat(mockFcmGateway.getSentPushes())
+                    .as("a concurrent retry must not dispatch a second push")
+                    .hasSize(1);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void newClientMessageIdDispatchesNormally() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+
+        postMessage(conversationId, alice, textRequest(UUID.randomUUID(), "first"))
+                .andExpect(status().isCreated());
+        postMessage(conversationId, alice, textRequest(UUID.randomUUID(), "second"))
+                .andExpect(status().isCreated());
+
+        assertThat(mockFcmGateway.getSentPushes()).hasSize(2);
+    }
+
+    private Map<String, Object> textRequest(UUID clientMessageId, String content) {
+        Map<String, Object> request = new java.util.HashMap<>();
+        request.put("clientMessageId", clientMessageId.toString());
+        request.put("type", "TEXT");
+        request.put("content", content);
+        return request;
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postMessage(
+            UUID conversationId, TestUser sender, Map<String, Object> request) throws Exception {
+        return mockMvc.perform(post("/api/v1/conversations/{id}/messages", conversationId)
+                .header("Authorization", bearer(sender))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)));
+    }
+
+    private int storedMessageCount(TestUser sender, UUID clientMessageId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM messages WHERE sender_id = ? AND client_message_id = ?",
+                Integer.class, sender.id(), clientMessageId);
+        return count == null ? 0 : count;
+    }
+
+    private void registerDeviceToken(TestUser user, String token) throws Exception {
+        mockMvc.perform(post("/api/v1/users/device-token")
+                        .header("Authorization", bearer(user))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "token", token, "platform", "ANDROID", "deviceLabel", "IT"))))
+                .andExpect(status().isOk());
     }
 
     private TestUser registerUser(String displayName) throws Exception {
