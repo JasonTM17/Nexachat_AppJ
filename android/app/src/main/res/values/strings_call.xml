@@ -3,6 +3,7 @@
     <string name="call_state_calling">Calling…</string>
     <string name="call_state_incoming">Incoming call</string>
     <string name="call_state_connecting">Connecting…</string>
+    <string name="call_status_accepted">Call accepted</string>
     <string name="call_state_connected">Voice call</string>
     <string name="call_state_ended">Call ended</string>
     <string name="call_state_busy">User is busy</string>
