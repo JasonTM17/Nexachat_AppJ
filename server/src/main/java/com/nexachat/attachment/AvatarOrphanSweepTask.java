@@ -9,6 +9,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -86,7 +88,7 @@ public class AvatarOrphanSweepTask {
         try {
             SweepResult result = advisoryLock.withLock(
                     ScheduledLockIds.AVATAR_ORPHAN_SWEEP,
-                    () -> execute(properties.isDryRun()));
+                    connection -> execute(properties.isDryRun(), connection));
             return result == null ? Optional.empty() : Optional.of(result);
         } catch (RuntimeException failure) {
             meterRegistry.counter(RUNS, "outcome", "failure").increment();
@@ -97,9 +99,9 @@ public class AvatarOrphanSweepTask {
         }
     }
 
-    private SweepResult execute(boolean dryRun) {
+    private SweepResult execute(boolean dryRun, Connection connection) throws SQLException {
         Instant cutoff = Instant.now().minus(Duration.ofHours(properties.getMinAgeHours()));
-        Set<String> referenced = referenceCoordinator.referencedAvatarKeys();
+        Set<String> referenced = referenceCoordinator.referencedAvatarKeys(connection);
         List<StorageService.StoredFileInfo> candidates = new ArrayList<>();
         int keptReferenced = 0;
         int keptRecent = 0;

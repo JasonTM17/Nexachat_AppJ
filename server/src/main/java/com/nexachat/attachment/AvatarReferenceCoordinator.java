@@ -11,9 +11,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /** Serializes avatar reference changes and file removal with the orphan sweep. */
@@ -48,18 +50,24 @@ public class AvatarReferenceCoordinator {
     }
 
     public Set<String> referencedAvatarKeys() {
-        List<String> urls = jdbcTemplate.queryForList("""
+        return jdbcTemplate.execute((ConnectionCallback<Set<String>>) this::referencedAvatarKeys);
+    }
+
+    Set<String> referencedAvatarKeys(Connection connection) throws SQLException {
+        Set<String> keys = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
                 SELECT avatar_url FROM users
                 WHERE avatar_url LIKE '%/api/v1/files/%'
                 UNION
                 SELECT avatar_url FROM conversations
                 WHERE avatar_url LIKE '%/api/v1/files/%'
-                """, String.class);
-        Set<String> keys = new HashSet<>();
-        for (String url : urls) {
-            String key = AvatarUrlPolicy.storageKeyFromUrl(url);
-            if (key != null) {
-                keys.add(key);
+                """);
+             ResultSet rows = statement.executeQuery()) {
+            while (rows.next()) {
+                String key = AvatarUrlPolicy.storageKeyFromUrl(rows.getString(1));
+                if (key != null) {
+                    keys.add(key);
+                }
             }
         }
         return keys;
@@ -71,8 +79,8 @@ public class AvatarReferenceCoordinator {
             return;
         }
         try {
-            advisoryLock.withLock(ScheduledLockIds.AVATAR_ORPHAN_SWEEP, () -> {
-                if (!referencedAvatarKeys().contains(storageKey)) {
+            advisoryLock.withLock(ScheduledLockIds.AVATAR_ORPHAN_SWEEP, connection -> {
+                if (!referencedAvatarKeys(connection).contains(storageKey)) {
                     storageService.deleteIfExists(storageKey);
                 }
                 return Boolean.TRUE;
