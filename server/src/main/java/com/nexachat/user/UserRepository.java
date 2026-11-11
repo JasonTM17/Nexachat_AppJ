@@ -13,13 +13,8 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
 
-    /** Lookup by normalized E.164 phone — normalize BEFORE calling this. */
-    Optional<User> findByPhone(String phone);
-
     /** Active (non-deleted) account with this phone, for login/register/search. */
     Optional<User> findByPhoneAndDeletedAtIsNull(String phone);
-
-    boolean existsByPhone(String phone);
 
     boolean existsByPhoneAndDeletedAtIsNull(String phone);
 

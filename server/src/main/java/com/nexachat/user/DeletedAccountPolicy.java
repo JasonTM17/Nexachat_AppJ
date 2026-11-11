@@ -15,8 +15,4 @@ public final class DeletedAccountPolicy {
 
     private DeletedAccountPolicy() {
     }
-
-    public static boolean isDeleted(User user) {
-        return user != null && user.getDeletedAt() != null;
-    }
 }

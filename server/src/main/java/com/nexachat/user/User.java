@@ -196,8 +196,4 @@ public class User {
         this.lastSeenAt = null;
         this.passwordHash = DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH;
     }
-
-    public void clearPhone() {
-        this.phone = null;
-    }
 }
