@@ -145,7 +145,7 @@ nexachat:
   uploads:
     # Uploads buffer the whole file on the heap (25 MB max). Bound how many may
     # do so at once; the rest wait acquire-timeout-ms, then get 429
-    # RATE_LIMITED with Retry-After. Lower this on a small heap (Render: 3).
+    # RATE_LIMITED with Retry-After. Lower this on a small heap (Render: 2).
     max-concurrent: ${NEXACHAT_UPLOADS_MAX_CONCURRENT:16}
     acquire-timeout-ms: ${NEXACHAT_UPLOADS_ACQUIRE_TIMEOUT_MS:1000}
   avatar-sweep:
