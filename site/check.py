@@ -38,6 +38,22 @@ EXPECTED_UPLOAD_FINGERPRINT = (
     "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A"
 )
 EXPECTED_PACKAGE_NAME = "com.nexachat"
+OFFICIAL_RELEASE_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+DOWNLOAD_PAGE = "download.html"
+ANDROID_API_TO_VERSION = {
+    21: "5.0",
+    23: "6.0",
+    24: "7.0",
+    26: "8.0",
+    28: "9",
+    29: "10",
+    30: "11",
+    31: "12",
+    33: "13",
+    34: "14",
+    35: "15",
+    36: "16",
+}
 
 
 def log_pass(msg):
@@ -102,6 +118,24 @@ def verify_android_package_name():
         if not match:
             return None, "Could not find applicationId in android/app/build.gradle"
         return match.group(1), None
+    except Exception as e:
+        return None, f"Failed to read android/app/build.gradle: {e}"
+
+
+def read_android_min_sdk():
+    """Read minSdk integer from android/app/build.gradle."""
+    gradle_path = os.path.join(REPO_DIR, "android", "app", "build.gradle")
+    if not os.path.isfile(gradle_path):
+        return None, f"android/app/build.gradle not found at {gradle_path}"
+
+    try:
+        with open(gradle_path, "r", encoding="utf-8") as f:
+            gradle_content = f.read()
+
+        match = re.search(r"minSdk\s+(\d+)", gradle_content)
+        if not match:
+            return None, "Could not find minSdk in android/app/build.gradle"
+        return int(match.group(1)), None
     except Exception as e:
         return None, f"Failed to read android/app/build.gradle: {e}"
 
@@ -573,12 +607,18 @@ def test_no_external_urls():
                 with open(path, "r", encoding="utf-8") as file_handle:
                     content = file_handle.read()
                 matches = collect_urls_for_external_scan(content, ext)
-                disallowed = [m for m in matches if not is_nexachat_site_url(m)]
+                disallowed = []
+                for m in matches:
+                    if is_nexachat_site_url(m):
+                        continue
+                    if rel_path == DOWNLOAD_PAGE and m == OFFICIAL_RELEASE_APK_URL:
+                        continue
+                    disallowed.append(m)
                 if disallowed:
                     failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s)")
+        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: release link on {DOWNLOAD_PAGE})")
     return failures
 
 
@@ -652,6 +692,7 @@ def test_no_inline_scripts_and_styles():
 
 REQUIRED_HTML_PAGES = (
     "index.html",
+    DOWNLOAD_PAGE,
     "404.html",
     "privacy.html",
     "terms.html",
@@ -661,6 +702,7 @@ REQUIRED_HTML_PAGES = (
 
 PUBLIC_SITEMAP_URLS = (
     "https://nexachat.io.vn/",
+    "https://nexachat.io.vn/download.html",
     "https://nexachat.io.vn/privacy.html",
     "https://nexachat.io.vn/terms.html",
     "https://nexachat.io.vn/delete-account.html",
@@ -803,7 +845,7 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing skip link to #main")
         if 'name="description"' not in html:
             failures.append(f"{rel_page} missing meta description")
-        if rel_page in ("index.html", "privacy.html", "terms.html", "delete-account.html"):
+        if rel_page in ("index.html", "privacy.html", "terms.html", "delete-account.html", DOWNLOAD_PAGE):
             if 'rel="canonical"' not in html:
                 failures.append(f"{rel_page} missing canonical link")
 
@@ -952,7 +994,7 @@ def test_dark_theme_contrast_tokens():
 def test_no_contradictory_hreflang():
     """Bilingual single-URL pages must not declare hreflang vi/en pointing at the same href."""
     failures = []
-    pages = ("index.html", "privacy.html", "terms.html", "delete-account.html")
+    pages = ("index.html", "privacy.html", "terms.html", "delete-account.html", DOWNLOAD_PAGE)
     hreflang_re = re.compile(
         r'<link[^>]+rel=["\']alternate["\'][^>]+hreflang=["\']([^"\']+)["\'][^>]+href=["\']([^"\']+)["\']',
         re.IGNORECASE,
@@ -1215,6 +1257,94 @@ def test_account_deletion_page():
     return failures
 
 
+def test_download_page():
+    """Verify site/download.html structure, primary button, install guide, SHA-256 instructions, minSdk, and links."""
+    failures = []
+    page_path = os.path.join(SITE_DIR, DOWNLOAD_PAGE)
+    if not os.path.isfile(page_path):
+        return [f"Missing HTML page {DOWNLOAD_PAGE}"]
+
+    with open(page_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Canonical and indexing
+    if 'rel="canonical" href="https://nexachat.io.vn/download.html"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} canonical must be https://nexachat.io.vn/download.html")
+    if "noindex" in html.lower():
+        failures.append(f"{DOWNLOAD_PAGE} must be indexable (no noindex robots meta)")
+
+    # Primary download button
+    btn_pattern = re.compile(
+        r'<a[^>]+class="[^"]*\bbtn\b[^"]*"[^>]+href="' + re.escape(OFFICIAL_RELEASE_APK_URL) + r'"'
+    )
+    if not btn_pattern.search(html):
+        failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_RELEASE_APK_URL}")
+
+    # Dynamic minSdk check against android/app/build.gradle
+    min_sdk, err = read_android_min_sdk()
+    if err:
+        failures.append(f"Could not verify minSdk for {DOWNLOAD_PAGE}: {err}")
+    else:
+        sdk_str = f"API {min_sdk}"
+        if sdk_str not in html:
+            failures.append(f"{DOWNLOAD_PAGE} must mention minSdk API level ({sdk_str}) from build.gradle")
+        ver_str = ANDROID_API_TO_VERSION.get(min_sdk)
+        if ver_str and f"Android {ver_str}" not in html:
+            failures.append(f"{DOWNLOAD_PAGE} must mention Android version (Android {ver_str})")
+
+    # Install guide copy (vi and en)
+    if "cho phép cài đặt từ nguồn này" not in html:
+        failures.append(f"{DOWNLOAD_PAGE} (vi) missing install guide instruction 'cho phép cài đặt từ nguồn này'")
+    if "allow installing from this source" not in html.lower():
+        failures.append(f"{DOWNLOAD_PAGE} (en) missing install guide instruction 'allow installing from this source'")
+    if "tệp apk" not in html.lower() or "apk file" not in html.lower():
+        failures.append(f"{DOWNLOAD_PAGE} missing APK file mention in install guide")
+
+    # SHA-256 verification instructions
+    if ".sha256" not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing .sha256 checksum file reference")
+    if "sha256sum" not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing sha256sum verification command")
+    if "Get-FileHash" not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing Get-FileHash verification command")
+
+    # Links to privacy and terms
+    if 'href="/privacy.html"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing link to /privacy.html")
+    if 'href="/terms.html"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing link to /terms.html")
+
+    # Navigation and footer links in index.html
+    index_path = os.path.join(SITE_DIR, "index.html")
+    if os.path.isfile(index_path):
+        with open(index_path, "r", encoding="utf-8") as f:
+            index_html = f.read()
+        if 'href="/download.html"' not in index_html:
+            failures.append("index.html must link to /download.html")
+        if '<nav' not in index_html or 'href="/download.html"' not in index_html:
+            failures.append("index.html navigation must link to /download.html")
+        # Check footer in index.html
+        footer_idx = index_html.find("<footer")
+        if footer_idx == -1 or 'href="/download.html"' not in index_html[footer_idx:]:
+            failures.append("index.html footer must link to /download.html")
+    else:
+        failures.append("Missing site/index.html")
+
+    # Sitemap check
+    sitemap_path = os.path.join(SITE_DIR, "sitemap.xml")
+    if os.path.isfile(sitemap_path):
+        with open(sitemap_path, "r", encoding="utf-8") as f:
+            sitemap_html = f.read()
+        if "https://nexachat.io.vn/download.html" not in sitemap_html:
+            failures.append("sitemap.xml must list https://nexachat.io.vn/download.html")
+    else:
+        failures.append("Missing site/sitemap.xml")
+
+    if not failures:
+        log_pass("Download page is present, bilingual, with primary button, install guide, SHA-256 steps, and minSdk verified")
+    return failures
+
+
 def test_delete_account_web_deployment_contract():
     """Repo gate: OTP web flow assets, strict default CSP, and operator deploy notes."""
     failures = []
@@ -1272,6 +1402,8 @@ def test_internal_static_links():
         "/robots.txt",
         "/privacy.html",
         "/terms.html",
+        "/delete-account.html",
+        "/download.html",
         "/og-image.svg",
         "/structured-data.json",
     }
@@ -1487,6 +1619,9 @@ def main():
 
     f_deletion_web = test_delete_account_web_deployment_contract()
     all_failures.extend(f_deletion_web)
+
+    f_download = test_download_page()
+    all_failures.extend(f_download)
 
     f_ld = test_index_inline_json_ld()
     all_failures.extend(f_ld)
