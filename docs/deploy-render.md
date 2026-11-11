@@ -156,7 +156,7 @@ here. Resend uses HTTPS and is the configured provider.
   an uptime monitor keeps it awake. Spring Boot adds its own boot time on top of
   container provisioning: in a local run capped at 512 MB / 0.1 CPU, the app
   reached readiness in about **200 s** (198–220 s depending on Flyway migration
-  execution; `reports/r4-336-s2.md`) and readiness reported `db`, `flyway`,
+  execution) and readiness reported `db`, `flyway`,
   `diskSpace` and `refreshReplay` UP. Live Render cold-start duration has not yet
   been measured directly on the live platform. Render allows 15 minutes for a new
   deploy to pass its health check.

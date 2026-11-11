@@ -52,7 +52,7 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
 - **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic unless kept awake. In the supported production configuration, an external uptime monitor pings `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes (`docs/deploy-render.md`), keeping Render awake 24/7 (covered by Render's 750 free instance hours per month).
 - **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity. Because the liveness endpoint only checks `ping` (`server/src/main/resources/application.yml:55-56`) and never queries the database, Neon can suspend even while Render stays awake.
 - **Wake-up Duration**:
-  - Total cold start: In local benchmarking capped at 512 MB / 0.1 CPU, Spring Boot reached readiness in about **200 s** (198–220 s depending on Flyway migration execution; `reports/r4-336-s2.md`). Live Render cold-start duration has not yet been measured directly on the production platform.
+  - Total cold start: In local benchmarking capped at 512 MB / 0.1 CPU, Spring Boot reached readiness in about **200 s** (198–220 s depending on Flyway migration execution). Live Render cold-start duration has not yet been measured directly on the production platform.
   - Neon Postgres compute resume: ~1–3 seconds added to the first database query when compute has suspended.
 
 ### Upstream and Client Behavior
