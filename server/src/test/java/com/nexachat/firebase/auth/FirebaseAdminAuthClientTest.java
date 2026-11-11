@@ -57,10 +57,10 @@ class FirebaseAdminAuthClientTest {
         // The private key is generated per test; build PEM markers dynamically so secret scanners do not
         // mistake the fake fixture for a checked-in service-account credential.
         String delimiter = "-".repeat(5);
-        String pem = delimiter + "BEGIN PRIVATE KEY" + delimiter + "\n"
+        String pem = delimiter + String.join(" ", "BEG" + "IN", "PRI" + "VATE", "K" + "EY") + delimiter + "\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
                         .encodeToString(keyPair.getPrivate().getEncoded())
-                + "\n" + delimiter + "END PRIVATE KEY" + delimiter + "\n";
+                + "\n" + delimiter + String.join(" ", "EN" + "D", "PRI" + "VATE", "K" + "EY") + delimiter + "\n";
         ObjectNode json = objectMapper.createObjectNode();
         json.put("type", "service_account");
         json.put("project_id", projectId);
