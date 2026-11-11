@@ -76,11 +76,20 @@ services:
       - key: NEXACHAT_CORS_ALLOWED_ORIGINS
         value: https://nexachat.io.vn
       # Render terminates TLS at its edge and the container is not directly
-      # reachable, but Render publishes no proxy CIDR. Leave this empty: rate
-      # limits then key on the proxy peer (one shared bucket) instead of
-      # trusting a spoofable X-Forwarded-For. See docs/deploy-render.md.
+      # reachable. Render publishes no proxy CIDR, but its load balancer reaches
+      # the service over the private network and peers are observed in
+      # 10.0.0.0/8. Trusting that range lets the resolver read Cloudflare's
+      # overwritten CF-Connecting-IP, so each client gets its own rate-limit
+      # bucket. If Render moves the peer off this range, buckets fall back to
+      # the shared proxy peer (safe, just coarse). See docs/deploy-render.md.
       - key: NEXACHAT_TRUSTED_PROXY_CIDRS
-        value: ""
+        value: "10.0.0.0/8"
+      # Cloudflare overwrites this single-value header on traffic to a Render
+      # web service, so a caller cannot choose its bucket. The default
+      # X-Forwarded-For is read right-to-left and is also safe, but it resolves
+      # to the Cloudflare edge IP on Render, not to the client.
+      - key: NEXACHAT_CLIENT_IP_HEADER
+        value: CF-Connecting-IP
 
       # ---- Storage ---------------------------------------------------------
       # Kept for the diskSpace health probe (application.yml:63). With the s3

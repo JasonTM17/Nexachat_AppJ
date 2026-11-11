@@ -115,6 +115,10 @@ nexachat:
     validity-cache-ttl-seconds: ${NEXACHAT_VALIDITY_CACHE_TTL_SECONDS:60}
     # Reverse-proxy CIDRs that may rewrite X-Forwarded-For (empty = never trust).
     trusted-proxy-cidrs: ${NEXACHAT_TRUSTED_PROXY_CIDRS:}
+    # Header that carries the client address when the peer is a trusted proxy.
+    # X-Forwarded-For is walked right-to-left; a single-value header such as
+    # CF-Connecting-IP is used only when the edge overwrites it.
+    client-ip-header: ${NEXACHAT_CLIENT_IP_HEADER:X-Forwarded-For}
   rate-limit:
     messages:
       edit-delete-per-minute: 30

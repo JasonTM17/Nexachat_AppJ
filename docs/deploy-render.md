@@ -107,7 +107,8 @@ storage provider is `local` (S1). The Blueprint declares:
 | `JWT_SECRET` | `application-prod.yml:79` | generated; ≥ 32 bytes (`JwtService.java:37-49`) |
 | `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:92` | generated; base64 of exactly 32 bytes |
 | `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:108` | `https://nexachat.io.vn` for web account deletion |
-| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:117` | empty; see the rate-limit note below |
+| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:117` | `10.0.0.0/8`; Render private-network peer range, see §8 |
+| `NEXACHAT_CLIENT_IP_HEADER` | `application.yml:121` | `CF-Connecting-IP`; Cloudflare overwrites it, see §8 |
 | `STORAGE_ROOT` | `application-prod.yml:83` | `/app/data/uploads`; also the `diskSpace` health path |
 | `NEXACHAT_STORAGE_PROVIDER` | 336 S1 `application.yml:133` | `s3` |
 | `NEXACHAT_STORAGE_S3_ENDPOINT` | 336 S1 `application.yml:136` | R2 endpoint |
@@ -200,10 +201,73 @@ here. Resend uses HTTPS and is the configured provider.
   without container sleep interruption; if Render is ever allowed to sleep,
   scheduled work only runs while the service is awake: a reminder that falls due
   during a sleep is delivered on the next wake-up, not at its exact time.
-- Render publishes no proxy CIDR, and a client can influence
-  `X-Forwarded-For` at the edge. `NEXACHAT_TRUSTED_PROXY_CIDRS` therefore stays
-  empty: per-IP rate-limit buckets key on Render's proxy peer, so credential
-  limits behave as one shared bucket. Revisit when the proxy peer range is
-  verified, or add `CF-Connecting-IP` support in the server.
 - One instance only. The scheduled jobs already use Postgres advisory locks, so
   scaling later does not double-run them.
+
+## 8. Client IP behind Render's proxy
+
+Public traffic reaches a Render web service through Cloudflare and Render's load
+balancer, which terminates TLS and forwards plain HTTP to the container, so the
+socket peer is a proxy, not the user
+([Render: Web Services](https://render.com/docs/web-services),
+[Render: DDoS protection](https://render.com/articles/how-render-handles-ddos-attacks)).
+Render publishes no proxy CIDR and no Render-specific client-address header.
+
+- **`X-Forwarded-For` is append-only.** Cloudflare appends to a caller-supplied
+  `X-Forwarded-For`, so its left-most entry is attacker-controlled
+  ([Render: PocketBase on Render, "Making PocketBase see the real client IP"](https://render.com/articles/host-pocketbase-on-render#making-pocketbase-see-the-real-client-ip)).
+- **`CF-Connecting-IP` is authoritative.** Cloudflare writes it on every request
+  to a Render web service and overwrites whatever the caller sent
+  ([Render: PocketBase on Render](https://render.com/articles/host-pocketbase-on-render#making-pocketbase-see-the-real-client-ip);
+  [Cloudflare HTTP headers](https://developers.cloudflare.com/fundamentals/reference/http-request-headers/)).
+
+The Blueprint therefore sets `NEXACHAT_TRUSTED_PROXY_CIDRS=10.0.0.0/8` and
+`NEXACHAT_CLIENT_IP_HEADER=CF-Connecting-IP`. Render does not publish the peer
+range; its load balancer connects over the
+[private network](https://render.com/docs/private-network) and the observed peer
+is in `10.0.0.0/8`
+([measured Render request](https://rohitpaulk.com/articles/render-rails-remote-ip)).
+If Render moves the peer outside that range, rate-limit buckets fall back to the
+shared proxy peer (safe, but coarse); re-run the probe below after any platform
+change.
+
+`ClientIpResolver` reads the configured header only when the socket peer is in
+the trusted range. With `X-Forwarded-For` it walks the chain right-to-left and
+returns the first address outside the trusted ranges; a malformed chain falls
+back to the proxy peer. A caller-supplied left-most entry can never choose a
+bucket. A single-value header with more than one value also falls back to the
+peer. Spring's own `getRemoteAddr()` still carries the left-most forwarded
+entry, so do not key a new security control on it; use `ClientIpResolver`.
+
+### Post-deploy probe
+
+Run this from two different networks (for example an office connection and a
+phone hotspot). Never run it from CI or against a production system you do not
+own.
+
+1. On network A, send 11 bad logins with a different fake `X-Forwarded-For`
+   each time. The response must become `429` by the 11th request (login budget
+   is 10 per 5 minutes; run the whole probe inside that window):
+
+   ```sh
+   for i in $(seq 1 11); do
+     curl -s -o /dev/null -w "%{http_code}\n" \
+       -H 'Content-Type: application/json' \
+       -H "X-Forwarded-For: 198.51.100.$i" \
+       -d '{"phone":"+84900000000","password":"wrong"}' \
+       https://api.nexachat.io.vn/api/v1/auth/login
+   done
+   ```
+
+2. On network A, send one more bad login with a different fake
+   `CF-Connecting-IP` and `X-Forwarded-For`. It must stay `429`; a `401` means
+   the fake header chose a fresh bucket.
+
+3. On network B, send one bad login: it must be `401` (fresh bucket), then ten
+   more must reach `429`. A `429` on the first network-B request means the peer
+   did not match `NEXACHAT_TRUSTED_PROXY_CIDRS` and every client still shares
+   the proxy bucket.
+
+Read Render's HTTP request log for the two `429` sequences: the status codes and
+timestamps must line up. The application deliberately logs no client IPs, so the
+bucket behaviour above is the confirmation.
