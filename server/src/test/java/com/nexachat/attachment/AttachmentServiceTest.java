@@ -60,7 +60,7 @@ class AttachmentServiceTest {
                 attachmentRepository, memberRepository, storageService, userRepository);
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
-        lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
+        lenient().when(userRepository.findByIdForUpdate(ownerId)).thenReturn(Optional.of(user(ownerId)));
     }
 
     private static StorageService.StreamHandle handle(byte[] content) {

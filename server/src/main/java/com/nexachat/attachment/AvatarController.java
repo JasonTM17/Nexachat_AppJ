@@ -9,6 +9,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Self-service avatar upload: POST /api/v1/users/me/avatar.
@@ -28,6 +30,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/users")
 public class AvatarController {
+
+    private static final Pattern OWNED_AVATAR_STORAGE_KEY = Pattern.compile(
+            "^avatars/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.[a-z0-9]+$");
 
     private final StorageService storageService;
     private final UserRepository userRepository;
@@ -57,16 +62,29 @@ public class AvatarController {
         if (sniffed == null || !sniffed.startsWith("image/")) {
             throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
         }
-        StorageService.StoredFile stored = storageService.store(
-                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
         User user = userRepository.findByIdForUpdate(principal.userId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
+        String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
+        StorageService.StoredFile stored = storageService.store(
+                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+        StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
         user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
         userRepository.save(user);
+        if (!stored.storageKey().equals(oldAvatarKey)) {
+            StorageTransactionCleanup.deleteAfterCommit(storageService, oldAvatarKey);
+        }
         return new AvatarResponse(user.getAvatarUrl());
+    }
+
+    private static String ownedAvatarStorageKey(String avatarUrl) {
+        if (avatarUrl == null || !avatarUrl.startsWith(AvatarUrlPolicy.FILES_PATH)) {
+            return null;
+        }
+        String storageKey = avatarUrl.substring(AvatarUrlPolicy.FILES_PATH.length());
+        return OWNED_AVATAR_STORAGE_KEY.matcher(storageKey).matches() ? storageKey : null;
     }
 
     /**

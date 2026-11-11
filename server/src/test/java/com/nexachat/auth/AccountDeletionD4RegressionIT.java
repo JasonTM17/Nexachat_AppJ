@@ -1,7 +1,11 @@
 package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.nexachat.attachment.AttachmentService;
+import com.nexachat.attachment.AvatarController;
 import com.nexachat.attachment.StorageService;
+import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.testutil.TestWaits;
 import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.AccountDeletionCoordination;
 import com.nexachat.user.DeletedAccountPolicy;
@@ -11,6 +15,7 @@ import com.nexachat.ws.StompAuthChannelInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -22,25 +27,39 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.awaitility.core.ConditionTimeoutException;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,6 +78,12 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     private StorageService storageService;
 
     @Autowired
+    private AttachmentService attachmentService;
+
+    @Autowired
+    private AvatarController avatarController;
+
+    @Autowired
     private AccountDeletionService accountDeletionService;
 
     @Autowired
@@ -72,6 +97,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Value("${nexachat.storage.root}")
+    private String storageRoot;
 
     @BeforeEach
     void resetPause() {
@@ -229,6 +257,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         Registered user = register("+84905553103", "secret123");
         Registered peer = register("+84905553104", "secret123");
         UUID conversationId = openDirect(user, peer);
+        UUID groupId = createGroup(user, List.of(peer.userId()));
 
         jdbcTemplate.update(
                 "INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
@@ -256,6 +285,19 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
                 VALUES (?, ?, 'test', ?, '\\x00', 'EN', '{}'::jsonb, '{}', ?, ?)
                 """, cacheId, conversationId, "b".repeat(64), "c".repeat(64),
                 Timestamp.from(Instant.now().plusSeconds(3600)));
+        jdbcTemplate.update("""
+                INSERT INTO message_summaries
+                (id, conversation_id, from_seq, to_seq, content_hash, provider, language, payload_json, expires_at)
+                VALUES (?, ?, 1, 1, ?, 'LOCAL', 'EN', '{}'::jsonb, ?)
+                """, UUID.randomUUID(), groupId, "d".repeat(64),
+                Timestamp.from(Instant.now().plusSeconds(3600)));
+        jdbcTemplate.update("""
+                INSERT INTO rag_ask_cache
+                (id, conversation_id, model, question_hash, question_vector, language, payload_json,
+                 cited_message_ids, cited_content_hash, expires_at)
+                VALUES (?, ?, 'test', ?, '\\x00', 'EN', '{}', '{}', ?, ?)
+                """, UUID.randomUUID(), groupId, "e".repeat(64), "f".repeat(64),
+                Timestamp.from(Instant.now().plusSeconds(3600)));
 
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
@@ -274,6 +316,113 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM rag_ask_cache WHERE conversation_id = ?",
                 Integer.class, conversationId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_summaries WHERE conversation_id = ?",
+                Integer.class, groupId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                Integer.class, groupId)).isZero();
+    }
+
+    @Test
+    void concurrentGroupAddCannotOutliveAccountDeletion() throws Exception {
+        Registered victim = register("+84905553201", "secret123");
+        Registered admin = register("+84905553202", "secret123");
+        Registered existing = register("+84905553203", "secret123");
+        UUID groupId = createGroup(admin, List.of(existing.userId()));
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/conversations/" + groupId + "/members",
+                Map.of("userIds", List.of(victim.userId().toString())), admin.accessToken())
+                .andReturn().getResponse().getStatus());
+
+        assertThat(memberCount(groupId, victim.userId())).isZero();
+    }
+
+    @Test
+    void concurrentGroupCreationCannotIncludeDeletingUser() throws Exception {
+        Registered victim = register("+84905553204", "secret123");
+        Registered actor = register("+84905553205", "secret123");
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/conversations/group",
+                Map.of("title", "Deletion race", "memberIds", List.of(victim.userId().toString())),
+                actor.accessToken()).andReturn().getResponse().getStatus());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE user_id = ?",
+                Integer.class, victim.userId())).isZero();
+    }
+
+    @Test
+    void concurrentDirectCreationCannotIncludeDeletingUser() throws Exception {
+        Registered victim = register("+84905553206", "secret123");
+        Registered actor = register("+84905553207", "secret123");
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/conversations/direct",
+                Map.of("userId", victim.userId().toString()), actor.accessToken())
+                .andReturn().getResponse().getStatus());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE user_id = ?",
+                Integer.class, victim.userId())).isZero();
+    }
+
+    @Test
+    void concurrentDirectInviteJoinCannotOutliveAccountDeletion() throws Exception {
+        Registered victim = register("+84905553208", "secret123");
+        Registered owner = register("+84905553209", "secret123");
+        Registered existing = register("+84905553210", "secret123");
+        UUID groupId = createGroup(owner, List.of(existing.userId()));
+        String inviteToken = createInviteLink(owner, groupId, false);
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/invite-links/" + inviteToken + "/join", Map.of(), victim.accessToken())
+                .andReturn().getResponse().getStatus());
+
+        assertThat(memberCount(groupId, victim.userId())).isZero();
+    }
+
+    @Test
+    void concurrentApprovalInviteJoinCannotPersistRequestAfterDeletionCleanup() throws Exception {
+        Registered victim = register("+84905553211", "secret123");
+        Registered owner = register("+84905553212", "secret123");
+        Registered existing = register("+84905553213", "secret123");
+        UUID groupId = createGroup(owner, List.of(existing.userId()));
+        String inviteToken = createInviteLink(owner, groupId, true);
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/invite-links/" + inviteToken + "/join", Map.of(), victim.accessToken())
+                .andReturn().getResponse().getStatus());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM group_join_requests WHERE user_id = ?",
+                Integer.class, victim.userId())).isZero();
+    }
+
+    @Test
+    void concurrentApprovalCannotAddPendingUserAfterDeletionCleanup() throws Exception {
+        Registered victim = register("+84905553214", "secret123");
+        Registered owner = register("+84905553215", "secret123");
+        Registered existing = register("+84905553216", "secret123");
+        UUID groupId = createGroup(owner, List.of(existing.userId()));
+        String inviteToken = createInviteLink(owner, groupId, true);
+        var join = postJson("/api/v1/invite-links/" + inviteToken + "/join",
+                        Map.of(), victim.accessToken())
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID requestId = UUID.fromString(objectMapper.readTree(
+                join.getResponse().getContentAsString()).get("requestId").asText());
+
+        assertAccountDeletionWinsRace(victim, () -> postJson(
+                "/api/v1/conversations/" + groupId + "/join-requests/" + requestId + "/approve",
+                Map.of(), owner.accessToken()).andReturn().getResponse().getStatus());
+
+        assertThat(memberCount(groupId, victim.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM group_join_requests WHERE user_id = ?",
+                Integer.class, victim.userId())).isZero();
     }
 
     @Test
@@ -332,6 +481,102 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT password_hash FROM users WHERE id = ?", String.class, user.userId()))
                 .isEqualTo(DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH);
+    }
+
+    @Test
+    void concurrentAttachmentUploadCannotOutliveDeletionCleanup() throws Exception {
+        Registered user = register("+84905553217", "secret123");
+        Set<String> attachmentsBefore = storedKeys("attachments");
+
+        assertAccountDeletionWinsRace(user, () -> uploadAttachment(user));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_attachments WHERE owner_id = ?",
+                Integer.class, user.userId())).isZero();
+        assertThat(storedKeys("attachments")).isEqualTo(attachmentsBefore);
+    }
+
+    @Test
+    void attachmentUploadDeletesStoredFileWhenDatabaseTransactionRollsBack() throws Exception {
+        Registered user = register("+84905553218", "secret123");
+        java.util.concurrent.atomic.AtomicReference<String> uploadedUrl =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
+            uploadedUrl.set(attachmentService.upload(user.userId(),
+                    new MockMultipartFile("file", "rollback.png", "image/png", PNG_BYTES),
+                    null, null, null, null).url());
+            throw new IllegalStateException("planned attachment rollback");
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessage("planned attachment rollback");
+
+        String storageKey = storageKeyFromUrl(uploadedUrl.get());
+        assertThat(storageService.exists(storageKey)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_attachments WHERE owner_id = ?",
+                Integer.class, user.userId())).isZero();
+    }
+
+    @Test
+    void avatarReplacementDeletesOldFileAfterCommit() throws Exception {
+        Registered user = register("+84905553219", "secret123");
+        String firstUrl = uploadAvatar(user).getResponse().getContentAsString();
+        String firstAvatarUrl = objectMapper.readTree(firstUrl).get("avatarUrl").asText();
+        String firstKey = storageKeyFromUrl(firstAvatarUrl);
+        assertThat(storageService.exists(firstKey)).isTrue();
+
+        String secondBody = uploadAvatar(user).getResponse().getContentAsString();
+        String secondAvatarUrl = objectMapper.readTree(secondBody).get("avatarUrl").asText();
+        String secondKey = storageKeyFromUrl(secondAvatarUrl);
+
+        assertThat(secondKey).isNotEqualTo(firstKey);
+        assertThat(storageService.exists(firstKey)).isFalse();
+        assertThat(storageService.exists(secondKey)).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT avatar_url FROM users WHERE id = ?", String.class, user.userId()))
+                .isEqualTo(secondAvatarUrl);
+    }
+
+    @Test
+    void avatarReplacementRollbackKeepsOldFileAndDeletesNewFile() throws Exception {
+        Registered user = register("+84905553220", "secret123");
+        String firstBody = uploadAvatar(user).getResponse().getContentAsString();
+        String firstUrl = objectMapper.readTree(firstBody).get("avatarUrl").asText();
+        String firstKey = storageKeyFromUrl(firstUrl);
+        java.util.concurrent.atomic.AtomicReference<String> attemptedUrl =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
+            try {
+                attemptedUrl.set(avatarController.uploadAvatar(new JwtPrincipal(user.userId()),
+                        List.<org.springframework.web.multipart.MultipartFile>of(
+                                new MockMultipartFile("file", "rollback.png", "image/png", PNG_BYTES)))
+                        .avatarUrl());
+            } catch (IOException ex) {
+                throw new IllegalStateException(ex);
+            }
+            throw new IllegalStateException("planned avatar rollback");
+        })).isInstanceOf(IllegalStateException.class)
+                .hasMessage("planned avatar rollback");
+
+        String attemptedKey = storageKeyFromUrl(attemptedUrl.get());
+        assertThat(storageService.exists(firstKey)).isTrue();
+        assertThat(storageService.exists(attemptedKey)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT avatar_url FROM users WHERE id = ?", String.class, user.userId()))
+                .isEqualTo(firstUrl);
+    }
+
+    @Test
+    void concurrentAvatarUploadRejectedByDeletionLeavesNoStoredFile() throws Exception {
+        Registered user = register("+84905553221", "secret123");
+        Set<String> avatarsBefore = storedKeys("avatars");
+
+        assertAccountDeletionWinsRace(user, () -> uploadAvatarStatus(user));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT avatar_url FROM users WHERE id = ?", String.class, user.userId())).isNull();
+        assertThat(storedKeys("avatars")).isEqualTo(avatarsBefore);
     }
 
     @Test
@@ -513,6 +758,124 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         }
     }
 
+    private void assertAccountDeletionWinsRace(Registered user, Callable<Integer> mutation)
+            throws Exception {
+        CountDownLatch deletionAtTombstone = new CountDownLatch(1);
+        pause.whenBeforeTombstone = () -> {
+            deletionAtTombstone.countDown();
+            try {
+                pause.awaitResume();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(ex);
+            }
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        Future<Integer> deletion = null;
+        Future<Integer> inFlightMutation = null;
+        boolean blockedOnUserLock = false;
+        try {
+            try {
+                deletion = executor.submit(() -> deleteMe(user.accessToken(), "secret123")
+                        .andReturn().getResponse().getStatus());
+                assertThat(deletionAtTombstone.await(30, TimeUnit.SECONDS)).isTrue();
+
+                inFlightMutation = executor.submit(mutation);
+                try {
+                    TestWaits.until("in-flight relationship write to wait on the deleting users row",
+                            () -> userLockWaiterCount() > 0);
+                    blockedOnUserLock = true;
+                } catch (ConditionTimeoutException expectedOnTheUnfixedImplementation) {
+                    // Keep the schedule deterministic on the unfixed code too:
+                    // deletion is resumed below before observing its outcome.
+                }
+            } finally {
+                pause.resume();
+            }
+
+            assertThat(deletion).isNotNull();
+            assertThat(deletion.get(60, TimeUnit.SECONDS)).isEqualTo(204);
+            assertThat(inFlightMutation).isNotNull();
+            int mutationStatus = inFlightMutation.get(60, TimeUnit.SECONDS);
+            assertThat(blockedOnUserLock)
+                    .as("relationship creation must acquire the target user lock before other rows")
+                    .isTrue();
+            assertThat(mutationStatus)
+                    .as("a mutation resumed after deletion must reject the tombstoned account")
+                    .isEqualTo(404);
+        } finally {
+            pause.resume();
+            executor.shutdownNow();
+        }
+    }
+
+    private int userLockWaiterCount() {
+        String url = environmentValue("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test");
+        String username = environmentValue("IT_DB_USER", "nexachat");
+        String password = environmentValue("IT_DB_PASSWORD", "nexachat");
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+             PreparedStatement statement = connection.prepareStatement("""
+                     SELECT count(*) FROM pg_stat_activity
+                     WHERE datname = current_database()
+                       AND pid <> pg_backend_pid()
+                       AND wait_event_type = 'Lock'
+                       AND query ILIKE ?
+                     """)) {
+            statement.setString(1, "%users%");
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        } catch (java.sql.SQLException ex) {
+            throw new IllegalStateException("Could not inspect the in-flight user-row lock", ex);
+        }
+    }
+
+    private static String environmentValue(String key, String fallback) {
+        String value = System.getenv(key);
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private int uploadAttachment(Registered user) throws Exception {
+        return mockMvc.perform(multipart("/api/v1/attachments")
+                        .file(new MockMultipartFile("file", "race.png", "image/png", PNG_BYTES))
+                        .header("Authorization", "Bearer " + user.accessToken()))
+                .andReturn().getResponse().getStatus();
+    }
+
+    private org.springframework.test.web.servlet.MvcResult uploadAvatar(Registered user) throws Exception {
+        return mockMvc.perform(multipart("/api/v1/users/me/avatar")
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", PNG_BYTES))
+                        .header("Authorization", "Bearer " + user.accessToken()))
+                .andReturn();
+    }
+
+    private int uploadAvatarStatus(Registered user) throws Exception {
+        return uploadAvatar(user).getResponse().getStatus();
+    }
+
+    private Set<String> storedKeys(String subdirectory) throws IOException {
+        Path directory = Path.of(storageRoot).resolve(subdirectory);
+        if (!Files.isDirectory(directory)) {
+            return Set.of();
+        }
+        Set<String> keys = new HashSet<>();
+        try (Stream<Path> files = Files.list(directory)) {
+            files.filter(Files::isRegularFile)
+                    .forEach(path -> keys.add(subdirectory + "/" + path.getFileName()));
+        }
+        return keys;
+    }
+
+    private static String storageKeyFromUrl(String url) {
+        String prefix = "/api/v1/files/";
+        if (url == null || !url.startsWith(prefix)) {
+            throw new IllegalArgumentException("Unexpected storage URL");
+        }
+        return url.substring(prefix.length());
+    }
+
     private ResultActions deleteMe(String accessToken, String password) throws Exception {
         return mockMvc.perform(delete("/api/v1/users/me")
                 .header("Authorization", "Bearer " + accessToken)
@@ -551,6 +914,12 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         jdbcTemplate.update("UPDATE users SET display_name = ? WHERE id = ?", name, userId);
     }
 
+    private int memberCount(UUID conversationId, UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
+                Integer.class, conversationId, userId);
+    }
+
     private List<JsonNode> systemMessages(UUID conversationId, Registered reader) throws Exception {
         var result = mockMvc.perform(get("/api/v1/conversations/" + conversationId + "/messages")
                         .header("Authorization", "Bearer " + reader.accessToken()))
@@ -567,8 +936,12 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     }
 
     private String createInviteLink(Registered owner, UUID groupId) throws Exception {
+        return createInviteLink(owner, groupId, true);
+    }
+
+    private String createInviteLink(Registered owner, UUID groupId, boolean requiresApproval) throws Exception {
         var result = postJson("/api/v1/conversations/" + groupId + "/invite-link",
-                Map.of("requiresApproval", true), owner.accessToken())
+                Map.of("requiresApproval", requiresApproval), owner.accessToken())
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("token").asText();

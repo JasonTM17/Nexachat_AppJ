@@ -29,6 +29,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -104,6 +105,10 @@ class GroupServiceTest {
         return userWithId(carolId, "+84901110003", "Carol");
     }
 
+    private List<UUID> sortedIds(UUID... ids) {
+        return Arrays.stream(ids).distinct().sorted().toList();
+    }
+
     private Conversation groupConversation() {
         Conversation conversation = Conversation.group(admin(), "Old Name");
         ReflectionTestUtils.setField(conversation, "id", conversationId);
@@ -145,8 +150,8 @@ class GroupServiceTest {
 
     @Test
     void createGroup_happy_creatorIsAdmin_membersAreMember_systemLineWritten() {
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin()));
-        when(userRepository.findAllById(List.of(bobId))).thenReturn(List.of(bob()));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId)))
+                .thenReturn(List.of(admin(), bob()));
         when(conversationRepository.save(any(Conversation.class))).thenAnswer(inv -> {
             Conversation c = inv.getArgument(0);
             ReflectionTestUtils.setField(c, "id", conversationId);
@@ -190,8 +195,8 @@ class GroupServiceTest {
 
     @Test
     void createGroup_dedupesMemberIds_andSkipsCreator() {
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin()));
-        when(userRepository.findAllById(List.of(bobId))).thenReturn(List.of(bob()));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId)))
+                .thenReturn(List.of(admin(), bob()));
         when(conversationRepository.save(any(Conversation.class))).thenAnswer(inv -> {
             Conversation c = inv.getArgument(0);
             ReflectionTestUtils.setField(c, "id", conversationId);
@@ -213,8 +218,6 @@ class GroupServiceTest {
 
     @Test
     void createGroup_onlyCreatorListed_throwsValidation() {
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin()));
-
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> groupService.createGroup(
                         adminId, new CreateGroupRequest("Team", List.of(adminId))));
@@ -225,8 +228,6 @@ class GroupServiceTest {
 
     @Test
     void createGroup_emptyMembers_throwsValidation() {
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin()));
-
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> groupService.createGroup(
                         adminId, new CreateGroupRequest("Team", List.of())));
@@ -255,8 +256,8 @@ class GroupServiceTest {
 
     @Test
     void createGroup_unknownMemberId_throwsUserNotFound() {
-        when(userRepository.findById(adminId)).thenReturn(Optional.of(admin()));
-        when(userRepository.findAllById(List.of(bobId))).thenReturn(List.of()); // missing
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId)))
+                .thenReturn(List.of(admin())); // missing bob
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> groupService.createGroup(
@@ -273,8 +274,8 @@ class GroupServiceTest {
     void addMembers_happy_savesOnlyNewAndPostsSystemPerAdd() {
         groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
         when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(adminId));
-        when(userRepository.findAllById(List.of(bobId, carolId)))
-                .thenReturn(List.of(bob(), carol()));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId, carolId)))
+                .thenReturn(List.of(admin(), bob(), carol()));
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
 
         groupService.addMembers(adminId, conversationId,
@@ -293,8 +294,8 @@ class GroupServiceTest {
         groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
         when(memberRepository.findMemberUserIds(conversationId))
                 .thenReturn(List.of(adminId, bobId)); // bob already in
-        when(userRepository.findAllById(List.of(bobId, carolId)))
-                .thenReturn(List.of(bob(), carol()));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId, carolId)))
+                .thenReturn(List.of(admin(), bob(), carol()));
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
 
         groupService.addMembers(adminId, conversationId,
@@ -309,7 +310,8 @@ class GroupServiceTest {
         groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
         when(memberRepository.findMemberUserIds(conversationId))
                 .thenReturn(List.of(adminId, bobId));
-        when(userRepository.findAllById(List.of(bobId))).thenReturn(List.of(bob()));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId)))
+                .thenReturn(List.of(admin(), bob()));
 
         groupService.addMembers(adminId, conversationId, new AddMemberRequest(List.of(bobId)));
 
@@ -348,7 +350,8 @@ class GroupServiceTest {
     @Test
     void addMembers_unknownUser_throwsUserNotFound() {
         groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
-        when(userRepository.findAllById(List.of(bobId))).thenReturn(List.of());
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId)))
+                .thenReturn(List.of(admin())); // missing bob
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> groupService.addMembers(adminId, conversationId,
