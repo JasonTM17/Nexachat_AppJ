@@ -4,6 +4,7 @@ package com.nexachat.ops;
 public final class ScheduledLockIds {
 
     public static final long RAG_INDEX_BACKFILL = 2_530_010L;
+    public static final long AVATAR_ORPHAN_SWEEP = 2_530_020L;
 
     private ScheduledLockIds() {
     }

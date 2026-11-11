@@ -18,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Self-service avatar upload: POST /api/v1/users/me/avatar.
@@ -30,9 +29,6 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/api/v1/users")
 public class AvatarController {
-
-    private static final Pattern OWNED_AVATAR_STORAGE_KEY = Pattern.compile(
-            "^avatars/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.[a-z0-9]+$");
 
     private final StorageService storageService;
     private final UserRepository userRepository;
@@ -84,7 +80,7 @@ public class AvatarController {
             return null;
         }
         String storageKey = avatarUrl.substring(AvatarUrlPolicy.FILES_PATH.length());
-        return OWNED_AVATAR_STORAGE_KEY.matcher(storageKey).matches() ? storageKey : null;
+        return AvatarUrlPolicy.AVATAR_STORAGE_KEY.matcher(storageKey).matches() ? storageKey : null;
     }
 
     /**

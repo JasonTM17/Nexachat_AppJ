@@ -4,6 +4,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 
 import java.net.URI;
+import java.util.regex.Pattern;
 
 /**
  * Group avatars are loaded by every member's client. Only a relative
@@ -14,6 +15,15 @@ import java.net.URI;
 public final class AvatarUrlPolicy {
 
     static final String FILES_PATH = "/api/v1/files/";
+
+    /**
+     * Key shape produced by the server for user and group avatars
+     * ({@code avatars/<uuid>.<sniffed-extension>}). The sweep only ever
+     * considers files matching this shape, so hand-placed files stay put.
+     */
+    static final Pattern AVATAR_STORAGE_KEY = Pattern.compile(
+            "^avatars/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.[a-z0-9]+$");
+
     private static final int MAX_LENGTH = 255;
 
     private AvatarUrlPolicy() {

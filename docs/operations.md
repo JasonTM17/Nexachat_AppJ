@@ -920,6 +920,42 @@ records stay as compact versioned tombstones so existing change-feed cursors
 continue to work. Enable retention in a private/staging environment first and
 compare the dry-run counts with your organization's retention requirements.
 
+### Orphaned-avatar sweep
+
+User and group avatars are written under `avatars/`. Replacement and account
+deletion remove the file they supersede, but files orphaned before that
+behaviour (or left by an interrupted upload) need an operator-run sweep. The
+sweep is disabled by default and counts only in dry-run mode. Each run lists
+`avatars/`, keeps every key referenced by `users.avatar_url` or
+`conversations.avatar_url` and every file younger than the grace age, then
+deletes at most one bounded batch of the rest. Only keys shaped like a
+server-generated avatar are eligible; hand-placed files are ignored. Runs are
+serialized across instances with a PostgreSQL advisory lock.
+
+```sh
+export NEXACHAT_AVATAR_SWEEP_ENABLED=true
+export NEXACHAT_AVATAR_SWEEP_DRY_RUN=true
+```
+
+Review the `nexachat.avatar.sweep.files.observed` counter, then set
+`NEXACHAT_AVATAR_SWEEP_DRY_RUN=false` to delete eligible files. Each interval
+removes at most the configured batch, so a large backlog drains over several
+runs. Logs and metrics contain counts only, never file names or user
+identifiers.
+
+| Property | Environment variable | Default | Effect / validation |
+| --- | --- | --- | --- |
+| `nexachat.avatar-sweep.enabled` | `NEXACHAT_AVATAR_SWEEP_ENABLED` | `false` | Opt-in scheduler switch. |
+| `nexachat.avatar-sweep.dry-run` | `NEXACHAT_AVATAR_SWEEP_DRY_RUN` | `true` | Count candidates without deleting. |
+| `nexachat.avatar-sweep.batch-size` | `NEXACHAT_AVATAR_SWEEP_BATCH_SIZE` | `100` | Files per run; 1–500. |
+| `nexachat.avatar-sweep.min-age-hours` | `NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS` | `24` | Grace age for the upload-to-reference window; 1–720 hours. |
+| `nexachat.avatar-sweep.interval-ms` | `NEXACHAT_AVATAR_SWEEP_INTERVAL_MS` | `86400000` | Scheduler delay; 60000–86400000 ms. |
+
+The scheduler reports `nexachat.avatar.sweep.runs` (tagged by outcome),
+`nexachat.avatar.sweep.files.observed`, `nexachat.avatar.sweep.files.deleted`,
+`nexachat.avatar.sweep.files.kept` (tagged by reason), and
+`nexachat.avatar.sweep.errors`.
+
 ## JWT secret rotation
 
 `JWT_SECRET` signs access JWTs. In the `prod` profile,
