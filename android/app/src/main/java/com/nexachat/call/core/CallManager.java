@@ -2,10 +2,15 @@ package com.nexachat.call.core;
 
 import android.os.Handler;
 import android.os.Looper;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
+import io.reactivex.rxjava3.core.Maybe;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -16,6 +21,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -25,6 +31,9 @@ import java.util.function.Supplier;
  */
 public final class CallManager implements AutoCloseable {
     private static final long RING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(50);
+    private static final long PUSH_INVITE_GRACE_MS = TimeUnit.SECONDS.toMillis(15);
+    private static final long PUSH_REPLAY_WINDOW_MS = TimeUnit.SECONDS.toMillis(60);
+    private static final int MAX_TERMINAL_CALL_IDS = 256;
 
     public interface CallListener {
         void onCallChanged(CallSession session);
@@ -58,9 +67,13 @@ public final class CallManager implements AutoCloseable {
     private final Set<CallListener> listeners = new CopyOnWriteArraySet<>();
     private final List<CallSignal> pendingRemoteSignals = new ArrayList<>();
     private final List<QueuedOutboundSignal> pendingOutboundSignals = new ArrayList<>();
+    private final Map<String, Long> terminalCallIds = new LinkedHashMap<>();
     private final Handler mainHandler;
 
     private volatile CallSession currentSession = CallSession.idle();
+    @Nullable private volatile PushAdmission pushAdmission;
+    private long ringDeadlineMs;
+    private long rejectNewPushUntilMs;
     private CallMediaEngine mediaEngine;
     private Cancellable ringTimeout;
     private Cancellable reconnectGraceTimer;
@@ -160,6 +173,8 @@ public final class CallManager implements AutoCloseable {
                 notifyError(new CallError(CallError.Code.UNKNOWN));
                 return;
             }
+            pushAdmission = null;
+            ringDeadlineMs = safeDeadline(clock.getAsLong(), ringTimeoutMs);
             setSession(new CallSession(
                     callId,
                     conversationId,
@@ -179,23 +194,96 @@ public final class CallManager implements AutoCloseable {
         });
     }
 
-    /**
-     * Hydrates an incoming call session from a background push notification
-     * before STOMP signaling has connected. Holds the session in PENDING_INCOMING
-     * with a 15s grace timer waiting for the STOMP INVITE frame.
-     */
-    public void hydrateIncomingCall(
+    /** Compatibility helper retained for the call-state tests. */
+    @VisibleForTesting
+    void hydrateIncomingCall(
             String callId,
             String conversationId,
             String callerId,
             String callerName,
             long serverTs) {
-        scheduler.execute(() -> {
-            if (closed || isCallInProgress(currentSession.getState())) return;
-            if (blank(callId) || blank(conversationId) || blank(callerId)) return;
+        long startedAtMs = serverTs > 0L ? serverTs : clock.getAsLong();
+        long deadlineMs = safeDeadline(startedAtMs, ringTimeoutMs);
+        admitIncomingPush(callId, conversationId, callerId, callerName, startedAtMs,
+                "test-recipient", 0L, deadlineMs, () -> true)
+                .subscribe(ignored -> { }, ignored -> { });
+    }
+
+    /**
+     * Admits a server-targeted push only while its local account epoch is current and the
+     * server's absolute ringing deadline has not passed. A successful Maybe value is emitted
+     * after the serialized call state and timers are installed.
+     */
+    public Maybe<CallSession> admitIncomingPush(
+            String callId,
+            String conversationId,
+            String callerId,
+            String callerName,
+            long startedAtMs,
+            String recipientId,
+            long sessionEpoch,
+            long ringExpiresAtMs,
+            BooleanSupplier sessionIsCurrent) {
+        return Maybe.create(emitter -> scheduler.execute(() -> {
+            long now = clock.getAsLong();
+            if (emitter.isDisposed()
+                    || closed
+                    || blank(callId)
+                    || blank(conversationId)
+                    || blank(callerId)
+                    || blank(recipientId)
+                    || startedAtMs <= 0L
+                    || ringExpiresAtMs <= startedAtMs
+                    || now >= ringExpiresAtMs
+                    || !sessionIsCurrent.getAsBoolean()) {
+                emitter.onComplete();
+                return;
+            }
+            purgeExpiredTerminalCallIds(now);
+            if (now < rejectNewPushUntilMs || terminalCallIds.containsKey(callId)) {
+                emitter.onComplete();
+                return;
+            }
+
+            CallState state = currentSession.getState();
+            boolean sameCall = callId.equals(currentSession.getCallId());
+            if (sameCall && pushAdmission != null) {
+                emitter.onComplete();
+                return;
+            }
+
+            if (sameCall && state == CallState.INCOMING_RINGING
+                    && currentSession.getDirection() == CallSession.Direction.INCOMING
+                    && conversationId.equals(currentSession.getConversationId())
+                    && callerId.equals(currentSession.getPeerUserId())) {
+                long currentDeadline = ringDeadlineMs > 0L
+                        ? Math.min(ringDeadlineMs, ringExpiresAtMs)
+                        : ringExpiresAtMs;
+                if (now >= currentDeadline) {
+                    rememberTerminalCall(callId, now);
+                    emitter.onComplete();
+                    return;
+                }
+                pushAdmission = new PushAdmission(
+                        callId, recipientId, sessionEpoch, currentDeadline, sessionIsCurrent);
+                ringDeadlineMs = currentDeadline;
+                scheduleRingTimeout(callId);
+                emitter.onSuccess(currentSession);
+                return;
+            }
+
+            if (isCallInProgress(state)) {
+                rememberTerminalCall(callId, now);
+                emitter.onComplete();
+                return;
+            }
+
             String name = callerName != null && !callerName.isBlank()
                     ? callerName
                     : unknownCallerDisplayName(callerId);
+            pushAdmission = new PushAdmission(
+                    callId, recipientId, sessionEpoch, ringExpiresAtMs, sessionIsCurrent);
+            ringDeadlineMs = ringExpiresAtMs;
             setSession(new CallSession(
                     callId,
                     conversationId,
@@ -204,20 +292,68 @@ public final class CallManager implements AutoCloseable {
                     CallSession.Direction.INCOMING,
                     CallState.PENDING_INCOMING,
                     null,
-                    serverTs > 0 ? serverTs : clock.getAsLong(),
+                    startedAtMs,
                     null,
                     false,
                     false));
             cancelRingTimeout();
             ringTimeout = scheduler.schedule(
-                    () -> finish(CallEndReason.MISSED, CallSignal.Type.CANCEL, null),
-                    15_000L);
+                    () -> {
+                        if (isCurrentPushSession()) {
+                            finish(CallEndReason.MISSED, CallSignal.Type.CANCEL, null);
+                        }
+                    },
+                    Math.min(PUSH_INVITE_GRACE_MS, ringExpiresAtMs - now));
+            emitter.onSuccess(currentSession);
+        }));
+    }
+
+    /** Current snapshot for consumers that must not wait for LiveData.postValue. */
+    public CallSession currentSessionSnapshot() {
+        return currentSession;
+    }
+
+    public boolean hasIncomingPushAdmission(String callId) {
+        PushAdmission admission = pushAdmission;
+        return admission != null && admission.callId.equals(callId);
+    }
+
+    public boolean isIncomingPushAdmissionCurrent(String callId) {
+        PushAdmission admission = pushAdmission;
+        if (admission == null || !admission.callId.equals(callId)
+                || !callId.equals(currentSession.getCallId())) {
+            return false;
+        }
+        if (!admission.sessionIsCurrent.getAsBoolean()) return false;
+        return !isRinging(currentSession.getState())
+                || clock.getAsLong() < admission.ringExpiresAtMs;
+    }
+
+    public boolean isIncomingPushAdmissionCurrent(
+            String callId, String recipientId, long sessionEpoch, long ringExpiresAtMs) {
+        PushAdmission admission = pushAdmission;
+        return admission != null
+                && admission.matches(callId, recipientId, sessionEpoch, ringExpiresAtMs)
+                && isIncomingPushAdmissionCurrent(callId);
+    }
+
+    /** Rechecks the active push session after a TokenRefresher epoch/admission signal. */
+    public void onSessionStateChanged() {
+        scheduler.execute(() -> {
+            PushAdmission admission = pushAdmission;
+            if (admission != null && !admission.sessionIsCurrent.getAsBoolean()) {
+                discardStalePushCall(admission);
+            }
         });
     }
 
     /** Accepts the matching incoming call and starts the callee media setup. */
     public void accept(String callId) {
         scheduler.execute(() -> {
+            if (isCurrentPushSession() && !isIncomingPushAdmissionCurrent(callId)) {
+                discardStalePushCall(pushAdmission);
+                return;
+            }
             if (!matches(callId) || (currentSession.getState() != CallState.INCOMING_RINGING
                     && currentSession.getState() != CallState.PENDING_INCOMING)) return;
             cancelRingTimeout();
@@ -234,6 +370,10 @@ public final class CallManager implements AutoCloseable {
     /** Declines the matching incoming call. */
     public void reject(String callId) {
         scheduler.execute(() -> {
+            if (isCurrentPushSession() && !isIncomingPushAdmissionCurrent(callId)) {
+                discardStalePushCall(pushAdmission);
+                return;
+            }
             if (!matches(callId) || (currentSession.getState() != CallState.INCOMING_RINGING
                     && currentSession.getState() != CallState.PENDING_INCOMING)) return;
             finish(CallEndReason.REJECTED, CallSignal.Type.REJECT, null);
@@ -354,6 +494,13 @@ public final class CallManager implements AutoCloseable {
             handleCallError(event);
             return;
         }
+        if (isTerminalEvent(event.getType())) {
+            rememberTerminalCall(event.getCallId(), clock.getAsLong());
+        }
+        if (isCurrentPushSession() && !isIncomingPushAdmissionCurrent(currentSession.getCallId())) {
+            discardStalePushCall(pushAdmission);
+            return;
+        }
         if (!matches(event.getCallId()) || currentSession.getState() == CallState.ENDED) return;
 
         switch (event.getType()) {
@@ -367,6 +514,8 @@ public final class CallManager implements AutoCloseable {
             case CALL_REJECTED:
                 if (currentSession.getState() == CallState.OUTGOING_RINGING) {
                     finish(CallEndReason.REJECTED, null, null);
+                } else if (isRinging(currentSession.getState())) {
+                    finish(CallEndReason.REJECTED, null, null);
                 }
                 break;
             case CALL_CANCELLED:
@@ -377,6 +526,8 @@ public final class CallManager implements AutoCloseable {
             case CALL_BUSY:
                 if (currentSession.getState() == CallState.OUTGOING_RINGING) {
                     finish(CallEndReason.BUSY, null, new CallError(CallError.Code.BUSY));
+                } else if (isRinging(currentSession.getState())) {
+                    finish(CallEndReason.BUSY, null, null);
                 }
                 break;
             case CALL_TIMEOUT:
@@ -399,7 +550,18 @@ public final class CallManager implements AutoCloseable {
     private void handleInvite(CallEvent event) {
         String callId = event.getCallId();
         if (blank(callId) || blank(event.getConversationId()) || blank(event.getFromUserId())) return;
+        long now = clock.getAsLong();
+        purgeExpiredTerminalCallIds(now);
+        if (now < rejectNewPushUntilMs || terminalCallIds.containsKey(callId)) return;
+        if (isCurrentPushSession() && !isIncomingPushAdmissionCurrent(currentSession.getCallId())) {
+            discardStalePushCall(pushAdmission);
+            return;
+        }
         if (callId.equals(currentSession.getCallId())) {
+            if (!event.getConversationId().equals(currentSession.getConversationId())
+                    || !event.getFromUserId().equals(currentSession.getPeerUserId())) {
+                return;
+            }
             if (currentSession.getState() == CallState.PENDING_INCOMING) {
                 cancelRingTimeout();
                 transition(CallState.INCOMING_RINGING, null, null);
@@ -422,6 +584,8 @@ public final class CallManager implements AutoCloseable {
             return;
         }
 
+        pushAdmission = null;
+        ringDeadlineMs = safeDeadline(clock.getAsLong(), ringTimeoutMs);
         String fallbackName = unknownCallerDisplayName(event.getFromUserId());
         setSession(new CallSession(
                 callId,
@@ -702,7 +866,19 @@ public final class CallManager implements AutoCloseable {
 
     private void finish(CallEndReason reason, CallSignal.Type signalType, CallError error) {
         if (!isCallInProgress(currentSession.getState())) return;
+        if (isCurrentPushSession()) {
+            PushAdmission admission = pushAdmission;
+            boolean sessionCurrent = admission != null && admission.sessionIsCurrent.getAsBoolean();
+            boolean deadlineExpired = admission != null
+                    && isRinging(currentSession.getState())
+                    && clock.getAsLong() >= admission.ringExpiresAtMs;
+            if (!sessionCurrent || (deadlineExpired && reason != CallEndReason.MISSED)) {
+                discardStalePushCall(admission);
+                return;
+            }
+        }
         CallSession old = currentSession;
+        rememberTerminalCall(old.getCallId(), clock.getAsLong());
         boolean sent = signalType == null
                 || send(old.getConversationId(), signalType, old.getCallId());
         cancelRingTimeout();
@@ -711,6 +887,7 @@ public final class CallManager implements AutoCloseable {
         pendingRemoteSignals.clear();
         pendingOutboundSignals.clear();
         stopMedia();
+        ringDeadlineMs = 0L;
         transition(CallState.ENDED, reason, old.getAnsweredAtMs());
         if (error != null) {
             notifyError(error);
@@ -763,12 +940,16 @@ public final class CallManager implements AutoCloseable {
 
     private void scheduleRingTimeout(String callId) {
         cancelRingTimeout();
+        if (ringDeadlineMs <= 0L) {
+            ringDeadlineMs = safeDeadline(clock.getAsLong(), ringTimeoutMs);
+        }
+        long delayMs = Math.max(0L, ringDeadlineMs - clock.getAsLong());
         ringTimeout = scheduler.schedule(() -> {
             if (matches(callId) && (currentSession.getState() == CallState.OUTGOING_RINGING
                     || currentSession.getState() == CallState.INCOMING_RINGING)) {
                 finish(CallEndReason.MISSED, null, null);
             }
-        }, ringTimeoutMs);
+        }, delayMs);
     }
 
     private void cancelRingTimeout() {
@@ -795,6 +976,63 @@ public final class CallManager implements AutoCloseable {
 
     private boolean matches(String callId) {
         return callId != null && callId.equals(currentSession.getCallId());
+    }
+
+    private boolean isCurrentPushSession() {
+        PushAdmission admission = pushAdmission;
+        return admission != null && admission.callId.equals(currentSession.getCallId());
+    }
+
+    private void discardStalePushCall(@Nullable PushAdmission admission) {
+        if (admission == null || pushAdmission != admission) return;
+        pushAdmission = null;
+        rememberTerminalCall(admission.callId, clock.getAsLong());
+        if (!admission.callId.equals(currentSession.getCallId())) return;
+        cancelRingTimeout();
+        cancelReconnectGraceTimer();
+        pendingRemoteSignals.clear();
+        pendingOutboundSignals.clear();
+        stopMedia();
+        ringDeadlineMs = 0L;
+        currentSession = CallSession.idle();
+        publishSession();
+    }
+
+    private void rememberTerminalCall(String callId, long now) {
+        if (blank(callId)) return;
+        purgeExpiredTerminalCallIds(now);
+        long expiresAt = safeDeadline(now, PUSH_REPLAY_WINDOW_MS);
+        PushAdmission admission = pushAdmission;
+        if (admission != null && callId.equals(admission.callId)) {
+            expiresAt = Math.max(expiresAt, admission.ringExpiresAtMs);
+        }
+        terminalCallIds.put(callId, expiresAt);
+        while (terminalCallIds.size() > MAX_TERMINAL_CALL_IDS) {
+            rejectNewPushUntilMs = Math.max(
+                    rejectNewPushUntilMs, safeDeadline(now, PUSH_REPLAY_WINDOW_MS));
+            String oldest = terminalCallIds.keySet().iterator().next();
+            terminalCallIds.remove(oldest);
+        }
+    }
+
+    private void purgeExpiredTerminalCallIds(long now) {
+        terminalCallIds.entrySet().removeIf(entry -> entry.getValue() <= now);
+    }
+
+    private static boolean isTerminalEvent(CallEvent.Type type) {
+        return type == CallEvent.Type.CALL_REJECTED
+                || type == CallEvent.Type.CALL_CANCELLED
+                || type == CallEvent.Type.CALL_BUSY
+                || type == CallEvent.Type.CALL_TIMEOUT
+                || type == CallEvent.Type.CALL_ENDED;
+    }
+
+    private static long safeDeadline(long startedAtMs, long durationMs) {
+        try {
+            return Math.addExact(startedAtMs, durationMs);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
     }
 
     static boolean isCallInProgress(CallState state) {
@@ -836,6 +1074,34 @@ public final class CallManager implements AutoCloseable {
 
     CallSession currentSessionForTest() {
         return currentSession;
+    }
+
+    private static final class PushAdmission {
+        final String callId;
+        final String recipientId;
+        final long sessionEpoch;
+        final long ringExpiresAtMs;
+        final BooleanSupplier sessionIsCurrent;
+
+        PushAdmission(
+                String callId,
+                String recipientId,
+                long sessionEpoch,
+                long ringExpiresAtMs,
+                BooleanSupplier sessionIsCurrent) {
+            this.callId = callId;
+            this.recipientId = recipientId;
+            this.sessionEpoch = sessionEpoch;
+            this.ringExpiresAtMs = ringExpiresAtMs;
+            this.sessionIsCurrent = sessionIsCurrent;
+        }
+
+        boolean matches(String callId, String recipientId, long sessionEpoch, long ringExpiresAtMs) {
+            return this.callId.equals(callId)
+                    && this.recipientId.equals(recipientId)
+                    && this.sessionEpoch == sessionEpoch
+                    && this.ringExpiresAtMs == ringExpiresAtMs;
+        }
     }
 
     private static ExecutorService newIoExecutor() {

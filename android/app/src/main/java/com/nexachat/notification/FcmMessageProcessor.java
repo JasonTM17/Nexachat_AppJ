@@ -10,10 +10,18 @@ import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.service.CallNotifications;
 import com.nexachat.call.ui.IncomingCallActivity;
+import com.nexachat.core.network.TokenRefresher;
+import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
+import com.nexachat.data.TimeAndJwt;
 import com.nexachat.data.SyncEngine;
 import com.nexachat.feature.reminder.ReminderPushEvents;
+import com.squareup.moshi.Moshi;
 import dagger.hilt.android.qualifiers.ApplicationContext;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.function.LongSupplier;
 import java.util.Map.Entry;
 import java.util.Map;
 import javax.inject.Inject;
@@ -40,7 +48,15 @@ public final class FcmMessageProcessor {
 
     @FunctionalInterface
     public interface IncomingCallLauncher {
-        void launch(String callId, String conversationId, String callerId, String callerName, long serverTs);
+        void launch(
+                String callId,
+                String conversationId,
+                String callerId,
+                String callerName,
+                long serverTs,
+                String recipientId,
+                long ringExpiresAtMs,
+                long sessionEpoch);
     }
 
     private final CallManager callManager;
@@ -48,23 +64,23 @@ public final class FcmMessageProcessor {
     private final Context context;
     private final IncomingCallLauncher callLauncher;
     private final ReminderPushEvents reminderPushEvents;
+    private final TokenRefresher tokenRefresher;
+    private final TokenStore tokenStore;
+    private final Moshi moshi;
+    private final Scheduler ioScheduler;
+    private final LongSupplier clock;
 
     @Inject
     public FcmMessageProcessor(
             @NonNull CallManager callManager,
             @NonNull SyncEngine syncEngine,
             @NonNull @ApplicationContext Context context,
-            @NonNull ReminderPushEvents reminderPushEvents) {
-        this(callManager, syncEngine, context, defaultLauncher(context), reminderPushEvents);
-    }
-
-    @VisibleForTesting
-    public FcmMessageProcessor(
-            @NonNull CallManager callManager,
-            @NonNull SyncEngine syncEngine,
-            @NonNull Context context,
-            @NonNull IncomingCallLauncher callLauncher) {
-        this(callManager, syncEngine, context, callLauncher, new ReminderPushEvents());
+            @NonNull ReminderPushEvents reminderPushEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull TokenStore tokenStore,
+            @NonNull Moshi moshi) {
+        this(callManager, syncEngine, context, defaultLauncher(context), reminderPushEvents,
+                tokenRefresher, tokenStore, moshi, Schedulers.io(), System::currentTimeMillis);
     }
 
     @VisibleForTesting
@@ -73,16 +89,37 @@ public final class FcmMessageProcessor {
             @NonNull SyncEngine syncEngine,
             @NonNull Context context,
             @NonNull IncomingCallLauncher callLauncher,
-            @NonNull ReminderPushEvents reminderPushEvents) {
+            @NonNull ReminderPushEvents reminderPushEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull TokenStore tokenStore,
+            @NonNull Moshi moshi,
+            @NonNull Scheduler ioScheduler,
+            @NonNull LongSupplier clock) {
         this.callManager = callManager;
         this.syncEngine = syncEngine;
         this.context = context.getApplicationContext();
         this.callLauncher = callLauncher;
         this.reminderPushEvents = reminderPushEvents;
+        this.tokenRefresher = tokenRefresher;
+        this.tokenStore = tokenStore;
+        this.moshi = moshi;
+        this.ioScheduler = ioScheduler;
+        this.clock = clock;
+        this.tokenRefresher.sessionSignals().subscribe(signal -> {
+            if (signal instanceof TokenRefresher.SessionSignal.EpochChanged
+                    || signal instanceof TokenRefresher.SessionSignal.AdmissionChanged) {
+                if (signal instanceof TokenRefresher.SessionSignal.AdmissionChanged changed
+                        && !changed.admitted()) {
+                    CallNotifications.clearIncoming(this.context);
+                }
+                this.callManager.onSessionStateChanged();
+            }
+        }, ignored -> { });
     }
 
     private static IncomingCallLauncher defaultLauncher(Context appContext) {
-        return (callId, conversationId, callerId, callerName, serverTs) -> {
+        return (callId, conversationId, callerId, callerName, serverTs,
+                recipientId, ringExpiresAtMs, sessionEpoch) -> {
             try {
                 Intent intent = new Intent(appContext, IncomingCallActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -90,7 +127,10 @@ public final class FcmMessageProcessor {
                 intent.putExtra(CallLauncher.EXTRA_CONVERSATION_ID, conversationId);
                 intent.putExtra(CallLauncher.EXTRA_PEER_USER_ID, callerId);
                 intent.putExtra(CallLauncher.EXTRA_PEER_NAME, callerName);
-                intent.putExtra("EXTRA_SERVER_TS", serverTs);
+                intent.putExtra(IncomingCallActivity.EXTRA_SERVER_TS, serverTs);
+                intent.putExtra(IncomingCallActivity.EXTRA_RECIPIENT_ID, recipientId);
+                intent.putExtra(IncomingCallActivity.EXTRA_RING_EXPIRES_AT, ringExpiresAtMs);
+                intent.putExtra(IncomingCallActivity.EXTRA_SESSION_EPOCH, sessionEpoch);
                 appContext.startActivity(intent);
             } catch (Throwable ignored) {
             }
@@ -183,19 +223,95 @@ public final class FcmMessageProcessor {
             }
         }
 
-        if (!hasText(callId) || !hasText(conversationId) || !hasText(callerId)) {
+        String recipientId = data.get("recipientId");
+        long ringExpiresAtMs;
+        try {
+            ringExpiresAtMs = Long.parseLong(data.get("ringExpiresAt"));
+        } catch (RuntimeException malformedExpiry) {
+            return;
+        }
+        long now = clock.getAsLong();
+        if (!hasText(callId)
+                || !hasText(conversationId)
+                || !hasText(callerId)
+                || !hasText(recipientId)
+                || serverTs <= 0L
+                || ringExpiresAtMs <= serverTs
+                || ringExpiresAtMs <= now) {
             return;
         }
 
-        callManager.hydrateIncomingCall(callId, conversationId, callerId, callerName, serverTs);
-        callLauncher.launch(callId, conversationId, callerId, callerName, serverTs);
-
-        CallSession session = callManager.session().getValue();
-        if (session != null) {
-            try {
-                CallNotifications.showIncoming(context, session);
-            } catch (Throwable ignored) {
+        final long callStartedAtMs = serverTs;
+        final String callCallerId = callerId;
+        final String callCallerName = callerName;
+        currentSessionCredential().subscribeOn(ioScheduler).subscribe(credential -> {
+            String currentUserId = TimeAndJwt.userIdFromJwt(credential.accessToken, moshi);
+            if (!recipientId.equals(currentUserId)
+                    || !tokenRefresher.isSessionCurrent(credential.sessionEpoch)) {
+                return;
             }
+            callManager.admitIncomingPush(
+                            callId,
+                            conversationId,
+                            callCallerId,
+                            callCallerName,
+                            callStartedAtMs,
+                            recipientId,
+                            credential.sessionEpoch,
+                            ringExpiresAtMs,
+                            () -> tokenRefresher.isSessionCurrent(credential.sessionEpoch))
+                    .subscribeOn(ioScheduler)
+                    .subscribe(session -> tokenRefresher.runIfSessionCurrent(
+                            credential.sessionEpoch,
+                            () -> {
+                                if (clock.getAsLong() >= ringExpiresAtMs
+                                        || !callManager.isIncomingPushAdmissionCurrent(callId)) {
+                                    return;
+                                }
+                                callLauncher.launch(
+                                        callId,
+                                        conversationId,
+                                        callCallerId,
+                                        callCallerName,
+                                        callStartedAtMs,
+                                        recipientId,
+                                        ringExpiresAtMs,
+                                        credential.sessionEpoch);
+                                try {
+                                    CallNotifications.showIncoming(context, session);
+                                } catch (Throwable ignored) {
+                                }
+                            }), ignored -> { });
+        }, ignored -> { });
+    }
+
+    private Maybe<SessionCredential> currentSessionCredential() {
+        long observedEpoch = tokenRefresher.sessionEpoch();
+        if (tokenRefresher.isSessionCurrent(observedEpoch)) {
+            return tokenStore.readTokens()
+                    .filter(ignored -> tokenRefresher.isSessionCurrent(observedEpoch))
+                    .map(tokens -> new SessionCredential(tokens, observedEpoch));
+        }
+        return tokenRefresher.refreshIfNeeded(null).flatMapMaybe(accessToken -> {
+            if (accessToken.isEmpty()) return Maybe.empty();
+            long currentEpoch = tokenRefresher.sessionEpoch();
+            return tokenRefresher.isSessionCurrent(currentEpoch)
+                    ? Maybe.just(new SessionCredential(accessToken.get(), currentEpoch))
+                    : Maybe.empty();
+        });
+    }
+
+    private static final class SessionCredential {
+        final String accessToken;
+        final long sessionEpoch;
+
+        SessionCredential(Tokens tokens, long sessionEpoch) {
+            this(tokens.getAccessToken(), sessionEpoch);
+        }
+
+        SessionCredential(String accessToken, long sessionEpoch) {
+            this.accessToken = accessToken;
+            this.sessionEpoch = sessionEpoch;
         }
     }
 
