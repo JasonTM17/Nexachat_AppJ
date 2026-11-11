@@ -13,6 +13,7 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.ui.ForwardFilter;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
@@ -44,10 +45,13 @@ import io.reactivex.rxjava3.disposables.SerialDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -81,6 +85,7 @@ public final class ChatViewModel extends ViewModel {
     private final ConversationRepository conversationRepository;
     private final AttachmentRepository attachmentRepository;
     private final RealtimeSession session;
+    @Nullable private final EphemeralStateRouter ephemeralRouter;
     private final MutableLiveData<RecallWindowConfig> recallWindowConfig =
             new MutableLiveData<>(RecallWindowConfig.DEFAULT);
     @Nullable private final SettingsRepository settingsRepository;
@@ -99,7 +104,11 @@ public final class ChatViewModel extends ViewModel {
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
     private final AtomicLong searchGeneration = new AtomicLong();
 
-    @Nullable private Disposable typingTtlDisposable;
+    private final Map<String, Disposable> typingTtlDisposables = new LinkedHashMap<>();
+    private final Set<String> activeTypingUsers = new HashSet<>();
+    private final Map<String, Long> latestTypingVersions = new HashMap<>();
+    private long typingEventVersion;
+    private long typingLifecycleVersion;
     private long searchCursor = -1L;
     private long lastTypingSentMs;
     private long lastReadSeq;
@@ -116,7 +125,34 @@ public final class ChatViewModel extends ViewModel {
             AttachmentRepository attachmentRepository,
             RealtimeSession session,
             TokenStore tokenStore,
+            EphemeralStateRouter ephemeralRouter,
             @Nullable SettingsRepository settingsRepository) {
+        this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, settingsRepository, ephemeralRouter);
+    }
+
+    /** Compatibility constructor for existing focused ViewModel tests. */
+    public ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore,
+            @Nullable SettingsRepository settingsRepository) {
+        this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, settingsRepository, null);
+    }
+
+    private ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore,
+            @Nullable SettingsRepository settingsRepository,
+            @Nullable EphemeralStateRouter ephemeralRouter) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -124,6 +160,7 @@ public final class ChatViewModel extends ViewModel {
         this.attachmentRepository = Objects.requireNonNull(
                 attachmentRepository, "attachmentRepository");
         this.session = Objects.requireNonNull(session, "session");
+        this.ephemeralRouter = ephemeralRouter;
         if (tokenStore != null) {
             disposables.add(tokenStore.observeRecallWindowConfig()
                     .subscribeOn(Schedulers.io())
@@ -200,6 +237,12 @@ public final class ChatViewModel extends ViewModel {
                     if (result instanceof Result.Success<?> success
                             && success.getValue() instanceof GroupDetail detail) {
                         mutableGroupMembers.setValue(detail.getMembers());
+                        if (ephemeralRouter != null) {
+                            ephemeralRouter.setTypingScope(conversationId,
+                                    detail.getMembers().stream()
+                                            .map(GroupMember::getUserId)
+                                            .collect(java.util.stream.Collectors.toSet()));
+                        }
                     }
                 }, this::surfaceStreamFailure));
     }
@@ -259,6 +302,11 @@ public final class ChatViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(this::onTypingEvent, this::surfaceStreamFailure));
+        if (ephemeralRouter != null) {
+            disposables.add(ephemeralRouter.selectionChanges()
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(ignored -> clearTypingIndicator(), this::surfaceStreamFailure));
+        }
         disposables.add(messageRepository.messagesFlow(conversationId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -309,6 +357,16 @@ public final class ChatViewModel extends ViewModel {
         AiOptOutState current = aiOptOutState.getValue();
         if (current != null && !current.isBusy()) {
             aiOptOutState.setValue(current.withOptOut(conversation.isAiOptOut()));
+        }
+        if (ephemeralRouter != null) {
+            if (conversation.isGroup()) {
+                ephemeralRouter.setTypingScope(conversationId, java.util.Set.of());
+            } else if (conversation.getOtherUserId() != null) {
+                ephemeralRouter.setTypingScope(conversationId,
+                        java.util.Set.of(conversation.getOtherUserId()));
+            } else {
+                ephemeralRouter.setTypingScope(conversationId, java.util.Set.of());
+            }
         }
         updateUiState(state -> state.withConversation(conversation));
     }
@@ -457,23 +515,42 @@ public final class ChatViewModel extends ViewModel {
         if (!conversationId.equals(event.getConversationId())) {
             return;
         }
+        String typingUser = event.getUserId() == null ? "\u0000" : event.getUserId();
+        long eventVersion = ++typingEventVersion;
+        latestTypingVersions.put(typingUser, eventVersion);
+        if (!event.isActive()) {
+            clearTypingUser(typingUser);
+            return;
+        }
+        Long expiresAt = event.getExpiresAtEpochMs();
+        long ttlMs = expiresAt == null
+                ? PEER_TYPING_TTL_MS
+                : Math.min(PEER_TYPING_TTL_MS, Math.max(0L, expiresAt - System.currentTimeMillis()));
+        if (ttlMs <= 0L) {
+            clearTypingUser(typingUser);
+            return;
+        }
+        long lifecycleVersion = typingLifecycleVersion;
         disposables.add(messageRepository.isMine(event.getUserId())
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(isMine -> {
-                    if (isMine) {
+                    if (isMine || lifecycleVersion != typingLifecycleVersion
+                            || !Objects.equals(latestTypingVersions.get(typingUser), eventVersion)) {
                         return;
                     }
+                    activeTypingUsers.add(typingUser);
                     updateUiState(state -> state.withPeerTyping(true));
-                    if (typingTtlDisposable != null) {
-                        typingTtlDisposable.dispose();
-                    }
-                    typingTtlDisposable = Flowable.timer(
-                                    PEER_TYPING_TTL_MS, TimeUnit.MILLISECONDS, Schedulers.computation())
+                    Disposable oldTimer = typingTtlDisposables.remove(typingUser);
+                    if (oldTimer != null) oldTimer.dispose();
+                    Disposable timer = Flowable.timer(
+                                    ttlMs, TimeUnit.MILLISECONDS, Schedulers.computation())
                             .observeOn(AndroidSchedulers.mainThread())
-                            .subscribe(ignored -> updateUiState(state -> state.withPeerTyping(false)),
+                            .subscribe(ignored -> expireTypingUser(
+                                            typingUser, eventVersion, lifecycleVersion),
                                     this::surfaceStreamFailure);
-                    disposables.add(typingTtlDisposable);
+                    typingTtlDisposables.put(typingUser, timer);
+                    disposables.add(timer);
                 }, this::surfaceStreamFailure));
     }
 
@@ -484,11 +561,41 @@ public final class ChatViewModel extends ViewModel {
         // The SavedStateHandle is owned by the constructor but intentionally
         // does not leak into the ViewModel's public API.
         savedState().set(KEY_INPUT, value);
+        if (value.isBlank()) clearOwnTypingSignal();
         long now = System.currentTimeMillis();
         if (!value.isBlank() && now - lastTypingSentMs >= TYPING_SEND_INTERVAL_MS) {
             lastTypingSentMs = now;
-            session.sendTyping(conversationId);
+            if (ephemeralRouter != null) ephemeralRouter.sendTyping(conversationId);
+            else session.sendTyping(conversationId);
         }
+    }
+
+    private void clearOwnTypingSignal() {
+        if (ephemeralRouter != null) ephemeralRouter.clearTyping(conversationId);
+    }
+
+    private void clearTypingIndicator() {
+        typingLifecycleVersion++;
+        for (Disposable timer : typingTtlDisposables.values()) timer.dispose();
+        typingTtlDisposables.clear();
+        activeTypingUsers.clear();
+        latestTypingVersions.clear();
+        updateUiState(state -> state.withPeerTyping(false));
+    }
+
+    private void clearTypingUser(String userId) {
+        Disposable timer = typingTtlDisposables.remove(userId);
+        if (timer != null) timer.dispose();
+        activeTypingUsers.remove(userId);
+        updateUiState(state -> state.withPeerTyping(!activeTypingUsers.isEmpty()));
+    }
+
+    private void expireTypingUser(String userId, long eventVersion, long lifecycleVersion) {
+        if (lifecycleVersion != typingLifecycleVersion
+                || !Objects.equals(latestTypingVersions.get(userId), eventVersion)) return;
+        typingTtlDisposables.remove(userId);
+        activeTypingUsers.remove(userId);
+        updateUiState(state -> state.withPeerTyping(!activeTypingUsers.isEmpty()));
     }
 
     public void onComposerDraftChange(MentionDraft draft) {
@@ -509,8 +616,10 @@ public final class ChatViewModel extends ViewModel {
         MentionDraft draft = getMentionDraft().trimmed();
         String text = draft.getContent();
         if (text.isEmpty()) {
+            clearOwnTypingSignal();
             return;
         }
+        clearOwnTypingSignal();
         ReplyTarget replyTarget = state.getReplyTarget();
         String replyToId = replyTarget == null ? null : replyTarget.getMessageId();
         savedState().set(KEY_INPUT, "");
@@ -1015,8 +1124,10 @@ public final class ChatViewModel extends ViewModel {
     protected void onCleared() {
         disposables.clear();
         uploadDisposables.clear();
-        if (typingTtlDisposable != null) {
-            typingTtlDisposable.dispose();
+        clearTypingIndicator();
+        if (ephemeralRouter != null) {
+            clearOwnTypingSignal();
+            ephemeralRouter.clearTypingScope(conversationId);
         }
         messageRepository.closeConversation(conversationId);
         super.onCleared();

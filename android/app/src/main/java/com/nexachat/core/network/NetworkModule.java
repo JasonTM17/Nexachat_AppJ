@@ -119,4 +119,10 @@ public final class NetworkModule {
     public static ConversationSettingsApi provideConversationSettingsApi(Retrofit retrofit) {
         return retrofit.create(ConversationSettingsApi.class);
     }
+
+    @Provides
+    @Singleton
+    public static FirebaseRealtimeApi provideFirebaseRealtimeApi(Retrofit retrofit) {
+        return retrofit.create(FirebaseRealtimeApi.class);
+    }
 }

@@ -8,6 +8,7 @@ import androidx.lifecycle.ProcessLifecycleOwner;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.service.CallNotificationObserver;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
 import dagger.hilt.android.HiltAndroidApp;
 import javax.inject.Inject;
 
@@ -21,6 +22,9 @@ public final class NexaChatApp extends Application {
     RealtimeSession realtimeSession;
 
     @Inject
+    EphemeralStateRouter ephemeralStateRouter;
+
+    @Inject
     CallManager callManager;
 
     @Override
@@ -31,6 +35,12 @@ public final class NexaChatApp extends Application {
             @Override
             public void onStart(@NonNull LifecycleOwner owner) {
                 realtimeSession.onAppForeground();
+                ephemeralStateRouter.onAppForeground();
+            }
+
+            @Override
+            public void onStop(@NonNull LifecycleOwner owner) {
+                ephemeralStateRouter.onAppBackground();
             }
         });
     }

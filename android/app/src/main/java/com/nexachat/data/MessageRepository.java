@@ -34,6 +34,7 @@ import com.nexachat.core.network.dto.ReadRequest;
 import com.nexachat.core.network.dto.SendMessageRequest;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.JsonAdapter;
@@ -124,6 +125,7 @@ public final class MessageRepository {
     private final RealtimeSession session;
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
+    @Nullable private final EphemeralStateRouter ephemeralRouter;
     private final SessionOperationTracker operationTracker;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
@@ -167,11 +169,12 @@ public final class MessageRepository {
             SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
-            SessionOperationTracker operationTracker, NetworkMonitor networkMonitor) {
+            SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
+            EphemeralStateRouter ephemeralRouter) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor);
+                operationTracker, networkMonitor, ephemeralRouter);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -228,6 +231,20 @@ public final class MessageRepository {
             AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                operationTracker, networkMonitor, null);
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
+            @Nullable EphemeralStateRouter ephemeralRouter) {
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -241,6 +258,7 @@ public final class MessageRepository {
         this.session = session;
         this.tokenStore = tokenStore;
         this.sessionEvents = sessionEvents;
+        this.ephemeralRouter = ephemeralRouter;
         this.operationTracker = operationTracker;
         this.moshi = moshi;
         this.timerScheduler = timerScheduler;
@@ -255,6 +273,10 @@ public final class MessageRepository {
         }
         collectInBackground(session.getEvents().concatMapCompletable(event ->
                 operationTracker.track(routeSessionEvent(event))));
+        if (ephemeralRouter != null) {
+            collectInBackground(ephemeralRouter.typingEvents().concatMapCompletable(event ->
+                    Completable.fromAction(() -> typingEvents.onNext(event))));
+        }
         collectInBackground(session.getResyncRequests().concatMapCompletable(ignored ->
                 operationTracker.track(resyncOnReconnect())));
         collectInBackground(sessionEvents.getEvents()
@@ -1004,7 +1026,7 @@ public final class MessageRepository {
         if (event instanceof ChatEvent.MessageUpdated updated) return onMessageUpdated(updated);
         if (event instanceof ChatEvent.MessageDeleted deleted) return onMessageDeleted(deleted);
         if (event instanceof ChatEvent.UserTyping typing) {
-            if (typing.getConversationId() != null) {
+            if (ephemeralRouter == null && typing.getConversationId() != null) {
                 typingEvents.onNext(new TypingEvent(typing.getConversationId(), typing.getUserId(), typing.getDisplayName()));
             }
             return Completable.complete();

@@ -2,6 +2,8 @@ package com.nexachat.data;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
+import com.nexachat.core.realtime.ephemeral.PresenceUpdate;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.stomp.ChatEvent;
 import com.nexachat.core.network.stomp.RealtimeSession;
@@ -45,6 +47,9 @@ public final class PresenceRepository implements AutoCloseable {
      * applied; once a peer has a live value, seeds must not rewrite it.
      */
     private final Set<String> livePeers = ConcurrentHashMap.newKeySet();
+    private final Object observerLock = new Object();
+    private final Map<String, String> presenceConversationByPeer = new LinkedHashMap<>();
+    @Nullable private final EphemeralStateRouter router;
 
     /** Latest server event time per peer, used to ignore delayed older frames. */
     private final ConcurrentHashMap<String, Instant> latestEventTimes =
@@ -52,13 +57,33 @@ public final class PresenceRepository implements AutoCloseable {
 
     @Inject
     public PresenceRepository(
+            @NonNull EphemeralStateRouter router,
+            @NonNull SessionEvents sessionEvents) {
+        this.router = router;
+        subscriptions.add(router.presenceEvents().subscribe(this::onPresenceUpdate, ignored -> { }));
+        subscriptions.add(router.selectionChanges()
+                .subscribe(ignored -> clearPresenceState(), ignored -> { }));
+        Disposable sessionSignals = sessionEvents.getEvents()
+                .subscribe(this::onSessionSignal, ignored -> { });
+        subscriptions.add(sessionSignals);
+        subscriptions.add(sessionEvents.getLifecycleEvents()
+                .filter(event -> event instanceof SessionEvents.Event.SessionClosing)
+                .subscribe(this::onSessionSignal, ignored -> { }));
+    }
+
+    /** Compatibility path for focused repository tests that exercise raw STOMP ordering. */
+    public PresenceRepository(
             @NonNull RealtimeSession session,
             @NonNull SessionEvents sessionEvents) {
+        this.router = null;
         Disposable realtime = session.getEvents().subscribe(this::onSessionEvent, ignored -> { });
         Disposable sessionSignals = sessionEvents.getEvents()
                 .subscribe(this::onSessionSignal, ignored -> { });
         subscriptions.add(realtime);
         subscriptions.add(sessionSignals);
+        subscriptions.add(sessionEvents.getLifecycleEvents()
+                .filter(event -> event instanceof SessionEvents.Event.SessionClosing)
+                .subscribe(this::onSessionSignal, ignored -> { }));
     }
 
     /** User id → presence for every peer this session has heard about. */
@@ -73,6 +98,7 @@ public final class PresenceRepository implements AutoCloseable {
      * live value; a live push always wins.
      */
     public void seed(@NonNull Map<String, PeerPresence> seeds) {
+        if (router != null && router.isFirebaseSelected()) return;
         if (seeds.isEmpty()) {
             return;
         }
@@ -98,6 +124,14 @@ public final class PresenceRepository implements AutoCloseable {
 
     /** Logout / account switch: nothing may carry over. */
     public synchronized void clear() {
+        clearPresenceState();
+        synchronized (observerLock) {
+            presenceConversationByPeer.clear();
+            publishPresenceObserversLocked();
+        }
+    }
+
+    private synchronized void clearPresenceState() {
         livePeers.clear();
         latestEventTimes.clear();
         mutablePresences.onNext(Collections.emptyMap());
@@ -105,6 +139,10 @@ public final class PresenceRepository implements AutoCloseable {
 
     /** Drops one peer (hidden presence, or no longer a DIRECT contact). */
     public void clear(@NonNull String userId) {
+        synchronized (observerLock) {
+            presenceConversationByPeer.remove(userId);
+            publishPresenceObserversLocked();
+        }
         livePeers.remove(userId);
         latestEventTimes.remove(userId);
         updatePresences(current -> {
@@ -125,12 +163,16 @@ public final class PresenceRepository implements AutoCloseable {
         if (userId == null || userId.isBlank()) {
             return;
         }
-        Instant eventTime = parseEventTime(presence.getServerTs());
-        if (eventTime != null && !recordIfCurrent(userId, eventTime)) {
-            return;
-        }
-        PeerPresence next = new PeerPresence(
-                presence.getOnline(), TimeAndJwt.isoToEpochMsOrNull(presence.getLastSeenAt()));
+        onPresenceUpdate(new PresenceUpdate(userId, new PeerPresence(
+                presence.getOnline(), TimeAndJwt.isoToEpochMsOrNull(presence.getLastSeenAt())),
+                TimeAndJwt.isoToEpochMsOrNull(presence.getServerTs())));
+    }
+
+    private void onPresenceUpdate(PresenceUpdate update) {
+        String userId = update.getUserId();
+        Long eventAt = update.getEventAtEpochMs();
+        if (eventAt != null && !recordIfCurrent(userId, Instant.ofEpochMilli(eventAt))) return;
+        PeerPresence next = update.getPresence();
         livePeers.add(userId);
         updatePresences(current -> {
             Map<String, PeerPresence> nextMap = new LinkedHashMap<>(current);
@@ -140,9 +182,25 @@ public final class PresenceRepository implements AutoCloseable {
     }
 
     private void onSessionSignal(SessionEvents.Event event) {
-        if (event instanceof SessionEvents.Event.LoggedOut) {
+        if (event instanceof SessionEvents.Event.SessionClosing
+                || event instanceof SessionEvents.Event.LoggedOut
+                || event instanceof SessionEvents.Event.ReauthenticationRequired) {
             clear();
         }
+    }
+
+    /** Replaces the authenticated inbox's direct, visible peer scope. */
+    public void setPresenceObservers(@NonNull Map<String, String> conversationByPeer) {
+        if (router == null) return;
+        synchronized (observerLock) {
+            presenceConversationByPeer.clear();
+            presenceConversationByPeer.putAll(conversationByPeer);
+            publishPresenceObserversLocked();
+        }
+    }
+
+    private void publishPresenceObserversLocked() {
+        if (router != null) router.setPresenceObservers(Map.copyOf(presenceConversationByPeer));
     }
 
     /** Records a timestamp unless a later presence event was already applied. */
