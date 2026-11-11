@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.BuildConfig;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -45,6 +46,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.UUID;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -53,6 +55,10 @@ import javax.inject.Singleton;
 public final class FirebaseEphemeralStateSource implements EphemeralStateSource {
     private static final long RENEW_INTERVAL_SECONDS = 60L;
     private static final long CONNECT_TIMEOUT_SECONDS = 15L;
+    private static final Disposable DISPOSED_SUBSCRIPTION = new Disposable() {
+        @Override public void dispose() { }
+        @Override public boolean isDisposed() { return true; }
+    };
 
     private final Context context;
     private final FirebaseRealtimeApi api;
@@ -68,6 +74,8 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     private final Map<String, PeerPresence> currentPresence = new LinkedHashMap<>();
     private final Map<String, TypingEvent> currentTyping = new LinkedHashMap<>();
     private final Set<FirebaseDatabase> persistenceConfigured =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<CallStatusRegistration> callStatusListeners =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
     private final FirebaseAuthQueue authQueue = new FirebaseAuthQueue();
@@ -120,6 +128,48 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     @NonNull @Override
     public io.reactivex.rxjava3.core.Flowable<SourceStatus> statusUpdates() {
         return statuses.hide();
+    }
+
+    /**
+     * Observes one server-owned call projection through the current authenticated bridge session.
+     * The registration is read-only and is removed on disposal, bridge close, or source failure.
+     */
+    @NonNull
+    public Disposable listenToCallStatus(
+            @NonNull String callId, @NonNull FirebaseCallStatusListener observer) {
+        Objects.requireNonNull(callId, "callId");
+        Objects.requireNonNull(observer, "observer");
+        if (!BuildConfig.FIREBASE_CALL_STATUS_ENABLED || !isUuid(callId)) {
+            return DISPOSED_SUBSCRIPTION;
+        }
+
+        final CallStatusRegistration registration;
+        synchronized (lock) {
+            if (!active || !ready || !connected || database == null || userId == null
+                    || !isCurrentLocked(sessionEpoch, generation)) {
+                return DISPOSED_SUBSCRIPTION;
+            }
+            DatabaseReference reference = database.getReference("calls").child(callId);
+            registration = new CallStatusRegistration(
+                    userId, sessionEpoch, generation, reference, observer);
+            callStatusListeners.add(registration);
+            reference.addValueEventListener(registration.firebaseListener);
+        }
+        return new Disposable() {
+            private final AtomicBoolean disposed = new AtomicBoolean();
+
+            @Override
+            public void dispose() {
+                if (disposed.compareAndSet(false, true)) {
+                    removeCallStatusListener(registration);
+                }
+            }
+
+            @Override
+            public boolean isDisposed() {
+                return disposed.get();
+            }
+        };
     }
 
     @Override
@@ -264,6 +314,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         final String oldUserId;
         final boolean wasConnected;
         final Map<String, Object> offlinePayload;
+        final List<FirebaseCallStatusListener> unavailableCallStatusListeners;
         synchronized (lock) {
             oldUserId = userId;
             wasConnected = connected;
@@ -278,7 +329,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             currentAuth = firebaseAuth;
             currentUser = currentAuth == null ? null : currentAuth.getCurrentUser();
             presenceRef = ownPresenceRef;
-            removeListenersLocked();
+            unavailableCallStatusListeners = removeListenersLocked();
             if (leaseRenewal != null) {
                 leaseRenewal.dispose();
                 leaseRenewal = null;
@@ -297,6 +348,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             currentPresence.clear();
             currentTyping.clear();
         }
+        notifyCallStatusUnavailable(unavailableCallStatusListeners);
         Completable cleanup = Completable.complete();
         if (currentDatabase != null) {
             if (wasConnected && currentUser != null && currentUser.getUid().equals(oldUserId)) {
@@ -721,11 +773,14 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     }
 
     private void markUnavailable(long expectedEpoch, long expectedGeneration) {
+        final List<FirebaseCallStatusListener> unavailableCallStatusListeners;
         synchronized (lock) {
             if (!isCurrentLocked(expectedEpoch, expectedGeneration)) return;
             ready = false;
             bootstrapping = false;
+            unavailableCallStatusListeners = removeCallStatusListenersLocked();
         }
+        notifyCallStatusUnavailable(unavailableCallStatusListeners);
         statuses.onNext(new SourceStatus.Unavailable(expectedEpoch, expectedGeneration));
     }
 
@@ -874,8 +929,9 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         typingListeners.clear();
     }
 
-    private void removeListenersLocked() {
+    private List<FirebaseCallStatusListener> removeListenersLocked() {
         removeScopeListenersLocked();
+        List<FirebaseCallStatusListener> unavailable = removeCallStatusListenersLocked();
         if (database != null && connectionListener != null) {
             database.getReference(".info/connected").removeEventListener(connectionListener);
         }
@@ -885,6 +941,68 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         connectionListener = null;
         serverOffsetListener = null;
         connectionEvents.onNext(Boolean.FALSE);
+        return unavailable;
+    }
+
+    private List<FirebaseCallStatusListener> removeCallStatusListenersLocked() {
+        List<FirebaseCallStatusListener> unavailable = new ArrayList<>();
+        for (CallStatusRegistration registration : callStatusListeners) {
+            registration.active = false;
+            registration.reference.removeEventListener(registration.firebaseListener);
+            unavailable.add(registration.observer);
+        }
+        callStatusListeners.clear();
+        return unavailable;
+    }
+
+    private boolean removeCallStatusListener(CallStatusRegistration registration) {
+        synchronized (lock) {
+            if (!callStatusListeners.remove(registration)) return false;
+            registration.active = false;
+            registration.reference.removeEventListener(registration.firebaseListener);
+            return true;
+        }
+    }
+
+    private void onCallStatusCancelled(CallStatusRegistration registration) {
+        if (removeCallStatusListener(registration)) {
+            notifyCallStatusUnavailable(Collections.singletonList(registration.observer));
+        }
+    }
+
+    private static void notifyCallStatusUnavailable(
+            List<FirebaseCallStatusListener> listeners) {
+        for (FirebaseCallStatusListener listener : listeners) {
+            try {
+                listener.onUnavailable();
+            } catch (RuntimeException ignored) {
+                // A view callback must not interrupt bridge cleanup.
+            }
+        }
+    }
+
+    private void onCallStatusChanged(
+            CallStatusRegistration registration, DataSnapshot snapshot) {
+        final String authenticatedUserId;
+        final long nowMillis;
+        synchronized (lock) {
+            if (!registration.active || !callStatusListeners.contains(registration)
+                    || !ready || userId == null
+                    || !Objects.equals(userId, registration.authenticatedUserId)
+                    || !isCurrentLocked(registration.sessionEpoch, registration.generation)) {
+                return;
+            }
+            authenticatedUserId = registration.authenticatedUserId;
+            nowMillis = System.currentTimeMillis() + serverOffsetEpochMs;
+        }
+        Object value = snapshot.getValue();
+        Map<?, ?> payload = value instanceof Map<?, ?> map ? map : null;
+        try {
+            registration.observer.onStatusChanged(
+                    snapshot.getKey(), authenticatedUserId, payload, nowMillis);
+        } catch (RuntimeException ignored) {
+            // UI observers are optional; RTDB authorization and the bridge session remain active.
+        }
     }
 
     private void detachListener(String key, ValueEventListener listener) {
@@ -907,6 +1025,14 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     private static Long asLong(@Nullable Object value) {
         Number number = asNumber(value);
         return number == null ? null : number.longValue();
+    }
+
+    private static boolean isUuid(String value) {
+        try {
+            return UUID.fromString(value).toString().equalsIgnoreCase(value);
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     @Nullable
@@ -957,4 +1083,38 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             String userId,
             @Nullable String conversationId) { }
     private enum TargetKind { PRESENCE, TYPING }
+
+    private final class CallStatusRegistration {
+        final String authenticatedUserId;
+        final long sessionEpoch;
+        final long generation;
+        final DatabaseReference reference;
+        final FirebaseCallStatusListener observer;
+        final ValueEventListener firebaseListener;
+        boolean active = true;
+
+        CallStatusRegistration(
+                String authenticatedUserId,
+                long sessionEpoch,
+                long generation,
+                DatabaseReference reference,
+                FirebaseCallStatusListener observer) {
+            this.authenticatedUserId = authenticatedUserId;
+            this.sessionEpoch = sessionEpoch;
+            this.generation = generation;
+            this.reference = reference;
+            this.observer = observer;
+            this.firebaseListener = new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    onCallStatusChanged(CallStatusRegistration.this, snapshot);
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    onCallStatusCancelled(CallStatusRegistration.this);
+                }
+            };
+        }
+    }
 }

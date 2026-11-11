@@ -110,7 +110,7 @@ rollout gates.
 
 ## Call status projection
 
-Call status projection (`/calls/{callId}`) provides passive UI display of call state in chat headers and conversation lists. It never acts as a signaling channel or call authority; STOMP over WebSocket remains the sole authoritative transport for WebRTC SDP, ICE candidates, and call actions (`/topic/call.*`).
+Call status projection (`/calls/{callId}`) can passively refine the call-screen label to “Call accepted” when the server projection advances before the corresponding STOMP event updates local call state. It never changes call controls or terminal outcomes and is not a signaling channel or call authority; STOMP over WebSocket remains the sole authoritative transport for WebRTC SDP, ICE candidates, and call actions (`/topic/call.*`).
 
 - **Paths & Payload**:
   - Path: `/calls/{callId}`
@@ -130,7 +130,7 @@ Call status projection (`/calls/{callId}`) provides passive UI display of call s
   - Write access is denied to all clients (`.write: false`).
 - **Flags**:
   - Server: `FIREBASE_CALL_STATUS_ENABLED=true` (`nexachat.firebase.call-status-enabled`), requires `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL`.
-  - Android: `firebaseCallStatusEnabled=true` Gradle property (sets `BuildConfig.FIREBASE_CALL_STATUS_ENABLED`, requires `firebaseRealtimeEnabled=true`), consumed by `FirebaseCallStatusDisplayAdapter`.
+  - Android: `firebaseCallStatusEnabled=true` Gradle property (sets `BuildConfig.FIREBASE_CALL_STATUS_ENABLED`, requires `firebaseRealtimeEnabled=true`), consumed by `FirebaseCallStatusDisplayAdapter` in the lifecycle-scoped call-screen listener.
 
 ## Presence and typing privacy guarantees
 

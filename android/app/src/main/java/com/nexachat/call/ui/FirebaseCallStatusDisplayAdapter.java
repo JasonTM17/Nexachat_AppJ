@@ -34,6 +34,10 @@ public final class FirebaseCallStatusDisplayAdapter {
         this.enabled = enabled;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public Optional<CallStatusDisplay> adapt(
             String snapshotCallId,
             String expectedCallId,
