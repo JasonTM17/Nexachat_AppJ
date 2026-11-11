@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -55,7 +56,7 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
-    private final TransactionTemplate postRotationTransaction;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -73,7 +74,7 @@ public class AuthService {
                        RateLimitService rateLimitService,
                        AuthResponseFactory responseFactory,
                        RefreshReplayConfiguration.BoundaryHook boundaryHook,
-                       PlatformTransactionManager transactionManager) {
+                       ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -83,7 +84,7 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
-        this.postRotationTransaction = new TransactionTemplate(transactionManager);
+        this.transactionManagerProvider = transactionManagerProvider;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -176,7 +177,8 @@ public class AuthService {
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_REFRESH_TRANSACTION_COMMIT,
                 RefreshReplayConfiguration.Operation.ROTATE, rotation.userId(), rotation.predecessorId());
 
-        boolean ownerUnavailable = Boolean.TRUE.equals(postRotationTransaction.execute(status ->
+        boolean ownerUnavailable = Boolean.TRUE.equals(new TransactionTemplate(
+                transactionManagerProvider.getObject()).execute(status ->
                 userRepository.findByIdForUpdate(rotation.userId())
                         .map(user -> user.getDeletedAt() != null)
                         .orElse(true)));

@@ -26,6 +26,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +62,8 @@ class AuthServiceTest {
     private AccessTokenRevocationService accessTokenRevocationService;
     @Mock
     private PlatformTransactionManager transactionManager;
+    @Mock
+    private ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     private AuthService authService;
 
@@ -78,10 +81,11 @@ class AuthServiceTest {
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
                 .thenReturn(new SimpleTransactionStatus());
+        lenient().when(transactionManagerProvider.getObject()).thenReturn(transactionManager);
         authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
-                (boundary, operation, userId, tokenId) -> { }, transactionManager);
+                (boundary, operation, userId, tokenId) -> { }, transactionManagerProvider);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
