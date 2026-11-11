@@ -130,7 +130,14 @@ nexachat:
     ring-timeout-ms: ${NEXACHAT_CALLS_RING_TIMEOUT_MS:45000}
     disconnect-grace-ms: ${NEXACHAT_CALLS_DISCONNECT_GRACE_MS:15000}
   storage:
+    provider: ${NEXACHAT_STORAGE_PROVIDER:local}
     root: ${STORAGE_ROOT:./data/uploads}
+    s3:
+      endpoint: ${NEXACHAT_STORAGE_S3_ENDPOINT:}
+      region: ${NEXACHAT_STORAGE_S3_REGION:auto}
+      bucket: ${NEXACHAT_STORAGE_S3_BUCKET:}
+      access-key-id: ${NEXACHAT_STORAGE_S3_ACCESS_KEY_ID:}
+      secret-access-key: ${NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY:}
   avatar-sweep:
     # Orphaned-avatar cleanup is opt-in; dry-run counts candidates until an
     # operator explicitly disables it. Only server-generated avatars/ keys

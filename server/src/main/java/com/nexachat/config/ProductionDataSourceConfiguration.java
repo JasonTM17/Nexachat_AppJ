@@ -18,7 +18,16 @@ public class ProductionDataSourceConfiguration {
             requireResolved(environment, "spring.datasource.url");
             requireResolved(environment, "spring.datasource.username");
             requireResolved(environment, "spring.datasource.password");
-            requireResolved(environment, "nexachat.storage.root");
+            String storageProvider = environment.getProperty("nexachat.storage.provider", "local");
+            if ("local".equals(storageProvider)) {
+                if (!StringUtils.hasText(environment.getProperty("STORAGE_ROOT"))) {
+                    throw new IllegalStateException("Required production property is missing: STORAGE_ROOT");
+                }
+                requireResolved(environment, "nexachat.storage.root");
+            } else if (!"s3".equals(storageProvider)) {
+                throw new IllegalStateException(
+                        "NEXACHAT_STORAGE_PROVIDER must be either 'local' or 's3'");
+            }
         };
     }
 
