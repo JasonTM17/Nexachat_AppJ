@@ -152,23 +152,42 @@ here. Resend uses HTTPS and is the configured provider.
 
 ## 7. Cold starts and free-tier limits
 
-- Render spins a Free service down after **15 minutes without traffic**. The
-  platform adds about a minute and Spring Boot adds its own boot time: in a
-  local run capped at 512 MB / 0.1 CPU, the app started in **219.7 s** (first
-  boot, Flyway applied all 28 migrations) and readiness reported `db`, `flyway`,
-  `diskSpace` and `refreshReplay` UP. Neon also suspends idle compute, so the
-  first request after a quiet period is slow. Render allows 15 minutes for a new
+- Render spins a Free service down after **15 minutes without traffic** unless
+  an uptime monitor keeps it awake. Spring Boot adds its own boot time on top of
+  container provisioning: in a local run capped at 512 MB / 0.1 CPU, the app
+  reached readiness in about **200 s** (198–220 s depending on Flyway migration
+  execution; `reports/r4-336-s2.md`) and readiness reported `db`, `flyway`,
+  `diskSpace` and `refreshReplay` UP. Live Render cold-start duration has not yet
+  been measured directly on the live platform. Render allows 15 minutes for a new
   deploy to pass its health check.
+- **Supported keep-alive setup:** An uptime monitor pings
+  `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes. It keeps
+  Render awake. Render's 750 free hours cover one always-on service
+  (~720–744 h/month). The liveness check (`server/src/main/resources/application.yml:55-56`)
+  never touches the database (database connectivity is checked under
+  `/actuator/health/readiness`, `application.yml:57-58`), so Neon still suspends.
+- **Neon free budget and sleep profile:** Neon Free provides 100 CU-hours per project
+  per month (~400 h at 0.25 CU), so the Neon compute must suspend after 5 minutes
+  without queries; an always-on database would exhaust the monthly allowance in about
+  16 days. The `render` profile (`server/src/main/resources/application-render.yml`)
+  configures:
+  - Hikari `minimum-idle: 0` (`application-render.yml:29`) and `idle-timeout: 60000`
+    (`application-render.yml:30`), so idle database connections are closed after 1
+    minute rather than held open;
+  - 30-minute background job intervals for RAG backfill (`nexachat.rag.index.backfill-interval-ms: 1800000`,
+    `application-render.yml:42`) and refresh-replay token cleanup (`nexachat.auth.refresh-replay.cleanup-interval-ms: 1800000`,
+    `application-render.yml:45`), ensuring scheduled tasks do not wake Neon every minute.
+- **Reminder scheduler and Neon idle:** The reminder poll currently still runs
+  every second (`ReminderScheduler.poll()` queries the DB every 1 s,
+  `server/src/main/java/com/nexachat/reminder/ReminderScheduler.java:100-101`), which
+  keeps Neon awake. After the reminder wake-up change in flight is merged, reminders
+  will wake the DB only when one is due (or on a 30-minute safety idle tick),
+  allowing Neon to suspend during periods without user activity.
 - The Android client times out at 10 s connect / 15 s read
-  (`android/app/src/main/java/com/nexachat/core/network/NetworkModule.java:45-46`),
-  so that first request can fail and is retried by the app or the offline
-  outbox. A keep-alive ping every 10 minutes to
-  `https://api.nexachat.io.vn/actuator/health/liveness` (any uptime monitor)
-  keeps the service awake during the day. Render's 750 free instance hours cover
-  an always-on month (~730 h), but Neon Free gives only 100 CU-hours per project
-  per month — 400 h at 0.25 CU — so a 24/7 keep-alive would exhaust the database
-  compute in about 16 days. Keep the ping to a bounded daily window or accept
-  the cold start.
+  (`android/app/src/main/java/com/nexachat/core/network/NetworkModule.java:45-46`).
+  If a request arrives during a cold start or redeploy, the client displays a
+  localized waiting indicator and retries with bounded exponential backoff (the
+  retry window is being re-tuned) rather than failing immediately.
 - RSS was **362.5 MiB** after startup and **413.9 MiB** after 200 concurrent
   conversation reads, with no OOM restart; 512 MB holds the app but leaves
   little room for attachments buffered in memory
@@ -176,9 +195,11 @@ here. Resend uses HTTPS and is the configured provider.
 - The filesystem is ephemeral: without R2, uploads disappear on every restart
   and sleep.
 - 0.1 CPU is shared by HTTP, WebSocket, Flyway and scheduled jobs; keep
-  retention jobs and the avatar sweep off until the plan is raised. Scheduled
-  work only runs while the service is awake: a reminder that falls due during
-  a sleep is delivered on the next wake-up, not at its exact time.
+  retention jobs and the avatar sweep off until the plan is raised. With the
+  supported keep-alive setup keeping Render awake 24/7, scheduled work runs
+  without container sleep interruption; if Render is ever allowed to sleep,
+  scheduled work only runs while the service is awake: a reminder that falls due
+  during a sleep is delivered on the next wake-up, not at its exact time.
 - Render publishes no proxy CIDR, and a client can influence
   `X-Forwarded-For` at the edge. `NEXACHAT_TRUSTED_PROXY_CIDRS` therefore stays
   empty: per-IP rate-limit buckets key on Render's proxy peer, so credential

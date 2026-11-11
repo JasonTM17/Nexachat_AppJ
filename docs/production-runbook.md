@@ -49,13 +49,11 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
 
 ### Free-Tier Sleep Cycle
 
-- **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic.
-- **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity.
+- **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic unless kept awake. In the supported production configuration, an external uptime monitor pings `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes (`docs/deploy-render.md`), keeping Render awake 24/7 (covered by Render's 750 free instance hours per month).
+- **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity. Because the liveness endpoint only checks `ping` (`server/src/main/resources/application.yml:55-56`) and never queries the database, Neon can suspend even while Render stays awake.
 - **Wake-up Duration**:
-  - Container spin-up and network routing on Render: ~50–60 seconds.
-  - JVM boot, Spring application context initialization, and Flyway validation: ~10–15 seconds.
-  - Total cold start: **~60–75 seconds**.
-  - Neon Postgres compute resume: ~1–3 seconds added to the first database query.
+  - Total cold start: In local benchmarking capped at 512 MB / 0.1 CPU, Spring Boot reached readiness in about **200 s** (198–220 s depending on Flyway migration execution; `reports/r4-336-s2.md`). Live Render cold-start duration has not yet been measured directly on the production platform.
+  - Neon Postgres compute resume: ~1–3 seconds added to the first database query when compute has suspended.
 
 ### Upstream and Client Behavior
 
@@ -63,10 +61,18 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
 - **Android Client Handling**:
   - The Android networking client intercepts timeouts and `502`/`503`/`504` errors when contacting `api.nexachat.io.vn`.
   - Instead of displaying a hard error, the app displays a localized waiting indicator ("Server is starting, please wait…" / "Máy chủ đang khởi động, vui lòng chờ…").
-  - The client executes bounded exponential backoff retries for up to **90 seconds** total before failing.
+  - The client executes bounded exponential backoff retries while displaying the waiting state; the retry window is being re-tuned to accommodate cold starts.
 - **Connection Pool Safety**:
-  - HikariCP pool is configured with `minimum-idle: 2`, `maximum-pool-size: 10`, and `connection-timeout: 30000` (`server/src/main/resources/application-prod.yml:59-62`).
-  - This prevents connection thundering herds against Neon's compute endpoint during cold wake-up.
+  - In default production configuration (`server/src/main/resources/application-prod.yml:58-65`), HikariCP is configured with `minimum-idle: 2` (line 61), `maximum-pool-size: 10` (line 60), `connection-timeout: 30000` (line 62), `validation-timeout: 5000` (line 63), and `max-lifetime: 1800000` (line 64).
+  - On Render, the `render` profile (`server/src/main/resources/application-render.yml:22-34`) overrides these defaults with:
+    - `maximum-pool-size: 5` (`application-render.yml:26`)
+    - `minimum-idle: 0` (`application-render.yml:29`)
+    - `idle-timeout: 60000` (`application-render.yml:30`)
+    - `connection-timeout: 20000` (`application-render.yml:31`)
+    - `validation-timeout: 3000` (`application-render.yml:32`)
+    - `max-lifetime: 1200000` (`application-render.yml:33`)
+    - `leak-detection-threshold: 60000` (`application-render.yml:34`)
+  - Setting `minimum-idle: 0` and `idle-timeout: 60000` releases idle database connections after 1 minute, allowing Neon Free compute to auto-suspend after 5 idle minutes while the Render service remains awake via liveness pings. Capping `maximum-pool-size: 5` prevents connection thundering herds against Neon's compute endpoint during cold wake-up.
 
 ---
 
@@ -210,7 +216,7 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
 - **What to Watch**:
   - Disk storage approaching 512 MB (Neon dashboard metrics).
   - Compute hours approaching 100 hours.
-  - HikariCP pool exhaustion: Ensure `maximum-pool-size: 10` remains intact and `leak-detection-threshold: 60000` catches leaked connections.
+  - HikariCP pool exhaustion: Ensure configured pool sizes (`maximum-pool-size: 5` on Render via `application-render.yml:26`, `10` in default prod via `application-prod.yml:60`) remain intact and `leak-detection-threshold: 60000` catches leaked connections.
 - **Operator Actions & Mitigation**:
   - Always use the Neon pooled connection string (`...-pooler.neon.tech`) using PgBouncer.
   - Enable bounded data retention cleanup (`NEXACHAT_RETENTION_ENABLED=true`) to purge expired tokens, tombstones, and inactive records (`docs/operations.md:122-161`).
