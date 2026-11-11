@@ -1,5 +1,6 @@
 package com.nexachat.observability;
 
+import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.JwtService;
 import com.nexachat.auth.google.UserIdentityRepository;
@@ -105,6 +106,9 @@ abstract class ObservabilityHealthTestBase {
 
     @MockitoBean
     protected JdbcTemplate jdbcTemplate;
+
+    @MockitoBean
+    protected AvatarReferenceCoordinator avatarReferenceCoordinator;
 
     protected static int freePort() {
         try (ServerSocket socket = new ServerSocket(0)) {

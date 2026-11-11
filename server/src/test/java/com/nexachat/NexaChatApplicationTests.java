@@ -1,5 +1,6 @@
 package com.nexachat;
 
+import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.archive.ArchiveRepository;
 import com.nexachat.auth.JwtProperties;
 import com.nexachat.auth.google.UserIdentityRepository;
@@ -107,6 +108,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private JdbcTemplate jdbcTemplate;
+
+    @MockitoBean
+    private AvatarReferenceCoordinator avatarReferenceCoordinator;
 
     @Autowired
     private ApplicationContext applicationContext;
