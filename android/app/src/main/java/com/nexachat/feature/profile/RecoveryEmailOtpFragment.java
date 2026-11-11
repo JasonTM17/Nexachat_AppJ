@@ -6,6 +6,7 @@ import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -42,6 +43,15 @@ public final class RecoveryEmailOtpFragment extends Fragment {
         binding.recoveryOtpToolbar.setNavigationOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigateUp());
         binding.recoveryOtpInput.addTextChangedListener(new OtpTextWatcher());
+        binding.recoveryOtpInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                if (RecoveryEmailOtpSanitizer.isComplete(binding.recoveryOtpInput.getText().toString())) {
+                    viewModel.verify();
+                    return true;
+                }
+            }
+            return false;
+        });
         binding.recoveryOtpVerify.setOnClickListener(v -> viewModel.verify());
         binding.recoveryOtpResend.setOnClickListener(v -> viewModel.resendCode());
         if (state != null) {

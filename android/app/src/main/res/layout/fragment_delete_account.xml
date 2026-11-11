@@ -43,6 +43,7 @@
             app:boxCornerRadiusTopEnd="12dp"
             app:boxCornerRadiusTopStart="12dp"
             app:endIconContentDescription="@string/cd_password_visibility"
+            app:endIconDrawable="@drawable/ic_visibility"
             app:endIconMode="password_toggle">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -76,6 +77,7 @@
             android:layout_marginTop="24dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/delete_account_confirm"
+            android:textColor="?attr/colorOnError"
             app:backgroundTint="?attr/colorError"
             app:cornerRadius="12dp" />
 

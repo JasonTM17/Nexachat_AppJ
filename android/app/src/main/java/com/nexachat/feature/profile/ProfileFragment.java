@@ -200,10 +200,13 @@ public final class ProfileFragment extends Fragment {
             return;
         }
         binding.googleAccountRow.setEnabled(!state.isLoading());
-        binding.googleAccountRow.setTrailingValue(state.isLinked()
+        String statusText = state.isLinked()
                 ? (state.getEmail() != null ? state.getEmail()
                         : getString(R.string.settings_google_linked))
-                : getString(R.string.settings_google_not_linked));
+                : getString(R.string.settings_google_not_linked);
+        binding.googleAccountRow.setTrailingValue(statusText);
+        binding.googleAccountRow.setContentDescription(
+                getString(R.string.settings_google_account) + ", " + statusText);
         if (state.getError() != null) {
             Toast.makeText(requireContext(),
                     ApiErrorText.text(requireContext(), state.getError()),
@@ -242,18 +245,29 @@ public final class ProfileFragment extends Fragment {
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(titleRes, null)
                 .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    String value = input == null || input.getText() == null
-                            ? "" : input.getText().toString();
-                    if (value.isEmpty()) {
-                        layout.setError(getString(R.string.error_current_password_required));
-                        return;
+        dialog.setOnShowListener(ignored -> {
+            android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positive.setOnClickListener(v -> {
+                String value = input == null || input.getText() == null
+                        ? "" : input.getText().toString();
+                if (value.isEmpty()) {
+                    layout.setError(getString(R.string.error_current_password_required));
+                    return;
+                }
+                layout.setError(null);
+                dialog.dismiss();
+                onConfirm.accept(value);
+            });
+            if (input != null) {
+                input.setOnEditorActionListener((v, actionId, event) -> {
+                    if (actionId == EditorInfo.IME_ACTION_DONE) {
+                        positive.performClick();
+                        return true;
                     }
-                    layout.setError(null);
-                    dialog.dismiss();
-                    onConfirm.accept(value);
-                }));
+                    return false;
+                });
+            }
+        });
         dialog.show();
     }
 
@@ -370,9 +384,9 @@ public final class ProfileFragment extends Fragment {
         input.setSaveEnabled(false);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        input.setAutofillHints(hint == R.string.auth_current_password_label
+        input.setAutofillHints((hint == R.string.auth_current_password_label || hint == R.string.auth_password_label)
                 ? View.AUTOFILL_HINT_PASSWORD : "newPassword");
-        input.setImeOptions(hint == R.string.auth_confirm_password_label
+        input.setImeOptions((hint == R.string.auth_confirm_password_label || hint == R.string.auth_password_label)
                 ? EditorInfo.IME_ACTION_DONE : EditorInfo.IME_ACTION_NEXT);
         layout.addView(input);
         return layout;
