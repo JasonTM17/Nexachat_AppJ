@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -280,6 +281,45 @@ class S3StorageServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
         verify(client, never()).getObject(any(GetObjectRequest.class));
+    }
+
+    @Test
+    void propertiesApplyBoundedDeadlineDefaults() {
+        S3StorageProperties properties = new S3StorageProperties(
+                "http://localhost:9000", null, BUCKET, "key", "secret",
+                null, null, null, null);
+
+        assertThat(properties.region()).isEqualTo("auto");
+        assertThat(properties.apiCallTimeout()).isEqualTo(S3StorageProperties.DEFAULT_API_CALL_TIMEOUT);
+        assertThat(properties.apiCallAttemptTimeout())
+                .isEqualTo(S3StorageProperties.DEFAULT_API_CALL_ATTEMPT_TIMEOUT);
+        assertThat(properties.connectionTimeout())
+                .isEqualTo(S3StorageProperties.DEFAULT_CONNECTION_TIMEOUT);
+        assertThat(properties.socketTimeout()).isEqualTo(S3StorageProperties.DEFAULT_SOCKET_TIMEOUT);
+    }
+
+    @Test
+    void propertiesRejectNonPositiveDeadlines() {
+        for (int slot = 0; slot < 4; slot++) {
+            Duration[] values = {
+                    Duration.ofSeconds(60), Duration.ofSeconds(30),
+                    Duration.ofSeconds(5), Duration.ofSeconds(30)};
+            values[slot] = Duration.ZERO;
+            assertThat(catchThrowableOfType(IllegalStateException.class,
+                    () -> new S3StorageProperties("http://localhost:9000", "auto", BUCKET,
+                            "key", "secret", values[0], values[1], values[2], values[3])))
+                    .as("slot %s", slot)
+                    .isNotNull();
+        }
+    }
+
+    @Test
+    void propertiesRejectAnAttemptDeadlineBeyondTheCallDeadline() {
+        assertThat(catchThrowableOfType(IllegalStateException.class,
+                () -> new S3StorageProperties("http://localhost:9000", "auto", BUCKET,
+                        "key", "secret", Duration.ofSeconds(1), Duration.ofSeconds(2),
+                        Duration.ofSeconds(1), Duration.ofSeconds(1))))
+                .isNotNull();
     }
 
     private static ResponseInputStream<GetObjectResponse> response(
