@@ -82,7 +82,7 @@ public final class ServerWakeGateTest {
     }
 
     @Test
-    public void stopsStartingRetryAtNinetySecondDeadline() throws Exception {
+    public void stopsStartingRetryAtTheWaitDeadline() throws Exception {
         for (int index = 0; index < 16; index++) {
             server.enqueue(response(503));
         }
@@ -91,16 +91,21 @@ public final class ServerWakeGateTest {
         var states = gate.getIsStarting().test();
         var ready = gate.awaitReady().test();
 
-        long[] delaysSeconds = {1, 2, 4, 8, 16, 16, 16, 16};
+        long[] delaysSeconds = {1, 2, 4, 8, 16, 16, 16, 16, 16, 16, 16, 16};
+        long elapsedSeconds = 0;
         for (long delaySeconds : delaysSeconds) {
             assertHealthRequest(server.takeRequest(1, TimeUnit.SECONDS));
             clock.advanceTimeBy(delaySeconds, TimeUnit.SECONDS);
+            elapsedSeconds += delaySeconds;
         }
         assertHealthRequest(server.takeRequest(1, TimeUnit.SECONDS));
-        clock.advanceTimeBy(11, TimeUnit.SECONDS);
+        long remainingSeconds = TimeUnit.MILLISECONDS.toSeconds(ServerWakeGate.MAX_WAIT_MS) - elapsedSeconds;
+        clock.advanceTimeBy(remainingSeconds - 1, TimeUnit.SECONDS);
+        ready.assertNoValues();
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
 
         ready.assertValue(false);
-        assertEquals(9, server.getRequestCount());
+        assertEquals(13, server.getRequestCount());
         assertEquals(List.of(false, true, false), states.values());
     }
 

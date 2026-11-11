@@ -22,7 +22,8 @@ import retrofit2.Response;
 /** Waits for Render's idempotent health endpoint before an auth mutation is sent. */
 @Singleton
 public final class ServerWakeGate {
-    public static final long MAX_WAIT_MS = 90_000L;
+    /** Render Free measured 123 s from container start to healthy; this adds a margin. */
+    public static final long MAX_WAIT_MS = 150_000L;
 
     private final HealthApi healthApi;
     private final Scheduler attemptScheduler;
