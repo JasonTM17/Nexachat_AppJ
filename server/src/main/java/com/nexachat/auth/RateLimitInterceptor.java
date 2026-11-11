@@ -17,12 +17,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-IP rate limit on credential and public recovery endpoints:
+ * Per-IP rate limit on credential and account-recovery endpoints:
  * <ul>
  *   <li>POST /api/v1/auth/login    — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/register — 10 requests / 5 min</li>
  *   <li>POST /api/v1/auth/refresh  — 30 requests / 5 min</li>
  *   <li>Public password-reset and account-deletion routes — 30 requests / 5 min each</li>
+ *   <li>Authenticated recovery-email request and verification — 30 requests / 5 min each</li>
  *   <li>POST /api/v1/auth/google/nonce — 30 requests / 5 min (only while the feature is on)</li>
  *   <li>POST /api/v1/auth/google       — 20 requests / 5 min (only while the feature is on)</li>
  * </ul>
@@ -37,17 +38,25 @@ import java.util.Map;
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
 
-    private record Rule(String name, String path, long capacity, Duration period) {
+    private record Rule(HttpMethod method, String name, String path, long capacity, Duration period) {
     }
 
     private static final List<Rule> RULES = List.of(
-            new Rule("login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
-            new Rule("register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
-            new Rule("refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
-            new Rule("account-deletion-request", "/api/v1/account-deletion/request", 30, Duration.ofMinutes(5)),
-            new Rule("account-deletion-confirm", "/api/v1/account-deletion/confirm", 30, Duration.ofMinutes(5)),
-            new Rule("password-reset-request", "/api/v1/auth/password-reset/request", 30, Duration.ofMinutes(5)),
-            new Rule("password-reset-confirm", "/api/v1/auth/password-reset/confirm", 30, Duration.ofMinutes(5)));
+            new Rule(HttpMethod.POST, "login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "account-deletion-request", "/api/v1/account-deletion/request",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "account-deletion-confirm", "/api/v1/account-deletion/confirm",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "password-reset-request", "/api/v1/auth/password-reset/request",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "password-reset-confirm", "/api/v1/auth/password-reset/confirm",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.PUT, "recovery-email-request", "/api/v1/users/me/email",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "recovery-email-confirm", "/api/v1/users/me/email/verify",
+                    30, Duration.ofMinutes(5)));
 
     /**
      * Google buckets exist only while the feature is enabled: a disabled
@@ -56,8 +65,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final List<Rule> GOOGLE_RULES = List.of(
             // A nonce is requested before every attempt, so it needs more
             // headroom than the sign-in call itself.
-            new Rule("google-nonce", "/api/v1/auth/google/nonce", 30, Duration.ofMinutes(5)),
-            new Rule("google-signin", "/api/v1/auth/google", 20, Duration.ofMinutes(5)));
+            new Rule(HttpMethod.POST, "google-nonce", "/api/v1/auth/google/nonce", 30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "google-signin", "/api/v1/auth/google", 20, Duration.ofMinutes(5)));
 
     private final RateLimitService rateLimitService;
     private final ClientIpResolver clientIpResolver;
@@ -79,15 +88,12 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     public boolean preHandle(@NonNull HttpServletRequest request,
                              @NonNull HttpServletResponse response,
                              @NonNull Object handler) {
-        if (!HttpMethod.POST.matches(request.getMethod())) {
-            return true;
-        }
         String uri = request.getRequestURI();
         List<Rule> rules = googleEnabled()
                 ? java.util.stream.Stream.concat(RULES.stream(), GOOGLE_RULES.stream()).toList()
                 : RULES;
         for (Rule rule : rules) {
-            if (rule.path().equals(uri)) {
+            if (rule.method().matches(request.getMethod()) && rule.path().equals(uri)) {
                 String key = rule.name() + '|' + clientIpResolver.rateLimitClientIp(request);
                 RateLimitService.Consumption consumption =
                         rateLimitService.tryConsume(key, rule.capacity(), rule.period());

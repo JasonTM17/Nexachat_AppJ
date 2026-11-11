@@ -7,6 +7,9 @@ import com.nexachat.auth.AccessTokensRevokedEvent;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.firebase.config.FirebaseDatabaseUrl;
+import com.nexachat.firebase.projection.FirebaseProjectionMetrics;
+import com.nexachat.firebase.projection.FirebaseProjectionRetryQueue;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -221,7 +224,8 @@ class FirebaseRealtimeAuthServiceTest {
         }).when(rtdb).revokeUser(eq(USER_ID), anyList());
 
         FirebaseSessionRevocationListener listener =
-                new FirebaseSessionRevocationListener(locks, rtdb, admin, members);
+                new FirebaseSessionRevocationListener(locks, rtdb, admin, members,
+                        new FirebaseProjectionRetryQueue(clock, new FirebaseProjectionMetrics(new SimpleMeterRegistry())));
         Thread issueThread = new Thread(() -> runCapturingFailure(
                 () -> service.issue(principal(NOW.plusSeconds(900))), threadFailure), "firebase-issue-test");
         Thread revokeThread = new Thread(() -> runCapturingFailure(

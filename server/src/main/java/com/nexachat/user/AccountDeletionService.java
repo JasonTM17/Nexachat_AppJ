@@ -11,6 +11,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.GroupService;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.auth.TokenService;
+import com.nexachat.ws.StompRevocationFence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -54,6 +55,7 @@ public class AccountDeletionService {
     private final AccountDeletionJdbcSupport jdbcSupport;
     private final ApplicationEventPublisher eventPublisher;
     private final AccountDeletionCoordination coordination;
+    private final StompRevocationFence revocationFence;
 
     public AccountDeletionService(UserRepository userRepository,
                                   PasswordEncoder passwordEncoder,
@@ -68,7 +70,8 @@ public class AccountDeletionService {
                                   Clock clock,
                                   AccountDeletionJdbcSupport jdbcSupport,
                                   ApplicationEventPublisher eventPublisher,
-                                  AccountDeletionCoordination coordination) {
+                                  AccountDeletionCoordination coordination,
+                                  StompRevocationFence revocationFence) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
@@ -83,10 +86,12 @@ public class AccountDeletionService {
         this.jdbcSupport = jdbcSupport;
         this.eventPublisher = eventPublisher;
         this.coordination = coordination;
+        this.revocationFence = revocationFence;
     }
 
     @Transactional
     public void deleteAccount(UUID userId, String password) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (user.getDeletedAt() != null) {
@@ -102,6 +107,7 @@ public class AccountDeletionService {
     /** Uses the same tombstoning path after the recovery-email OTP is consumed. */
     @Transactional
     public void deleteAccountByVerifiedRecovery(UUID userId) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE,
                         "Code is invalid or expired"));

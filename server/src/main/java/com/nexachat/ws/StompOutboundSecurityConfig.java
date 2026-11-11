@@ -10,16 +10,19 @@ public class StompOutboundSecurityConfig implements WebSocketMessageBrokerConfig
 
     private final StompConversationMembershipOutboundInterceptor membershipInterceptor;
     private final StompSeenPrivacyOutboundInterceptor seenPrivacyInterceptor;
+    private final StompAuthChannelInterceptor revocationGuard;
 
     public StompOutboundSecurityConfig(
             StompConversationMembershipOutboundInterceptor membershipInterceptor,
-            StompSeenPrivacyOutboundInterceptor seenPrivacyInterceptor) {
+            StompSeenPrivacyOutboundInterceptor seenPrivacyInterceptor,
+            StompAuthChannelInterceptor revocationGuard) {
         this.membershipInterceptor = membershipInterceptor;
         this.seenPrivacyInterceptor = seenPrivacyInterceptor;
+        this.revocationGuard = revocationGuard;
     }
 
     @Override
     public void configureClientOutboundChannel(ChannelRegistration registration) {
-        registration.interceptors(membershipInterceptor, seenPrivacyInterceptor);
+        registration.interceptors(revocationGuard, membershipInterceptor, seenPrivacyInterceptor);
     }
 }

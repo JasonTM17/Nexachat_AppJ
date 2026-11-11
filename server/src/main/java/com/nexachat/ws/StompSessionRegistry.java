@@ -217,7 +217,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         }
     }
 
-    /** Closes a socket whose STOMP CONNECT was rejected. */
+    /** Closes a socket whose handshake or executor-time authentication was rejected. */
     public void closeHandshake(String sessionId) {
         if (sessionId == null) {
             return;

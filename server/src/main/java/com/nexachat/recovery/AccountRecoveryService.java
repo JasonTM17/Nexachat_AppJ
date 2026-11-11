@@ -10,6 +10,7 @@ import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.ws.StompRevocationFence;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +23,8 @@ public class AccountRecoveryService {
 
     private static final long REQUEST_PHONE_CAPACITY = 10;
     private static final long CONFIRM_PHONE_CAPACITY = 20;
+    private static final long REQUEST_ACCOUNT_CAPACITY = 10;
+    private static final long CONFIRM_ACCOUNT_CAPACITY = 10;
     private static final Duration PHONE_PERIOD = Duration.ofMinutes(5);
 
     private final UserRepository userRepository;
@@ -32,6 +35,7 @@ public class AccountRecoveryService {
     private final RateLimitService rateLimitService;
     private final AccountDeletionService accountDeletionService;
     private final AuthService authService;
+    private final StompRevocationFence revocationFence;
 
     public AccountRecoveryService(UserRepository userRepository,
                                   PhoneService phoneService,
@@ -40,7 +44,8 @@ public class AccountRecoveryService {
                                   MailSender mailSender,
                                   RateLimitService rateLimitService,
                                   AccountDeletionService accountDeletionService,
-                                  AuthService authService) {
+                                  AuthService authService,
+                                  StompRevocationFence revocationFence) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.otpService = otpService;
@@ -49,6 +54,7 @@ public class AccountRecoveryService {
         this.rateLimitService = rateLimitService;
         this.accountDeletionService = accountDeletionService;
         this.authService = authService;
+        this.revocationFence = revocationFence;
     }
 
     public void requestAccountDeletion(String rawPhone) {
@@ -66,12 +72,19 @@ public class AccountRecoveryService {
             otpService.dummyCompare(OtpPurpose.DELETE_ACCOUNT, code);
             throw invalidCode();
         }
-        enforcePhoneLimit("confirm", OtpPurpose.DELETE_ACCOUNT, phone);
+        boolean phoneBudgetAvailable = consumePhoneLimit("confirm", OtpPurpose.DELETE_ACCOUNT, phone);
+        boolean accountBudgetAvailable = consumeAccountPhoneLimit("confirm", phone,
+                CONFIRM_ACCOUNT_CAPACITY);
+        if (!phoneBudgetAvailable || !accountBudgetAvailable) {
+            otpService.dummyCompare(OtpPurpose.DELETE_ACCOUNT, code);
+            throw invalidCode();
+        }
         User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         if (user == null) {
             otpService.dummyCompare(OtpPurpose.DELETE_ACCOUNT, code);
             throw invalidCode();
         }
+        revocationFence.holdWriteUntilTransactionCompletion(user.getId());
         User locked = userRepository.findByIdForUpdate(user.getId()).orElse(null);
         if (locked == null || locked.getDeletedAt() != null || !phone.equals(locked.getPhone())
                 || !otpService.consume(locked, OtpPurpose.DELETE_ACCOUNT, code)) {
@@ -88,12 +101,19 @@ public class AccountRecoveryService {
             otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
             throw invalidCode();
         }
-        enforcePhoneLimit("confirm", OtpPurpose.RESET_PASSWORD, phone);
+        boolean phoneBudgetAvailable = consumePhoneLimit("confirm", OtpPurpose.RESET_PASSWORD, phone);
+        boolean accountBudgetAvailable = consumeAccountPhoneLimit("confirm", phone,
+                CONFIRM_ACCOUNT_CAPACITY);
+        if (!phoneBudgetAvailable || !accountBudgetAvailable) {
+            otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
+            throw invalidCode();
+        }
         User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         if (user == null) {
             otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
             throw invalidCode();
         }
+        revocationFence.holdWriteUntilTransactionCompletion(user.getId());
         User locked = userRepository.findByIdForUpdate(user.getId()).orElse(null);
         if (locked == null || locked.getDeletedAt() != null || !phone.equals(locked.getPhone())
                 || !otpService.consume(locked, OtpPurpose.RESET_PASSWORD, code)) {
@@ -104,13 +124,24 @@ public class AccountRecoveryService {
 
     private void requestCode(String rawPhone, OtpPurpose purpose) {
         String phone = normalizeOrNull(rawPhone);
+        boolean budgetAvailable = true;
         if (phone != null) {
-            enforcePhoneLimit("request", purpose, phone);
+            boolean phoneBudgetAvailable = consumePhoneLimit("request", purpose, phone);
+            boolean accountBudgetAvailable = consumeAccountPhoneLimit("request", phone,
+                    REQUEST_ACCOUNT_CAPACITY);
+            budgetAvailable = phoneBudgetAvailable && accountBudgetAvailable;
         }
-        mailDispatcher.dispatchPublicRequest(purpose, () -> preparePublicRequest(phone, purpose));
+        boolean finalBudgetAvailable = budgetAvailable;
+        mailDispatcher.dispatchPublicRequest(purpose,
+                () -> preparePublicRequest(phone, purpose, finalBudgetAvailable),
+                mail -> otpService.cancel(mail.otpId()));
     }
 
-    private Optional<OtpMail> preparePublicRequest(String phone, OtpPurpose purpose) {
+    private Optional<OtpMail> preparePublicRequest(String phone, OtpPurpose purpose, boolean budgetAvailable) {
+        if (!budgetAvailable) {
+            otpService.performDummyWork(purpose);
+            return Optional.empty();
+        }
         Optional<OtpMail> delivery = Optional.empty();
         if (phone != null && mailSender.isAvailable()) {
             User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
@@ -135,15 +166,19 @@ public class AccountRecoveryService {
         }
     }
 
-    private void enforcePhoneLimit(String action, OtpPurpose purpose, String phone) {
+    private boolean consumePhoneLimit(String action, OtpPurpose purpose, String phone) {
         long capacity = "request".equals(action) ? REQUEST_PHONE_CAPACITY : CONFIRM_PHONE_CAPACITY;
         String key = "public-otp|" + purpose.name() + "|" + action + "|phone|" + phone;
+        return consumeLimit(key, capacity);
+    }
+
+    private boolean consumeAccountPhoneLimit(String action, String phone, long capacity) {
+        return consumeLimit("public-otp|" + action + "|account|phone|" + phone, capacity);
+    }
+
+    private boolean consumeLimit(String key, long capacity) {
         RateLimitService.Consumption consumption = rateLimitService.tryConsume(key, capacity, PHONE_PERIOD);
-        if (!consumption.allowed()) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED,
-                    "Rate limit exceeded, try again later",
-                    Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
-        }
+        return consumption.allowed();
     }
 
     private static ApiException invalidCode() {

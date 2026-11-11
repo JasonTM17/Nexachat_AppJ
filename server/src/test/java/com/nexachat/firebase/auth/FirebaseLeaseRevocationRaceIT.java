@@ -7,6 +7,9 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.firebase.config.FirebaseDatabaseUrl;
+import com.nexachat.firebase.projection.FirebaseProjectionMetrics;
+import com.nexachat.firebase.projection.FirebaseProjectionRetryQueue;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -234,7 +237,9 @@ class FirebaseLeaseRevocationRaceIT {
                 FakeFirebaseRtdbClient rtdb,
                 FakeFirebaseAdminClient admin,
                 ConversationMemberRepository members) {
-            return new FirebaseSessionRevocationListener(locks, rtdb, admin, members);
+            return new FirebaseSessionRevocationListener(locks, rtdb, admin, members,
+                    new FirebaseProjectionRetryQueue(Clock.systemUTC(),
+                            new FirebaseProjectionMetrics(new SimpleMeterRegistry())));
         }
     }
 

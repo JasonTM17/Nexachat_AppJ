@@ -1,6 +1,9 @@
 package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.nexachat.recovery.EmailOtpService;
+import com.nexachat.recovery.OtpMail;
+import com.nexachat.recovery.OtpPurpose;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +14,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -41,6 +45,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
     @Autowired private RefreshRotationReplayIT.ReplayBoundaryProbe boundaryProbe;
     @Autowired private RefreshReplayProperties replayProperties;
     @Autowired private DataSource dataSource;
+    @Autowired private EmailOtpService emailOtpService;
 
     private static String syntheticReplayKey() {
         byte[] key = new byte[32];
@@ -177,6 +182,56 @@ class RefreshRevocationRaceIT extends SecurityITBase {
                 RefreshReplayConfiguration.Operation.ROTATE))
                 .isLessThan(eventIndex(RefreshReplayConfiguration.Boundary.AFTER_USER_LOCK,
                         RefreshReplayConfiguration.Operation.LOGOUT_ALL));
+    }
+
+    @Test
+    void passwordResetHoldingUserLockMakesConcurrentRefreshFailAfterRevocation() throws Exception {
+        Registered user = register("+84905552813");
+        jdbcTemplate.update("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?",
+                "reset-race@example.com", Timestamp.from(Instant.now()), user.userId());
+        OtpMail reset = emailOtpService.issueForPublicRequest(user.userId(), OtpPurpose.RESET_PASSWORD)
+                .orElseThrow();
+
+        CountDownLatch resetOwnsUserLock = new CountDownLatch(1);
+        CountDownLatch releaseReset = new CountDownLatch(1);
+        CountDownLatch rotationAtUserLock = new CountDownLatch(1);
+        boundaryProbe.armOnce(RefreshReplayConfiguration.Boundary.BEFORE_USER_LOCK,
+                RefreshReplayConfiguration.Operation.LOGOUT_ALL, event -> {
+                    resetOwnsUserLock.countDown();
+                    await(releaseReset);
+                });
+        boundaryProbe.armOnce(RefreshReplayConfiguration.Boundary.BEFORE_USER_LOCK,
+                RefreshReplayConfiguration.Operation.ROTATE, event -> rotationAtUserLock.countDown());
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> passwordReset = executor.submit(() -> postJson(
+                    "/api/v1/auth/password-reset/confirm",
+                    Map.of("phone", "+84905552813", "code", reset.code(), "newPassword", "reset-race123"))
+                    .andReturn().getResponse().getStatus());
+            await(resetOwnsUserLock);
+
+            Future<MvcResult> rotation = executor.submit(() -> postRefresh(user.refreshToken(), null).andReturn());
+            await(rotationAtUserLock);
+            awaitUserRowLockWait();
+            releaseReset.countDown();
+
+            assertThat(passwordReset.get(30, TimeUnit.SECONDS)).isEqualTo(204);
+            MvcResult rotationResult = rotation.get(30, TimeUnit.SECONDS);
+            assertThat(rotationResult.getResponse().getStatus()).isEqualTo(401);
+            assertThat(response(rotationResult).path("error").path("code").asText())
+                    .isIn("TOKEN_INVALID", "TOKEN_REUSED");
+        } finally {
+            releaseReset.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(liveRows(user.userId())).isZero();
+        getWithAuth("/api/v1/users/me", user.accessToken()).andExpect(status().isUnauthorized());
+        postJson("/api/v1/auth/login", Map.of("phone", "+84905552813", "password", "secret123"))
+                .andExpect(status().isUnauthorized());
+        postJson("/api/v1/auth/login", Map.of("phone", "+84905552813", "password", "reset-race123"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -409,6 +464,39 @@ class RefreshRevocationRaceIT extends SecurityITBase {
             }
         }
         throw new AssertionError("Legacy bulk UPDATE did not reach its planned row-lock wait");
+    }
+
+    private void awaitUserRowLockWait() throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        try (Connection observer = DriverManager.getConnection(
+                environmentValue("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test"),
+                environmentValue("IT_DB_USER", "nexachat"),
+                environmentValue("IT_DB_PASSWORD", "nexachat"));
+             PreparedStatement query = observer.prepareStatement("""
+                     SELECT EXISTS (
+                         SELECT 1 FROM pg_stat_activity
+                         WHERE datname = current_database()
+                           AND pid <> pg_backend_pid()
+                           AND wait_event_type = 'Lock'
+                           AND query ILIKE '%users%'
+                     )
+                     """)) {
+            while (System.nanoTime() < deadline) {
+                try (ResultSet result = query.executeQuery()) {
+                    result.next();
+                    if (result.getBoolean(1)) {
+                        return;
+                    }
+                }
+                Thread.onSpinWait();
+            }
+        }
+        throw new AssertionError("Refresh rotation did not reach the password-reset user-row lock");
+    }
+
+    private static String environmentValue(String key, String fallback) {
+        String value = System.getenv(key);
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static void await(CountDownLatch latch) {

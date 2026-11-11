@@ -7,6 +7,7 @@ import com.nexachat.firebase.auth.FirebaseRealtimeAuthService;
 import com.nexachat.firebase.auth.FirebaseSessionRevocationListener;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.firebase.client.FirebaseRtdbRestClient;
+import com.nexachat.firebase.projection.FirebaseProjectionRetryQueue;
 import com.nexachat.google.GoogleServiceAccountCredentials;
 import com.nexachat.google.GoogleServiceAccountCredentialsFactory;
 import com.nexachat.notification.FcmProperties;
@@ -93,8 +94,9 @@ public class FirebaseRealtimeConfiguration {
     FirebaseSessionRevocationListener firebaseSessionRevocationListener(FirebaseBridgeLock locks,
                                                                         FirebaseRtdbClient rtdb,
                                                                         FirebaseAdminAuthClient admin,
-                                                                        ConversationMemberRepository members) {
-        return new FirebaseSessionRevocationListener(locks, rtdb, admin, members);
+                                                                        ConversationMemberRepository members,
+                                                                        FirebaseProjectionRetryQueue retries) {
+        return new FirebaseSessionRevocationListener(locks, rtdb, admin, members, retries);
     }
 
     private static int timeoutMillis(int seconds) {

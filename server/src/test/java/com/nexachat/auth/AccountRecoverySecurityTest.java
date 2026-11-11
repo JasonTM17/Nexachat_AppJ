@@ -12,8 +12,10 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.awaitility.Awaitility;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -72,7 +74,7 @@ class AccountRecoverySecurityTest extends SecurityITBase {
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + owner.accessToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("owner@example.com"))
+                .andExpect(jsonPath("$.email").value((Object) null))
                 .andExpect(jsonPath("$.emailVerified").value(false));
 
         String otherView = mockMvc.perform(get("/api/v1/users/search")
@@ -123,6 +125,176 @@ class AccountRecoverySecurityTest extends SecurityITBase {
         assertThat(deletion.purpose()).isEqualTo(OtpPurpose.DELETE_ACCOUNT);
         assertThat(withEmail.userId()).isNotNull();
         assertThat(output.getOut()).doesNotContain(deletion.code()).doesNotContain(TEST_RESEND_KEY);
+    }
+
+    @Test
+    void recoveryEmailOwnershipDoesNotChangeStatusOrBody() throws Exception {
+        registerWithVerifiedEmail("+84905552901", "claimed@example.com");
+        Registered other = register("+84905552902");
+
+        var first = putEmail(other, "claimed@example.com")
+                .andExpect(status().isAccepted())
+                .andReturn();
+        assertThat(first.getResponse().getContentAsString()).isEmpty();
+
+        for (int index = 3; index <= 6; index++) {
+            Registered requester = register("+849055529%02d".formatted(index));
+            var duplicate = putEmail(requester, "claimed@example.com")
+                    .andExpect(status().isAccepted())
+                    .andReturn();
+            assertThat(duplicate.getResponse().getContentAsString()).isEmpty();
+        }
+
+        Registered rateLimited = register("+84905552907");
+        var afterAddressLimit = putEmail(rateLimited, "claimed@example.com")
+                .andExpect(status().isAccepted())
+                .andReturn();
+        assertThat(afterAddressLimit.getResponse().getContentAsString()).isEmpty();
+    }
+
+    @Test
+    void emailOtpSendLimitAppliesAcrossAccountsForOneDestination() throws Exception {
+        for (int i = 1; i <= 6; i++) {
+            Registered user = register("+849055529%02d".formatted(i));
+            var request = putEmail(user, "shared-destination@example.com");
+            if (i <= 5) {
+                request.andExpect(status().isAccepted());
+                assertThat(mailSender.take()).isNotNull();
+            } else {
+                request.andExpect(status().isAccepted())
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .content().string(""));
+                assertThat(jdbcTemplate.queryForObject("""
+                        SELECT count(*) FROM email_otps WHERE user_id = ? AND purpose = 'VERIFY_EMAIL'
+                          AND consumed_at IS NULL
+                        """, Integer.class, user.userId())).isZero();
+            }
+        }
+    }
+
+    @Test
+    void emailOtpConfirmLimitAppliesAcrossCodesForOneAccount() throws Exception {
+        Registered user = register("+84905552921");
+        putEmail(user, "account-limited@example.com").andExpect(status().isAccepted());
+        AccountRecoveryFlowTest.SentOtp first = mailSender.take();
+        String wrong = first.code().equals("000000") ? "000001" : "000000";
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            verifyEmail(user, wrong).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"));
+        }
+
+        ageLatestOtp(user.userId(), OtpPurpose.VERIFY_EMAIL);
+        putEmail(user, "account-limited@example.com").andExpect(status().isAccepted());
+        AccountRecoveryFlowTest.SentOtp second = mailSender.take();
+        for (int attempt = 0; attempt < 5; attempt++) {
+            verifyEmail(user, wrong).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"));
+        }
+
+        verifyEmail(user, second.code()).andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void emailOtpConfirmLimitAppliesAcrossAccountsForOneDestination() throws Exception {
+        java.util.List<Registered> users = new java.util.ArrayList<>();
+        java.util.List<AccountRecoveryFlowTest.SentOtp> codes = new java.util.ArrayList<>();
+        for (int index = 1; index <= 3; index++) {
+            Registered user = register("+849055528%02d".formatted(index));
+            users.add(user);
+            putEmail(user, "shared-confirm@example.com").andExpect(status().isAccepted());
+            codes.add(mailSender.take());
+        }
+
+        for (int account = 0; account < 2; account++) {
+            String wrong = codes.get(account).code().equals("000000") ? "000001" : "000000";
+            for (int attempt = 0; attempt < 5; attempt++) {
+                verifyEmail(users.get(account), wrong).andExpect(status().isBadRequest());
+            }
+        }
+
+        verifyEmail(users.get(2), codes.get(2).code())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"));
+    }
+
+    @Test
+    void failedEmailDeliveryKeepsPreviousVerifiedAddressAndDoesNotLogSecrets(CapturedOutput output)
+            throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552922", "old-recovery@example.com");
+        ageLatestOtp(user.userId(), OtpPurpose.VERIFY_EMAIL);
+        CountDownLatch sendEntered = new CountDownLatch(1);
+        CountDownLatch releaseSend = new CountDownLatch(1);
+        mailSender.failNextSend(sendEntered, releaseSend);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<org.springframework.test.web.servlet.MvcResult> request = executor.submit(
+                    () -> putEmail(user, "new-recovery@example.com").andReturn());
+            assertThat(sendEntered.await(10, TimeUnit.SECONDS)).isTrue();
+
+            var accepted = request.get(5, TimeUnit.SECONDS);
+            assertThat(accepted.getResponse().getStatus()).isEqualTo(202);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT email = 'old-recovery@example.com' AND email_verified_at IS NOT NULL"
+                            + " FROM users WHERE id = ?", Boolean.class, user.userId())).isTrue();
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM email_otps WHERE user_id = ? AND purpose = 'VERIFY_EMAIL'"
+                            + " AND email = 'new-recovery@example.com' AND consumed_at IS NULL",
+                    Integer.class, user.userId())).isEqualTo(1);
+        } finally {
+            releaseSend.countDown();
+            executor.shutdownNow();
+        }
+
+        Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM email_otps WHERE user_id = ? AND purpose = 'VERIFY_EMAIL'"
+                        + " AND email = 'new-recovery@example.com' AND consumed_at IS NULL",
+                Integer.class, user.userId())).isZero());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT email = 'old-recovery@example.com' AND email_verified_at IS NOT NULL"
+                        + " FROM users WHERE id = ?", Boolean.class, user.userId())).isTrue();
+        assertThat(output.getOut()).doesNotContain("old-recovery@example.com")
+                .doesNotContain("new-recovery@example.com")
+                .doesNotContain("synthetic-provider-response-secret");
+        AccountRecoveryFlowTest.SentOtp failedDelivery = mailSender.lastAttempted();
+        assertThat(failedDelivery).isNotNull();
+        assertThat(output.getOut()).doesNotContain(failedDelivery.code());
+    }
+
+    @Test
+    void failedPublicOtpDeliveryConsumesTheIssuedCodeAndDoesNotLogSecrets(CapturedOutput output)
+            throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552927", "failed-public-send@example.com");
+        CountDownLatch sendEntered = new CountDownLatch(1);
+        CountDownLatch releaseSend = new CountDownLatch(1);
+        mailSender.failNextSend(sendEntered, releaseSend);
+
+        assertThat(requestCode("+84905552927")).isEqualTo("{}");
+        assertThat(sendEntered.await(10, TimeUnit.SECONDS)).isTrue();
+        AccountRecoveryFlowTest.SentOtp failedDelivery = mailSender.lastAttempted();
+        assertThat(failedDelivery).isNotNull();
+        assertThat(failedDelivery.purpose()).isEqualTo(OtpPurpose.DELETE_ACCOUNT);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps
+                WHERE user_id = ? AND purpose = 'DELETE_ACCOUNT' AND consumed_at IS NULL
+                """, Integer.class, user.userId())).isEqualTo(1);
+
+        try {
+            releaseSend.countDown();
+            Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(
+                    jdbcTemplate.queryForObject("""
+                            SELECT count(*) FROM email_otps
+                            WHERE user_id = ? AND purpose = 'DELETE_ACCOUNT' AND consumed_at IS NULL
+                            """, Integer.class, user.userId())).isZero());
+        } finally {
+            releaseSend.countDown();
+        }
+
+        assertThat(output.getOut()).doesNotContain("failed-public-send@example.com")
+                .doesNotContain(failedDelivery.code())
+                .doesNotContain("synthetic-provider-response-secret");
     }
 
     @Test
@@ -252,16 +424,29 @@ class AccountRecoverySecurityTest extends SecurityITBase {
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("cooldown@example.com"));
+                .andExpect(jsonPath("$.email").value((Object) null));
 
+        Registered publicAccount = registerWithVerifiedEmail(
+                "+84909992008", "delete-budget@example.com");
         for (int i = 0; i < 10; i++) {
             assertThat(requestCode("+84909992008")).isEqualTo("{}");
+            assertThat(mailSender.take()).isNotNull();
+            if (i < 9) {
+                ageLatestOtp(publicAccount.userId(), OtpPurpose.DELETE_ACCOUNT);
+            }
         }
+        Integer otpRowsBefore = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps WHERE user_id = ? AND purpose = 'DELETE_ACCOUNT'
+                """, Integer.class, publicAccount.userId());
         mockMvc.perform(post("/api/v1/account-deletion/request")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("phone", "+84909992008"))))
-                .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+                .andExpect(status().isAccepted())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .json("{}", true));
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps WHERE user_id = ? AND purpose = 'DELETE_ACCOUNT'
+                """, Integer.class, publicAccount.userId())).isEqualTo(otpRowsBefore);
     }
 
     @Test
@@ -284,7 +469,7 @@ class AccountRecoverySecurityTest extends SecurityITBase {
             int firstStatus = firstResult.get(10, TimeUnit.SECONDS);
             int secondStatus = secondResult.get(10, TimeUnit.SECONDS);
 
-            assertThat(java.util.List.of(firstStatus, secondStatus)).containsExactlyInAnyOrder(200, 409);
+            assertThat(java.util.List.of(firstStatus, secondStatus)).containsExactlyInAnyOrder(200, 400);
             assertThat(output.getOut()).doesNotContain("race@example.com");
             Integer owners = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users"
                     + " WHERE email = 'race@example.com' AND email_verified_at IS NOT NULL AND deleted_at IS NULL",
@@ -305,6 +490,123 @@ class AccountRecoverySecurityTest extends SecurityITBase {
                         .content(objectMapper.writeValueAsString(Map.of("phone", "+84905553999"))))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void publicOtpRequestsShareAnAccountBudgetAcrossPurposes() throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552923", "shared-budget@example.com");
+        for (int i = 0; i < 10; i++) {
+            assertThat(requestCode("+84905552923")).isEqualTo("{}");
+        }
+
+        Integer before = jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps
+                WHERE user_id = ? AND purpose = 'RESET_PASSWORD' AND consumed_at IS NULL
+                """, Integer.class, user.userId());
+        var limitedAccount = postJson("/api/v1/auth/password-reset/request",
+                        Map.of("phone", "+84905552923"), null,
+                        request -> { request.setRemoteAddr("203.0.113.10"); return request; })
+                .andExpect(status().isAccepted())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .json("{}", true))
+                .andReturn();
+        var unknownAccount = postJson("/api/v1/auth/password-reset/request",
+                        Map.of("phone", "+84905552926"), null,
+                        request -> { request.setRemoteAddr("203.0.113.11"); return request; })
+                .andExpect(status().isAccepted())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .json("{}", true))
+                .andReturn();
+        assertThat(limitedAccount.getResponse().getContentAsString())
+                .isEqualTo(unknownAccount.getResponse().getContentAsString());
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps
+                WHERE user_id = ? AND purpose = 'RESET_PASSWORD' AND consumed_at IS NULL
+                """, Integer.class, user.userId())).isEqualTo(before);
+    }
+
+    @Test
+    void publicOtpConfirmationsShareAnAccountBudgetAcrossPurposes() throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552925", "confirm-budget@example.com");
+        requestCode("+84905552925");
+        mailSender.take();
+        String wrong = "000000";
+        for (int attempt = 0; attempt < 10; attempt++) {
+            confirmDeletion("+84905552925", wrong).andExpect(status().isBadRequest());
+        }
+
+        requestPasswordReset("+84905552925");
+        AccountRecoveryFlowTest.SentOtp reset = mailSender.take();
+        var limitedAccount = confirmPasswordReset("+84905552925", reset.code(), "confirm-budget123")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"))
+                .andReturn();
+        var unknownAccount = confirmPasswordReset("+84905552926", reset.code(), "confirm-budget123")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"))
+                .andReturn();
+        assertThat(limitedAccount.getResponse().getContentAsString())
+                .isEqualTo(unknownAccount.getResponse().getContentAsString());
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM email_otps
+                WHERE user_id = ? AND purpose = 'RESET_PASSWORD' AND consumed_at IS NULL
+                """, Integer.class, user.userId())).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentPasswordResetConfirmationConsumesTheCodeOnce() throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552924", "single-use@example.com");
+        requestPasswordReset("+84905552924");
+        AccountRecoveryFlowTest.SentOtp reset = mailSender.take();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<Integer> first = executor.submit(() -> confirmResetConcurrently(
+                    "+84905552924", reset.code(), ready, start));
+            Future<Integer> second = executor.submit(() -> confirmResetConcurrently(
+                    "+84905552924", reset.code(), ready, start));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(java.util.List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(204, 400);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
+                Integer.class, user.userId())).isZero();
+    }
+
+    @Test
+    void concurrentDeletionConfirmationConsumesTheCodeOnce() throws Exception {
+        Registered user = registerWithVerifiedEmail("+84905552926", "single-use-delete@example.com");
+        requestCode("+84905552926");
+        AccountRecoveryFlowTest.SentOtp deletion = mailSender.take();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<Integer> first = executor.submit(() -> confirmDeletionConcurrently(
+                    "+84905552926", deletion.code(), ready, start));
+            Future<Integer> second = executor.submit(() -> confirmDeletionConcurrently(
+                    "+84905552926", deletion.code(), ready, start));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(java.util.List.of(first.get(30, TimeUnit.SECONDS), second.get(30, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(204, 400);
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at IS NOT NULL FROM users WHERE id = ?", Boolean.class, user.userId())).isTrue();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL
+                """, Integer.class, user.userId())).isZero();
     }
 
     @Test
@@ -366,6 +668,25 @@ class AccountRecoverySecurityTest extends SecurityITBase {
         return verifyEmail(user, code).andReturn().getResponse().getStatus();
     }
 
+    private int confirmResetConcurrently(String phone, String code,
+                                         CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        if (!start.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("password reset race was not released");
+        }
+        return confirmPasswordReset(phone, code, "concurrent-reset123")
+                .andReturn().getResponse().getStatus();
+    }
+
+    private int confirmDeletionConcurrently(String phone, String code,
+                                            CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        if (!start.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("account deletion race was not released");
+        }
+        return confirmDeletion(phone, code).andReturn().getResponse().getStatus();
+    }
+
     private String requestCode(String phone) throws Exception {
         return mockMvc.perform(post("/api/v1/account-deletion/request")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -400,7 +721,7 @@ class AccountRecoverySecurityTest extends SecurityITBase {
 
     private void ageLatestOtp(java.util.UUID userId, OtpPurpose purpose) {
         jdbcTemplate.update("UPDATE email_otps SET created_at = ?, expires_at = ?"
-                        + " WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL",
+                        + " WHERE user_id = ? AND purpose = ?",
                 Timestamp.from(Instant.now().minusSeconds(61)),
                 Timestamp.from(Instant.now().plusSeconds(600)), userId, purpose.name());
     }

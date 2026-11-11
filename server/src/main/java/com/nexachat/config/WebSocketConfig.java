@@ -1,6 +1,7 @@
 package com.nexachat.config;
 
 import com.nexachat.ws.StompAuthChannelInterceptor;
+import com.nexachat.ws.StompSessionWriteLockDecoratorFactory;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -8,6 +9,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
 /**
  * STOMP over raw WebSocket (plan §11.1/T12):
@@ -39,11 +41,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor authChannelInterceptor;
+    private final StompSessionWriteLockDecoratorFactory sessionWriteLockDecoratorFactory;
     private final SecurityProperties securityProperties;
 
     public WebSocketConfig(StompAuthChannelInterceptor authChannelInterceptor,
+                           StompSessionWriteLockDecoratorFactory sessionWriteLockDecoratorFactory,
                            SecurityProperties securityProperties) {
         this.authChannelInterceptor = authChannelInterceptor;
+        this.sessionWriteLockDecoratorFactory = sessionWriteLockDecoratorFactory;
         this.securityProperties = securityProperties;
     }
 
@@ -59,6 +64,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.configureBrokerChannel().interceptors(authChannelInterceptor);
         // The SimpleBroker only answers the client heart-beat header when it has a
         // scheduler; without one the server advertises 0,0 and an idle socket
         // (e.g. a ringing caller) trips the client's 30 s liveness guard.
@@ -81,5 +87,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(authChannelInterceptor);
+    }
+
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(sessionWriteLockDecoratorFactory);
     }
 }

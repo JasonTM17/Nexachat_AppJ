@@ -13,9 +13,11 @@ import com.nexachat.mail.MailSender;
 import com.nexachat.recovery.OtpPurpose;
 
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -138,7 +140,9 @@ class AccountRecoveryFlowTest extends SecurityITBase {
 
     static final class CapturingMailSender implements MailSender {
         private final LinkedBlockingQueue<SentOtp> sent = new LinkedBlockingQueue<>();
+        private final AtomicReference<SendBarrier> nextBarrier = new AtomicReference<>();
         private volatile boolean available = true;
+        private volatile SentOtp lastAttempted;
 
         @Override
         public boolean isAvailable() {
@@ -147,7 +151,22 @@ class AccountRecoveryFlowTest extends SecurityITBase {
 
         @Override
         public void sendOtp(String recipient, OtpPurpose purpose, String code) {
-            sent.add(new SentOtp(recipient, purpose, code));
+            SentOtp attempt = new SentOtp(recipient, purpose, code);
+            lastAttempted = attempt;
+            SendBarrier barrier = nextBarrier.getAndSet(null);
+            if (barrier != null) {
+                barrier.entered().countDown();
+                try {
+                    if (!barrier.release().await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("synthetic-provider-response-secret");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("synthetic-provider-response-secret");
+                }
+                throw new IllegalStateException("synthetic-provider-response-secret");
+            }
+            sent.add(attempt);
         }
 
         List<SentOtp> messages() {
@@ -157,14 +176,27 @@ class AccountRecoveryFlowTest extends SecurityITBase {
         void clear() {
             sent.clear();
             available = true;
+            nextBarrier.set(null);
+            lastAttempted = null;
         }
 
         void setAvailable(boolean available) {
             this.available = available;
         }
 
+        void failNextSend(CountDownLatch entered, CountDownLatch release) {
+            nextBarrier.set(new SendBarrier(entered, release));
+        }
+
+        SentOtp lastAttempted() {
+            return lastAttempted;
+        }
+
         SentOtp take() throws InterruptedException {
             return sent.poll(5, TimeUnit.SECONDS);
+        }
+
+        private record SendBarrier(CountDownLatch entered, CountDownLatch release) {
         }
     }
 
