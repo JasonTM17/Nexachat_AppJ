@@ -137,12 +137,12 @@ flowchart LR
     end
 
     DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
-    FS["File volume<br/>(uploads)"]
+    STORAGE["File storage<br/>(local volume or private S3-compatible bucket)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
     ST -- "STOMP /ws (CONNECT: Authorization header)" --> INT --> SVC
     SVC --> DB
-    SVC --> FS
+    SVC --> STORAGE
     SVC --> EVT --> BR
     BR -. "MESSAGE_CREATED/UPDATED/DELETED · READ · TYPING<br/>PRESENCE · REACTION_UPDATED · PIN_UPDATED · CONVERSATION_UPDATED" .-> ST
 ```

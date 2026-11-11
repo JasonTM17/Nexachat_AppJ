@@ -6,8 +6,8 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Stores uploaded bytes under a server-generated key and resolves a public
- * URL path for them.
+ * Stores uploaded bytes under a server-generated key and resolves an API URL
+ * path for them.
  *
  * <p>Implementations must derive the storage key from server-side sniffed
  * content, never from the client-supplied filename, so the URL space stays
@@ -35,8 +35,7 @@ public interface StorageService {
      * Reads back the bytes stored under {@code storageKey}.
      *
      * <p>Implementations must apply the same traversal guard as {@link #store}:
-     * the key is normalized and required to stay inside the storage root before
-     * any read.</p>
+     * the key is validated before any read.</p>
      *
      * @param storageKey key returned by {@link #store}
      * @return raw file content
@@ -62,20 +61,20 @@ public interface StorageService {
     StreamHandle open(String storageKey);
 
     /**
-     * Checks whether a safe, regular stored file exists under the storage root.
+     * Checks whether a safe stored object exists in the configured backend.
      *
-     * <p>Implementations must apply the same root-containment and symlink
-     * guards as {@link #read}; malformed keys are rejected as missing files.</p>
+     * <p>Implementations must apply the same key-safety guards as {@link #read};
+     * malformed keys are rejected as missing files.</p>
      *
      * @param storageKey key returned by {@link #store}
-     * @return {@code true} only when the key resolves to a regular stored file
+     * @return {@code true} only when the key resolves to a stored object
      */
     boolean exists(String storageKey);
 
     /**
      * Deletes a stored file if it still exists.
      *
-     * <p>Implementations must apply the same root-containment guard as reads.
+     * <p>Implementations must apply the same key-safety guard as reads.
      * The operation must be idempotent so a database retry can finish after a
      * file was removed but its attachment row was not committed.</p>
      *
@@ -88,9 +87,9 @@ public interface StorageService {
     /**
      * Lists the stored files directly inside {@code subdir}.
      *
-     * <p>Only regular files are returned: nested directories and symbolic
-     * links are skipped, so a sweep can never walk outside the requested
-     * folder. Implementations apply the same {@code subdir} guard as
+     * <p>Only direct child objects are returned: nested folders and
+     * directory-marker objects are skipped. Implementations apply the same
+     * {@code subdir} guard as
      * {@link #store}. The result is ordered oldest first (last-modified time,
      * then key) so a bounded batch makes deterministic progress.</p>
      *
@@ -121,7 +120,7 @@ public interface StorageService {
     /**
      * Result of a successful store: key, exact byte count, and sniffed MIME type.
      *
-     * @param storageKey key relative to the storage root
+     * @param storageKey key relative to the configured storage backend
      * @param sizeBytes  number of bytes written
      * @param mimeType   MIME type sniffed from the content
      */
@@ -131,7 +130,7 @@ public interface StorageService {
     /**
      * A stored file observed during an inventory walk.
      *
-     * @param storageKey key relative to the storage root
+     * @param storageKey key relative to the configured storage backend
      * @param lastModified last write time; write-once files are never modified
      *                     after {@link #store}, so this is their creation time
      */

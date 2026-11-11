@@ -18,11 +18,17 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `DATABASE_USER` | Yes | None; set in `.env` | `nexachat` |
 | `DATABASE_PASSWORD` | Yes | None; set in `.env` | `replace-with-a-local-only-password` |
 | `JWT_SECRET` | Yes; at least 32 UTF-8 bytes, not the repository development value, at least 8 distinct characters | None; set in `.env` | `replace-with-at-least-32-random-characters-before-running` |
-| `STORAGE_ROOT` | Yes outside Compose; Compose supplies a default | `/app/data/uploads` | `/app/data/uploads` |
+| `STORAGE_ROOT` | Required in production when provider is `local`; optional for `s3` | `/app/data/uploads` | `/app/data/uploads` |
+| `NEXACHAT_STORAGE_PROVIDER` | No (`local` or `s3`) | `local` | `local` |
+| `NEXACHAT_STORAGE_S3_ENDPOINT` | Yes when provider is `s3` | Empty | Not shown |
+| `NEXACHAT_STORAGE_S3_REGION` | Used when provider is `s3` | `auto` | `auto` |
+| `NEXACHAT_STORAGE_S3_BUCKET` | Yes when provider is `s3` | Empty | Not shown |
+| `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | Yes when provider is `s3`; secret store | Empty | Not shown |
+| `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | Yes when provider is `s3`; secret store | Empty | Not shown |
 | `MANAGEMENT_SERVER_PORT` | No (opt-in loopback isolation; shares API port 8080 by default) | Empty | `8081` |
 | `MANAGEMENT_SERVER_ADDRESS` | No (bind address for management server) | Empty | `127.0.0.1` |
 | `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
-| `MANAGEMENT_DISK_THRESHOLD` | No (disk space warning threshold on storage root) | `1GB` | `1GB` |
+| `MANAGEMENT_DISK_THRESHOLD` | No (local disk warning threshold; does not measure an S3 bucket) | `1GB` | `1GB` |
 | `NEXACHAT_CORS_ALLOWED_ORIGINS` | No (comma-separated browser origins; empty admits no web caller) | Empty | `https://web.nexachat.com` |
 | `NEXACHAT_MAIL_PROVIDER` | No (required only to enable recovery-email delivery; `smtp`, `resend`, or empty to disable) | Empty | `smtp` |
 | `MAIL_SMTP_HOST` | No (when SMTP is selected) | `smtp.gmail.com` | `smtp.gmail.com` |
@@ -134,7 +140,9 @@ Compose starts the app with `SPRING_PROFILES_ACTIVE=prod,json-logs`. In
 `server/src/main/resources/application-prod.yml` the prod profile also:
 
 - has no defaults for `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`,
-  `JWT_SECRET` or `STORAGE_ROOT` (startup fails if one is unset),
+  or `JWT_SECRET` (startup fails if one is unset); provider `local` also
+  requires `STORAGE_ROOT`, while provider `s3` requires its endpoint, bucket,
+  access key ID and secret access key,
 - validates Flyway checksums (`validate-on-migrate: true`) and turns
   `spring.jpa.open-in-view` off,
 - caps Hikari at 10 connections per instance (two instances stay below the
@@ -166,6 +174,25 @@ without Swarm, those limits are not always enforced the same way as on a cluster
 this repository has **not** re-measured effective limits with `docker stats`.
 Treat the YAML values as a starting budget and tune for your host before
 production.
+
+### File storage
+
+`NEXACHAT_STORAGE_PROVIDER` defaults to `local`, which stores files under
+`STORAGE_ROOT`. For persistent object storage, set it to `s3` and configure
+`NEXACHAT_STORAGE_S3_ENDPOINT`, `NEXACHAT_STORAGE_S3_BUCKET`,
+`NEXACHAT_STORAGE_S3_ACCESS_KEY_ID`, and
+`NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY`. R2 uses region `auto`; its endpoint is
+`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Create an R2 API token limited
+to object read/write on this bucket and keep both credentials in the runtime
+secret store. See Cloudflare's [R2 S3 setup](https://developers.cloudflare.com/r2/get-started/s3/)
+and [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
+guides for token setup, endpoint and region details. The server uses
+path-style requests and keeps the bucket private.
+
+Downloads continue through `/api/v1/files/{key}` after the server's existing
+authorization checks; responses do not contain an R2 bucket URL. The avatar
+orphan sweep lists `avatars/` objects through paginated S3 ListObjectsV2 calls.
+The Compose `app-uploads` volume is used only by the `local` provider.
 
 ### Feature configuration and retention
 
@@ -542,7 +569,7 @@ NexaChat supports self-service account deletion across two channels:
 2. **Web self-service deletion:** For users without device access, `site/delete-account.html` enables deletion using a 6-digit OTP sent to their verified recovery email (`POST /api/v1/auth/recovery/delete-account/request` and `confirm`).
 
 #### What is deleted and what is preserved:
-- **Tombstoned / Deleted:** User row is soft-deleted (`users.deleted_at = now()`, Flyway V26), `users.phone` is set to `NULL` (freeing the E.164 phone number for re-registration), display name resets to `Deleted account`, and avatar URL is cleared. Active sessions are revoked via `users.tokens_valid_after` and refresh token families are cleared. The user automatically leaves all group chats (promoting a successor admin if needed). Contacts, push device tokens, private labels, group join requests, linked Google identities, email OTPs, unbound uploads, and AI caches are scrubbed. The stored avatar file is deleted from disk after commit.
+- **Tombstoned / Deleted:** User row is soft-deleted (`users.deleted_at = now()`, Flyway V26), `users.phone` is set to `NULL` (freeing the E.164 phone number for re-registration), display name resets to `Deleted account`, and avatar URL is cleared. Active sessions are revoked via `users.tokens_valid_after` and refresh token families are cleared. The user automatically leaves all group chats (promoting a successor admin if needed). Contacts, push device tokens, private labels, group join requests, linked Google identities, email OTPs, unbound uploads, and AI caches are scrubbed. The unreferenced avatar object is deleted from the configured storage provider after commit.
 - **Preserved:** Direct and group chat messages and bound attachments remain visible to the other conversation participants to avoid broken history, rendered under the neutral author label `Deleted account`.
 
 ### Access-token revocation
@@ -653,8 +680,8 @@ when TLS terminates in front of the JVM.
   limit, so the bound does not depend on a reverse proxy; a proxy
   (`client_max_body_size`) remains useful as defence in depth.
 - `/api/v1/files/**` normalizes the storage key and rejects any key containing
-  `..` or `\`; the storage layer re-checks that the resolved path stays inside
-  the configured root before opening it.
+  `..` or `\`; the storage layer re-checks key safety before opening an object
+  in either backend.
 
 ## Start, stop, and health
 
@@ -734,8 +761,9 @@ point the Compose and Dockerfile health checks at it too.
 - `db` — a `SELECT 1` validation query against the configured DataSource.
 - `flyway` — Flyway validation plus the applied version and pending count
   (details hidden).
-- `diskSpace` — free space on the upload directory (`nexachat.storage.root`)
-  with a configurable threshold (`MANAGEMENT_DISK_THRESHOLD`, default `1GB`).
+- `diskSpace` — free space at `nexachat.storage.root` with a configurable
+  threshold (`MANAGEMENT_DISK_THRESHOLD`, default `1GB`). This checks local
+  runtime disk space; it does not measure S3/R2 bucket capacity.
 - `ping` — liveness.
 
 Two groups are exposed and both are public:
@@ -1038,6 +1066,9 @@ sweep is disabled by default and counts only in dry-run mode. Each run lists
 deletes at most one bounded batch of the rest. Only keys shaped like a
 server-generated avatar are eligible; hand-placed files are ignored. Runs are
 serialized across instances with a PostgreSQL advisory lock.
+
+With the `s3` provider, the same sweep uses paginated `ListObjectsV2` requests
+for the `avatars/` prefix; age ordering and deletion limits remain unchanged.
 
 ```sh
 export NEXACHAT_AVATAR_SWEEP_ENABLED=true

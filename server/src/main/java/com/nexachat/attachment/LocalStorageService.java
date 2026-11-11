@@ -1,10 +1,10 @@
 package com.nexachat.attachment;
 
-import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -38,30 +37,11 @@ import java.util.UUID;
  */
 @Service
 @Primary
+@ConditionalOnProperty(prefix = "nexachat.storage", name = "provider", havingValue = "local", matchIfMissing = true)
 public class LocalStorageService implements StorageService {
 
     /** Hard ceiling for a single upload; also enforced by the multipart config. */
     static final long MAX_FILE_SIZE_BYTES = StorageService.MAX_FILE_SIZE_BYTES;
-
-    private static final Map<String, String> MIME_TO_EXTENSION = Map.ofEntries(
-            Map.entry("image/jpeg", ".jpg"),
-            Map.entry("image/png", ".png"),
-            Map.entry("image/webp", ".webp"),
-            Map.entry("image/gif", ".gif"),
-            Map.entry("video/mp4", ".mp4"),
-            Map.entry("audio/mpeg", ".mp3"),
-            Map.entry("audio/mp4", ".m4a"),
-            Map.entry("audio/ogg", ".ogg"),
-            Map.entry("application/pdf", ".pdf"),
-            Map.entry("text/plain", ".txt"),
-            Map.entry("text/csv", ".csv"),
-            Map.entry("text/markdown", ".md"),
-            Map.entry("application/zip", ".zip"),
-            Map.entry("application/msword", ".doc"),
-            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
-            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
-            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx")
-    );
 
     private final Path root;
 
@@ -83,17 +63,13 @@ public class LocalStorageService implements StorageService {
         if (bytes.length > MAX_FILE_SIZE_BYTES) {
             throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
         }
-        String sniffed = MagicBytes.sniff(bytes);
+        String sniffed = StorageContentPolicy.sniffMime(contentTypeDeclared, bytes);
         if (sniffed == null) {
-            // Text formats carry no magic bytes — verify the content instead:
-            // the declared type must be textual AND the payload must decode as
-            // strict UTF-8 (a renamed binary fails the decode and still 415s).
-            sniffed = sniffTextContent(contentTypeDeclared, bytes);
-        }
-        if (sniffed == null || !MagicBytes.ALLOWED_MIMES.contains(sniffed)) {
             throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
         }
-        String storageKey = safeSubdir(subdir) + "/" + UUID.randomUUID() + extensionFor(sniffed);
+        String safeDirectory = StorageContentPolicy.safeSubdir(subdir);
+        String storageKey = safeDirectory + "/" + UUID.randomUUID()
+                + StorageContentPolicy.extensionFor(sniffed);
         Path target = root.resolve(storageKey).normalize();
         if (!target.startsWith(root)) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Invalid storage path");
@@ -162,7 +138,7 @@ public class LocalStorageService implements StorageService {
 
     @Override
     public List<StoredFileInfo> list(String subdir) {
-        String folder = safeSubdir(subdir);
+        String folder = StorageContentPolicy.safeSubdir(subdir);
         Path directory = root.resolve(folder).normalize();
         if (!directory.startsWith(root) || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
             return List.of();
@@ -198,8 +174,7 @@ public class LocalStorageService implements StorageService {
      * is already absent, so a symlinked directory cannot bypass the guard.
      */
     private Path resolveDeletionPath(String storageKey) {
-        if (storageKey == null || storageKey.isBlank()
-                || storageKey.contains("..") || storageKey.contains("\\")) {
+        if (!StorageContentPolicy.isSafeStorageKey(storageKey)) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         }
         Path target = root.resolve(storageKey).normalize();
@@ -241,8 +216,7 @@ public class LocalStorageService implements StorageService {
     }
 
     private Path resolveExactPath(String storageKey) {
-        if (storageKey == null || storageKey.isBlank()
-                || storageKey.contains("..") || storageKey.contains("\\")) {
+        if (!StorageContentPolicy.isSafeStorageKey(storageKey)) {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         }
         Path target = root.resolve(storageKey).normalize();
@@ -270,85 +244,5 @@ public class LocalStorageService implements StorageService {
     @Override
     public String resolveUrl(String storageKey) {
         return "/api/v1/files/" + storageKey;
-    }
-
-    /**
-     * Declared-mime acceptance for un-sniffable text types. The bytes must
-     * decode under a strict UTF-8 decoder; anything binary (e.g. an .exe
-     * renamed .txt) throws {@link java.nio.charset.CharacterCodingException}
-     * and is rejected. Returns the declared mime or {@code null}.
-     */
-    private static String sniffTextContent(String contentTypeDeclared, byte[] bytes) {
-        if (contentTypeDeclared == null
-                || !TEXT_FALLBACK_MIMES.contains(contentTypeDeclared)) {
-            return null;
-        }
-        try {
-            java.nio.charset.StandardCharsets.UTF_8.newDecoder()
-                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
-                    .decode(java.nio.ByteBuffer.wrap(bytes));
-        } catch (java.nio.charset.CharacterCodingException ex) {
-            return null;
-        }
-        // A text/* label must not smuggle an HTML or SVG document. Those bytes
-        // are served inline from this origin; nosniff is not a substitute for
-        // keeping active markup out of the allow-list.
-        if (looksLikeActiveMarkup(bytes)) {
-            return null;
-        }
-        return contentTypeDeclared;
-    }
-
-    private static final java.util.Set<String> TEXT_FALLBACK_MIMES =
-            java.util.Set.of("text/plain", "text/markdown", "text/csv");
-
-    /**
-     * True when the leading non-whitespace bytes are an HTML, SVG, or XML
-     * document. A note that merely mentions those words later in the file is
-     * left alone.
-     */
-    private static boolean looksLikeActiveMarkup(byte[] bytes) {
-        int start = 0;
-        if (bytes.length >= 3
-                && (bytes[0] & 0xFF) == 0xEF
-                && (bytes[1] & 0xFF) == 0xBB
-                && (bytes[2] & 0xFF) == 0xBF) {
-            start = 3;
-        }
-        while (start < bytes.length) {
-            byte current = bytes[start];
-            if (current != ' ' && current != '\n' && current != '\r' && current != '\t') {
-                break;
-            }
-            start++;
-        }
-        int length = Math.min(bytes.length - start, 16);
-        if (length <= 0) {
-            return false;
-        }
-        String head = new String(bytes, start, length, java.nio.charset.StandardCharsets.UTF_8)
-                .toLowerCase(java.util.Locale.ROOT);
-        return head.startsWith("<!doctype")
-                || head.startsWith("<html")
-                || head.startsWith("<svg")
-                || head.startsWith("<script")
-                || head.startsWith("<xhtml")
-                || head.startsWith("<?xml");
-    }
-
-    private static String safeSubdir(String subdir) {
-        if (subdir == null || subdir.isBlank()
-                || subdir.contains("..")
-                || subdir.contains("/")
-                || subdir.contains("\\")
-                || !subdir.matches("[A-Za-z0-9._-]+")) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Invalid storage subdirectory");
-        }
-        return subdir;
-    }
-
-    private static String extensionFor(String mimeType) {
-        return MIME_TO_EXTENSION.getOrDefault(mimeType, ".bin");
     }
 }

@@ -23,11 +23,11 @@ import java.io.SequenceInputStream;
 import java.util.UUID;
 
 /**
- * Serves stored files from {@code ${nexachat.storage.root}} as inline content.
+ * Streams stored files through the API after the existing authorization checks.
  *
  * <p>The storage key is the request path after {@code /api/v1/files/}. It is
- * normalized and required to stay inside the storage root before any read, so
- * a crafted key cannot escape the upload directory. The response Content-Type
+ * normalized and validated before any read, so a crafted key cannot address
+ * a different object. The response Content-Type
  * is re-sniffed from the stored bytes — the same sniff the store path applied
  * — with {@code application/octet-stream} as the final fallback.</p>
  *

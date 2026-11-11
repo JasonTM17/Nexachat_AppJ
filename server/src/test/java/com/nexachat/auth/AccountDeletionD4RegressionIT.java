@@ -18,7 +18,6 @@ import com.nexachat.ws.StompAuthChannelInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -36,8 +35,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.awaitility.core.ConditionTimeoutException;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -55,7 +52,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -103,9 +99,6 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
-
-    @Value("${nexachat.storage.root}")
-    private String storageRoot;
 
     @BeforeEach
     void resetPause() {
@@ -979,16 +972,10 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         return uploadAvatar(user).getResponse().getStatus();
     }
 
-    private Set<String> storedKeys(String subdirectory) throws IOException {
-        Path directory = Path.of(storageRoot).resolve(subdirectory);
-        if (!Files.isDirectory(directory)) {
-            return Set.of();
-        }
+    private Set<String> storedKeys(String subdirectory) {
         Set<String> keys = new HashSet<>();
-        try (Stream<Path> files = Files.list(directory)) {
-            files.filter(Files::isRegularFile)
-                    .forEach(path -> keys.add(subdirectory + "/" + path.getFileName()));
-        }
+        storageService.list(subdirectory)
+                .forEach(file -> keys.add(file.storageKey()));
         return keys;
     }
 

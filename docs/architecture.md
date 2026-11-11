@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v13) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V28; V21/V23 reserved) + file volume. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V28; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -64,7 +64,7 @@ flowchart LR
     end
 
     PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
-    VOL[("Local file volume<br/>(StorageService boundary)")]
+    STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
     REST -- "HTTPS REST /api/v1" --> SEC
@@ -77,7 +77,7 @@ flowchart LR
     PRES --> PRESENCE --> BROKER
     MSG --> BROKER --> STOMP
     Mod --> PG
-    ATT --> VOL
+    ATT --> STORAGE
     MSG -. "khi WS offline (FCM data push)" .-> FCM
 ```
 
@@ -256,7 +256,7 @@ sequenceDiagram
   for re-registration. Invalidates active sessions via `users.tokens_valid_after`,
   auto-leaves all groups (promoting a successor admin if needed), scrubs contacts,
   push tokens, private labels, join requests, Google identities, email OTPs, and
-  AI caches, and purges avatar files from disk. Historical messages and attachments
+  AI caches, and purges unreferenced avatar objects from the configured storage provider. Historical messages and attachments
   remain in direct and group chats with the author displayed as neutral `Deleted account`.
   Self-service deletion is available in-app (`DELETE /api/v1/users/me`) and on the web
   (`site/delete-account.html`) via recovery-email OTP.

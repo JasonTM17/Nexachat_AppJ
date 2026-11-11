@@ -26,6 +26,7 @@
         <tomcat.version>10.1.59</tomcat.version>
         <jackson-bom.version>2.21.7</jackson-bom.version>
         <postgresql.version>42.7.12</postgresql.version>
+        <aws-sdk-v2.version>2.57.13</aws-sdk-v2.version>
         <nexachat.test.build-directory>target</nexachat.test.build-directory>
     </properties>
 
@@ -137,6 +138,18 @@
             <groupId>com.bucket4j</groupId>
             <artifactId>bucket4j-core</artifactId>
             <version>${bucket4j.version}</version>
+        </dependency>
+
+        <!-- Minimal synchronous AWS SDK v2 client for S3-compatible storage. -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws-sdk-v2.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${aws-sdk-v2.version}</version>
         </dependency>
 
         <!-- Test -->

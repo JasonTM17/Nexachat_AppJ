@@ -80,4 +80,5 @@ nexachat:
     access-ttl-seconds: 900
     refresh-ttl-days: 14
   storage:
-    root: ${STORAGE_ROOT}
+    # The local provider requires STORAGE_ROOT; S3 deployments do not use a local upload path.
+    root: ${STORAGE_ROOT:./data/uploads}

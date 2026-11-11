@@ -43,7 +43,7 @@ public class AttachmentService {
 
     /**
      * Upload ceiling — mirrors {@code spring.servlet.multipart.max-file-size}
-     * (25MB) and {@link LocalStorageService#MAX_FILE_SIZE_BYTES}. Enforced here
+     * (25MB) and {@link StorageService#MAX_FILE_SIZE_BYTES}. Enforced here
      * too so the rejection is a clean 413 even when the multipart layer did
      * not trip first (e.g. tests, alternate storage backends).
      */

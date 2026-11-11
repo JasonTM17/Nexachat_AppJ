@@ -37,7 +37,8 @@ class ProductionConfigurationTest {
                 .isEqualTo("${DATABASE_PASSWORD}");
         assertThat(production.getProperty("spring.datasource.url")).isEqualTo("${DATABASE_URL}");
         assertThat(production.getProperty("nexachat.jwt.secret")).isEqualTo("${JWT_SECRET}");
-        assertThat(production.getProperty("nexachat.storage.root")).isEqualTo("${STORAGE_ROOT}");
+        assertThat(production.getProperty("nexachat.storage.root"))
+                .isEqualTo("${STORAGE_ROOT:./data/uploads}");
     }
 
     @Test
@@ -151,6 +152,24 @@ class ProductionConfigurationTest {
                 "JWT_SECRET", TEST_JWT_SECRET)).run(context -> {
             assertThat(context).hasFailed();
             assertThat(context.getStartupFailure()).hasStackTraceContaining("STORAGE_ROOT");
+        });
+    }
+
+    @Test
+    void productionS3ProviderDoesNotRequireALocalStorageRoot() {
+        productionContext(Map.of(
+                "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",
+                "DATABASE_USER", "test-user",
+                "DATABASE_PASSWORD", "test-password",
+                "JWT_SECRET", TEST_JWT_SECRET,
+                "NEXACHAT_STORAGE_PROVIDER", "s3",
+                "NEXACHAT_STORAGE_S3_ENDPOINT", "https://account.r2.cloudflarestorage.com",
+                "NEXACHAT_STORAGE_S3_REGION", "auto",
+                "NEXACHAT_STORAGE_S3_BUCKET", "nexachat-test",
+                "NEXACHAT_STORAGE_S3_ACCESS_KEY_ID", "test-access-key",
+                "NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY", "test-secret-key")).run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getEnvironment().getProperty("nexachat.storage.provider")).isEqualTo("s3");
         });
     }
 
