@@ -6,6 +6,7 @@ import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -40,6 +41,13 @@ public final class RecoveryEmailFormFragment extends Fragment {
         binding.recoveryFormToolbar.setNavigationOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigateUp());
         binding.recoveryFormEmailInput.addTextChangedListener(new EmailTextWatcher());
+        binding.recoveryFormEmailInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                viewModel.sendCode();
+                return true;
+            }
+            return false;
+        });
         binding.recoveryFormSend.setOnClickListener(v -> viewModel.sendCode());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
