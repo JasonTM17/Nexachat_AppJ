@@ -297,18 +297,18 @@ wait_for_health() {
         http GET "$BASE_URL/actuator/health"
         now="$(date +%s)"
         elapsed=$((now - start))
-        if [ "$HTTP_RC" -eq 0 ] && [ "$HTTP_CODE" = "200" ]; then
-            status="$(json_get "$BODY" status)"
-            if [ "$status" = "UP" ]; then
-                cp "$HDR" "$WORK_DIR/health.headers"
-                log_pass "health: UP at $BASE_URL/actuator/health (${elapsed}s, attempt $attempt)"
-                return 0
-            fi
-            last="HTTP 200 status=${status:-unparseable}"
-        elif [ "$HTTP_RC" -ne 0 ]; then
-            last="curl exit $HTTP_RC, HTTP ${HTTP_CODE:-none}"
+        status="$(json_get "$BODY" status)"
+        if [ "$HTTP_RC" -eq 0 ] && [ "$HTTP_CODE" = "200" ] && [ "$status" = "UP" ]; then
+            cp "$HDR" "$WORK_DIR/health.headers"
+            log_pass "health: UP at $BASE_URL/actuator/health (${elapsed}s, attempt $attempt)"
+            return 0
+        fi
+        if [ "$HTTP_RC" -ne 0 ]; then
+            last="curl exit $HTTP_RC, HTTP ${HTTP_CODE:-none} ($(curl_error_snippet))"
+        elif [ -n "$status" ]; then
+            last="HTTP ${HTTP_CODE:-none} status=$status ($(body_snippet))"
         else
-            last="HTTP ${HTTP_CODE:-none}"
+            last="HTTP ${HTTP_CODE:-none} ($(body_snippet))"
         fi
 
         if [ "$elapsed" -ge "$WAIT_SECONDS" ]; then
