@@ -1,6 +1,7 @@
 package com.nexachat.conversation;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -8,12 +9,24 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface ConversationRepository extends JpaRepository<Conversation, UUID> {
 
     /** Canonical DIRECT pair-key lookup — the idempotency anchor of open-direct. */
     Optional<Conversation> findByDirectKey(String directKey);
+
+    /** Bounded UUID keyset page used by opt-in Firebase projection backfill. */
+    @Query("SELECT c.id FROM Conversation c WHERE (:afterId IS NULL OR c.id > :afterId) ORDER BY c.id")
+    List<UUID> findIdsAfter(@Param("afterId") UUID afterId, Pageable pageable);
+
+    /** Bounded keyset page of direct conversations for reader-edge backfill. */
+    @Query("SELECT c.id FROM Conversation c WHERE c.type = :type "
+            + "AND (:afterId IS NULL OR c.id > :afterId) ORDER BY c.id")
+    List<UUID> findIdsAfterByType(@Param("afterId") UUID afterId,
+                                  @Param("type") Conversation.Type type,
+                                  Pageable pageable);
 
     /**
      * {@code SELECT ... FOR UPDATE} on the conversation row — serializes

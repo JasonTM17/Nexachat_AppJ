@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 class UserSettingsServiceTest {
@@ -127,7 +128,7 @@ class UserSettingsServiceTest {
     }
 
     @Test
-    void unchangedOrOfflineVisibilityUpdateDoesNotPublishPresence() {
+    void offlineVisibilityChangePublishesMirrorUpdateButNoStompPresenceUpdate() {
         UserRepository repository = mock(UserRepository.class);
         ConversationMemberRepository memberRepository = mock(ConversationMemberRepository.class);
         PresenceSessionState sessionState = mock(PresenceSessionState.class);
@@ -143,7 +144,9 @@ class UserSettingsServiceTest {
         when(sessionState.isOnline(userId)).thenReturn(false);
         service.updateSettings(userId, false, null, null);
 
-        verifyNoInteractions(eventPublisher, memberRepository);
+        verify(eventPublisher).publishEvent(new UserPresenceVisibilityChangedEvent(userId, false));
+        verify(eventPublisher, never()).publishEvent(org.mockito.ArgumentMatchers.isA(UserPresenceChangedEvent.class));
+        verifyNoInteractions(memberRepository);
     }
 
     private static UserSettingsService service(UserRepository repository,

@@ -50,6 +50,9 @@ public class UserSettingsService {
         if (showPresence != null) {
             boolean changed = user.isShowPresence() != showPresence;
             user.changeShowPresence(showPresence);
+            if (changed) {
+                eventPublisher.publishEvent(new UserPresenceVisibilityChangedEvent(userId, showPresence));
+            }
             if (changed && sessionState.isOnline(userId)) {
                 eventPublisher.publishEvent(new UserPresenceChangedEvent(
                         userId, showPresence, null, memberRepository.findDirectPeerUserIds(userId)));

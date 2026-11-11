@@ -9,12 +9,14 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
+import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +55,7 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
+    private final ApplicationEventPublisher eventPublisher;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -69,7 +72,8 @@ public class AuthService {
                        AccessTokenRevocationService accessTokenRevocationService,
                        RateLimitService rateLimitService,
                        AuthResponseFactory responseFactory,
-                       RefreshReplayConfiguration.BoundaryHook boundaryHook) {
+                       RefreshReplayConfiguration.BoundaryHook boundaryHook,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -79,6 +83,7 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
+        this.eventPublisher = eventPublisher;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -103,6 +108,7 @@ public class AuthService {
             // constraint is the final arbiter, mapped back to the same contract.
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
+        eventPublisher.publishEvent(new UserAccountCreatedEvent(user.getId()));
         log.info("Registered new account");
         return issueSession(user, deviceLabel);
     }
