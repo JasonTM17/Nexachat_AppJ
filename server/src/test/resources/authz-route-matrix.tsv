@@ -91,7 +91,7 @@ PUT	/api/v1/conversations/{conversationId}/mute	CONVERSATION_MEMBER	conversation
 PUT	/api/v1/conversations/{conversationId}/pin	CONVERSATION_MEMBER	conversation_member	rest-089
 PUT	/api/v1/conversations/{conversationId}/polls/{pollId}/vote	CONVERSATION_MEMBER	conversation_member	rest-090
 PUT	/api/v1/messages/{messageId}/reactions/{emoji}	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-091
-DELETE	/api/v1/auth/identities/google	AUTHENTICATED	authenticated_self	rest-092
+DELETE	/api/v1/auth/identities/google	AUTHENTICATED	authenticated_self	rest-098
 GET	/api/v1/auth/identities	AUTHENTICATED	authenticated_self	rest-093
 POST	/api/v1/auth/google	PUBLIC_AUTH	public_auth	rest-094
 POST	/api/v1/auth/google/nonce	PUBLIC_AUTH	public_auth	rest-095
