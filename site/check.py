@@ -1085,6 +1085,55 @@ def test_bilingual_user_visible_text():
     return failures
 
 
+PRIVACY_BRIDGE_VI_PHRASES = (
+    "Firebase Authentication",
+    "mã cuộc gọi",
+    "mã người gọi và người nhận",
+    "RINGING/ACTIVE/ENDED",
+    "lastSeen",
+    "5 giây",
+    "120 giây",
+    "mặc định tắt ở cả máy chủ và ứng dụng",
+    "SDP/ICE",
+    "token đăng nhập NexaChat",
+)
+PRIVACY_BRIDGE_EN_PHRASES = (
+    "Firebase Authentication",
+    "call id",
+    "caller and callee ids",
+    "RINGING/ACTIVE/ENDED",
+    "lastSeen",
+    "5 seconds",
+    "120 seconds",
+    "disabled by default on both the server and the app",
+    "SDP/ICE",
+    "NexaChat login tokens",
+)
+
+
+def test_privacy_policy_disclosures():
+    """The privacy page must disclose the optional Firebase bridge and passive call status."""
+    path = os.path.join(SITE_DIR, "privacy.html")
+    if not os.path.isfile(path):
+        return ["Missing site/privacy.html"]
+
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    failures = []
+    for phrase in PRIVACY_BRIDGE_VI_PHRASES:
+        if phrase not in html:
+            failures.append(f"privacy.html missing Vietnamese Firebase disclosure: {ascii(phrase)}")
+    for phrase in PRIVACY_BRIDGE_EN_PHRASES:
+        if phrase not in html:
+            failures.append(f"privacy.html missing English Firebase disclosure: {ascii(phrase)}")
+    if not failures:
+        log_pass(
+            "Privacy page discloses Firebase call status, lastSeen, retention, and default-off flags in vi/en"
+        )
+    return failures
+
+
 def test_account_deletion_page():
     """The public account-deletion page and its privacy/footer links must exist."""
     failures = []
@@ -1429,6 +1478,9 @@ def main():
 
     f_i18n = test_bilingual_user_visible_text()
     all_failures.extend(f_i18n)
+
+    f_privacy = test_privacy_policy_disclosures()
+    all_failures.extend(f_privacy)
 
     f_deletion = test_account_deletion_page()
     all_failures.extend(f_deletion)
