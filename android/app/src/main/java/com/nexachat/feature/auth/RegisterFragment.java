@@ -27,7 +27,7 @@ public final class RegisterFragment extends Fragment {
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
         binding = FragmentRegisterBinding.inflate(inflater, container, false);
-        if (state != null) { confirmation = state.getString("confirm", ""); confirmChecked = state.getBoolean("confirmChecked"); }
+        if (state != null) confirmChecked = state.getBoolean("confirmChecked");
         return binding.getRoot();
     }
 
@@ -101,6 +101,6 @@ public final class RegisterFragment extends Fragment {
         binding.secondaryAction.setEnabled(notLoading);
         rendering = false;
     }
-    @Override public void onSaveInstanceState(@NonNull Bundle out) { super.onSaveInstanceState(out); out.putString("confirm", confirmation); out.putBoolean("confirmChecked", confirmChecked); }
+    @Override public void onSaveInstanceState(@NonNull Bundle out) { super.onSaveInstanceState(out); out.putBoolean("confirmChecked", confirmChecked); }
     @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
 }

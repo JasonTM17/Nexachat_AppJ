@@ -325,7 +325,7 @@ public final class AuthViewModel extends ViewModel {
         @Override
         public String toString() {
             return "UiState(phone=" + phone
-                    + ", password=" + password
+                    + ", password=<redacted>"
                     + ", displayName=" + displayName
                     + ", loading=" + loading
                     + ", error=" + error

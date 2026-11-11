@@ -181,7 +181,36 @@ public final class ProfileViewModelTest {
         assertTrue(state.isPasswordChanged());
         assertFalse(state.isPasswordSaving());
         assertNull(state.getPasswordError());
+        assertEquals("", state.getOldPassword());
+        assertEquals("", state.getNewPassword());
+        assertEquals("", state.getConfirmPassword());
         verify(authRepository, times(1)).changePassword("oldpass123", "newpass456");
+    }
+
+    @Test
+    public void dismissingPasswordDialogClearsEnteredCredentials() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        openAndFillPassword(viewModel, "old-marker", "new-marker", "new-marker");
+
+        viewModel.dismissPasswordDialog();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals("", state.getOldPassword());
+        assertEquals("", state.getNewPassword());
+        assertEquals("", state.getConfirmPassword());
+    }
+
+    @Test
+    public void uiStateStringDoesNotExposePasswordFields() {
+        ProfileViewModel.UiState state = new ProfileViewModel.UiState()
+                .withOldPassword("old-marker")
+                .withNewPassword("new-marker")
+                .withConfirmPassword("confirm-marker");
+
+        String description = state.toString();
+        assertFalse(description.contains("old-marker"));
+        assertFalse(description.contains("new-marker"));
+        assertFalse(description.contains("confirm-marker"));
     }
 
     @Test

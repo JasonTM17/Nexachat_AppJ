@@ -62,7 +62,9 @@ public final class DeleteAccountViewModel extends ViewModel {
                 .subscribe(
                         result -> updateState(current -> {
                             if (result instanceof Result.Success<?>) {
-                                return current.withDeleting(true).withError(null);
+                                return current.withDeleting(true)
+                                        .withPassword("")
+                                        .withError(null);
                             }
                             ApiError error = ((Result.Failure<?>) result).getError();
                             return current.withDeleting(false).withError(error);

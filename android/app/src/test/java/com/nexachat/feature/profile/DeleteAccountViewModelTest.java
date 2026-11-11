@@ -69,6 +69,7 @@ public final class DeleteAccountViewModelTest {
         DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
         assertTrue(state.isDeleting());
         assertNull(state.getError());
+        assertEquals("", state.getPassword());
         verify(authRepository, times(1)).deleteAccount("secret-pass");
     }
 

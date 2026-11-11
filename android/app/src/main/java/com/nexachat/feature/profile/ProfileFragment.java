@@ -367,6 +367,7 @@ public final class ProfileFragment extends Fragment {
         layout.setEndIconMode(TextInputLayout.END_ICON_PASSWORD_TOGGLE);
         layout.setEndIconContentDescription(getString(R.string.cd_password_visibility));
         TextInputEditText input = new TextInputEditText(layout.getContext());
+        input.setSaveEnabled(false);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         input.setAutofillHints(hint == R.string.auth_current_password_label

@@ -72,6 +72,7 @@ public final class RecoveryEmailOtpViewModelTest {
         RecoveryEmailOtpViewModel.UiState state = viewModel.getUiState().getValue();
         assertTrue(state.isVerified());
         assertEquals("user@test.com", state.getVerifiedEmail());
+        assertEquals("", state.getOtp());
     }
 
     @Test
