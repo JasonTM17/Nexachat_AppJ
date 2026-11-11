@@ -71,6 +71,7 @@ cd android && ./gradlew assembleDebug && adb install app/build/outputs/apk/debug
 ```
 
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
+Pre-built APK download: [nexachat.io.vn/download.html](https://nexachat.io.vn/download.html) · [GitHub Releases](https://github.com/JasonTM17/Nexachat_AppJ/releases).
 Setup, testing and deployment guides: [CONTRIBUTING.md](CONTRIBUTING.md) ·
 [docs/operations.md](docs/operations.md).
 
@@ -251,6 +252,8 @@ psql -h localhost -p 5433 -U nexachat -d nexachat < demo/seed.sql
 
    or just press ▶ in Android Studio. USB debugging alternative:
    `adb reverse tcp:8080 tcp:8080` then keep `localhost`/`10.0.2.2` as the host.
+
+   To install pre-built release APKs without building from source, download the signed package from [nexachat.io.vn/download.html](https://nexachat.io.vn/download.html) or [GitHub Releases](https://github.com/JasonTM17/Nexachat_AppJ/releases).
 
 ## Demo accounts
 

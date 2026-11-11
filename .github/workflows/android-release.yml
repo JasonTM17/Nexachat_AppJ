@@ -187,10 +187,18 @@ jobs:
           asset_dir="$RUNNER_TEMP/nexachat-release-assets"
           apk="$asset_dir/nexachat-${RELEASE_TAG}.apk"
           checksum="$apk.sha256"
+          notes_file="docs/release-notes/${RELEASE_TAG}.md"
+          if [[ -f "$notes_file" ]]; then
+            echo "Using release notes from $notes_file."
+            notes_arg=(--notes-file "$notes_file")
+          else
+            echo "Notice: Release notes file $notes_file not found; falling back to --generate-notes."
+            notes_arg=(--generate-notes)
+          fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" "$apk" "$checksum" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$RELEASE_TAG" "$apk" "$checksum" --generate-notes --repo "$GITHUB_REPOSITORY"
+            gh release create "$RELEASE_TAG" "$apk" "$checksum" "${notes_arg[@]}" --repo "$GITHUB_REPOSITORY"
           fi
 
       - name: Remove temporary keystore
