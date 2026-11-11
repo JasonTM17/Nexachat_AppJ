@@ -91,6 +91,10 @@ jobs:
     steps:
       # Full commit SHA pins are paired with the upstream release tags.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
       - name: Check Markdown links
         run: python tools/check-markdown-links.py
       - name: Check static site
@@ -99,6 +103,10 @@ jobs:
         run: |
           python tools/check-android-strings.py --self-test
           python tools/check-android-strings.py
+      - name: Test API contract checker
+        run: python tools/check-api-contract.py --self-test
+      - name: Check API contract routes
+        run: python tools/check-api-contract.py
       - name: Validate GitHub Actions workflows
         run: |
           curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- 1.7.7
