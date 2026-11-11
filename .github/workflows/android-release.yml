@@ -1,0 +1,209 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing semantic version tag to build and publish (for example v1.2.3)
+        required: true
+        type: string
+
+concurrency:
+  group: android-apk-release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: android-release
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            android/gradle/libs.versions.toml
+            android/gradle/wrapper/gradle-wrapper.properties
+            android/build.gradle
+            android/app/build.gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-36
+
+      - name: Derive Android version from tag
+        id: release_version
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            release_tag="$INPUT_RELEASE_TAG"
+          else
+            release_tag="$GITHUB_REF_NAME"
+          fi
+          if [[ "$release_tag" != v* ]]; then
+            echo '::error::Release tags must start with v and use MAJOR.MINOR.PATCH.'
+            exit 1
+          fi
+          source tools/release-version.sh
+          version_info="$(derive_release_version "$release_tag")" || exit 1
+          read -r version_name version_code <<< "$version_info"
+          {
+            echo "tag=$release_tag"
+            echo "version_name=$version_name"
+            echo "version_code=$version_code"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate signing secrets and decode keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RELEASE_STORE_FILE: ${{ secrets.RELEASE_STORE_FILE }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 RELEASE_STORE_FILE RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [[ -z "${!name-}" ]]; then
+              echo "::error::Required repository secret $name is missing."
+              exit 1
+            fi
+          done
+          if [[ ! "$RELEASE_STORE_FILE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo '::error::RELEASE_STORE_FILE must be a filename only, without a directory path.'
+            exit 1
+          fi
+          umask 077
+          keystore_dir="$(mktemp -d "$RUNNER_TEMP/nexachat-release-XXXXXX")"
+          keystore_path="$keystore_dir/$RELEASE_STORE_FILE"
+          printf 'RELEASE_STORE_FILE_PATH=%s\n' "$keystore_path" >> "$GITHUB_ENV"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"; then
+            echo '::error::ANDROID_KEYSTORE_BASE64 could not be decoded.'
+            exit 1
+          fi
+          if [[ ! -s "$keystore_path" ]]; then
+            echo '::error::Decoded keystore is empty.'
+            exit 1
+          fi
+          chmod 600 "$keystore_path"
+
+      - name: Check release API URL
+        env:
+          RELEASE_API_BASE_URL: ${{ secrets.RELEASE_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELEASE_API_BASE_URL" ]]; then
+            echo '::error::Required repository secret RELEASE_API_BASE_URL is missing.'
+            exit 1
+          fi
+          source tools/release-url-guard.sh
+          if ! guard_release_api_base_url "$RELEASE_API_BASE_URL" false >/dev/null 2>&1; then
+            echo '::error::RELEASE_API_BASE_URL failed the HTTPS release URL guard.'
+            exit 1
+          fi
+          echo 'Release API URL passed the HTTPS guard.'
+
+      - name: Build signed release APK
+        working-directory: android
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_API_BASE_URL: ${{ secrets.RELEASE_API_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_STORE_FILE="$RELEASE_STORE_FILE_PATH"
+          ./gradlew :app:assembleRelease \
+            --no-daemon --no-build-cache --no-configuration-cache --no-parallel --max-workers=2 \
+            "-PapiBaseUrl=$RELEASE_API_BASE_URL" \
+            "-PreleaseVersionName=${{ steps.release_version.outputs.version_name }}" \
+            "-PreleaseVersionCode=${{ steps.release_version.outputs.version_code }}"
+
+      - name: Check R8 mapping
+        shell: bash
+        run: python tools/check-release-r8-mapping.py
+
+      - name: Verify signature and create checksum
+        id: release_assets
+        env:
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='android/app/build/outputs/apk/release/app-release.apk'
+          if [[ ! -f "$apk" ]]; then
+            echo '::error::The signed release APK was not produced.'
+            exit 1
+          fi
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$sdk_root" || ! -d "$sdk_root/build-tools" ]]; then
+            echo '::error::Android SDK build-tools were not found.'
+            exit 1
+          fi
+          apksigner="$(find "$sdk_root/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" || ! -x "$apksigner" ]]; then
+            echo '::error::apksigner was not found in the Android SDK build-tools.'
+            exit 1
+          fi
+          "$apksigner" verify --print-certs "$apk"
+          asset_dir="$RUNNER_TEMP/nexachat-release-assets"
+          mkdir -p "$asset_dir"
+          asset_name="nexachat-${RELEASE_TAG}.apk"
+          cp "$apk" "$asset_dir/$asset_name"
+          (cd "$asset_dir" && sha256sum "$asset_name" > "$asset_name.sha256")
+
+      - name: Publish APK and checksum to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_dir="$RUNNER_TEMP/nexachat-release-assets"
+          apk="$asset_dir/nexachat-${RELEASE_TAG}.apk"
+          checksum="$apk.sha256"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$apk" "$checksum" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" "$apk" "$checksum" --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi
+
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${RELEASE_STORE_FILE_PATH:-}" ]]; then
+            keystore_dir="${RELEASE_STORE_FILE_PATH%/*}"
+            case "$keystore_dir" in
+              "$RUNNER_TEMP"/nexachat-release-*) ;;
+              *) echo '::error::Refusing to remove a path outside its unique runner temporary directory.'; exit 1 ;;
+            esac
+            rm -f -- "$RELEASE_STORE_FILE_PATH"
+            rmdir -- "$keystore_dir"
+          fi
