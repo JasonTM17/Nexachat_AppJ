@@ -20,7 +20,9 @@ import http.server
 import json
 import os
 import re
+import shutil
 import socketserver
+import subprocess
 import sys
 import threading
 import urllib.error
@@ -1256,8 +1258,30 @@ def test_vercel_ignore_command(vercel_data):
         failures.append("ignoreCommand must reference VERCEL_GIT_PREVIOUS_SHA")
     elif "VERCEL_GIT_COMMIT_SHA" not in cmd:
         failures.append("ignoreCommand must compare against VERCEL_GIT_COMMIT_SHA")
+    elif "cat-file" not in cmd:
+        failures.append("ignoreCommand must verify commit object existence with git cat-file")
+    elif "rev-parse" in cmd:
+        failures.append(
+            "ignoreCommand must not rely on git rev-parse (shallow clones lack objects that rev-parse still accepts)"
+        )
+    elif "exit 0" not in cmd or "exit 1" not in cmd:
+        failures.append("ignoreCommand must explicitly return exit 0 (skip) or exit 1 (build)")
     else:
-        log_pass("vercel.json defines repo-owned ignoreCommand using VERCEL_GIT_PREVIOUS_SHA")
+        log_pass("vercel.json defines repo-owned ignoreCommand using VERCEL_GIT_PREVIOUS_SHA and cat-file")
+
+    sh_script = os.path.join(REPO_DIR, "tools", "test-vercel-ignore-command.sh")
+    if os.path.isfile(sh_script):
+        bash_path = shutil.which("bash")
+        if bash_path:
+            proc = subprocess.run([bash_path, sh_script], capture_output=True, text=True)
+            if proc.returncode != 0:
+                failures.append(
+                    f"tools/test-vercel-ignore-command.sh failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+                )
+            else:
+                log_pass("tools/test-vercel-ignore-command.sh passed (shallow clone and diff scenarios)")
+        else:
+            log_info("bash not found; skipped dynamic test-vercel-ignore-command.sh execution")
     return failures
 
 
