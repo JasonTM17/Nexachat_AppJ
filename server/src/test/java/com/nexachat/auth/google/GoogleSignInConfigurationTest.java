@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestOperations;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -14,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -60,10 +62,20 @@ class GoogleSignInConfigurationTest {
     void jwksHttpClientStopsWaitingWhenTheResponseBodyStalls() throws Exception {
         CountDownLatch requestReceived = new CountDownLatch(1);
         CountDownLatch releaseResponse = new CountDownLatch(1);
+        AtomicInteger requestCount = new AtomicInteger();
         HttpServer server = HttpServer.create(
                 new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         ExecutorService executor = Executors.newSingleThreadExecutor();
+        server.createContext("/warmup", exchange -> {
+            byte[] body = "{\"keys\":[]}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(body);
+            }
+        });
         server.createContext("/stalled", exchange -> {
+            requestCount.incrementAndGet();
             try {
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, 11);
@@ -81,8 +93,14 @@ class GoogleSignInConfigurationTest {
         server.start();
 
         try {
-            var request = executor.submit(() -> GoogleSignInConfiguration.jwksRestOperations()
-                    .getForObject("http://127.0.0.1:" + server.getAddress().getPort() + "/stalled", String.class));
+            String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            RestOperations jwksRestOperations = GoogleSignInConfiguration.jwksRestOperations();
+            // Warm up the HTTP client so the timed window is not charged for
+            // one-time class loading on a cold JVM.
+            jwksRestOperations.getForObject(baseUrl + "/warmup", String.class);
+
+            long startedAt = System.nanoTime();
+            var request = executor.submit(() -> jwksRestOperations.getForObject(baseUrl + "/stalled", String.class));
             assertThat(requestReceived.await(3, TimeUnit.SECONDS)).isTrue();
             try {
                 request.get(8, TimeUnit.SECONDS);
@@ -92,6 +110,13 @@ class GoogleSignInConfigurationTest {
             } catch (TimeoutException exception) {
                 throw new AssertionError("JWKS response read did not honor its timeout", exception);
             }
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            assertThat(elapsedMillis)
+                    .as("JWKS fetch must end within the bounded request deadline")
+                    .isLessThan(GoogleSignInConfiguration.JWKS_REQUEST_TIMEOUT.toMillis() + 2_000);
+            assertThat(requestCount)
+                    .as("JWKS fetch must not retry the request")
+                    .hasValue(1);
         } finally {
             releaseResponse.countDown();
             server.stop(0);

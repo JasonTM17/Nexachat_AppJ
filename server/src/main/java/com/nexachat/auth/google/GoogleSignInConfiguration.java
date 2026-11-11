@@ -3,7 +3,7 @@ package com.nexachat.auth.google;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -11,6 +11,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.web.client.RestOperations;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.http.HttpClient;
 import java.time.Duration;
 
 /**
@@ -25,7 +26,12 @@ import java.time.Duration;
 public class GoogleSignInConfiguration {
 
     private static final Duration JWKS_CONNECT_TIMEOUT = Duration.ofSeconds(2);
-    private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
+    /**
+     * Total deadline for one JWKS HTTP exchange (request sent until the body
+     * is fully read). Unlike a per-read timeout this cannot be extended by a
+     * stalled body or by the response cleanup reading the stream again.
+     */
+    static final Duration JWKS_REQUEST_TIMEOUT = Duration.ofSeconds(5);
 
     @Bean
     public JwtDecoder googleIdTokenDecoder(GoogleSignInProperties properties) {
@@ -58,9 +64,13 @@ public class GoogleSignInConfiguration {
     }
 
     static RestOperations jwksRestOperations() {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(JWKS_CONNECT_TIMEOUT);
-        factory.setReadTimeout(JWKS_READ_TIMEOUT);
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(JWKS_CONNECT_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(JWKS_REQUEST_TIMEOUT);
         return new RestTemplate(factory);
     }
 }
