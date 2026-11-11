@@ -24,11 +24,22 @@ spring:
       # (https://neon.com/docs/connect/connection-pooling). One Render instance
       # with a direct (non-pooled) connection needs far fewer.
       maximum-pool-size: 5
-      minimum-idle: 1
+      # Hold no idle connection, so Neon Free can suspend its compute (after 5
+      # idle minutes) while an uptime monitor keeps this service awake.
+      minimum-idle: 0
+      idle-timeout: 60000
       connection-timeout: 20000
       validation-timeout: 3000
-      # Stay below Neon's idle-connection behaviour and recycle stale sockets
-      # after a Render restart or a Neon compute wake-up.
       max-lifetime: 1200000
-      keepalive-time: 300000
       leak-detection-threshold: 60000
+
+# Background jobs that need no prompt schedule run far apart here, so they do
+# not keep the Neon compute awake. RAG indexes lazily at query time; expired
+# refresh-replay payloads are already unusable.
+nexachat:
+  rag:
+    index:
+      backfill-interval-ms: 1800000
+  auth:
+    refresh-replay:
+      cleanup-interval-ms: 1800000
