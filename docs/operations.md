@@ -221,6 +221,24 @@ to a JSON file. With `FCM_ENABLED=true`, a missing or malformed value, or an
 empty `FCM_PROJECT_ID`, stops startup with a clear message instead of failing
 on the first send.
 
+#### Google service-account credentials
+
+Both FCM and the Firebase bridge read the key through
+[`GoogleServiceAccountCredentialsFactory`](../server/src/main/java/com/nexachat/google/GoogleServiceAccountCredentialsFactory.java).
+`FCM_SERVICE_ACCOUNT_JSON` must be a service-account private-key JSON: either
+the JSON document itself or a readable path to it. The document must contain
+`"type": "service_account"`, `client_email`, `token_uri` and `private_key`;
+anything else stops startup with a clear message. Application Default
+Credentials (`GOOGLE_APPLICATION_CREDENTIALS`, the Compute metadata server, or
+workload identity) are **not** used: ADC alone does not configure FCM or the
+Firebase bridge.
+
+The key must belong to the project in `FCM_PROJECT_ID`, the same project as
+`android/app/google-services.json`.
+[`FirebaseRealtimeConfiguration`](../server/src/main/java/com/nexachat/firebase/config/FirebaseRealtimeConfiguration.java)
+requires `FCM_PROJECT_ID` when the bridge is enabled and rejects a key whose
+`project_id` differs; FCM sends would also fail against the wrong project.
+
 `FCM_TOKEN_URI` and `FCM_API_URL` are optional overrides for running the server
 against a local fake Google endpoint; leave them empty in production.
 
@@ -313,6 +331,33 @@ Optional display-only call status projection publishes to `/calls/{callId}`:
    Roll out in staged cohorts. Clients obtain custom tokens, maintain membership leases, and stream presence,
    typing, and call status, falling back automatically to STOMP if Firebase is unreachable.
 
+#### Compose deployment
+
+`docker-compose.yml` forwards the `FIREBASE_*` settings the server reads:
+`FIREBASE_REALTIME_ENABLED`, `FIREBASE_REALTIME_DEFAULT`,
+`FIREBASE_CALL_STATUS_ENABLED`, `FIREBASE_DATABASE_URL`,
+`FIREBASE_CONNECT_TIMEOUT_SECONDS` and `FIREBASE_READ_TIMEOUT_SECONDS`. They
+default to off and empty exactly like `application.yml`, so values in `.env`
+reach the app container; an exported host value still wins over `.env` (the
+same interpolation rule as `FCM_ENABLED` above).
+
+The bridge also needs `FCM_PROJECT_ID` and the service-account key in
+`FCM_SERVICE_ACCOUNT_JSON`, even while `FCM_ENABLED=false`. To mount a key file
+instead of inlining it, use the opt-in
+[`docker-compose.firebase.yml`](../docker-compose.firebase.yml) override. It
+mounts the host file read-only at `/run/secrets/nexachat-firebase.json` and
+points `FCM_SERVICE_ACCOUNT_JSON` there:
+
+```sh
+NEXACHAT_FIREBASE_KEY_HOST_FILE=/secure/nexachat-firebase.json \
+  docker compose -f docker-compose.yml -f docker-compose.firebase.yml up -d app
+```
+
+The app container runs as uid/gid `10001`, so the mounted file must be readable
+by that user. `NEXACHAT_FIREBASE_KEY_HOST_FILE` is a Compose interpolation
+input, not a server setting. The key's project must match `FCM_PROJECT_ID`; see
+[Google service-account credentials](#google-service-account-credentials).
+
 #### Rollback
 
 - **Emergency kill switch**: Set `control/enabled: false` directly in RTDB root. All client reads and writes
@@ -322,12 +367,8 @@ Optional display-only call status projection publishes to `/calls/{callId}`:
 - **Disable full bridge**: Set `FIREBASE_REALTIME_ENABLED=false` on the server and restart. Bridge routes
   answer 404 and Android clients cleanly fall back to STOMP over WebSocket.
 
-The current Compose file does not forward `FIREBASE_*` variables into the app
-container. Setting them only in `.env` will not enable this bridge in Compose;
-the deployment configuration must explicitly pass the reviewed Firebase
-variables to the backend before the feature is enabled. To turn the bridge off,
-set `FIREBASE_REALTIME_ENABLED=false` and restart the backend. Existing STOMP
-clients and routes remain available.
+To turn the bridge off, set `FIREBASE_REALTIME_ENABLED=false` and restart the
+backend. Existing STOMP clients and routes remain available.
 
 Bridge issue, renewal, and single-session deletion hold a lock on that user's
 PostgreSQL row through the Firebase request so they serialize with logout and
