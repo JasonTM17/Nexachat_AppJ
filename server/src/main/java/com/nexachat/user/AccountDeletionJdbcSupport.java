@@ -77,23 +77,33 @@ class AccountDeletionJdbcSupport {
         jdbcTemplate.update("DELETE FROM email_otps WHERE user_id = ?", userId);
     }
 
-    List<String> findUnboundAttachmentStorageKeys(UUID ownerId) {
+    /**
+     * Deletes uploads that were never bound to a message and returns the
+     * storage keys whose rows this call actually removed.
+     *
+     * <p>{@code SKIP LOCKED} is the lock-order guard: a send that is claiming
+     * one of these rows already holds its row lock and will reference the
+     * sender row next. Deleting must not wait for such a row (the sender row
+     * is held by the deletion transaction), and the returned keys must not
+     * include a row that survived, or post-commit cleanup would delete a file
+     * a message now owns. Skipped rows stay for the retention job.</p>
+     */
+    List<String> deleteUnboundAttachments(UUID ownerId) {
         JdbcTemplate jdbcTemplate = jdbc();
         if (jdbcTemplate == null) {
             return Collections.emptyList();
         }
         return jdbcTemplate.queryForList("""
-                SELECT storage_key FROM message_attachments
-                WHERE owner_id = ? AND message_id IS NULL
+                WITH candidates AS (
+                    SELECT id
+                    FROM message_attachments
+                    WHERE owner_id = ? AND message_id IS NULL
+                    FOR UPDATE SKIP LOCKED
+                )
+                DELETE FROM message_attachments attachment
+                USING candidates
+                WHERE attachment.id = candidates.id
+                RETURNING attachment.storage_key
                 """, String.class, ownerId);
-    }
-
-    void deleteUnboundAttachments(UUID ownerId) {
-        JdbcTemplate jdbcTemplate = jdbc();
-        if (jdbcTemplate == null) {
-            return;
-        }
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id = ? AND message_id IS NULL", ownerId);
     }
 }

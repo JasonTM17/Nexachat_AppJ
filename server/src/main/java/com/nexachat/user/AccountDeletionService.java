@@ -120,7 +120,14 @@ public class AccountDeletionService {
                 .distinct().sorted().toList();
 
         String avatarStorageKey = avatarStorageKey(user.getAvatarUrl());
-        List<String> unboundKeys = new ArrayList<>(jdbcSupport.findUnboundAttachmentStorageKeys(userId));
+        // Delete the account's unbound upload rows before any group
+        // conversation row is locked. A send locks its attachment rows first
+        // and only then references the sender row and advances the
+        // conversation; deleting these rows later would invert that order and
+        // deadlock. SKIP LOCKED makes an in-flight send the winner of its own
+        // row instead of making deletion wait for it, and RETURNING keeps the
+        // post-commit file cleanup limited to files whose rows were removed.
+        List<String> unboundKeys = jdbcSupport.deleteUnboundAttachments(userId);
 
         // Scrub caches while group memberships still identify every affected
         // conversation. leaveAllGroups removes those lookup rows.
@@ -132,7 +139,6 @@ public class AccountDeletionService {
         jdbcSupport.deleteLabels(userId);
         jdbcSupport.deleteGoogleIdentityData(userId);
         jdbcSupport.deleteEmailOtps(userId);
-        jdbcSupport.deleteUnboundAttachments(userId);
 
         tokenService.revokeAllForUser(userId);
 
