@@ -177,6 +177,36 @@ public final class TokenStore {
                 .map(prefs -> Objects.requireNonNullElse(prefs.get(SESSION_EPOCH), 0L));
     }
 
+    /**
+     * Keeps stored credentials but closes the session so refresh dispatch stops
+     * after a terminal replay-recovery failure. Clears any pending rotation marker.
+     */
+    @NonNull
+    public Completable markSessionReauthRequired(long expectedEpoch) {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            long current = Objects.requireNonNullElse(
+                                    updated.get(SESSION_EPOCH), 0L);
+                            if (current != expectedEpoch) {
+                                return preferences;
+                            }
+                            updated.set(SESSION_LIFECYCLE, LIFECYCLE_CLOSED);
+                            clearPendingRefresh(updated);
+                            return (Preferences) updated;
+                        }))
+                .ignoreElement();
+    }
+
+    /** True when encrypted refresh credentials exist regardless of session lifecycle. */
+    @NonNull
+    public Single<Boolean> hasStoredRefreshCredential() {
+        return dataStore.data()
+                .firstElement()
+                .map(preferences -> toTokens(preferences) != null)
+                .defaultIfEmpty(false);
+    }
+
     /** Finalizes durable closed state after local cleanup completes. */
     @NonNull
     public Completable markSessionClosed(long expectedEpoch) {

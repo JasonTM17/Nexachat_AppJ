@@ -55,6 +55,9 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         if (item.getKind() == MessageListItem.Kind.DATE_SEPARATOR) {
             return MessageViewTypeMapper.VIEW_TYPE_DATE_SEPARATOR;
         }
+        if (item.getKind() == MessageListItem.Kind.UNREAD_DIVIDER) {
+            return MessageViewTypeMapper.VIEW_TYPE_UNREAD_DIVIDER;
+        }
         return MessageViewTypeMapper.viewTypeForMessage(item.getMessage());
     }
 
@@ -67,6 +70,9 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         if (viewType == MessageViewTypeMapper.VIEW_TYPE_DATE_SEPARATOR) {
             return new DateSeparatorViewHolder(row);
         }
+        if (viewType == MessageViewTypeMapper.VIEW_TYPE_UNREAD_DIVIDER) {
+            return new UnreadDividerViewHolder(row);
+        }
         return new MessageViewHolder(row);
     }
 
@@ -76,6 +82,8 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         if (holder instanceof DateSeparatorViewHolder) {
             String label = item.getDateSeparatorLabel() != null ? item.getDateSeparatorLabel() : "";
             binder.bindDateSeparator(holder.itemView, label);
+        } else if (holder instanceof UnreadDividerViewHolder) {
+            binder.bindUnreadDivider(holder.itemView, item.getUnreadDividerCount());
         } else if (holder instanceof MessageViewHolder) {
             binder.bindMessageRow(holder.itemView, item);
         }
@@ -89,6 +97,12 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
 
     static final class DateSeparatorViewHolder extends RecyclerView.ViewHolder {
         DateSeparatorViewHolder(@NonNull View itemView) {
+            super(itemView);
+        }
+    }
+
+    static final class UnreadDividerViewHolder extends RecyclerView.ViewHolder {
+        UnreadDividerViewHolder(@NonNull View itemView) {
             super(itemView);
         }
     }

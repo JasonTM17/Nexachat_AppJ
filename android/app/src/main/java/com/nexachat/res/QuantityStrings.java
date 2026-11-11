@@ -37,6 +37,10 @@ public final class QuantityStrings {
         return resources.getQuantityString(R.plurals.unread_banner_format, unreadCount, unreadCount);
     }
 
+    public static String chatUnreadDivider(Resources resources, int unreadCount) {
+        return resources.getQuantityString(R.plurals.chat_unread_divider, unreadCount, unreadCount);
+    }
+
     public static String askRateLimitedRetry(Resources resources, int retryAfterSeconds) {
         return resources.getQuantityString(
                 R.plurals.ask_rate_limited_retry, retryAfterSeconds, retryAfterSeconds);

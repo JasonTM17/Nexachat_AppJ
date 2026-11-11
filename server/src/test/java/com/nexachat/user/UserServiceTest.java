@@ -2,6 +2,7 @@ package com.nexachat.user;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.contact.ContactRepository;
 import com.nexachat.user.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,8 @@ class UserServiceTest {
     private UserRepository userRepository;
     @Mock
     private PhoneService phoneService;
+    @Mock
+    private ContactRepository contactRepository;
 
     @InjectMocks
     private UserService userService;
@@ -57,7 +60,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_trimsAndPersists() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), "  Lan Nguyen  ");
 
@@ -68,7 +71,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_blank_throwsValidationFailed() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> userService.updateDisplayName(user.getId(), "   "));
@@ -81,7 +84,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_null_isNoOp() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), null);
 
@@ -130,16 +133,40 @@ class UserServiceTest {
     @Test
     void search_q_prefixExcludesCallerAndCapsAt20() {
         UUID callerId = UUID.randomUUID();
+        User first = userWithId("Lan A");
+        User second = userWithId("Lan B");
         when(userRepository.searchByDisplayNamePrefix(eq("Lan"), eq(callerId), any(Pageable.class)))
-                .thenReturn(List.of(userWithId("Lan A"), userWithId("Lan B")));
+                .thenReturn(List.of(first, second));
+        when(contactRepository.findContactUserIdsAmong(eq(callerId), any()))
+                .thenReturn(List.of());
 
         List<UserResponse> results = userService.search(callerId, null, " Lan ");
 
         assertThat(results).hasSize(2);
+        assertThat(results).extracting(UserResponse::phone).containsOnlyNulls();
         ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
         verify(userRepository).searchByDisplayNamePrefix(eq("Lan"), eq(callerId), pageable.capture());
         // Exactly the 20-row contract cap.
         assertThat(pageable.getValue().getPageSize()).isEqualTo(20);
+    }
+
+    @Test
+    void search_q_disclosesPhoneOnlyForContacts() {
+        UUID callerId = UUID.randomUUID();
+        User contact = userWithId("Lan Contact");
+        User stranger = userWithId("Lan Stranger");
+        when(userRepository.searchByDisplayNamePrefix(eq("Lan"), eq(callerId), any(Pageable.class)))
+                .thenReturn(List.of(contact, stranger));
+        when(contactRepository.findContactUserIdsAmong(eq(callerId), any()))
+                .thenReturn(List.of(contact.getId()));
+
+        List<UserResponse> results = userService.search(callerId, null, "Lan");
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).id()).isEqualTo(contact.getId());
+        assertThat(results.get(0).phone()).isEqualTo(contact.getPhone());
+        assertThat(results.get(1).id()).isEqualTo(stranger.getId());
+        assertThat(results.get(1).phone()).isNull();
     }
 
     @Test

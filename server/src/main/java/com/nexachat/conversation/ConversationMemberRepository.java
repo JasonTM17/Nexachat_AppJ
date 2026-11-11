@@ -30,7 +30,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.ConversationMemberView(
-                       u.id, u.displayName, u.phone)
+                       u.id, u.displayName, u.phone, u.deletedAt IS NOT NULL)
             FROM ConversationMember m JOIN m.user u
             WHERE m.conversation.id = :conversationId
             ORDER BY u.id
@@ -99,6 +99,10 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
+
+    /** Current conversation ids for privacy cleanup after an account's realtime bridges are revoked. */
+    @Query("SELECT m.conversation.id FROM ConversationMember m WHERE m.user.id = :userId")
+    List<UUID> findConversationIdsByUserId(@Param("userId") UUID userId);
 
     /**
      * Members whose mute is currently effective: {@code muted = true} and either
@@ -194,6 +198,20 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             ORDER BY u.id
             """)
     List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
+
+    /**
+     * Successor pick for account-deletion admin hand-over: earliest
+     * {@code joined_at}, tie-broken by user id (PostgreSQL ordering).
+     */
+    @Query(value = """
+            SELECT user_id FROM conversation_members
+            WHERE conversation_id = :conversationId AND user_id <> :excludeUserId
+            ORDER BY joined_at ASC, user_id ASC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findSuccessorUserIdForAccountDeletion(
+            @Param("conversationId") UUID conversationId,
+            @Param("excludeUserId") UUID excludeUserId);
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows

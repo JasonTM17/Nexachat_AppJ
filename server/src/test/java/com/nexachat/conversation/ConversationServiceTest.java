@@ -106,8 +106,8 @@ class ConversationServiceTest {
         Conversation stored = conversationWithKey("k");
         when(directConversationCreator.createDirect(any(), any(), anyString())).thenReturn(stored);
         when(memberRepository.findMemberViews(stored.getId())).thenReturn(List.of(
-                new ConversationMemberView(callerId, "Caller", "+84901112233"),
-                new ConversationMemberView(otherId, "Other", "+84987776655")));
+                new ConversationMemberView(callerId, "Caller", "+84901112233", false),
+                new ConversationMemberView(otherId, "Other", "+84987776655", false)));
 
         ConversationService.OpenDirectResult result =
                 conversationService.openDirect(callerId, new OpenDirectRequest(null, otherId));
@@ -149,6 +149,7 @@ class ConversationServiceTest {
         Conversation winner = conversationWithKey(key);
         // First lookup misses, the post-race re-read finds the winner.
         when(conversationRepository.findByDirectKey(key))
+                .thenReturn(Optional.empty())
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
         when(directConversationCreator.createDirect(any(), any(), eq(key)))
@@ -205,8 +206,6 @@ class ConversationServiceTest {
 
     @Test
     void openDirect_self_throwsValidationFailed() {
-        when(userRepository.findById(callerId)).thenReturn(Optional.of(caller()));
-
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> conversationService.openDirect(callerId, new OpenDirectRequest(null, callerId)));
 

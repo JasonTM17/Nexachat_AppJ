@@ -1,13 +1,18 @@
 package com.nexachat.summary;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import androidx.lifecycle.SavedStateHandle;
+import com.squareup.moshi.Moshi;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
@@ -92,49 +97,44 @@ public final class SummaryViewModelTest {
     @Test
     public void newerRequestCancelsOldResponseAndDismissClearsSavedSummaryId() throws Exception {
         try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
-            AtomicInteger calls = new AtomicInteger();
-            CountDownLatch firstStarted = new CountDownLatch(1);
-            CountDownLatch releaseFirst = new CountDownLatch(1);
-            try (SummaryTestServer server = new SummaryTestServer(exchange -> {
-                int call = calls.incrementAndGet();
-                if (call == 1) {
-                    firstStarted.countDown();
-                    try {
-                        releaseFirst.await(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                    }
-                    SummaryTestServer.respond(exchange, 200,
-                            SummaryRepositoryTest.responseJson("summary-old", false));
-                    return;
+            SummaryRepository repository = mock(SummaryRepository.class);
+            AtomicReference<SummaryRepository.Callback> staleCallback = new AtomicReference<>();
+            when(repository.findCachedById(anyString(), any(), anyString())).thenReturn(Optional.empty());
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                SummaryRequest request = invocation.getArgument(1);
+                SummaryRepository.Callback callback = invocation.getArgument(2);
+                if (request.getScope() == SummaryScope.UNREAD) {
+                    staleCallback.set(callback);
+                    return (SummaryRepository.Cancellable) () -> { };
                 }
-                SummaryTestServer.respond(exchange, 200,
-                        SummaryRepositoryTest.responseJson("summary-new", false));
-            })) {
-                SummaryRepository repository = new SummaryRepository(
-                        SummaryRepositoryTest.api(server.baseUrl()));
-                SavedStateHandle handle = new SavedStateHandle(
-                        Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
-                SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
+                callback.onSuccess(summaryResponse("summary-new"));
+                return (SummaryRepository.Cancellable) () -> { };
+            });
+            SavedStateHandle handle = new SavedStateHandle(
+                    Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+            SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
 
-                viewModel.request(SummaryScope.UNREAD, null);
-                assertTrue(firstStarted.await(5, TimeUnit.SECONDS));
-                assertEquals(SummaryUiState.Status.LOADING, viewModel.state().getValue().getStatus());
-                viewModel.request(SummaryScope.TODAY, null);
-                SummaryUiState ready = awaitState(viewModel, SummaryUiState.Status.READY, "summary-new");
-                releaseFirst.countDown();
-                Thread.sleep(100L);
-                assertEquals("summary-new", ready.getSummary().getSummaryId());
-                assertEquals("summary-new", viewModel.state().getValue().getSummary().getSummaryId());
+            viewModel.request(SummaryScope.UNREAD, null);
+            assertEquals(SummaryUiState.Status.LOADING, viewModel.state().getValue().getStatus());
+            viewModel.request(SummaryScope.TODAY, null);
+            SummaryUiState ready = awaitState(viewModel, SummaryUiState.Status.READY, "summary-new");
 
-                viewModel.dismiss();
-                SummaryUiState idle = awaitState(viewModel, SummaryUiState.Status.IDLE);
-                assertNull(idle.getLastSummaryId());
-                assertNull(handle.get("summary_last_id"));
-            } finally {
-                releaseFirst.countDown();
-            }
+            SummaryRepository.Callback stale = staleCallback.get();
+            assertNotNull(stale);
+            stale.onSuccess(summaryResponse("summary-old"));
+            assertEquals("summary-new", ready.getSummary().getSummaryId());
+            assertEquals("summary-new", viewModel.state().getValue().getSummary().getSummaryId());
+
+            viewModel.dismiss();
+            SummaryUiState idle = awaitState(viewModel, SummaryUiState.Status.IDLE);
+            assertNull(idle.getLastSummaryId());
+            assertNull(handle.get("summary_last_id"));
         }
+    }
+
+    private static SummaryResponse summaryResponse(String summaryId) throws Exception {
+        return new Moshi.Builder().build().adapter(SummaryResponse.class).fromJson(
+                SummaryRepositoryTest.responseJson(summaryId, false));
     }
 
     private static SummaryUiState awaitState(SummaryViewModel viewModel, SummaryUiState.Status status)
@@ -146,18 +146,6 @@ public final class SummaryViewModelTest {
             SummaryViewModel viewModel,
             SummaryUiState.Status status,
             String summaryId) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            SummaryUiState value = viewModel.state().getValue();
-            if (value != null && value.getStatus() == status
-                    && (summaryId == null || (value.getSummary() != null
-                    && summaryId.equals(value.getSummary().getSummaryId())))) {
-                return value;
-            }
-            Thread.sleep(10L);
-        }
-        SummaryUiState value = viewModel.state().getValue();
-        throw new AssertionError("Timed out waiting for " + status + ", last="
-                + (value == null ? null : value.getStatus()));
+        return LiveDataTestSupport.awaitSummaryState(viewModel.state(), status, summaryId);
     }
 }

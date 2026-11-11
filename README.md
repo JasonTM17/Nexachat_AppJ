@@ -8,8 +8,8 @@ message sending available offline.
 
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v13`, `Hilt`, `Material 3`)
-> paired with a **Spring Boot 3.4** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls, consent-gated
+> paired with a **Spring Boot 3.5** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24` + `V25` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls, consent-gated
 > **AI conversation summaries**, and conversation RAG with the Android “Ask this chat” entry).
 > Every architectural claim below links directly to its executable source and verification suite.
 
@@ -55,7 +55,7 @@ Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campus
 </tr>
 </table>
 
-Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: pure Java 21 LTS on Android (XML Views, Material 3, Hilt, Room RxJava 3), Spring Boot 3.4, PostgreSQL 16, STOMP, WebRTC signaling.
+Direct and group chat, phone search, Vietnamese and English UI, light and dark theme, landscape chat, 1-to-1 voice calls, and a consent-gated summary (the local engine is on without consent; an external model is used only after the profile switch is agreed). Stack: pure Java 21 LTS on Android (XML Views, Material 3, Hilt, Room RxJava 3), Spring Boot 3.5.16, PostgreSQL 16, STOMP, WebRTC signaling.
 
 ## Quick start
 
@@ -119,7 +119,7 @@ flowchart LR
         REPO --> RT["Retrofit APIs"]
     end
 
-    subgraph Server["server/ — Spring Boot 3.4 modular monolith"]
+    subgraph Server["server/ — Spring Boot 3.5.16 modular monolith"]
         SEC["SecurityConfig<br/>JWT filter · stateless"]
         INT["StompAuthChannelInterceptor<br/>CONNECT authN · SUB/SEND authZ"]
         SVC["Services: auth · user · contact<br/>conversation · message · attachment · retention · presence · call signaling · summary · notification · rag · reminder · poll · label · invite · archive"]
@@ -127,7 +127,7 @@ flowchart LR
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24 + V25<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay")]
     FS["File volume<br/>(uploads)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -153,10 +153,10 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Layer | Server (`server/`) | Android (`android/`) |
 |---|---|---|
 | Language | Java 21 LTS | Java 21 LTS |
-| Framework | Spring Boot 3.4.1 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
+| Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes | AES/GCM/NoPadding via AndroidKeyStore |
 | Realtime | spring-websocket + STOMP, SimpleBroker | OkHttp 4.12 WebSocket + own STOMP codec |
-| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24 + V25, `ddl-auto: validate` | Room 2.6.1 (v13, exported schemas 6–13, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + AGP 8.9.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -290,14 +290,14 @@ nexachat/
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V20, V22, V24   # Flyway migrations
+│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V25 # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
 │  ├─ design/       design tokens + design-system references
 │  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
-├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/ · rag-eval/ · gif/
+├─ tools/     sign-release.sh · check-markdown-links.py · seed_demo_chat.py · e2e/ · summary-eval/ · rag-eval/ · firebase-rules/ · gif/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
 ├─ README.md · CONTRIBUTING.md · CHANGELOG.md
 └─ docker-compose.yml
@@ -313,6 +313,7 @@ points: [docs/architecture.md](docs/architecture.md) ·
 [docs/ai-summary.md](docs/ai-summary.md) ·
 [docs/security.md](docs/security.md) ·
 [docs/operations.md](docs/operations.md) ·
+[docs/firebase-realtime.md](docs/firebase-realtime.md) ·
 [docs/media/README.md](docs/media/README.md) ·
 [docs/known-limitations.md](docs/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).

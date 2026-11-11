@@ -85,6 +85,25 @@ public final class TokenAuthenticatorTest {
     }
 
     @Test
+    public void terminalRecoveryEmitsReauthenticationAndPreservesTokens() throws Exception {
+        TokenStore store = store(new Tokens(OLD, 0, "rt-stale"));
+        AuthApi api = mock(AuthApi.class);
+        Call<AuthResponse> call = mock(Call.class);
+        when(api.refresh(any())).thenReturn(call);
+        when(api.refresh(anyString(), any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.error(409,
+                okhttp3.ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"REFRESH_RECOVERY_UNAVAILABLE\"}}")));
+        SessionEvents events = new SessionEvents();
+        io.reactivex.rxjava3.subscribers.TestSubscriber<SessionEvents.Event> observer =
+                events.getEvents().test();
+        Request retry = authenticator(store, api, events).authenticate(null, unauthorized(OLD));
+        assertNull(retry);
+        assertEquals("rt-stale", current(store).getRefreshToken());
+        observer.assertValue(SessionEvents.Event.ReauthenticationRequired.INSTANCE);
+    }
+
+    @Test
     public void definitiveRefreshRejectionClearsSessionAndEmitsLogout() throws Exception {
         TokenStore store = store(new Tokens(OLD, 0, "rt-dead"));
         AuthApi api = mock(AuthApi.class);
@@ -110,6 +129,28 @@ public final class TokenAuthenticatorTest {
                 null, unauthorized("token", "https://nexachat.test/api/v1/auth/refresh", 0));
         assertNull(request);
         verify(store, never()).readTokens();
+        verify(api, never()).refresh(any());
+    }
+
+    @Test
+    public void wrongPassword401DoesNotTriggerRefresh() throws Exception {
+        TokenStore store = store(new Tokens(OLD, 0, "rt-1"));
+        AuthApi api = mock(AuthApi.class);
+        Request request = new Request.Builder().url("https://nexachat.test/api/v1/users/me")
+                .header(
+                        AuthInterceptor.HEADER_AUTHORIZATION,
+                        AuthInterceptor.BEARER_PREFIX + OLD)
+                .build();
+        okhttp3.Response response = new okhttp3.Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(401)
+                .message("Unauthorized")
+                .body(okhttp3.ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"WRONG_PASSWORD\"}}"))
+                .build();
+        assertNull(authenticator(store, api, new SessionEvents()).authenticate(null, response));
         verify(api, never()).refresh(any());
     }
 
@@ -159,6 +200,7 @@ public final class TokenAuthenticatorTest {
         when(store.reservePendingRefresh(anyLong(), anyString(), anyString())).thenReturn(Single.just(true));
         when(store.reserveSessionClosing(anyLong())).thenReturn(Single.just(2L));
         when(store.markSessionClosed(anyLong())).thenReturn(Completable.complete());
+        when(store.markSessionReauthRequired(anyLong())).thenReturn(Completable.complete());
         return store;
     }
 

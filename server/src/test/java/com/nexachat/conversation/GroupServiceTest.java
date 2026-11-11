@@ -155,8 +155,8 @@ class GroupServiceTest {
         });
         when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
         when(memberRepository.findMemberViews(conversationId)).thenReturn(List.of(
-                new ConversationMemberView(adminId, "Admin Alice", "+84901110001"),
-                new ConversationMemberView(bobId, "Bob", "+84901110002")));
+                new ConversationMemberView(adminId, "Admin Alice", "+84901110001", false),
+                new ConversationMemberView(bobId, "Bob", "+84901110002", false)));
 
         ConversationResponse response = groupService.createGroup(
                 adminId, new CreateGroupRequest("  Team  ", List.of(bobId)));
@@ -534,6 +534,37 @@ class GroupServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(ex.getMessage()).contains("admin");
         verify(memberRepository, never()).delete(any(ConversationMember.class));
+    }
+
+    @Test
+    void leaveForAccountDeletion_promotesSuccessorBeforeSoleAdminLeaves() {
+        Conversation conversation = groupConversation();
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(conversation));
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(Optional.of(conversation));
+        ConversationMember adminMember =
+                member(conversation, adminId, "Admin Alice", ConversationMember.Role.ADMIN);
+        ConversationMember bobMember =
+                member(conversation, bobId, "Bob", ConversationMember.Role.MEMBER);
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(adminMember), Optional.of(adminMember));
+        when(memberRepository.countByConversation_IdAndRole(
+                conversationId, ConversationMember.Role.ADMIN)).thenReturn(1L);
+        when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
+        when(memberRepository.findSuccessorUserIdForAccountDeletion(conversationId, adminId))
+                .thenReturn(Optional.of(bobId));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, bobId))
+                .thenReturn(Optional.of(bobMember));
+        when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+
+        groupService.leaveForAccountDeletion(adminId, conversationId);
+
+        assertThat(bobMember.getRole()).isEqualTo(ConversationMember.Role.ADMIN);
+        verify(memberRepository).save(bobMember);
+        verify(messageService).postSystemMessage(
+                eq(adminId), eq(conversationId), eq("Admin Alice made Bob a group admin"));
+        verify(memberRepository).delete(adminMember);
     }
 
     @Test

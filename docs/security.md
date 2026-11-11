@@ -82,6 +82,32 @@ the implementing source file.
   access tokens with `401 TOKEN_INVALID`. The lookup is served from an in-memory bounded LRU
   cache (`AccessTokenValidityCache`, `nexachat.security.validity-cache-ttl-seconds`, default 60 s)
   with a database projection fallback (`findAuthValidityById`).
+- Firebase bridge issuance and renewal do not trust that cache: each operation reads the current
+  account and token cutoff from the database before signing or writing a lease. When enabled,
+  `POST /api/v1/realtime/firebase-token` returns a no-store Firebase custom token whose Firebase
+  UID is the existing Nexa UUID and whose `bridgeId` claim is server-minted. The custom token is
+  an exchange credential with a maximum one-hour validity; database access depends on the separate
+  RTDB lease, which lasts at most 120 seconds and is capped by the Nexa access-token expiry.
+  Lease renewal accepts at most 30 conversation ids and rechecks current membership before each
+  grant (`FirebaseRealtimeAuthService.java`).
+- Issue, renewal, and explicit bridge deletion take a pessimistic lock on the shared Nexa user row
+  and hold it through Firebase writes; a bounded in-process lock also orders local cleanup. This
+  makes a pending logout/password-change cutoff wait for an in-flight lease write across server
+  instances using the same database (`FirebaseRealtimeAuthService.java`,
+  `UserRepository.findByIdForUpdate`). After the durable cutoff commits, the Firebase listener
+  deletes that user's bridge sessions and presence, clears typing state for their current
+  conversations, and asks Firebase Auth to revoke refresh tokens
+  (`FirebaseSessionRevocationListener.java`). Firebase cleanup is best-effort: if the provider is
+  unavailable, or the database transaction fails after a remote lease write, that lease can remain
+  until its maximum 120-second expiry. A failed transaction does not return the custom token, and a
+  downloaded copy cannot be recalled.
+  Firebase remains disabled by default; install and verify the complete RTDB rules and server-side
+  account/membership projections before enabling clients. The S1 bridge does not include those
+  projections. The rules candidate has an offline emulator contract suite and a credential-free CI
+  job (`tools/firebase-rules`, `firebase-rules`); review the two MEDIUM rule gaps it records
+  (multi-device last-seen exposure and the DIRECT-only reader-edge invariant) in
+  `docs/firebase-realtime.md`. Projection correctness, real Firebase Auth/IAM exchange and device
+  behavior remain rollout gates.
 
 ## 3. Transport authorization
 
@@ -187,9 +213,10 @@ the implementing source file.
 ## 5. Rate limits
 
 - Pre-auth credential endpoints are IP-keyed (login 10/5 min, register 10/5 min,
-  refresh 30/5 min; RateLimitInterceptor.java) **and** phone-keyed (login and
-  register 20/5 min per normalized E.164 phone; AuthService.java), preventing
-  distributed IP rotation from brute-forcing an account. Without
+  refresh 30/5 min, Google nonce 30/5 min, Google sign-in 20/5 min;
+  RateLimitInterceptor.java) **and** phone-keyed (login and register 20/5 min per
+  normalized E.164 phone; AuthService.java), preventing distributed IP rotation
+  from brute-forcing an account. Without
   `NEXACHAT_TRUSTED_PROXY_CIDRS`, rate limits key off the socket peer and
   `X-Forwarded-For` is treated as client-spoofable; when the immediate peer
   matches a configured CIDR, `ClientIpResolver` uses the forwarded client IP for
@@ -248,9 +275,13 @@ the implementing source file.
   (`AccountDeletionService.java`, Flyway V26 `users.deleted_at`). Success revokes
   every refresh token, stamps the access-token cutoff, unregisters device tokens,
   removes contacts (both directions), clears per-user AI opt-outs and rate-limit
-  rows, deletes the avatar file when stored under `/api/v1/files/avatars/…`, and
-  leaves the user from each group through the normal self-leave path (sole admin
-  with other members still present is rejected).
+  rows, deletes ask-cache and summary rows for conversations the member belonged to,
+  removes private labels and pending group-join requests, deletes linked Google
+  identities and account-owned link nonces, removes unbound-upload metadata and
+  the avatar file after commit, and replaces the stored password hash. It also
+  removes the user from each group through an account-deletion leave path that
+  auto-promotes a successor admin when needed (in-app self-leave still rejects
+  a sole admin while other members remain).
 - Deleted accounts are not returned from `GET /users/search`, exact phone lookup
   behaves like an unknown number, and login for the freed E.164 receives the same
   `INVALID_CREDENTIALS` envelope as a wrong password. Re-registration with that
@@ -260,6 +291,54 @@ the implementing source file.
   show the server neutral label `Deleted account` with no phone. **Removed from
   discovery:** phone number, contacts, push tokens, avatar, and AI consent
   state tied to the deleted user.
+
+## 8. Google sign-in (OpenID Connect)
+
+- Off by default (`nexachat.google.signin.enabled`). While off, every endpoint
+  answers `404 NOT_FOUND` (GoogleSignInService.requireEnabled), the decoder bean
+  rejects without any network access, and the Android build without a web client
+  ID never renders the entry points. Enabling the feature without
+  `nexachat.google.signin.web-client-id` or at least one trusted Android client
+  ID fails application startup
+  (GoogleSignInConfiguration.decoderFor) — there is no insecure fallback.
+- The ID token is verified with Spring Security's `NimbusJwtDecoder` over Google's
+  JWKS (`https://www.googleapis.com/oauth2/v3/certs`, cached by Nimbus and
+  refreshed when Google rotates to an unknown key ID). RS256 is the only accepted
+  algorithm; the validator chain requires `exp`/`nbf` within a 60-second skew,
+  `iss` equal to `accounts.google.com` or `https://accounts.google.com`, `aud`
+  exactly equal to the configured web client ID (a token with any additional
+  audience is rejected), a `sub`, an `iat` no more than 60 s in the future, and —
+  when Google sets it — an `azp` that is the web client or one of the configured
+  Android client IDs (`nexachat.google.signin.android-client-ids`)
+  (GoogleIdTokenValidators.java). There is no custom crypto.
+- The identity key is the immutable `sub`; email is stored for display only and
+  never used to match or link an account (UserIdentity.java). A Google account
+  can belong to at most one user and a user to at most one Google account, both
+  enforced by UNIQUE constraints (V28); a concurrent link loses on the constraint
+  and receives the same generic `409` (GoogleSignInService.link).
+- Replay protection: `POST /auth/google/nonce` issues a 256-bit nonce, persists
+  only its SHA-256 hex with a five-minute expiry, and the token's `nonce` claim
+  must match. Each nonce is bound to its purpose (`signin` for the public route,
+  `link` for the authenticated route). A link nonce is also bound to the account
+  and unique access-token `jti` that requested it, using only a SHA-256 hash;
+  a nonce cannot be spent by another account or another access-token instance.
+  New access tokens receive a random `jti`; older tokens without one may use
+  normal APIs but must refresh before starting a Google link flow. The service
+  consumes the nonce with one conditional `UPDATE ... WHERE purpose = ? AND
+  consumed_at IS NULL AND expires_at > now()`
+  in a `REQUIRES_NEW` transaction, so concurrent requests and a later rollback
+  of the sign-in transaction cannot both use (or release) the nonce
+  (GoogleNonceService.java). All failures — malformed, wrong audience, wrong
+  issuer, expired, bad signature, wrong nonce — collapse to
+  `401 GOOGLE_SIGN_IN_FAILED`.
+- Linking and unlinking require the account password (bcrypt comparison) and are
+  rate-limited per user (10/5 min); an unlinked Google account gets the generic
+  `404 GOOGLE_ACCOUNT_NOT_LINKED` and the message never reveals whether the
+  Google account or the NexaChat account exists. Automatic account creation from
+  Google and email-based linking are intentionally absent (account-takeover
+  risk). Physical deletion cascades identity rows in V28; account tombstoning
+  deletes linked identities and account-owned link nonces explicitly in the
+  deletion transaction.
 
 ## Known limits & future work
 

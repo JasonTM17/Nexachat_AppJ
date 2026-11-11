@@ -179,10 +179,10 @@ abstract class SecurityITBase {
      * A signed access token for {@code userId} stamped five seconds before now.
      *
      * <p>The access-token cutoff is stored at one-second resolution (JWT
-     * {@code iat} has no sub-second precision), so a token minted in the same
-     * second as the logout is deliberately still valid. Stamping the token
-     * explicitly makes "issued before the cutoff" deterministic instead of
-     * sleeping across a second boundary.
+     * {@code iat} has no sub-second precision), so tokens at or before the
+     * cutoff second fail closed. Stamping the token explicitly makes
+     * "issued before the cutoff" deterministic without sleeping across a
+     * second boundary.
      */
     protected String accessTokenIssuedBeforeRevocation(UUID userId) {
         return accessTokenIssuedBeforeRevocation(userId, 5);

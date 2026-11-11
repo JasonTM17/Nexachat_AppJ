@@ -39,7 +39,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
         JsonNode group = objectMapper.readTree(groupResult.getResponse().getContentAsString());
         assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut"));
         for (JsonNode groupMember : group.path("members")) {
-            assertKeys(groupMember, Set.of("userId", "displayName", "phone"));
+            assertKeys(groupMember, Set.of("userId", "displayName", "phone", "deleted"));
         }
         UUID groupId = UUID.fromString(group.path("id").asText());
 

@@ -1,12 +1,14 @@
 package com.nexachat.attachment;
 
 import com.nexachat.common.MagicBytes;
+import com.nexachat.common.MultipartRequests;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Self-service avatar upload: POST /api/v1/users/me/avatar.
@@ -35,13 +38,15 @@ public class AvatarController {
     }
 
     @PostMapping("/me/avatar")
+    @Transactional
     public AvatarResponse uploadAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestParam("file") MultipartFile file) throws IOException {
+            @RequestParam("file") List<MultipartFile> files) throws IOException {
         if (principal == null) {
             throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
         }
-        if (file == null || file.isEmpty()) {
+        MultipartFile file = MultipartRequests.requireSingleFile(files);
+        if (file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Avatar file is required");
         }
         if (file.getSize() > StorageService.MAX_FILE_SIZE_BYTES) {
@@ -54,8 +59,11 @@ public class AvatarController {
         }
         StorageService.StoredFile stored = storageService.store(
                 "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-        User user = userRepository.findById(principal.userId())
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND));
+        User user = userRepository.findByIdForUpdate(principal.userId())
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
         user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
         userRepository.save(user);
         return new AvatarResponse(user.getAvatarUrl());

@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.DynamicUpdate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -22,6 +23,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "users")
+@DynamicUpdate
 public class User {
 
     /** App-side UUID; the DB {@code DEFAULT gen_random_uuid()} stays as a safety net. */
@@ -30,7 +32,7 @@ public class User {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "phone", nullable = false, length = 16, unique = true)
+    @Column(name = "phone", length = 16)
     private String phone;
 
     /** bcrypt output is always exactly 60 chars; the column is CHAR(60) not VARCHAR. */
@@ -226,6 +228,7 @@ public class User {
         this.lastSeenAt = null;
         this.email = null;
         this.emailVerifiedAt = null;
+        this.passwordHash = DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH;
     }
 
     public void clearPhone() {

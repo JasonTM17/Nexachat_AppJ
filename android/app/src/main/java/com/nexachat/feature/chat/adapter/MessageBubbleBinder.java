@@ -25,6 +25,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.TextViewCompat;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.ViewModelStoreOwner;
+import com.nexachat.res.QuantityStrings;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
@@ -34,7 +35,7 @@ import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.nexachat.R;
-import com.nexachat.call.ui.CallLogResourceResolver;
+import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.BlurHashDecoder;
@@ -120,7 +121,11 @@ public final class MessageBubbleBinder {
             return;
         }
         applyRowSpacing(root, item.getGroupPosition());
-        applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
+        if (MessageViewTypeMapper.isSystemMessage(message)) {
+            bubble.setBackgroundResource(R.drawable.bg_date_separator);
+        } else {
+            applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
+        }
         applyBubbleColors(root.getContext(), bubble, message, item.isPulsing());
         boolean mentionedMe = isMentionedUser(message, currentUserId);
         if (mentionedMe) {
@@ -173,7 +178,26 @@ public final class MessageBubbleBinder {
         }
     }
 
+    public void bindUnreadDivider(@NonNull View root, int unreadCount) {
+        TextView label = root.findViewById(R.id.unreadDividerLabel);
+        View dividerRoot = root.findViewById(R.id.unreadDividerRoot);
+        if (label != null) {
+            label.setText(QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+        }
+        if (dividerRoot != null) {
+            dividerRoot.setContentDescription(
+                    QuantityStrings.chatUnreadDivider(root.getResources(), unreadCount));
+        }
+    }
+
     private void wireGestures(View root, ChatMessage message) {
+        if (MessageViewTypeMapper.isSystemMessage(message)) {
+            root.setOnLongClickListener(null);
+            root.setOnClickListener(null);
+            root.setLongClickable(false);
+            root.setClickable(false);
+            return;
+        }
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
         boolean retry = ChatBubbleRules.isRetryAffordanceVisible(message.getStatus());
         root.setOnLongClickListener(v -> {
@@ -199,9 +223,8 @@ public final class MessageBubbleBinder {
     }
 
     private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
-        float density = bubble.getResources().getDisplayMetrics().density;
-        float radius = 18f * density;
-        float tailRadius = 4f * density;
+        float radius = bubble.getResources().getDimension(R.dimen.corner_lg);
+        float tailRadius = bubble.getResources().getDimension(R.dimen.corner_xs);
         float bottomLeft = radius;
         float bottomRight = radius;
         boolean isTail = position == MessageGroupPosition.SINGLE || position == MessageGroupPosition.LAST;
@@ -354,14 +377,8 @@ public final class MessageBubbleBinder {
             if (systemLabel != null) {
                 systemLabel.setVisibility(View.VISIBLE);
                 String raw = message.getContent() != null ? message.getContent() : "";
-                CallLogResourceResolver.ResolvedCallLog resolved =
-                        CallLogResourceResolver.fromSystemMessage(raw, message.getMine());
-                systemLabel.setText(
-                        root.getContext().getString(
-                                resolved.getResourceId(),
-                                resolved.getArguments()
-                        )
-                );
+                systemLabel.setText(SystemEventFormatter.format(
+                        root.getContext(), raw, message.getMine()));
             }
             return;
         }
@@ -425,11 +442,8 @@ public final class MessageBubbleBinder {
             body.setVisibility(View.VISIBLE);
             String raw = message.getContent() != null ? message.getContent() : message.getType();
             if (raw != null && raw.startsWith("CALL|")) {
-                CallLogResourceResolver.ResolvedCallLog resolved =
-                        CallLogResourceResolver.fromSystemMessage(raw, message.getMine());
-                body.setText(
-                        root.getContext().getString(resolved.getResourceId(), resolved.getArguments())
-                );
+                body.setText(SystemEventFormatter.format(
+                        root.getContext(), raw, message.getMine()));
             } else {
                 body.setContentDescription(null);
                 body.setText(raw != null ? raw : "");
@@ -640,9 +654,45 @@ public final class MessageBubbleBinder {
         if (metaInclude == null) {
             return;
         }
+        if (MessageBubbleMetaRules.policyFor(message) == MessageBubbleMetaRules.MetaRowPolicy.HIDDEN) {
+            metaInclude.setVisibility(View.GONE);
+            return;
+        }
+        metaInclude.setVisibility(View.VISIBLE);
+        boolean systemMessage = MessageViewTypeMapper.isSystemMessage(message);
         MessageContentKind contentKind = MessageViewTypeMapper.resolveContentKind(message);
         boolean mediaMeta = contentKind == MessageContentKind.IMAGE
                 || contentKind == MessageContentKind.VIDEO;
+        if (systemMessage) {
+            TextView time = metaInclude.findViewById(R.id.timeLabel);
+            TextView edited = metaInclude.findViewById(R.id.editedLabel);
+            ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+            ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
+            TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
+            int metaColor = resolveThemeColor(
+                    root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
+            metaInclude.setBackground(null);
+            metaInclude.setPadding(0, 0, 0, 0);
+            if (edited != null) {
+                edited.setVisibility(View.GONE);
+            }
+            if (time != null) {
+                time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
+                time.setTextColor(metaColor);
+                time.setAlpha(1.0f);
+                time.setVisibility(View.VISIBLE);
+            }
+            if (sending != null) {
+                sending.setVisibility(View.GONE);
+            }
+            if (deliveredIcon != null) {
+                deliveredIcon.setVisibility(View.GONE);
+            }
+            if (deliveryText != null) {
+                deliveryText.setVisibility(View.GONE);
+            }
+            return;
+        }
         float density = root.getResources().getDisplayMetrics().density;
         if (mediaMeta) {
             metaInclude.setBackgroundResource(R.drawable.bg_message_image_meta);
@@ -786,7 +836,7 @@ public final class MessageBubbleBinder {
             return;
         }
         reactionsInclude.setVisibility(View.VISIBLE);
-        int overlapPx = Math.round(6f * root.getResources().getDisplayMetrics().density);
+        int gapPx = root.getResources().getDimensionPixelSize(R.dimen.space_xs);
         int index = 0;
         for (ReactionChip chip : reactions) {
             Chip view = new Chip(root.getContext());
@@ -794,8 +844,8 @@ public final class MessageBubbleBinder {
                     R.string.a11y_reaction_chip, chip.getEmoji(), chip.getCount()));
             view.setCheckable(false);
             view.setClickable(true);
-            view.setTextSize(12f);
-            view.setChipCornerRadius(16f * root.getResources().getDisplayMetrics().density);
+            TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);
+            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_lg));
             int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
             view.setChipMinHeight(minTouchPx);
             view.setEnsureMinTouchTargetSize(true);
@@ -815,7 +865,7 @@ public final class MessageBubbleBinder {
             ViewGroup.MarginLayoutParams params = new ViewGroup.MarginLayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.setMarginStart(index == 0 ? 0 : -overlapPx);
+            params.setMarginStart(index == 0 ? 0 : gapPx);
             group.addView(view, params);
             index++;
         }

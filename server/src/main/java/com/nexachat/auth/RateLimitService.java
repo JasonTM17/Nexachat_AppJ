@@ -3,6 +3,7 @@ package com.nexachat.auth;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
+import io.github.bucket4j.TimeMeter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -10,6 +11,7 @@ import java.time.Duration;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -35,20 +37,35 @@ public class RateLimitService {
     private final Map<String, BucketEntry> buckets = new LinkedHashMap<>(16, 0.75f, true);
     private final int maxBuckets;
     private final long idleTtlNanos;
+    private final TimeMeter timeMeter;
     private final Object bucketLock = new Object();
     private long operations;
 
+    /**
+     * Production constructor: Bucket4j's millisecond system clock, matching the
+     * previous default so refill behaviour is unchanged.
+     */
     @Autowired
+    public RateLimitService(TimeMeter timeMeter) {
+        this(DEFAULT_MAX_BUCKETS, DEFAULT_IDLE_TTL, timeMeter);
+    }
+
+    /** Standalone use (tests, manual wiring) keeps the production time source. */
     public RateLimitService() {
-        this(DEFAULT_MAX_BUCKETS, DEFAULT_IDLE_TTL);
+        this(DEFAULT_MAX_BUCKETS, DEFAULT_IDLE_TTL, TimeMeter.SYSTEM_MILLISECONDS);
     }
 
     RateLimitService(int maxBuckets, Duration idleTtl) {
+        this(maxBuckets, idleTtl, TimeMeter.SYSTEM_MILLISECONDS);
+    }
+
+    RateLimitService(int maxBuckets, Duration idleTtl, TimeMeter timeMeter) {
         if (maxBuckets < 1 || idleTtl.isNegative() || idleTtl.isZero()) {
             throw new IllegalArgumentException("Rate-limit cache bounds must be positive");
         }
         this.maxBuckets = maxBuckets;
         this.idleTtlNanos = idleTtl.toNanos();
+        this.timeMeter = Objects.requireNonNull(timeMeter, "timeMeter must not be null");
     }
 
     public Consumption tryConsume(String bucketKey, long capacity, Duration refillPeriod) {
@@ -89,14 +106,17 @@ public class RateLimitService {
         return new Consumption(false, retryAfter);
     }
 
-    private static Bucket newBucket(long capacity, Duration period) {
+    private Bucket newBucket(long capacity, Duration period) {
         // Greedy refill: the budget trickles back continuously instead of all-at-once
         // at the window boundary, so a burst right after the boundary cannot double-fire.
         Bandwidth limit = Bandwidth.builder()
                 .capacity(capacity)
                 .refillGreedy(capacity, period)
                 .build();
-        return Bucket.builder().addLimit(limit).build();
+        return Bucket.builder()
+                .addLimit(limit)
+                .withCustomTimePrecision(timeMeter)
+                .build();
     }
 
     private void evictExpired(long now) {

@@ -243,7 +243,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         return userRepository.findAuthValidityById(userId)
                 .map(found -> {
                     Instant cutoff = found.tokensValidAfter();
-                    return cutoff != null && issuedAt.isBefore(cutoff);
+                    return cutoff != null && !issuedAt.isAfter(cutoff);
                 })
                 .orElse(true);
     }

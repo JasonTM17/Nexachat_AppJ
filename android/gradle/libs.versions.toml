@@ -29,6 +29,14 @@ mockito = "5.14.2"
 arch-core-testing = "2.2.0"
 work = "2.9.1"
 firebase-messaging = "24.0.0"
+credentials = "1.6.0"
+# googleid 1.2.1 is compiled with Kotlin 2.4 metadata; AGP 8.9.3's lint embeds the
+# Kotlin 2.1.0 compiler and logs "Module was compiled with an incompatible version
+# of Kotlin" for it on every lint analysis. 1.2.0 has the same public API (the 1.2.1
+# release notes list only minor metric improvements) and metadata 2.1.0, so it is the
+# newest release lint can read. Lint therefore keeps reporting that 1.2.1 is available
+# (GradleDependency); that is expected. Revisit when lint's Kotlin compiler reaches 2.4.
+googleid = "1.2.0"
 # Media3 pulls 33.3.1-android. CVE-2026-102554 is fixed in 33.7.2.
 guava = "33.7.2-android"
 
@@ -99,12 +107,18 @@ androidx-work-rxjava3 = { group = "androidx.work", name = "work-rxjava3", versio
 
 # Firebase Cloud Messaging
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebase-messaging" }
+
+# Sign in with Google (Credential Manager)
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
 
 # Unit tests
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
 androidx-arch-core-testing = { group = "androidx.arch.core", name = "core-testing", version.ref = "arch-core-testing" }
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 
 # Instrumented tests
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-ext-junit" }
@@ -141,4 +155,5 @@ unit-test = [
     "junit",
     "mockito-core",
     "androidx-arch-core-testing",
+    "mockwebserver",
 ]

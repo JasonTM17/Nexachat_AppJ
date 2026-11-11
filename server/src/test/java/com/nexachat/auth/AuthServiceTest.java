@@ -11,6 +11,8 @@ import com.nexachat.message.MessageRecallProperties;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.user.dto.UserResponse;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +23,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -41,6 +47,8 @@ class AuthServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private EntityManager entityManager;
+    @Mock
     private PhoneService phoneService;
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -52,6 +60,10 @@ class AuthServiceTest {
     private RateLimitService rateLimitService;
     @Mock
     private AccessTokenRevocationService accessTokenRevocationService;
+    @Mock
+    private PlatformTransactionManager transactionManager;
+    @Mock
+    private ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     private AuthService authService;
 
@@ -67,9 +79,13 @@ class AuthServiceTest {
         lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
-        authService = new AuthService(userRepository, phoneService, passwordEncoder, jwtService,
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
+        lenient().when(transactionManagerProvider.getObject()).thenReturn(transactionManager);
+        authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
                 tokenService, accessTokenRevocationService, rateLimitService,
-                new MessageRecallProperties());
+                new AuthResponseFactory(jwtService, new MessageRecallProperties()),
+                (boundary, operation, userId, tokenId) -> { }, transactionManagerProvider);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
@@ -148,6 +164,7 @@ class AuthServiceTest {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
 
         AuthResponse response = authService.login(new LoginRequest("0912345678", "secret123"), "JUnit");
@@ -162,6 +179,7 @@ class AuthServiceTest {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -205,9 +223,12 @@ class AuthServiceTest {
     @Test
     void refresh_success_returnsRotatedTokenAndNewAccess() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(tokenService.rotate("rt-1", "JUnit"))
-                .thenReturn(new TokenService.RotationResult(user.getId(), "rt-2"));
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        AuthResponse original = new AuthResponse(UserResponse.from(user), "access-jwt", 900,
+                "rt-2", 86_400, true);
+        UUID predecessorId = UUID.randomUUID();
+        when(tokenService.rotate("rt-1", null, "JUnit"))
+                .thenReturn(new TokenService.RotationResult(user.getId(), predecessorId, original));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         AuthResponse response = authService.refresh(new RefreshRequest("rt-1"), "JUnit");
 
@@ -219,7 +240,7 @@ class AuthServiceTest {
     @Test
     void refresh_reusedToken_revokesWholeFamilyAndThrows401() {
         UUID userId = UUID.randomUUID();
-        when(tokenService.rotate("stolen", null)).thenThrow(RefreshTokenException.reused(userId));
+        when(tokenService.rotate("stolen", null, null)).thenThrow(RefreshTokenException.reused(userId));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.refresh(new RefreshRequest("stolen"), null));
@@ -228,13 +249,14 @@ class AuthServiceTest {
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
         // Both refresh and access tokens must be revoked in the separate
         // transaction that commits before the 401 is returned.
-        verify(accessTokenRevocationService).revokeRefreshFamilyAndAccessTokens(userId);
+        verify(accessTokenRevocationService).revokeRefreshFamilyAndAccessTokens(
+                userId, RefreshReplayConfiguration.Operation.REUSE_REVOKE);
         verify(tokenService, never()).revokeAllForUser(userId);
     }
 
     @Test
     void refresh_unknownToken_throwsInvalidWithoutFamilyRevoke() {
-        when(tokenService.rotate("ghost", null)).thenThrow(RefreshTokenException.invalid(null));
+        when(tokenService.rotate("ghost", null, null)).thenThrow(RefreshTokenException.invalid(null));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.refresh(new RefreshRequest("ghost"), null));
@@ -249,7 +271,7 @@ class AuthServiceTest {
     @Test
     void changePassword_wrongOld_throwsWrongPasswordAndKeepsSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("bad-old", "stored-hash")).thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -264,7 +286,7 @@ class AuthServiceTest {
     @Test
     void changePassword_success_rehashesAndRevokesAllSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("old-pass", "stored-hash")).thenReturn(true);
 
         authService.changePassword(user.getId(), new ChangePasswordRequest("old-pass", "newpass123", null));
@@ -278,7 +300,7 @@ class AuthServiceTest {
     @Test
     void changePassword_withKeepToken_revokesOnlyOtherSessions() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("old-pass", "stored-hash")).thenReturn(true);
 
         authService.changePassword(user.getId(), new ChangePasswordRequest("old-pass", "newpass123", "rt-current"));
@@ -291,7 +313,7 @@ class AuthServiceTest {
     @Test
     void changePassword_unknownUser_throwsUserNotFound404() {
         UUID ghost = UUID.randomUUID();
-        when(userRepository.findById(ghost)).thenReturn(Optional.empty());
+        when(userRepository.findByIdForUpdate(ghost)).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> authService.changePassword(ghost, new ChangePasswordRequest("old", "newpass123", null)));

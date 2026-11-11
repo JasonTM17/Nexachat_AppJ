@@ -25,6 +25,8 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
 SITE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(SITE_DIR)
@@ -432,7 +434,6 @@ def test_vercel_headers(vercel_data):
         "default-src 'none'",
         "style-src 'self'",
         "script-src 'self'",
-        "connect-src 'none'",
         "img-src 'self'",
         "base-uri 'none'",
         "form-action 'none'",
@@ -443,6 +444,11 @@ def test_vercel_headers(vercel_data):
         log_pass("Strict Content-Security-Policy with all required directives present")
     else:
         failures.append(f"CSP missing directives: {csp_missing} (actual: {csp})")
+    csp_pair_failures = validate_deletion_csp_pair(read_deletion_api_base(), csp)
+    if not csp_pair_failures:
+        log_pass("CSP connect-src matches the delete-account API meta state")
+    else:
+        failures.extend(csp_pair_failures)
 
     # Cache-Control: no-store for /join/*
     join_hdrs = headers_by_source.get("/join/(.*)", {})
@@ -472,9 +478,87 @@ def test_vercel_headers(vercel_data):
     return failures
 
 
+SITE_HOST = "nexachat.io.vn"
+SITE_ABSOLUTE_PREFIX = f"https://{SITE_HOST}"
+LD_JSON_ALLOWED_HOSTS = frozenset({"schema.org", "www.w3.org"})
+
+LD_JSON_SCRIPT_RE = re.compile(
+    r'<script\s+[^>]*type\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+MIN_CONTRAST_RATIO = 4.5
+MIN_NON_TEXT_CONTRAST_RATIO = 3.0
+
+
+def is_nexachat_site_url(url: str) -> bool:
+    """True only when the URL host is exactly nexachat.io.vn (not a lookalike prefix)."""
+    try:
+        parts = urlsplit(url.strip().rstrip(".,;)]}"))
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    hostname = (parts.hostname or "").lower()
+    return hostname == SITE_HOST
+
+
+def is_allowed_ldjson_url(url: str) -> bool:
+    try:
+        hostname = (urlsplit(url.strip().rstrip(".,;)]}")).hostname or "").lower()
+    except ValueError:
+        return False
+    return hostname in LD_JSON_ALLOWED_HOSTS
+
+
+def strip_ld_json_blocks(html: str) -> str:
+    return LD_JSON_SCRIPT_RE.sub("", html)
+
+
+def hex_to_rgb(hex_color: str):
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"expected #RRGGBB, got {hex_color}")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def relative_luminance(hex_color: str) -> float:
+    def channel(c):
+        c = c / 255.0
+        if c <= 0.03928:
+            return c / 12.92
+        return ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = hex_to_rgb(hex_color)
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast_ratio(fg_hex: str, bg_hex: str) -> float:
+    l1 = relative_luminance(fg_hex)
+    l2 = relative_luminance(bg_hex)
+    lighter = max(l1, l2)
+    darker = min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def collect_urls_for_external_scan(content: str, ext: str):
+    """Extract http(s) URLs from markup; allow schema.org only inside JSON-LD blocks."""
+    url_pattern = re.compile(r"https?://[^\s\"'<>]+")
+    if ext == ".html":
+        ld_blocks = LD_JSON_SCRIPT_RE.findall(content)
+        scan_body = strip_ld_json_blocks(content)
+        scan_body = DELETION_META_RE.sub("", scan_body)
+        urls = url_pattern.findall(scan_body)
+        for block in ld_blocks:
+            for match in url_pattern.findall(block):
+                if not is_allowed_ldjson_url(match) and not is_nexachat_site_url(match):
+                    urls.append(match)
+        return urls
+    return url_pattern.findall(content)
+
+
 def test_no_external_urls():
     failures = []
-    url_pattern = re.compile(r"https?://[^\s\"'>]+")
     scanned = 0
 
     for root, _, files in os.walk(SITE_DIR):
@@ -486,12 +570,13 @@ def test_no_external_urls():
                 rel_path = os.path.relpath(path, SITE_DIR)
                 with open(path, "r", encoding="utf-8") as file_handle:
                     content = file_handle.read()
-                matches = url_pattern.findall(content)
-                if matches:
-                    failures.append(f"External URL(s) found in {rel_path}: {matches}")
+                matches = collect_urls_for_external_scan(content, ext)
+                disallowed = [m for m in matches if not is_nexachat_site_url(m)]
+                if disallowed:
+                    failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No external URLs found across {scanned} HTML/CSS/JS file(s)")
+        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s)")
     return failures
 
 
@@ -502,6 +587,7 @@ class InlineChecker(html.parser.HTMLParser):
         self.failures = []
         self.current_tag = None
         self.script_src = None
+        self.script_type = None
         self.in_script = False
         self.in_style = False
 
@@ -510,6 +596,11 @@ class InlineChecker(html.parser.HTMLParser):
         if tag == "script":
             self.in_script = True
             self.script_src = attr_dict.get("src")
+            self.script_type = (attr_dict.get("type") or "").lower()
+            if self.script_type == "application/ld+json" and self.script_src:
+                self.failures.append(
+                    f"JSON-LD must be inline in {self.filename}; external src on application/ld+json is not consumed"
+                )
         elif tag == "style":
             self.in_style = True
             self.failures.append(f"Inline <style> tag found in {self.filename}")
@@ -525,11 +616,14 @@ class InlineChecker(html.parser.HTMLParser):
         if tag == "script":
             self.in_script = False
             self.script_src = None
+            self.script_type = None
         elif tag == "style":
             self.in_style = False
 
     def handle_data(self, data):
         if self.in_script and data.strip():
+            if self.script_type == "application/ld+json":
+                return
             self.failures.append(f"Inline script content found in {self.filename}: {data.strip()[:40]}...")
         if self.in_style and data.strip():
             self.failures.append(f"Inline style content found in {self.filename}")
@@ -554,7 +648,96 @@ def test_no_inline_scripts_and_styles():
     return failures
 
 
-REQUIRED_HTML_PAGES = ("index.html", "404.html", os.path.join("join", "index.html"))
+REQUIRED_HTML_PAGES = (
+    "index.html",
+    "404.html",
+    "privacy.html",
+    "terms.html",
+    "delete-account.html",
+    os.path.join("join", "index.html"),
+)
+
+PUBLIC_SITEMAP_URLS = (
+    "https://nexachat.io.vn/",
+    "https://nexachat.io.vn/privacy.html",
+    "https://nexachat.io.vn/terms.html",
+    "https://nexachat.io.vn/delete-account.html",
+)
+
+DELETION_PAGE = "delete-account.html"
+DELETION_PAGE_VI_PHRASES = (
+    "Cài đặt",
+    "Xóa tài khoản",
+    "mật khẩu hiện tại",
+    "Dữ liệu bị xóa",
+    "Dữ liệu còn lại và thời gian lưu",
+    "quản trị viên duy nhất",
+    "Google Play",
+    "email khôi phục đã xác minh",
+    "Xóa trên web chưa khả dụng",
+)
+DELETION_PAGE_EN_PHRASES = (
+    "Settings",
+    "Delete account",
+    "current password",
+    "Data that is deleted",
+    "Data that remains and how long it is kept",
+    "only admin",
+    "Google Play",
+    "verified recovery email",
+    "Web deletion is not available yet",
+)
+DELETION_NEUTRAL_REQUEST_VI = "Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã."
+DELETION_NEUTRAL_REQUEST_EN = "If this number has a verified recovery email, we sent a code."
+DELETION_META_RE = re.compile(
+    r'<meta\s+name="nexachat-api-base"\s+content="([^"]*)"', re.IGNORECASE
+)
+CONNECT_SRC_RE = re.compile(r"(?:^|;)\s*connect-src\s+([^;]+)", re.IGNORECASE)
+
+
+def read_deletion_api_base() -> str:
+    """Return the configured API base from the deletion page, or '' when the form is off."""
+    path = os.path.join(SITE_DIR, DELETION_PAGE)
+    if not os.path.isfile(path):
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+    match = DELETION_META_RE.search(html)
+    return match.group(1).strip() if match else ""
+
+
+def validate_deletion_csp_pair(meta_content: str, csp: str) -> list[str]:
+    """Empty meta requires connect-src 'none'; an https origin meta requires that origin."""
+    match = CONNECT_SRC_RE.search(csp)
+    if not match:
+        return ["Content-Security-Policy must define connect-src"]
+    sources = match.group(1).split()
+    meta = meta_content.strip()
+    if not meta:
+        if sources != ["'none'"]:
+            return [
+                "Default deployment (empty nexachat-api-base) must keep connect-src exactly 'none'"
+            ]
+        return []
+    try:
+        parsed = urlsplit(meta)
+    except ValueError:
+        parsed = None
+    if (
+        parsed is None
+        or parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        return ["nexachat-api-base must be an https origin with no path, query, or fragment"]
+    origin = f"https://{parsed.netloc}"
+    if "'none'" in sources or origin not in sources:
+        return [f"Configured nexachat-api-base {origin} must appear in connect-src without 'none'"]
+    return []
 
 
 def test_site_pages_and_assets():
@@ -578,10 +761,11 @@ def test_site_pages_and_assets():
     else:
         with open(sitemap_path, "r", encoding="utf-8") as f:
             sitemap_body = f.read()
-        if "https://nexachat.io.vn/" not in sitemap_body:
-            failures.append("sitemap.xml must list apex home URL https://nexachat.io.vn/")
+        missing_urls = [u for u in PUBLIC_SITEMAP_URLS if u not in sitemap_body]
+        if missing_urls:
+            failures.append(f"sitemap.xml missing URL(s): {missing_urls}")
         else:
-            log_pass("sitemap.xml lists home URL")
+            log_pass("sitemap.xml lists all public URLs (home, privacy, terms, deletion)")
 
     robots_path = os.path.join(SITE_DIR, "robots.txt")
     if not os.path.isfile(robots_path):
@@ -613,9 +797,259 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing favicon link to /favicon.svg")
         if 'charset="utf-8"' not in html.lower():
             failures.append(f"{rel_page} missing utf-8 charset meta")
+        if 'href="#main"' not in html or 'id="main"' not in html:
+            failures.append(f"{rel_page} missing skip link to #main")
+        if 'name="description"' not in html:
+            failures.append(f"{rel_page} missing meta description")
+        if rel_page in ("index.html", "privacy.html", "terms.html", "delete-account.html"):
+            if 'rel="canonical"' not in html:
+                failures.append(f"{rel_page} missing canonical link")
+
+    og_image_path = os.path.join(SITE_DIR, "og-image.svg")
+    if not os.path.isfile(og_image_path):
+        failures.append("Missing site/og-image.svg")
+    else:
+        try:
+            with open(og_image_path, "r", encoding="utf-8") as og_file:
+                og_body = og_file.read()
+            ET.fromstring(og_body)
+            log_pass("og-image.svg is well-formed UTF-8 XML")
+        except Exception as e:
+            failures.append(f"og-image.svg must be valid UTF-8 XML: {e}")
+
+    structured_path = os.path.join(SITE_DIR, "structured-data.json")
+    if not os.path.isfile(structured_path):
+        failures.append("Missing site/structured-data.json")
+    else:
+        try:
+            with open(structured_path, "r", encoding="utf-8") as f:
+                sd = json.load(f)
+            if not isinstance(sd, list) or not sd:
+                failures.append("structured-data.json must be a non-empty JSON array")
+            else:
+                log_pass("structured-data.json parses as JSON array")
+        except Exception as e:
+            failures.append(f"Failed to parse structured-data.json: {e}")
 
     if not failures:
-        log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, and charset")
+        log_pass(f"All {len(REQUIRED_HTML_PAGES)} HTML pages have DOCTYPE, viewport, favicon, charset, skip link, description")
+    return failures
+
+
+def test_index_inline_json_ld():
+    """index.html must ship JSON-LD inline (not via script src)."""
+    failures = []
+    index_path = os.path.join(SITE_DIR, "index.html")
+    if not os.path.isfile(index_path):
+        return ["Missing site/index.html"]
+    with open(index_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    if 'type="application/ld+json" src=' in html or "type='application/ld+json' src=" in html:
+        failures.append("index.html must not load JSON-LD via script src")
+    blocks = LD_JSON_SCRIPT_RE.findall(html)
+    if not blocks:
+        failures.append("index.html missing inline application/ld+json block")
+    else:
+        try:
+            data = json.loads(blocks[0].strip())
+        except json.JSONDecodeError as e:
+            failures.append(f"index.html JSON-LD must parse as JSON: {e}")
+        else:
+            if not isinstance(data, list) or not data:
+                failures.append("index.html JSON-LD must be a non-empty array")
+            else:
+                types = {item.get("@type") for item in data if isinstance(item, dict)}
+                if "Organization" not in types or "SoftwareApplication" not in types:
+                    failures.append("index.html JSON-LD must include Organization and SoftwareApplication")
+                else:
+                    log_pass("index.html has inline JSON-LD (Organization + SoftwareApplication)")
+    return failures
+
+
+def css_theme_block(css: str, pattern: str) -> str:
+    match = re.search(pattern, css, re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def css_theme_token(block: str, name: str) -> str | None:
+    match = re.search(rf"--{re.escape(name)}:\s*(#[0-9a-fA-F]{{6}})\b", block)
+    return match.group(1) if match else None
+
+
+def test_dark_theme_contrast_tokens():
+    """Light and dark text/link/error/input-border tokens must meet WCAG AA on their surfaces."""
+    failures = []
+    css_path = os.path.join(SITE_DIR, "style.css")
+    if not os.path.isfile(css_path):
+        return ["Missing site/style.css"]
+    with open(css_path, "r", encoding="utf-8") as f:
+        css = f.read()
+
+    dark_block = css_theme_block(css, r":root\s*\{(.*?)\}")
+    light_block = css_theme_block(
+        css, r"@media\s*\(prefers-color-scheme:\s*light\)\s*\{\s*:root\s*\{(.*?)\}"
+    )
+    if not dark_block or not light_block:
+        return ["style.css must define :root tokens and a prefers-color-scheme: light :root block"]
+
+    for theme, block in (("dark", dark_block), ("light", light_block)):
+        theme_failures = []
+        card_bg = css_theme_token(block, "card-bg")
+        body_bg = css_theme_token(block, "bg-color")
+        btn_bg = css_theme_token(block, "btn-bg")
+        primary = css_theme_token(block, "primary")
+        input_border = css_theme_token(block, "input-border")
+        error = css_theme_token(block, "error")
+        missing = [
+            name for name, value in (
+                ("card-bg", card_bg),
+                ("bg-color", body_bg),
+                ("btn-bg", btn_bg),
+                ("primary", primary),
+                ("input-border", input_border),
+                ("error", error),
+            ) if not value
+        ]
+        if missing:
+            failures.append(f"{theme} theme missing contrast tokens: {missing}")
+            continue
+
+        btn_ratio = contrast_ratio("#ffffff", btn_bg)
+        link_ratio = contrast_ratio(primary, card_bg)
+        error_card_ratio = contrast_ratio(error, card_bg)
+        error_body_ratio = contrast_ratio(error, body_bg)
+        border_ratio = contrast_ratio(input_border, body_bg)
+        if btn_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .btn contrast {btn_ratio:.2f}:1 (#ffffff on {btn_bg}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if link_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .prose a contrast {link_ratio:.2f}:1 ({primary} on {card_bg}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if error_card_ratio < MIN_CONTRAST_RATIO or error_body_ratio < MIN_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .form-error contrast {error_card_ratio:.2f}:1 on card and "
+                f"{error_body_ratio:.2f}:1 on body ({error}) below {MIN_CONTRAST_RATIO}:1"
+            )
+        if border_ratio < MIN_NON_TEXT_CONTRAST_RATIO:
+            theme_failures.append(
+                f"{theme} .form-input border contrast {border_ratio:.2f}:1 ({input_border} on {body_bg}) "
+                f"below {MIN_NON_TEXT_CONTRAST_RATIO}:1"
+            )
+        if theme_failures:
+            failures.extend(theme_failures)
+        else:
+            log_pass(
+                f"{theme}-theme contrast OK: btn {btn_ratio:.2f}:1, prose links {link_ratio:.2f}:1, "
+                f"error {error_card_ratio:.2f}:1, input border {border_ratio:.2f}:1"
+            )
+    return failures
+
+
+def test_no_contradictory_hreflang():
+    """Bilingual single-URL pages must not declare hreflang vi/en pointing at the same href."""
+    failures = []
+    pages = ("index.html", "privacy.html", "terms.html", "delete-account.html")
+    hreflang_re = re.compile(
+        r'<link[^>]+rel=["\']alternate["\'][^>]+hreflang=["\']([^"\']+)["\'][^>]+href=["\']([^"\']+)["\']',
+        re.IGNORECASE,
+    )
+    for rel_page in pages:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            html = f.read()
+        by_href: dict[str, set[str]] = {}
+        for lang, href in hreflang_re.findall(html):
+            by_href.setdefault(href, set()).add(lang.lower())
+        for href, langs in by_href.items():
+            if langs >= {"vi", "en"}:
+                failures.append(f"{rel_page}: hreflang vi and en both point to {href}")
+    if not failures:
+        log_pass("No contradictory hreflang on bilingual single-URL pages")
+    return failures
+
+
+def test_terms_sign_out_copy():
+    failures = []
+    terms_path = os.path.join(SITE_DIR, "terms.html")
+    if not os.path.isfile(terms_path):
+        return ["Missing site/terms.html"]
+    with open(terms_path, "r", encoding="utf-8") as f:
+        html = f.read().lower()
+    if "sign-out or password change revokes other sessions" in html:
+        failures.append("terms.html must distinguish single-device sign-out from password change / sign-out-all")
+    if "đăng xuất hoặc đổi mật khẩu thu hồi phiên khác" in html:
+        failures.append("terms.html (vi) must distinguish single-device sign-out from password change / sign-out-all")
+    if not failures:
+        log_pass("terms.html account session copy matches AuthService behaviour")
+    return failures
+
+
+def run_gate_self_tests():
+    """Regression tests for gate helpers (deterministic, no network)."""
+    failures = []
+
+    if is_nexachat_site_url("https://nexachat.io.vn.evil.example/x"):
+        failures.append("is_nexachat_site_url must reject lookalike host by prefix")
+    if is_nexachat_site_url("https://nexachat.io.vn@evil.example/x"):
+        failures.append("is_nexachat_site_url must reject userinfo lookalike host")
+    if not is_nexachat_site_url("https://nexachat.io.vn/privacy.html"):
+        failures.append("is_nexachat_site_url must allow real site URLs")
+
+    if contrast_ratio("#ffffff", "#3b82f6") >= MIN_CONTRAST_RATIO:
+        failures.append("self-test: old dark btn colour should fail the 4.5:1 bar (regression sentinel)")
+    if contrast_ratio("#ffffff", "#1d4ed8") < MIN_CONTRAST_RATIO:
+        failures.append("self-test: expected white on #1d4ed8 to meet 4.5:1")
+    if contrast_ratio("#f87171", "#ffffff") >= MIN_CONTRAST_RATIO:
+        failures.append("self-test: old light .form-error colour should fail the 4.5:1 bar")
+    if contrast_ratio("#b91c1c", "#ffffff") < MIN_CONTRAST_RATIO:
+        failures.append("self-test: new light .form-error colour should meet 4.5:1")
+    if contrast_ratio("#e2e8f0", "#ffffff") >= MIN_NON_TEXT_CONTRAST_RATIO:
+        failures.append("self-test: old light input border should fail the 3:1 bar")
+    if contrast_ratio("#64748b", "#ffffff") < MIN_NON_TEXT_CONTRAST_RATIO:
+        failures.append("self-test: new light input border should meet 3:1")
+
+    csp_cases = (
+        ("", "default-src 'none'; connect-src 'none'", True),
+        ("", "default-src 'none'; connect-src https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'; connect-src https://api.example.com", True),
+        ("https://api.example.com", "default-src 'none'; connect-src 'none'", False),
+        ("http://api.example.com", "default-src 'none'; connect-src http://api.example.com", False),
+        ("https://api.example.com/path", "default-src 'none'; connect-src https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'; connect-src 'none' https://api.example.com", False),
+        ("https://api.example.com", "default-src 'none'", False),
+    )
+    for meta, csp, should_pass in csp_cases:
+        result = validate_deletion_csp_pair(meta, csp)
+        if (not result) != should_pass:
+            failures.append(
+                f"self-test: CSP pair meta={meta!r} csp={csp!r} expected "
+                f"{'pass' if should_pass else 'fail'}, got {result}"
+            )
+
+    sample_html = (
+        '<script type="application/ld+json">{"@context":"https://schema.org"}</script>'
+        '<a href="https://evil.example/x">x</a>'
+    )
+    urls = collect_urls_for_external_scan(sample_html, ".html")
+    if "https://evil.example/x" not in urls:
+        failures.append("collect_urls_for_external_scan must still flag non-ld+json URLs")
+
+    meta_html = (
+        '<meta name="nexachat-api-base" content="https://api.nexachat.io.vn">'
+        '<a href="https://evil.example/x">x</a>'
+    )
+    meta_urls = collect_urls_for_external_scan(meta_html, ".html")
+    if "https://api.nexachat.io.vn" in meta_urls:
+        failures.append("collect_urls_for_external_scan must allow the configured API base meta")
+    if "https://evil.example/x" not in meta_urls:
+        failures.append("collect_urls_for_external_scan must still scan the rest of the page")
+
+    if not failures:
+        log_pass("Gate helper regression self-tests passed")
     return failures
 
 
@@ -639,18 +1073,157 @@ def test_bilingual_user_visible_text():
             join_html = f.read()
         if "com.nexachat" not in join_html:
             failures.append("join/index.html must mention package id com.nexachat in install instructions")
-        if "Google Play" not in join_html or "App Store" not in join_html:
-            failures.append("join/index.html must mention store install paths (Google Play / App Store)")
+        if "Google Play" not in join_html:
+            failures.append("join/index.html must mention Google Play install path")
+        if "App Store" in join_html:
+            failures.append("join/index.html must not claim an iOS App Store listing (Android-only client)")
 
     if not failures:
         log_pass("Public HTML pages include vi/en text and join install fallback copy")
     return failures
 
 
+def test_account_deletion_page():
+    """The public account-deletion page and its privacy/footer links must exist."""
+    failures = []
+    page_path = os.path.join(SITE_DIR, DELETION_PAGE)
+    if not os.path.isfile(page_path):
+        return [f"Missing HTML page {DELETION_PAGE}"]
+
+    with open(page_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    if 'rel="canonical" href="https://nexachat.io.vn/delete-account.html"' not in html:
+        failures.append(f"{DELETION_PAGE} canonical must be https://nexachat.io.vn/delete-account.html")
+    if "noindex" in html.lower():
+        failures.append(f"{DELETION_PAGE} must be indexable (no noindex robots meta)")
+
+    for phrase in DELETION_PAGE_VI_PHRASES:
+        if phrase not in html:
+            failures.append(f"{DELETION_PAGE} missing Vietnamese deletion copy: {phrase}")
+    for phrase in DELETION_PAGE_EN_PHRASES:
+        if phrase not in html:
+            failures.append(f"{DELETION_PAGE} missing English deletion copy: {phrase}")
+
+    privacy_path = os.path.join(SITE_DIR, "privacy.html")
+    if os.path.isfile(privacy_path):
+        with open(privacy_path, "r", encoding="utf-8") as f:
+            privacy_html = f.read()
+        if privacy_html.count('href="/delete-account.html"') < 2:
+            failures.append("privacy.html must link the deletion page from its body and its footer")
+    else:
+        failures.append("Missing site/privacy.html")
+
+    for rel_page in REQUIRED_HTML_PAGES:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            page_html = f.read()
+        if 'href="/delete-account.html"' not in page_html:
+            failures.append(f"{rel_page} footer must link /delete-account.html")
+
+    if DELETION_NEUTRAL_REQUEST_VI not in html:
+        failures.append(f"{DELETION_PAGE} missing neutral post-request copy (vi)")
+    if DELETION_NEUTRAL_REQUEST_EN not in html:
+        failures.append(f"{DELETION_PAGE} missing neutral post-request copy (en)")
+
+    if 'name="nexachat-api-base"' not in html:
+        failures.append(f"{DELETION_PAGE} must declare meta name=\"nexachat-api-base\"")
+    if 'src="/delete-account.js"' not in html or "defer" not in html:
+        failures.append(f"{DELETION_PAGE} must load /delete-account.js with defer")
+
+    js_path = os.path.join(SITE_DIR, "delete-account.js")
+    if not os.path.isfile(js_path):
+        failures.append("Missing site/delete-account.js")
+    else:
+        with open(js_path, "r", encoding="utf-8") as js_file:
+            js_body = js_file.read()
+        for needle in (
+            "/api/v1/account-deletion/request",
+            "/api/v1/account-deletion/confirm",
+            'meta[name="nexachat-api-base"]',
+            "phoneInput.addEventListener('input'",
+            "ev.key !== 'Enter'",
+            "res.status === 429",
+            "web-deletion-send-error",
+            "web-deletion-rate-error",
+        ):
+            if needle not in js_body:
+                failures.append(f"delete-account.js missing required fragment: {needle}")
+
+    if html.count('role="alert"') < 5:
+        failures.append(f"{DELETION_PAGE} must expose form errors and rate-limit feedback with role=\"alert\"")
+    if 'aria-labelledby="web-deletion-heading-vi web-deletion-heading-en"' not in html:
+        failures.append(f"{DELETION_PAGE} web-deletion section must be labelled by both language headings")
+    if "Gửi mã · Send code" not in html or "Xóa tài khoản · Delete account" not in html:
+        failures.append(f"{DELETION_PAGE} form buttons must show bilingual visible labels")
+
+    if not failures:
+        log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
+    return failures
+
+
+def test_delete_account_web_deployment_contract():
+    """Repo gate: OTP web flow assets, strict default CSP, and operator deploy notes."""
+    failures = []
+
+    vercel_path = os.path.join(SITE_DIR, "vercel.json")
+    if os.path.isfile(vercel_path):
+        with open(vercel_path, "r", encoding="utf-8") as f:
+            vercel_data = json.load(f)
+        headers_list = vercel_data.get("headers", [])
+        global_csp = ""
+        for entry in headers_list:
+            if entry.get("source") == "/(.*)":
+                for hdr in entry.get("headers", []):
+                    if hdr.get("key", "").lower() == "content-security-policy":
+                        global_csp = hdr.get("value", "")
+        if "script-src 'self'" not in global_csp:
+            failures.append("vercel.json CSP must allow script-src 'self' for delete-account.js")
+        csp_pair_failures = validate_deletion_csp_pair(read_deletion_api_base(), global_csp)
+        if csp_pair_failures:
+            failures.extend(csp_pair_failures)
+        else:
+            log_pass("delete-account API meta and CSP connect-src form a consistent pair")
+
+    ops_path = os.path.join(REPO_DIR, "docs", "operations.md")
+    if not os.path.isfile(ops_path):
+        failures.append("Missing docs/operations.md for web-deletion deploy notes")
+    else:
+        with open(ops_path, "r", encoding="utf-8") as f:
+            ops_body = f.read()
+        for needle in (
+            "nexachat-api-base",
+            "connect-src",
+            "NEXACHAT_CORS_ALLOWED_ORIGINS",
+            "delete-account.html",
+        ):
+            if needle not in ops_body:
+                failures.append(f"docs/operations.md must document web deletion deploy item: {needle}")
+
+    if not failures:
+        log_pass("Web account-deletion flow: meta/script gate, default CSP, operations deploy notes")
+    return failures
+
+
 def test_internal_static_links():
     """Root-absolute href/src in HTML point to files under site/ or known Vercel routes."""
     failures = []
-    known_routes = {"/", "/join/index.html", "/style.css", "/favicon.svg", "/join/join.js", "/sitemap.xml", "/robots.txt"}
+    known_routes = {
+        "/",
+        "/join/index.html",
+        "/style.css",
+        "/favicon.svg",
+        "/join/join.js",
+        "/delete-account.js",
+        "/sitemap.xml",
+        "/robots.txt",
+        "/privacy.html",
+        "/terms.html",
+        "/og-image.svg",
+        "/structured-data.json",
+    }
 
     for rel_page in REQUIRED_HTML_PAGES:
         path = os.path.join(SITE_DIR, rel_page)
@@ -780,7 +1353,22 @@ def main():
         "--url",
         help="Base URL to verify live HTTP serving of assetlinks (e.g., https://nexachat-site.vercel.app)",
     )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Run deterministic regression tests for site gate helpers only",
+    )
     args = parser.parse_args()
+
+    if args.self_test:
+        print("=== Site check gate self-tests ===")
+        failures = run_gate_self_tests()
+        if failures:
+            for fail in failures:
+                log_fail(fail)
+            sys.exit(1)
+        print("ALL SELF-TESTS PASSED!")
+        sys.exit(0)
 
     print("=== Running NexaChat Site & Digital Asset Links Checks ===")
     all_failures = []
@@ -814,6 +1402,24 @@ def main():
 
     f_i18n = test_bilingual_user_visible_text()
     all_failures.extend(f_i18n)
+
+    f_deletion = test_account_deletion_page()
+    all_failures.extend(f_deletion)
+
+    f_deletion_web = test_delete_account_web_deployment_contract()
+    all_failures.extend(f_deletion_web)
+
+    f_ld = test_index_inline_json_ld()
+    all_failures.extend(f_ld)
+
+    f_contrast = test_dark_theme_contrast_tokens()
+    all_failures.extend(f_contrast)
+
+    f_hreflang = test_no_contradictory_hreflang()
+    all_failures.extend(f_hreflang)
+
+    f_terms = test_terms_sign_out_copy()
+    all_failures.extend(f_terms)
 
     f_links = test_internal_static_links()
     all_failures.extend(f_links)

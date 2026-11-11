@@ -37,7 +37,7 @@ import java.util.Optional;
  * </ul>
  *
  * <p><b>Revocation:</b> after a logout, logout-all or password change the user
- * row carries a cutoff instant; a token whose {@code iat} is not after it is
+ * row carries a cutoff instant; a token whose {@code iat} is at or before it is
  * rejected with {@code TOKEN_INVALID}. The account-exists-plus-cutoff lookup is
  * served from {@link AccessTokenValidityCache} so the hot path does no database
  * work, falling back to the database on a cache miss.
@@ -46,6 +46,7 @@ import java.util.Optional;
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     public static final String AUTH_ERROR_ATTRIBUTE = "nexachat.authErrorCode";
+    public static final String ACCESS_TOKEN_ID_ATTRIBUTE = "nexachat.accessTokenId";
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
@@ -72,8 +73,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 if (isRevoked(claims)) {
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
                 } else {
+                    if (claims.tokenId() != null && !claims.tokenId().isBlank()) {
+                        request.setAttribute(ACCESS_TOKEN_ID_ATTRIBUTE, claims.tokenId());
+                    }
                     var authentication = new UsernamePasswordAuthenticationToken(
-                            new JwtPrincipal(claims.userId()), null, List.of());
+                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt()), null, List.of());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
@@ -87,11 +91,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * True when the account is gone or the token was issued before the cutoff.
-     * A token without an {@code iat} is treated as issued at the epoch, so any
-     * cutoff rejects it. Tokens issued in the cutoff's own second are accepted:
-     * {@code iat} has one-second resolution, so they are indistinguishable from
-     * a token minted right after the logout.
+     * True when the account is gone or the token was issued at or before the
+     * cutoff. A token without an {@code iat} is treated as issued at the epoch,
+     * so any cutoff rejects it. Inclusive comparison fails closed for the
+     * cutoff second because JWT {@code iat} has one-second resolution.
      */
     private boolean isRevoked(JwtService.AccessTokenClaims claims) {
         Optional<Validity> cached = validityCache.get(claims.userId());
@@ -110,6 +113,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return true;
         }
         Instant cutoff = validity.tokensValidAfter();
-        return cutoff != null && claims.issuedAt().isBefore(cutoff);
+        return cutoff != null && !claims.issuedAt().isAfter(cutoff);
     }
 }

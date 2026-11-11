@@ -1,6 +1,9 @@
 package com.nexachat;
 
 import com.nexachat.archive.ArchiveRepository;
+import com.nexachat.auth.JwtProperties;
+import com.nexachat.auth.google.UserIdentityRepository;
+import com.nexachat.auth.JwtService;
 import com.nexachat.auth.RefreshTokenRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -21,10 +24,14 @@ import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -37,6 +44,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private RefreshTokenRepository refreshTokenRepository;
+
+    @MockitoBean
+    private UserIdentityRepository userIdentityRepository;
 
     @MockitoBean
     private ContactRepository contactRepository;
@@ -98,7 +108,15 @@ class NexaChatApplicationTests {
     @MockitoBean
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private ApplicationContext applicationContext;
+
+    @Autowired
+    private JwtProperties jwtProperties;
+
     @Test
     void contextLoads() {
+        assertThat(applicationContext.getBean(JwtService.class)).isNotNull();
+        assertThat(jwtProperties.secret()).isNotBlank();
     }
 }

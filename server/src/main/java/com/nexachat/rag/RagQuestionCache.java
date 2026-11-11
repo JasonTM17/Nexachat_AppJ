@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Array;
 import java.sql.Timestamp;
@@ -29,6 +30,7 @@ import java.util.UUID;
 public class RagQuestionCache {
 
     private static final int SEMANTIC_SCAN_LIMIT = 200;
+    private static final String CONVERSATION_LOCK_PREFIX = "rag-question-cache:";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -91,12 +93,26 @@ public class RagQuestionCache {
                 });
     }
 
+    public long contentVersion(UUID conversationId) {
+        Long version = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(seq), 0) FROM messages WHERE conversation_id = ? AND type = 'TEXT'",
+                Long.class,
+                conversationId);
+        return version == null ? 0 : version;
+    }
+
+    @Transactional
     public void save(
             UUID conversationId,
             String model,
             String questionHash,
             float[] questionVector,
             CachedAsk ask) {
+        lockConversation(conversationId);
+        if (contentVersion(conversationId) != ask.expectedContentVersion()) {
+            return;
+        }
+
         Instant createdAt = clock.instant();
         Instant expiresAt = createdAt.plusSeconds(
                 Math.max(1, properties.getAsk().getCacheTtlHours()) * 3600L);
@@ -142,7 +158,9 @@ public class RagQuestionCache {
      * both invalidate the full conversation cache because rows record only
      * citations, not the full prompt message set.
      */
+    @Transactional
     public void deleteAllForConversation(UUID conversationId) {
+        lockConversation(conversationId);
         jdbcTemplate.update("DELETE FROM rag_ask_cache WHERE conversation_id = ?", conversationId);
     }
 
@@ -159,6 +177,13 @@ public class RagQuestionCache {
 
     private OffsetDateTime now() {
         return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    }
+
+    private void lockConversation(UUID conversationId) {
+        jdbcTemplate.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                (org.springframework.jdbc.core.RowCallbackHandler) resultSet -> { },
+                CONVERSATION_LOCK_PREFIX + conversationId);
     }
 
     private RowMapper<CachedAsk> mapper() {
@@ -197,7 +222,18 @@ public class RagQuestionCache {
             String mode,
             List<UUID> citedIds,
             String citedHash,
-            SummaryLanguage language) {
+            SummaryLanguage language,
+            long expectedContentVersion) {
+
+        public CachedAsk(
+                String answer,
+                List<RagCitation> citations,
+                String mode,
+                List<UUID> citedIds,
+                String citedHash,
+                SummaryLanguage language) {
+            this(answer, citations, mode, citedIds, citedHash, language, -1);
+        }
 
         public CachedAsk {
             citations = citations == null ? List.of() : List.copyOf(citations);

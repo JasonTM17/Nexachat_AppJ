@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -18,6 +19,7 @@ import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
@@ -29,7 +31,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void messageCreatedDecodesFullPayload() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":\"c-1\","
                 + "\"serverTs\":\"2026-11-03T09:12:04Z\",\"payload\":{\"id\":\"m-1\","
@@ -44,7 +46,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void conversationUpdatedDecodesChangeAndMemberSnapshot() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"CONVERSATION_UPDATED\",\"conversationId\":\"c-1\","
                 + "\"payload\":{\"conversationId\":\"c-1\",\"change\":\"MEMBER_REMOVED\","
@@ -63,14 +65,14 @@ public final class RealtimeSessionEventDecodeTest {
     public void everyOpenResubscribesPresenceQueue() {
         TokenStore store = tokenStore(true);
         StompClient stomp = stomp();
-        when(stomp.connect()).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
-        session(store, stomp, null);
+        when(stomp.connect(any(), any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
+        session(store, stomp, null, true);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
     }
 
     @Test
     public void messageUpdatedDecodesFullPayload() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_UPDATED\",\"conversationId\":\"c-1\","
                 + "\"serverTs\":\"2026-11-03T10:00:00Z\",\"payload\":{\"id\":\"m-1\","
@@ -85,7 +87,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void messageDeletedDecodesIdAndTime() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"MESSAGE_DELETED\",\"conversationId\":\"c-1\","
                 + "\"payload\":{\"messageId\":\"m-1\",\"deletedAt\":\"2026-11-03T11:00:00Z\"}}"));
@@ -97,7 +99,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void onlineAndOfflineDecodePresenceAndLastSeen() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("{\"eventType\":\"USER_ONLINE\",\"serverTs\":\"2026-11-03T11:59:00.000Z\","
                 + "\"payload\":{\"userId\":\"u-2\",\"online\":true}}"));
@@ -116,7 +118,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void errorQueueDecodesBothCodes() {
-        RealtimeSession session = session(false, "errors-sub");
+        RealtimeSession session = session(true, "errors-sub");
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(new StompFrame(StompCommand.MESSAGE,
                 java.util.Collections.singletonMap("subscription", "errors-sub"),
@@ -135,7 +137,7 @@ public final class RealtimeSessionEventDecodeTest {
 
     @Test
     public void unknownTypesAndMalformedFramesDoNotKillStream() {
-        RealtimeSession session = session(false, null);
+        RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
         frames.onNext(message("not json"));
         frames.onNext(message("{\"eventType\":\"FUTURE_EVENT\",\"conversationId\":\"c-1\",\"payload\":{\"x\":1}}"));
@@ -149,15 +151,29 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     private RealtimeSession session(boolean loggedIn, String errorId) {
-        return session(tokenStore(loggedIn), stomp(), errorId);
+        return session(tokenStore(loggedIn), stomp(), errorId, loggedIn);
     }
 
-    private RealtimeSession session(TokenStore store, StompClient stomp, String errorId) {
+    private RealtimeSession session(TokenStore store, StompClient stomp, String errorId, boolean loggedIn) {
         if (errorId != null) when(stomp.subscriptionIdFor(RealtimeSession.USER_ERRORS_DESTINATION)).thenReturn(errorId);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         AppForegroundState foreground = () -> Flowable.just(false);
-        return new RealtimeSession(stomp, store, mock(TokenRefresher.class), new Moshi.Builder().build(),
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        BehaviorProcessor<Boolean> admitted = io.reactivex.rxjava3.processors.BehaviorProcessor.createDefault(
+                loggedIn);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (invocation.getArgument(0, Long.class) != 1L || !admitted.getValue()) {
+                return false;
+            }
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
+        return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, foreground);
     }
 
@@ -165,7 +181,7 @@ public final class RealtimeSessionEventDecodeTest {
         StompClient stomp = mock(StompClient.class);
         when(stomp.getFrames()).thenReturn(frames.onBackpressureBuffer());
         when(stomp.subscribe(any())).thenReturn(Flowable.empty());
-        when(stomp.connect()).thenReturn(Flowable.never());
+        when(stomp.connect(any(), any())).thenReturn(Flowable.never());
         return stomp;
     }
 

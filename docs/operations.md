@@ -7,6 +7,11 @@ secret before starting the stack. Do not commit `.env` or signing files.
 
 ## Configuration
 
+Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
+`NEXACHAT_RAG_ENABLED`) must be exactly `true` or `false` in the environment or
+`.env` file. Spring Boot 3.5 no longer treats values such as `1`, `yes`, or
+`on` as enabled.
+
 | Variable | Required in production | Compose default | Placeholder example |
 |---|---|---|---|
 | `DATABASE_URL` | Yes outside Compose; Compose supplies a default | `jdbc:postgresql://db:5432/nexachat` | `jdbc:postgresql://db:5432/nexachat` |
@@ -31,6 +36,11 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | No (optional "Sign in with Google"; all Google routes answer 404 while off) | `false` | `false` |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Yes when Google sign-in is enabled; startup fails closed without it | Empty | `<id>.apps.googleusercontent.com` |
+| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Yes when Google sign-in is enabled (comma-separated Android OAuth client IDs trusted as token `azp`) | Empty while disabled | `<id>.apps.googleusercontent.com` |
+| `NEXACHAT_GOOGLE_JWKS_URI` | No (Google's rotating public keys; override only for tests) | `https://www.googleapis.com/oauth2/v3/certs` | `https://www.googleapis.com/oauth2/v3/certs` |
+| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | No (single-use sign-in nonce lifetime) | `300` | `300` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` | Empty | Inline service-account JSON or a path to the key file |
@@ -40,6 +50,12 @@ secret before starting the stack. Do not commit `.env` or signing files.
 | `FCM_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `FCM_MAX_RETRIES` | No | `2` | `2` |
 | `FCM_RETRY_BASE_DELAY_MS` | No | `200` | `200` |
+| `FIREBASE_REALTIME_ENABLED` | No (opt-in Firebase Auth bridge) | `false` | `false` |
+| `FIREBASE_DATABASE_URL` | Required when the bridge is enabled | Empty (bridge stays disabled) | `https://<database>.<region>.firebasedatabase.app` |
+| `FIREBASE_REALTIME_DEFAULT` | No (reserved rollout default) | `stomp` | `stomp` |
+| `FIREBASE_CALL_STATUS_ENABLED` | No (call status is not enabled by this bridge) | `false` | `false` |
+| `FIREBASE_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
+| `FIREBASE_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
 | `NEXACHAT_SUMMARY_LLM_BASE_URL` | Yes when summary LLM enabled | `https://generativelanguage.googleapis.com/v1beta/openai` | `https://generativelanguage.googleapis.com/v1beta/openai` |
 | `NEXACHAT_SUMMARY_LLM_MODEL` | Yes when summary LLM enabled | `gemini-3.1-flash-lite` | `gemini-3.1-flash-lite` |
@@ -111,6 +127,26 @@ The `server/Dockerfile` runs as the non-root `nexachat` user and adds
 `-XX:+ExitOnOutOfMemoryError` to `JAVA_OPTS`, so a container is replaced rather
 than left alive after an OOM.
 
+The default Compose `app` service uses a read-only root filesystem: uploads
+persist only on the `app-uploads` volume mounted at `/app/data`, and a
+`tmpfs` at `/tmp` (uid/gid `10001`) covers JVM and multipart scratch I/O.
+`cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, and
+`stop_grace_period: 25s` (above the prod graceful-shutdown budget of 20s) apply
+to the app container. The Postgres service image is pinned by the linux/amd64
+manifest digest in `docker-compose.yml` (not the floating `postgres:16-alpine`
+tag). **ARM64 hosts** (Apple Silicon or Linux aarch64) cannot run that digest as
+written: Docker pulls a platform-specific manifest, so `docker compose up` fails
+unless you change the pin (for example use the multi-arch index digest from the
+registry, pin the `linux/arm64` manifest for that tag, or set `platform:
+linux/amd64` on the `db` service and accept QEMU emulation).
+
+The Compose `app` service declares `deploy.resources.limits` of **2 CPUs** and
+**2G RAM** plus the cgroup hardening above. On a plain `docker compose up`
+without Swarm, those limits are not always enforced the same way as on a cluster;
+this repository has **not** re-measured effective limits with `docker stats`.
+Treat the YAML values as a starting budget and tune for your host before
+production.
+
 ### Feature configuration and retention
 
 The V12–V20 feature flags, rate limits and ceilings are listed in
@@ -179,6 +215,63 @@ Firebase Cloud Messaging API enabled, and an Android client with a matching
 `android/app/google-services.json` that registers its device token. None of
 these external credentials or files are bundled in the repository, and
 end-to-end delivery is not covered by CI.
+
+### Firebase realtime auth bridge (staged rollout)
+
+The Firebase bridge is disabled by default. It creates its Spring beans and
+contacts Firebase only when `FIREBASE_REALTIME_ENABLED=true` **and**
+`FIREBASE_DATABASE_URL` is non-empty. If either condition is false, the bridge
+routes are absent and the existing STOMP service continues to work. A non-empty
+URL must be the HTTPS root URL of a Firebase Realtime Database; an invalid URL
+fails startup. Keep the URL empty in `.env` until the Firebase project and rules
+are ready.
+
+This bridge reuses `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`; FCM push can
+remain disabled independently with `FCM_ENABLED=false`. The service account
+must belong to the same project and have the Firebase Authentication and
+Realtime Database permissions required by the deployment. Provide it through
+the process environment or a protected key file; never commit the key. The
+backend uses it to sign custom auth tokens, revoke Firebase refresh tokens, and
+write private lease state over the RTDB REST API.
+
+Before enabling the bridge in a Firebase project:
+
+1. Enable Firebase Authentication and create a Realtime Database in the chosen
+   region. Keep the database in locked mode during setup.
+2. Review and install the complete rules candidate at
+   `tools/firebase-rules/database.rules.json`. The default rules deny access;
+   user accounts, control state, and current conversation memberships must be
+   projected before authorized Firebase reads can succeed. The projection
+   writer and Android transport remain later rollout steps; this S1 bridge
+   alone does not make a client data path ready for production. The rules
+   contract, its offline emulator suite and its known gaps are documented in
+   [firebase-realtime.md](firebase-realtime.md); the `firebase-rules` CI job
+   runs that suite without credentials.
+3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
+   `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
+   service-account project, installed rules, and projection before directing
+   any client to Firebase. `FIREBASE_REALTIME_DEFAULT` stays `stomp` and
+   `FIREBASE_CALL_STATUS_ENABLED` stays `false` for this stage.
+4. Configure a project budget and billing alerts, then monitor database reads,
+   writes, and download volume during a staged rollout.
+
+The current Compose file does not forward `FIREBASE_*` variables into the app
+container. Setting them only in `.env` will not enable this bridge in Compose;
+the deployment configuration must explicitly pass the reviewed Firebase
+variables to the backend before the feature is enabled. To turn the bridge off,
+set `FIREBASE_REALTIME_ENABLED=false` and restart the backend. Existing STOMP
+clients and routes remain available.
+
+Bridge issue, renewal, and single-session deletion hold a lock on that user's
+PostgreSQL row through the Firebase request so they serialize with logout and
+password-change revocation on every server instance sharing the database. RTDB
+REST calls use the configured connect/read timeouts; Firebase Admin requests
+use the same timeout settings. Google service-account token refresh has retries
+disabled and uses the Google Auth HTTP client's bounded 20-second connect/read
+defaults. A slow Firebase request can therefore delay another bridge operation
+or logout for that same user until its timeout; other users use different rows.
+If a database commit fails after a lease write, the response is not returned and
+the orphaned lease expires within 120 seconds.
 
 **Mute gating.** `NEW_MESSAGE` pushes are skipped for members who muted the
 conversation (per-member `muted` / `muted_until` on `conversation_members`; a
@@ -302,13 +395,13 @@ proxy), the REST/STOMP authentication layer, and per-conversation authorization.
 
 Access tokens are HS256 JWTs with a 15-minute lifetime. Logout, logout-all and
 password change stamp `users.tokens_valid_after` (added by Flyway `V11`); the
-JWT filter rejects any token whose `iat` is before that cutoff, so a stolen
+JWT filter rejects any token whose `iat` is at or before that cutoff, so a stolen
 access token stops working immediately instead of living out its lifetime.
 
 - The cutoff is stored at one-second resolution because JWT `iat` has no
-  sub-second precision: a token issued in the same second as the logout is
-  indistinguishable from one minted just after it, leaving at most one second of
-  slack.
+  sub-second precision: tokens whose `iat` is equal to the cutoff second fail
+  closed. A token minted in that same second after revocation may need a refresh
+  after the next second boundary.
 - The filter caches "account exists + cutoff" per user id in a bounded LRU
   (`nexachat.security.validity-cache-ttl-seconds`, default 60, capped at the
   access-token lifetime) so the hot path does no database work; a cache miss
@@ -320,8 +413,33 @@ access token stops working immediately instead of living out its lifetime.
   closes that user's tracked WebSocket sessions. The event is process-local;
   multi-instance deployments do not broadcast the close to other servers.
 
-Refresh-token rotation is unchanged: logout revokes only the presented refresh
-token, and a password change keeps the supplied session token alive.
+Logout revokes only the presented refresh-token lineage. It leaves other
+lineages' cached replay responses intact, even though the account-wide access
+cutoff also invalidates their existing access JWTs. Logout-all and password
+change still invalidate replay responses for the sessions they revoke.
+
+### Keyed refresh replay
+
+`NEXACHAT_REFRESH_REPLAY_KEY` enables response recovery for a refresh request
+that includes a canonical UUIDv4 `Idempotency-Key`. Generate a Base64 value from
+32 cryptographically random bytes (for example, `openssl rand -base64 32`),
+store it in the deployment secret manager, and inject the same value into every
+server instance. Do not commit it, print it in logs, or reuse `JWT_SECRET`.
+`.env.example` intentionally leaves the local value blank.
+
+The first keyed rotation stores the encrypted response with its predecessor for
+30 seconds. Keep the key stable across restarts and replicas. There are no key
+versions or grace-key lookup: changing or removing the key during that window
+makes an outstanding retry return `409 REFRESH_RECOVERY_UNAVAILABLE`. Rotate
+only after the previous key has been unused for at least 30 seconds.
+
+If the key is missing or malformed, startup logs one warning and keyed requests
+fall back to legacy strict rotation; they do not return `503` for configuration
+absence and do not store recovery payloads. A retry of that spent predecessor
+returns `401 TOKEN_REUSED` and revokes the family. The readiness component
+`refreshReplay` is `DOWN` in the `prod` profile while the key is unavailable;
+the process still starts and serves strict refresh rotation, so this check does
+not block the fallback request path.
 
 ### Cross-origin and headers
 
@@ -622,7 +740,7 @@ LAN address printed by the demo script and be on the same network.
 ## Upgrade
 
 Back up before replacing the app image. Flyway applies versioned migrations
-through V27 on app startup and they are forward-only: add a new SQL migration; never
+through V28 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -645,15 +763,15 @@ V11 introduce:
   `group_invite_bans`.
 
 `V21` is reserved for the recall-window worker and `V23` is intentionally
-unused; neither has a file. `V25` refresh-token replay hardening uses the token
-family columns already present in V1, so it also has no migration file.
-`V22__retention_cleanup_indexes.sql` adds retention indexes,
-`V24__hot_path_perf.sql` drops the unused `idx_conv_inbox`,
-`V26__user_account_deletion.sql` adds account tombstoning, and
-`V27__account_recovery_email_otp.sql` adds recovery email/OTP data. Ensure every
-migration file V1–V20, `V22`, `V24`, `V26`, and `V27` is present in the source
-tree before rebuilding the dev app container; the image packages the server
-migration resources used by Flyway at startup.
+unused; neither has a file. `V22__retention_cleanup_indexes.sql` adds the
+retention indexes, `V24__hot_path_perf.sql` drops the unused `idx_conv_inbox`,
+and `V25__refresh_rotation_replay.sql` adds encrypted refresh-response replay
+metadata and cleanup support. `V26__user_account_deletion.sql` adds account
+tombstoning, `V27__account_recovery_email_otp.sql` adds recovery email/OTP data,
+and `V28__google_signin.sql` adds Google identity links and single-use nonces.
+Ensure every migration file V1–V20, `V22`, and `V24`–`V28` is present in the
+source tree before rebuilding the dev app container; the image packages the
+server migration resources used by Flyway at startup.
 
 ```sh
 bash demo/backup.sh
@@ -796,6 +914,16 @@ Direct Gradle builds can set `-PreleaseVersionName` and
    - Session tokens and user authentication state stored in DataStore preferences.
    - Downloaded attachment files and cached media in the application cache directory.
 5. **No sensitive logging**: `HttpLoggingInterceptor` is stripped in release builds (`BuildConfig.DEBUG` guarded), and no tokens, credentials, or payload bodies are logged.
+
+## Static site: web account deletion (lost device)
+
+The public page `site/delete-account.html` can call the unauthenticated account-deletion OTP endpoints when the API origin is configured at deploy time. The repository ships with an empty API base so browsers make no cross-origin requests until an operator enables the flow.
+
+1. **HTML meta** — Set `content` on `<meta name="nexachat-api-base" content="...">` in `site/delete-account.html` to the HTTPS API origin (no trailing slash), e.g. `https://api.nexachat.io.vn`. Rebuild or redeploy the static site after editing.
+2. **Content-Security-Policy** — In `site/vercel.json`, set the global `connect-src` directive to the same API origin (replacing `'none'`). The meta value and the CSP value must change together; an empty meta with a configured origin, or a configured meta with `connect-src 'none'`, fails the site gate.
+3. **Server CORS** — Set `NEXACHAT_CORS_ALLOWED_ORIGINS` on the API to include exactly `https://nexachat.io.vn` (and `https://www.nexachat.io.vn` only if you serve the apex redirect host). No wildcard; omitting the site origin blocks browser `fetch` from the deletion form.
+
+`python site/check.py` gates the meta tag, external `delete-account.js`, the default-or-configured `connect-src` pair, and these operator notes.
 
 ## Run CI checks locally
 

@@ -94,6 +94,16 @@ class ProductionConfigurationTest {
     }
 
     @Test
+    void readinessIncludesRefreshReplayConfigurationState() throws IOException {
+        PropertySource<?> application = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"))
+                .get(0);
+
+        assertThat(application.getProperty("management.endpoint.health.group.readiness.include"))
+                .asString().contains("refreshReplay");
+    }
+
+    @Test
     void productionDatasourceFailsWhenRequiredCredentialsAreMissing() throws IOException {
         productionContext(Map.of(
                 "DATABASE_URL", "jdbc:postgresql://db:5432/nexachat",

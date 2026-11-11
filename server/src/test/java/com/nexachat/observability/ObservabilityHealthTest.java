@@ -82,6 +82,7 @@ class ObservabilityHealthTest extends ObservabilityHealthTestBase {
         assertThat(readiness.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(readiness.getBody()).contains("diskSpace");
         assertThat(readiness.getBody()).contains("flyway");
+        assertThat(readiness.getBody()).contains("refreshReplay");
     }
 
     @Test
