@@ -8,15 +8,18 @@ import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.os.Build;
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.ui.CallActivity;
 import com.nexachat.call.ui.CallNotificationActionRouter;
 import com.nexachat.call.ui.CallNotificationPrivacyPolicy;
+import com.nexachat.call.ui.IncomingCallIntentCodec;
 import com.nexachat.call.ui.IncomingCallActivity;
 import com.nexachat.core.common.AppLocaleManager;
 
@@ -32,18 +35,30 @@ public final class CallNotifications {
     private CallNotifications() { }
 
     public static boolean showIncoming(Context context, CallSession session) {
+        return showIncoming(context, session, null);
+    }
+
+    public static boolean showIncoming(
+            Context context,
+            CallSession session,
+            @Nullable IncomingCallPushData pushData) {
         if (context == null || session == null
                 || (session.getState() != CallState.INCOMING_RINGING
                 && session.getState() != CallState.PENDING_INCOMING)) {
             return false;
         }
         Context appContext = localizedAppContext(context);
+        if (pushData != null && (!pushData.matches(session)
+                || !pushData.isValidAt(System.currentTimeMillis()))) {
+            clearIncoming(appContext);
+            return false;
+        }
         ensureChannel(appContext);
         if (!canPost(appContext, CHANNEL_ID)) return false;
         Intent openIntent = incomingActivityIntent(
-                appContext, session, CallNotificationActionRouter.ACTION_OPEN);
+                appContext, session, CallNotificationActionRouter.ACTION_OPEN, pushData);
         Intent acceptIntent = incomingActivityIntent(
-                appContext, session, CallNotificationActionRouter.ACTION_ACCEPT);
+                appContext, session, CallNotificationActionRouter.ACTION_ACCEPT, pushData);
         PendingIntent open = PendingIntent.getActivity(
                 appContext, requestCode(session, CallNotificationActionRouter.ACTION_OPEN), openIntent,
                 pendingIntentFlags());
@@ -52,7 +67,7 @@ public final class CallNotifications {
                 pendingIntentFlags());
         PendingIntent decline = PendingIntent.getService(
                 appContext, requestCode(session, CallNotificationActionRouter.ACTION_DECLINE),
-                serviceIntent(appContext, CallNotificationActionRouter.ACTION_DECLINE, session.getCallId()),
+                serviceIntent(appContext, CallNotificationActionRouter.ACTION_DECLINE, session, pushData),
                 pendingIntentFlags());
 
         boolean canUseFullScreen = true;
@@ -148,9 +163,33 @@ public final class CallNotifications {
     }
 
     public static Intent incomingActivityIntent(Context context, CallSession session, String action) {
-        return new Intent(context, IncomingCallActivity.class)
+        return incomingActivityIntent(context, session, action, null);
+    }
+
+    public static Intent incomingActivityIntent(
+            Context context,
+            CallSession session,
+            String action,
+            @Nullable IncomingCallPushData pushData) {
+        Intent intent = new Intent(context, IncomingCallActivity.class)
                 .setAction(action)
                 .putExtra(IncomingCallActivity.EXTRA_CALL_ID, session.getCallId());
+        if (pushData != null && pushData.matches(session)) {
+            IncomingCallIntentCodec.putPushData(intent, pushData);
+        }
+        return intent;
+    }
+
+    private static Intent serviceIntent(
+            Context context,
+            String action,
+            CallSession session,
+            @Nullable IncomingCallPushData pushData) {
+        Intent intent = serviceIntent(context, action, session.getCallId());
+        if (pushData != null && pushData.matches(session)) {
+            IncomingCallIntentCodec.putPushData(intent, pushData);
+        }
+        return intent;
     }
 
     private static Intent serviceIntent(Context context, String action, String callId) {

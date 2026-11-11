@@ -5,10 +5,12 @@ import android.content.Intent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
-import com.nexachat.call.CallLauncher;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallSession;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.service.CallNotifications;
+import com.nexachat.call.ui.CallNotificationActionRouter;
+import com.nexachat.call.ui.IncomingCallIntentCodec;
 import com.nexachat.call.ui.IncomingCallActivity;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
@@ -121,16 +123,19 @@ public final class FcmMessageProcessor {
         return (callId, conversationId, callerId, callerName, serverTs,
                 recipientId, ringExpiresAtMs, sessionEpoch) -> {
             try {
+                IncomingCallPushData pushData = new IncomingCallPushData(
+                        callId,
+                        conversationId,
+                        callerId,
+                        callerName,
+                        serverTs,
+                        recipientId,
+                        ringExpiresAtMs,
+                        sessionEpoch);
                 Intent intent = new Intent(appContext, IncomingCallActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                intent.putExtra(IncomingCallActivity.EXTRA_CALL_ID, callId);
-                intent.putExtra(CallLauncher.EXTRA_CONVERSATION_ID, conversationId);
-                intent.putExtra(CallLauncher.EXTRA_PEER_USER_ID, callerId);
-                intent.putExtra(CallLauncher.EXTRA_PEER_NAME, callerName);
-                intent.putExtra(IncomingCallActivity.EXTRA_SERVER_TS, serverTs);
-                intent.putExtra(IncomingCallActivity.EXTRA_RECIPIENT_ID, recipientId);
-                intent.putExtra(IncomingCallActivity.EXTRA_RING_EXPIRES_AT, ringExpiresAtMs);
-                intent.putExtra(IncomingCallActivity.EXTRA_SESSION_EPOCH, sessionEpoch);
+                intent.setAction(CallNotificationActionRouter.ACTION_OPEN);
+                IncomingCallIntentCodec.putPushData(intent, pushData);
                 appContext.startActivity(intent);
             } catch (Throwable ignored) {
             }
@@ -264,21 +269,20 @@ public final class FcmMessageProcessor {
                     .subscribe(session -> tokenRefresher.runIfSessionCurrent(
                             credential.sessionEpoch,
                             () -> {
-                                if (clock.getAsLong() >= ringExpiresAtMs
-                                        || !callManager.isIncomingPushAdmissionCurrent(callId)) {
-                                    return;
-                                }
+                                IncomingCallPushData pushData =
+                                        callManager.currentIncomingPushData(callId);
+                                if (pushData == null || !pushData.isValidAt(clock.getAsLong())) return;
                                 callLauncher.launch(
-                                        callId,
-                                        conversationId,
-                                        callCallerId,
-                                        callCallerName,
-                                        callStartedAtMs,
-                                        recipientId,
-                                        ringExpiresAtMs,
-                                        credential.sessionEpoch);
+                                        pushData.getCallId(),
+                                        pushData.getConversationId(),
+                                        pushData.getCallerId(),
+                                        pushData.getCallerName(),
+                                        pushData.getServerTs(),
+                                        pushData.getRecipientId(),
+                                        pushData.getRingExpiresAtMs(),
+                                        pushData.getSessionEpoch());
                                 try {
-                                    CallNotifications.showIncoming(context, session);
+                                    CallNotifications.showIncoming(context, session, pushData);
                                 } catch (Throwable ignored) {
                                 }
                             }), ignored -> { });

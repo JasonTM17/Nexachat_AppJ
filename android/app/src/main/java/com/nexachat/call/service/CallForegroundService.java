@@ -12,7 +12,11 @@ import androidx.core.content.ContextCompat;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.core.IncomingCallPushAdmission;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.ui.CallNotificationActionRouter;
+import com.nexachat.call.ui.IncomingCallIntentCodec;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
 
@@ -23,6 +27,7 @@ public class CallForegroundService extends Service {
     public static final String ACTION_STOP = "com.nexachat.call.STOP";
 
     @Inject CallManager callManager;
+    @Inject IncomingCallPushAdmission incomingCallPushAdmission;
 
     private boolean foregroundStarted;
     private CallManager.CallListener listener;
@@ -67,12 +72,33 @@ public class CallForegroundService extends Service {
         if (CallNotificationActionRouter.ACTION_DECLINE.equals(action)) {
             String requestedCallId = intent.getStringExtra(
                     com.nexachat.call.ui.IncomingCallActivity.EXTRA_CALL_ID);
-            CallSession session = callManager.session().getValue();
-            if (session != null && session.getCallId() != null
-                    && session.getCallId().equals(requestedCallId)) {
+            IncomingCallPushData pushData = IncomingCallIntentCodec.readPushData(intent);
+            if (pushData != null) {
+                if (!pushData.getCallId().equals(requestedCallId)) {
+                    discardIncomingDecline(startId);
+                    return START_NOT_STICKY;
+                }
+                incomingCallPushAdmission.admitAndRunIfCurrent(
+                        pushData, () -> declineAdmittedCall(requestedCallId))
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(declined -> {
+                            if (!declined) {
+                                discardIncomingDecline(startId);
+                            }
+                        }, ignored -> discardIncomingDecline(startId),
+                                () -> discardIncomingDecline(startId));
+                return START_NOT_STICKY;
+            }
+            CallSession session = callManager.currentSessionSnapshot();
+            if (session != null && requestedCallId != null
+                    && requestedCallId.equals(session.getCallId())
+                    && session.getDirection() == CallSession.Direction.INCOMING
+                    && (session.getState() == CallState.INCOMING_RINGING
+                        || session.getState() == CallState.PENDING_INCOMING)) {
+                CallNotifications.clearIncoming(this);
                 callManager.reject(requestedCallId);
             } else {
-                retainLiveCallOrStop(startId);
+                discardIncomingDecline(startId);
             }
             return START_NOT_STICKY;
         }
@@ -139,5 +165,15 @@ public class CallForegroundService extends Service {
         } else {
             stopSelf(startId);
         }
+    }
+
+    private void declineAdmittedCall(String callId) {
+        CallNotifications.clearIncoming(this);
+        callManager.reject(callId);
+    }
+
+    private void discardIncomingDecline(int startId) {
+        CallNotifications.clearIncoming(this);
+        stopSelf(startId);
     }
 }
