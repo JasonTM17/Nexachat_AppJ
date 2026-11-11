@@ -1,6 +1,7 @@
 package com.nexachat.conversation;
 
 import com.nexachat.attachment.AvatarController.AvatarResponse;
+import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.attachment.AvatarUrlPolicy;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.MagicBytes;
@@ -95,6 +96,7 @@ public class GroupService {
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
+    private final AvatarReferenceCoordinator avatarReferenceCoordinator;
     private final SimpUserRegistry simpUserRegistry;
     private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
 
@@ -105,6 +107,7 @@ public class GroupService {
                         MessageService messageService,
                         ApplicationEventPublisher eventPublisher,
                         StorageService storageService,
+                        AvatarReferenceCoordinator avatarReferenceCoordinator,
                         SimpUserRegistry simpUserRegistry,
                         AbstractBrokerMessageHandler simpleBrokerMessageHandler) {
         this.conversationRepository = conversationRepository;
@@ -114,6 +117,7 @@ public class GroupService {
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
+        this.avatarReferenceCoordinator = avatarReferenceCoordinator;
         this.simpUserRegistry = simpUserRegistry;
         this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
     }
@@ -445,6 +449,7 @@ public class GroupService {
             }
         }
         if (request.avatarUrl() != null) {
+            avatarReferenceCoordinator.lockForTransaction();
             String avatarUrl = request.avatarUrl().trim();
             if (avatarUrl.length() > MAX_AVATAR_URL_LENGTH) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
@@ -455,6 +460,11 @@ public class GroupService {
                     : AvatarUrlPolicy.toRelativeFilesUrl(avatarUrl);
             if (normalizedAvatarUrl != null) {
                 normalizedAvatarUrl = lockAndCanonicalizeAttachmentAvatarReference(normalizedAvatarUrl);
+                String storageKey = AvatarUrlPolicy.storageKeyFromUrl(normalizedAvatarUrl);
+                if (AvatarUrlPolicy.isServerGeneratedAvatarStorageKey(storageKey)
+                        && !storageService.exists(storageKey)) {
+                    throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Avatar file not found");
+                }
             }
             conversation.changeAvatarUrl(normalizedAvatarUrl);
         }
@@ -490,6 +500,7 @@ public class GroupService {
         if (sniffed == null || !sniffed.startsWith("image/")) {
             throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
         }
+        avatarReferenceCoordinator.lockForTransaction();
         StorageService.StoredFile stored = storageService.store(
                 "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
         conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));

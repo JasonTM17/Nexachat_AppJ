@@ -2,6 +2,8 @@ package com.nexachat.summary;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -122,12 +124,14 @@ public class SummaryCacheRepository {
 
     @Transactional
     public SavedSummary saveIfAbsent(
+            UUID requestingUserId,
             UUID conversationId,
             SummaryWindow window,
             String contentHash,
             String provider,
             SummaryLanguage requestedLanguage,
             SummaryGeneration generation) {
+        lockActiveRequester(requestingUserId, conversationId);
         Optional<SummaryCacheEntry> inserted = write(
                 UPSERT_SQL, conversationId, window, contentHash, provider, requestedLanguage, generation);
         if (inserted.isPresent()) {
@@ -143,14 +147,29 @@ public class SummaryCacheRepository {
 
     @Transactional
     public SummaryCacheEntry replace(
+            UUID requestingUserId,
             UUID conversationId,
             SummaryWindow window,
             String contentHash,
             String provider,
             SummaryLanguage requestedLanguage,
             SummaryGeneration generation) {
+        lockActiveRequester(requestingUserId, conversationId);
         return write(REPLACE_SQL, conversationId, window, contentHash, provider, requestedLanguage, generation)
                 .orElseThrow(() -> new IllegalStateException("Summary cache refresh did not return a row"));
+    }
+
+    private void lockActiveRequester(UUID requestingUserId, UUID conversationId) {
+        List<Boolean> activeMembers = jdbcTemplate.query("""
+                SELECT requester.deleted_at IS NULL
+                FROM users requester
+                JOIN conversation_members member ON member.user_id = requester.id
+                WHERE requester.id = ? AND member.conversation_id = ?
+                FOR SHARE OF requester
+                """, (rs, rowNum) -> rs.getBoolean(1), requestingUserId, conversationId);
+        if (activeMembers.isEmpty() || !activeMembers.getFirst()) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
     }
 
     private Optional<SummaryCacheEntry> write(

@@ -234,7 +234,8 @@ public class User {
         this.avatarUrl = null;
         this.showPresence = false;
         this.showSeen = false;
-        changeAiSummaryConsent(false);
+        aiSummaryConsent = false;
+        aiSummaryConsentEpoch++;
         this.lastSeenAt = null;
         this.email = null;
         this.emailVerifiedAt = null;

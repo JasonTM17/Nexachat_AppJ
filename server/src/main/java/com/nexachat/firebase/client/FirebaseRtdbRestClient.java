@@ -435,9 +435,9 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
             long updatedAt = positiveEpochMillis(call.get("updatedAt"), "updatedAt");
             long expiresAt = positiveEpochMillis(call.get("expiresAt"), "expiresAt");
             long maximumTtl = switch (state) {
-                case "RINGING" -> 45_000L;
-                case "ACTIVE" -> 120_000L;
-                case "ENDED" -> 60_000L;
+                case "RINGING" -> FirebaseCallStatusLease.RINGING_MILLIS;
+                case "ACTIVE" -> FirebaseCallStatusLease.ACTIVE_MILLIS;
+                case "ENDED" -> FirebaseCallStatusLease.ENDED_MILLIS;
                 default -> throw new IllegalArgumentException("Firebase call-status projection has an invalid state");
             };
             if (expiresAt <= updatedAt || expiresAt - updatedAt > maximumTtl) {

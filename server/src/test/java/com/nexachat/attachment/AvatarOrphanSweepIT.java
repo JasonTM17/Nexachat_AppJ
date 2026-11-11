@@ -1,6 +1,8 @@
 package com.nexachat.attachment;
 
 import com.nexachat.ops.ScheduledLockIds;
+import com.nexachat.conversation.GroupService;
+import com.nexachat.conversation.dto.PatchGroupRequest;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +14,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.nio.file.Files;
@@ -24,6 +28,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -69,6 +78,10 @@ class AvatarOrphanSweepIT {
     private MeterRegistry meterRegistry;
     @Autowired
     private DataSource dataSource;
+    @Autowired
+    private GroupService groupService;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     private UUID firstUserId;
     private UUID secondUserId;
@@ -84,6 +97,10 @@ class AvatarOrphanSweepIT {
                 INSERT INTO conversations (id, type, title, created_by)
                 VALUES (?, 'GROUP', 'avatar sweep fixture', ?)
                 """, conversationId, firstUserId);
+        jdbcTemplate.update("""
+                INSERT INTO conversation_members (conversation_id, user_id, role)
+                VALUES (?, ?, 'ADMIN'), (?, ?, 'MEMBER')
+                """, conversationId, firstUserId, conversationId, secondUserId);
         properties.setEnabled(false);
         properties.setDryRun(true);
         properties.setBatchSize(100);
@@ -241,6 +258,48 @@ class AvatarOrphanSweepIT {
 
         assertThat(sweepTask.runOnce().orElseThrow().deleted()).isEqualTo(1);
         assertThat(storagePath(orphan)).doesNotExist();
+    }
+
+    @Test
+    void concurrentGroupAvatarReferenceIsSerializedWithSweep() throws Exception {
+        properties.setEnabled(true);
+        properties.setDryRun(false);
+        String oldOrphan = storeOldAvatar("concurrent-group.png", Duration.ofDays(2));
+        CountDownLatch referenceWritten = new CountDownLatch(1);
+        CountDownLatch allowCommit = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> update = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+                groupService.updateGroup(firstUserId, conversationId,
+                        new PatchGroupRequest(null, "/api/v1/files/" + oldOrphan));
+                referenceWritten.countDown();
+                try {
+                    if (!allowCommit.await(10, TimeUnit.SECONDS)) {
+                        throw new AssertionError("Timed out waiting to commit the group avatar reference");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+                return null;
+            }));
+
+            assertThat(referenceWritten.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(sweepTask.runOnce()).isEmpty();
+            assertThat(storagePath(oldOrphan)).exists();
+
+            allowCommit.countDown();
+            update.get(10, TimeUnit.SECONDS);
+        } finally {
+            allowCommit.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+
+        AvatarOrphanSweepTask.SweepResult result = sweepTask.runOnce().orElseThrow();
+        assertThat(result.deleted()).isZero();
+        assertThat(result.keptReferenced()).isEqualTo(1);
+        assertThat(storagePath(oldOrphan)).exists();
     }
 
     private String storeOldAvatar(String filename, Duration age) throws Exception {

@@ -5,6 +5,7 @@ import com.nexachat.call.CallSession;
 import com.nexachat.call.CallState;
 import com.nexachat.call.CallStatusProjectionEvent;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
+import com.nexachat.firebase.client.FirebaseCallStatusLease;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -20,9 +21,9 @@ import java.util.Map;
 /** Publishes bounded display-only call status without moving call signaling authority. */
 public class FirebaseCallStatusProjectionService {
 
-    static final long ACTIVE_LEASE_MILLIS = 120_000L;
+    static final long ACTIVE_LEASE_MILLIS = FirebaseCallStatusLease.ACTIVE_MILLIS;
     static final long ACTIVE_RENEW_INTERVAL_MILLIS = 60_000L;
-    static final long ENDED_TTL_MILLIS = 60_000L;
+    static final long ENDED_TTL_MILLIS = FirebaseCallStatusLease.ENDED_MILLIS;
     static final int MAX_PATCH_SIZE = 500;
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseCallStatusProjectionService.class);
@@ -38,6 +39,11 @@ public class FirebaseCallStatusProjectionService {
                                                long ringTimeoutMillis) {
         if (ringTimeoutMillis <= 0) {
             throw new IllegalArgumentException("Call ring timeout must be positive");
+        }
+        if (ringTimeoutMillis > FirebaseCallStatusLease.RINGING_MILLIS) {
+            throw new IllegalArgumentException(
+                    "Firebase call-status projection supports ring timeout up to "
+                            + FirebaseCallStatusLease.RINGING_MILLIS + " ms");
         }
         this.rtdb = rtdb;
         this.callService = callService;

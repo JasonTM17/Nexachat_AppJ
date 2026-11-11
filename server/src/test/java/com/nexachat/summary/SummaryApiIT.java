@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -38,9 +41,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -81,8 +89,12 @@ class SummaryApiIT {
     private SummaryWindowService windowService;
     @Autowired
     private SummaryConsentRepository consentRepository;
-    @Autowired
+    @MockitoSpyBean
     private SummaryCacheRepository cacheRepository;
+    @Autowired
+    private AccountDeletionService accountDeletionService;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
     @Autowired
     private SummaryRequestLimitRepository requestLimitRepository;
 
@@ -346,13 +358,13 @@ class SummaryApiIT {
             Future<SummaryCacheRepository.SavedSummary> first = executor.submit(() -> {
                 ready.countDown();
                 start.await();
-                return cacheRepository.saveIfAbsent(conversationId, window, hash, "LOCAL",
+                return cacheRepository.saveIfAbsent(caller.getId(), conversationId, window, hash, "LOCAL",
                         SummaryLanguage.EN, generation);
             });
             Future<SummaryCacheRepository.SavedSummary> second = executor.submit(() -> {
                 ready.countDown();
                 start.await();
-                return cacheRepository.saveIfAbsent(conversationId, window, hash, "LOCAL",
+                return cacheRepository.saveIfAbsent(caller.getId(), conversationId, window, hash, "LOCAL",
                         SummaryLanguage.EN, generation);
             });
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
@@ -369,6 +381,47 @@ class SummaryApiIT {
             assertThat(count).isEqualTo(1);
         } finally {
             executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void inFlightSummaryCannotRecreateCacheAfterAccountDeletion() throws Exception {
+        addUsableMessages(5);
+        jdbcTemplate.update("UPDATE users SET password_hash = ? WHERE id = ?",
+                passwordEncoder.encode("secret123"), caller.getId());
+        CountDownLatch cacheWriteReached = new CountDownLatch(1);
+        CountDownLatch allowCacheWrite = new CountDownLatch(1);
+        AtomicBoolean pauseFirstWrite = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (pauseFirstWrite.compareAndSet(true, false)) {
+                cacheWriteReached.countDown();
+                if (!allowCacheWrite.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume the summary cache write");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(cacheRepository).saveIfAbsent(eq(caller.getId()), eq(conversationId),
+                any(SummaryWindow.class), anyString(),
+                anyString(), any(SummaryLanguage.class), any(SummaryGeneration.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlight = executor.submit(() -> postSummary(
+                    caller, requestBody("LAST_N", 5, false)).andReturn());
+            assertThat(cacheWriteReached.await(10, TimeUnit.SECONDS)).isTrue();
+
+            accountDeletionService.deleteAccount(caller.getId(), "secret123");
+            allowCacheWrite.countDown();
+
+            MvcResult result = inFlight.get(20, TimeUnit.SECONDS);
+            assertThat(result.getResponse().getStatus()).isEqualTo(404);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM message_summaries WHERE conversation_id = ?",
+                    Integer.class, conversationId)).isZero();
+        } finally {
+            allowCacheWrite.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }
     }
 
