@@ -104,7 +104,7 @@ storage provider is `local` (S1). The Blueprint declares:
 | `DATABASE_URL` | `application-prod.yml:55` | direct Neon JDBC URL, `sslmode=require` |
 | `DATABASE_USER` | `application-prod.yml:56` | |
 | `DATABASE_PASSWORD` | `application-prod.yml:57` | secret |
-| `JWT_SECRET` | `application-prod.yml:79` | generated; ≥ 32 bytes (`JwtService.java:42-53`) |
+| `JWT_SECRET` | `application-prod.yml:79` | generated; ≥ 32 bytes (`JwtService.java:37-49`) |
 | `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:92` | generated; base64 of exactly 32 bytes |
 | `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:108` | `https://nexachat.io.vn` for web account deletion |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:117` | empty; see the rate-limit note below |
