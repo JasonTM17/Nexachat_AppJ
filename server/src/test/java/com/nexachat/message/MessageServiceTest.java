@@ -124,6 +124,7 @@ class MessageServiceTest {
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
         assertThat(event.getValue().message().seq()).isEqualTo(42);
+        assertThat(event.getValue().replay()).isFalse();
     }
 
     @Test
@@ -200,6 +201,29 @@ class MessageServiceTest {
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().message().id()).isEqualTo(stored.id());
         assertThat(event.getValue().message().seq()).isEqualTo(stored.seq());
+        assertThat(event.getValue().replay()).isTrue();
+    }
+
+    @Test
+    void send_concurrentInsertDedup_publishesReplayEvent() {
+        memberOk();
+        MessageRow winner = row(43);
+        when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
+
+        MessageService.SendResult result = messageService.send(senderId, conversationId, request());
+
+        assertThat(result.created()).isFalse();
+        assertThat(result.message().id()).isEqualTo(winner.id());
+        // The insert lost the race, so the winner's push is the only one.
+        verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().message().id()).isEqualTo(winner.id());
+        assertThat(event.getValue().replay()).isTrue();
     }
 
     @Test

@@ -281,8 +281,10 @@ public class MessageService {
 
         MessageResponse response = toResponse(row);
         // Broadcast on dedup too: the re-sent frame is how a retrying sender
-        // gets its SENT signal; receivers deduplicate by message id.
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        // gets its SENT signal; receivers deduplicate by message id. The replay
+        // flag keeps push fan-out to the one dispatch the stored row already had.
+        eventPublisher.publishEvent(new MessageCreatedEvent(
+                conversationId, response, null, !created));
         return new SendResult(response, created);
     }
 
@@ -292,7 +294,7 @@ public class MessageService {
                     "clientMessageId already used in a different conversation");
         }
         MessageResponse response = toResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response));
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response, null, true));
         return new SendResult(response, false);
     }
 
