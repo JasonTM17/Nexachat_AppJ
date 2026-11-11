@@ -25,6 +25,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -85,6 +86,8 @@ class AskApiIT {
     private MessageService messageService;
     @MockitoSpyBean
     private RagQuestionCache questionCache;
+    @MockitoSpyBean
+    private Clock clock;
 
     private User caller;
     private User peer;
@@ -308,6 +311,12 @@ class AskApiIT {
 
     @Test
     void askRequestsHaveTheirOwnRateLimitBucket() throws Exception {
+        // AskRateLimiter keys its counters by the UTC minute. Freeze the clock at
+        // one instant so the 21 requests cannot straddle a minute boundary:
+        // crossing it opens a fresh window and legitimately returns 200 for
+        // request 21, which is exactly the intermittent failure seen in full
+        // verify runs.
+        doReturn(Instant.parse("2026-11-11T10:30:15Z")).when(clock).instant();
         addMessage(peer.getId(), "The budget was approved at 1,200 dollars.");
         String body = "{\"question\":\"How much budget was approved?\"}";
         for (int index = 0; index < 20; index++) {

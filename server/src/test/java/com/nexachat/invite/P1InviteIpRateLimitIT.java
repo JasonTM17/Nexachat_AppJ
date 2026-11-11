@@ -3,8 +3,10 @@ package com.nexachat.invite;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.auth.RateLimitService;
+import com.nexachat.testutil.MutableTimeMeter;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import io.github.bucket4j.TimeMeter;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,12 +15,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
@@ -28,6 +32,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,6 +49,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestPropertySource(properties = "server.forward-headers-strategy=framework")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class P1InviteIpRateLimitIT {
+
+    /** Frozen bucket time: 60 requests must exhaust the minute budget exactly. */
+    private static final MutableTimeMeter BUCKET_TIME = new MutableTimeMeter();
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class FrozenBucketTime {
+        @Bean
+        @Primary
+        TimeMeter frozenRateLimitTimeMeter() {
+            return BUCKET_TIME;
+        }
+    }
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -74,8 +92,8 @@ class P1InviteIpRateLimitIT {
 
     private TestUser alice;
     private TestUser dave;
-    private TestUser bob;
-    private TestUser carol;
+    private final List<TestUser> resolvers = new ArrayList<>();
+    private TestUser fresh;
 
     @BeforeEach
     void resetRateLimitBuckets() {
@@ -86,8 +104,12 @@ class P1InviteIpRateLimitIT {
     void setUp() {
         alice = createTestUser("RateLimit Alice");
         dave = createTestUser("RateLimit Dave");
-        bob = createTestUser("RateLimit Bob");
-        carol = createTestUser("RateLimit Carol");
+        // Six preview callers keep every per-user bucket at 10 of 30, so the
+        // request that must be denied can only be stopped by the shared IP bucket.
+        for (int index = 0; index < 6; index++) {
+            resolvers.add(createTestUser("RateLimit Resolver " + index));
+        }
+        fresh = createTestUser("RateLimit Fresh");
     }
 
     @Test
@@ -102,19 +124,34 @@ class P1InviteIpRateLimitIT {
         String token = objectMapper.readTree(link.getResponse().getContentAsString())
                 .get("token").asText();
 
-        for (int i = 1; i <= 60; i++) {
-            TestUser caller = i % 2 == 0 ? bob : carol;
-            ResponseEntity<String> response = resolve(token, caller, "10.30.1." + i);
-            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        for (int i = 0; i < 60; i++) {
+            TestUser caller = resolvers.get(i % resolvers.size());
+            ResponseEntity<String> response = resolve(token, caller, "10.30.1." + (i + 1));
+            assertThat(response.getStatusCode())
+                    .as("preview %d stays inside the shared 60/minute budget", i + 1)
+                    .isEqualTo(HttpStatus.OK);
         }
-        // Greedy bucket refill can admit a few extra preview calls inside the same minute window;
-        // changing X-Forwarded-For must not reset the shared socket-peer bucket.
-        HttpStatusCode status = HttpStatus.OK;
-        for (int attempt = 61; attempt <= 75 && !status.equals(HttpStatus.TOO_MANY_REQUESTS); attempt++) {
-            ResponseEntity<String> response = resolve(token, bob, "10.30.2." + attempt);
-            status = response.getStatusCode();
+
+        // The fresh user has not consumed its own 30/minute budget. A 429 here can
+        // therefore only come from the socket-peer bucket shared by all callers; if
+        // X-Forwarded-For were honoured, this new address would get a fresh bucket
+        // and the request would be 200 (the failure observed in full verify runs).
+        ResponseEntity<String> denied = resolve(token, fresh, "10.30.9.99");
+        assertThat(denied.getStatusCode())
+                .as("spoofed X-Forwarded-For must not reset the peer bucket")
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+        // Proof that the bucket clock is the injected meter: two seconds of frozen
+        // time refill exactly two of the sixty tokens. A real system clock would
+        // have refilled an unpredictable number during the 60 previews above.
+        BUCKET_TIME.advance(Duration.ofSeconds(2));
+        for (int index = 0; index < 2; index++) {
+            assertThat(resolve(token, fresh, "10.30.9." + (100 + index)).getStatusCode())
+                    .as("refilled token %d", index + 1)
+                    .isEqualTo(HttpStatus.OK);
         }
-        assertThat(status).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(resolve(token, fresh, "10.30.9.200").getStatusCode())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     }
 
     private ResponseEntity<String> resolve(String token, TestUser caller, String forwardedFor) {
