@@ -66,7 +66,7 @@ public class FirebaseAuthorizationProjectionService {
         if (memberIds.size() != 2) {
             return;
         }
-        withUserLocks(memberIds, () -> {
+        locks.withUserLocks(memberIds, () -> {
             Conversation current = conversations.findById(conversationId).orElse(null);
             if (current == null || current.getType() != Conversation.Type.DIRECT) {
                 return;
@@ -128,19 +128,6 @@ public class FirebaseAuthorizationProjectionService {
             }
             metrics.write("account-delete", () -> rtdb.applyAuthorizationProjection(updates));
         });
-    }
-
-    private void withUserLocks(List<UUID> userIds, Runnable action) {
-        List<UUID> sorted = userIds.stream().distinct().sorted().toList();
-        withUserLockAt(sorted, 0, action);
-    }
-
-    private void withUserLockAt(List<UUID> userIds, int index, Runnable action) {
-        if (index == userIds.size()) {
-            action.run();
-            return;
-        }
-        locks.withUserLock(userIds.get(index), () -> withUserLockAt(userIds, index + 1, action));
     }
 
     private static Map<String, Object> accountValue(User user) {
