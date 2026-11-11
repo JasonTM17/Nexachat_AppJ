@@ -40,6 +40,11 @@ spring:
       # twice (container buffer plus MultipartFile.getBytes()). Upload service
       # code copies the file once, under nexachat.uploads admission.
       file-size-threshold: 0B
+      # Scratch directory for those parts. Empty keeps the servlet-container
+      # temp directory (the JVM temp root in the image). A configured path is
+      # created at boot and probe-written by MultipartTempDirectory, so an
+      # unwritable mount fails startup instead of the first upload.
+      location: ${NEXACHAT_MULTIPART_TEMP_DIR:}
 
 management:
   # Actuator shares the API port by default so existing health checks keep working.
