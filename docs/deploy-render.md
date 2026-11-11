@@ -260,13 +260,14 @@ own.
    ```
 
 2. On network A, send one more bad login with a different fake
-   `CF-Connecting-IP` and `X-Forwarded-For`. It must stay `429`; a `401` means
-   the fake header chose a fresh bucket.
+   `CF-Connecting-IP` and `X-Forwarded-For`. It must stay `429`; any other
+   status means the fake header chose a fresh bucket.
 
-3. On network B, send one bad login: it must be `401` (fresh bucket), then ten
-   more must reach `429`. A `429` on the first network-B request means the peer
-   did not match `NEXACHAT_TRUSTED_PROXY_CIDRS` and every client still shares
-   the proxy bucket.
+3. On network B, send one bad login: it must not be `429` (fresh bucket;
+   expected `401`), then ten more must reach `429`. A `429` on the first
+   network-B request means the peer did not match
+   `NEXACHAT_TRUSTED_PROXY_CIDRS` and every client still shares the proxy
+   bucket.
 
 Read Render's HTTP request log for the two `429` sequences: the status codes and
 timestamps must line up. The application deliberately logs no client IPs, so the
