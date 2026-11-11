@@ -27,6 +27,8 @@
         <jackson-bom.version>2.21.7</jackson-bom.version>
         <postgresql.version>42.7.12</postgresql.version>
         <aws-sdk-v2.version>2.57.13</aws-sdk-v2.version>
+        <!-- First stable Flyway with PostgreSQL 18 support (11.13.3). -->
+        <flyway.version>11.13.3</flyway.version>
         <nexachat.test.build-directory>target</nexachat.test.build-directory>
     </properties>
 
