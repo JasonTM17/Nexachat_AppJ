@@ -184,8 +184,14 @@ public class GoogleSignInService {
     }
 
     /** Issues a nonce for the authenticated link flow, bounded per account. */
+    @Transactional
     public GoogleNonceService.IssuedNonce issueLinkNonce(UUID userId, String accessTokenId) {
         requireEnabled();
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
         enforceAccountRateLimit(userId, "google-link-nonce");
         return nonceService.issue(GoogleNonceService.PURPOSE_LINK, userId, accessTokenId);
     }
