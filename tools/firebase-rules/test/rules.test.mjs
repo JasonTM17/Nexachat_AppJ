@@ -99,6 +99,7 @@ function typingPayload(overrides = {}) {
 describe('unauthenticated and unlisted paths', () => {
   const guardedPaths = [
     'control/enabled',
+    'control/adminDisabled',
     'accounts/bob/active',
     'sessions/bob/bob-b1/until',
     'members/direct-ab/bob',
@@ -136,6 +137,7 @@ describe('unauthenticated and unlisted paths', () => {
     for (const path of [
       'control',
       'control/enabled',
+      'control/adminDisabled',
       'accounts',
       'accounts/bob',
       'sessions/bob/bob-b1',
@@ -149,6 +151,7 @@ describe('unauthenticated and unlisted paths', () => {
 
   test('authenticated clients cannot write or delete server-only mirrors', async () => {
     await assertFails(write('alice', 'alice-a1', 'control/enabled', false));
+    await assertFails(write('alice', 'alice-a1', 'control/adminDisabled', true));
     await assertFails(write('alice', 'alice-a1', 'accounts/alice/active', true));
     await assertFails(write('alice', 'alice-a1', 'sessions/alice/alice-a1/until', Date.now() + LEASE_MS));
     await assertFails(write('alice', 'alice-a1', 'members/direct-ab/alice', Date.now() + LEASE_MS));
@@ -157,6 +160,7 @@ describe('unauthenticated and unlisted paths', () => {
     await assertFails(write('alice', 'alice-a1', 'blocked/alice/bob', true));
     await assertFails(remove('alice', 'alice-a1', 'members/direct-ab/bob'));
     await assertFails(remove('alice', 'alice-a1', 'accounts/bob'));
+    await assertFails(remove('alice', 'alice-a1', 'control/adminDisabled'));
   });
 
   test('authenticated clients cannot read parent collections of granted leaves', async () => {
@@ -303,6 +307,18 @@ describe('presence', () => {
     await assertFails(read('alice', 'alice-a1', 'presence/bob'));
     await adminRemove('control/enabled');
     await assertFails(read('alice', 'alice-a1', 'presence/bob'));
+  });
+
+  test('administrative disable gates clients even if backfill reopens admission', async () => {
+    await adminSet('control/adminDisabled', true);
+    await adminSet('control/enabled', true);
+
+    await assertFails(read('alice', 'alice-a1', 'presence/bob'));
+    await assertFails(read('alice', 'alice-a1', 'presence/alice'));
+    await assertFails(write('alice', 'alice-a1', 'presence/alice/alice-a1', onlinePresence()));
+    await assertFails(read('alice', 'alice-a1', 'typing/direct-ab/bob'));
+    await assertFails(write('bob', 'bob-b1', 'typing/direct-ab/bob', typingPayload()));
+    await assertFails(read('alice', 'alice-a1', 'calls/call-ab'));
   });
 
   test('denies an online lease beyond the session or already expired', async () => {

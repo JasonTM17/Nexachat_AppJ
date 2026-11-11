@@ -29,7 +29,7 @@ export function baseFixture() {
   const now = Date.now();
   const until = now + LEASE_MS;
   return {
-    control: { enabled: true, presencePrivacyVersion: 2 },
+    control: { enabled: true, presencePrivacyVersion: 2, adminDisabled: false },
     accounts: {
       alice: { active: true, showPresence: true },
       bob: { active: true, showPresence: true },

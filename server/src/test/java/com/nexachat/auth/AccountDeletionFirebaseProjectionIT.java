@@ -224,6 +224,11 @@ class AccountDeletionFirebaseProjectionIT extends SecurityITBase {
         }
 
         @Override
+        public synchronized boolean isAdministrativelyDisabled() {
+            return Boolean.TRUE.equals(values.get("control/adminDisabled"));
+        }
+
+        @Override
         public synchronized int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
             String prefix = "presence/" + userId + "/";
             List<String> legacyPaths = values.entrySet().stream()

@@ -275,6 +275,7 @@ Before enabling the bridge in a Firebase project:
   positive `lastSeen` values across all accounts via `removeLegacyOfflinePresenceEntries`,
   and atomically publishes `control/presencePrivacyVersion: 2` with `control/enabled: true`.
   Peer reads remain denied until this marker is published; client presence deletes are denied.
+  The backfill also checks the operator-owned `control/adminDisabled` RTDB marker before work and before reopening admission. A true marker leaves admission closed and is never changed by the server.
 - **DIRECT vs group reader edges**:
   The projection service only creates reader edges at `/presenceReaders/{subjectUid}/{viewerUid}`
   for `Conversation.Type.DIRECT` with shape `{"cid": "<conversationId>", "type": "DIRECT"}`.
@@ -315,8 +316,16 @@ Optional display-only call status projection publishes to `/calls/{callId}`:
 
 #### Rollback
 
-- **Emergency kill switch**: Set `control/enabled: false` directly in RTDB root. All client reads and writes
-  are immediately denied by rules; Android clients detect disconnection and fall back to STOMP over WebSocket.
+- **Emergency kill switch**: In RTDB, set `control/adminDisabled: true`, then set `control/enabled: false`.
+  The reviewed security rules deny all client reads and writes while the marker is true, even if a backfill
+  or another server replica writes `control/enabled: true`. Deploy rules containing this check before relying
+  on the marker. The backfill leaves admission closed when it observes the marker and never changes it, so
+  the disable persists across scheduled runs, restarts, and replicas. Also set the master
+  `FIREBASE_REALTIME_ENABLED=false` on every backend instance and restart or drain them to stop bridge
+  endpoints and writers. Android clients fall back to STOMP over WebSocket.
+- **Restore after an administrative disable**: Keep `control/enabled: false` while bridge flags are off.
+  Configure the intended backend instances, clear `control/adminDisabled` (`false` or remove), then let a
+  successful backfill reopen admission. Do not clear the marker while `control/enabled` is true.
 - **Disable call status**: Set `FIREBASE_CALL_STATUS_ENABLED=false` on the server and restart. Existing call
   projections expire within at most 120 seconds; presence and typing continue over RTDB.
 - **Disable full bridge**: Set `FIREBASE_REALTIME_ENABLED=false` on the server and restart. Bridge routes

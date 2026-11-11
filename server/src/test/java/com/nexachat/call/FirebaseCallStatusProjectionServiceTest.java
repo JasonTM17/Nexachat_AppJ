@@ -199,6 +199,7 @@ class FirebaseCallStatusProjectionServiceTest {
             writes.add(new LinkedHashMap<>(updates));
         }
 
+        @Override public boolean isAdministrativelyDisabled() { return false; }
         @Override public Long readSessionLease(UUID userId, UUID bridgeId) { return null; }
         @Override public void writeSessionLease(UUID userId, UUID bridgeId, long until,
                                                 Map<UUID, Long> conversationLeases) { }
