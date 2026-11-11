@@ -340,6 +340,9 @@ public final class ReflectiveDtoKeepCoverageTest {
     }
 
     private static Class<?> resolveClass(File apiFile, String source, String simpleName) {
+        if (simpleName.contains(".")) {
+            return forName(simpleName);
+        }
         Matcher imported = Pattern.compile(
                 "(?m)^import\\s+([\\w.]+\\." + Pattern.quote(simpleName) + ")\\s*;").matcher(source);
         if (imported.find()) {
