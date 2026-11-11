@@ -79,6 +79,10 @@ def firebaseRealtimeEnabled = providers.gradleProperty('firebaseRealtimeEnabled'
     .map { it.toBoolean() }
     .orElse(false)
     .get()
+def firebaseCallStatusEnabled = providers.gradleProperty('firebaseCallStatusEnabled')
+    .map { it.toBoolean() }
+    .orElse(false)
+    .get() && firebaseRealtimeEnabled
 
 // Web OAuth client ID for "Sign in with Google". Fed by -PgoogleWebClientId=
 // (or GOOGLE_WEB_CLIENT_ID in local.properties); empty hides every Google entry
@@ -178,6 +182,7 @@ android {
         // -PapiBaseUrl=...; defaults to the emulator's host-loopback alias.
         buildConfigField 'String', 'API_BASE_URL', "\"${apiBaseUrl.get()}\""
         buildConfigField 'boolean', 'FIREBASE_REALTIME_ENABLED', "${firebaseRealtimeEnabled}"
+        buildConfigField 'boolean', 'FIREBASE_CALL_STATUS_ENABLED', "${firebaseCallStatusEnabled}"
         buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', "\"${googleWebClientId}\""
         buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
         manifestPlaceholders = [inviteLinkHttpsHost: '']
