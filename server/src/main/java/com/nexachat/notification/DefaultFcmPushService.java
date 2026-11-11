@@ -16,23 +16,39 @@ import java.util.UUID;
 public class DefaultFcmPushService implements FcmPushService {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultFcmPushService.class);
+    private static final long DEFAULT_RING_TIMEOUT_MS = 45_000L;
 
     private final UserDeviceTokenRepository tokenRepository;
     private final FcmGateway fcmGateway;
     private final DeviceTokenService deviceTokenService;
+    private final long ringTimeoutMs;
 
     public DefaultFcmPushService(UserDeviceTokenRepository tokenRepository, FcmGateway fcmGateway) {
-        this(tokenRepository, fcmGateway, null);
+        this(tokenRepository, fcmGateway, null, DEFAULT_RING_TIMEOUT_MS);
+    }
+
+    public DefaultFcmPushService(
+            UserDeviceTokenRepository tokenRepository,
+            FcmGateway fcmGateway,
+            DeviceTokenService deviceTokenService) {
+        this(tokenRepository, fcmGateway, deviceTokenService, DEFAULT_RING_TIMEOUT_MS);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public DefaultFcmPushService(UserDeviceTokenRepository tokenRepository,
                                  FcmGateway fcmGateway,
                                  @org.springframework.context.annotation.Lazy
-                                 DeviceTokenService deviceTokenService) {
+                                 DeviceTokenService deviceTokenService,
+                                 @org.springframework.beans.factory.annotation.Value(
+                                         "${nexachat.calls.ring-timeout-ms:45000}")
+                                 long ringTimeoutMs) {
+        if (ringTimeoutMs < 1L) {
+            throw new IllegalArgumentException("ringTimeoutMs must be positive");
+        }
         this.tokenRepository = tokenRepository;
         this.fcmGateway = fcmGateway;
         this.deviceTokenService = deviceTokenService;
+        this.ringTimeoutMs = ringTimeoutMs;
     }
 
     @Override
@@ -91,9 +107,11 @@ public class DefaultFcmPushService implements FcmPushService {
         data.put("callId", callId.toString());
         data.put("conversationId", conversationId.toString());
         data.put("callerId", callerId.toString());
+        data.put("recipientId", recipientId.toString());
         data.put("callerName", callerName != null ? callerName : "");
         data.put("callType", callType != null ? callType : "AUDIO");
         data.put("timestamp", String.valueOf(timestamp));
+        data.put("ringExpiresAt", String.valueOf(Math.addExact(timestamp, ringTimeoutMs)));
 
         dispatchToTokens(tokens, data, "HIGH", 60L);
     }

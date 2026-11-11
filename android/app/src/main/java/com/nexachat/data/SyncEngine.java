@@ -2,6 +2,7 @@ package com.nexachat.data;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
@@ -12,6 +13,8 @@ import com.nexachat.core.database.MessageReactionEntity;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.MessageApi;
+import com.nexachat.core.network.SessionEvents;
+import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.ReactionSummaryDto;
@@ -33,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
@@ -58,6 +62,8 @@ public final class SyncEngine {
     private final ReactionDao reactionDao;
     private final TokenStore tokenStore;
     private final Moshi moshi;
+    private final TokenRefresher tokenRefresher;
+    private final SessionOperationTracker operationTracker;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
     private final AtomicBoolean hasPendingContinuation = new AtomicBoolean();
     /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
@@ -72,7 +78,9 @@ public final class SyncEngine {
             ConversationDao conversationDao,
             ReactionDao reactionDao,
             TokenStore tokenStore,
-            Moshi moshi) {
+            Moshi moshi,
+            TokenRefresher tokenRefresher,
+            SessionOperationTracker operationTracker) {
         this.appDatabase = appDatabase;
         this.messageApi = messageApi;
         this.messageDao = messageDao;
@@ -80,7 +88,30 @@ public final class SyncEngine {
         this.reactionDao = reactionDao;
         this.tokenStore = tokenStore;
         this.moshi = moshi;
+        this.tokenRefresher = tokenRefresher;
+        this.operationTracker = operationTracker;
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
+    }
+
+    /** Compatibility constructor for existing package-local sync tests. */
+    @VisibleForTesting
+    SyncEngine(
+            AppDatabase appDatabase,
+            MessageApi messageApi,
+            MessageDao messageDao,
+            ConversationDao conversationDao,
+            ReactionDao reactionDao,
+            TokenStore tokenStore,
+            Moshi moshi) {
+        this(appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore, moshi,
+                testTokenRefresher(tokenStore), new SessionOperationTracker());
+    }
+
+    private static TokenRefresher testTokenRefresher(TokenStore tokenStore) {
+        TokenRefresher refresher = new TokenRefresher(
+                tokenStore, new SessionEvents(), () -> null);
+        refresher.onSessionEstablished(1L);
+        return refresher;
     }
 
     /** Whether the sync stopped at the hard page bound with deltas still pending on the server. */
@@ -94,16 +125,32 @@ public final class SyncEngine {
      * Continues past the hard 20-page bound via bounded retries without stalling cursors or looping indefinitely.
      */
     public Completable sync() {
-        return syncAttempt(0).subscribeOn(Schedulers.io());
+        return Completable.defer(() -> {
+            long expectedEpoch = tokenRefresher.sessionEpoch();
+            if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+                return Completable.complete();
+            }
+            return operationTracker.track(syncAttempt(0, expectedEpoch))
+                    .onErrorResumeNext(error -> error instanceof CancellationException
+                            ? Completable.complete()
+                            : Completable.error(error));
+        }).subscribeOn(Schedulers.io());
     }
 
-    private Completable syncAttempt(int retryCount) {
-        return loadCursorState().flatMapCompletable(cursor ->
+    private Completable syncAttempt(int retryCount, long expectedEpoch) {
+        if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+            return Completable.error(new CancellationException("Sync session changed"));
+        }
+        return loadCursorState(expectedEpoch).flatMapCompletable(cursor ->
                 Single.zip(
                                 messageDao.getAllMaxSeqs(),
                                 conversationDao.getAllWatermarks(),
                                 this::mergeWatermarks)
                         .flatMapCompletable(watermarks -> {
+                            if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+                                return Completable.error(
+                                        new CancellationException("Sync session changed"));
+                            }
                             lastServerTime = cursor.serverTime;
                             if (watermarks.isEmpty()) {
                                 hasPendingContinuation.set(false);
@@ -123,16 +170,17 @@ public final class SyncEngine {
                             return Flowable.fromIterable(requests)
                                     .concatMapCompletable(request -> drainDeltaRequest(
                                             request, lastResponse, missingServerTime,
-                                            batchHasMore, cursor.userId))
+                                            batchHasMore, cursor.userId, expectedEpoch))
                                     .andThen(Completable.defer(() -> {
                                         Completable persist = (missingServerTime.get() || lastResponse.get() == null)
                                                 ? Completable.complete()
-                                                : persistServerTime(cursor, lastResponse.get());
+                                                : persistServerTime(
+                                                        cursor, lastResponse.get(), expectedEpoch);
                                         return persist.andThen(Completable.defer(() -> {
                                             if (batchHasMore.get()) {
                                                 hasPendingContinuation.set(true);
                                                 if (retryCount < MAX_BOUNDED_RETRIES) {
-                                                    return syncAttempt(retryCount + 1);
+                                                    return syncAttempt(retryCount + 1, expectedEpoch);
                                                 }
                                             } else {
                                                 hasPendingContinuation.set(false);
@@ -153,7 +201,8 @@ public final class SyncEngine {
             AtomicReference<SyncResponse> lastResponse,
             AtomicBoolean missingServerTime,
             AtomicBoolean batchHasMore,
-            @Nullable String ownerUserId) {
+            @Nullable String ownerUserId,
+            long expectedEpoch) {
         return drainDeltaPage(
                 request.getSince(),
                 new ArrayList<>(request.getWatermarks()),
@@ -161,7 +210,8 @@ public final class SyncEngine {
                 lastResponse,
                 missingServerTime,
                 batchHasMore,
-                ownerUserId);
+                ownerUserId,
+                expectedEpoch);
     }
 
     private Completable drainDeltaPage(
@@ -171,7 +221,11 @@ public final class SyncEngine {
             AtomicReference<SyncResponse> lastResponse,
             AtomicBoolean missingServerTime,
             AtomicBoolean batchHasMore,
-            @Nullable String ownerUserId) {
+            @Nullable String ownerUserId,
+            long expectedEpoch) {
+        if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+            return Completable.error(new CancellationException("Sync session changed"));
+        }
         if (watermarks.isEmpty()) {
             return Completable.complete();
         }
@@ -182,7 +236,7 @@ public final class SyncEngine {
         SyncRequest request = new SyncRequest(
                 watermarks, DELTA_LIMIT_PER_CONVERSATION, since);
         return fetchDeltaResponse(request).flatMapCompletable(response -> {
-            applyDeltaBundle(response, watermarks, ownerUserId);
+            applyDeltaBundle(response, watermarks, ownerUserId, expectedEpoch);
             lastResponse.set(response);
             if (response.getServerTime() == null) {
                 missingServerTime.set(true);
@@ -192,7 +246,7 @@ public final class SyncEngine {
                 return Completable.error(new IOException("delta sync page made no progress"));
             }
             return drainDeltaPage(since, next, page + 1, lastResponse,
-                    missingServerTime, batchHasMore, ownerUserId);
+                    missingServerTime, batchHasMore, ownerUserId, expectedEpoch);
         });
     }
 
@@ -291,7 +345,10 @@ public final class SyncEngine {
                 });
     }
 
-    private Single<SyncCursor> loadCursorState() {
+    private Single<SyncCursor> loadCursorState(long expectedEpoch) {
+        if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+            return Single.error(new CancellationException("Sync session changed"));
+        }
         return tokenStore.readTokens()
                 .map(tokens -> Optional.ofNullable(
                         TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi)))
@@ -304,15 +361,26 @@ public final class SyncEngine {
                     return tokenStore.readSyncServerTime(value)
                             .map(serverTime -> new SyncCursor(value, serverTime))
                             .defaultIfEmpty(new SyncCursor(value, null));
-                });
+                })
+                .flatMap(cursor -> tokenRefresher.isSessionCurrent(expectedEpoch)
+                        ? Single.just(cursor)
+                        : Single.error(new CancellationException("Sync session changed")));
     }
 
-    private Completable persistServerTime(SyncCursor cursor, SyncResponse response) {
+    private Completable persistServerTime(
+            SyncCursor cursor, SyncResponse response, long expectedEpoch) {
         if (cursor.userId == null || response == null || response.getServerTime() == null) {
             return Completable.complete();
         }
-        return tokenStore.saveSyncServerTime(cursor.userId, response.getServerTime())
-                .doOnComplete(() -> lastServerTime = response.getServerTime());
+        return Completable.fromAction(() -> {
+            boolean persisted = tokenRefresher.runIfSessionCurrent(expectedEpoch, () ->
+                    tokenStore.saveSyncServerTime(cursor.userId, response.getServerTime())
+                            .blockingAwait());
+            if (!persisted) {
+                throw new CancellationException("Sync session changed before cursor write");
+            }
+            lastServerTime = response.getServerTime();
+        });
     }
 
     private static final class SyncCursor {
@@ -345,7 +413,8 @@ public final class SyncEngine {
     private void applyDeltaBundle(
             SyncResponse response,
             List<SyncRequest.Watermark> requested,
-            @Nullable String ownerUserId) {
+            @Nullable String ownerUserId,
+            long expectedEpoch) {
         if (response == null) {
             return;
         }
@@ -356,137 +425,141 @@ public final class SyncEngine {
 
         final String myUserId = ownerUserId == null ? "" : ownerUserId;
 
-        appDatabase.runInTransaction(() -> {
-            for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
-                String conversationId = delta.getConversationId();
-                if (conversationId == null) continue;
+        boolean applied = tokenRefresher.runIfSessionCurrent(expectedEpoch, () ->
+                appDatabase.runInTransaction(() -> {
+                    for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
+                        String conversationId = delta.getConversationId();
+                        if (conversationId == null) continue;
 
-                // 0. Apply the caller's own per-member preferences. The server
-                //    carries them on every delta so a change made on another
-                //    device reaches Room without a separate inbox fetch.
-                if (delta.getMuted() != null) {
-                    boolean muted = Boolean.TRUE.equals(delta.getMuted());
-                    Long mutedUntil = muted
-                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil())
-                            : null;
-                    conversationDao.updateMute(conversationId, muted, mutedUntil).blockingAwait();
-                }
-                if (delta.getArchived() != null) {
-                    conversationDao.updateArchived(
-                            conversationId, Boolean.TRUE.equals(delta.getArchived())).blockingAwait();
-                }
+                        // 0. Apply the caller's own per-member preferences. The server
+                        //    carries them on every delta so a change made on another
+                        //    device reaches Room without a separate inbox fetch.
+                        if (delta.getMuted() != null) {
+                            boolean muted = Boolean.TRUE.equals(delta.getMuted());
+                            Long mutedUntil = muted
+                                    ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil())
+                                    : null;
+                            conversationDao.updateMute(conversationId, muted, mutedUntil).blockingAwait();
+                        }
+                        if (delta.getArchived() != null) {
+                            conversationDao.updateArchived(
+                                    conversationId, Boolean.TRUE.equals(delta.getArchived())).blockingAwait();
+                        }
 
-                // 1. Ingest new messages
-                if (!delta.getNewMessages().isEmpty()) {
-                    List<MessageEntity> newEntities = new ArrayList<>();
-                    List<String> reactionMsgIds = new ArrayList<>();
-                    List<MessageReactionEntity> reactionEntities = new ArrayList<>();
+                        // 1. Ingest new messages
+                        if (!delta.getNewMessages().isEmpty()) {
+                            List<MessageEntity> newEntities = new ArrayList<>();
+                            List<String> reactionMsgIds = new ArrayList<>();
+                            List<MessageReactionEntity> reactionEntities = new ArrayList<>();
 
-                    for (MessageDto dto : delta.getNewMessages()) {
-                        MessageEntity entity = toEntity(dto, conversationId);
-                        if (entity != null) {
-                            newEntities.add(entity);
-                            if (dto.getReactions() != null && !dto.getReactions().isEmpty()) {
-                                reactionMsgIds.add(entity.getId());
-                                for (ReactionSummaryDto summary : dto.getReactions()) {
-                                    MessageReactionEntity rEntity = toReactionEntity(
-                                            summary, entity.getId(), conversationId, myUserId);
-                                    if (rEntity != null) reactionEntities.add(rEntity);
+                            for (MessageDto dto : delta.getNewMessages()) {
+                                MessageEntity entity = toEntity(dto, conversationId);
+                                if (entity != null) {
+                                    newEntities.add(entity);
+                                    if (dto.getReactions() != null && !dto.getReactions().isEmpty()) {
+                                        reactionMsgIds.add(entity.getId());
+                                        for (ReactionSummaryDto summary : dto.getReactions()) {
+                                            MessageReactionEntity rEntity = toReactionEntity(
+                                                    summary, entity.getId(), conversationId, myUserId);
+                                            if (rEntity != null) reactionEntities.add(rEntity);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (!newEntities.isEmpty()) {
+                                messageDao.upsertAll(newEntities).blockingAwait();
+                                MessageEntity last = newEntities.get(newEntities.size() - 1);
+                                conversationDao.updateLastMessage(
+                                        conversationId, last.getSeq(),
+                                        last.getContent() != null ? last.getContent() : last.getType(),
+                                        last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
+                                        last.getCreatedAt()
+                                ).blockingAwait();
+                            }
+                            if (!reactionMsgIds.isEmpty()) {
+                                reactionDao.replaceForMessagesInTransaction(reactionMsgIds, reactionEntities);
+                            }
+                        }
+
+                        // 2. Ingest edited messages
+                        if (!delta.getEditedMessages().isEmpty()) {
+                            for (MessageDto dto : delta.getEditedMessages()) {
+                                MessageEntity entity = toEntity(dto, conversationId);
+                                if (entity != null) {
+                                    messageDao.update(entity).blockingAwait();
+                                    conversationDao.updateLastMessageContent(
+                                            conversationId, entity.getSeq(),
+                                            entity.getContent() != null ? entity.getContent() : entity.getType()
+                                    ).blockingAwait();
                                 }
                             }
                         }
-                    }
 
-                    if (!newEntities.isEmpty()) {
-                        messageDao.upsertAll(newEntities).blockingAwait();
-                        MessageEntity last = newEntities.get(newEntities.size() - 1);
-                        conversationDao.updateLastMessage(
-                                conversationId, last.getSeq(),
-                                last.getContent() != null ? last.getContent() : last.getType(),
-                                last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
-                                last.getCreatedAt()
-                        ).blockingAwait();
-                    }
-                    if (!reactionMsgIds.isEmpty()) {
-                        reactionDao.replaceForMessagesInTransaction(reactionMsgIds, reactionEntities);
-                    }
-                }
-
-                // 2. Ingest edited messages
-                if (!delta.getEditedMessages().isEmpty()) {
-                    for (MessageDto dto : delta.getEditedMessages()) {
-                        MessageEntity entity = toEntity(dto, conversationId);
-                        if (entity != null) {
-                            messageDao.update(entity).blockingAwait();
-                            conversationDao.updateLastMessageContent(
-                                    conversationId, entity.getSeq(),
-                                    entity.getContent() != null ? entity.getContent() : entity.getType()
-                            ).blockingAwait();
-                        }
-                    }
-                }
-
-                // 3. Ingest deleted message IDs
-                if (!delta.getDeletedMessageIds().isEmpty()) {
-                    for (String deletedId : delta.getDeletedMessageIds()) {
-                        MessageEntity existing = messageDao.byId(deletedId).blockingGet();
-                        if (existing != null && existing.getDeletedAtEpochMs() == null) {
-                            MessageEntity tombstone = new MessageEntity(
-                                    existing.getId(), existing.getConversationId(), existing.getSeq(),
-                                    existing.getSenderId(), existing.getSenderDisplayName(), existing.getType(),
-                                    "", existing.getClientMessageId(), existing.getReplyToId(),
-                                    existing.getReplyToSenderName(), existing.getReplyToSnippet(),
-                                    existing.getCreatedAt(), null, existing.getEditedAtEpochMs(),
-                                    System.currentTimeMillis()
-                            );
-                            messageDao.update(tombstone).blockingAwait();
-                            reactionDao.deleteForMessageInTransaction(deletedId);
-                            messageDao.clearReplySnippets(deletedId).blockingAwait();
-                            // Keep the inbox preview neutral when the deleted message was the
-                            // conversation's last one, as the live delete path already does.
-                            ConversationEntity row = conversationDao.byId(existing.getConversationId()).blockingGet();
-                            if (row != null && row.getLastMessageSeq() == existing.getSeq()) {
-                                conversationDao.markLastMessageDeleted(existing.getConversationId()).blockingAwait();
+                        // 3. Ingest deleted message IDs
+                        if (!delta.getDeletedMessageIds().isEmpty()) {
+                            for (String deletedId : delta.getDeletedMessageIds()) {
+                                MessageEntity existing = messageDao.byId(deletedId).blockingGet();
+                                if (existing != null && existing.getDeletedAtEpochMs() == null) {
+                                    MessageEntity tombstone = new MessageEntity(
+                                            existing.getId(), existing.getConversationId(), existing.getSeq(),
+                                            existing.getSenderId(), existing.getSenderDisplayName(), existing.getType(),
+                                            "", existing.getClientMessageId(), existing.getReplyToId(),
+                                            existing.getReplyToSenderName(), existing.getReplyToSnippet(),
+                                            existing.getCreatedAt(), null, existing.getEditedAtEpochMs(),
+                                            System.currentTimeMillis()
+                                    );
+                                    messageDao.update(tombstone).blockingAwait();
+                                    reactionDao.deleteForMessageInTransaction(deletedId);
+                                    messageDao.clearReplySnippets(deletedId).blockingAwait();
+                                    // Keep the inbox preview neutral when the deleted message was the
+                                    // conversation's last one, as the live delete path already does.
+                                    ConversationEntity row = conversationDao.byId(existing.getConversationId()).blockingGet();
+                                    if (row != null && row.getLastMessageSeq() == existing.getSeq()) {
+                                        conversationDao.markLastMessageDeleted(existing.getConversationId()).blockingAwait();
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                // 4. Ingest reaction updates. A full-refresh delta carries an
-                // empty partial page because the event log was purged; applying
-                // it would erase nothing but cannot repair local state either,
-                // so history reload remains the authoritative path.
-                if (!delta.isReactionsFullRefresh() && !delta.getReactionUpdates().isEmpty()) {
-                    for (ReactionUpdateDto update : delta.getReactionUpdates()) {
-                        String msgId = update.getMessageId();
-                        if (msgId != null) {
-                            List<MessageReactionEntity> rEntities = new ArrayList<>();
-                            for (ReactionSummaryDto summary : update.getReactions()) {
-                                MessageReactionEntity rEntity = toReactionEntity(
-                                        summary, msgId, conversationId, myUserId);
-                                if (rEntity != null) rEntities.add(rEntity);
+                        // 4. Ingest reaction updates. A full-refresh delta carries an
+                        // empty partial page because the event log was purged; applying
+                        // it would erase nothing but cannot repair local state either,
+                        // so history reload remains the authoritative path.
+                        if (!delta.isReactionsFullRefresh() && !delta.getReactionUpdates().isEmpty()) {
+                            for (ReactionUpdateDto update : delta.getReactionUpdates()) {
+                                String msgId = update.getMessageId();
+                                if (msgId != null) {
+                                    List<MessageReactionEntity> rEntities = new ArrayList<>();
+                                    for (ReactionSummaryDto summary : update.getReactions()) {
+                                        MessageReactionEntity rEntity = toReactionEntity(
+                                                summary, msgId, conversationId, myUserId);
+                                        if (rEntity != null) rEntities.add(rEntity);
+                                    }
+                                    reactionDao.replaceForMessageInTransaction(msgId, rEntities);
+                                }
                             }
-                            reactionDao.replaceForMessageInTransaction(msgId, rEntities);
                         }
+
+                        // 5. Apply caller-only member flags (pinned, pinnedAt).
+                        if (delta.getPinned() != null) {
+                            boolean pinned = Boolean.TRUE.equals(delta.getPinned());
+                            Long pinnedAt = delta.getPinnedAt() != null
+                                    ? TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())
+                                    : null;
+                            conversationDao.updatePin(conversationId, pinned, pinnedAt).blockingAwait();
+                        }
+
+                        // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered
+                        //    frames; a delta bundle says nothing about what the peer has read.
                     }
-                }
-
-                // 5. Apply caller-only member flags (pinned, pinnedAt).
-                if (delta.getPinned() != null) {
-                    boolean pinned = Boolean.TRUE.equals(delta.getPinned());
-                    Long pinnedAt = delta.getPinnedAt() != null
-                            ? TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())
-                            : null;
-                    conversationDao.updatePin(conversationId, pinned, pinnedAt).blockingAwait();
-                }
-
-                // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered
-                //    frames; a delta bundle says nothing about what the peer has read.
-            }
-            for (String conversationId : missing) {
-                LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId, myUserId);
-            }
-        });
+                    for (String conversationId : missing) {
+                        LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId, myUserId);
+                    }
+                }));
+        if (!applied) {
+            throw new CancellationException("Sync session changed before Room transaction");
+        }
     }
 
     @Nullable

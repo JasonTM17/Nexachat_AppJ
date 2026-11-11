@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
+import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.observers.TestObserver;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -117,6 +120,156 @@ public final class CallManagerTest {
 
         assertEquals("Người gọi không xác định", session().getPeerDisplayName());
         assertFalse("peer-1".equals(session().getPeerDisplayName()));
+    }
+
+    @Test
+    public void stalePushTimestampCannotCreateIncomingCallAfterItsRingDeadline() {
+        manager.hydrateIncomingCall(
+                "call-stale", "conversation-1", "peer-1", "Peer", nowMs - 100L);
+        scheduler.runCurrent();
+
+        assertEquals(CallState.IDLE, session().getState());
+        assertEquals(0, media.startCount);
+    }
+
+    @Test
+    public void pushDeadlineMinusOneIsAdmittedAndExpiresAtTheAbsoluteDeadline() {
+        long deadline = nowMs + 1L;
+        TestObserver<CallSession> admission = admitPush("call-boundary", deadline, () -> true);
+        scheduler.runCurrent();
+
+        admission.assertValueCount(1);
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+        scheduler.advanceBy(1L);
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.MISSED, session().getEndReason());
+        assertEquals(0, media.startCount);
+    }
+
+    @Test
+    public void pushAtOrAfterItsDeadlineIsRejected() {
+        long deadline = nowMs;
+        TestObserver<CallSession> atDeadline = admitPush("call-at-deadline", deadline, () -> true);
+        scheduler.runCurrent();
+        atDeadline.assertComplete();
+
+        nowMs = deadline + 1L;
+        TestObserver<CallSession> afterDeadline = admitPush(
+                "call-after-deadline", deadline, () -> true);
+        scheduler.runCurrent();
+        afterDeadline.assertComplete();
+        assertEquals(CallState.IDLE, session().getState());
+    }
+
+    @Test
+    public void duplicatePushDoesNotResetTheAbsoluteRingDeadline() {
+        long deadline = nowMs + 20L;
+        TestObserver<CallSession> first = admitPush("call-duplicate", deadline, () -> true);
+        scheduler.runCurrent();
+        first.assertValueCount(1);
+
+        scheduler.advanceBy(10L);
+        TestObserver<CallSession> duplicate = admitPush("call-duplicate", deadline, () -> true);
+        scheduler.runCurrent();
+        duplicate.assertComplete();
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+        scheduler.advanceBy(10L);
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.MISSED, session().getEndReason());
+    }
+
+    @Test
+    public void pushIsRejectedWhileAnotherCallIsBusy() {
+        startOutgoing();
+        TestObserver<CallSession> admission = admitPush(
+                "call-busy", nowMs + 20L, () -> true);
+        scheduler.runCurrent();
+
+        admission.assertComplete();
+        assertEquals(CallState.OUTGOING_RINGING, session().getState());
+        assertEquals("call-1", session().getCallId());
+    }
+
+    @Test
+    public void cancelledCallIdCannotBeRecreatedByAQueuedPush() {
+        signaling.emit(event(CallEvent.Type.CALL_CANCELLED, "call-cancelled", null));
+        scheduler.runCurrent();
+
+        TestObserver<CallSession> admission = admitPush(
+                "call-cancelled", nowMs + 20L, () -> true);
+        scheduler.runCurrent();
+
+        admission.assertComplete();
+        assertEquals(CallState.IDLE, session().getState());
+    }
+
+    @Test
+    public void delayedStompInviteForCancelledCallIdIsIgnored() {
+        signaling.emit(event(CallEvent.Type.CALL_CANCELLED, "call-cancelled-stomp", null));
+        signaling.emit(invite("call-cancelled-stomp", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.IDLE, session().getState());
+    }
+
+    @Test
+    public void terminalIdCacheOverflowFailsClosedForIncomingInvites() {
+        for (int index = 0; index <= 256; index++) {
+            signaling.emit(event(CallEvent.Type.CALL_CANCELLED, "cancelled-" + index, null));
+        }
+        signaling.emit(invite("call-after-terminal-overflow", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.IDLE, session().getState());
+    }
+
+    @Test
+    public void sessionChangeDiscardsPushCallBeforeItCanActivateMedia() {
+        AtomicBoolean sessionCurrent = new AtomicBoolean(true);
+        TestObserver<CallSession> admission = admitPush(
+                "call-old-account", nowMs + 20L, sessionCurrent::get);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+
+        sessionCurrent.set(false);
+        manager.onSessionStateChanged();
+        scheduler.runCurrent();
+        manager.accept("call-old-account");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.IDLE, session().getState());
+        assertEquals(0, media.startCount);
+        assertTrue(signaling.sent.isEmpty());
+    }
+
+    @Test
+    public void acceptedPushCallCanHangUpAfterItsRingDeadline() {
+        long deadline = nowMs + 25L;
+        TestObserver<CallSession> admission = admitPush("call-push-active", deadline, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+
+        signaling.emit(invite("call-push-active", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+        assertEquals(CallState.INCOMING_RINGING, session().getState());
+
+        manager.accept("call-push-active");
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, session().getState());
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, session().getState());
+
+        scheduler.advanceBy(deadline - nowMs);
+        manager.hangUp();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.COMPLETED, session().getEndReason());
+        assertEquals(CallSignal.Type.END, signaling.lastSignal().getType());
+        assertEquals(1, media.stopCount);
     }
 
     @Test
@@ -299,6 +452,23 @@ public final class CallManagerTest {
     private void startOutgoing() {
         manager.startOutgoing("conversation-1", "peer-1", "Peer");
         scheduler.runCurrent();
+    }
+
+    private TestObserver<CallSession> admitPush(
+            String callId, long ringExpiresAtMs, java.util.function.BooleanSupplier sessionCurrent) {
+        long startedAt = Math.min(nowMs, ringExpiresAtMs - 1L);
+        Maybe<CallSession> admission = manager.admitIncomingPush(
+                callId,
+                "conversation-1",
+                "peer-1",
+                "Peer",
+                startedAt,
+                "user-me",
+                1L,
+                ringExpiresAtMs,
+                sessionCurrent);
+        TestObserver<CallSession> observer = admission.test();
+        return observer;
     }
 
     private CallSession session() {

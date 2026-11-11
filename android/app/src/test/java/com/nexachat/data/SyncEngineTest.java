@@ -26,6 +26,8 @@ import com.nexachat.core.database.OutboxDao;
 import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.MessageApi;
+import com.nexachat.core.network.SessionEvents;
+import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.ReactionSummaryDto;
 import com.nexachat.core.network.dto.ReactionUpdateDto;
@@ -45,6 +47,8 @@ import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.MediaType;
@@ -66,6 +70,8 @@ public final class SyncEngineTest {
     private OutboxDao outboxDao;
     private TokenStore tokenStore;
     private Moshi moshi;
+    private TokenRefresher tokenRefresher;
+    private SessionOperationTracker operationTracker;
     private SyncEngine syncEngine;
 
     @Before
@@ -77,6 +83,9 @@ public final class SyncEngineTest {
         reactionDao = mock(ReactionDao.class);
         tokenStore = mock(TokenStore.class);
         moshi = new Moshi.Builder().build();
+        tokenRefresher = new TokenRefresher(tokenStore, new SessionEvents(), () -> null);
+        tokenRefresher.onSessionEstablished(1L);
+        operationTracker = new SessionOperationTracker();
 
         // Make runInTransaction execute the runnable immediately
         doAnswer(invocation -> {
@@ -91,8 +100,11 @@ public final class SyncEngineTest {
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
+        when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets(anyString())).thenReturn(Completable.complete());
         when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
+                .thenReturn(Completable.complete());
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
                 .thenReturn(Completable.complete());
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
         when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
@@ -117,7 +129,9 @@ public final class SyncEngineTest {
                 conversationDao,
                 reactionDao,
                 tokenStore,
-                moshi
+                moshi,
+                tokenRefresher,
+                operationTracker
         );
     }
 
@@ -488,7 +502,8 @@ public final class SyncEngineTest {
         firstSync.assertComplete();
 
         syncEngine = new SyncEngine(
-                appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore, moshi);
+                appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore,
+                moshi, tokenRefresher, operationTracker);
         TestObserver<Void> secondSync = syncEngine.sync().test();
         secondSync.awaitCount(1);
         secondSync.assertComplete();
@@ -802,6 +817,137 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
+    }
+
+    @Test
+    public void syncDiscardsDelayedAccountAResponseAfterSwitchToB() throws Exception {
+        assertDelayedResponseDiscardedAfterSessionChange("user-b");
+    }
+
+    @Test
+    public void syncDiscardsDelayedAccountAResponseAfterSameAccountRelogin() throws Exception {
+        assertDelayedResponseDiscardedAfterSessionChange("user-a");
+    }
+
+    @Test
+    public void syncRegistersDelayedRequestForSessionOperationCancellation() throws Exception {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("conversation-a", 0L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")));
+
+        CountDownLatch requestStarted = new CountDownLatch(1);
+        CountDownLatch releaseResponse = new CountDownLatch(1);
+        CountDownLatch responseReturned = new CountDownLatch(1);
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        when(call.execute()).thenAnswer(invocation -> {
+            requestStarted.countDown();
+            try {
+                if (!releaseResponse.await(5, TimeUnit.SECONDS)) {
+                    throw new java.io.IOException("test response was not released");
+                }
+                return Response.success(new SyncResponse(Collections.emptyList(), "cursor-a"));
+            } finally {
+                responseReturned.countDown();
+            }
+        });
+        org.mockito.Mockito.doAnswer(invocation -> {
+            releaseResponse.countDown();
+            return null;
+        }).when(call).cancel();
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        assertTrue("sync request should reach the delayed response", requestStarted.await(5, TimeUnit.SECONDS));
+        long newGeneration = operationTracker.invalidate();
+
+        verify(call).cancel();
+        assertTrue("cancelled request should leave execute", responseReturned.await(5, TimeUnit.SECONDS));
+        operationTracker.activate(newGeneration);
+        observer.dispose();
+        verify(messageDao, never()).upsertAll(anyList());
+        verify(tokenStore, never()).saveSyncServerTime("user-a", "cursor-a");
+    }
+
+    @Test
+    public void syncRechecksSessionAtCursorWriteAfterRoomBoundary() {
+        TokenRefresher sessionGate = mock(TokenRefresher.class);
+        when(sessionGate.sessionEpoch()).thenReturn(1L);
+        when(sessionGate.isSessionCurrent(1L)).thenReturn(true);
+        AtomicInteger fenceCalls = new AtomicInteger();
+        when(sessionGate.runIfSessionCurrent(eq(1L), any(Runnable.class)))
+                .thenAnswer(invocation -> {
+                    if (fenceCalls.getAndIncrement() != 0) return false;
+                    ((Runnable) invocation.getArgument(1)).run();
+                    return true;
+                });
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("conversation-a", 0L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")));
+        SyncResponse response = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "conversation-a", List.of(), List.of(), List.of(), List.of(), 0L, false)),
+                "cursor-a");
+        Call<SyncResponse> call = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+        SyncEngine gatedSyncEngine = new SyncEngine(
+                appDatabase, messageApi, messageDao, conversationDao, reactionDao,
+                tokenStore, moshi, sessionGate, operationTracker);
+
+        TestObserver<Void> observer = gatedSyncEngine.sync().test();
+        observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+
+        verify(appDatabase).runInTransaction(any(Runnable.class));
+        verify(tokenStore, never()).saveSyncServerTime("user-a", "cursor-a");
+        org.junit.Assert.assertEquals("Room and cursor each need an epoch fence", 2, fenceCalls.get());
+    }
+
+    private void assertDelayedResponseDiscardedAfterSessionChange(String nextUserId) throws Exception {
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("conversation-a", 0L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")));
+
+        CountDownLatch requestStarted = new CountDownLatch(1);
+        CountDownLatch releaseResponse = new CountDownLatch(1);
+        SyncResponse response = new SyncResponse(List.of(new SyncResponse.ConversationDeltaDto(
+                "conversation-a",
+                List.of(message("message-a", 1L, "conversation-a", "private A data")),
+                List.of(), List.of(), List.of(), 1L, false)), "cursor-a");
+        @SuppressWarnings("unchecked")
+        Call<SyncResponse> call = mock(Call.class);
+        when(call.clone()).thenReturn(call);
+        try {
+            when(call.execute()).thenAnswer(invocation -> {
+                requestStarted.countDown();
+                if (!releaseResponse.await(5, TimeUnit.SECONDS)) {
+                    throw new java.io.IOException("test response was not released");
+                }
+                return Response.success(response);
+            });
+        } catch (java.io.IOException ignored) {
+            throw new AssertionError(ignored);
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+
+        TestObserver<Void> observer = syncEngine.sync().test();
+        assertTrue("sync request should reach the delayed response", requestStarted.await(5, TimeUnit.SECONDS));
+
+        // Simulate logout followed by either a different account or a fresh
+        // login for the same account while the already-started response is held.
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt(nextUserId), 1800000000000L, "refresh-next")));
+        tokenRefresher.onSessionEstablished(2L);
+        releaseResponse.countDown();
+
+        observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+        verify(messageDao, never()).upsertAll(anyList());
+        verify(tokenStore, never()).saveSyncServerTime("user-a", "cursor-a");
     }
 
     @Test

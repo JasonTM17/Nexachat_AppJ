@@ -258,11 +258,33 @@ class FcmPushServiceTest {
         MockFcmGateway.SentPush push = sent.get(0);
         assertThat(push.data().get("type")).isEqualTo("CALL_INVITE");
         assertThat(push.data().get("callId")).isEqualTo(callId.toString());
+        assertThat(push.data().get("recipientId")).isEqualTo(userId.toString());
+        assertThat(push.data().get("ringExpiresAt")).isEqualTo(String.valueOf(nowMs + 45_000L));
         assertThat(push.data().get("callerName")).isEqualTo("Trần Thị B");
         assertThat(push.data().get("callType")).isEqualTo("AUDIO");
 
         byte[] jsonBytes = objectMapper.writeValueAsString(push.data()).getBytes(StandardCharsets.UTF_8);
         assertThat(jsonBytes.length).as("Call invite payload must be < 500 bytes").isLessThan(500);
+    }
+
+    @Test
+    void callInviteExpiryUsesTheConfiguredServerRingTimeout() {
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(
+                user, "fcm-token-configured-ring", UserDeviceToken.Platform.ANDROID, "Pixel 8");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+        DefaultFcmPushService configuredPushService = new DefaultFcmPushService(
+                tokenRepository, mockGateway, null, 30_000L);
+        long nowMs = System.currentTimeMillis();
+
+        configuredPushService.sendCallInviteNotification(
+                userId, UUID.randomUUID(), conversationId, UUID.randomUUID(), "Alice", "AUDIO", nowMs);
+
+        assertThat(mockGateway.getSentPushes()).hasSize(1);
+        assertThat(mockGateway.getSentPushes().get(0).data().get("recipientId"))
+                .isEqualTo(userId.toString());
+        assertThat(mockGateway.getSentPushes().get(0).data().get("ringExpiresAt"))
+                .isEqualTo(String.valueOf(nowMs + 30_000L));
     }
 
     @Test
