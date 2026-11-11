@@ -27,8 +27,9 @@ class DirectConversationCreatorTest {
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         User caller = User.create("+84901110001", "hash", "Caller");
         User peer = User.create("+84901110002", "hash", "Peer");
-        when(users.getReferenceById(callerId)).thenReturn(caller);
-        when(users.getReferenceById(peerId)).thenReturn(peer);
+        ReflectionTestUtils.setField(caller, "id", callerId);
+        ReflectionTestUtils.setField(peer, "id", peerId);
+        when(users.findActiveUsersByIdsForUpdate(List.of(callerId, peerId))).thenReturn(List.of(caller, peer));
         when(conversations.saveAndFlush(any(Conversation.class))).thenAnswer(invocation -> {
             Conversation saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "id", conversationId);
