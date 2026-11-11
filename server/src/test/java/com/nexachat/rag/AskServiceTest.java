@@ -5,6 +5,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryConsentRepository.ConsentSnapshot;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +59,7 @@ class AskServiceTest {
         senderId = UUID.randomUUID();
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
-        when(consentRepository.isConsented(userId)).thenReturn(false);
+        setConsent(false);
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
     }
 
@@ -111,7 +112,7 @@ class AskServiceTest {
         properties.getRetrieval().setExtractiveThreshold(1.01);
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         when(llmAnswerService.answer(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
 
@@ -143,7 +144,7 @@ class AskServiceTest {
         when(embeddingService.embedQuestion(any(), anyBoolean()))
                 .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
                         new float[256], "openai-compatible:gemini-embedding-001"));
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         AskService modelAwareService = new AskService(
                 rateLimiter, conversationRepository, memberRepository, consentRepository,
                 embeddingService, retrieval, questionCache, llmAnswerService, properties, stats,
@@ -164,7 +165,7 @@ class AskServiceTest {
                 "The budget is 1,200 dollars.",
                 List.of(new RagCitation(fact.id(), 1, "The budget is 1,200 dollars.")),
                 "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN);
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -205,7 +206,7 @@ class AskServiceTest {
                 "La migration est le 14 mars.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
                 "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -224,7 +225,7 @@ class AskServiceTest {
                 "La migration est le 14 mars.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
                 "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
@@ -258,5 +259,10 @@ class AskServiceTest {
                 senderId, "User", content);
         index.add(message);
         return message;
+    }
+
+    private void setConsent(boolean consented) {
+        when(consentRepository.isConsented(userId)).thenReturn(consented);
+        when(consentRepository.snapshot(userId)).thenReturn(new ConsentSnapshot(consented, consented ? 1 : 0));
     }
 }

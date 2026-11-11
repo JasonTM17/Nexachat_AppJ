@@ -3,6 +3,7 @@ package com.nexachat.rag;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryConsentRepository.ConsentSnapshot;
 import com.nexachat.summary.SummaryLanguage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -63,6 +65,7 @@ class AskServiceStampedeTest {
     private final AtomicInteger embeddingCalls = new AtomicInteger();
     private final AtomicInteger answerProviderCalls = new AtomicInteger();
     private final AtomicBoolean consented = new AtomicBoolean();
+    private final AtomicLong consentEpoch = new AtomicLong();
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private AskService service;
@@ -77,6 +80,7 @@ class AskServiceStampedeTest {
         conversationId = UUID.randomUUID();
         userId = UUID.randomUUID();
         consented.set(true);
+        consentEpoch.set(1);
         nonConsentedRetrievalReached = new CountDownLatch(1);
         fact = RagTestSupport.message(conversationId, UUID.randomUUID(), 1, UUID.randomUUID(),
                 "User", "The core migration is scheduled for March 14 at 02:00.");
@@ -88,6 +92,8 @@ class AskServiceStampedeTest {
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(eq(conversationId), any())).thenReturn(true);
         when(consentRepository.isConsented(any())).thenAnswer(invocation -> consented.get());
+        when(consentRepository.snapshot(any())).thenAnswer(invocation ->
+                new ConsentSnapshot(consented.get(), consentEpoch.get()));
         when(embeddingService.embedQuestion(any(), anyBoolean())).thenAnswer(invocation -> {
             embeddingCalls.incrementAndGet();
             return new RagEmbeddingService.EmbeddingOutcome(new float[] {1f, 0f}, "test-embedding-model");
@@ -104,9 +110,9 @@ class AskServiceStampedeTest {
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of());
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         doAnswer(invocation -> {
-            cachedByQuestionHash.put(invocation.getArgument(2), invocation.getArgument(4));
-            return null;
-        }).when(questionCache).save(any(), any(), any(), any(), any());
+            cachedByQuestionHash.put(invocation.getArgument(4), invocation.getArgument(6));
+            return true;
+        }).when(questionCache).saveIfConsentSnapshotMatches(any(), any(), any(), any(), any(), any(), any());
 
         service = new AskService(rateLimiter, conversationRepository, memberRepository,
                 consentRepository, embeddingService, retrievalService, questionCache,
@@ -186,6 +192,7 @@ class AskServiceStampedeTest {
         try {
             assertThat(providerEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
             consented.set(false);
+            consentEpoch.incrementAndGet();
 
             Future<AskResponse> nonConsentedAsk = executor.submit(
                     () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
@@ -196,9 +203,44 @@ class AskServiceStampedeTest {
             releaseProvider.countDown();
         }
 
-        assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.LLM);
+        assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(answerProviderCalls.get()).isEqualTo(1);
         verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void revokeAndReenableDoesNotJoinOrReturnAnOldConsentEpochAsk() throws Exception {
+        CountDownLatch firstProviderEntered = new CountDownLatch(1);
+        CountDownLatch secondProviderEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            int call = answerProviderCalls.incrementAndGet();
+            (call == 1 ? firstProviderEntered : secondProviderEntered).countDown();
+            if (!releaseProvider.await(WAIT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("the provider was never released");
+            }
+            return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+        });
+
+        Future<AskResponse> oldEpochAsk = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        assertThat(firstProviderEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        consented.set(false);
+        consentEpoch.incrementAndGet();
+        consented.set(true);
+        consentEpoch.incrementAndGet();
+
+        Future<AskResponse> newEpochAsk = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(secondProviderEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            releaseProvider.countDown();
+        }
+
+        assertThat(oldEpochAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(newEpochAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.LLM);
+        assertThat(answerProviderCalls.get()).isEqualTo(2);
     }
 
     @Test

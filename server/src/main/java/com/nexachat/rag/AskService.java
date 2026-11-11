@@ -57,8 +57,8 @@ public class AskService {
      * One cold-cache computation per identical ask. Followers wait for the
      * leader's response instead of repeating the embedding, retrieval and
      * provider work. Conversation and user identify the membership scope, and
-     * consent state prevents a request from joining work started under a
-     * different consent decision.
+     * the consent snapshot prevents a request from joining work started under
+     * a different consent epoch.
      */
     private final ConcurrentHashMap<AskKey, CompletableFuture<AskResponse>> inFlight =
             new ConcurrentHashMap<>();
@@ -109,6 +109,15 @@ public class AskService {
     }
 
     public AskResponse ask(UUID conversationId, UUID userId, AskRequest request) {
+        AskExecution execution = askForResponse(conversationId, userId, request);
+        if (!execution.consentSnapshot().equals(consentRepository.snapshot(userId))) {
+            stats.recordNotFound();
+            return AskResponse.notFound(execution.response().contextOmitted());
+        }
+        return execution.response();
+    }
+
+    AskExecution askForResponse(UUID conversationId, UUID userId, AskRequest request) {
         stats.recordRequest();
         rateLimiter.consume(userId);
         if (!conversationRepository.existsById(conversationId)) {
@@ -118,21 +127,22 @@ public class AskService {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required");
         }
         boolean contextOmitted = aiOptOuts.hasOptedOutMessages(conversationId);
+        SummaryConsentRepository.ConsentSnapshot consentSnapshot = consentRepository.snapshot(userId);
         if (!properties.isEnabled()) {
             stats.recordNotFound();
-            return AskResponse.notFound(contextOmitted);
+            return new AskExecution(consentSnapshot, AskResponse.notFound(contextOmitted));
         }
 
-        boolean consented = consentRepository.isConsented(userId);
         String question = request.question().strip();
         SummaryLanguage language = request.language() == null || request.language() == SummaryLanguage.AUTO
                 ? detectQuestionLanguage(question)
                 : request.language();
         String questionHash = RagHashes.questionHash(RagQuestionNormalizer.normalize(question));
 
-        AskKey key = new AskKey(conversationId, userId, questionHash, language, consented);
-        return computeOnce(key, () -> compute(
-                conversationId, userId, question, language, questionHash, consented, contextOmitted));
+        AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot);
+        AskResponse response = computeOnce(key, () -> compute(
+                conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted));
+        return new AskExecution(consentSnapshot, response);
     }
 
     /**
@@ -182,8 +192,9 @@ public class AskService {
             String question,
             SummaryLanguage language,
             String questionHash,
-            boolean consented,
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted) {
+        boolean consented = consentSnapshot.consented();
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(question, consented);
 
@@ -220,7 +231,7 @@ public class AskService {
         if (isLookupLike(question)
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted, contentVersion);
+                    userId, consentSnapshot, contextOmitted, contentVersion);
         }
 
         if (consented) {
@@ -230,7 +241,7 @@ public class AskService {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
                         llmAnswer, retrieval.messages(), AskMode.LLM, language, contentVersion);
                 if (answer != null) {
-                    saveAnswer(conversationId, questionEmbedding, questionHash, answer);
+                    saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
                     stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
                     return toResponse(answer, AskMode.LLM, 1, retrieval.inputChars(), false,
                             llmAnswer.provider(), contextOmitted);
@@ -240,7 +251,7 @@ public class AskService {
 
         if (retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    contextOmitted, contentVersion);
+                    userId, consentSnapshot, contextOmitted, contentVersion);
         }
         stats.recordNotFound();
         return AskResponse.notFound(contextOmitted);
@@ -252,6 +263,8 @@ public class AskService {
             String questionHash,
             SummaryLanguage language,
             RetrievalResult retrieval,
+            UUID userId,
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
             long contentVersion) {
         RagQuestionCache.CachedAsk answer = toCachedAsk(
@@ -260,19 +273,21 @@ public class AskService {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted);
         }
-        saveAnswer(conversationId, questionEmbedding, questionHash, answer);
+        saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
         stats.recordExtractive();
         return toResponse(answer, AskMode.EXTRACTIVE, 0, 0, false, null, contextOmitted);
     }
 
     private void saveAnswer(
+            UUID userId,
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             UUID conversationId,
             RagEmbeddingService.EmbeddingOutcome questionEmbedding,
             String questionHash,
             RagQuestionCache.CachedAsk answer) {
         try {
-            questionCache.save(conversationId, questionEmbedding.model(), questionHash,
-                    questionEmbedding.vector(), answer);
+            questionCache.saveIfConsentSnapshotMatches(userId, consentSnapshot, conversationId,
+                    questionEmbedding.model(), questionHash, questionEmbedding.vector(), answer);
         } catch (RuntimeException exception) {
             // A cache write failure must never fail the answer.
             log.debug("ask cache write failed: {}", exception.getClass().getSimpleName());
@@ -380,6 +395,6 @@ public class AskService {
             UUID userId,
             String questionHash,
             SummaryLanguage language,
-            boolean consented) {
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot) {
     }
 }

@@ -7,8 +7,10 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.message.dto.SendMessageRequest;
+import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.user.UserSettingsService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -42,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -84,6 +88,10 @@ class AskApiIT {
     private JwtService jwtService;
     @Autowired
     private MessageService messageService;
+    @Autowired
+    private UserSettingsService userSettingsService;
+    @MockitoSpyBean
+    private SummaryConsentRepository consentRepository;
     @MockitoSpyBean
     private RagQuestionCache questionCache;
     @MockitoSpyBean
@@ -248,8 +256,10 @@ class AskApiIT {
                 }
             }
             return invocation.callRealMethod();
-        }).when(questionCache).save(eq(conversationId), any(String.class), any(String.class),
-                any(float[].class), any(RagQuestionCache.CachedAsk.class));
+        }).when(questionCache).saveIfConsentSnapshotMatches(any(),
+                any(SummaryConsentRepository.ConsentSnapshot.class), eq(conversationId),
+                any(String.class), any(String.class), any(float[].class),
+                any(RagQuestionCache.CachedAsk.class));
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -273,6 +283,120 @@ class AskApiIT {
             assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
         } finally {
             allowSave.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void inFlightAskCannotPersistOrReturnAnswerAfterConsentRevocation() throws Exception {
+        grantAiConsent(caller);
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+        CountDownLatch saveReached = new CountDownLatch(1);
+        CountDownLatch allowSave = new CountDownLatch(1);
+        AtomicBoolean pauseFirstSave = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (pauseFirstSave.compareAndSet(true, false)) {
+                saveReached.countDown();
+                if (!allowSave.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume the consented ask cache write");
+                }
+            }
+            return invocation.callRealMethod();
+        }).when(questionCache).saveIfConsentSnapshotMatches(any(),
+                any(SummaryConsentRepository.ConsentSnapshot.class), eq(conversationId),
+                any(String.class), any(String.class), any(float[].class),
+                any(RagQuestionCache.CachedAsk.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlightAsk = executor.submit(() -> postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(saveReached.await(10, TimeUnit.SECONDS)).isTrue();
+            userSettingsService.updateSettings(caller.getId(), null, null, false);
+            allowSave.countDown();
+
+            JsonNode revokedResponse = objectMapper.readTree(
+                    inFlightAsk.get(10, TimeUnit.SECONDS).getResponse().getContentAsString());
+            assertThat(revokedResponse.path("mode").asText()).isEqualTo("NOT_FOUND");
+            assertThat(revokedResponse.path("answer").isNull()).isTrue();
+            Integer cacheRows = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                    Integer.class,
+                    conversationId);
+            assertThat(cacheRows).isZero();
+            Long consentEpoch = jdbcTemplate.queryForObject(
+                    "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, caller.getId());
+            assertThat(consentEpoch).isEqualTo(1);
+
+            JsonNode nonConsentingMemberResponse = objectMapper.readTree(
+                    postAsk(peer, question).andExpect(status().isOk()).andReturn()
+                            .getResponse().getContentAsString());
+            assertThat(nonConsentingMemberResponse.path("mode").asText()).isNotEqualTo("CACHE");
+            assertThat(nonConsentingMemberResponse.path("usage").path("cached").asBoolean()).isFalse();
+            Integer cacheRowsAfterNonConsentingAsk = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                    Integer.class,
+                    conversationId);
+            assertThat(cacheRowsAfterNonConsentingAsk).isZero();
+        } finally {
+            allowSave.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void responseWriteHoldsConsentLockUntilTheBodyIsFlushed() throws Exception {
+        grantAiConsent(caller);
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        String question = "{\"question\":\"When is the server migration scheduled?\"}";
+        CountDownLatch responseLockReached = new CountDownLatch(1);
+        CountDownLatch allowResponseWrite = new CountDownLatch(1);
+        AtomicBoolean pauseFirstResponse = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            SummaryConsentRepository.ConsentSnapshot snapshot =
+                    (SummaryConsentRepository.ConsentSnapshot) invocation.callRealMethod();
+            if (pauseFirstResponse.compareAndSet(true, false)) {
+                responseLockReached.countDown();
+                if (!allowResponseWrite.await(10, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to flush the consent-guarded ask response");
+                }
+            }
+            return snapshot;
+        }).when(consentRepository).lockForResponse(eq(caller.getId()));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> inFlightAsk = executor.submit(() -> postAsk(caller, question)
+                    .andExpect(status().isOk())
+                    .andReturn());
+
+            assertThat(responseLockReached.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThatThrownBy(() -> jdbcTemplate.queryForObject(
+                    "SELECT ai_summary_consent_epoch FROM users WHERE id = ? FOR UPDATE NOWAIT",
+                    Long.class,
+                    caller.getId()))
+                    .isInstanceOf(UncategorizedSQLException.class)
+                    .satisfies(exception -> assertThat(
+                            ((UncategorizedSQLException) exception).getSQLException().getSQLState())
+                            .isEqualTo("55P03"));
+
+            allowResponseWrite.countDown();
+            JsonNode responseBody = objectMapper.readTree(
+                    inFlightAsk.get(10, TimeUnit.SECONDS).getResponse().getContentAsString());
+            assertThat(responseBody.path("mode").asText()).isEqualTo("EXTRACTIVE");
+            assertThat(responseBody.path("answer").asText()).contains("March 14");
+
+            userSettingsService.updateSettings(caller.getId(), null, null, false);
+            Long consentEpoch = jdbcTemplate.queryForObject(
+                    "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, caller.getId());
+            assertThat(consentEpoch).isEqualTo(1);
+        } finally {
+            allowResponseWrite.countDown();
             executor.shutdownNow();
             assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         }

@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.SummaryLanguage;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -102,15 +103,33 @@ public class RagQuestionCache {
     }
 
     @Transactional
-    public void save(
+    public boolean saveIfConsentSnapshotMatches(
+            UUID userId,
+            SummaryConsentRepository.ConsentSnapshot expectedConsent,
             UUID conversationId,
             String model,
             String questionHash,
             float[] questionVector,
             CachedAsk ask) {
+        if (!expectedConsent.consented()) {
+            return false;
+        }
+        List<SummaryConsentRepository.ConsentSnapshot> consentSnapshots = jdbcTemplate.query(
+                """
+                SELECT ai_summary_consent, ai_summary_consent_epoch
+                FROM users
+                WHERE id = ?
+                FOR SHARE
+                """,
+                (rs, rowNum) -> new SummaryConsentRepository.ConsentSnapshot(
+                        rs.getBoolean("ai_summary_consent"), rs.getLong("ai_summary_consent_epoch")),
+                userId);
+        if (consentSnapshots.isEmpty() || !expectedConsent.equals(consentSnapshots.getFirst())) {
+            return false;
+        }
         lockConversation(conversationId);
         if (contentVersion(conversationId) != ask.expectedContentVersion()) {
-            return;
+            return false;
         }
 
         Instant createdAt = clock.instant();
@@ -151,6 +170,7 @@ public class RagQuestionCache {
                     statement.setObject(9, OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC));
                     statement.setObject(10, OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC));
                 });
+        return true;
     }
 
     /**
