@@ -87,14 +87,10 @@ public class AvatarOrphanSweepTask {
             return Optional.empty();
         }
         try {
-            if (!advisoryLock.tryAcquire(ScheduledLockIds.AVATAR_ORPHAN_SWEEP)) {
-                return Optional.empty();
-            }
-            try {
-                return Optional.of(execute(properties.isDryRun()));
-            } finally {
-                advisoryLock.release(ScheduledLockIds.AVATAR_ORPHAN_SWEEP);
-            }
+            SweepResult result = advisoryLock.withLock(
+                    ScheduledLockIds.AVATAR_ORPHAN_SWEEP,
+                    () -> execute(properties.isDryRun()));
+            return result == null ? Optional.empty() : Optional.of(result);
         } catch (RuntimeException failure) {
             meterRegistry.counter(RUNS, "outcome", "failure").increment();
             log.warn("Avatar sweep failed ({})", failure.getClass().getSimpleName());
