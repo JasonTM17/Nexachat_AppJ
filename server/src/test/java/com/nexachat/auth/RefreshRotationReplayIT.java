@@ -137,7 +137,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
             assertThat(liveRowCount(session.userId())).isEqualTo(1);
         } finally {
             releaseFirst.countDown();
-            executor.shutdownNow();
+            shutdownWorkers(executor);
         }
     }
 
@@ -446,6 +446,18 @@ class RefreshRotationReplayIT extends SecurityITBase {
         return jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
                 Integer.class, userId);
+    }
+
+    private static void shutdownWorkers(ExecutorService executor) {
+        executor.shutdownNow();
+        try {
+            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Worker threads did not stop within 10 s");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while stopping worker threads", exception);
+        }
     }
 
     private static void await(CountDownLatch latch) {

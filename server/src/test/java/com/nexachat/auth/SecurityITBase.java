@@ -8,7 +8,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -17,9 +19,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -42,6 +48,12 @@ abstract class SecurityITBase {
 
     /** Origin the security configuration admits for cross-origin requests. */
     protected static final String ALLOWED_ORIGIN = "https://app.example.com";
+
+    /** Bound on one TRUNCATE attempt; a transient writer releases its locks sooner. */
+    private static final int RESET_LOCK_TIMEOUT_MS = 5_000;
+
+    /** Attempts before the reset fails loudly instead of hanging the suite. */
+    private static final int RESET_MAX_ATTEMPTS = 4;
 
     @DynamicPropertySource
     static void securityItProperties(DynamicPropertyRegistry registry) {
@@ -95,8 +107,57 @@ abstract class SecurityITBase {
      */
     @BeforeEach
     void resetUsers() {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        truncateUsersCascade();
         rateLimitService.reset();
+    }
+
+    /**
+     * Clears the shared tables with a bounded lock wait and a retry.
+     *
+     * <p>A plain {@code TRUNCATE users CASCADE} waits without a bound. Cached
+     * Spring contexts keep their scheduled jobs alive for the whole test JVM,
+     * and an earlier method can leave a worker finishing a transaction after
+     * its test returned. Either session can hold a relation lock that the
+     * cascade needs; when it then requests a table the truncate already
+     * locked, PostgreSQL reports {@code deadlock detected} (or the truncate
+     * waits forever, with no assertion in control). Bounding each attempt
+     * turns that into a retryable lock timeout; the truncate is idempotent, so
+     * retrying cannot change any assertion result.
+     */
+    private void truncateUsersCascade() {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                jdbcTemplate.execute((ConnectionCallback<Void>) connection -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute("SET lock_timeout = " + RESET_LOCK_TIMEOUT_MS);
+                        try {
+                            statement.execute("TRUNCATE users CASCADE");
+                        } finally {
+                            statement.execute("SET lock_timeout = 0");
+                        }
+                    }
+                    return null;
+                });
+                return;
+            } catch (DataAccessException failure) {
+                if (attempt >= RESET_MAX_ATTEMPTS || !isTransientLockFailure(failure)) {
+                    throw failure;
+                }
+                LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(100L * attempt));
+            }
+        }
+    }
+
+    private static boolean isTransientLockFailure(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof SQLException sqlException) {
+                String state = sqlException.getSQLState();
+                if ("55P03".equals(state) || "40P01".equals(state)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     protected ResultActions postJson(String path, Object body) throws Exception {

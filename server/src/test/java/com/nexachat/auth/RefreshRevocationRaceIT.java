@@ -76,6 +76,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
         String childHash = TokenService.sha256Hex(UUID.randomUUID().toString());
         Instant now = replayClock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         try (Connection rotation = dataSource.getConnection()) {
             rotation.setAutoCommit(false);
             rotation.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
@@ -100,7 +101,6 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
             CountDownLatch revokerReady = new CountDownLatch(1);
             java.util.concurrent.atomic.AtomicInteger revokerPid = new java.util.concurrent.atomic.AtomicInteger();
-            ExecutorService executor = Executors.newSingleThreadExecutor();
             try {
                 Future<Integer> oldBulkUpdate = executor.submit(() -> {
                     try (Connection revocation = dataSource.getConnection()) {
@@ -132,6 +132,10 @@ class RefreshRevocationRaceIT extends SecurityITBase {
             } finally {
                 executor.shutdownNow();
             }
+        } finally {
+            // The connection must be closed (releasing its row locks) before
+            // waiting for the revoker, which may be blocked on those locks.
+            awaitWorkers(executor);
         }
 
         Integer oldParentRevoked = jdbcTemplate.queryForObject(
@@ -174,7 +178,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
             assertThat(logout.get(30, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(204);
         } finally {
             releaseRotation.countDown();
-            executor.shutdownNow();
+            shutdownWorkers(executor);
         }
 
         assertThat(liveRows(first.userId())).isZero();
@@ -223,7 +227,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
                     .isIn("TOKEN_INVALID", "TOKEN_REUSED");
         } finally {
             releaseReset.countDown();
-            executor.shutdownNow();
+            shutdownWorkers(executor);
         }
 
         assertThat(liveRows(user.userId())).isZero();
@@ -270,7 +274,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
             assertThat(response(reusedResult).path("error").path("code").asText()).isEqualTo("TOKEN_REUSED");
         } finally {
             releaseRotation.countDown();
-            executor.shutdownNow();
+            shutdownWorkers(executor);
         }
         assertThat(liveRows(reused.userId())).isZero();
     }
@@ -340,7 +344,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
             assertThat(logout.get(30, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(204);
         } finally {
             releaseRotation.countDown();
-            executor.shutdownNow();
+            shutdownWorkers(executor);
         }
 
         assertThat(isRevoked(first.refreshToken())).isTrue();
@@ -497,6 +501,27 @@ class RefreshRevocationRaceIT extends SecurityITBase {
     private static String environmentValue(String key, String fallback) {
         String value = System.getenv(key);
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static void shutdownWorkers(ExecutorService executor) {
+        executor.shutdownNow();
+        awaitWorkers(executor);
+    }
+
+    /**
+     * A method must not return while its request threads still own a
+     * connection or a row lock: the next test's {@code TRUNCATE users CASCADE}
+     * would otherwise race a transaction that has no owner left to finish it.
+     */
+    private static void awaitWorkers(ExecutorService executor) {
+        try {
+            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                throw new AssertionError("Worker threads did not stop within 10 s");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while stopping worker threads", exception);
+        }
     }
 
     private static void await(CountDownLatch latch) {
