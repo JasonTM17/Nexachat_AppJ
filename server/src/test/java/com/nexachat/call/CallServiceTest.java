@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -112,6 +113,7 @@ class CallServiceTest {
         assertThat(registry.activeCallForUser(callerId)).isEmpty();
         assertThat(registry.activeCallForUser(calleeId)).isEmpty();
         verify(eventPublisher, never()).publishEvent(any(CallRingingEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(CallStatusProjectionEvent.class));
         verify(eventPublisher, never()).publishEvent(any(CallDelivery.class));
 
         service.signal(conversationId, callerId,
@@ -177,6 +179,7 @@ class CallServiceTest {
         assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(callId);
         verify(systemMessageWriter, never()).write(any());
         verify(eventPublisher, never()).publishEvent(any(CallTerminalEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(CallStatusProjectionEvent.class));
         verify(eventPublisher, never()).publishEvent(any(CallDelivery.class));
 
         service.signal(conversationId, callerId,
@@ -219,6 +222,68 @@ class CallServiceTest {
         assertThatThrownBy(() -> service.signal(conversationId, callerId, oversized))
                 .isInstanceOf(CallException.class)
                 .extracting("code").isEqualTo(CallException.Code.VALIDATION_FAILED);
+    }
+
+    @Test
+    void publishesPersistedCallStatusSnapshotsInTransitionOrder() {
+        UUID callId = UUID.randomUUID();
+
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+        service.signal(conversationId, calleeId,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.END, callId, null, null));
+
+        org.mockito.ArgumentCaptor<CallStatusProjectionEvent> captured =
+                org.mockito.ArgumentCaptor.forClass(CallStatusProjectionEvent.class);
+        verify(eventPublisher, times(3)).publishEvent(captured.capture());
+        assertThat(captured.getAllValues())
+                .extracting(event -> event.session().state())
+                .containsExactly(CallState.RINGING, CallState.ACTIVE, CallState.ENDED);
+        assertThat(captured.getAllValues())
+                .extracting(event -> event.session().callId())
+                .containsOnly(callId);
+    }
+
+    @Test
+    void timeoutPersistsAnEndedProjectionSnapshot() {
+        java.util.concurrent.atomic.AtomicReference<Instant> current =
+                new java.util.concurrent.atomic.AtomicReference<>(now);
+        Clock advancingClock = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return current.get();
+            }
+        };
+        registry = new CallRegistry(advancingClock, 45_000);
+        service = new CallService(registry, recordRepository, conversationRepository,
+                memberRepository, rateLimitService, systemMessageWriter, eventPublisher,
+                "stun:stun.l.google.com:19302");
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+
+        current.set(now.plusSeconds(46));
+        service.timeout(callId);
+
+        org.mockito.ArgumentCaptor<CallStatusProjectionEvent> captured =
+                org.mockito.ArgumentCaptor.forClass(CallStatusProjectionEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(captured.capture());
+        assertThat(captured.getAllValues())
+                .extracting(event -> event.session().state())
+                .containsExactly(CallState.RINGING, CallState.ENDED);
+        assertThat(captured.getAllValues().get(1).session().endReason()).isEqualTo(CallEndReason.MISSED);
     }
 
     @Test

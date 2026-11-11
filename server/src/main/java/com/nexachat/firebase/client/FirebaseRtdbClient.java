@@ -12,6 +12,11 @@ public interface FirebaseRtdbClient {
         throw new UnsupportedOperationException("Firebase authorization projections are not supported by this client");
     }
 
+    /** Atomic, server-only writes or deletions for bounded call-status display projections. */
+    default void applyCallStatusProjection(Map<String, Object> updates) {
+        throw new UnsupportedOperationException("Firebase call-status projections are not supported by this client");
+    }
+
     /** Deletes at most {@code limit} children whose selected numeric lease/expiry is at or before the cutoff. */
     default int deleteExpiredChildren(String parentPath, String orderBy, long cutoffMillis, int limit) {
         throw new UnsupportedOperationException("Firebase lease sweeping is not supported by this client");

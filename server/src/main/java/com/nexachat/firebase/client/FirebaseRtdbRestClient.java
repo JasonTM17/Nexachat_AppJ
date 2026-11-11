@@ -58,6 +58,12 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
     }
 
     @Override
+    public void applyCallStatusProjection(Map<String, Object> updates) {
+        validateCallStatusProjection(updates);
+        patch(updates);
+    }
+
+    @Override
     public int deleteExpiredChildren(String parentPath, String orderBy, long cutoffMillis, int limit) {
         validateSweep(parentPath, orderBy, limit);
         URI queryUri = queryUri(parentPath, orderBy, cutoffMillis, limit);
@@ -401,6 +407,70 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
                 }
             }
         }
+    }
+
+    static void validateCallStatusProjection(Map<String, Object> updates) {
+        if (updates == null || updates.isEmpty() || updates.size() > 500) {
+            throw new IllegalArgumentException("Firebase call-status projection patch must not be empty");
+        }
+        List<String> paths = new ArrayList<>(updates.keySet());
+        Set<String> fields = Set.of("cid", "callerId", "calleeId", "state", "updatedAt", "expiresAt");
+        for (String path : paths) {
+            String[] parts = path == null ? new String[0] : path.split("/", -1);
+            if (parts.length != 2 || !"calls".equals(parts[0]) || !UUID_KEY.matcher(parts[1]).matches()) {
+                throw new IllegalArgumentException("Firebase call-status projection path is not allowed");
+            }
+            Object value = updates.get(path);
+            if (value == null) {
+                continue;
+            }
+            if (!(value instanceof Map<?, ?> call) || !call.keySet().equals(fields)) {
+                throw new IllegalArgumentException("Firebase call-status projection has an invalid shape");
+            }
+            if (!isUuid(call.get("cid")) || !isUuid(call.get("callerId")) || !isUuid(call.get("calleeId"))
+                    || call.get("callerId").equals(call.get("calleeId"))) {
+                throw new IllegalArgumentException("Firebase call-status projection has invalid participants");
+            }
+            Object stateValue = call.get("state");
+            if (!(stateValue instanceof String state)
+                    || !Set.of("RINGING", "ACTIVE", "ENDED").contains(state)) {
+                throw new IllegalArgumentException("Firebase call-status projection has an invalid state");
+            }
+            long updatedAt = positiveEpochMillis(call.get("updatedAt"), "updatedAt");
+            long expiresAt = positiveEpochMillis(call.get("expiresAt"), "expiresAt");
+            long maximumTtl = switch (state) {
+                case "RINGING" -> 45_000L;
+                case "ACTIVE" -> 120_000L;
+                case "ENDED" -> 60_000L;
+                default -> throw new IllegalArgumentException("Firebase call-status projection has an invalid state");
+            };
+            if (expiresAt <= updatedAt || expiresAt - updatedAt > maximumTtl) {
+                throw new IllegalArgumentException("Firebase call-status projection expiry exceeds its lease");
+            }
+        }
+        for (int i = 0; i < paths.size(); i++) {
+            for (int j = i + 1; j < paths.size(); j++) {
+                if (paths.get(i).startsWith(paths.get(j) + "/")
+                        || paths.get(j).startsWith(paths.get(i) + "/")) {
+                    throw new IllegalArgumentException("Firebase call-status projection paths overlap");
+                }
+            }
+        }
+    }
+
+    private static boolean isUuid(Object value) {
+        return value instanceof String id && UUID_KEY.matcher(id).matches();
+    }
+
+    private static long positiveEpochMillis(Object value, String field) {
+        if (!(value instanceof Long || value instanceof Integer)) {
+            throw new IllegalArgumentException("Firebase call-status projection has an invalid " + field);
+        }
+        long millis = ((Number) value).longValue();
+        if (millis < 0) {
+            throw new IllegalArgumentException("Firebase call-status projection has an invalid " + field);
+        }
+        return millis;
     }
 
     private static void validateSweep(String parentPath, String orderBy, int limit) {

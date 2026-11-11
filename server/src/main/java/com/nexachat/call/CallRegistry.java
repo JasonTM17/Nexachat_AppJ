@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -150,6 +151,13 @@ public class CallRegistry {
         evictExpiredTerminals(clock.instant());
         UUID callId = activeCallByUser.get(userId);
         return callId == null ? Optional.empty() : Optional.ofNullable(calls.get(callId));
+    }
+
+    public synchronized List<CallSession> activeCallSessions() {
+        evictExpiredTerminals(clock.instant());
+        return calls.values().stream()
+                .filter(session -> session.state() == CallState.ACTIVE)
+                .toList();
     }
 
     public Instant now() {
