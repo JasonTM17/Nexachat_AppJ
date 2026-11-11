@@ -222,7 +222,10 @@ public final class ForgotPasswordViewModel extends ViewModel {
                         result -> updateState(current -> {
                             if (result instanceof Result.Success<?>) {
                                 events.postValue(Event.PasswordChanged);
-                                return current.withSubmitting(false);
+                                return current.withSubmitting(false)
+                                        .withOtp("")
+                                        .withNewPassword("")
+                                        .withConfirmPassword("");
                             }
                             ApiError error = ((Result.Failure<?>) result).getError();
                             boolean invalid = error instanceof ApiError.InvalidOrExpiredCode;

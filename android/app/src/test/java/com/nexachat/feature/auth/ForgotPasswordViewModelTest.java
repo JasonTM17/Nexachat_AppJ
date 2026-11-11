@@ -97,6 +97,10 @@ public final class ForgotPasswordViewModelTest {
                 List.of(ForgotPasswordViewModel.Event.CodeSent,
                         ForgotPasswordViewModel.Event.PasswordChanged),
                 events);
+        ForgotPasswordViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals("", state.getOtp());
+        assertEquals("", state.getNewPassword());
+        assertEquals("", state.getConfirmPassword());
         verify(repository).confirmReset(eq("+84912345678"), eq("123456"), eq("newpass12"));
     }
 

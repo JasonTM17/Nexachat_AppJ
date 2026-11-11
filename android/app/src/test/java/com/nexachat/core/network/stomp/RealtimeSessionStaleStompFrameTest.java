@@ -56,6 +56,7 @@ public final class RealtimeSessionStaleStompFrameTest {
         BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
         when(refresher.sessionAdmission()).thenReturn(admission);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
         when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
@@ -107,6 +108,7 @@ public final class RealtimeSessionStaleStompFrameTest {
         AtomicLong epoch = new AtomicLong(1L);
         when(refresher.sessionAdmission()).thenReturn(admission);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenAnswer(ignored -> epoch.get());
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
                 admission.getValue() && invocation.<Long>getArgument(0) == epoch.get());

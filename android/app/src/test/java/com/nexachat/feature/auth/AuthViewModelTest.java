@@ -42,6 +42,15 @@ public final class AuthViewModelTest {
             900,
             "refresh-token");
 
+    @Test
+    public void uiStateStringDoesNotExposePassword() {
+        AuthViewModel.UiState state = new AuthViewModel.UiState(
+                "+84912345678", "auth-secret-marker", "Minh", false, null,
+                false, false, false);
+
+        assertFalse(state.toString().contains("auth-secret-marker"));
+    }
+
     @Before
     public void setUp() {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());

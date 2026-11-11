@@ -216,18 +216,7 @@ public final class RealtimeSession {
                     tokensPresent = present;
                     applySessionSignals();
                 }));
-        subscriptions.add(tokenRefresher.sessionEpochChanges()
-                .subscribe(epoch -> {
-                    if (epoch == tokenRefresher.sessionEpoch()) {
-                        launchConnectionLoop();
-                    }
-                }));
-        subscriptions.add(tokenRefresher.sessionAdmission()
-                .distinctUntilChanged()
-                .subscribe(admitted -> {
-                    sessionAdmitted = admitted;
-                    applySessionSignals();
-                }));
+        subscriptions.add(tokenRefresher.sessionSignals().subscribe(this::onSessionSignal));
         subscriptions.add(networkMonitor.getIsOnline()
                 .filter(Boolean::booleanValue)
                 .subscribe(ignored -> {
@@ -333,6 +322,25 @@ public final class RealtimeSession {
             parkedRounds = 0;
         }
         launchConnectionLoop();
+    }
+
+    private void onSessionSignal(TokenRefresher.SessionSignal signal) {
+        if (signal.epoch() != tokenRefresher.sessionEpoch()) {
+            return;
+        }
+        if (signal instanceof TokenRefresher.SessionSignal.EpochChanged changed) {
+            if (tokenRefresher.isSessionCurrent(changed.epoch())) {
+                launchConnectionLoop();
+            }
+            return;
+        }
+        TokenRefresher.SessionSignal.AdmissionChanged changed =
+                (TokenRefresher.SessionSignal.AdmissionChanged) signal;
+        if (changed.admitted() != tokenRefresher.isSessionCurrent(changed.epoch())) {
+            return;
+        }
+        sessionAdmitted = changed.admitted();
+        applySessionSignals();
     }
 
     private void tearDownLoggedOutSession() {

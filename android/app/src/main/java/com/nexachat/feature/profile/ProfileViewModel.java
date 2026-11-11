@@ -138,6 +138,9 @@ public final class ProfileViewModel extends ViewModel {
     public void dismissPasswordDialog() {
         updateState(state -> state
                 .withShowPasswordDialog(false)
+                .withOldPassword("")
+                .withNewPassword("")
+                .withConfirmPassword("")
                 .withPasswordError(null));
     }
 
@@ -192,6 +195,9 @@ public final class ProfileViewModel extends ViewModel {
                 .subscribe(
                         result -> updateState(current -> result instanceof Result.Success<?>
                                 ? current.withPasswordSaving(false).withShowPasswordDialog(false)
+                                        .withOldPassword("")
+                                        .withNewPassword("")
+                                        .withConfirmPassword("")
                                         .withPasswordChanged(true)
                                 : current.withPasswordSaving(false).withPasswordError(
                                         ((Result.Failure<?>) result).getError())),
@@ -512,9 +518,9 @@ public final class ProfileViewModel extends ViewModel {
                     + ", saving=" + saving
                     + ", saveError=" + saveError
                     + ", showPasswordDialog=" + showPasswordDialog
-                    + ", oldPassword=" + oldPassword
-                    + ", newPassword=" + newPassword
-                    + ", confirmPassword=" + confirmPassword
+                    + ", oldPassword=<redacted>"
+                    + ", newPassword=<redacted>"
+                    + ", confirmPassword=<redacted>"
                     + ", oldPasswordError=" + oldPasswordError
                     + ", newPasswordError=" + newPasswordError
                     + ", confirmMismatch=" + confirmMismatch

@@ -35,6 +35,7 @@ public class NexaHostActivity extends AppCompatActivity {
 
     private final CompositeDisposable disposables = new CompositeDisposable();
     private boolean pendingLogoutNavigation;
+    private boolean pendingSessionExpired;
     @Nullable private ThemeMode currentThemeMode;
 
     @Override
@@ -77,7 +78,7 @@ public class NexaHostActivity extends AppCompatActivity {
         super.onResume();
         updateSystemBarAppearance();
         if (pendingLogoutNavigation) {
-            navigateToLoginIfPossible();
+            navigateToLoginIfPossible(pendingSessionExpired);
         }
     }
 
@@ -125,26 +126,23 @@ public class NexaHostActivity extends AppCompatActivity {
             return;
         }
         if (getSupportFragmentManager().isStateSaved()) {
-            pendingLogoutNavigation = true;
+            deferLoginNavigation(sessionExpired);
             return;
         }
         navigateToLoginIfPossible(sessionExpired);
     }
 
-    private void navigateToLoginIfPossible() {
-        navigateToLoginIfPossible(false);
-    }
-
     private void navigateToLoginIfPossible(boolean sessionExpired) {
+        boolean showSessionExpired = sessionExpired || pendingSessionExpired;
         if (getSupportFragmentManager().isStateSaved()) {
-            pendingLogoutNavigation = true;
+            deferLoginNavigation(showSessionExpired);
             return;
         }
         NavHostFragment host =
                 (NavHostFragment)
                         getSupportFragmentManager().findFragmentById(R.id.nav_host);
         if (host == null) {
-            pendingLogoutNavigation = true;
+            deferLoginNavigation(showSessionExpired);
             return;
         }
         NavController nav = host.getNavController();
@@ -159,7 +157,7 @@ public class NexaHostActivity extends AppCompatActivity {
                     loginArgs.putString("returnInviteToken", token);
                 }
             }
-            if (sessionExpired) {
+            if (showSessionExpired) {
                 if (loginArgs == null) {
                     loginArgs = new Bundle();
                 }
@@ -167,8 +165,14 @@ public class NexaHostActivity extends AppCompatActivity {
             }
             nav.navigate(R.id.action_global_login, loginArgs);
             pendingLogoutNavigation = false;
+            pendingSessionExpired = false;
         } catch (IllegalStateException ignored) {
-            pendingLogoutNavigation = true;
+            deferLoginNavigation(showSessionExpired);
         }
+    }
+
+    private void deferLoginNavigation(boolean sessionExpired) {
+        pendingLogoutNavigation = true;
+        pendingSessionExpired = pendingSessionExpired || sessionExpired;
     }
 }

@@ -140,6 +140,7 @@ public final class RealtimeSessionReArmTest {
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(admission);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(
                 invocation -> admission.getValue() && invocation.getArgument(0, Long.class) == 1L);
@@ -285,6 +286,7 @@ public final class RealtimeSessionReArmTest {
         BehaviorProcessor<Boolean> admitted = BehaviorProcessor.createDefault(true);
         when(refresher.sessionAdmission()).thenReturn(admitted);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(
                 invocation -> admitted.getValue() && invocation.getArgument(0, Long.class) == 1L);

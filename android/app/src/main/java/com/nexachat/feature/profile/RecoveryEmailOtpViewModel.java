@@ -98,6 +98,7 @@ public final class RecoveryEmailOtpViewModel extends ViewModel {
                                         (VerifyRecoveryEmailResponse) success.getValue();
                                 return current.withVerifying(false)
                                         .withVerifiedEmail(body.getEmail())
+                                        .withOtp("")
                                         .withVerified(true);
                             }
                             ApiError error = ((Result.Failure<?>) result).getError();
