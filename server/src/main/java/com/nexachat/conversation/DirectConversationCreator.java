@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -8,7 +10,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Writes one DIRECT conversation + its two member rows atomically.
@@ -43,8 +47,11 @@ public class DirectConversationCreator {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Conversation createDirect(UUID callerId, UUID otherId, String directKey) {
-        User caller = userRepository.getReferenceById(callerId);
-        User other = userRepository.getReferenceById(otherId);
+        List<UUID> userIds = List.of(callerId, otherId).stream().distinct().sorted().toList();
+        Map<UUID, User> users = userRepository.findActiveUsersByIdsForUpdate(userIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+        User caller = requireActiveUser(users.get(callerId));
+        User other = requireActiveUser(users.get(otherId));
         Conversation conversation = Conversation.direct(caller, directKey);
         // saveAndFlush, not save: the INSERT must hit the direct_key UNIQUE
         // NOW — save() alone defers the flush to commit, after the caller has
@@ -56,5 +63,12 @@ public class DirectConversationCreator {
         eventPublisher.publishEvent(new ConversationMembershipChangedEvent(
                 conversation.getId(), List.of()));
         return conversation;
+    }
+
+    private static User requireActiveUser(User user) {
+        if (user == null || user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
+        return user;
     }
 }

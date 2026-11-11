@@ -49,6 +49,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<UUID> findIdsAfter(@Param("afterId") UUID afterId, Pageable pageable);
 
     /**
+     * Locks a set of user rows in a stable order before creating relationships
+     * that refer to them. Callers must pass a non-empty id list.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id IN :ids AND u.deletedAt IS NULL ORDER BY u.id")
+    List<User> findActiveUsersByIdsForUpdate(@Param("ids") List<UUID> ids);
+
+    /**
      * Case-insensitive {@code displayName} prefix search for GET /users/search?q=.
      * The caller is always excluded. {@code prefix} must arrive LIKE-escaped
      * ({@code \\}, {@code %}, {@code _}) — see {@link UserService#search} — so a

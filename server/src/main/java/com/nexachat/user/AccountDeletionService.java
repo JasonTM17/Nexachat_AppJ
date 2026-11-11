@@ -101,10 +101,12 @@ public class AccountDeletionService {
         String avatarStorageKey = avatarStorageKey(user.getAvatarUrl());
         List<String> unboundKeys = new ArrayList<>(jdbcSupport.findUnboundAttachmentStorageKeys(userId));
 
+        // Scrub caches while group memberships still identify every affected
+        // conversation. leaveAllGroups removes those lookup rows.
+        jdbcSupport.scrubAiData(userId);
         leaveAllGroups(userId);
         contactRepository.deleteAllInvolvingUser(userId);
         deviceTokenRepository.deleteAllByUserId(userId);
-        jdbcSupport.scrubAiData(userId);
         jdbcSupport.deleteGroupJoinRequests(userId);
         jdbcSupport.deleteLabels(userId);
         jdbcSupport.deleteGoogleIdentityData(userId);

@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -95,6 +96,24 @@ class InviteServiceTest {
 
         lenient().when(conversationRepository.findByIdForUpdate(conversationId))
                 .thenReturn(Optional.of(groupConversation));
+        lenient().when(userRepository.findActiveUsersByIdsForUpdate(anyList())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<UUID> ids = invocation.getArgument(0);
+            return ids.stream().map(this::userForId).filter(java.util.Objects::nonNull).toList();
+        });
+    }
+
+    private User userForId(UUID id) {
+        if (adminId.equals(id)) {
+            return adminUser;
+        }
+        if (memberId.equals(id)) {
+            return memberUser;
+        }
+        if (strangerId.equals(id)) {
+            return strangerUser;
+        }
+        return null;
     }
 
     private User userWithId(UUID id, String phone, String name) {
@@ -480,8 +499,6 @@ class InviteServiceTest {
                 conversationId, strangerId, GroupJoinRequest.Status.PENDING)).thenReturn(Optional.empty());
         when(joinRequestRepository.findFirstByConversation_IdAndUser_IdOrderByCreatedAtDesc(
                 conversationId, strangerId)).thenReturn(Optional.empty());
-        when(userRepository.findById(strangerId)).thenReturn(Optional.of(strangerUser));
-
         UUID reqId = UUID.randomUUID();
         when(joinRequestRepository.save(any(GroupJoinRequest.class))).thenAnswer(i -> {
             GroupJoinRequest r = i.getArgument(0);

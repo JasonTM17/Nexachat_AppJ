@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Core business service for group invite links, safe previews, approval flows,
@@ -274,6 +276,11 @@ public class InviteService {
         }
         entityManager.detach(link);
 
+        // Account deletion takes this row lock before removing memberships or
+        // join requests. Taking it first prevents a join from committing after
+        // deletion cleanup has already run.
+        User joiningUser = lockActiveUsers(callerId).get(callerId);
+
         // Idempotent: already a member
         if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, callerId)) {
             return new JoinResponse("ALREADY_MEMBER", conversationId, null);
@@ -327,10 +334,8 @@ public class InviteService {
                 throw ApiException.of(ApiErrorCode.FORBIDDEN, "Your request to join this group was rejected");
             }
 
-            User user = userRepository.findById(callerId)
-                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-
-            GroupJoinRequest joinRequest = new GroupJoinRequest(lockedLink.getConversation(), lockedLink, user);
+            GroupJoinRequest joinRequest = new GroupJoinRequest(
+                    lockedLink.getConversation(), lockedLink, joiningUser);
             joinRequest = joinRequestRepository.save(joinRequest);
 
             log.info("Join request created for user {} in group {}", callerId, conversationId);
@@ -390,6 +395,18 @@ public class InviteService {
             throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
         }
 
+        UUID requestedUserId = request.getUser().getId();
+        Map<UUID, User> lockedUsers = lockActiveUsers(callerId, requestedUserId);
+
+        // Deletion may have removed the request while this transaction waited
+        // for the user lock. Re-read it before taking conversation/link locks.
+        request = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
+        if (!request.getConversation().getId().equals(conversationId)
+                || !request.getUser().getId().equals(requestedUserId)) {
+            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
+        }
+
         if (request.getStatus() == GroupJoinRequest.Status.APPROVED) {
             return toJoinRequestResponse(request); // Idempotent
         }
@@ -420,11 +437,28 @@ public class InviteService {
         // Add member to group
         groupService.addMemberFromInvite(request.getUser().getId(), conversationId, callerId);
 
-        request.approve(callerMember.getUser(), Instant.now());
+        request.approve(lockedUsers.get(callerId), Instant.now());
         request = joinRequestRepository.save(request);
 
         log.info("Join request {} approved by admin {} for user {}", requestId, callerId, request.getUser().getId());
         return toJoinRequestResponse(request);
+    }
+
+    /** Locks affected accounts in UUID order and rejects missing or tombstoned users. */
+    private Map<UUID, User> lockActiveUsers(UUID... userIds) {
+        List<UUID> orderedIds = java.util.Arrays.stream(userIds)
+                .distinct()
+                .sorted()
+                .toList();
+        Map<UUID, User> users = userRepository.findActiveUsersByIdsForUpdate(orderedIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        for (UUID userId : orderedIds) {
+            User user = users.get(userId);
+            if (user == null || user.getDeletedAt() != null) {
+                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+            }
+        }
+        return users;
     }
 
     /**

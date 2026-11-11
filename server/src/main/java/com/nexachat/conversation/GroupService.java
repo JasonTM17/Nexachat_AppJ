@@ -133,16 +133,17 @@ public class GroupService {
     @Transactional
     public ConversationResponse createGroup(UUID creatorId, CreateGroupRequest request) {
         String title = normalizeTitle(request == null ? null : request.title());
-        User creator = userRepository.findById(creatorId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-
         List<UUID> memberIds = dedupeExcluding(
                 request == null ? null : request.memberIds(), creatorId);
         if (memberIds.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "Group needs at least one other member");
         }
-        List<User> members = resolveUsers(memberIds);
+        List<UUID> userIdsToLock = new ArrayList<>(memberIds);
+        userIdsToLock.add(creatorId);
+        Map<UUID, User> lockedUsers = lockActiveUsers(userIdsToLock);
+        User creator = lockedUsers.get(creatorId);
+        List<User> members = memberIds.stream().map(lockedUsers::get).toList();
 
         Conversation conversation = Conversation.group(creator, title);
         conversationRepository.save(conversation);
@@ -194,7 +195,10 @@ public class GroupService {
         if (userIds.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "userIds must not be empty");
         }
-        List<User> candidates = resolveUsers(userIds);
+        List<UUID> userIdsToLock = new ArrayList<>(userIds);
+        userIdsToLock.add(callerId);
+        Map<UUID, User> lockedUsers = lockActiveUsers(userIdsToLock);
+        List<User> candidates = userIds.stream().map(lockedUsers::get).toList();
 
         Set<UUID> existing = new HashSet<>(memberRepository.findMemberUserIds(conversationId));
         List<User> toAdd = candidates.stream()
@@ -204,7 +208,7 @@ public class GroupService {
             return; // idempotent no-op: nothing changed → no message, no broadcast
         }
 
-        String actorName = caller.getUser().getDisplayName();
+        String actorName = lockedUsers.get(callerId).getDisplayName();
         for (User user : toAdd) {
             memberRepository.save(ConversationMember.join(
                     conversation, user, ConversationMember.Role.MEMBER));
@@ -227,14 +231,17 @@ public class GroupService {
      */
     @Transactional
     public void addMemberFromInvite(UUID userId, UUID conversationId, UUID approverId) {
+        List<UUID> userIdsToLock = new ArrayList<>();
+        userIdsToLock.add(userId);
+        if (approverId != null) {
+            userIdsToLock.add(approverId);
+        }
+        Map<UUID, User> lockedUsers = lockActiveUsers(userIdsToLock);
+        User user = lockedUsers.get(userId);
+
         Conversation conversation = requireGroup(conversationId);
         if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             return; // Idempotent no-op
-        }
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        if (user.getDeletedAt() != null) {
-            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
         memberRepository.saveAndFlush(ConversationMember.join(
                 conversation, user, ConversationMember.Role.MEMBER));
@@ -243,8 +250,7 @@ public class GroupService {
 
         String text;
         if (approverId != null) {
-            User approver = userRepository.findById(approverId).orElse(null);
-            String approverName = approver != null ? approver.getDisplayName() : "Admin";
+            String approverName = lockedUsers.get(approverId).getDisplayName();
             text = approverName + " approved " + user.getDisplayName() + " to join the group";
         } else {
             text = user.getDisplayName() + " joined the group via invite link";
@@ -612,28 +618,23 @@ public class GroupService {
                 .toList();
     }
 
-    /**
-     * Resolves ids to users in REQUEST order; any id that does not exist aborts
-     * the whole call with {@code USER_NOT_FOUND} (no partial adds).
-     */
-    private List<User> resolveUsers(List<UUID> userIds) {
-        Map<UUID, User> byId = userRepository.findAllById(userIds).stream()
+    /** Locks active users in database UUID order before a relationship write. */
+    private Map<UUID, User> lockActiveUsers(List<UUID> userIds) {
+        List<UUID> orderedIds = userIds.stream().filter(Objects::nonNull).distinct().sorted().toList();
+        Map<UUID, User> byId = userRepository.findActiveUsersByIdsForUpdate(orderedIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity()));
-        List<User> resolved = new ArrayList<>(userIds.size());
         List<UUID> missing = new ArrayList<>();
-        for (UUID id : userIds) {
+        for (UUID id : orderedIds) {
             User user = byId.get(id);
             if (user == null || user.getDeletedAt() != null) {
                 missing.add(id);
-            } else {
-                resolved.add(user);
             }
         }
         if (!missing.isEmpty()) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found",
                     Map.of("userIds", missing));
         }
-        return resolved;
+        return byId;
     }
 
     /**
