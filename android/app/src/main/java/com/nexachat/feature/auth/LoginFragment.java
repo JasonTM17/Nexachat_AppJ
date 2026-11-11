@@ -25,6 +25,7 @@ public final class LoginFragment extends Fragment {
     private FragmentLoginBinding binding;
     private AuthViewModel viewModel;
     private boolean rendering;
+    private boolean sessionExpired;
     @Nullable private String returnInviteToken;
     @Nullable private Integer persistedNoticeResId;
     private static final String STATE_NOTICE_RES_ID = "loginNoticeResId";
@@ -38,12 +39,8 @@ public final class LoginFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
         returnInviteToken = getArguments() == null
                 ? null : getArguments().getString("returnInviteToken");
-        boolean sessionExpired = getArguments() != null
+        sessionExpired = getArguments() != null
                 && getArguments().getBoolean("showSessionExpired", false);
-        if (sessionExpired) {
-            binding.errorBanner.setVisibility(View.VISIBLE);
-            binding.errorBanner.setText(R.string.session_expired_sign_in_again);
-        }
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
         binding.passwordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
@@ -119,10 +116,9 @@ public final class LoginFragment extends Fragment {
         if (!binding.passwordInput.getText().toString().equals(state.getPassword())) binding.passwordInput.setText(state.getPassword());
         binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
-        binding.errorBanner.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
-        if (state.getError() != null) {
-            binding.errorBanner.setText(ApiErrorText.text(requireContext(), state.getError()));
-        }
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(sessionExpired, state.getError());
+        binding.errorBanner.setVisibility(banner.isVisible() ? View.VISIBLE : View.GONE);
+        if (banner.isVisible()) binding.errorBanner.setText(banner.getMessageRes());
         if (persistedNoticeResId != null) {
             binding.noticeBanner.setText(persistedNoticeResId);
             binding.noticeBanner.setVisibility(View.VISIBLE);
