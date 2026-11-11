@@ -25,6 +25,11 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_STORAGE_S3_BUCKET` | Yes when provider is `s3` | Empty | Not shown |
 | `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | Yes when provider is `s3`; secret store | Empty | Not shown |
 | `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | Yes when provider is `s3`; secret store | Empty | Not shown |
+| `NEXACHAT_STORAGE_S3_API_CALL_TIMEOUT` | No (overall S3 call deadline, including retries) | `60s` | `60s` |
+| `NEXACHAT_STORAGE_S3_API_CALL_ATTEMPT_TIMEOUT` | No (one S3 attempt; must not exceed the call deadline) | `30s` | `30s` |
+| `NEXACHAT_STORAGE_S3_CONNECTION_TIMEOUT` | No (S3 TCP connect deadline) | `5s` | `5s` |
+| `NEXACHAT_STORAGE_S3_SOCKET_TIMEOUT` | No (S3 socket read-inactivity deadline) | `30s` | `30s` |
+| `NEXACHAT_MULTIPART_TEMP_DIR` | No (multipart scratch directory; empty keeps the servlet-container temp directory) | Empty | `/tmp/nexachat-multipart` |
 | `MANAGEMENT_SERVER_PORT` | No (opt-in loopback isolation; shares API port 8080 by default) | Empty | `8081` |
 | `MANAGEMENT_SERVER_ADDRESS` | No (bind address for management server) | Empty | `127.0.0.1` |
 | `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
@@ -189,6 +194,21 @@ secret store. See Cloudflare's [R2 S3 setup](https://developers.cloudflare.com/r
 and [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
 guides for token setup, endpoint and region details. The server uses
 path-style requests and keeps the bucket private.
+
+Multipart parts are written to disk before the controller runs
+(`spring.servlet.multipart.file-size-threshold: 0B`). They go to
+`NEXACHAT_MULTIPART_TEMP_DIR` when set, otherwise to the servlet container's
+temp directory (Tomcat's `work/` directory under its base). A configured
+directory is created at boot and probe-written by the runtime user, so an
+unwritable mount fails startup instead of the first upload. The container
+deletes every part when the request ends, on success, a validation error, a
+storage failure, and a client abort. Object-store calls are bounded by
+`NEXACHAT_STORAGE_S3_API_CALL_TIMEOUT`,
+`NEXACHAT_STORAGE_S3_API_CALL_ATTEMPT_TIMEOUT`,
+`NEXACHAT_STORAGE_S3_CONNECTION_TIMEOUT` and
+`NEXACHAT_STORAGE_S3_SOCKET_TIMEOUT` (defaults `60s`, `30s`, `5s`, `30s`);
+the attempt deadline may not exceed the call deadline, and non-positive
+values fail startup.
 
 Downloads continue through `/api/v1/files/{key}` after the server's existing
 authorization checks; responses do not contain an R2 bucket URL. The avatar
