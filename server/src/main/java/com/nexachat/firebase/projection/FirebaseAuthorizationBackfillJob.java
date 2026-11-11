@@ -69,6 +69,9 @@ public class FirebaseAuthorizationBackfillJob {
         }
         try {
             rtdb.applyAuthorizationProjection(Map.of("control/enabled", false));
+            if (rtdb.isAdministrativelyDisabled()) {
+                return;
+            }
             boolean migratePresencePrivacy = !rtdb.presencePrivacyMigrationComplete();
             UUID afterUserId = null;
             while (true) {
@@ -101,6 +104,9 @@ public class FirebaseAuthorizationBackfillJob {
                 }
                 metrics.backfillRows("direct-readers", page.size());
                 afterConversationId = page.get(page.size() - 1);
+            }
+            if (rtdb.isAdministrativelyDisabled()) {
+                return;
             }
             Map<String, Object> admission = new java.util.LinkedHashMap<>();
             admission.put("control/enabled", true);

@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -52,6 +53,17 @@ class FirebaseRtdbRestClientProjectionValidationTest {
         assertThatThrownBy(() -> client.applyAuthorizationProjection(
                 Map.of("control/presencePrivacyVersion", 1)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void administrativeDisableMarkerParserFailsClosedForUnexpectedTypes() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertThat(FirebaseRtdbRestClient.parseAdministrativeDisablement(mapper.readTree("true"))).isTrue();
+        assertThat(FirebaseRtdbRestClient.parseAdministrativeDisablement(mapper.readTree("false"))).isFalse();
+        assertThat(FirebaseRtdbRestClient.parseAdministrativeDisablement(mapper.readTree("null"))).isFalse();
+        assertThatThrownBy(() -> FirebaseRtdbRestClient.parseAdministrativeDisablement(mapper.readTree("1")))
+                .isInstanceOf(FirebaseProviderException.class);
     }
 
     @Test

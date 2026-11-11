@@ -75,6 +75,42 @@ class FirebaseAuthorizationBackfillJobTest {
     }
 
     @Test
+    void backfillDoesNotReopenAdmissionWhenAdminDisableIsAlreadySet() {
+        UserRepository users = mock(UserRepository.class);
+        ConversationRepository conversations = mock(ConversationRepository.class);
+        FirebaseAuthorizationProjectionService projections = mock(FirebaseAuthorizationProjectionService.class);
+        FirebaseRtdbClient rtdb = mock(FirebaseRtdbClient.class);
+        when(rtdb.isAdministrativelyDisabled()).thenReturn(true);
+
+        new FirebaseAuthorizationBackfillJob(users, conversations, projections, rtdb,
+                new FirebaseProjectionMetrics(new SimpleMeterRegistry())).backfill();
+
+        verify(rtdb).isAdministrativelyDisabled();
+        verify(rtdb, never()).applyAuthorizationProjection(Map.of("control/enabled", true));
+        verify(rtdb, never()).presencePrivacyMigrationComplete();
+    }
+
+    @Test
+    void backfillKeepsAdmissionClosedWhenAdminDisablesDuringReconciliation() {
+        UserRepository users = mock(UserRepository.class);
+        ConversationRepository conversations = mock(ConversationRepository.class);
+        FirebaseAuthorizationProjectionService projections = mock(FirebaseAuthorizationProjectionService.class);
+        FirebaseRtdbClient rtdb = mock(FirebaseRtdbClient.class);
+        when(rtdb.isAdministrativelyDisabled()).thenReturn(false, true);
+        when(rtdb.presencePrivacyMigrationComplete()).thenReturn(true);
+        when(users.findIdsAfter(null, PageRequest.of(0, FirebaseAuthorizationBackfillJob.PAGE_SIZE)))
+                .thenReturn(List.of());
+        when(conversations.findIdsAfterByType(null, Conversation.Type.DIRECT,
+                PageRequest.of(0, FirebaseAuthorizationBackfillJob.PAGE_SIZE))).thenReturn(List.of());
+
+        new FirebaseAuthorizationBackfillJob(users, conversations, projections, rtdb,
+                new FirebaseProjectionMetrics(new SimpleMeterRegistry())).backfill();
+
+        verify(rtdb, org.mockito.Mockito.times(2)).isAdministrativelyDisabled();
+        verify(rtdb, never()).applyAuthorizationProjection(Map.of("control/enabled", true));
+    }
+
+    @Test
     void failedBackfillKeepsFirebaseAdmissionDisabled() {
         UserRepository users = mock(UserRepository.class);
         ConversationRepository conversations = mock(ConversationRepository.class);

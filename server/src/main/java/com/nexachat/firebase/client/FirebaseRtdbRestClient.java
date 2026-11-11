@@ -127,6 +127,28 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
     }
 
     @Override
+    public boolean isAdministrativelyDisabled() {
+        URI uri = databaseUrl.resolve("control/adminDisabled");
+        JsonNode disabled;
+        try {
+            disabled = objectMapper.readTree(send("GET", uri, null));
+        } catch (Exception ex) {
+            throw new FirebaseProviderException("Firebase Realtime Database returned an invalid admin disable marker");
+        }
+        return parseAdministrativeDisablement(disabled);
+    }
+
+    static boolean parseAdministrativeDisablement(JsonNode disabled) {
+        if (disabled == null || disabled.isNull()) {
+            return false;
+        }
+        if (!disabled.isBoolean()) {
+            throw new FirebaseProviderException("Firebase Realtime Database returned an invalid admin disable marker");
+        }
+        return disabled.booleanValue();
+    }
+
+    @Override
     public int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
         if (userId == null || limit < 1 || limit > 500) {
             throw new IllegalArgumentException("Firebase presence privacy migration request is invalid");

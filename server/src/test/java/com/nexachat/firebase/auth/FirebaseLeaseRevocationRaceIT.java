@@ -308,6 +308,11 @@ class FirebaseLeaseRevocationRaceIT {
         }
 
         @Override
+        public boolean isAdministrativelyDisabled() {
+            return false;
+        }
+
+        @Override
         public Long readSessionLease(UUID userId, UUID bridgeId) {
             return null;
         }

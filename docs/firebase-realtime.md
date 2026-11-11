@@ -26,7 +26,8 @@ denied by the rules.
 
 | Path | Writer | Lifetime / contract |
 |---|---|---|
-| `/control/enabled` | server | Global kill switch. Every client rule requires `true`. |
+| `/control/enabled` | server | Global admission gate. Every client rule requires `true`. |
+| `/control/adminDisabled` | operator | Persistent administrative kill switch. When `true`, every client rule denies reads and writes even if a backfill publishes `/control/enabled: true`; reconciliation never changes this marker. |
 | `/control/presencePrivacyVersion` | server | Peer presence reads require version `2`. The authorization backfill removes legacy offline timestamp rows before publishing this marker; it is written atomically with reopening the global gate. |
 | `/accounts/{uid}/{active,showPresence}` | server | Account state mirror. `showPresence=false` denies peers, not the owner. |
 | `/sessions/{uid}/{bridgeId}/until` | server | Bridge lease in epoch milliseconds, at most 120 seconds and never beyond the Nexa access-token expiry. |
@@ -136,7 +137,7 @@ Call status projection (`/calls/{callId}`) can passively refine the call-screen 
 
 - **Presence privacy version 2 (`control/presencePrivacyVersion`)**:
   - Offline per-device presence carries no time or lease information: `lastSeen`, `updatedAt` and `leaseUntil` must all be zero. Firebase presence reports online/offline state only; last-seen time remains on the authoritative server presence path.
-  - Peer reads remain strictly denied until the server backfill (`FirebaseAuthorizationBackfillJob`) has removed legacy offline `lastSeen` rows from every account via `removeLegacyOfflinePresenceEntries` and atomically publishes `control/presencePrivacyVersion: 2` together with `control/enabled: true`. A failed or partial migration leaves peer reads closed; owners can still read their own node.
+  - Peer reads remain strictly denied until the server backfill (`FirebaseAuthorizationBackfillJob`) has removed legacy offline `lastSeen` rows from every account via `removeLegacyOfflinePresenceEntries` and atomically publishes `control/presencePrivacyVersion: 2` together with `control/enabled: true`. A failed or partial migration leaves peer reads closed; owners can still read their own node. The job checks the operator-owned `control/adminDisabled` marker before work and again before reopening admission.
   - The marker is one-time; rules prevent clients from writing timestamp-bearing offline rows.
 - **DIRECT vs Group reader edges**:
   - Presence readers carry an explicit `type:"DIRECT"` and `cid` at `/presenceReaders/{subjectUid}/{viewerUid}`. Rules require `type == 'DIRECT'` and active membership leases in `cid` for both users.
@@ -158,7 +159,7 @@ Rollout must execute in three strict sequential phases:
 2. **Enable server flags and run startup reconciliation**:
    - Drain older backend instances that could write timestamped offline presence records or lack privacy v2 validation.
    - Start the backend with `FIREBASE_REALTIME_ENABLED=true`, a valid HTTPS `FIREBASE_DATABASE_URL`, and optionally `FIREBASE_CALL_STATUS_ENABLED=true`.
-   - On startup, `FirebaseAuthorizationBackfillJob` closes admission (`control/enabled: false`), purges legacy offline presence rows with timestamps across all users (`removeLegacyOfflinePresenceEntries`), reconciles active accounts and DIRECT reader edges, and atomically publishes `control/enabled: true` with `control/presencePrivacyVersion: 2`.
+   - On startup, `FirebaseAuthorizationBackfillJob` closes admission (`control/enabled: false`), checks `control/adminDisabled`, purges legacy offline presence rows with timestamps across all users (`removeLegacyOfflinePresenceEntries`), reconciles active accounts and DIRECT reader edges, checks the marker again, and only then atomically publishes `control/enabled: true` with `control/presencePrivacyVersion: 2`. If the marker is true, the run leaves admission closed.
    - If `FIREBASE_CALL_STATUS_ENABLED=true`, `FirebaseCallStatusProjectionService` begins projecting call transitions and scheduling active call lease renewals.
 3. **Ship Android client builds**:
    - Build Android client with Gradle properties `firebaseRealtimeEnabled=true` (and `firebaseCallStatusEnabled=true` if enabling call status UI).
@@ -168,7 +169,9 @@ Rollout must execute in three strict sequential phases:
 ## Rollback
 
 - **Emergency kill switch**:
-  Set `control/enabled: false` directly in RTDB (via Firebase Console or REST). All client reads and writes across presence, typing, and calls are immediately denied by security rules. Android clients detect disconnection and fall back to STOMP over WebSocket.
+  In RTDB, set `control/adminDisabled: true` and then `control/enabled: false` using Firebase Console or an authorized admin REST client. Deploy the reviewed rules containing the `adminDisabled` check before relying on this marker. All client reads and writes across presence, typing, and calls are denied while the marker is true, even if an in-flight backfill or another server replica writes `control/enabled: true`. Backfills leave admission closed when they observe the marker, and never write or clear it. Keep the marker true across restarts and replica replacements. Also set the master `FIREBASE_REALTIME_ENABLED=false` on every backend instance and restart or drain those instances to stop bridge endpoints and writers; Android clients fall back to STOMP over WebSocket.
+- **Restore after an administrative disable**:
+  Keep `control/enabled: false` while the master server flag is disabled. After the intended backend instances are configured and ready to reconcile, clear `control/adminDisabled` (set it to `false` or remove it), then allow a successful backfill to publish `control/enabled: true`. Do not clear the marker while `control/enabled` is true, because the rules will admit clients as soon as the marker is cleared.
 - **Call status rollback**:
   Set `FIREBASE_CALL_STATUS_ENABLED=false` on the backend (and/or `firebaseCallStatusEnabled=false` in Android) and restart. Call status projection stops; existing `/calls/{callId}` records expire naturally within at most 120 seconds (`ACTIVE_LEASE_MILLIS`). Presence and typing remain operational over RTDB.
 - **Full Firebase bridge rollback**:

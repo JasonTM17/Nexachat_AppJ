@@ -32,6 +32,9 @@ public interface FirebaseRtdbClient {
         return false;
     }
 
+    /** Returns whether an operator has persistently disabled client access to the Firebase bridge. */
+    boolean isAdministrativelyDisabled();
+
     /** Removes at most {@code limit} legacy presence records containing a last-seen timestamp. */
     default int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
         throw new UnsupportedOperationException("Firebase presence privacy migration is not supported by this client");
