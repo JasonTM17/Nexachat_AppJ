@@ -25,6 +25,10 @@ import java.util.List;
  * <p>The caller is the authenticated {@link JwtPrincipal}; only image content
  * passes the sniff check. The stored file is served from the public files
  * endpoint and its URL is persisted on the user row.</p>
+ *
+ * <p>Like every upload path, the whole-file buffer is admitted by
+ * {@link UploadAdmission}; a saturated gate answers {@code 429 RATE_LIMITED}
+ * with a {@code Retry-After} header.</p>
  */
 @RestController
 @RequestMapping("/api/v1/users")
@@ -33,14 +37,17 @@ public class AvatarController {
     private final StorageService storageService;
     private final UserRepository userRepository;
     private final AvatarReferenceCoordinator referenceCoordinator;
+    private final UploadAdmission uploadAdmission;
 
     public AvatarController(
             StorageService storageService,
             UserRepository userRepository,
-            AvatarReferenceCoordinator referenceCoordinator) {
+            AvatarReferenceCoordinator referenceCoordinator,
+            UploadAdmission uploadAdmission) {
         this.storageService = storageService;
         this.userRepository = userRepository;
         this.referenceCoordinator = referenceCoordinator;
+        this.uploadAdmission = uploadAdmission;
     }
 
     @PostMapping("/me/avatar")
@@ -58,27 +65,31 @@ public class AvatarController {
         if (file.getSize() > StorageService.MAX_FILE_SIZE_BYTES) {
             throw ApiException.of(ApiErrorCode.FILE_TOO_LARGE);
         }
-        byte[] bytes = file.getBytes();
-        String sniffed = MagicBytes.sniff(bytes);
-        if (sniffed == null || !sniffed.startsWith("image/")) {
-            throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
+        // The whole-file copy and the store that consumes it share one
+        // admission slot so a burst of avatars cannot exhaust the heap.
+        try (UploadAdmission.Permit permit = uploadAdmission.acquire()) {
+            byte[] bytes = file.getBytes();
+            String sniffed = MagicBytes.sniff(bytes);
+            if (sniffed == null || !sniffed.startsWith("image/")) {
+                throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
+            }
+            User user = userRepository.findByIdForUpdate(principal.userId())
+                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+            if (user.getDeletedAt() != null) {
+                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+            }
+            referenceCoordinator.lockForTransaction();
+            String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
+            StorageService.StoredFile stored = storageService.store(
+                    "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+            StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
+            user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
+            userRepository.save(user);
+            if (!stored.storageKey().equals(oldAvatarKey)) {
+                referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
+            }
+            return new AvatarResponse(user.getAvatarUrl());
         }
-        User user = userRepository.findByIdForUpdate(principal.userId())
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        if (user.getDeletedAt() != null) {
-            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
-        }
-        referenceCoordinator.lockForTransaction();
-        String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
-        StorageService.StoredFile stored = storageService.store(
-                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-        StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
-        user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
-        userRepository.save(user);
-        if (!stored.storageKey().equals(oldAvatarKey)) {
-            referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
-        }
-        return new AvatarResponse(user.getAvatarUrl());
     }
 
     private static String ownedAvatarStorageKey(String avatarUrl) {
