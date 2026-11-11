@@ -8,6 +8,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,6 +38,7 @@ public class AvatarController {
     }
 
     @PostMapping("/me/avatar")
+    @Transactional
     public AvatarResponse uploadAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam("file") List<MultipartFile> files) throws IOException {
@@ -57,8 +59,11 @@ public class AvatarController {
         }
         StorageService.StoredFile stored = storageService.store(
                 "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-        User user = userRepository.findById(principal.userId())
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND));
+        User user = userRepository.findByIdForUpdate(principal.userId())
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
         user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
         userRepository.save(user);
         return new AvatarResponse(user.getAvatarUrl());

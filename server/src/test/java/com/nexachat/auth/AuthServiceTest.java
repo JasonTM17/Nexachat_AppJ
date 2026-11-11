@@ -23,6 +23,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +60,10 @@ class AuthServiceTest {
     private RateLimitService rateLimitService;
     @Mock
     private AccessTokenRevocationService accessTokenRevocationService;
+    @Mock
+    private PlatformTransactionManager transactionManager;
+    @Mock
+    private ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     private AuthService authService;
 
@@ -71,10 +79,13 @@ class AuthServiceTest {
         lenient().when(userRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(rateLimitService.tryConsume(anyString(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
+        lenient().when(transactionManagerProvider.getObject()).thenReturn(transactionManager);
         authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
-                (boundary, operation, userId, tokenId) -> { });
+                (boundary, operation, userId, tokenId) -> { }, transactionManagerProvider);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
@@ -88,7 +99,7 @@ class AuthServiceTest {
     @Test
     void register_success_normalizesHashesAndIssuesTokens() {
         when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(false);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(false);
 
         AuthResponse response = authService.register(
                 new RegisterRequest("0912345678", "secret123", "  Minh Tran  "), "JUnit-Agent");
@@ -111,7 +122,7 @@ class AuthServiceTest {
     @Test
     void register_duplicatePhone_throwsPhoneExists409() {
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(true);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(true);
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.register(new RegisterRequest("0912345678", "secret123", "Minh"), null));
@@ -124,7 +135,7 @@ class AuthServiceTest {
     @Test
     void register_uniqueConstraintRaceOnSave_mapsToPhoneExists() {
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.existsByPhone("+84912345678")).thenReturn(false);
+        when(userRepository.existsByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(false);
         when(userRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("users_phone_key"));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
@@ -143,7 +154,7 @@ class AuthServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
-        verify(userRepository, never()).existsByPhone(anyString());
+        verify(userRepository, never()).existsByPhoneAndDeletedAtIsNull(anyString());
     }
 
     // ---------------------------------------------------------------- login
@@ -152,7 +163,7 @@ class AuthServiceTest {
     void login_success_issuesTokens() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
-        when(userRepository.findByPhone("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
 
@@ -167,7 +178,7 @@ class AuthServiceTest {
     void login_wrongPassword_throwsInvalidCredentials401() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         when(phoneService.toE164(anyString())).thenReturn("+84912345678");
-        when(userRepository.findByPhone("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
 
@@ -182,7 +193,7 @@ class AuthServiceTest {
     @Test
     void login_unknownUser_throwsIdenticalInvalidCredentials_andPaysBcryptCompare() {
         when(phoneService.toE164(anyString())).thenReturn("+84999999999");
-        when(userRepository.findByPhone("+84999999999")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84999999999")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> authService.login(new LoginRequest("0999999999", "whatever123"), null));
@@ -203,7 +214,7 @@ class AuthServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
         verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
     }
 
@@ -217,6 +228,7 @@ class AuthServiceTest {
         UUID predecessorId = UUID.randomUUID();
         when(tokenService.rotate("rt-1", null, "JUnit"))
                 .thenReturn(new TokenService.RotationResult(user.getId(), predecessorId, original));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         AuthResponse response = authService.refresh(new RefreshRequest("rt-1"), "JUnit");
 

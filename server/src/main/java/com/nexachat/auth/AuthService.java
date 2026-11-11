@@ -15,9 +15,12 @@ import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.util.Map;
@@ -53,6 +56,7 @@ public class AuthService {
     private final RateLimitService rateLimitService;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -69,7 +73,8 @@ public class AuthService {
                        AccessTokenRevocationService accessTokenRevocationService,
                        RateLimitService rateLimitService,
                        AuthResponseFactory responseFactory,
-                       RefreshReplayConfiguration.BoundaryHook boundaryHook) {
+                       RefreshReplayConfiguration.BoundaryHook boundaryHook,
+                       ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -79,6 +84,7 @@ public class AuthService {
         this.rateLimitService = rateLimitService;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
+        this.transactionManagerProvider = transactionManagerProvider;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -89,7 +95,7 @@ public class AuthService {
         PasswordPolicy.requireRegisterable(request.password());
         enforcePhoneRateLimit("register", phone);
 
-        if (userRepository.existsByPhone(phone)) {
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         User user = User.create(phone, passwordEncoder.encode(request.password()), request.displayName().trim());
@@ -122,7 +128,7 @@ public class AuthService {
         }
         enforcePhoneRateLimit("login", phone);
 
-        User foundUser = userRepository.findByPhone(phone).orElse(null);
+        User foundUser = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         if (foundUser == null) {
             // Pay one bcrypt compare anyway so unknown vs known users take the same time.
             passwordEncoder.matches(request.password(), dummyHash);
@@ -170,6 +176,16 @@ public class AuthService {
         // This seam is deliberately after TokenService's proxy has committed.
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_REFRESH_TRANSACTION_COMMIT,
                 RefreshReplayConfiguration.Operation.ROTATE, rotation.userId(), rotation.predecessorId());
+
+        boolean ownerUnavailable = Boolean.TRUE.equals(new TransactionTemplate(
+                transactionManagerProvider.getObject()).execute(status ->
+                userRepository.findByIdForUpdate(rotation.userId())
+                        .map(user -> user.getDeletedAt() != null)
+                        .orElse(true)));
+        if (ownerUnavailable) {
+            tokenService.revokeIfOwned(rotation.response().refreshToken(), rotation.userId());
+            throw ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid");
+        }
         return rotation.response();
     }
 
@@ -194,6 +210,9 @@ public class AuthService {
     public void changePassword(UUID userId, ChangePasswordRequest request) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
 
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");

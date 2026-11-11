@@ -45,7 +45,7 @@ public class PresenceService {
     @Transactional
     public Instant recordLastSeen(UUID userId) {
         User user = userRepository.findById(userId).orElse(null);
-        if (user == null) {
+        if (user == null || user.getDeletedAt() != null) {
             return null;
         }
         Instant lastSeenAt = Instant.now().truncatedTo(ChronoUnit.MICROS);

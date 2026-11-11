@@ -355,6 +355,9 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                         "oldPassword", activePassword,
                         "newPassword", "matrixSecret456",
                         "refreshToken", activeRefreshToken)));
+            } else if (route.path().equals("/api/v1/users/me") && route.method().equals("DELETE")) {
+                request.contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "wrong-probe-password")));
             }
 
             var result = mockMvc.perform(request).andReturn();
@@ -865,6 +868,9 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         if (route.method().equals("POST") && path.endsWith("/ask")) return Map.of("question", "role probe");
         if (route.method().equals("POST") && path.endsWith("/summary")) {
             return Map.of("scope", "LAST_N", "limit", 5);
+        }
+        if (route.path().equals("/api/v1/users/me") && route.method().equals("DELETE")) {
+            return Map.of("password", "wrong-role-probe");
         }
         return null;
     }

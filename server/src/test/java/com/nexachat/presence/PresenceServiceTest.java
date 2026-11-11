@@ -11,6 +11,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import com.nexachat.user.DeletedAccountPolicy;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -93,5 +95,14 @@ class PresenceServiceTest {
 
         assertThat(result).containsEntry(conversationId, new InboxEntry.PeerPresence(false, lastSeenAt));
         assertThat(result).doesNotContainKey(hiddenConversation);
+    }
+
+    @Test
+    void deletedUserDoesNotPersistLastSeen() {
+        User tombstoned = User.create("+84901112233", DeletedAccountPolicy.TOMBSTONE_PASSWORD_HASH, "gone");
+        tombstoned.markDeleted(Instant.parse("2026-11-05T12:00:00Z"));
+        when(userRepository.findById(subjectId)).thenReturn(java.util.Optional.of(tombstoned));
+
+        assertThat(presenceService.recordLastSeen(subjectId)).isNull();
     }
 }

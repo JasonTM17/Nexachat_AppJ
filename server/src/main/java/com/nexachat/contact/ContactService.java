@@ -52,7 +52,7 @@ public class ContactService {
     @Transactional
     public ContactResponse add(UUID ownerId, String rawPhone) {
         final String phone = normalize(rawPhone);
-        User target = userRepository.findByPhone(phone)
+        User target = userRepository.findByPhoneAndDeletedAtIsNull(phone)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.USER_NOT_FOUND, "No user registered with that phone number"));
 

@@ -30,12 +30,19 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.ConversationMemberView(
-                       u.id, u.displayName, u.phone)
+                       u.id, u.displayName, u.phone, u.deletedAt IS NOT NULL)
             FROM ConversationMember m JOIN m.user u
             WHERE m.conversation.id = :conversationId
             ORDER BY u.id
             """)
     List<ConversationMemberView> findMemberViews(@Param("conversationId") UUID conversationId);
+
+    @Query("""
+            SELECT m.conversation.id FROM ConversationMember m
+            JOIN m.conversation c
+            WHERE m.user.id = :userId AND c.type = com.nexachat.conversation.Conversation.Type.GROUP
+            """)
+    List<UUID> findGroupConversationIdsForUser(@Param("userId") UUID userId);
 
     /**
      * THE authorization primitive for message traffic (plan §11.3.2): used by
@@ -191,6 +198,20 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             ORDER BY u.id
             """)
     List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
+
+    /**
+     * Successor pick for account-deletion admin hand-over: earliest
+     * {@code joined_at}, tie-broken by user id (PostgreSQL ordering).
+     */
+    @Query(value = """
+            SELECT user_id FROM conversation_members
+            WHERE conversation_id = :conversationId AND user_id <> :excludeUserId
+            ORDER BY joined_at ASC, user_id ASC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findSuccessorUserIdForAccountDeletion(
+            @Param("conversationId") UUID conversationId,
+            @Param("excludeUserId") UUID excludeUserId);
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows

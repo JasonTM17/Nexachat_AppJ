@@ -60,7 +60,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_trimsAndPersists() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), "  Lan Nguyen  ");
 
@@ -71,7 +71,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_blank_throwsValidationFailed() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         ApiException ex = catchThrowableOfType(ApiException.class, 
                 () -> userService.updateDisplayName(user.getId(), "   "));
@@ -84,7 +84,7 @@ class UserServiceTest {
     @Test
     void updateDisplayName_null_isNoOp() {
         User user = userWithId("Old Name");
-        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
 
         User updated = userService.updateDisplayName(user.getId(), null);
 
@@ -99,7 +99,7 @@ class UserServiceTest {
         UUID callerId = UUID.randomUUID();
         User found = userWithId("Lan");
         when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
-        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(found));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(found));
 
         List<UserResponse> results = userService.search(callerId, "0987776655", null);
 
@@ -112,7 +112,7 @@ class UserServiceTest {
     @Test
     void search_phoneUnknown_returnsEmptyListNot404() {
         when(phoneService.toE164(anyString())).thenReturn("+84900000001");
-        when(userRepository.findByPhone("+84900000001")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
         List<UserResponse> results = userService.search(UUID.randomUUID(), "0900000001", null);
 
@@ -127,7 +127,7 @@ class UserServiceTest {
                 () -> userService.search(UUID.randomUUID(), "not-a-phone", null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
     }
 
     @Test
@@ -188,7 +188,7 @@ class UserServiceTest {
                 () -> userService.search(UUID.randomUUID(), "+84912345678", "Lan"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
     }
 
     @Test
@@ -197,6 +197,6 @@ class UserServiceTest {
                 () -> userService.search(UUID.randomUUID(), null, "  "));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(userRepository, never()).findByPhone(anyString());
+        verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
     }
 }

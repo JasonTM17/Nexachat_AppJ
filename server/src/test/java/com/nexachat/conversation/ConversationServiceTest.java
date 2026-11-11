@@ -106,8 +106,8 @@ class ConversationServiceTest {
         Conversation stored = conversationWithKey("k");
         when(directConversationCreator.createDirect(any(), any(), anyString())).thenReturn(stored);
         when(memberRepository.findMemberViews(stored.getId())).thenReturn(List.of(
-                new ConversationMemberView(callerId, "Caller", "+84901112233"),
-                new ConversationMemberView(otherId, "Other", "+84987776655")));
+                new ConversationMemberView(callerId, "Caller", "+84901112233", false),
+                new ConversationMemberView(otherId, "Other", "+84987776655", false)));
 
         ConversationService.OpenDirectResult result =
                 conversationService.openDirect(callerId, new OpenDirectRequest(null, otherId));
@@ -150,6 +150,7 @@ class ConversationServiceTest {
         // First lookup misses, the post-race re-read finds the winner.
         when(conversationRepository.findByDirectKey(key))
                 .thenReturn(Optional.empty())
+                .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
         when(directConversationCreator.createDirect(any(), any(), eq(key)))
                 .thenThrow(new DataIntegrityViolationException("conversations_direct_key_key"));
@@ -165,7 +166,7 @@ class ConversationServiceTest {
     @Test
     void openDirect_byPhone_normalizesAndResolves() {
         when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
-        when(userRepository.findByPhone("+84987776655")).thenReturn(Optional.of(other()));
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(other()));
         when(userRepository.findById(callerId)).thenReturn(Optional.of(caller()));
         Conversation stored = conversationWithKey("k");
         when(conversationRepository.findByDirectKey(anyString())).thenReturn(Optional.of(stored));
@@ -176,7 +177,7 @@ class ConversationServiceTest {
 
         assertThat(result.body().id()).isEqualTo(stored.getId());
         verify(phoneService).toE164("0987776655");
-        verify(userRepository).findByPhone("+84987776655");
+        verify(userRepository).findByPhoneAndDeletedAtIsNull("+84987776655");
     }
 
     @Test
@@ -194,7 +195,7 @@ class ConversationServiceTest {
     @Test
     void openDirect_unknownPhone_throwsUserNotFound404() {
         when(phoneService.toE164(anyString())).thenReturn("+84900000001");
-        when(userRepository.findByPhone("+84900000001")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> conversationService.openDirect(callerId, new OpenDirectRequest("0900000001", null)));
@@ -205,8 +206,6 @@ class ConversationServiceTest {
 
     @Test
     void openDirect_self_throwsValidationFailed() {
-        when(userRepository.findById(callerId)).thenReturn(Optional.of(caller()));
-
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> conversationService.openDirect(callerId, new OpenDirectRequest(null, callerId)));
 

@@ -33,4 +33,9 @@ public interface UserDeviceTokenRepository extends JpaRepository<UserDeviceToken
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM UserDeviceToken t WHERE t.token = :token")
     int deleteByToken(@Param("token") String token);
+
+    @org.springframework.transaction.annotation.Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM UserDeviceToken t WHERE t.user.id = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }
