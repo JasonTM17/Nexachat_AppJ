@@ -452,6 +452,6 @@ test('the step, rate-limit and global error messages exist in both locales with 
   }
 });
 
-test('the checked-in page keeps the API base empty by default', () => {
-  assert.match(HTML, /<meta name="nexachat-api-base" content="">/);
+test('the checked-in page targets the production API over HTTPS without a trailing slash', () => {
+  assert.match(HTML, /<meta name="nexachat-api-base" content="https:\/\/api\.nexachat\.io\.vn">/);
 });
