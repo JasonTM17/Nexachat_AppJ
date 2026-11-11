@@ -686,6 +686,43 @@ Use `http://10.0.2.2:8080` from the Android emulator. A physical phone needs
 the LAN URL printed by `demo/lan-up.sh` or `demo/lan-up.ps1`; the scripts refuse
 to start if a non-NexaChat process is listening on host port `8080` or `5433`.
 
+## Production smoke test
+
+`tools/prod-smoke.sh` is the post-deploy check. Run it against the public API
+origin after a deploy (bash, curl and Python 3.8+ are required; JSON parsing
+uses Python):
+
+```sh
+bash tools/prod-smoke.sh https://api.nexachat.io.vn
+```
+
+It polls `/actuator/health` for up to 120 s (Render Free wakes in about a
+minute), then checks: health `UP`; TLS certificate verification on an HTTPS
+origin and, when the origin sends `Strict-Transport-Security`, a positive
+`max-age` (a missing API header is a warning unless `--require-hsts` is
+passed); the browser CORS preflight that `site/delete-account.js` needs
+from `https://nexachat.io.vn` for both account-deletion routes; unauthenticated
+`GET /api/v1/users/me` → `401`; exactly one public password-reset OTP request
+with the reserved fake phone `+84908000000` → `202 {}`; and the `/ws` STOMP
+upgrade (`101`). A failed CORS preflight means the origin is missing from
+`NEXACHAT_CORS_ALLOWED_ORIGINS`.
+
+`--write` additionally registers two disposable accounts in the reserved
+`+84908` phone range, logs in, uploads a 1×1 PNG avatar through
+`POST /users/me/avatar`, fetches it back byte-for-byte, deletes both accounts,
+and verifies that login and the old access token are rejected (`401`) and the
+avatar returns `404 FILE_NOT_FOUND`. The second account is the observer that
+can still authenticate after the first is deleted. Nothing is written without
+`--write`; that mode creates and deletes real rows, so use it only on an
+environment you operate.
+
+Options: `--wait SECONDS` (default 120), `--timeout SECONDS` (per request,
+default 20), and `--require-hsts` (fail when an HTTPS origin sends no
+`Strict-Transport-Security`; by default a missing API HSTS header is a warning
+because the TLS edge may add it). `--self-test` runs an offline stub-server
+suite that proves the pass path, the wake-up failure, every degraded check and
+an avatar-cleanup leak are detected.
+
 ## Logs
 
 Spring Boot and PostgreSQL log to container stdout/stderr; Docker retains them.
