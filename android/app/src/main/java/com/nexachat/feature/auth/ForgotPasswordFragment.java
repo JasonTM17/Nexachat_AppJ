@@ -40,6 +40,13 @@ public final class ForgotPasswordFragment extends Fragment {
         binding.forgotToolbar.setNavigationOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigateUp());
         binding.forgotPhoneInput.addTextChangedListener(watcher(viewModel::onPhoneChanged));
+        binding.forgotPhoneInput.setOnEditorActionListener((v, action, event) -> {
+            if (action == EditorInfo.IME_ACTION_DONE) {
+                viewModel.sendCode();
+                return true;
+            }
+            return false;
+        });
         binding.forgotOtpInput.addTextChangedListener(new OtpTextWatcher());
         binding.forgotNewPasswordInput.addTextChangedListener(watcher(viewModel::onNewPasswordChanged));
         binding.forgotConfirmPasswordInput.addTextChangedListener(

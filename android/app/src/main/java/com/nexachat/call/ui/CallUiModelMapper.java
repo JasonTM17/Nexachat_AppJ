@@ -4,12 +4,40 @@ import com.nexachat.R;
 import com.nexachat.call.core.CallEndReason;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.ui.FirebaseCallStatusDisplayAdapter.CallStatusDisplay;
+import com.nexachat.call.ui.FirebaseCallStatusDisplayAdapter.State;
 
 /** Maps the manager snapshot into localized view resources and control visibility. */
 public final class CallUiModelMapper {
     private CallUiModelMapper() { }
 
     public static CallUiModel map(CallSession session) {
+        return map(session, null);
+    }
+
+    /**
+     * Uses the read-only projection only as an accepted-call label while STOMP catches up.
+     * The manager snapshot continues to own call controls and every terminal result.
+     */
+    public static CallUiModel map(CallSession session, CallStatusDisplay firebaseStatus) {
+        CallUiModel authoritative = mapAuthoritative(session);
+        if (session == null || session.getState() == CallState.ENDED || firebaseStatus == null
+                || firebaseStatus.getState() != State.ACTIVE
+                || !matches(firebaseStatus, session)
+                || !isAwaitingAcceptedEvent(session.getState())) {
+            return authoritative;
+        }
+        return new CallUiModel(
+                R.string.call_status_accepted,
+                authoritative.getSubtitleRes(),
+                authoritative.getHangUpLabelRes(),
+                authoritative.isShowTimer(),
+                authoritative.isShowMute(),
+                authoritative.isShowSpeaker(),
+                authoritative.isShowHangUp());
+    }
+
+    private static CallUiModel mapAuthoritative(CallSession session) {
         if (session == null) return ended(R.string.call_state_ended);
         switch (session.getState()) {
             case OUTGOING_RINGING:
@@ -30,6 +58,26 @@ public final class CallUiModelMapper {
             default:
                 return ended(R.string.call_state_ended);
         }
+    }
+
+    private static boolean isAwaitingAcceptedEvent(CallState state) {
+        return state == CallState.OUTGOING_RINGING
+                || state == CallState.INCOMING_RINGING
+                || state == CallState.CONNECTING;
+    }
+
+    private static boolean matches(CallStatusDisplay status, CallSession session) {
+        if (!same(status.getCallId(), session.getCallId())
+                || !same(status.getConversationId(), session.getConversationId())
+                || !same(status.getPeerUserId(), session.getPeerUserId())
+                || session.getDirection() == null) {
+            return false;
+        }
+        return status.isViewerCaller() == (session.getDirection() == CallSession.Direction.OUTGOING);
+    }
+
+    private static boolean same(String first, String second) {
+        return first != null && second != null && first.equalsIgnoreCase(second);
     }
 
     private static int titleFor(CallEndReason reason) {

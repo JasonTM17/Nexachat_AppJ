@@ -74,10 +74,10 @@ class SummaryCacheWinnerOptOutTest {
                 eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN)))
                 .thenReturn(Optional.empty());
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(safe);
-        when(cacheRepository.saveIfAbsent(eq(conversationId), eq(window),
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window),
                 eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
                 .thenReturn(new SummaryCacheRepository.SavedSummary(unsafeWinner, false));
-        when(cacheRepository.replace(eq(conversationId), eq(window),
+        when(cacheRepository.replace(eq(userId), eq(conversationId), eq(window),
                 eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
                 .thenReturn(safeReplacement);
 

@@ -2,6 +2,8 @@ package com.nexachat.attachment;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Instant;
+import java.util.List;
 
 /**
  * Stores uploaded bytes under a server-generated key and resolves a public
@@ -84,6 +86,20 @@ public interface StorageService {
     boolean deleteIfExists(String storageKey);
 
     /**
+     * Lists the stored files directly inside {@code subdir}.
+     *
+     * <p>Only regular files are returned: nested directories and symbolic
+     * links are skipped, so a sweep can never walk outside the requested
+     * folder. Implementations apply the same {@code subdir} guard as
+     * {@link #store}. The result is ordered oldest first (last-modified time,
+     * then key) so a bounded batch makes deterministic progress.</p>
+     *
+     * @param subdir logical folder, e.g. {@code avatars}
+     * @return stored files, empty when the folder does not exist
+     */
+    List<StoredFileInfo> list(String subdir);
+
+    /**
      * An open stored file: the stream positioned at offset zero plus its size.
      */
     record StreamHandle(InputStream content, long sizeBytes) implements AutoCloseable {
@@ -110,5 +126,15 @@ public interface StorageService {
      * @param mimeType   MIME type sniffed from the content
      */
     record StoredFile(String storageKey, long sizeBytes, String mimeType) {
+    }
+
+    /**
+     * A stored file observed during an inventory walk.
+     *
+     * @param storageKey key relative to the storage root
+     * @param lastModified last write time; write-once files are never modified
+     *                     after {@link #store}, so this is their creation time
+     */
+    record StoredFileInfo(String storageKey, Instant lastModified) {
     }
 }

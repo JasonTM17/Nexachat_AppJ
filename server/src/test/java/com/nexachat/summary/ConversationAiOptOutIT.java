@@ -9,6 +9,7 @@ import com.nexachat.rag.JdbcRagMessageIndex;
 import com.nexachat.rag.RagMessage;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.user.UserSettingsService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,8 @@ class ConversationAiOptOutIT {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private UserSettingsService userSettingsService;
     @Autowired
     private ConversationRepository conversationRepository;
     @Autowired
@@ -132,6 +135,7 @@ class ConversationAiOptOutIT {
 
     @Test
     void retrievalCacheAndIndexStopUsingAnOptedOutAuthorsMessages() throws Exception {
+        userSettingsService.updateSettings(caller.getId(), null, null, true);
         TestMessage fact = addMessage(peer.getId(),
                 "The server migration is scheduled for March 14 at 02:00.");
         addMessage(caller.getId(), "We discussed the release notes.");

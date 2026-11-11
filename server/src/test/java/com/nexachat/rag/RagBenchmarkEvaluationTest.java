@@ -3,6 +3,7 @@ package com.nexachat.rag;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryConsentRepository.ConsentSnapshot;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.Test;
@@ -165,6 +166,7 @@ class RagBenchmarkEvaluationTest {
         when(conversationRepository.existsById(any())).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(any(), any())).thenReturn(true);
         when(consentRepository.isConsented(any())).thenReturn(true);
+        when(consentRepository.snapshot(any())).thenReturn(new ConsentSnapshot(true, 1));
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             List<RagContextItem> context = invocation.getArgument(4);

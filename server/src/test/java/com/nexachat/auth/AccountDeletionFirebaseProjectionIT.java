@@ -77,7 +77,7 @@ class AccountDeletionFirebaseProjectionIT extends SecurityITBase {
         assertThat(firebase.bridgeCanAccess(deleted.userId(), bridgeId, nowMillis)).isTrue();
         assertThat(firebase.get("members/" + conversationId + "/" + deleted.userId())).isNotNull();
         assertThat(firebase.get("presenceReaders/" + peer.userId() + "/" + deleted.userId()))
-                .isEqualTo(conversationId.toString());
+                .isEqualTo(Map.of("cid", conversationId.toString(), "type", "DIRECT"));
 
         deleteMe(deleted.accessToken(), "secret123").andExpect(status().isNoContent());
 
@@ -216,6 +216,26 @@ class AccountDeletionFirebaseProjectionIT extends SecurityITBase {
                     values.put(path, value);
                 }
             });
+        }
+
+        @Override
+        public synchronized boolean presencePrivacyMigrationComplete() {
+            return Integer.valueOf(2).equals(values.get("control/presencePrivacyVersion"));
+        }
+
+        @Override
+        public synchronized int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
+            String prefix = "presence/" + userId + "/";
+            List<String> legacyPaths = values.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith(prefix))
+                    .filter(entry -> entry.getValue() instanceof Map<?, ?>)
+                    .filter(entry -> ((Map<?, ?>) entry.getValue()).get("lastSeen") instanceof Number lastSeen
+                            && lastSeen.longValue() > 0L)
+                    .limit(limit)
+                    .map(Map.Entry::getKey)
+                    .toList();
+            legacyPaths.forEach(values::remove);
+            return legacyPaths.size();
         }
 
         @Override

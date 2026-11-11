@@ -459,7 +459,7 @@
     <string name="conversation_pinned">Đã ghim lên đầu</string>
     <string name="conversation_unpinned">Đã bỏ ghim</string>
     <string name="confirm_remove_contact">Xóa liên hệ này?</string>
-    <string name="session_expired_sign_in_again">Phiên đã hết hạn, đăng nhập lại</string>
+    <string name="session_expired_sign_in_again">Phiên đã hết hạn, hãy đăng nhập lại.</string>
 
     <!-- Cluster B message interactions -->
     <string name="message_actions_title">Thao tác với tin nhắn</string>
@@ -504,10 +504,10 @@
     <string name="forgot_password_submit">Đặt lại mật khẩu</string>
     <string name="forgot_password_resend">Gửi lại mã</string>
     <string name="forgot_password_resend_countdown">Gửi lại mã (%1$d)</string>
-    <string name="forgot_password_code_invalid">Mã sai hoặc đã hết hạn</string>
+    <string name="forgot_password_code_invalid">Mã không đúng hoặc đã hết hạn</string>
     <string name="forgot_password_changed">Đã đổi mật khẩu. Hãy đăng nhập lại.</string>
     <string name="forgot_password_password_too_long">Mật khẩu tối đa 72 byte</string>
-    <string name="forgot_password_change_phone">Đổi số</string>
+    <string name="forgot_password_change_phone">Đổi số điện thoại</string>
     <string name="auth_password_policy_hint">Tối thiểu 8 ký tự, tối đa 72 byte</string>
     <string name="cd_forgot_phone">Số điện thoại để đặt lại mật khẩu</string>
     <string name="cd_forgot_otp">Mã xác minh đặt lại mật khẩu</string>
@@ -522,11 +522,11 @@
     <string name="recovery_email_verify">Xác minh</string>
     <string name="recovery_email_resend">Gửi lại mã</string>
     <string name="recovery_email_resend_countdown">Gửi lại mã (%1$d)</string>
-    <string name="recovery_email_otp_label">Mã 6 số</string>
+    <string name="recovery_email_otp_label">Mã 6 chữ số</string>
     <string name="recovery_email_otp_sent_to">Đã gửi mã tới %1$s</string>
     <string name="recovery_email_invalid">Nhập địa chỉ email hợp lệ</string>
     <string name="recovery_email_in_use">Email này đã được xác minh trên tài khoản khác</string>
-    <string name="recovery_email_code_invalid">Mã sai hoặc hết hạn</string>
+    <string name="recovery_email_code_invalid">Mã không đúng hoặc đã hết hạn</string>
     <string name="recovery_email_mail_unavailable">Dịch vụ email không khả dụng</string>
     <string name="recovery_email_verified_status">Đã xác minh: %1$s</string>
     <string name="recovery_email_none_status">Chưa có email khôi phục</string>
@@ -553,5 +553,5 @@
     <string name="error_google_not_linked">Tài khoản Google này chưa được liên kết. Hãy đăng nhập bằng số điện thoại và mật khẩu, sau đó liên kết Google trong Cài đặt.</string>
     <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
     <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
-    <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ cách đăng nhập này.</string>
+    <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
 </resources>

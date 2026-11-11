@@ -20,9 +20,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
 
 @Service
 public class CallService {
@@ -182,6 +184,21 @@ public class CallService {
         return iceConfig;
     }
 
+    /**
+     * Visits the current active-call snapshot while holding the registry read lock.
+     * Projection renewals use this to avoid writing an old ACTIVE state after a terminal transition.
+     */
+    public void withActiveCallSessions(Consumer<List<CallSession>> visitor) {
+        Objects.requireNonNull(visitor, "visitor");
+        Lock lock = registryAccessLock.readLock();
+        lock.lock();
+        try {
+            visitor.accept(registry.activeCallSessions());
+        } finally {
+            lock.unlock();
+        }
+    }
+
     @Transactional(readOnly = true)
     public CallHistoryPage history(UUID userId, UUID conversationId, int limit, String rawCursor) {
         if (limit < 1 || limit > HISTORY_MAX_LIMIT) {
@@ -245,6 +262,7 @@ public class CallService {
 
     private void persist(CallSession call) {
         recordRepository.save(CallRecord.from(call));
+        eventPublisher.publishEvent(new CallStatusProjectionEvent(call));
     }
 
     private CallEvent event(String eventType, CallSession call, UUID fromUserId, CallSignal signal,

@@ -28,38 +28,84 @@
       <div class="prose" lang="vi">
         <h2>Ứng dụng</h2>
         <p>NexaChat là ứng dụng nhắn tin trên Android (<code>com.nexachat</code>). Không có ứng dụng trình duyệt đầy đủ cho nhắn tin.</p>
-        <h2>Dữ liệu tài khoản</h2>
-        <p>Đăng ký dùng số điện thoại và mật khẩu (chuẩn hóa E.164). Bạn có thể thêm email khôi phục tùy chọn và xác minh bằng mã 6 chữ số. Dịch vụ không xác minh quyền sở hữu số điện thoại bằng OTP.</p>
+
+        <h2>Dữ liệu tài khoản và danh bạ</h2>
+        <p>Đăng ký dùng số điện thoại chuẩn hóa E.164, mật khẩu và tên hiển thị; bạn có thể thêm ảnh đại diện tùy chọn. Dịch vụ không xác minh quyền sở hữu số điện thoại bằng tin nhắn SMS OTP.</p>
+        <p>NexaChat không đọc danh bạ trên thiết bị (không yêu cầu quyền <code>READ_CONTACTS</code>). Danh bạ được tạo thủ công trong ứng dụng. Khi tìm kiếm theo tên hiển thị, số điện thoại được ẩn trừ khi bạn đã lưu người đó trong danh bạ; tìm kiếm chính xác bằng số điện thoại sẽ hiển thị hồ sơ tương ứng.</p>
+
+        <h2>Đăng nhập bằng Google (tùy chọn)</h2>
+        <p>Đăng nhập bằng Google là tính năng tùy chọn, mặc định tắt và phụ thuộc vào cấu hình của nhà vận hành. Tính năng này không tạo tài khoản mới; bạn chỉ có thể liên kết tài khoản Google sau khi đã đăng nhập tài khoản NexaChat trong phần Cài đặt (cần nhập mật khẩu hiện tại).</p>
+        <p>Máy chủ NexaChat chỉ xác thực ID token và lưu mã nhận diện người dùng bất biến của Google (OpenID Connect <code>sub</code>) cùng địa chỉ email Google tại thời điểm liên kết để hiển thị. Token phiên Google không được lưu trữ. Dữ liệu liên kết Google chỉ dành riêng cho chủ tài khoản, không hiển thị trong tìm kiếm hay hồ sơ công khai, và sẽ bị xóa ngay khi bạn hủy liên kết hoặc xóa tài khoản.</p>
+
         <h2>Email khôi phục và mã dùng một lần</h2>
-        <p>Email khôi phục là tùy chọn, dùng cho khôi phục tài khoản, xóa tài khoản trên web và đặt lại mật khẩu; không dùng cho quảng cáo. Mã 6 chữ số được gửi qua nhà cung cấp email giao dịch, chỉ lưu dưới dạng băm, hết hạn sau 10 phút và có giới hạn số lần gửi và số lần thử. Email đã xác minh được gỡ khỏi tài khoản khi bạn xóa email hoặc xóa tài khoản.</p>
-        <h2>Tin nhắn và tệp</h2>
-        <p>Nội dung tin nhắn và tệp đính kèm được lưu trên máy chủ khi bạn gửi qua ứng dụng. Tin nhắn không được mã hóa đầu cuối; bảo vệ phụ thuộc TLS khi vận chuyển và kiểm soát truy cập trên máy chủ.</p>
-        <h2>Phiên đăng nhập</h2>
-        <p>Ứng dụng dùng access token ngắn hạn và refresh token một lần. Trên thiết bị, token phiên được lưu mã hóa trong Android Keystore.</p>
+        <p>Bạn có thể thêm một email khôi phục tùy chọn và xác minh bằng mã 6 chữ số. Email khôi phục là dữ liệu riêng tư, không hiển thị cho người dùng khác, không xuất hiện trong tìm kiếm và không dùng cho mục đích quảng cáo.</p>
+        <p>Email này được dùng cho khôi phục tài khoản, xóa tài khoản trên web và đặt lại mật khẩu. Khi nhà vận hành cấu hình dịch vụ email, mã 6 chữ số được gửi qua nhà cung cấp email giao dịch; mã chỉ được lưu dưới dạng băm HMAC-SHA256 (không lưu mã gốc), hết hạn sau 10 phút và có giới hạn số lần thử. Email đã xác minh sẽ được xóa khi bạn gỡ bỏ hoặc khi xóa tài khoản.</p>
+
+        <h2>Tin nhắn, cuộc gọi và tệp đính kèm</h2>
+        <p>Nội dung tin nhắn, biểu cảm, bình chọn, lời nhắc và tệp đính kèm (hình ảnh, video, âm thanh, tài liệu) được lưu trên máy chủ khi gửi qua ứng dụng. Tin nhắn thoại và cuộc gọi cần quyền micro (<code>RECORD_AUDIO</code>).</p>
+        <p>Cuộc gọi 1-1 sử dụng WebRTC truyền trực tiếp giữa hai thiết bị (P2P hoặc qua STUN công khai của Google; không có TURN). STUN nhận địa chỉ IP nguồn; thiết bị còn lại nhận ứng viên ICE, có thể chứa địa chỉ mạng cục bộ. Âm thanh và hình ảnh cuộc gọi không được ghi âm hay lưu trữ. SDP/ICE chỉ được chuyển tiếp trong bộ nhớ; siêu dữ liệu cuộc gọi (người gọi, người nhận, thời điểm, trạng thái) được lưu trên máy chủ. NexaChat không mã hóa đầu cuối (E2EE); bảo vệ dữ liệu phụ thuộc vào mã hóa TLS khi vận chuyển và cơ chế phân quyền trên máy chủ.</p>
+
+        <h2>Trạng thái hoạt động, đang nhập và thông báo đẩy</h2>
+        <p>Trạng thái trực tuyến và thông báo đang nhập là dữ liệu tạm thời, mặc định truyền qua STOMP WebSocket và lưu trong bộ nhớ máy chủ. Thời gian hoạt động gần nhất được lưu trên máy chủ; bạn có thể ẩn thời gian này trong cài đặt quyền riêng tư.</p>
+        <p>Máy chủ hỗ trợ cầu nối tùy chọn tới Firebase Realtime Database và Firebase Authentication, mặc định tắt ở cả máy chủ và ứng dụng; khi tắt, ứng dụng không mở kết nối Firebase Authentication hoặc Realtime Database và STOMP là kênh mặc định. Khi được bật, dữ liệu người dùng mà Firebase nhận gồm dữ liệu tạm thời và cờ phân quyền: UUID nội bộ (người dùng, cuộc trò chuyện, cuộc gọi, bridge), trạng thái trực tuyến và đang nhập, cờ hoạt động/hiển thị hoạt động, quyền đọc trạng thái 1-1, trạng thái cuộc gọi chỉ để hiển thị (mã cuộc gọi, mã người gọi và người nhận, trạng thái RINGING/ACTIVE/ENDED, thời điểm cập nhật và hết hạn) cùng thời hạn phiên/thành viên ngắn. Trường lastSeen luôn bằng 0; thời gian hoạt động gần nhất thực tế không được gửi tới Firebase. Dữ liệu trạng thái (trực tuyến, đang nhập, cuộc gọi, thời hạn phiên/thành viên) tồn tại từ 5 giây (đang nhập) đến tối đa 120 giây (phiên, thành viên, cuộc gọi đang hoạt động), tự hết hạn hoặc bị xóa khi mất kết nối, đăng xuất hay xóa tài khoản; cờ và quyền phân quyền bị xóa khi xóa tài khoản. Cầu nối này không nhận số điện thoại, email, tên hiển thị, nội dung tin nhắn, tệp đính kèm, SDP/ICE hay token đăng nhập NexaChat.</p>
+        <p>Khi thông báo đẩy (FCM) được cấu hình, mã đăng ký thiết bị được lưu trên máy chủ. Gói tin đẩy chỉ chứa mã định danh, tên hiển thị người gửi hoặc người gọi và siêu dữ liệu thông báo (cuộc gọi, lời nhắc, cờ nhắc đến); không chứa nội dung tin nhắn hay tệp đính kèm.</p>
+
+        <h2>Phiên đăng nhập và bảo mật thiết bị</h2>
+        <p>Ứng dụng dùng access token ngắn hạn và cơ chế xoay vòng refresh token một lần. Trên thiết bị Android, token phiên được lưu mã hóa bằng Android Keystore (AES-GCM). Cơ sở dữ liệu và bộ nhớ đệm đa phương tiện nằm trong vùng lưu trữ riêng của ứng dụng.</p>
+        <p>Đăng xuất trên thiết bị hiện tại chỉ thu hồi phiên của thiết bị đó. Đổi mật khẩu hoặc chọn đăng xuất mọi thiết bị sẽ thu hồi toàn bộ phiên đang hoạt động.</p>
+
         <h2>Tính năng AI (tùy chọn)</h2>
-        <p>Tóm tắt hội thoại và hỏi đáp trong chat có thể gọi mô hình bên ngoài chỉ khi người dùng đồng ý và nhà vận hành cấu hình khóa API. Có thể từ chối theo tài khoản hoặc theo hội thoại.</p>
-        <h2>Xóa tài khoản</h2>
-        <p>Bạn có thể xóa tài khoản trong ứng dụng. Nếu đã thêm email khôi phục đã xác minh, bạn cũng có thể xóa trên trang này khi nhà vận hành bật biểu mẫu web. Xem <a href="/delete-account.html">trang xóa tài khoản</a> để biết dữ liệu nào bị xóa và dữ liệu nào còn lại.</p>
+        <p>Tính năng tóm tắt hội thoại và hỏi đáp (Ask) mặc định xử lý trên máy chủ NexaChat, không gửi dữ liệu tới dịch vụ AI bên ngoài. Ứng dụng chỉ gọi mô hình AI bên ngoài khi người yêu cầu đồng ý (opt-in) và nhà vận hành đã cấu hình khóa API.</p>
+        <p>Khi gửi dữ liệu tới dịch vụ AI bên ngoài, nội dung tin nhắn được làm sạch (redacted): tên người dùng được thay bằng định danh ẩn danh (U1, U2...), số điện thoại, email, liên kết và mã số được loại bỏ. Tin nhắn của người tham gia khác trong khung tóm tắt cũng được gửi trừ khi họ từ chối AI trong cuộc trò chuyện đó. Quá trình lập chỉ mục nền có thể gửi văn bản của người tham gia chưa từ chối AI trong cuộc trò chuyện tới nhà cung cấp nhúng bên ngoài khi nhà vận hành bật. Người dùng có thể từ chối tính năng AI trên toàn tài khoản hoặc theo từng cuộc trò chuyện. Bản tóm tắt và kết quả hỏi đáp được lưu đệm tạm thời (mặc định 24 giờ) và tự động xóa khi tin nhắn liên quan bị sửa, thu hồi hoặc khi xóa tài khoản.</p>
+
+        <h2>Lưu trữ, thu hồi và xóa tài khoản</h2>
+        <p>Tin nhắn và cuộc trò chuyện thông thường không tự động hết hạn. Người gửi có thể thu hồi tin nhắn trong vòng 24 giờ (hoặc quản trị viên nhóm có thể thu hồi bất kỳ lúc nào), chuyển tin nhắn thành trạng thái đã thu hồi.</p>
+        <p>Bạn có thể xóa tài khoản trực tiếp trong ứng dụng tại Hồ sơ (Cài đặt) > Xóa tài khoản với mật khẩu hiện tại. Nếu đã có email khôi phục đã xác minh, bạn cũng có thể yêu cầu xóa tài khoản bị mất thiết bị qua biểu mẫu trên <a href="/delete-account.html">trang xóa tài khoản</a>.</p>
+        <p>Khi xóa tài khoản, hệ thống lập tức thu hồi mọi phiên đăng nhập, xóa đăng ký nhận thông báo, xóa danh bạ hai chiều, rời tất cả các nhóm (chuyển giao quyền quản trị nếu là quản trị viên duy nhất), xóa ảnh đại diện, xóa liên kết Google, xóa email khôi phục và mã OTP, xóa đồng ý và bộ nhớ đệm AI, giải phóng số điện thoại để đăng ký mới và đổi tên hiển thị thành tài khoản đã xóa. Tin nhắn bạn đã gửi vẫn lưu lại trong cuộc trò chuyện của người nhận dưới tên tài khoản đã xóa. Trên thiết bị Android, thao tác xóa tài khoản sẽ dọn sạch toàn bộ cơ sở dữ liệu cục bộ, token và bộ nhớ đệm tệp.</p>
+
         <h2>Trang web này</h2>
-        <p>nexachat.io.vn phục vụ trang giới thiệu, liên kết mời nhóm, tệp <code>assetlinks.json</code> cho App Links Android và biểu mẫu xóa tài khoản. Khi được bật, biểu mẫu chỉ gửi số điện thoại và mã bạn nhập tới API NexaChat qua HTTPS; trang không đặt cookie, không dùng lưu trữ cục bộ và không có trình theo dõi. Đăng ký chỉ trong ứng dụng.</p>
+        <p>nexachat.io.vn phục vụ trang giới thiệu, liên kết mời nhóm, tệp <code>assetlinks.json</code> cho App Links Android và biểu mẫu xóa tài khoản. Khi được bật, biểu mẫu chỉ gửi số điện thoại và mã bạn nhập tới API NexaChat qua HTTPS; trang không đặt cookie, không dùng lưu trữ cục bộ và không có trình theo dõi. Đăng ký tài khoản chỉ thực hiện trong ứng dụng.</p>
       </div>
       <div class="prose" lang="en">
         <h2>Application</h2>
         <p>NexaChat is an Android messaging app (<code>com.nexachat</code>). There is no full browser client for messaging.</p>
-        <h2>Account data</h2>
-        <p>Registration uses a phone number and password (E.164 normalization). You can add an optional recovery email and verify it with a 6-digit code. The service does not verify phone ownership with OTP.</p>
+
+        <h2>Account data and contacts</h2>
+        <p>Registration uses an E.164 phone number, password, and display name; you can optionally upload an avatar image. The service does not verify phone number ownership with SMS OTP.</p>
+        <p>NexaChat does not read your device address book (no <code>READ_CONTACTS</code> permission). Contacts are created manually in the app. In display-name search, phone numbers are omitted unless you already have that user in your contacts; searching by exact phone number returns the matching profile.</p>
+
+        <h2>Sign in with Google (optional)</h2>
+        <p>Sign in with Google is optional, disabled by default, and depends on operator configuration. It cannot be used to create new accounts; you can only link a Google account after registering and signing in to NexaChat, through Settings (requiring your current password).</p>
+        <p>The NexaChat server verifies the ID token and stores only Google's immutable user identifier (OpenID Connect <code>sub</code> claim) and the Google email address at link time for display. Google session tokens are not stored. Linked Google identity data is owner-only, is never exposed in search or public profiles, and is permanently deleted when you unlink Google or delete your account.</p>
+
         <h2>Recovery email and one-time codes</h2>
-        <p>The recovery email is optional and used for account recovery, web account deletion, and password reset; it is not used for marketing. A 6-digit code is sent through a transactional email provider, stored only as a hash, expires after 10 minutes, and is limited by send and attempt counts. A verified email is removed from the account when you remove it or delete the account.</p>
-        <h2>Messages and files</h2>
-        <p>Message and attachment content is stored on the server when sent through the app. There is no end-to-end encryption; protection relies on TLS in transit and server access controls.</p>
-        <h2>Sessions</h2>
-        <p>The app uses short-lived access tokens and single-use refresh token rotation. On device, session tokens are encrypted with Android Keystore.</p>
+        <p>You can add an optional recovery email and verify it with a 6-digit code. The recovery email is private, never shown to other users, omitted from search and profile responses, and never used for marketing.</p>
+        <p>The email is used for account recovery, web account deletion, and password reset. When the operator configures email delivery, a 6-digit code is sent through a transactional email provider; the code is stored only as an HMAC-SHA256 hash (never in plaintext), expires after 10 minutes, and has attempt and rate limits. A verified email is removed from the account when you remove it or delete your account.</p>
+
+        <h2>Messages, calls, and attachments</h2>
+        <p>Message text, reactions, polls, reminders, and file attachments (images, videos, audio recordings, documents) are stored on the server when sent through the app. Voice messages and calls require microphone permission (<code>RECORD_AUDIO</code>).</p>
+        <p>One-on-one calls use WebRTC peer-to-peer connections (or public Google STUN for network traversal; there is no TURN server). Google STUN sees the source IP; the other device receives ICE candidates, which can include local network addresses. Call audio and video streams are never recorded or stored. SDP/ICE payloads are relayed in memory only; call metadata (caller, callee, time, state) is stored on the server. NexaChat does not offer end-to-end encryption; protection relies on TLS in transit (HTTPS/WSS) and server-side database access controls.</p>
+
+        <h2>Presence, typing, and push notifications</h2>
+        <p>Online presence and typing indicators are transient, routed over STOMP WebSocket to the NexaChat server by default, and held in server memory. Last-seen time is stored on the server; you can hide it in privacy settings.</p>
+        <p>The server supports an optional bridge to Firebase Realtime Database and Firebase Authentication, disabled by default on both the server and the app; when disabled, the app opens no Firebase Authentication or Realtime Database connection and STOMP is the default transport. When enabled, the user data Firebase receives consists of ephemeral data and authorization flags: internal UUIDs (user, conversation, call, bridge), online and typing state, the active and show-presence flags, 1:1 presence-reader grants, passive call status for display (call id, caller and callee ids, RINGING/ACTIVE/ENDED state, update and expiry timestamps), and short session and membership leases. The lastSeen field is always 0; the real last-seen time is never sent to Firebase. The status data (online, typing, calls, leases) lives for 5 seconds (typing) to at most 120 seconds (session, membership, active call), expires by itself, or is removed on disconnect, logout, or account deletion; flags and grants are removed when the account is deleted. This bridge never receives phone numbers, email addresses, display names, message text, attachments, SDP/ICE, or NexaChat login tokens.</p>
+        <p>When push notifications (FCM) are configured, device registration tokens are stored on the server. Push payloads contain identifiers, the sender or caller display name, and notification metadata (call, reminder, mention flag) only; they never contain message text or file attachments.</p>
+
+        <h2>Sessions and device security</h2>
+        <p>The app uses short-lived access tokens and single-use refresh token rotation. On Android devices, session tokens are encrypted using Android Keystore (AES-GCM). The local database and media caches reside in app-private storage.</p>
+        <p>Signing out on the current device revokes that device's session. Changing your password or choosing sign-out-all revokes all active sessions.</p>
+
         <h2>Optional AI features</h2>
-        <p>Conversation summary and in-chat ask may call an external model only with user consent and operator API keys. Opt-out is available per account and per conversation.</p>
-        <h2>Account deletion</h2>
-        <p>You can delete your account in the app. If you added a verified recovery email, you can also delete your account on this site when the operator enables the web form. See the <a href="/delete-account.html">account deletion page</a> for what is deleted and what remains.</p>
+        <p>Conversation summary and in-chat questions (Ask) run on the NexaChat server by default and send no data to external AI services. The app calls an external AI model only when the requesting user opts in and the operator has configured API keys.</p>
+        <p>When message text is sent to an external AI service, it is redacted: user names are replaced with anonymous tokens (U1, U2...), and phone numbers, emails, URLs, and IDs are stripped. Messages from other participants in the summary window are included unless they opted out of AI in that conversation. The background embedding index can send text from participants who have not opted out in that conversation to the configured external embedding provider. Users can opt out of AI processing for their entire account or per conversation. Cached summaries and question answers are transient (24-hour default TTL) and are purged when referenced messages are edited, recalled, or when an account is deleted.</p>
+
+        <h2>Retention, recall, and account deletion</h2>
+        <p>Messages and conversations do not expire automatically by default. Authors can recall their messages within 24 hours (or group admins at any time), replacing them with tombstones.</p>
+        <p>You can delete your account in the Android app under Profile (Settings) > Delete account with your current password. If you have a verified recovery email, you can also delete a lost-device account via the web form on the <a href="/delete-account.html">account deletion page</a>.</p>
+        <p>Account deletion immediately revokes all sessions, removes push tokens, deletes mutual contacts, leaves all groups (transferring admin rights if sole admin), deletes avatar images and unbound uploads, removes Google identities and recovery email OTP records, purges AI consent and caches, releases the phone number for new registration, and replaces the display name with a neutral deleted state. Sent messages and attachments remain visible to other conversation members, attributed to “Deleted account”. On the device, account deletion wipes the local database, tokens, and media caches.</p>
+
         <h2>This website</h2>
-        <p>nexachat.io.vn serves landing pages, group invite links, Android App Links metadata, and the account-deletion form. When enabled, the form sends only the phone number and code you type to the NexaChat API over HTTPS; the site sets no cookies, uses no local storage, and has no trackers. Sign-up happens in the app only.</p>
+        <p>nexachat.io.vn serves landing pages, group invite links, Android App Links metadata (<code>assetlinks.json</code>), and the account-deletion form. When enabled, the web deletion form sends only the phone number and verification code to the NexaChat API over HTTPS; the site sets no cookies, uses no local storage, and has no third-party trackers. Account registration is available in the Android app only.</p>
       </div>
       <p class="page-actions"><a class="btn btn-secondary" href="/">Trang chủ · Home</a></p>
     </div>

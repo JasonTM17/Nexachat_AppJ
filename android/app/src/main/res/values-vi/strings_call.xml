@@ -3,6 +3,7 @@
     <string name="call_state_calling">Đang gọi…</string>
     <string name="call_state_incoming">Cuộc gọi đến</string>
     <string name="call_state_connecting">Đang kết nối…</string>
+    <string name="call_status_accepted">Cuộc gọi đã được chấp nhận</string>
     <string name="call_state_connected">Cuộc gọi thoại</string>
     <string name="call_state_ended">Đã kết thúc</string>
     <string name="call_state_busy">Đang bận</string>

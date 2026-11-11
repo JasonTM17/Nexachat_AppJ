@@ -64,6 +64,9 @@ public class User {
     @Column(name = "ai_summary_consent", nullable = false)
     private boolean aiSummaryConsent;
 
+    @Column(name = "ai_summary_consent_epoch", nullable = false)
+    private long aiSummaryConsentEpoch;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -155,6 +158,10 @@ public class User {
         return aiSummaryConsent;
     }
 
+    public long getAiSummaryConsentEpoch() {
+        return aiSummaryConsentEpoch;
+    }
+
     public void changeDisplayName(String displayName) {
         this.displayName = displayName;
     }
@@ -176,6 +183,9 @@ public class User {
     }
 
     public void changeAiSummaryConsent(boolean aiSummaryConsent) {
+        if (this.aiSummaryConsent != aiSummaryConsent) {
+            aiSummaryConsentEpoch++;
+        }
         this.aiSummaryConsent = aiSummaryConsent;
     }
 
@@ -224,7 +234,8 @@ public class User {
         this.avatarUrl = null;
         this.showPresence = false;
         this.showSeen = false;
-        this.aiSummaryConsent = false;
+        aiSummaryConsent = false;
+        aiSummaryConsentEpoch++;
         this.lastSeenAt = null;
         this.email = null;
         this.emailVerifiedAt = null;

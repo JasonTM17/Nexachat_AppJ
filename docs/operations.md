@@ -53,7 +53,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `FIREBASE_REALTIME_ENABLED` | No (opt-in Firebase Auth bridge) | `false` | `false` |
 | `FIREBASE_DATABASE_URL` | Required when the bridge is enabled | Empty (bridge stays disabled) | `https://<database>.<region>.firebasedatabase.app` |
 | `FIREBASE_REALTIME_DEFAULT` | No (reserved rollout default) | `stomp` | `stomp` |
-| `FIREBASE_CALL_STATUS_ENABLED` | No (call status is not enabled by this bridge) | `false` | `false` |
+| `FIREBASE_CALL_STATUS_ENABLED` | No (project call status to Firebase RTDB; requires `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL`) | `false` | `false` |
 | `FIREBASE_CONNECT_TIMEOUT_SECONDS` | No | `5` | `5` |
 | `FIREBASE_READ_TIMEOUT_SECONDS` | No | `10` | `10` |
 | `NEXACHAT_SUMMARY_LLM_ENABLED` | No (optional external summary LLM) | `false` | `false` |
@@ -100,6 +100,26 @@ replacement in the secret store, deploy and verify delivery in a controlled
 environment, then revoke the old key. Never place SMTP passwords or Resend
 keys in source control or logs. OTPs are short-lived, and the application logs
 do not include codes, recipient addresses, phone numbers, or provider keys.
+
+#### Local development with Mailpit
+
+To test OTP emails locally without external provider credentials, run [Mailpit](https://github.com/axllent/mailpit):
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+Configure `.env`:
+```properties
+NEXACHAT_MAIL_PROVIDER=smtp
+MAIL_SMTP_HOST=localhost
+MAIL_SMTP_PORT=1025
+MAIL_SMTP_USERNAME=
+MAIL_SMTP_PASSWORD=
+MAIL_FROM=noreply@nexachat.io.vn
+```
+
+Open `http://localhost:8025` to view delivered OTP emails for email verification, password reset, and web account deletion.
 
 The Compose app uses `db:5432` on the private Compose network. A server started
 directly with Maven on the host uses `localhost:5433` from `application.yml`;
@@ -239,21 +259,68 @@ Before enabling the bridge in a Firebase project:
 1. Enable Firebase Authentication and create a Realtime Database in the chosen
    region. Keep the database in locked mode during setup.
 2. Review and install the complete rules candidate at
-   `tools/firebase-rules/database.rules.json`. The default rules deny access;
-   user accounts, control state, and current conversation memberships must be
-   projected before authorized Firebase reads can succeed. The projection
-   writer and Android transport remain later rollout steps; this S1 bridge
-   alone does not make a client data path ready for production. The rules
-   contract, its offline emulator suite and its known gaps are documented in
-   [firebase-realtime.md](firebase-realtime.md); the `firebase-rules` CI job
-   runs that suite without credentials.
-3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
-   `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
-   service-account project, installed rules, and projection before directing
-   any client to Firebase. `FIREBASE_REALTIME_DEFAULT` stays `stomp` and
-   `FIREBASE_CALL_STATUS_ENABLED` stays `false` for this stage.
-4. Configure a project budget and billing alerts, then monitor database reads,
+   `tools/firebase-rules/database.rules.json`. The rules contract, its offline
+   emulator suite and its tests are documented in [firebase-realtime.md](firebase-realtime.md);
+   the `firebase-rules` CI job runs that suite without credentials.
+3. Configure a project budget and billing alerts, then monitor database reads,
    writes, and download volume during a staged rollout.
+
+#### Presence privacy v2 and DIRECT reader edges
+
+- **Presence privacy version 2 (`control/presencePrivacyVersion`)**:
+  Peer presence reads require `control/presencePrivacyVersion == 2` in `database.rules.json`.
+  Offline presence records zero all metadata (`lastSeen: 0`, `updatedAt: 0`, `leaseUntil: 0`)
+  to prevent last-seen timestamp leakage. On startup, `FirebaseAuthorizationBackfillJob`
+  closes admission (`control/enabled: false`), removes legacy offline presence rows with
+  positive `lastSeen` values across all accounts via `removeLegacyOfflinePresenceEntries`,
+  and atomically publishes `control/presencePrivacyVersion: 2` with `control/enabled: true`.
+  Peer reads remain denied until this marker is published; client presence deletes are denied.
+- **DIRECT vs group reader edges**:
+  The projection service only creates reader edges at `/presenceReaders/{subjectUid}/{viewerUid}`
+  for `Conversation.Type.DIRECT` with shape `{"cid": "<conversationId>", "type": "DIRECT"}`.
+  Group conversations never project presence reader edges; group presence visibility is
+  denied by rules. Group typing (`/typing/{conversationId}/{uid}`) remains enabled for any
+  active group member.
+
+#### Call status projection
+
+Optional display-only call status projection publishes to `/calls/{callId}`:
+- **Paths & Payload**: `/calls/{callId}` contains `{cid, callerId, calleeId, state, updatedAt, expiresAt}`.
+  States are `RINGING` (TTL <= 45s), `ACTIVE` (TTL <= 120s, renewed every 60s by `renewActiveCallProjections`),
+  and `ENDED` (TTL <= 60s).
+- **Rule enforcement**: Read access is restricted to participants (`callerId` or `calleeId`) who hold
+  active membership leases in `cid` and have active, unblocked accounts. Client writes are denied (`.write: false`).
+- **Flags**: Enabled on the server via `FIREBASE_CALL_STATUS_ENABLED=true` (`nexachat.firebase.call-status-enabled`),
+  which requires `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL`. Enabled in Android via
+  Gradle property `firebaseCallStatusEnabled=true` (`BuildConfig.FIREBASE_CALL_STATUS_ENABLED`, gated on
+  `firebaseRealtimeEnabled`). It never acts as a signaling channel or call authority.
+
+#### Safe rollout order
+
+1. **Deploy RTDB rules first**:
+   Review `tools/firebase-rules/database.rules.json` and verify with `cd tools/firebase-rules && npm test`.
+   Deploy rules to the target Firebase project via the Firebase CLI or Console before enabling backend flags.
+   Rules default to deny, enforce `control/presencePrivacyVersion == 2`, validate DIRECT reader edges,
+   and deny client writes to `/calls` and typing/presence deletions.
+2. **Enable backend flags and run reconciliation**:
+   Drain older backend instances that could write timestamped offline presence records.
+   Deploy the backend with `FIREBASE_REALTIME_ENABLED=true`, `FIREBASE_DATABASE_URL`, and optionally
+   `FIREBASE_CALL_STATUS_ENABLED=true`. On startup, `FirebaseAuthorizationBackfillJob` closes admission
+   (`control/enabled: false`), purges legacy offline presence rows with timestamps, rebuilds DIRECT reader edges,
+   and atomically publishes `control/enabled: true` and `control/presencePrivacyVersion: 2`.
+3. **Ship Android client**:
+   Build and release the Android app with `firebaseRealtimeEnabled=true` (and `firebaseCallStatusEnabled=true`).
+   Roll out in staged cohorts. Clients obtain custom tokens, maintain membership leases, and stream presence,
+   typing, and call status, falling back automatically to STOMP if Firebase is unreachable.
+
+#### Rollback
+
+- **Emergency kill switch**: Set `control/enabled: false` directly in RTDB root. All client reads and writes
+  are immediately denied by rules; Android clients detect disconnection and fall back to STOMP over WebSocket.
+- **Disable call status**: Set `FIREBASE_CALL_STATUS_ENABLED=false` on the server and restart. Existing call
+  projections expire within at most 120 seconds; presence and typing continue over RTDB.
+- **Disable full bridge**: Set `FIREBASE_REALTIME_ENABLED=false` on the server and restart. Bridge routes
+  answer 404 and Android clients cleanly fall back to STOMP over WebSocket.
 
 The current Compose file does not forward `FIREBASE_*` variables into the app
 container. Setting them only in `.env` will not enable this bridge in Compose;
@@ -390,6 +457,43 @@ The server stores account credentials (bcrypt password hashes, E.164 phones),
 refresh-token hashes, message and attachment content, and short-lived access
 JWTs. The trust boundaries are the network edge (TLS terminated at the reverse
 proxy), the REST/STOMP authentication layer, and per-conversation authorization.
+
+### Google sign-in (OpenID Connect)
+
+Google sign-in is disabled by default (`NEXACHAT_GOOGLE_SIGNIN_ENABLED=false`). While disabled,
+all `/api/v1/auth/google/*` endpoints answer `404 NOT_FOUND`.
+
+#### Key Properties & Security Controls
+- **No client secret needed:** Token validation uses Google's public JWKS (`https://www.googleapis.com/oauth2/v3/certs`) via Spring Security's `NimbusJwtDecoder`. Only the Web Client ID (expected `aud`) and trusted Android OAuth Client IDs (expected `azp`) are configured.
+- **Link-first policy:** To protect against account takeover, Google sign-in only works for Google accounts already linked to an existing NexaChat account. Users cannot register new accounts directly through Google sign-in, and auto-linking by email is disallowed. Linking requires the account's password.
+- **Single-use nonces:** Replay is prevented via `POST /api/v1/auth/google/nonce` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS: 300`). Nonces are bound to their purpose (`signin` or `link`) and the requester's identity.
+
+#### Server Configuration (`.env`)
+```properties
+NEXACHAT_GOOGLE_SIGNIN_ENABLED=true
+NEXACHAT_GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS=your-android-client-id.apps.googleusercontent.com
+NEXACHAT_GOOGLE_JWKS_URI=https://www.googleapis.com/oauth2/v3/certs
+NEXACHAT_GOOGLE_NONCE_TTL_SECONDS=300
+```
+Startup fails closed if `NEXACHAT_GOOGLE_SIGNIN_ENABLED=true` but `NEXACHAT_GOOGLE_WEB_CLIENT_ID` or `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` is blank.
+
+#### Android Configuration
+In `android/local.properties` (or via `./gradlew -PgoogleWebClientId=...`):
+```properties
+GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+```
+When `GOOGLE_WEB_CLIENT_ID` is empty, Google sign-in UI buttons are automatically hidden.
+
+### Account deletion (app and web page)
+
+NexaChat supports self-service account deletion across two channels:
+1. **In-app deletion:** Authenticated user navigates to Profile / Settings -> Delete account, confirms with their password (`DELETE /api/v1/users/me`).
+2. **Web self-service deletion:** For users without device access, `site/delete-account.html` enables deletion using a 6-digit OTP sent to their verified recovery email (`POST /api/v1/auth/recovery/delete-account/request` and `confirm`).
+
+#### What is deleted and what is preserved:
+- **Tombstoned / Deleted:** User row is soft-deleted (`users.deleted_at = now()`, Flyway V26), `users.phone` is set to `NULL` (freeing the E.164 phone number for re-registration), display name resets to `Deleted account`, and avatar URL is cleared. Active sessions are revoked via `users.tokens_valid_after` and refresh token families are cleared. The user automatically leaves all group chats (promoting a successor admin if needed). Contacts, push device tokens, private labels, group join requests, linked Google identities, email OTPs, unbound uploads, and AI caches are scrubbed. The stored avatar file is deleted from disk after commit.
+- **Preserved:** Direct and group chat messages and bound attachments remain visible to the other conversation participants to avoid broken history, rendered under the neutral author label `Deleted account`.
 
 ### Access-token revocation
 
@@ -740,7 +844,7 @@ LAN address printed by the demo script and be on the same network.
 ## Upgrade
 
 Back up before replacing the app image. Flyway applies versioned migrations
-through V28 on app startup and they are forward-only: add a new SQL migration; never
+through V30 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -768,10 +872,20 @@ retention indexes, `V24__hot_path_perf.sql` drops the unused `idx_conv_inbox`,
 and `V25__refresh_rotation_replay.sql` adds encrypted refresh-response replay
 metadata and cleanup support. `V26__user_account_deletion.sql` adds account
 tombstoning, `V27__account_recovery_email_otp.sql` adds recovery email/OTP data,
-and `V28__google_signin.sql` adds Google identity links and single-use nonces.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V28` is present in the
+`V28__google_signin.sql` adds Google identity links and single-use nonces,
+`V29__user_ai_summary_consent_epoch.sql` adds `users.ai_summary_consent_epoch`
+for fencing in-flight AI summary generation against consent revocation, and
+`V30__refresh_token_user_index.sql` drops partial index `idx_refresh_user` and
+creates composite index `idx_refresh_user_id` on `refresh_tokens (user_id, id)`.
+Ensure every migration file V1–V20, `V22`, and `V24`–`V30` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
+
+#### V29 and V30 migration lock impacts
+
+- `V29__user_ai_summary_consent_epoch.sql`: Adds `ai_summary_consent_epoch BIGINT NOT NULL DEFAULT 0 CHECK (ai_summary_consent_epoch >= 0)` to `users`. In PostgreSQL 11+, adding a column with a constant default updates system catalog metadata only without table rewrite (instant, brief `ACCESS EXCLUSIVE` lock).
+- `V30__refresh_token_user_index.sql`: Replaces the partial `idx_refresh_user` (`WHERE revoked_at IS NULL`) with full composite index `idx_refresh_user_id` on `refresh_tokens (user_id, id)` to accelerate user-scoped token reads (password change `FOR UPDATE`, logout-all, account deletion replay invalidation).
+  - **Lock impact on a large `refresh_tokens` table**: Because Flyway executes migrations within transactions where PostgreSQL disallows the `CONCURRENTLY` option, `CREATE INDEX` runs without `CONCURRENTLY` and acquires a `SHARE` lock on the `refresh_tokens` table. A `SHARE` lock permits concurrent `SELECT` queries but **blocks all concurrent writes** (`INSERT`, `UPDATE`, `DELETE`). Since every user authentication, token refresh rotation, and logout writes to `refresh_tokens`, any write traffic during this migration will queue behind the `SHARE` lock. On a table with a large volume of refresh tokens, building this index can block authentication writes for seconds or minutes, risking connection pool saturation and HTTP timeouts. In high-traffic deployments, operators should pre-create the index concurrently out-of-band (`CREATE INDEX CONCURRENTLY idx_refresh_user_id ON refresh_tokens (user_id, id);`) and drop the old index (`DROP INDEX CONCURRENTLY idx_refresh_user;`) before applying Flyway migrations, or execute the deployment during a planned maintenance window.
 
 ```sh
 bash demo/backup.sh
@@ -862,6 +976,42 @@ Message, conversation, and user rows are never removed by these jobs. Poll
 records stay as compact versioned tombstones so existing change-feed cursors
 continue to work. Enable retention in a private/staging environment first and
 compare the dry-run counts with your organization's retention requirements.
+
+### Orphaned-avatar sweep
+
+User and group avatars are written under `avatars/`. Replacement and account
+deletion remove the file they supersede, but files orphaned before that
+behaviour (or left by an interrupted upload) need an operator-run sweep. The
+sweep is disabled by default and counts only in dry-run mode. Each run lists
+`avatars/`, keeps every key referenced by `users.avatar_url` or
+`conversations.avatar_url` and every file younger than the grace age, then
+deletes at most one bounded batch of the rest. Only keys shaped like a
+server-generated avatar are eligible; hand-placed files are ignored. Runs are
+serialized across instances with a PostgreSQL advisory lock.
+
+```sh
+export NEXACHAT_AVATAR_SWEEP_ENABLED=true
+export NEXACHAT_AVATAR_SWEEP_DRY_RUN=true
+```
+
+Review the `nexachat.avatar.sweep.files.observed` counter, then set
+`NEXACHAT_AVATAR_SWEEP_DRY_RUN=false` to delete eligible files. Each interval
+removes at most the configured batch, so a large backlog drains over several
+runs. Logs and metrics contain counts only, never file names or user
+identifiers.
+
+| Property | Environment variable | Default | Effect / validation |
+| --- | --- | --- | --- |
+| `nexachat.avatar-sweep.enabled` | `NEXACHAT_AVATAR_SWEEP_ENABLED` | `false` | Opt-in scheduler switch. |
+| `nexachat.avatar-sweep.dry-run` | `NEXACHAT_AVATAR_SWEEP_DRY_RUN` | `true` | Count candidates without deleting. |
+| `nexachat.avatar-sweep.batch-size` | `NEXACHAT_AVATAR_SWEEP_BATCH_SIZE` | `100` | Files per run; 1–500. |
+| `nexachat.avatar-sweep.min-age-hours` | `NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS` | `24` | Grace age for the upload-to-reference window; 1–720 hours. |
+| `nexachat.avatar-sweep.interval-ms` | `NEXACHAT_AVATAR_SWEEP_INTERVAL_MS` | `86400000` | Scheduler delay; 60000–86400000 ms. |
+
+The scheduler reports `nexachat.avatar.sweep.runs` (tagged by outcome),
+`nexachat.avatar.sweep.files.observed`, `nexachat.avatar.sweep.files.deleted`,
+`nexachat.avatar.sweep.files.kept` (tagged by reason), and
+`nexachat.avatar.sweep.errors`.
 
 ## JWT secret rotation
 

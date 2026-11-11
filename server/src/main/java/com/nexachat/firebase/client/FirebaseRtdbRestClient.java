@@ -58,6 +58,12 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
     }
 
     @Override
+    public void applyCallStatusProjection(Map<String, Object> updates) {
+        validateCallStatusProjection(updates);
+        patch(updates);
+    }
+
+    @Override
     public int deleteExpiredChildren(String parentPath, String orderBy, long cutoffMillis, int limit) {
         validateSweep(parentPath, orderBy, limit);
         URI queryUri = queryUri(parentPath, orderBy, cutoffMillis, limit);
@@ -94,54 +100,72 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
         }
         String parentPath = "presence/" + userId;
         JsonNode expired = readQuery(parentPath, "leaseUntil", cutoffMillis, limit);
-        int changed = 0;
+        int deleted = 0;
         if (expired != null && expired.isObject()) {
             var fields = expired.fieldNames();
             while (fields.hasNext()) {
                 String bridgeId = fields.next();
                 if (UUID_KEY.matcher(bridgeId).matches()
-                        && markOfflineIfStillExpired(parentPath + "/" + bridgeId, cutoffMillis)) {
-                    changed++;
+                        && deleteExpiredPresenceChild(parentPath + "/" + bridgeId, cutoffMillis)) {
+                    deleted++;
                 }
             }
+        }
+        return deleted;
+    }
+
+    @Override
+    public boolean presencePrivacyMigrationComplete() {
+        URI uri = databaseUrl.resolve("control/presencePrivacyVersion");
+        JsonNode version;
+        try {
+            version = objectMapper.readTree(send("GET", uri, null));
+        } catch (Exception ex) {
+            throw new FirebaseProviderException("Firebase Realtime Database returned an invalid privacy version");
+        }
+        return version != null && version.isIntegralNumber() && version.intValue() >= 2;
+    }
+
+    @Override
+    public int removeLegacyOfflinePresenceEntries(UUID userId, int limit) {
+        if (userId == null || limit < 1 || limit > 500) {
+            throw new IllegalArgumentException("Firebase presence privacy migration request is invalid");
+        }
+        String parentPath = "presence/" + userId;
+        URI queryUri = positiveLastSeenQueryUri(parentPath, limit);
+        JsonNode candidates;
+        try {
+            candidates = objectMapper.readTree(send("GET", queryUri, null));
+        } catch (Exception ex) {
+            throw new FirebaseProviderException("Firebase Realtime Database returned invalid legacy presence data");
+        }
+        if (candidates == null || !candidates.isObject()) {
+            return 0;
         }
 
-        // Presence is per bridge. If its bounded current snapshot fits, retain only the most recent offline marker.
-        JsonNode current = readOrderedChildren(parentPath, limit + 1);
-        if (current == null || !current.isObject() || current.size() > limit) {
-            return changed;
-        }
-        String latestOfflineBridge = null;
-        long latestLastSeen = Long.MIN_VALUE;
-        var currentFields = current.fields();
-        while (currentFields.hasNext()) {
-            var entry = currentFields.next();
-            JsonNode node = entry.getValue();
-            JsonNode online = node == null ? null : node.get("online");
-            JsonNode lastSeen = node == null ? null : node.get("lastSeen");
-            if (online != null && online.isBoolean() && !online.booleanValue()
-                    && lastSeen != null && lastSeen.isIntegralNumber() && lastSeen.canConvertToLong()
-                    && lastSeen.longValue() > latestLastSeen) {
-                latestLastSeen = lastSeen.longValue();
-                latestOfflineBridge = entry.getKey();
+        int examined = 0;
+        var fields = candidates.fieldNames();
+        while (fields.hasNext()) {
+            String bridgeId = fields.next();
+            if (!UUID_KEY.matcher(bridgeId).matches()) {
+                throw new FirebaseProviderException("Legacy Firebase presence contains an invalid bridge key");
             }
+            examined++;
+            deleteLegacyOfflinePresenceChild(parentPath + "/" + bridgeId);
         }
-        if (latestOfflineBridge == null) {
-            return changed;
+        return examined;
+    }
+
+    private boolean deleteLegacyOfflinePresenceChild(String relativePath) {
+        URI uri = databaseUrl.resolve(relativePath);
+        EtagValue current = readWithEtag(uri);
+        JsonNode node = current.value();
+        JsonNode lastSeen = node == null ? null : node.get("lastSeen");
+        if (lastSeen == null || !lastSeen.isIntegralNumber() || !lastSeen.canConvertToLong()
+                || lastSeen.longValue() <= 0L) {
+            return false;
         }
-        var cleanupFields = current.fieldNames();
-        while (cleanupFields.hasNext()) {
-            String bridgeId = cleanupFields.next();
-            if (!bridgeId.equals(latestOfflineBridge) && UUID_KEY.matcher(bridgeId).matches()) {
-                JsonNode node = current.get(bridgeId);
-                JsonNode online = node == null ? null : node.get("online");
-                if (online != null && online.isBoolean() && !online.booleanValue()
-                        && deleteOlderOfflineChild(parentPath + "/" + bridgeId, latestLastSeen)) {
-                    changed++;
-                }
-            }
-        }
-        return changed;
+        return deleteIfMatch(uri, current.etag());
     }
 
     private boolean deleteIfStillExpired(String relativePath, String orderBy, long cutoffMillis) {
@@ -165,38 +189,13 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
         return deleteIfMatch(uri, etag);
     }
 
-    private boolean markOfflineIfStillExpired(String relativePath, long cutoffMillis) {
+    private boolean deleteExpiredPresenceChild(String relativePath, long cutoffMillis) {
         URI uri = databaseUrl.resolve(relativePath);
         EtagValue current = readWithEtag(uri);
         JsonNode node = current.value();
-        JsonNode online = node == null ? null : node.get("online");
         JsonNode leaseUntil = node == null ? null : node.get("leaseUntil");
-        if (online == null || !online.isBoolean() || !online.booleanValue()
-                || leaseUntil == null || !leaseUntil.isIntegralNumber() || !leaseUntil.canConvertToLong()
+        if (leaseUntil == null || !leaseUntil.isIntegralNumber() || !leaseUntil.canConvertToLong()
                 || leaseUntil.longValue() > cutoffMillis) {
-            return false;
-        }
-        Map<String, Object> offline = new LinkedHashMap<>();
-        offline.put("online", false);
-        offline.put("lastSeen", Map.of(".sv", "timestamp"));
-        offline.put("updatedAt", Map.of(".sv", "timestamp"));
-        offline.put("leaseUntil", leaseUntil.longValue());
-        HttpResponse<String> response = sendRaw("PUT", uri, offline, Map.of("If-Match", current.etag()));
-        if (response.statusCode() == 412) {
-            return false;
-        }
-        requireSuccess(response);
-        return true;
-    }
-
-    private boolean deleteOlderOfflineChild(String relativePath, long latestLastSeen) {
-        URI uri = databaseUrl.resolve(relativePath);
-        EtagValue current = readWithEtag(uri);
-        JsonNode online = current.value() == null ? null : current.value().get("online");
-        JsonNode lastSeen = current.value() == null ? null : current.value().get("lastSeen");
-        if (online == null || !online.isBoolean() || online.booleanValue()
-                || lastSeen == null || !lastSeen.isIntegralNumber() || !lastSeen.canConvertToLong()
-                || lastSeen.longValue() > latestLastSeen) {
             return false;
         }
         return deleteIfMatch(uri, current.etag());
@@ -234,18 +233,6 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
         }
     }
 
-    private JsonNode readOrderedChildren(String parentPath, int limit) {
-        String encodedOrder = URLEncoder.encode("\"$key\"", StandardCharsets.UTF_8);
-        URI uri = URI.create(databaseUrl.resolve(parentPath) + "?orderBy=" + encodedOrder + "&limitToFirst=" + limit);
-        try {
-            return objectMapper.readTree(send("GET", uri, null));
-        } catch (FirebaseProviderException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new FirebaseProviderException("Firebase Realtime Database returned invalid presence data");
-        }
-    }
-
     private record EtagValue(JsonNode value, String etag) {
     }
 
@@ -253,6 +240,12 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
         String encodedOrder = URLEncoder.encode("\"" + orderBy + "\"", StandardCharsets.UTF_8);
         return URI.create(databaseUrl.resolve(parentPath) + "?orderBy=" + encodedOrder
                 + "&endAt=" + cutoffMillis + "&limitToFirst=" + limit);
+    }
+
+    private URI positiveLastSeenQueryUri(String parentPath, int limit) {
+        String encodedOrder = URLEncoder.encode("\"lastSeen\"", StandardCharsets.UTF_8);
+        return URI.create(databaseUrl.resolve(parentPath) + "?orderBy=" + encodedOrder
+                + "&startAt=1&limitToFirst=" + limit);
     }
 
     @Override
@@ -357,6 +350,12 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
             String[] parts = path == null ? new String[0] : path.split("/", -1);
             if (parts.length == 2 && "control".equals(parts[0]) && "enabled".equals(parts[1])) {
                 requireType(updates.get(path), Boolean.class, path);
+            } else if (parts.length == 2 && "control".equals(parts[0])
+                    && "presencePrivacyVersion".equals(parts[1])) {
+                requireType(updates.get(path), Integer.class, path);
+                if (!Integer.valueOf(2).equals(updates.get(path))) {
+                    throw new IllegalArgumentException("Firebase presence privacy version is unsupported");
+                }
             } else if (parts.length == 2 && "accounts".equals(parts[0]) && UUID_KEY.matcher(parts[1]).matches()) {
                 Object value = updates.get(path);
                 if (value != null && (!(value instanceof Map<?, ?> account)
@@ -368,9 +367,12 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
             } else if (parts.length == 3 && "presenceReaders".equals(parts[0])
                     && UUID_KEY.matcher(parts[1]).matches() && UUID_KEY.matcher(parts[2]).matches()) {
                 Object value = updates.get(path);
-                if (value != null && (!(value instanceof String conversationId)
-                        || !UUID_KEY.matcher(conversationId).matches())) {
-                    throw new IllegalArgumentException("Firebase presence-reader projection has an invalid value");
+                if (value != null && (!(value instanceof Map<?, ?> reader)
+                        || !reader.keySet().equals(Set.of("cid", "type"))
+                        || !(reader.get("cid") instanceof String conversationId)
+                        || !UUID_KEY.matcher(conversationId).matches()
+                        || !"DIRECT".equals(reader.get("type")))) {
+                    throw new IllegalArgumentException("Firebase presence-reader projection must identify a DIRECT conversation");
                 }
             } else if (parts.length == 3 && ("members".equals(parts[0]) || "blocked".equals(parts[0]))
                     && UUID_KEY.matcher(parts[1]).matches() && UUID_KEY.matcher(parts[2]).matches()) {
@@ -401,6 +403,70 @@ public final class FirebaseRtdbRestClient implements FirebaseRtdbClient {
                 }
             }
         }
+    }
+
+    static void validateCallStatusProjection(Map<String, Object> updates) {
+        if (updates == null || updates.isEmpty() || updates.size() > 500) {
+            throw new IllegalArgumentException("Firebase call-status projection patch must not be empty");
+        }
+        List<String> paths = new ArrayList<>(updates.keySet());
+        Set<String> fields = Set.of("cid", "callerId", "calleeId", "state", "updatedAt", "expiresAt");
+        for (String path : paths) {
+            String[] parts = path == null ? new String[0] : path.split("/", -1);
+            if (parts.length != 2 || !"calls".equals(parts[0]) || !UUID_KEY.matcher(parts[1]).matches()) {
+                throw new IllegalArgumentException("Firebase call-status projection path is not allowed");
+            }
+            Object value = updates.get(path);
+            if (value == null) {
+                continue;
+            }
+            if (!(value instanceof Map<?, ?> call) || !call.keySet().equals(fields)) {
+                throw new IllegalArgumentException("Firebase call-status projection has an invalid shape");
+            }
+            if (!isUuid(call.get("cid")) || !isUuid(call.get("callerId")) || !isUuid(call.get("calleeId"))
+                    || call.get("callerId").equals(call.get("calleeId"))) {
+                throw new IllegalArgumentException("Firebase call-status projection has invalid participants");
+            }
+            Object stateValue = call.get("state");
+            if (!(stateValue instanceof String state)
+                    || !Set.of("RINGING", "ACTIVE", "ENDED").contains(state)) {
+                throw new IllegalArgumentException("Firebase call-status projection has an invalid state");
+            }
+            long updatedAt = positiveEpochMillis(call.get("updatedAt"), "updatedAt");
+            long expiresAt = positiveEpochMillis(call.get("expiresAt"), "expiresAt");
+            long maximumTtl = switch (state) {
+                case "RINGING" -> FirebaseCallStatusLease.RINGING_MILLIS;
+                case "ACTIVE" -> FirebaseCallStatusLease.ACTIVE_MILLIS;
+                case "ENDED" -> FirebaseCallStatusLease.ENDED_MILLIS;
+                default -> throw new IllegalArgumentException("Firebase call-status projection has an invalid state");
+            };
+            if (expiresAt <= updatedAt || expiresAt - updatedAt > maximumTtl) {
+                throw new IllegalArgumentException("Firebase call-status projection expiry exceeds its lease");
+            }
+        }
+        for (int i = 0; i < paths.size(); i++) {
+            for (int j = i + 1; j < paths.size(); j++) {
+                if (paths.get(i).startsWith(paths.get(j) + "/")
+                        || paths.get(j).startsWith(paths.get(i) + "/")) {
+                    throw new IllegalArgumentException("Firebase call-status projection paths overlap");
+                }
+            }
+        }
+    }
+
+    private static boolean isUuid(Object value) {
+        return value instanceof String id && UUID_KEY.matcher(id).matches();
+    }
+
+    private static long positiveEpochMillis(Object value, String field) {
+        if (!(value instanceof Long || value instanceof Integer)) {
+            throw new IllegalArgumentException("Firebase call-status projection has an invalid " + field);
+        }
+        long millis = ((Number) value).longValue();
+        if (millis < 0) {
+            throw new IllegalArgumentException("Firebase call-status projection has an invalid " + field);
+        }
+        return millis;
     }
 
     private static void validateSweep(String parentPath, String orderBy, int limit) {

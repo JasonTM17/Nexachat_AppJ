@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class FirebaseRtdbRestClientProjectionValidationTest {
 
@@ -36,6 +37,24 @@ class FirebaseRtdbRestClientProjectionValidationTest {
     }
 
     @Test
+    void presenceReaderProjectionRequiresExplicitDirectConversationMetadata() {
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(Map.of(
+                "presenceReaders/" + USER_ID + "/" + USER_ID, USER_ID.toString())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(Map.of(
+                "presenceReaders/" + USER_ID + "/" + USER_ID,
+                Map.of("cid", USER_ID.toString(), "type", "GROUP"))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void presencePrivacyMigrationMarkerOnlyAcceptsVersionTwo() {
+        assertThatThrownBy(() -> client.applyAuthorizationProjection(
+                Map.of("control/presencePrivacyVersion", 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void patchesCannotContainOverlappingParentAndChildPaths() {
         Map<String, Object> updates = new LinkedHashMap<>();
         updates.put("sessions/" + USER_ID, null);
@@ -52,6 +71,44 @@ class FirebaseRtdbRestClientProjectionValidationTest {
         assertThatThrownBy(() -> client.deleteExpiredChildren("members/" + USER_ID, "$value", 1L, 501))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> client.expirePresenceEntries(USER_ID, 1L, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void callStatusProjectionRequiresOnlyBoundedParticipantFields() {
+        Map<String, Object> call = new LinkedHashMap<>();
+        call.put("cid", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        call.put("callerId", USER_ID.toString());
+        call.put("calleeId", "22222222-2222-4222-8222-222222222222");
+        call.put("state", "ACTIVE");
+        call.put("updatedAt", 1_000L);
+        call.put("expiresAt", 121_000L);
+
+        assertThatCode(() -> FirebaseRtdbRestClient.validateCallStatusProjection(
+                Map.of("calls/" + USER_ID, call))).doesNotThrowAnyException();
+
+        assertThatThrownBy(() -> client.applyCallStatusProjection(Map.of(
+                "messages/" + USER_ID, call)))
+                .isInstanceOf(IllegalArgumentException.class);
+        call.put("sdp", "must not be projected");
+        assertThatThrownBy(() -> client.applyCallStatusProjection(Map.of("calls/" + USER_ID, call)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void callStatusProjectionRejectsUnboundedOrInvalidStates() {
+        Map<String, Object> call = new LinkedHashMap<>();
+        call.put("cid", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        call.put("callerId", USER_ID.toString());
+        call.put("calleeId", "22222222-2222-4222-8222-222222222222");
+        call.put("state", "ACTIVE");
+        call.put("updatedAt", 1_000L);
+        call.put("expiresAt", 121_001L);
+
+        assertThatThrownBy(() -> client.applyCallStatusProjection(Map.of("calls/" + USER_ID, call)))
+                .isInstanceOf(IllegalArgumentException.class);
+        call.put("state", "RINGING");
+        assertThatThrownBy(() -> client.applyCallStatusProjection(Map.of("calls/" + USER_ID, call)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

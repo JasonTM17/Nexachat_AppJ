@@ -85,6 +85,13 @@ cache are scoped by the same identity.
   or joining an in-flight ask. Without consent, the request skips cache reads
   and computes locally so a member cannot receive an answer produced by an
   external-model request made under another member’s consent.
+- Before responding, the server compares the consent snapshot and serializes
+  the selected response while holding a shared lock on the user row. It releases
+  the database transaction and connection before writing the serialized bytes
+  to the HTTP response. This serialization point orders the response against
+  consent changes: a revocation committed before serialization is observed and
+  suppresses the answer; a revocation committed afterward is linearized after
+  that response, even if a slow client receives the bytes later.
 - **Per-conversation opt-out (Flyway V13).** Any member can call
   `PUT /api/v1/conversations/{id}/ai-opt-out` to exclude their own messages
   from AI processing in that conversation; `DELETE` clears it. Both are

@@ -18,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Self-service avatar upload: POST /api/v1/users/me/avatar.
@@ -31,15 +30,17 @@ import java.util.regex.Pattern;
 @RequestMapping("/api/v1/users")
 public class AvatarController {
 
-    private static final Pattern OWNED_AVATAR_STORAGE_KEY = Pattern.compile(
-            "^avatars/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.[a-z0-9]+$");
-
     private final StorageService storageService;
     private final UserRepository userRepository;
+    private final AvatarReferenceCoordinator referenceCoordinator;
 
-    public AvatarController(StorageService storageService, UserRepository userRepository) {
+    public AvatarController(
+            StorageService storageService,
+            UserRepository userRepository,
+            AvatarReferenceCoordinator referenceCoordinator) {
         this.storageService = storageService;
         this.userRepository = userRepository;
+        this.referenceCoordinator = referenceCoordinator;
     }
 
     @PostMapping("/me/avatar")
@@ -67,6 +68,7 @@ public class AvatarController {
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
+        referenceCoordinator.lockForTransaction();
         String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
         StorageService.StoredFile stored = storageService.store(
                 "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
@@ -74,7 +76,7 @@ public class AvatarController {
         user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
         userRepository.save(user);
         if (!stored.storageKey().equals(oldAvatarKey)) {
-            StorageTransactionCleanup.deleteAfterCommit(storageService, oldAvatarKey);
+            referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
         }
         return new AvatarResponse(user.getAvatarUrl());
     }
@@ -84,7 +86,7 @@ public class AvatarController {
             return null;
         }
         String storageKey = avatarUrl.substring(AvatarUrlPolicy.FILES_PATH.length());
-        return OWNED_AVATAR_STORAGE_KEY.matcher(storageKey).matches() ? storageKey : null;
+        return AvatarUrlPolicy.AVATAR_STORAGE_KEY.matcher(storageKey).matches() ? storageKey : null;
     }
 
     /**

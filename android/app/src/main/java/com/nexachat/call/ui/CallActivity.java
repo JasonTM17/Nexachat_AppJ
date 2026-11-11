@@ -34,8 +34,11 @@ import com.nexachat.call.media.CallMediaEngineProvider;
 import com.nexachat.call.service.CallForegroundService;
 import com.nexachat.call.ui.CallPermissionHelper.Decision;
 import com.nexachat.core.common.AppLocaleManager;
+import com.nexachat.core.realtime.ephemeral.EphemeralStateSource;
+import com.nexachat.core.realtime.ephemeral.FirebaseEphemeralStateSource;
 import com.nexachat.core.ui.MessageUiRules;
 import dagger.hilt.android.AndroidEntryPoint;
+import io.reactivex.rxjava3.disposables.Disposable;
 import javax.inject.Inject;
 
 /** Classic XML call screen; the singleton manager owns state across rotation. */
@@ -50,6 +53,8 @@ public class CallActivity extends ComponentActivity {
     private enum PendingOperation { NONE, START_OUTGOING, ACCEPT_INCOMING }
 
     @Inject CallManager callManager;
+    @Inject FirebaseEphemeralStateSource firebaseEphemeralStateSource;
+    @Inject FirebaseCallStatusDisplayAdapter firebaseCallStatusDisplayAdapter;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable timerTick = new Runnable() {
@@ -76,6 +81,8 @@ public class CallActivity extends ComponentActivity {
     private TextView hangUpLabel;
     private CallSession currentSession;
     private CallManager.CallListener listener;
+    private FirebaseCallStatusDisplaySession firebaseCallStatusDisplaySession;
+    private Disposable firebaseStatusEvents;
     private PendingOperation pendingOperation = PendingOperation.NONE;
     private boolean startRequested;
     private String requestedCallId;
@@ -91,6 +98,12 @@ public class CallActivity extends ComponentActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_call);
         bindViews();
+        firebaseCallStatusDisplaySession = new FirebaseCallStatusDisplaySession(
+                firebaseCallStatusDisplayAdapter,
+                firebaseEphemeralStateSource::listenToCallStatus,
+                ignored -> mainHandler.post(() -> {
+                    if (!isFinishing() && !isDestroyed()) render(currentSession);
+                }));
         if (savedInstanceState != null) {
             pendingOperation = PendingOperation.values()[Math.max(0, Math.min(
                     PendingOperation.values().length - 1,
@@ -130,9 +143,11 @@ public class CallActivity extends ComponentActivity {
     @Override protected void onStart() {
         super.onStart();
         if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH || isFinishing()) return;
+        startFirebaseCallStatusDisplay();
         listener = new CallManager.CallListener() {
             @Override public void onCallChanged(CallSession session) {
                 currentSession = session;
+                firebaseCallStatusDisplaySession.onCallChanged(session);
                 render(session);
                 updateProximityWakeLock();
                 if (session != null && session.getState() == CallState.ENDED) {
@@ -180,6 +195,7 @@ public class CallActivity extends ComponentActivity {
             }
         }
         render(currentSession);
+        firebaseCallStatusDisplaySession.onCallChanged(currentSession);
         if (currentSession != null && currentSession.getState() == CallState.ENDED) {
             mainHandler.removeCallbacks(finishEndedScreen);
             mainHandler.postDelayed(finishEndedScreen, ENDED_SCREEN_MS);
@@ -194,6 +210,11 @@ public class CallActivity extends ComponentActivity {
     }
 
     @Override protected void onStop() {
+        if (firebaseStatusEvents != null) {
+            firebaseStatusEvents.dispose();
+            firebaseStatusEvents = null;
+        }
+        firebaseCallStatusDisplaySession.stop();
         if (listener != null) {
             callManager.removeListener(listener);
             listener = null;
@@ -207,6 +228,10 @@ public class CallActivity extends ComponentActivity {
     }
 
     @Override protected void onDestroy() {
+        if (firebaseStatusEvents != null) firebaseStatusEvents.dispose();
+        if (firebaseCallStatusDisplaySession != null) {
+            firebaseCallStatusDisplaySession.stop();
+        }
         mainHandler.removeCallbacks(timerTick);
         mainHandler.removeCallbacks(finishEndedScreen);
         if (pulseAnimator != null) {
@@ -258,6 +283,22 @@ public class CallActivity extends ComponentActivity {
         hangUpLabel = findViewById(R.id.call_hang_up_label);
     }
 
+    private void startFirebaseCallStatusDisplay() {
+        firebaseCallStatusDisplaySession.start();
+        if (!firebaseCallStatusDisplayAdapter.isEnabled()) return;
+        firebaseStatusEvents = firebaseEphemeralStateSource.statusUpdates().subscribe(
+                sourceStatus -> mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (sourceStatus instanceof EphemeralStateSource.SourceStatus.Ready) {
+                        firebaseCallStatusDisplaySession.onSourceReady();
+                    } else {
+                        firebaseCallStatusDisplaySession.onSourceUnavailable();
+                    }
+                    render(currentSession);
+                }), ignored -> mainHandler.post(() ->
+                        firebaseCallStatusDisplaySession.onSourceUnavailable()));
+    }
+
     private void bindActions() {
         muteButton.setOnClickListener(view -> {
             if (currentSession != null) callManager.setMuted(!currentSession.isMuted());
@@ -295,7 +336,9 @@ public class CallActivity extends ComponentActivity {
         peerName.setText(name);
         peerInitials.setText(MessageUiRules.extractInitials(name));
         CallAvatarColorResolver.apply(this, peerInitials, name);
-        CallUiModel model = CallUiModelMapper.map(session);
+        CallUiModel model = CallUiModelMapper.map(
+                session, firebaseCallStatusDisplaySession == null
+                        ? null : firebaseCallStatusDisplaySession.display());
         status.setText(model.getTitleRes());
         if (model.getSubtitleRes() != 0) status.setText(model.getSubtitleRes());
         status.setContentDescription(status.getText());

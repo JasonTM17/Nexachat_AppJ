@@ -29,13 +29,15 @@ class AvatarControllerTest {
     private StorageService storageService;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private AvatarReferenceCoordinator referenceCoordinator;
 
     private AvatarController controller;
     private final UUID userId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        controller = new AvatarController(storageService, userRepository);
+        controller = new AvatarController(storageService, userRepository, referenceCoordinator);
     }
 
     @Test

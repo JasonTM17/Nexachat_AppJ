@@ -1,6 +1,7 @@
 package com.nexachat.user;
 
 import com.nexachat.auth.AccessTokensRevokedEvent;
+import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.call.CallRecordRepository;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
@@ -48,6 +49,7 @@ public class AccountDeletionService {
     private final CallRecordRepository callRecordRepository;
     private final GroupService groupService;
     private final StorageService storageService;
+    private final AvatarReferenceCoordinator avatarReferenceCoordinator;
     private final ContactRepository contactRepository;
     private final Clock clock;
     private final AccountDeletionJdbcSupport jdbcSupport;
@@ -63,6 +65,7 @@ public class AccountDeletionService {
                                   @Lazy CallRecordRepository callRecordRepository,
                                   GroupService groupService,
                                   StorageService storageService,
+                                  AvatarReferenceCoordinator avatarReferenceCoordinator,
                                   ContactRepository contactRepository,
                                   Clock clock,
                                   AccountDeletionJdbcSupport jdbcSupport,
@@ -77,6 +80,7 @@ public class AccountDeletionService {
         this.callRecordRepository = callRecordRepository;
         this.groupService = groupService;
         this.storageService = storageService;
+        this.avatarReferenceCoordinator = avatarReferenceCoordinator;
         this.contactRepository = contactRepository;
         this.clock = clock;
         this.jdbcSupport = jdbcSupport;
@@ -185,7 +189,7 @@ public class AccountDeletionService {
 
     private void deleteStorageKeys(String avatarKey, List<String> unboundKeys) {
         if (avatarKey != null) {
-            storageService.deleteIfExists(avatarKey);
+            avatarReferenceCoordinator.deleteIfUnreferenced(avatarKey);
         }
         for (String key : unboundKeys) {
             storageService.deleteIfExists(key);

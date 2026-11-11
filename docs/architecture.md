@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v13) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24 + V25; V21/V23 reserved) + file volume. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V28; V21/V23 reserved) + file volume. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -24,12 +24,13 @@ flowchart LR
         subgraph DS["Data Sources"]
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
+            ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
             ROOM[("Room DB v13 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
         UI --> VM --> REPO
-        REPO --> REST & STOMP & ROOM & STORE
+        REPO --> REST & STOMP & ROUTER & ROOM & STORE
         UI --> SETTINGS
     end
 
@@ -38,11 +39,14 @@ flowchart LR
         SEC["Spring Security<br/>JWT filter · Rate limit"]
         subgraph Mod["Modules"]
             AUTH["auth"]
+            GOOGLE["google auth"]
+            RECOVERY["recovery"]
             USER["user · contact"]
             CONV["conversation"]
             MSG["message"]
             ATT["attachment"]
             PRES["presence"]
+            FIREBASE["firebase bridge"]
             CALL["call signaling"]
             SUM["summary"]
             NOTIF["notification"]
@@ -59,7 +63,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24 + V25 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
     VOL[("Local file volume<br/>(StorageService boundary)")]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -88,11 +92,14 @@ all three layers.
 flowchart TB
     subgraph Mod["Modules"]
         AUTH["auth"]
+        GOOGLE["google auth"]
+        RECOVERY["recovery"]
         USER["user · contact"]
         CONV["conversation"]
         MSG["message"]
         ATT["attachment"]
         PRES["presence"]
+        FIREBASE["firebase bridge"]
         CALL["call signaling"]
         SUM["summary"]
         NOTIF["notification"]
@@ -197,7 +204,7 @@ sequenceDiagram
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
 
-## 5. V12–V20 feature modules
+## 5. V12–V28 feature modules & realtime extensions
 
 - **Per-member conversation preferences (V12, V16):** `conversation_members`
   carries `muted` / `muted_until` / `archived` and `pinned` / `pinned_at`.
@@ -241,6 +248,33 @@ sequenceDiagram
   skipped for muted members, except when the message mentions them or has
   `mentionAll: true`, when a `SYSTEM` event is about that member, and for
   `CALL_INVITE` (a call must ring).
+- **Keyed refresh replay (V25):** `users.encrypted_refresh_response` stores
+  AES-GCM encrypted responses under rotating keys to handle network timeouts on token
+  refresh without treating retried requests as token reuse.
+- **Account deletion and phone reuse (V26):** soft-delete / tombstoning
+  via `users.deleted_at = now()`, setting `phone = NULL` to free the E.164 phone
+  for re-registration. Invalidates active sessions via `users.tokens_valid_after`,
+  auto-leaves all groups (promoting a successor admin if needed), scrubs contacts,
+  push tokens, private labels, join requests, Google identities, email OTPs, and
+  AI caches, and purges avatar files from disk. Historical messages and attachments
+  remain in direct and group chats with the author displayed as neutral `Deleted account`.
+  Self-service deletion is available in-app (`DELETE /api/v1/users/me`) and on the web
+  (`site/delete-account.html`) via recovery-email OTP.
+- **Account recovery & email OTP (V27):** `email_otps` stores HMAC-SHA256 digests
+  of 6-digit codes (10-minute expiry, constant-time compare, 5-attempt limit, 60 s cooldown)
+  for email verification (`POST /api/v1/users/me/email/request`), password reset
+  (`POST /api/v1/auth/recovery/reset-password/request`), and web account deletion. Pluggable
+  `MailSender` supports SMTP (Gmail, local Mailpit for dev) and Resend.
+- **Google sign-in (V28):** link-first OpenID Connect identity integration
+  (`user_identities`, `google_signin_nonces`). Validates Google ID tokens via
+  public JWKS (`https://www.googleapis.com/oauth2/v3/certs`) using Spring Security's
+  `NimbusJwtDecoder` without requiring a client secret. Single-use nonces prevent replay.
+  Linking requires re-authenticating with the account's password; automatic account creation
+  and email-based linking are omitted to prevent account takeover.
+- **Ephemeral state router (STOMP default, opt-in Firebase):** Android `EphemeralStateRouter`
+  manages presence and typing subscriptions. While STOMP is always active and the default,
+  an optional Firebase RTDB bridge and projection writer (`server/firebase/**`,
+  `docs/firebase-realtime.md`) can be enabled via configuration flags (default off).
 
 Theme mode (`SYSTEM`, `LIGHT`, `DARK`) and locale are local Android settings;
 they are applied by the app and are not persisted as server account settings.

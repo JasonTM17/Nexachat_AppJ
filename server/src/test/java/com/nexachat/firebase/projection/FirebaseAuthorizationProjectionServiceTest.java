@@ -59,8 +59,9 @@ class FirebaseAuthorizationProjectionServiceTest {
         service.reconcileConversation(CONVERSATION_ID);
 
         Map<String, Object> expected = new LinkedHashMap<>();
-        expected.put("presenceReaders/" + USER_ID + "/" + PEER_ID, CONVERSATION_ID.toString());
-        expected.put("presenceReaders/" + PEER_ID + "/" + USER_ID, CONVERSATION_ID.toString());
+        Map<String, String> directReader = Map.of("cid", CONVERSATION_ID.toString(), "type", "DIRECT");
+        expected.put("presenceReaders/" + USER_ID + "/" + PEER_ID, directReader);
+        expected.put("presenceReaders/" + PEER_ID + "/" + USER_ID, directReader);
         assertThat(rtdb.patches).containsExactly(expected, expected);
     }
 

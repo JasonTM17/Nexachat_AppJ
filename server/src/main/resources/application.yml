@@ -131,6 +131,15 @@ nexachat:
     disconnect-grace-ms: ${NEXACHAT_CALLS_DISCONNECT_GRACE_MS:15000}
   storage:
     root: ${STORAGE_ROOT:./data/uploads}
+  avatar-sweep:
+    # Orphaned-avatar cleanup is opt-in; dry-run counts candidates until an
+    # operator explicitly disables it. Only server-generated avatars/ keys
+    # older than min-age-hours and referenced by no user or group row go.
+    enabled: ${NEXACHAT_AVATAR_SWEEP_ENABLED:false}
+    dry-run: ${NEXACHAT_AVATAR_SWEEP_DRY_RUN:true}
+    batch-size: ${NEXACHAT_AVATAR_SWEEP_BATCH_SIZE:100}
+    min-age-hours: ${NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS:24}
+    interval-ms: ${NEXACHAT_AVATAR_SWEEP_INTERVAL_MS:86400000}
   sync:
     # Delta clients that fall behind this window receive a full reaction refresh.
     reaction-retention-days: ${NEXACHAT_SYNC_REACTION_RETENTION_DAYS:30}

@@ -4,6 +4,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 
 import java.net.URI;
+import java.util.regex.Pattern;
 
 /**
  * Group avatars are loaded by every member's client. Only a relative
@@ -14,9 +15,22 @@ import java.net.URI;
 public final class AvatarUrlPolicy {
 
     static final String FILES_PATH = "/api/v1/files/";
+
+    /**
+     * Key shape produced by the server for user and group avatars
+     * ({@code avatars/<uuid>.<sniffed-extension>}). The sweep only ever
+     * considers files matching this shape, so hand-placed files stay put.
+     */
+    static final Pattern AVATAR_STORAGE_KEY = Pattern.compile(
+            "^avatars/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.[a-z0-9]+$");
+
     private static final int MAX_LENGTH = 255;
 
     private AvatarUrlPolicy() {
+    }
+
+    public static boolean isServerGeneratedAvatarStorageKey(String storageKey) {
+        return storageKey != null && AVATAR_STORAGE_KEY.matcher(storageKey).matches();
     }
 
     public static String toRelativeFilesUrl(String raw) {
@@ -60,6 +74,40 @@ public final class AvatarUrlPolicy {
             throw invalid();
         }
         return relative;
+    }
+
+    /** Returns the storage key in a legacy or relative files URL. */
+    public static String storageKeyFromUrl(String avatarUrl) {
+        if (avatarUrl == null) {
+            return null;
+        }
+        String value = avatarUrl.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        String path = value;
+        try {
+            String parsedPath = URI.create(value).getPath();
+            if (parsedPath != null && !parsedPath.isEmpty()) {
+                path = parsedPath;
+            }
+        } catch (IllegalArgumentException malformed) {
+            int fragment = value.indexOf('#');
+            if (fragment >= 0) {
+                value = value.substring(0, fragment);
+            }
+            int query = value.indexOf('?');
+            if (query >= 0) {
+                value = value.substring(0, query);
+            }
+            path = value;
+        }
+        int prefix = path.lastIndexOf(FILES_PATH);
+        if (prefix < 0) {
+            return null;
+        }
+        String key = path.substring(prefix + FILES_PATH.length());
+        return key.isBlank() ? null : key;
     }
 
     private static boolean hasControlChars(String value) {

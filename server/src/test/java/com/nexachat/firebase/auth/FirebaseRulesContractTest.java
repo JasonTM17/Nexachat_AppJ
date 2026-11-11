@@ -31,7 +31,8 @@ class FirebaseRulesContractTest {
         JsonNode rules = objectMapper.readTree(Files.readString(rulesPath())).path("rules");
 
         String presenceRead = rules.path("presence").path("$uid").path(".read").asText();
-        assertThat(presenceRead).contains("auth.token.bridgeId", "control/enabled", "sessions", "showPresence", "presenceReaders", "members", "blocked");
+        assertThat(presenceRead).contains("auth.token.bridgeId", "control/enabled", "presencePrivacyVersion",
+                "sessions", "showPresence", "presenceReaders", "members", "blocked");
         assertThat(rules.path("presence").path("$uid").path("$bridge").path(".write").asText())
                 .contains("auth.uid == $uid", "auth.token.bridgeId == $bridge", "sessions");
 

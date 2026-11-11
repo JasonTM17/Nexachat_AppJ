@@ -8,7 +8,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -172,6 +176,44 @@ class LocalStorageServiceTest {
         Path written = tempDir.resolve(stored.storageKey());
         assertThat(written).exists().hasBinaryContent(png);
         assertThat(stored.sizeBytes()).isEqualTo(Files.size(written));
+    }
+
+    // -------------------------------------------------------------------- list
+
+    @Test
+    void list_returnsRegularFilesOldestFirstAndSkipsDirectories() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        var newer = newService().store("avatars", "newer.png", "image/png", png);
+        var older = newService().store("avatars", "older.png", "image/png", png);
+        Files.setLastModifiedTime(tempDir.resolve(newer.storageKey()),
+                FileTime.from(Instant.parse("2026-02-01T00:00:00Z")));
+        Files.setLastModifiedTime(tempDir.resolve(older.storageKey()),
+                FileTime.from(Instant.parse("2026-01-01T00:00:00Z")));
+        Files.createDirectories(tempDir.resolve("avatars/nested"));
+        Files.writeString(tempDir.resolve("avatars/nested/ignored.png"), "not a direct child");
+
+        var listed = newService().list("avatars");
+
+        assertThat(listed).extracting(StorageService.StoredFileInfo::storageKey)
+                .containsExactly(older.storageKey(), newer.storageKey());
+        Set<String> names = listed.stream()
+                .map(StorageService.StoredFileInfo::storageKey)
+                .collect(Collectors.toSet());
+        assertThat(names).noneMatch(key -> key.startsWith("avatars/nested/"));
+    }
+
+    @Test
+    void list_missingDirectoryIsEmpty() {
+        assertThat(newService().list("avatars")).isEmpty();
+    }
+
+    @Test
+    void list_rejectsTraversalSubdir() {
+        for (String hostile : new String[] {"..", "../evil", "a/b", "a\\b", "  "}) {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> newService().list(hostile));
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        }
     }
 
     // -------------------------------------------------------------------- read

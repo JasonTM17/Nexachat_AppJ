@@ -9,11 +9,16 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,6 +45,8 @@ class ScheduledAdvisoryLockIT {
     private ScheduledAdvisoryLock advisoryLock;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private DataSource dataSource;
 
     @org.junit.jupiter.api.BeforeEach
     @AfterEach
@@ -69,6 +76,60 @@ class ScheduledAdvisoryLockIT {
             }
             if (acquiredSecond) {
                 advisoryLock.release(TEST_LOCK);
+            }
+        }
+    }
+
+    @Test
+    void withLockHoldsOnOneSessionAndReleasesIt() throws Exception {
+        long lockId = TEST_LOCK + 1;
+        AtomicBoolean visibleToAnotherSession = new AtomicBoolean();
+
+        Boolean ran = advisoryLock.withLock(lockId, () -> {
+            try (Connection other = dataSource.getConnection();
+                 PreparedStatement statement =
+                         other.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                statement.setLong(1, lockId);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next();
+                    visibleToAnotherSession.set(result.getBoolean(1));
+                }
+                return true;
+            } catch (Exception failure) {
+                throw new IllegalStateException("Could not probe the held lock", failure);
+            }
+        });
+
+        assertThat(ran).isTrue();
+        assertThat(visibleToAnotherSession).isFalse();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_locks
+                WHERE locktype = 'advisory' AND granted AND objid = ?
+                """, Integer.class, lockId))
+                .as("no session may keep the advisory lock after withLock returns")
+                .isZero();
+        try (Connection other = dataSource.getConnection()) {
+            boolean acquiredAgain;
+            try (PreparedStatement statement =
+                         other.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+                statement.setLong(1, lockId);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next();
+                    acquiredAgain = result.getBoolean(1);
+                }
+            }
+            try {
+                assertThat(acquiredAgain)
+                        .as("the lock must be released after withLock")
+                        .isTrue();
+            } finally {
+                if (acquiredAgain) {
+                    try (PreparedStatement release =
+                                 other.prepareStatement("SELECT pg_advisory_unlock(?)")) {
+                        release.setLong(1, lockId);
+                        release.execute();
+                    }
+                }
             }
         }
     }

@@ -66,15 +66,21 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         String destination = SimpMessageHeaderAccessor.getDestination(message.getHeaders());
         Matcher topic = destination == null ? null : CONVERSATION_TOPIC.matcher(destination);
         if (topic == null || !topic.matches()) {
-            return message;
+            return isAuthenticatedOrInternalMessage(sessionId) ? message : null;
         }
 
         UUID conversationId = UUID.fromString(topic.group(1));
         UUID userId = userIdForSession(sessionId);
-        return userId != null
-                && memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)
-                ? message
-                : null;
+        if (userId == null || !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+            return null;
+        }
+        // The membership lookup can block while revocation unbinds and closes
+        // the socket, so validate the session again before releasing the frame.
+        return isAuthenticatedOrInternalMessage(sessionId) ? message : null;
+    }
+
+    private boolean isAuthenticatedOrInternalMessage(@Nullable String sessionId) {
+        return sessionId == null || sessionRegistry.isAuthenticatedSession(sessionId);
     }
 
     @Nullable

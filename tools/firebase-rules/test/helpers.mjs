@@ -29,7 +29,7 @@ export function baseFixture() {
   const now = Date.now();
   const until = now + LEASE_MS;
   return {
-    control: { enabled: true },
+    control: { enabled: true, presencePrivacyVersion: 2 },
     accounts: {
       alice: { active: true, showPresence: true },
       bob: { active: true, showPresence: true },
@@ -50,8 +50,8 @@ export function baseFixture() {
       'direct-bc': { bob: until, carol: until },
     },
     presenceReaders: {
-      bob: { alice: 'direct-ab' },
-      alice: { bob: 'direct-ab' },
+      bob: { alice: { cid: 'direct-ab', type: 'DIRECT' } },
+      alice: { bob: { cid: 'direct-ab', type: 'DIRECT' } },
     },
     presence: {
       bob: {

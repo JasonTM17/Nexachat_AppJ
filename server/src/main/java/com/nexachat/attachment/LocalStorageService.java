@@ -9,9 +9,15 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -152,6 +158,38 @@ public class LocalStorageService implements StorageService {
         } catch (IOException ex) {
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to delete stored file");
         }
+    }
+
+    @Override
+    public List<StoredFileInfo> list(String subdir) {
+        String folder = safeSubdir(subdir);
+        Path directory = root.resolve(folder).normalize();
+        if (!directory.startsWith(root) || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return List.of();
+        }
+        List<StoredFileInfo> files = new ArrayList<>();
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(directory)) {
+            for (Path entry : entries) {
+                if (!Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                try {
+                    Instant lastModified = Files.getLastModifiedTime(entry, LinkOption.NOFOLLOW_LINKS)
+                            .toInstant();
+                    files.add(new StoredFileInfo(
+                            folder + "/" + entry.getFileName(), lastModified));
+                } catch (NoSuchFileException vanished) {
+                    // A concurrent delete won the race; the next walk will not see it either.
+                }
+            }
+        } catch (NoSuchFileException vanished) {
+            return List.of();
+        } catch (IOException ex) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to list stored files");
+        }
+        files.sort(Comparator.comparing(StoredFileInfo::lastModified)
+                .thenComparing(StoredFileInfo::storageKey));
+        return List.copyOf(files);
     }
 
     /**

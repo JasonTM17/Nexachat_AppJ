@@ -5,6 +5,7 @@ import com.nexachat.common.FakeOpenAiServer;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.SummaryConsentRepository;
+import com.nexachat.summary.SummaryConsentRepository.ConsentSnapshot;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.CircuitBreaker;
 import com.nexachat.summary.llm.LlmClient;
@@ -68,7 +69,7 @@ class AskServiceFallbackTest {
         startServers();
         properties.getRetrieval().setExtractiveThreshold(1.01);
         addMessage(conversationId, senderId, 1, "The server migration is scheduled for March 14 at 02:00.");
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
@@ -89,7 +90,7 @@ class AskServiceFallbackTest {
         startServers();
         properties.getRetrieval().setExtractiveThreshold(1.01);
         addMessage(conversationId, senderId, 1, "The server migration is scheduled for March 14 at 02:00.");
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
                 FakeOpenAiServer.jsonResponse("{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}")));
 
@@ -107,7 +108,7 @@ class AskServiceFallbackTest {
         startServers();
         properties.getRetrieval().setExtractiveThreshold(1.01);
         addMessage(conversationId, senderId, 1, "The server migration is scheduled for March 14 at 02:00.");
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 503, "fallback down"));
 
@@ -130,7 +131,7 @@ class AskServiceFallbackTest {
                 List.of(new RagCitation(fact.id(), 1, "The budget is 1,200 dollars.")),
                 "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
-        when(consentRepository.isConsented(userId)).thenReturn(true);
+        setConsent(true);
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest("How much budget was approved?", null));
@@ -180,5 +181,10 @@ class AskServiceFallbackTest {
                 senderId, "User", content);
         index.add(message);
         return message;
+    }
+
+    private void setConsent(boolean consented) {
+        when(consentRepository.isConsented(userId)).thenReturn(consented);
+        when(consentRepository.snapshot(userId)).thenReturn(new ConsentSnapshot(consented, consented ? 1 : 0));
     }
 }

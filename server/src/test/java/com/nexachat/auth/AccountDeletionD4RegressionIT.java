@@ -383,6 +383,22 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
     }
 
     @Test
+    void deletionAdvancesAiConsentEpochWhenConsentWasAlreadyFalse() throws Exception {
+        Registered user = register("+84905553105", "secret123");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT ai_summary_consent FROM users WHERE id = ?", Boolean.class, user.userId())).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, user.userId()))
+                .isZero();
+
+        deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT ai_summary_consent_epoch FROM users WHERE id = ?", Long.class, user.userId()))
+                .isEqualTo(1);
+    }
+
+    @Test
     void concurrentGroupAddCannotOutliveAccountDeletion() throws Exception {
         Registered victim = register("+84905553201", "secret123");
         Registered admin = register("+84905553202", "secret123");
@@ -660,6 +676,56 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
             assertThat(storageService.exists(avatar.storageKey())).isTrue();
         } finally {
             storageService.deleteIfExists(avatar.storageKey());
+        }
+    }
+
+    @Test
+    void accountDeletionKeepsAvatarFileStillReferencedByAGroup() throws Exception {
+        Registered user = register("+84905553222", "secret123");
+        Registered peer = register("+84905553223", "secret123");
+        UUID groupId = createGroup(user, List.of(peer.userId()));
+        String avatarBody = uploadAvatar(user).getResponse().getContentAsString();
+        String avatarUrl = objectMapper.readTree(avatarBody).path("avatarUrl").asText();
+        String avatarKey = storageKeyFromUrl(avatarUrl);
+
+        patchJson("/api/v1/conversations/" + groupId, Map.of("avatarUrl", avatarUrl), user.accessToken())
+                .andExpect(status().isOk());
+        assertThat(storageService.exists(avatarKey)).isTrue();
+
+        try {
+            deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
+
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT avatar_url FROM conversations WHERE id = ?", String.class, groupId))
+                    .isEqualTo(avatarUrl);
+            assertThat(storageService.exists(avatarKey)).isTrue();
+        } finally {
+            storageService.deleteIfExists(avatarKey);
+        }
+    }
+
+    @Test
+    void avatarReplacementKeepsOldFileStillReferencedByAGroup() throws Exception {
+        Registered user = register("+84905553224", "secret123");
+        Registered peer = register("+84905553225", "secret123");
+        UUID groupId = createGroup(user, List.of(peer.userId()));
+        String firstBody = uploadAvatar(user).getResponse().getContentAsString();
+        String firstUrl = objectMapper.readTree(firstBody).path("avatarUrl").asText();
+        String firstKey = storageKeyFromUrl(firstUrl);
+        patchJson("/api/v1/conversations/" + groupId, Map.of("avatarUrl", firstUrl), user.accessToken())
+                .andExpect(status().isOk());
+
+        try {
+            String secondBody = uploadAvatar(user).getResponse().getContentAsString();
+            String secondUrl = objectMapper.readTree(secondBody).path("avatarUrl").asText();
+
+            assertThat(secondUrl).isNotEqualTo(firstUrl);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT avatar_url FROM conversations WHERE id = ?", String.class, groupId))
+                    .isEqualTo(firstUrl);
+            assertThat(storageService.exists(firstKey)).isTrue();
+        } finally {
+            storageService.deleteIfExists(firstKey);
         }
     }
 

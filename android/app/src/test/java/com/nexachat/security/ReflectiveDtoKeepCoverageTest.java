@@ -1,8 +1,16 @@
 package com.nexachat.security;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import com.nexachat.core.network.dto.FirebaseBridgeResponse;
+import com.nexachat.core.network.dto.FirebaseLeaseRequest;
+import com.nexachat.core.network.dto.FirebaseLeaseResponse;
 import com.nexachat.core.network.dto.MessageDto;
+import com.nexachat.core.network.dto.PeerPresenceDto;
+import com.nexachat.core.network.stomp.dto.PresenceEventDto;
+import com.nexachat.core.network.stomp.dto.TypingSignalDto;
 import com.squareup.moshi.Json;
 import java.io.File;
 import java.io.IOException;
@@ -109,6 +117,120 @@ public final class ReflectiveDtoKeepCoverageTest {
                 "Moshi adapters built from class literals have no R8 keep coverage:\n"
                         + String.join("\n", failures),
                 failures.isEmpty());
+    }
+
+    /**
+     * Firebase RTDB deserializes typed {@code getValue(X.class)},
+     * {@code GenericTypeIndicator<X>} and POJO {@code setValue(x)} payloads with
+     * the same reflective field rules as Moshi. The presence v2 and typing
+     * paths currently exchange Maps only; a future typed model must be kept.
+     */
+    @Test
+    public void firebaseRealtimeTypedModelsAreAbsentOrKept() throws Exception {
+        List<KeepPattern> keeps = fullKeepPatterns();
+        List<String> failures = new ArrayList<>();
+        for (File sourceFile : javaSources(sourceRoot())) {
+            String source = new String(Files.readAllBytes(sourceFile.toPath()), StandardCharsets.UTF_8);
+            if (!source.contains("com.google.firebase.database")) {
+                continue;
+            }
+            Set<String> literals = new LinkedHashSet<>();
+            literals.addAll(firebaseTypedReadLiterals(source));
+            literals.addAll(firebaseTypedWriteLiterals(source));
+            for (String literal : literals) {
+                Class<?> model = resolveClass(sourceFile, source, literal);
+                if (model == null
+                        || !model.getName().startsWith("com.nexachat.")
+                        || !hasInstanceField(model)
+                        || coveredByFullKeep(keeps, model.getName())) {
+                    continue;
+                }
+                failures.add(model.getName() + " in " + sourceFile.getName());
+            }
+        }
+
+        assertTrue(
+                "Firebase RTDB typed models have no R8 keep coverage:\n"
+                        + String.join("\n", failures),
+                failures.isEmpty());
+    }
+
+    /**
+     * Pins the unannotated field names Moshi serializes for the Firebase bridge,
+     * presence v2 and typing beans. A rename here silently changes the wire
+     * contract even though the R8 mapping check still passes.
+     */
+    @Test
+    public void firebaseWireModelFieldsMatchTheWireContract() throws Exception {
+        assertWireModel(FirebaseBridgeResponse.class,
+                "customToken", "databaseUrl", "bridgeId", "leaseUntil", "transport");
+        assertWireModel(FirebaseLeaseRequest.class, "bridgeId", "conversationIds");
+        assertWireModel(FirebaseLeaseResponse.class, "leaseUntil", "transport");
+        assertWireModel(PeerPresenceDto.class, "online", "lastSeenAt");
+        assertWireModel(PresenceEventDto.class, "userId", "online", "lastSeenAt");
+        assertWireModel(TypingSignalDto.class, "userId", "displayName");
+    }
+
+    private static void assertWireModel(Class<?> model, String... fields) throws Exception {
+        Set<String> actual = new LinkedHashSet<>();
+        for (Field field : model.getDeclaredFields()) {
+            if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()) {
+                actual.add(field.getName());
+            }
+        }
+        assertEquals(model.getName() + " wire fields",
+                new LinkedHashSet<>(List.of(fields)), actual);
+        if (model != FirebaseLeaseRequest.class) {
+            // Moshi's reflective response adapter needs a no-arg constructor.
+            assertNotNull(model.getName() + " needs a no-arg constructor",
+                    model.getDeclaredConstructor());
+        }
+    }
+
+    private static List<KeepPattern> fullKeepPatterns() throws IOException {
+        String rules = new String(Files.readAllBytes(proguardRules().toPath()), StandardCharsets.UTF_8);
+        List<KeepPattern> keeps = new ArrayList<>();
+        Matcher matcher = KEEP_RULE.matcher(rules);
+        while (matcher.find()) {
+            if (matcher.group(2).contains("*;")) {
+                keeps.add(KeepPattern.compile(matcher.group(1)));
+            }
+        }
+        return keeps;
+    }
+
+    private static Set<String> firebaseTypedReadLiterals(String source) {
+        Set<String> names = new LinkedHashSet<>();
+        Matcher direct = Pattern.compile(
+                "\\.getValue\\(\\s*([A-Za-z_$][\\w.$]*)\\.class\\s*\\)").matcher(source);
+        while (direct.find()) {
+            names.add(direct.group(1));
+        }
+        Matcher generic = Pattern.compile("GenericTypeIndicator\\s*<").matcher(source);
+        while (generic.find()) {
+            int open = generic.end();
+            int close = closeGeneric(source, open);
+            if (close < 0) {
+                continue;
+            }
+            Matcher tokens = TYPE_TOKEN.matcher(source.substring(open, close));
+            while (tokens.find()) {
+                if (!NON_MODELS.contains(tokens.group(1))) {
+                    names.add(tokens.group(1));
+                }
+            }
+        }
+        return names;
+    }
+
+    private static Set<String> firebaseTypedWriteLiterals(String source) {
+        Set<String> names = new LinkedHashSet<>();
+        Matcher write = Pattern.compile(
+                "\\.setValue\\(\\s*new\\s+([A-Za-z_$][\\w.$]*)\\s*\\(").matcher(source);
+        while (write.find()) {
+            names.add(write.group(1));
+        }
+        return names;
     }
 
     /**

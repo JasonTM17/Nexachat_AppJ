@@ -83,8 +83,9 @@ public class FirebaseAuthorizationProjectionService {
                 return;
             }
             Map<String, Object> updates = new LinkedHashMap<>();
-            updates.put(readerPath(currentMembers.get(0), currentMembers.get(1)), conversationId.toString());
-            updates.put(readerPath(currentMembers.get(1), currentMembers.get(0)), conversationId.toString());
+            Map<String, String> directReader = Map.of("cid", conversationId.toString(), "type", "DIRECT");
+            updates.put(readerPath(currentMembers.get(0), currentMembers.get(1)), directReader);
+            updates.put(readerPath(currentMembers.get(1), currentMembers.get(0)), directReader);
             metrics.write("direct-readers", () -> rtdb.applyAuthorizationProjection(updates));
         });
     }
