@@ -20,6 +20,8 @@ Commands:
   validate-send      Call ``messages:send`` with ``validate_only=true`` and a
                      synthetic registration token, so Google validates the
                      request without delivering anything.
+  self-test          Run the embedded response-classification tests; no
+                     credentials or network access.
   server-e2e         Drive the running server API end to end: register two
                      fixture users, register a synthetic device token for the
                      recipient, send a message, then inspect the container log
@@ -173,6 +175,20 @@ def google_error_word(body: bytes) -> str:
     if isinstance(error, str):
         return error
     return ""
+
+
+# The only results that prove authentication worked and the synthetic
+# registration token was the rejected input. A 5xx or any other status is a
+# failure of the request, not an expected token rejection.
+EXPECTED_VALIDATE_SEND = {
+    "synthetic": (404, "UNREGISTERED"),
+    "malformed": (400, "INVALID_ARGUMENT"),
+}
+
+
+def validate_send_accepted(token_shape: str, status: int, google_status: str) -> bool:
+    """True only for the shape-specific invalid-token rejection."""
+    return EXPECTED_VALIDATE_SEND.get(token_shape) == (status, google_status)
 
 
 def sign_assertion(doc: dict, token_uri: str, account_email: str, pem: str) -> str:
@@ -334,16 +350,58 @@ def cmd_validate_send(args) -> int:
         google_status = ""
 
     status_class = f"{status // 100}xx" if status else "no-response"
+    accepted = validate_send_accepted(args.token_shape, status, google_status)
     print("oauth_ok=true")
     print(f"http_status={status}")
     print(f"status_class={status_class}")
     print(f"google_status={google_status or 'NONE'}")
     print(f"detail_types={','.join(detail_types) if detail_types else 'NONE'}")
-    print(f"request_authenticated={b(status not in (401, 403))}")
-    print(f"token_rejected={b(status >= 400)}")
-    # A validate_only call is expected to be authenticated and to be rejected
-    # because the token is synthetic; anything else is a failure.
-    return 0 if (status not in (401, 403) and status >= 400) else 1
+    print(f"request_authenticated={b(status > 0 and status not in (401, 403))}")
+    print(f"expected_rejection={b(accepted)}")
+    # A validate_only call is expected to be authenticated and rejected only
+    # for the shape-specific invalid-token reason; every other status,
+    # including 5xx, is a failure.
+    return 0 if accepted else 1
+
+
+def cmd_self_test(_args) -> int:
+    cases = [
+        # shape, HTTP status, Google error status, accepted
+        ("synthetic", 404, "UNREGISTERED", True),
+        ("malformed", 400, "INVALID_ARGUMENT", True),
+        ("synthetic", 500, "INTERNAL", False),
+        ("malformed", 503, "UNAVAILABLE", False),
+        ("synthetic", 502, "", False),
+        ("synthetic", 401, "UNAUTHENTICATED", False),
+        ("synthetic", 403, "PERMISSION_DENIED", False),
+        ("synthetic", 429, "RESOURCE_EXHAUSTED", False),
+        ("synthetic", 200, "NONE", False),
+        ("synthetic", 404, "NOT_FOUND", False),
+        ("malformed", 404, "UNREGISTERED", False),
+    ]
+    failures = 0
+    for shape, status, word, expected in cases:
+        actual = validate_send_accepted(shape, status, word)
+        ok = actual is expected
+        failures += 0 if ok else 1
+        print(f"case shape={shape} http_status={status} "
+              f"google_status={word or 'NONE'} accepted={b(actual)} "
+              f"expected={b(expected)} ok={b(ok)}")
+
+    # Regression for the fixed false positive: the old rule accepted a 5xx.
+    def legacy(status: int) -> bool:
+        return status not in (401, 403) and status >= 400
+
+    legacy_accepted = legacy(500)
+    fixed = validate_send_accepted("synthetic", 500, "INTERNAL")
+    red_green = legacy_accepted and not fixed
+    print(f"regression_5xx legacy_accepted={b(legacy_accepted)} "
+          f"fixed_accepted={b(fixed)} red_green={b(red_green)}")
+    if not red_green:
+        failures += 1
+
+    print(f"self_test_passed={b(failures == 0)}")
+    return 0 if failures == 0 else 1
 
 
 def mask_phone(phone: str) -> str:
@@ -538,6 +596,9 @@ def build_parser() -> argparse.ArgumentParser:
                           help="synthetic: well-formed fake token (UNREGISTERED); "
                                "malformed: not a token (INVALID_ARGUMENT)")
 
+    sub.add_parser("self-test",
+                   help="run the embedded response-classification tests")
+
     e2e = sub.add_parser("server-e2e",
                          help="end-to-end check through the running server API")
     e2e.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -554,6 +615,7 @@ def main(argv: list[str]) -> int:
         "check-credential": cmd_check_credential,
         "oauth-exchange": cmd_oauth_exchange,
         "validate-send": cmd_validate_send,
+        "self-test": cmd_self_test,
         "server-e2e": cmd_server_e2e,
     }
     try:

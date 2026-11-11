@@ -1,0 +1,17 @@
+# Opt-in override that mounts the Google service-account key read-only.
+#
+#   NEXACHAT_FIREBASE_KEY_HOST_FILE=/secure/path/service-account.json \
+#     docker compose -f docker-compose.yml -f docker-compose.firebase.yml up -d app
+#
+# The key must be a service-account private-key JSON whose project matches
+# FCM_PROJECT_ID; Application Default Credentials do not work here. The base
+# compose file keeps Firebase off and empty without this override.
+services:
+  app:
+    environment:
+      FCM_SERVICE_ACCOUNT_JSON: /run/secrets/nexachat-firebase.json
+    volumes:
+      - type: bind
+        source: ${NEXACHAT_FIREBASE_KEY_HOST_FILE:?Set NEXACHAT_FIREBASE_KEY_HOST_FILE to the host path of the service-account JSON}
+        target: /run/secrets/nexachat-firebase.json
+        read_only: true
