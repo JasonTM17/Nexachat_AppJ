@@ -14,6 +14,7 @@ import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.LinkedHashMap;
+import java.net.SocketTimeoutException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -73,10 +74,14 @@ public final class StompClient {
             }
         }
 
-        /** The attempt died before or after Open. {@code auth} marks HTTP 401/403 handshakes. */
-        record Failed(@Nullable String reason, boolean auth) implements State {
+        /** The attempt died before or after Open. */
+        record Failed(@Nullable String reason, boolean auth, boolean wakeRetryable) implements State {
             public Failed(@Nullable String reason) {
-                this(reason, false);
+                this(reason, false, false);
+            }
+
+            public Failed(@Nullable String reason, boolean auth) {
+                this(reason, auth, false);
             }
 
             @Nullable
@@ -88,9 +93,14 @@ public final class StompClient {
                 return auth;
             }
 
+            public boolean isWakeRetryable() {
+                return wakeRetryable;
+            }
+
             @Override
             public String toString() {
-                return "Failed(reason=" + reason + ", auth=" + auth + ")";
+                return "Failed(reason=" + reason + ", auth=" + auth
+                        + ", wakeRetryable=" + wakeRetryable + ")";
             }
         }
 
@@ -488,7 +498,10 @@ public final class StompClient {
                     boolean auth = httpStatus != null
                             && (httpStatus == HTTP_UNAUTHORIZED || httpStatus == HTTP_FORBIDDEN);
                     String reason = httpStatus == null ? failure.getMessage() : "HTTP_" + httpStatus;
-                    sink.trySend(new State.Failed(reason, auth));
+                    boolean wakeRetryable = httpStatus != null
+                            ? httpStatus == 502 || httpStatus == 503 || httpStatus == 504
+                            : failure instanceof SocketTimeoutException;
+                    sink.trySend(new State.Failed(reason, auth, wakeRetryable));
                     sink.close();
                 });
             }
@@ -511,7 +524,7 @@ public final class StompClient {
         ScheduledFuture<?> connectTimeout = scheduler.schedule(() -> {
             liveness.runIfCurrent(() -> {
                 if (!open && !cleanedUp.get()) {
-                    sink.trySend(new State.Failed(REASON_CONNECT_TIMEOUT));
+                    sink.trySend(new State.Failed(REASON_CONNECT_TIMEOUT, false, true));
                     webSocket.cancel();
                 }
             });

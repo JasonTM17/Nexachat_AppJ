@@ -9,6 +9,7 @@ import com.nexachat.core.common.WhitespaceTrim;
 import com.nexachat.core.media.MediaCacheCleaner;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AuthApi;
+import com.nexachat.core.network.ServerWakeGate;
 import com.nexachat.core.network.UserApi;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.storage.RecallWindowConfig;
@@ -30,10 +31,12 @@ import com.nexachat.feature.auth.LoginNotice;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import com.nexachat.core.common.Unit;
@@ -61,6 +64,7 @@ public final class AuthRepository {
     @Nullable private final MediaCacheCleaner mediaCacheCleaner;
     @Nullable private final Moshi moshi;
     @Nullable private final LoginNotice loginNotice;
+    @Nullable private final ServerWakeGate serverWakeGate;
 
     @Inject
     public AuthRepository(
@@ -73,7 +77,8 @@ public final class AuthRepository {
             @NonNull AccountDataCleaner accountDataCleaner,
             @NonNull MediaCacheCleaner mediaCacheCleaner,
             @NonNull Moshi moshi,
-            @NonNull LoginNotice loginNotice) {
+            @NonNull LoginNotice loginNotice,
+            @NonNull ServerWakeGate serverWakeGate) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
         this.userApi = Objects.requireNonNull(userApi, "userApi");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
@@ -85,6 +90,7 @@ public final class AuthRepository {
         this.mediaCacheCleaner = Objects.requireNonNull(mediaCacheCleaner, "mediaCacheCleaner");
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
+        this.serverWakeGate = Objects.requireNonNull(serverWakeGate, "serverWakeGate");
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -106,6 +112,30 @@ public final class AuthRepository {
         this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = null;
+        this.serverWakeGate = null;
+    }
+
+    /** Focused constructor for tests that exercise the readiness gate before login. */
+    public AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @Nullable AccountDataCleaner accountDataCleaner,
+            @NonNull ServerWakeGate serverWakeGate) {
+        this.authApi = Objects.requireNonNull(authApi, "authApi");
+        this.userApi = null;
+        this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
+        this.sessionEvents = Objects.requireNonNull(sessionEvents, "sessionEvents");
+        this.tokenRefresher = Objects.requireNonNull(tokenRefresher, "tokenRefresher");
+        this.deviceTokenRegistrationManager = Objects.requireNonNull(
+                deviceTokenRegistrationManager, "deviceTokenRegistrationManager");
+        this.accountDataCleaner = accountDataCleaner;
+        this.mediaCacheCleaner = null;
+        this.moshi = null;
+        this.loginNotice = null;
+        this.serverWakeGate = Objects.requireNonNull(serverWakeGate, "serverWakeGate");
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -128,6 +158,7 @@ public final class AuthRepository {
         this.mediaCacheCleaner = null;
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = null;
+        this.serverWakeGate = null;
     }
 
     AuthRepository(
@@ -150,6 +181,7 @@ public final class AuthRepository {
         this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
+        this.serverWakeGate = null;
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -170,6 +202,7 @@ public final class AuthRepository {
         this.mediaCacheCleaner = null;
         this.moshi = null;
         this.loginNotice = null;
+        this.serverWakeGate = null;
     }
 
     @NonNull
@@ -186,7 +219,24 @@ public final class AuthRepository {
             @NonNull String phone,
             @NonNull String password) {
         LoginRequest request = loginRequest(phone, password);
-        return Single.defer(() -> persistOnSuccess(authCall(authApi.login(request))));
+        return Single.defer(() -> withServerReady(
+                () -> persistOnSuccess(authCall(authApi.login(request)))));
+    }
+
+    @NonNull
+    public Flowable<Boolean> getServerWakeState() {
+        return serverWakeGate == null ? Flowable.just(false) : serverWakeGate.getIsStarting();
+    }
+
+    @NonNull
+    private Single<Boolean> awaitServerReady() {
+        return serverWakeGate == null ? Single.just(true) : serverWakeGate.awaitReady();
+    }
+
+    private <T> Single<Result<T>> withServerReady(Supplier<Single<Result<T>>> request) {
+        return awaitServerReady().flatMap(ready -> ready
+                ? Single.defer(request::get)
+                : Single.just(Result.<T>failure(new ApiError.Network("server is not ready"))));
     }
 
     /**
@@ -341,9 +391,9 @@ public final class AuthRepository {
     /** Fetches a single-use nonce before a Google credential request. */
     @NonNull
     public Single<Result<GoogleNonceResponse>> requestGoogleNonce() {
-        return Single.defer(() -> ApiResult.safeApiCall(authApi.googleNonce())
-                        .map(AuthRepository::valueResult)
-                        .subscribeOn(Schedulers.io()));
+        return Single.defer(() -> withServerReady(() -> ApiResult.safeApiCall(authApi.googleNonce())
+                .map(AuthRepository::valueResult)
+                .subscribeOn(Schedulers.io())));
     }
 
     /** Fetches the nonce used by the authenticated link flow. */
@@ -359,8 +409,8 @@ public final class AuthRepository {
     public Single<Result<AuthResponse>> googleSignIn(
             @NonNull String idToken,
             @NonNull String nonce) {
-        return Single.defer(() -> persistOnSuccess(
-                authCall(authApi.googleSignIn(new GoogleSignInRequest(idToken, nonce)))));
+        return Single.defer(() -> withServerReady(() -> persistOnSuccess(
+                authCall(authApi.googleSignIn(new GoogleSignInRequest(idToken, nonce))))));
     }
 
     /** Links a Google account; the server verifies the password and the nonce. */

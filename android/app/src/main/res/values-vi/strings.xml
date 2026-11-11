@@ -30,6 +30,7 @@
     <string name="error_phone_exists">Số điện thoại này đã được đăng ký</string>
     <string name="error_rate_limited">Thử quá nhiều lần. Hãy thử lại sau.</string>
     <string name="error_network">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="server_starting">Máy chủ đang khởi động, vui lòng chờ…</string>
     <string name="error_generic">Có lỗi xảy ra. Hãy thử lại.</string>
     <string name="error_not_member">Bạn không còn trong cuộc trò chuyện này</string>
 

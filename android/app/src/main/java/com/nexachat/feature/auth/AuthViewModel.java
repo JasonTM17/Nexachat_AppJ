@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 import javax.inject.Inject;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
@@ -34,6 +35,7 @@ public final class AuthViewModel extends ViewModel {
     private final GoogleSignInFlow googleSignInFlow;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
+    private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     private final OneShotLiveData<Event> events = new OneShotLiveData<>();
     private UiState currentState = mutableUiState.getValue();
 
@@ -41,6 +43,12 @@ public final class AuthViewModel extends ViewModel {
     public AuthViewModel(AuthRepository authRepository, GoogleSignInFlow googleSignInFlow) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.googleSignInFlow = Objects.requireNonNull(googleSignInFlow, "googleSignInFlow");
+        Flowable<Boolean> wakeState = authRepository.getServerWakeState();
+        if (wakeState != null) {
+            disposables.add(wakeState.subscribe(
+                    serverStarting::postValue,
+                    ignored -> serverStarting.postValue(false)));
+        }
     }
 
     /** True when the build carries a Google web client ID; otherwise the button stays hidden. */
@@ -86,6 +94,10 @@ public final class AuthViewModel extends ViewModel {
 
     public LiveData<Event> getEvents() {
         return events;
+    }
+
+    public LiveData<Boolean> getServerStarting() {
+        return serverStarting;
     }
 
     public void onPhoneChange(@NonNull String value) {

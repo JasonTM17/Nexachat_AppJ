@@ -52,6 +52,7 @@ public final class TokenRefresher {
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     private final Provider<AuthApi> authApi;
+    @Nullable private final ServerWakeGate serverWakeGate;
     @Nullable private final AccountDataCleaner accountDataCleaner;
     private final Object lock = new Object();
     private final AtomicLong sessionEpoch = new AtomicLong();
@@ -86,11 +87,36 @@ public final class TokenRefresher {
             @NonNull TokenStore tokenStore,
             @NonNull SessionEvents sessionEvents,
             @NonNull Provider<AuthApi> authApi,
-            @NonNull AccountDataCleaner accountDataCleaner) {
+            @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull ServerWakeGate serverWakeGate) {
         this.tokenStore = tokenStore;
         this.sessionEvents = sessionEvents;
         this.authApi = authApi;
         this.accountDataCleaner = accountDataCleaner;
+        this.serverWakeGate = serverWakeGate;
+        this.sessionSignalDispatch = startSessionSignalDispatch();
+    }
+
+    /** Preserves the constructor used by focused tests without readiness polling. */
+    public TokenRefresher(
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull Provider<AuthApi> authApi,
+            @NonNull AccountDataCleaner accountDataCleaner) {
+        this(tokenStore, sessionEvents, authApi, accountDataCleaner, null);
+    }
+
+    /** Test constructor for verifying readiness before a keyed refresh request. */
+    public TokenRefresher(
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull Provider<AuthApi> authApi,
+            @NonNull ServerWakeGate serverWakeGate) {
+        this.tokenStore = tokenStore;
+        this.sessionEvents = sessionEvents;
+        this.authApi = authApi;
+        this.accountDataCleaner = null;
+        this.serverWakeGate = serverWakeGate;
         this.sessionSignalDispatch = startSessionSignalDispatch();
     }
 
@@ -103,7 +129,13 @@ public final class TokenRefresher {
         this.sessionEvents = sessionEvents;
         this.authApi = authApi;
         this.accountDataCleaner = null;
+        this.serverWakeGate = null;
         this.sessionSignalDispatch = startSessionSignalDispatch();
+    }
+
+    @NonNull
+    public Flowable<Boolean> getServerWakeState() {
+        return serverWakeGate == null ? Flowable.just(false) : serverWakeGate.getIsStarting();
     }
 
     /** Read-only epoch for realtime callers; never opens admission or performs IO. */
@@ -423,17 +455,30 @@ public final class TokenRefresher {
         if (!admitDispatch(capturedEpoch)) {
             return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
         }
-        return Single.fromCallable(() -> authApi.get()
-                        .refresh(dispatchKey, new RefreshRequest(refreshToken))
-                        .execute())
-                .flatMap(response -> handleResponse(
-                        response, capturedEpoch, dispatchKey, failedAccessToken))
-                .onErrorResumeNext(error -> {
-                    if (error instanceof IOException) {
-                        return Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE);
-                    }
-                    return Single.error(error);
-                });
+        Single<Boolean> readiness = serverWakeGate == null
+                ? Single.just(true)
+                : serverWakeGate.awaitReady();
+        return readiness.flatMap(ready -> {
+            if (!ready) {
+                return Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE);
+            }
+            // Readiness may take most of the wake window; logout or account
+            // replacement during that wait must fence the old refresh POST.
+            if (!admitDispatch(capturedEpoch)) {
+                return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+            }
+            return Single.fromCallable(() -> authApi.get()
+                            .refresh(dispatchKey, new RefreshRequest(refreshToken))
+                            .execute())
+                    .flatMap(response -> handleResponse(
+                            response, capturedEpoch, dispatchKey, failedAccessToken))
+                    .onErrorResumeNext(error -> {
+                        if (error instanceof IOException) {
+                            return Single.just(TokenRefreshOutcome.TransientFailure.INSTANCE);
+                        }
+                        return Single.error(error);
+                    });
+        });
     }
 
     private boolean admitDispatch(long expectedEpoch) {

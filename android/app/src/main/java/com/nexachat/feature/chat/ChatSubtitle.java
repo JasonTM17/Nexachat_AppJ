@@ -11,6 +11,16 @@ public final class ChatSubtitle {
      * @return a string resource id, or 0 when the subtitle should be empty
      */
     public static int textRes(boolean peerTyping, boolean connected, boolean group, Boolean peerOnline) {
+        return textRes(peerTyping, connected, group, peerOnline, false);
+    }
+
+    public static int textRes(
+            boolean peerTyping,
+            boolean connected,
+            boolean group,
+            Boolean peerOnline,
+            boolean serverStarting) {
+        if (serverStarting) return R.string.server_starting;
         if (peerTyping) return R.string.chat_typing;
         if (!connected) return R.string.chat_offline;
         if (!group && peerOnline != null) {

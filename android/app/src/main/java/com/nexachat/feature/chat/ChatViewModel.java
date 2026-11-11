@@ -88,6 +88,7 @@ public final class ChatViewModel extends ViewModel {
     @Nullable private final EphemeralStateRouter ephemeralRouter;
     private final MutableLiveData<RecallWindowConfig> recallWindowConfig =
             new MutableLiveData<>(RecallWindowConfig.DEFAULT);
+    private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     @Nullable private final SettingsRepository settingsRepository;
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<AiOptOutState> aiOptOutState =
@@ -207,6 +208,10 @@ public final class ChatViewModel extends ViewModel {
         return recallWindowConfig;
     }
 
+    public LiveData<Boolean> getServerStarting() {
+        return serverStarting;
+    }
+
     /** Live per-conversation AI opt-out state used by the settings dialog. */
     public LiveData<AiOptOutState> getAiOptOutState() {
         return aiOptOutState;
@@ -273,6 +278,13 @@ public final class ChatViewModel extends ViewModel {
                     updateConnectivityState();
                 },
                         this::surfaceStreamFailure));
+        Flowable<Boolean> wakeState = session.getIsServerStarting();
+        if (wakeState != null) {
+            disposables.add(wakeState
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(serverStarting::setValue, this::surfaceStreamFailure));
+        }
         disposables.add(messageRepository.getRestReachability()
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())

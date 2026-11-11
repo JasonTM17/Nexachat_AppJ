@@ -78,6 +78,7 @@ public final class RealtimeSession {
     /** First parked re-arm delay; doubles per round up to {@link #PARKED_RETRY_MAX_MS}. */
     public static final long PARKED_RETRY_BASE_MS = 5_000L;
     public static final long PARKED_RETRY_MAX_MS = 60_000L;
+    public static final long SERVER_WAKE_WINDOW_MS = 90_000L;
 
     private static final int NORMAL_CODE = 1000;
     private static final int EVENTS_BUFFER = 128;
@@ -116,6 +117,9 @@ public final class RealtimeSession {
             BehaviorProcessor.createDefault(
                     new EpochPublication<>(NO_EPOCH, NO_ATTEMPT, false));
     private final FlowableProcessor<EpochPublication<Boolean>> isOpen = openState.toSerialized();
+    private final BehaviorProcessor<Boolean> socketWakeState =
+            BehaviorProcessor.createDefault(false);
+    private final FlowableProcessor<Boolean> socketWakeStarting = socketWakeState.toSerialized();
     private final FlowableProcessor<EpochPublication<ChatEvent>> events =
             PublishProcessor.<EpochPublication<ChatEvent>>create().toSerialized();
     private final FlowableProcessor<EpochPublication<Object>> resyncRequests =
@@ -125,7 +129,9 @@ public final class RealtimeSession {
     private final SerialDisposable connection = new SerialDisposable();
     private final SerialDisposable parkedWake = new SerialDisposable();
     private final SerialDisposable authRecovery = new SerialDisposable();
+    private final SerialDisposable socketWakeTimeout = new SerialDisposable();
     private final AtomicLong connectionAttemptSeq = new AtomicLong();
+    private final AtomicLong socketWakeGeneration = new AtomicLong();
     private volatile long activeConnectionAttemptId;
     /** Session epoch captured at {@link #connectOnce()} start; cleared when the attempt ends. */
     private volatile long activeAttemptSessionEpoch = -1L;
@@ -237,6 +243,20 @@ public final class RealtimeSession {
         return currentPublications(isOpen.onBackpressureLatest());
     }
 
+    /** Startup state from REST auth preflight or a bounded server-wake STOMP failure window. */
+    @NonNull
+    public Flowable<Boolean> getIsServerStarting() {
+        Flowable<Boolean> refreshWake = tokenRefresher.getServerWakeState();
+        if (refreshWake == null) {
+            refreshWake = Flowable.just(false);
+        }
+        return Flowable.combineLatest(
+                        socketWakeStarting.onBackpressureLatest(),
+                        refreshWake.startWithItem(false).onErrorReturnItem(false),
+                        (socket, refresh) -> Boolean.TRUE.equals(socket) || Boolean.TRUE.equals(refresh))
+                .distinctUntilChanged();
+    }
+
     @NonNull
     public Flowable<ChatEvent> getEvents() {
         return currentAttemptPublications(events.onBackpressureBuffer(
@@ -330,6 +350,7 @@ public final class RealtimeSession {
         }
         if (signal instanceof TokenRefresher.SessionSignal.EpochChanged changed) {
             if (tokenRefresher.isSessionCurrent(changed.epoch())) {
+                clearSocketWakeState();
                 launchConnectionLoop();
             }
             return;
@@ -344,6 +365,7 @@ public final class RealtimeSession {
     }
 
     private void tearDownLoggedOutSession() {
+        clearSocketWakeState();
         hasSession = false;
         synchronized (this) {
             attemptActive = false;
@@ -361,6 +383,7 @@ public final class RealtimeSession {
 
     /** Closes the socket when admission closes while refresh bytes may still exist. */
     private void closeForAdmissionBoundary() {
+        clearSocketWakeState();
         hasSession = tokensPresent;
         synchronized (this) {
             attemptActive = false;
@@ -488,6 +511,12 @@ public final class RealtimeSession {
         AtomicBoolean attemptTerminal = new AtomicBoolean();
         Disposable attempt = prepared.subscribe(
                 connectionState -> runIfAttemptLive(sessionEpoch, attemptId, () -> {
+                    if (connectionState instanceof StompClient.State.Open) {
+                        clearSocketWakeState();
+                    } else if (connectionState instanceof StompClient.State.Failed failed
+                            && failed.isWakeRetryable()) {
+                        beginSocketWakeState(sessionEpoch);
+                    }
                     publishState(connectionState, sessionEpoch, attemptId);
                     if (connectionState instanceof StompClient.State.Open) {
                         failures = 0;
@@ -523,6 +552,26 @@ public final class RealtimeSession {
     private boolean isAttemptLive(long sessionEpoch, long attemptId) {
         return tokenRefresher.isSessionCurrent(sessionEpoch)
                 && activeConnectionAttemptId == attemptId;
+    }
+
+    private void beginSocketWakeState(long sessionEpoch) {
+        if (Boolean.TRUE.equals(socketWakeState.getValue())) {
+            return;
+        }
+        long generation = socketWakeGeneration.incrementAndGet();
+        socketWakeStarting.onNext(true);
+        socketWakeTimeout.set(reconnectScheduler.scheduleDirect(() -> {
+            if (socketWakeGeneration.get() == generation
+                    && tokenRefresher.isSessionCurrent(sessionEpoch)) {
+                socketWakeStarting.onNext(false);
+            }
+        }, SERVER_WAKE_WINDOW_MS, TimeUnit.MILLISECONDS));
+    }
+
+    private void clearSocketWakeState() {
+        socketWakeGeneration.incrementAndGet();
+        socketWakeTimeout.set(Disposable.empty());
+        socketWakeStarting.onNext(false);
     }
 
     /** Serializes attempt state publication with both attempt replacement and session changes. */

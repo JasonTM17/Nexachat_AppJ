@@ -33,4 +33,13 @@ public final class LoginErrorBannerStateTest {
         assertTrue(banner.isVisible());
         assertEquals(R.string.error_invalid_credentials, banner.getMessageRes());
     }
+
+    @Test
+    public void serverWakeStateTakesPrecedenceOverGenericNetworkError() {
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(
+                false, new ApiError.Network("timeout"), true);
+
+        assertTrue(banner.isVisible());
+        assertEquals(R.string.server_starting, banner.getMessageRes());
+    }
 }
