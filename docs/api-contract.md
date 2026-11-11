@@ -1,7 +1,9 @@
 # NexaChat REST API Contract
 
 > Endpoint catalog for the current REST contract. Routes below are derived from
-> controllers under `server/src/main/java/com/nexachat/`.
+> controllers under `server/src/main/java/com/nexachat/`; run
+> `python tools/check-api-contract.py` to fail when a controller route is
+> missing from this file (or a documented route no longer exists).
 > The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
 > Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API and Android Ask screen available).
 
@@ -24,6 +26,7 @@
 | [Calls](#calls--apiv1calls-and-apiv1conversations) | `/api/v1/calls` | ICE configuration, direct call history, and WebRTC signaling integration |
 | [Conversation Summary](#conversation-summary-api) | `/api/v1/conversations/{id}/summary` | Consent-gated catch-up summary (local extractive & OpenAI-compatible LLM) |
 | [Conversation Ask (RAG)](#conversation-ask-api-rag) | `/api/v1/conversations/{id}/ask` | Hybrid retrieval-augmented chat QA with citation validation and local lexical fallback |
+| [Firebase realtime bridge](#firebase-realtime-bridge-opt-in) | `/api/v1/realtime` | Opt-in Firebase custom token, bridge lease renewal and revocation |
 | [WebSocket / STOMP](#websocket--stomp) | `/ws` | Realtime messaging, delivery/read receipts, typing, and presence |
 
 ## Feature matrix
@@ -44,6 +47,10 @@ Android client can consume the API but no dedicated screen is merged into
 | Private conversation labels | V18 | Shipped — `feature/label` dialog and assignment | `LabelFlowIT`, `V18MigrationTest`, Android `LabelViewModelTest`, `LabelRulesTest` |
 | Delta-sync partial indexes | V19 | n/a (server-side) | `V19MigrationTest`, `SyncControllerTest` |
 | Group invite links and join requests | V20 | Shipped — `feature/invite` manage and join screens | `InviteServiceTest`, `InviteTokenTest`, `InviteRateLimiterTest`, `GroupInviteFlowIT`, `InviteEventListenerTest`, Android `InviteJoinViewModelTest`, `InviteManageViewModelTest`, `InviteLinkParserTest`, `InviteLinkConfigurationTest`, `InvitePrivacyTest`, `RetrofitInviteRepositoryTest` |
+| Refresh-token replay recovery | V25 | n/a (server-side) | `RefreshRotationReplayIT`, `RefreshReplayCipherTest`, `RefreshReplayCleanupTest`, `RefreshReplayStartupWarningTest` |
+| Account deletion (tombstone) | V26 | Shipped — profile delete-account and the web deletion page | `AccountDeletionFlowIT`, `AccountDeletionD4RegressionIT`, `AccountDeletionFirebaseProjectionIT`, Android `DeleteAccountViewModelTest` |
+| Recovery email + OTP | V27 | Shipped — forgot-password, recovery-email and deletion OTP screens | `AccountRecoveryFlowTest`, `AccountRecoverySecurityTest`, `AccountRecoverySchedulingTest`, Android `RecoveryEmailFormViewModelTest`, `ForgotPasswordViewModelTest` |
+| Google sign-in and linked identities | V28 | Shipped — Credential Manager sign-in and Settings → linked accounts (hidden without `-PgoogleWebClientId=`) | `GoogleSignInIT`, `GoogleSignInDisabledIT`, `GoogleIdTokenVerifierTest`, `GoogleSignInConfigurationTest`, Android `GoogleSignInFlowTest`, `LinkedAccountsViewModelTest` |
 | Author message recall window | No migration (V21 reserved, unused) | Shipped — chat overflow recall with `RECALL_WINDOW_EXPIRED` handling | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT`, Android `ChatInteractionsViews` / `ChatViewModel` recall flow |
 | Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
 
@@ -146,9 +153,12 @@ These keys are Spring properties; override them with the matching
 - **Base URL:** `http://localhost:8080` · **Path prefix:** `/api/v1`
 - **Auth:** JWT access token in the `Authorization: Bearer <accessToken>`
   header. Public (no token): `POST /auth/register`, `POST /auth/login`,
-  `POST /auth/refresh`, `POST /auth/google`, `POST /auth/google/nonce`
-  (Google sign-in; 404 while disabled), `/actuator/health`, and the `/ws`
-  handshake (the JWT travels in the STOMP CONNECT frame there instead).
+  `POST /auth/refresh`, `POST /auth/password-reset/request`,
+  `POST /auth/password-reset/confirm`, `POST /account-deletion/request`,
+  `POST /account-deletion/confirm`, `POST /auth/google`,
+  `POST /auth/google/nonce` (Google sign-in; 404 while disabled),
+  `/actuator/health`, and the `/ws` handshake (the JWT travels in the STOMP
+  CONNECT frame there instead).
 - **Tokens:** access TTL 900 s (`accessTokenExpiresIn`); refresh TTL 14 days;
   refresh tokens rotate on use; `PATCH /auth/password` revokes other sessions
   by design.
@@ -255,8 +265,9 @@ These keys are Spring properties; override them with the matching
 - `POST /contacts`, `PATCH /contacts/{id}`, `DELETE /contacts/{id}`,
   `POST /conversations/{id}/read` and `POST /conversations/{id}/delivered` are
   safe to retry.
-- The mutating reaction endpoints (`POST`/`PUT`/`DELETE
-  /messages/{id}/reactions[/{emoji}]`) and pin endpoints
+- The mutating reaction endpoints (`POST /messages/{messageId}/reactions`,
+  `PUT /messages/{messageId}/reactions/{emoji}` and
+  `DELETE /messages/{messageId}/reactions/{emoji}`) and pin endpoints
   (`POST /conversations/{id}/pins`, `DELETE /conversations/{id}/pins/{messageId}`)
   accept an optional `Idempotency-Key` header (a UUID). The first request with a
   given `(user, key)` runs the operation and caches the outcome; a repeat with
@@ -386,15 +397,15 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/refresh` | Public | `{refreshToken}`; optional canonical UUIDv4 `Idempotency-Key` | `200` `AuthResponse` (new token pair or original response replay) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `REFRESH_RECOVERY_UNAVAILABLE` 409 · `REFRESH_SERVICE_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
-| `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 |
+| `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 · `RATE_LIMITED` 429 (10/5 min per user, shared with `DELETE /users/me`) |
 | `POST /auth/password-reset/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an account with a verified recovery email | `RATE_LIMITED` 429 |
 | `POST /auth/password-reset/confirm` | Public | `{phone, code, newPassword}` — `newPassword` follows `PasswordPolicy` | `204` empty | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
-| `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled |
+| `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled · `RATE_LIMITED` 429 (30/5 min per IP, only while enabled) |
 | `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 · `RATE_LIMITED` 429 |
 | `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
 | `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose, bound to the caller; a public sign-in nonce or another account's link nonce is rejected) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
 | `POST /auth/identities/google` | Bearer | `{idToken, nonce, password}` — password re-authenticates the owner | `204` empty (idempotent for the same Google account) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_ALREADY_LINKED` 409 · `RATE_LIMITED` 429 |
-| `DELETE /auth/identities/google` | Bearer | `{password}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `LAST_SIGN_IN_METHOD` 409 |
+| `DELETE /auth/identities/google` | Bearer | `{password}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `LAST_SIGN_IN_METHOD` 409 · `RATE_LIMITED` 429 (10/5 min per user) · `NOT_FOUND` 404 when the feature is disabled or no Google account is linked |
 
 **Sign in with Google (V28).** Disabled unless
 `nexachat.google.signin.enabled=true` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`); while
@@ -455,7 +466,9 @@ account hash (it still pays one dummy bcrypt compare for timing).
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS` (omitted or unrecognized defaults to `ANDROID`), label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
-`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views.
+The alias routes `POST /devices/token` and `DELETE /devices/token` run the same handlers as the `/users/device-token` rows above, with identical bodies and responses.
+
+`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts.
 
 ### Public account deletion recovery
 
@@ -971,7 +984,9 @@ rest); `HEAD` behaves like `GET` without a body.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `POST /sync` (alias `/chat/sync`) | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks; `limitPerConv` clamped to 1–100 (default 50); `since` is the client's last sync instant | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `POST /sync` | Bearer | `{watermarks: [{conversationId, lastSeq, reactionCursor?}], limitPerConv?, since?}` — 1–100 watermarks; `limitPerConv` clamped to 1–100 (default 50); `since` is the client's last sync instant | `200` `SyncResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+
+`POST /chat/sync` is an alias of `POST /sync`: same handler, body and response.
 
 `SyncResponse` = `{deltas: [{conversationId, newMessages, editedMessages, deletedMessageIds, reactionUpdates, maxSeq, hasMore, reactionCursor?, reactionsFullRefresh, muted, mutedUntil?, archived, pinned, pinnedAt?}], serverTime}`. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC), omitted when the mute is forever or the conversation is not muted; `pinnedAt` is omitted when the conversation is not pinned. The flags are carried on every delta so a second device learns a mute/archive/pin change made elsewhere without a separate inbox fetch.
 Watermarks for unknown conversations, or conversations the caller is not (or no longer) a member of, are omitted from `deltas` without an error. `editedMessages`, `deletedMessageIds` and `reactionUpdates` are populated only when `since` is supplied; a request without `since` returns `newMessages` only. `maxSeq` is the conversation's current maximum sequence even when `hasMore=true`.
@@ -1178,6 +1193,29 @@ indexedMessages}`. No message text, questions or vectors are exposed.
 phone numbers configured in `NEXACHAT_ADMIN_PHONES`. Non-admin authenticated
 callers receive `403 FORBIDDEN` (`code: FORBIDDEN`). When `NEXACHAT_ADMIN_PHONES`
 is empty or unset, the endpoint is denied to all users.
+
+## Firebase realtime bridge (opt-in)
+
+The three `/api/v1/realtime` routes exist only when
+`nexachat.firebase.realtime-enabled=true` (`FIREBASE_REALTIME_ENABLED`) **and**
+`FIREBASE_DATABASE_URL` is set to a valid HTTPS Realtime Database URL (an
+invalid value fails startup). While the feature is off, the controller bean is
+absent and every path answers `404 NOT_FOUND` like any unknown route. All three
+require a Bearer access token and answer `Cache-Control: no-store`; they never
+carry message bodies through Firebase. STOMP remains the default realtime
+transport; the RTDB data model, rules and rollout gates live in
+[`docs/firebase-realtime.md`](firebase-realtime.md).
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /realtime/firebase-token` | Bearer | Empty body | `200` `{customToken, databaseUrl, bridgeId, leaseUntil, transport:"FIREBASE"}` | `UNAUTHORIZED` 401 · `TOKEN_EXPIRED` 401 · `TOKEN_INVALID` 401 |
+| `POST /realtime/firebase-lease` | Bearer | `{bridgeId, conversationIds[]}` — 1–30 current memberships, unique ids | `200` `{leaseUntil, transport:"FIREBASE"}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `TOKEN_EXPIRED` 401 · `TOKEN_INVALID` 401 (revoked/expired bridge) · `NOT_MEMBER` 403 (a conversation id is no longer a membership) |
+| `DELETE /realtime/firebase-session/{bridgeId}` | Bearer | — | `204` empty (revokes only that bridge) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `TOKEN_EXPIRED` 401 · `TOKEN_INVALID` 401 |
+
+A bridge lease (`leaseUntil`) is at most 120 seconds and never outlives the
+access token. Renewal is refused after logout, password change, account
+deletion or removal from a listed conversation, so a revoked session cannot
+keep reading presence or typing state.
 
 ## WebSocket / STOMP
 
