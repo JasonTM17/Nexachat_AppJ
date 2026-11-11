@@ -116,6 +116,21 @@ jobs:
             echo "::notice::shellcheck not on runner; skipped style checks (bash -n passed)."
           fi
 
+  site-js-test:
+    # Node-only behaviour tests for the static site's scripts. Uses Node's
+    # built-in runner and an in-repo DOM shim: no packages, network, browser or
+    # repository secret required.
+    runs-on: ubuntu-latest
+    steps:
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Run site script tests
+        working-directory: tools/site-tests
+        run: npm test
+
   firebase-rules:
     # Offline Firebase RTDB rules contract. Uses the demo project and the local
     # emulator only; no repository secret or cloud credential is required.
@@ -175,7 +190,7 @@ jobs:
   publish-container:
     # Publishes the server image to GitHub Packages (ghcr.io) after all gates pass on main.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [server-test, android-test, repo-hygiene, firebase-rules, secret-scan]
+    needs: [server-test, android-test, repo-hygiene, site-js-test, firebase-rules, secret-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read
