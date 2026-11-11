@@ -30,7 +30,13 @@ arch-core-testing = "2.2.0"
 work = "2.9.1"
 firebase-messaging = "24.0.0"
 credentials = "1.6.0"
-googleid = "1.2.1"
+# googleid 1.2.1 is compiled with Kotlin 2.4 metadata; AGP 8.9.3's lint embeds the
+# Kotlin 2.1.0 compiler and logs "Module was compiled with an incompatible version
+# of Kotlin" for it on every lint analysis. 1.2.0 has the same public API (the 1.2.1
+# release notes list only minor metric improvements) and metadata 2.1.0, so it is the
+# newest release lint can read. Lint therefore keeps reporting that 1.2.1 is available
+# (GradleDependency); that is expected. Revisit when lint's Kotlin compiler reaches 2.4.
+googleid = "1.2.0"
 # Media3 pulls 33.3.1-android. CVE-2026-102554 is fixed in 33.7.2.
 guava = "33.7.2-android"
 
