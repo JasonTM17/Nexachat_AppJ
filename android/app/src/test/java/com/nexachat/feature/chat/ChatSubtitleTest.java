@@ -30,4 +30,10 @@ public class ChatSubtitleTest {
     public void typingWinsOverConnectivity() {
         assertEquals(R.string.chat_typing, ChatSubtitle.textRes(true, false, false, Boolean.FALSE));
     }
+
+    @Test
+    public void serverStartingWinsOverTypingAndOfflineStatus() {
+        assertEquals(R.string.server_starting,
+                ChatSubtitle.textRes(true, false, false, Boolean.FALSE, true));
+    }
 }

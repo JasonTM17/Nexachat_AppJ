@@ -21,7 +21,9 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
+import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +65,44 @@ public final class StompClientBearerAttemptTest {
                 .assertValueCount(1)
                 .assertValueAt(0, StompClient.State.Connecting.INSTANCE);
         assertEquals("attempt-bearer", observed.get());
+    }
+
+    @Test
+    public void gatewayHandshakeFailureIsMarkedAsServerWakeRetryable() {
+        TokenStore store = mock(TokenStore.class);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        AtomicReference<WebSocketListener> listenerRef = new AtomicReference<>();
+        WebSocket socket = mock(WebSocket.class);
+        client.setTestListenerCapture((listener, attemptId) -> listenerRef.set(listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> socket);
+        TestSubscriber<StompClient.State> attempt = client.connect("access").test();
+        Response response = mock(Response.class);
+        when(response.code()).thenReturn(503);
+
+        listenerRef.get().onFailure(socket, new IOException("gateway"), response);
+
+        attempt.assertValueCount(2);
+        assertTrue(attempt.values().get(1) instanceof StompClient.State.Failed failed
+                && failed.isWakeRetryable() && !failed.isAuth());
+        attempt.assertComplete();
+    }
+
+    @Test
+    public void websocketSocketTimeoutIsMarkedAsServerWakeRetryable() {
+        TokenStore store = mock(TokenStore.class);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        AtomicReference<WebSocketListener> listenerRef = new AtomicReference<>();
+        WebSocket socket = mock(WebSocket.class);
+        client.setTestListenerCapture((listener, attemptId) -> listenerRef.set(listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> socket);
+        TestSubscriber<StompClient.State> attempt = client.connect("access").test();
+
+        listenerRef.get().onFailure(socket, new SocketTimeoutException("read timed out"), null);
+
+        attempt.assertValueCount(2);
+        assertTrue(attempt.values().get(1) instanceof StompClient.State.Failed failed
+                && failed.isWakeRetryable());
+        attempt.assertComplete();
     }
 
     @Test

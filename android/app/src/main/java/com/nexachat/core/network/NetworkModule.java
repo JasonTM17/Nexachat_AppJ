@@ -86,6 +86,22 @@ public final class NetworkModule {
 
     @Provides
     @Singleton
+    public static HealthApi provideHealthApi() {
+        // Readiness polling must not depend on TokenAuthenticator -> TokenRefresher
+        // -> ServerWakeGate, and must not rotate credentials on a health response.
+        OkHttpClient healthClient = new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build();
+        Retrofit healthRetrofit = new Retrofit.Builder()
+                .baseUrl(HttpUrl.get(AppConfig.API_BASE_URL))
+                .client(healthClient)
+                .build();
+        return healthRetrofit.create(HealthApi.class);
+    }
+
+    @Provides
+    @Singleton
     public static UserApi provideUserApi(Retrofit retrofit) {
         return retrofit.create(UserApi.class);
     }

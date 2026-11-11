@@ -42,5 +42,16 @@
             android:layout_marginTop="32dp"
             android:indeterminate="true"
             app:indicatorColor="?attr/colorPrimary" />
+
+        <TextView
+            android:id="@+id/splashStatus"
+            android:layout_width="280dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:maxWidth="280dp"
+            android:text="@string/server_starting"
+            android:textColor="?attr/colorOnBackground"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

@@ -26,6 +26,7 @@ public final class LoginFragment extends Fragment {
     private AuthViewModel viewModel;
     private boolean rendering;
     private boolean sessionExpired;
+    private boolean serverStarting;
     @Nullable private String returnInviteToken;
     @Nullable private Integer persistedNoticeResId;
     private static final String STATE_NOTICE_RES_ID = "loginNoticeResId";
@@ -69,6 +70,11 @@ public final class LoginFragment extends Fragment {
                                 binding.getRoot(), R.string.forgot_password_changed, Snackbar.LENGTH_LONG)
                         .show());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        viewModel.getServerStarting().observe(getViewLifecycleOwner(), starting -> {
+            serverStarting = Boolean.TRUE.equals(starting);
+            AuthViewModel.UiState current = viewModel.getUiState().getValue();
+            if (current != null) render(current);
+        });
         if (state != null && state.containsKey(STATE_NOTICE_RES_ID)) {
             persistedNoticeResId = state.getInt(STATE_NOTICE_RES_ID);
         }
@@ -116,7 +122,8 @@ public final class LoginFragment extends Fragment {
         if (!binding.passwordInput.getText().toString().equals(state.getPassword())) binding.passwordInput.setText(state.getPassword());
         binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
-        LoginErrorBannerState banner = LoginErrorBannerState.resolve(sessionExpired, state.getError());
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(
+                sessionExpired, state.getError(), serverStarting);
         binding.errorBanner.setVisibility(banner.isVisible() ? View.VISIBLE : View.GONE);
         if (banner.isVisible()) binding.errorBanner.setText(banner.getMessageRes());
         if (persistedNoticeResId != null) {

@@ -27,6 +27,11 @@ public final class SplashFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(SplashViewModel.class);
+        viewModel.getServerStarting().observe(getViewLifecycleOwner(), starting -> {
+            if (binding == null) return;
+            boolean visible = Boolean.TRUE.equals(starting);
+            binding.splashStatus.setVisibility(visible ? View.VISIBLE : View.GONE);
+        });
         viewModel.getNavEvents().observe(getViewLifecycleOwner(), event -> {
             if (event instanceof SplashNavEvent.ToInbox) {
                 NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,

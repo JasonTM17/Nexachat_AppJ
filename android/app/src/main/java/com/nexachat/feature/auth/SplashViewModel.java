@@ -2,11 +2,13 @@ package com.nexachat.feature.auth;
 
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AuthRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
@@ -18,11 +20,18 @@ public final class SplashViewModel extends ViewModel {
 
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final OneShotLiveData<SplashNavEvent> navEvents = new OneShotLiveData<>();
+    private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
 
     @Inject
     public SplashViewModel(TokenStore tokenStore, AuthRepository authRepository) {
         Objects.requireNonNull(tokenStore, "tokenStore");
         Objects.requireNonNull(authRepository, "authRepository");
+        Flowable<Boolean> wakeState = authRepository.getServerWakeState();
+        if (wakeState != null) {
+            disposables.add(wakeState.subscribe(
+                    serverStarting::postValue,
+                    ignored -> serverStarting.postValue(false)));
+        }
 
         disposables.add(SplashSession.restoreDestination(
                         tokenStore.getHasValidRefresh().first(false),
@@ -37,6 +46,11 @@ public final class SplashViewModel extends ViewModel {
     @NonNull
     public LiveData<SplashNavEvent> getNavEvents() {
         return navEvents;
+    }
+
+    @NonNull
+    public LiveData<Boolean> getServerStarting() {
+        return serverStarting;
     }
 
     @Override

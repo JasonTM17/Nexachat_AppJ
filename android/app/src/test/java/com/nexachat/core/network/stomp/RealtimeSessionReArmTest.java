@@ -255,6 +255,32 @@ public final class RealtimeSessionReArmTest {
                 ReconnectPolicy.MAX_ATTEMPTS, connects.get());
     }
 
+    @Test
+    public void wakeRetryShowsStartupStateForAtMostNinetySeconds() {
+        TestScheduler scheduler = new TestScheduler();
+        AtomicInteger connects = new AtomicInteger();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(Flowable.empty());
+        when(stomp.connect(anyString(), any())).thenAnswer(ignored -> {
+            connects.incrementAndGet();
+            return Flowable.just(new StompClient.State.Failed("HTTP_503", false, true));
+        });
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), stomp,
+                BehaviorProcessor.createDefault(false), BehaviorProcessor.createDefault(false),
+                mock(TokenRefresher.class), scheduler);
+        var starting = session.getIsServerStarting().test();
+
+        assertTrue("a gateway failure should show the localized startup state",
+                starting.values().get(starting.values().size() - 1));
+        scheduler.advanceTimeBy(89L, TimeUnit.SECONDS);
+        assertTrue("the startup state should remain visible inside the wake window",
+                starting.values().get(starting.values().size() - 1));
+        scheduler.advanceTimeBy(1L, TimeUnit.SECONDS);
+        assertFalse("the startup state must expire at the bounded deadline",
+                starting.values().get(starting.values().size() - 1));
+        assertTrue("the reconnect loop should continue during the wake window", connects.get() > 1);
+    }
+
     private static RealtimeSession session(
             TokenStore store,
             StompClient stomp,

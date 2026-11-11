@@ -103,6 +103,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private SummaryViewModel summaryViewModel;
     private MessageListAdapter adapter;
     private ChatViewModel.UiState state = new ChatViewModel.UiState();
+    private boolean serverStarting;
     private ChatSearchState searchState = new ChatSearchState();
     private RecallWindowConfig recallWindowConfig = RecallWindowConfig.DEFAULT;
     private String conversationId = "";
@@ -599,6 +600,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 renderSearchResults();
             }
         });
+        viewModel.getServerStarting().observe(getViewLifecycleOwner(), starting -> {
+            serverStarting = Boolean.TRUE.equals(starting);
+            renderSubtitle();
+        });
         viewModel.getGroupMembers().observe(getViewLifecycleOwner(), next -> {
             groupMembers = next == null ? List.of() : next;
             if (binding != null) updateMentionPicker(
@@ -660,11 +665,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
             binding.chatHeaderAvatar.setOnlineStatus(peerOnline);
         }
-        Boolean peerForSubtitle = !state.isGroup() && state.getPeerPresence() != null
-                ? Boolean.valueOf(state.getPeerPresence().getOnline()) : null;
-        int subtitleRes = ChatSubtitle.textRes(
-                state.getPeerTyping(), state.getConnected(), state.isGroup(), peerForSubtitle);
-        binding.chatToolbar.setSubtitle(subtitleRes == 0 ? "" : getString(subtitleRes));
+        renderSubtitle();
         binding.callButton.setVisibility(state.isGroup() ? View.GONE : View.VISIBLE);
         binding.infoButton.setVisibility(state.isGroup() ? View.VISIBLE : View.GONE);
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
@@ -686,6 +687,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
         boolean hasText = input != null && !input.isBlank();
         updateComposerButtons(hasText || editingMessage != null);
+    }
+
+    private void renderSubtitle() {
+        if (binding == null || state == null) return;
+        Boolean peerForSubtitle = !state.isGroup() && state.getPeerPresence() != null
+                ? Boolean.valueOf(state.getPeerPresence().getOnline()) : null;
+        int subtitleRes = ChatSubtitle.textRes(
+                state.getPeerTyping(), state.getConnected(), state.isGroup(), peerForSubtitle,
+                serverStarting);
+        binding.chatToolbar.setSubtitle(subtitleRes == 0 ? "" : getString(subtitleRes));
     }
 
     private void renderPinned() {

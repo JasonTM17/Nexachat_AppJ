@@ -30,6 +30,7 @@
     <string name="error_phone_exists">This phone number is already registered</string>
     <string name="error_rate_limited">Too many attempts. Try again later</string>
     <string name="error_network">No connection. Check your network</string>
+    <string name="server_starting">Server is starting, please wait…</string>
     <string name="error_generic">Something went wrong. Try again</string>
     <string name="error_not_member">You are no longer in this conversation</string>
 

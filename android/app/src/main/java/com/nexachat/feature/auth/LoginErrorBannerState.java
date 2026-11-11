@@ -17,6 +17,14 @@ public final class LoginErrorBannerState {
     }
 
     public static LoginErrorBannerState resolve(boolean sessionExpired, @Nullable ApiError error) {
+        return resolve(sessionExpired, error, false);
+    }
+
+    public static LoginErrorBannerState resolve(
+            boolean sessionExpired, @Nullable ApiError error, boolean serverStarting) {
+        if (serverStarting) {
+            return new LoginErrorBannerState(true, R.string.server_starting);
+        }
         if (error != null) {
             return new LoginErrorBannerState(true, ApiErrorText.resource(error));
         }
