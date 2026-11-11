@@ -14,10 +14,13 @@ import com.nexachat.core.storage.Tokens;
 import com.nexachat.data.AccountDataCleaner;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +29,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -38,6 +42,13 @@ import retrofit2.Response;
 @Singleton
 public final class TokenRefresher {
 
+    private static final Scheduler SESSION_SIGNAL_DISPATCHER =
+            Schedulers.from(Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "nexachat-session-signals");
+                thread.setDaemon(true);
+                return thread;
+            }));
+
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     private final Provider<AuthApi> authApi;
@@ -48,6 +59,12 @@ public final class TokenRefresher {
             BehaviorProcessor.createDefault(false).toSerialized();
     private final FlowableProcessor<Long> sessionEpochEvents =
             PublishProcessor.<Long>create().toSerialized();
+    private final FlowableProcessor<SessionSignal> queuedSessionSignals =
+            PublishProcessor.<SessionSignal>create().toSerialized();
+    private final FlowableProcessor<SessionSignal> publishedSessionSignals =
+            BehaviorProcessor.<SessionSignal>createDefault(
+                    new SessionSignal.AdmissionChanged(0L, false)).toSerialized();
+    private final Disposable sessionSignalDispatch;
     private volatile boolean admissionOpen;
     private volatile boolean bootstrapComplete;
     private volatile boolean closingOrClosed;
@@ -60,6 +77,10 @@ public final class TokenRefresher {
     @VisibleForTesting
     volatile Runnable admissionTestHookBeforeTrue;
 
+    @Nullable
+    @VisibleForTesting
+    volatile Runnable terminalRecoveryTestHookAfterAdmissionCheck;
+
     @Inject
     public TokenRefresher(
             @NonNull TokenStore tokenStore,
@@ -70,6 +91,7 @@ public final class TokenRefresher {
         this.sessionEvents = sessionEvents;
         this.authApi = authApi;
         this.accountDataCleaner = accountDataCleaner;
+        this.sessionSignalDispatch = startSessionSignalDispatch();
     }
 
     /** Retained for deterministic tests that do not construct a Room database. */
@@ -81,6 +103,7 @@ public final class TokenRefresher {
         this.sessionEvents = sessionEvents;
         this.authApi = authApi;
         this.accountDataCleaner = null;
+        this.sessionSignalDispatch = startSessionSignalDispatch();
     }
 
     /** Read-only epoch for realtime callers; never opens admission or performs IO. */
@@ -117,6 +140,12 @@ public final class TokenRefresher {
     @NonNull
     public Flowable<Long> sessionEpochChanges() {
         return sessionEpochEvents.onBackpressureLatest();
+    }
+
+    /** Replays epoch-tagged session transitions on the serialized signal dispatcher. */
+    @NonNull
+    public Flowable<SessionSignal> sessionSignals() {
+        return publishedSessionSignals.onBackpressureLatest();
     }
 
     /** Forced rotation used when restoring a session at startup. */
@@ -164,14 +193,17 @@ public final class TokenRefresher {
             inFlight = null;
             pendingSuccessResponse = null;
             bootstrapComplete = true;
+            queuedSessionSignals.onNext(new SessionSignal.EpochChanged(newEpoch));
         }
-        sessionEpochEvents.onNext(newEpoch);
         Runnable hook = admissionTestHookBeforeTrue;
         if (hook != null) {
             hook.run();
         }
         synchronized (lock) {
-            publishAdmissionTrueUnderLock();
+            if (admissionOpen && sessionEpoch.get() == newEpoch) {
+                queuedSessionSignals.onNext(
+                        new SessionSignal.AdmissionChanged(newEpoch, true));
+            }
         }
     }
 
@@ -204,21 +236,34 @@ public final class TokenRefresher {
     }
 
     private SessionCloseMarker closeAdmissionSynchronously() {
-        SessionCloseMarker marker;
         synchronized (lock) {
-            long activeEpoch = sessionEpoch.get();
-            long closingEpoch = activeEpoch + 1L;
-            sessionEpoch.set(closingEpoch);
-            admissionOpen = false;
-            closingOrClosed = true;
-            bootstrapComplete = true;
-            inFlight = null;
-            pendingSuccessResponse = null;
-            pendingSuccessKey = null;
-            marker = new SessionCloseMarker(activeEpoch, closingEpoch);
-            admissionEvents.onNext(false);
+            return closeAdmissionUnderLock();
         }
-        return marker;
+    }
+
+    @Nullable
+    private SessionCloseMarker closeAdmissionIfCurrentSynchronously(long expectedEpoch) {
+        synchronized (lock) {
+            if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
+                return null;
+            }
+            return closeAdmissionUnderLock();
+        }
+    }
+
+    /** Caller must hold {@link #lock}. */
+    private SessionCloseMarker closeAdmissionUnderLock() {
+        long activeEpoch = sessionEpoch.get();
+        long closingEpoch = activeEpoch + 1L;
+        sessionEpoch.set(closingEpoch);
+        admissionOpen = false;
+        closingOrClosed = true;
+        bootstrapComplete = true;
+        inFlight = null;
+        pendingSuccessResponse = null;
+        pendingSuccessKey = null;
+        queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(closingEpoch, false));
+        return new SessionCloseMarker(activeEpoch, closingEpoch);
     }
 
     private void ensureBootstrap() {
@@ -251,15 +296,42 @@ public final class TokenRefresher {
             }
             bootstrapComplete = true;
             if (admissionOpen) {
-                publishAdmissionTrueUnderLock();
+                queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(
+                        sessionEpoch.get(), true));
             }
         }
     }
 
-    /** Caller must hold {@link #lock}; re-checks {@link #admissionOpen} before emitting. */
-    private void publishAdmissionTrueUnderLock() {
-        if (admissionOpen) {
-            admissionEvents.onNext(true);
+    private Disposable startSessionSignalDispatch() {
+        return queuedSessionSignals
+                .observeOn(SESSION_SIGNAL_DISPATCHER)
+                .subscribe(this::dispatchSessionSignal, RxJavaPlugins::onError);
+    }
+
+    private void dispatchSessionSignal(SessionSignal signal) {
+        if (!isSessionSignalCurrent(signal)) {
+            return;
+        }
+        publishedSessionSignals.onNext(signal);
+        if (!isSessionSignalCurrent(signal)) {
+            return;
+        }
+        if (signal instanceof SessionSignal.EpochChanged changed) {
+            sessionEpochEvents.onNext(changed.epoch());
+        } else if (signal instanceof SessionSignal.AdmissionChanged changed) {
+            admissionEvents.onNext(changed.admitted());
+        }
+    }
+
+    private boolean isSessionSignalCurrent(SessionSignal signal) {
+        synchronized (lock) {
+            if (sessionEpoch.get() != signal.epoch()) {
+                return false;
+            }
+            if (signal instanceof SessionSignal.EpochChanged) {
+                return admissionOpen;
+            }
+            return admissionOpen == ((SessionSignal.AdmissionChanged) signal).admitted();
         }
     }
 
@@ -384,8 +456,7 @@ public final class TokenRefresher {
             return finalizeTerminalRecovery(capturedEpoch);
         }
         if (TokenRefreshRules.isDefinitiveRejection(status, errorCode)) {
-            return rejectIfCurrent(capturedEpoch)
-                    .andThen(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
+            return rejectIfCurrent(capturedEpoch);
         }
         if (TokenRefreshRules.isTransientStatus(status, errorCode)
                 || status == 408
@@ -435,29 +506,39 @@ public final class TokenRefresher {
     private Single<TokenRefreshOutcome> finalizeTerminalRecovery(long expectedEpoch) {
         synchronized (lock) {
             if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
-                return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
+                return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
             }
         }
-        closeAdmissionSynchronously();
+        Runnable hook = terminalRecoveryTestHookAfterAdmissionCheck;
+        if (hook != null) {
+            hook.run();
+        }
+        SessionCloseMarker marker = closeAdmissionIfCurrentSynchronously(expectedEpoch);
+        if (marker == null) {
+            return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
+        }
         tokenStore.markSessionReauthRequired(expectedEpoch).blockingAwait();
         sessionEvents.emitReauthenticationRequired();
         return Single.just(TokenRefreshOutcome.RecoveryRequired.INSTANCE);
     }
 
-    private Completable rejectIfCurrent(long expectedEpoch) {
-        SessionCloseMarker marker = closeAdmissionSynchronously();
-        if (marker.activeEpoch != expectedEpoch) {
-            return Completable.complete();
+    private Single<TokenRefreshOutcome> rejectIfCurrent(long expectedEpoch) {
+        SessionCloseMarker marker = closeAdmissionIfCurrentSynchronously(expectedEpoch);
+        if (marker == null) {
+            return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
         }
         Completable finish = tokenStore.clear()
                 .andThen(tokenStore.markSessionClosed(marker.closingEpoch))
                 .andThen(Completable.fromAction(sessionEvents::emitLoggedOut));
+        Completable cleanup;
         if (accountDataCleaner == null) {
-            return tokenStore.reserveSessionClosing(expectedEpoch).ignoreElement().andThen(finish);
+            cleanup = tokenStore.reserveSessionClosing(expectedEpoch).ignoreElement().andThen(finish);
+        } else {
+            cleanup = tokenStore.reserveSessionClosing(expectedEpoch)
+                    .ignoreElement()
+                    .andThen(accountDataCleaner.clearForLogout(finish));
         }
-        return tokenStore.reserveSessionClosing(expectedEpoch)
-                .ignoreElement()
-                .andThen(accountDataCleaner.clearForLogout(finish));
+        return cleanup.andThen(Single.just(TokenRefreshOutcome.Rejected.INSTANCE));
     }
 
     private void releaseOnTerminal(
@@ -558,6 +639,17 @@ public final class TokenRefresher {
     }
 
     private record SessionCloseMarker(long activeEpoch, long closingEpoch) {
+    }
+
+    public sealed interface SessionSignal
+            permits SessionSignal.EpochChanged, SessionSignal.AdmissionChanged {
+        long epoch();
+
+        record EpochChanged(long epoch) implements SessionSignal {
+        }
+
+        record AdmissionChanged(long epoch, boolean admitted) implements SessionSignal {
+        }
     }
 
     private static final class CachedFlight {

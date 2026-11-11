@@ -46,7 +46,8 @@ import org.junit.Test;
 public final class RealtimeSessionEpochAdvanceTest {
 
     @Test
-    public void establishedSessionWithOpenSocketRetiresOldAccountAndConnectsNewBearer() {
+    public void establishedSessionWithOpenSocketRetiresOldAccountAndConnectsNewBearer()
+            throws InterruptedException {
         TestScheduler scheduler = new TestScheduler();
         BehaviorProcessor<Boolean> tokensPresent = BehaviorProcessor.createDefault(true);
         AtomicReference<Tokens> storedTokens = new AtomicReference<>(
@@ -59,14 +60,28 @@ public final class RealtimeSessionEpochAdvanceTest {
         refresher.onSessionEstablished(1L);
 
         List<String> connectedBearers = new ArrayList<>();
+        CountDownLatch accountAConnected = new CountDownLatch(1);
+        CountDownLatch accountBConnected = new CountDownLatch(1);
+        CountDownLatch accountAAttemptCaptured = new CountDownLatch(2);
+        CountDownLatch accountBAttemptCaptured = new CountDownLatch(2);
         Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
         Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
         StompClient stomp = new StompClient(new OkHttpClient(), store);
-        stomp.setConnectBearerObserverForTests(connectedBearers::add);
-        stomp.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        stomp.setConnectBearerObserverForTests(bearer -> {
+            connectedBearers.add(bearer);
+            if ("account-a".equals(bearer)) accountAConnected.countDown();
+            if ("account-b".equals(bearer)) accountBConnected.countDown();
+        });
+        stomp.setTestListenerCapture((listener, attemptId) -> {
+            listeners.put(attemptId, listener);
+            if (attemptId == 1L) accountAAttemptCaptured.countDown();
+            if (attemptId == 2L) accountBAttemptCaptured.countDown();
+        });
         stomp.setTestWebSocketFactoryForTests((listener, attemptId) -> {
             WebSocket socket = mock(WebSocket.class);
             sockets.put(attemptId, socket);
+            if (attemptId == 1L) accountAAttemptCaptured.countDown();
+            if (attemptId == 2L) accountBAttemptCaptured.countDown();
             return socket;
         });
 
@@ -77,6 +92,9 @@ public final class RealtimeSessionEpochAdvanceTest {
                 new ReconnectPolicy(() -> 0.0), monitor, foreground, scheduler);
         scheduler.triggerActions();
 
+        assertTrue("account A should connect", accountAConnected.await(5, TimeUnit.SECONDS));
+        assertTrue("account A socket and listener should be captured",
+                accountAAttemptCaptured.await(5, TimeUnit.SECONDS));
         assertEquals(List.of("account-a"), connectedBearers);
         WebSocket socketA = sockets.get(1L);
         WebSocketListener listenerA = listeners.get(1L);
@@ -89,6 +107,9 @@ public final class RealtimeSessionEpochAdvanceTest {
         refresher.onSessionEstablished(2L);
         scheduler.triggerActions();
 
+        assertTrue("account B should replace account A", accountBConnected.await(5, TimeUnit.SECONDS));
+        assertTrue("account B socket and listener should be captured",
+                accountBAttemptCaptured.await(5, TimeUnit.SECONDS));
         assertEquals("account establishment without a false admission edge must replace the bearer",
                 List.of("account-a", "account-b"), connectedBearers);
         WebSocket socketB = sockets.get(2L);
@@ -120,6 +141,7 @@ public final class RealtimeSessionEpochAdvanceTest {
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(admission);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenAnswer(ignored -> epoch.get());
         when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation -> {
             long expected = invocation.getArgument(0);

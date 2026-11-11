@@ -164,6 +164,7 @@ public final class RealtimeSessionEventDecodeTest {
                 loggedIn);
         when(refresher.sessionAdmission()).thenReturn(admitted);
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
         when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {

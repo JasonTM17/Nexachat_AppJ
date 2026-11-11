@@ -20,6 +20,7 @@ import com.nexachat.core.network.stomp.ReconnectPolicy;
 import com.nexachat.core.network.stomp.StompClient;
 import com.nexachat.core.network.stomp.StompCommand;
 import com.nexachat.core.network.stomp.StompFrame;
+import com.nexachat.core.network.stomp.TestSessionSignals;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.SessionSnapshot;
 import com.nexachat.core.storage.TokenStore;
@@ -96,6 +97,7 @@ public final class NetworkCharacterizationTest {
         TokenRefresher refresher = mock(TokenRefresher.class);
         when(refresher.sessionAdmission()).thenReturn(Flowable.just(true));
         when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
         when(refresher.sessionEpoch()).thenReturn(1L);
         when(refresher.isSessionCurrent(anyLong())).thenReturn(true);
         when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
