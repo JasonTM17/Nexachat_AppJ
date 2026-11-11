@@ -14,8 +14,20 @@ public final class ApiErrorTextTest {
                 R.string.error_invalid_credentials,
                 ApiErrorText.resource(ApiError.InvalidCredentials.INSTANCE));
         assertEquals(R.string.error_phone_exists, ApiErrorText.resource(ApiError.PhoneExists.INSTANCE));
+        assertEquals(
+                R.string.error_wrong_password,
+                ApiErrorText.resource(ApiError.WrongPassword.INSTANCE));
         assertEquals(R.string.error_rate_limited, ApiErrorText.resource(ApiError.RateLimited.INSTANCE));
         assertEquals(R.string.error_network, ApiErrorText.resource(new ApiError.Network()));
+        assertEquals(
+                R.string.recovery_email_mail_unavailable,
+                ApiErrorText.resource(ApiError.MailUnavailable.INSTANCE));
+        assertEquals(
+                R.string.recovery_email_in_use,
+                ApiErrorText.resource(ApiError.EmailAlreadyInUse.INSTANCE));
+        assertEquals(
+                R.string.recovery_email_invalid,
+                ApiErrorText.resource(ApiError.RecoveryEmailInvalid.INSTANCE));
         assertEquals(
                 R.string.session_expired_sign_in_again,
                 ApiErrorText.resource(ApiError.SessionExpired.INSTANCE));
@@ -45,7 +57,9 @@ public final class ApiErrorTextTest {
     public void resource_matchesAuthErrorIdsContract() {
         ApiError[] errors = {
             ApiError.InvalidCredentials.INSTANCE,
+            ApiError.WrongPassword.INSTANCE,
             ApiError.PhoneExists.INSTANCE,
+            ApiError.InvalidOrExpiredCode.INSTANCE,
             ApiError.RateLimited.INSTANCE,
             new ApiError.Network(),
             ApiError.SessionExpired.INSTANCE,

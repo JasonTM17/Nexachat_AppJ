@@ -10,16 +10,30 @@ public final class UserDto {
     private final String phone;
     private final String displayName;
     @Nullable private final String avatarUrl;
+    @Nullable private final String email;
+    @Nullable private final Boolean emailVerified;
 
     public UserDto() {
-        this(null, null, null, null);
+        this(null, null, null, null, null, null);
     }
 
     public UserDto(@NonNull String id, @NonNull String phone, @NonNull String displayName, @Nullable String avatarUrl) {
+        this(id, phone, displayName, avatarUrl, null, null);
+    }
+
+    public UserDto(
+            @NonNull String id,
+            @NonNull String phone,
+            @NonNull String displayName,
+            @Nullable String avatarUrl,
+            @Nullable String email,
+            @Nullable Boolean emailVerified) {
         this.id = id;
         this.phone = phone;
         this.displayName = displayName;
         this.avatarUrl = avatarUrl;
+        this.email = email;
+        this.emailVerified = emailVerified;
     }
 
     public UserDto(String id, String phone, String displayName) {
@@ -42,13 +56,32 @@ public final class UserDto {
         return avatarUrl;
     }
 
+    @Nullable
+    public String getEmail() {
+        return email;
+    }
+
+    @Nullable
+    public Boolean getEmailVerified() {
+        return emailVerified;
+    }
+
+    public boolean hasVerifiedRecoveryEmail() {
+        return email != null
+                && !email.isEmpty()
+                && Boolean.TRUE.equals(emailVerified);
+    }
 
     public UserDto withDisplayName(String displayName) {
-        return new UserDto(id, phone, displayName, avatarUrl);
+        return new UserDto(id, phone, displayName, avatarUrl, email, emailVerified);
     }
 
     public UserDto withAvatarUrl(String avatarUrl) {
-        return new UserDto(id, phone, displayName, avatarUrl);
+        return new UserDto(id, phone, displayName, avatarUrl, email, emailVerified);
+    }
+
+    public UserDto withRecoveryEmail(@Nullable String nextEmail, @Nullable Boolean verified) {
+        return new UserDto(id, phone, displayName, avatarUrl, nextEmail, verified);
     }
 
     @Override
@@ -59,11 +92,13 @@ public final class UserDto {
         return Objects.equals(id, that.id)
                 && Objects.equals(phone, that.phone)
                 && Objects.equals(displayName, that.displayName)
-                && Objects.equals(avatarUrl, that.avatarUrl);
+                && Objects.equals(avatarUrl, that.avatarUrl)
+                && Objects.equals(email, that.email)
+                && Objects.equals(emailVerified, that.emailVerified);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, phone, displayName, avatarUrl);
+        return Objects.hash(id, phone, displayName, avatarUrl, email, emailVerified);
     }
 }

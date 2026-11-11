@@ -36,6 +36,16 @@
     </fragment>
 
     <fragment
+        android:id="@+id/forgotPasswordFragment"
+        android:name="com.nexachat.feature.auth.ForgotPasswordFragment"
+        android:label="@string/forgot_password_title">
+        <argument
+            android:name="prefillPhone"
+            android:defaultValue=""
+            app:argType="string" />
+    </fragment>
+
+    <fragment
         android:id="@+id/inboxFragment"
         android:name="com.nexachat.feature.inbox.InboxFragment"
         android:label="@string/inbox_title" />
@@ -59,6 +69,42 @@
         android:id="@+id/languageSettingsFragment"
         android:name="com.nexachat.feature.profile.LanguageSettingsFragment"
         android:label="@string/settings_language" />
+
+    <fragment
+        android:id="@+id/recoveryEmailManageFragment"
+        android:name="com.nexachat.feature.profile.RecoveryEmailManageFragment"
+        android:label="@string/recovery_email_title" />
+
+    <fragment
+        android:id="@+id/recoveryEmailFormFragment"
+        android:name="com.nexachat.feature.profile.RecoveryEmailFormFragment"
+        android:label="@string/recovery_email_title" />
+
+    <fragment
+        android:id="@+id/recoveryEmailOtpFragment"
+        android:name="com.nexachat.feature.profile.RecoveryEmailOtpFragment"
+        android:label="@string/recovery_email_title">
+        <argument
+            android:name="email"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/deleteAccountFragment"
+        android:name="com.nexachat.feature.profile.DeleteAccountFragment"
+        android:label="@string/delete_account_title" />
+
+    <action
+        android:id="@+id/action_profile_to_recoveryEmailManage"
+        app:destination="@id/recoveryEmailManageFragment" />
+
+    <action
+        android:id="@+id/action_recoveryEmailManage_to_recoveryEmailForm"
+        app:destination="@id/recoveryEmailFormFragment" />
+
+    <action
+        android:id="@+id/action_recoveryEmailForm_to_recoveryEmailOtp"
+        app:destination="@id/recoveryEmailOtpFragment" />
 
     <fragment
         android:id="@+id/chatFragment"

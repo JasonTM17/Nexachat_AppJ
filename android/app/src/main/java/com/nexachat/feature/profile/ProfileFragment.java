@@ -70,6 +70,18 @@ public final class ProfileFragment extends Fragment {
         binding.saveName.setOnClickListener(v -> viewModel.saveDisplayName());
         binding.cancelName.setOnClickListener(v -> viewModel.cancelEditName());
         binding.changePassword.setOnClickListener(v -> { viewModel.openPasswordDialog(); showPasswordDialog(); });
+        binding.recoveryEmailRow.setTitle(getString(R.string.recovery_email_title));
+        binding.recoveryEmailRow.setLeadingIcon(R.drawable.ic_email);
+        binding.recoveryEmailRow.setOnClickListener(v -> NavHostFragment.findNavController(this)
+                .navigate(R.id.action_profile_to_recoveryEmailManage));
+        getParentFragmentManager().setFragmentResultListener(
+                RecoveryEmailManageViewModel.RESULT_PROFILE_RELOAD,
+                getViewLifecycleOwner(),
+                (key, bundle) -> {
+                    if (bundle.getBoolean(RecoveryEmailManageViewModel.RESULT_PROFILE_RELOAD, false)) {
+                        viewModel.load();
+                    }
+                });
         binding.languageRow.setTitle(getString(R.string.settings_language));
         binding.languageRow.setLeadingIcon(R.drawable.ic_language);
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
@@ -122,6 +134,12 @@ public final class ProfileFragment extends Fragment {
         binding.logoutAllRow.setLeadingIcon(R.drawable.ic_logout);
         binding.logoutAllRow.setDestructive(true);
         binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
+        binding.deleteAccountRow.setTitle(getString(R.string.action_delete_account));
+        binding.deleteAccountRow.setLeadingIcon(R.drawable.ic_delete);
+        binding.deleteAccountRow.setDestructive(true);
+        binding.deleteAccountRow.setContentDescription(getString(R.string.action_delete_account));
+        binding.deleteAccountRow.setOnClickListener(v ->
+                NavHostFragment.findNavController(this).navigate(R.id.deleteAccountFragment));
         binding.googleAccountRow.setTitle(getString(R.string.settings_google_account));
         binding.googleAccountRow.setLeadingIcon(R.drawable.ic_check_circle);
         binding.googleAccountRow.setOnClickListener(v -> onGoogleAccountClicked());
@@ -140,7 +158,22 @@ public final class ProfileFragment extends Fragment {
 
     private void render(ProfileViewModel.UiState state) {
         UserDto user = state.getUser();
-        if (user != null) { binding.profileAvatar.setName(user.getDisplayName()); binding.profileAvatar.setAvatarUrl(user.getAvatarUrl()); binding.profileName.setText(user.getDisplayName()); binding.profilePhone.setText(user.getPhone()); }
+        if (user != null) {
+            binding.profileAvatar.setName(user.getDisplayName());
+            binding.profileAvatar.setAvatarUrl(user.getAvatarUrl());
+            binding.profileName.setText(user.getDisplayName());
+            binding.profilePhone.setText(user.getPhone());
+            if (user.hasVerifiedRecoveryEmail()) {
+                binding.recoveryEmailRow.setTrailingValue(user.getEmail());
+                binding.recoveryEmailRow.setContentDescription(
+                        getString(R.string.recovery_email_title) + ", " + user.getEmail());
+            } else {
+                binding.recoveryEmailRow.setTrailingValue(getString(R.string.recovery_email_add));
+                binding.recoveryEmailRow.setContentDescription(
+                        getString(R.string.recovery_email_title) + ", "
+                                + getString(R.string.recovery_email_add));
+            }
+        }
         binding.profileAvatar.setContentDescription(getString(R.string.profile_change_avatar));
         binding.profileAvatar.setEnabled(!state.isAvatarUploading());
         if (binding.cameraBadge != null) {
