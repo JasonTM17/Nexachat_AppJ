@@ -34,6 +34,26 @@ across runs. If both Maven processes use this checkout, also pass a different
 `-Dnexachat.test.build-directory=target/<run-name>` to each command so their
 compiled classes and reports stay separate.
 
+## Firebase rules tests
+
+The optional Firebase Realtime Database candidate has an offline rules contract
+matrix. It needs Node.js 20 or newer and Java 21; the first run installs npm
+dependencies and downloads the pinned database emulator JAR, and later runs
+need no network or Google credentials. The suite uses the fixed demo project
+`demo-nexachat-presence`, the database emulator on `127.0.0.1:19007` and the
+emulator hub on `127.0.0.1:19008`.
+
+```bash
+cd tools/firebase-rules
+npm ci
+npm test
+```
+
+A failed assertion makes `firebase emulators:exec` exit non-zero. The isolated
+CI job `firebase-rules` runs the same command. Scope, data model and the two
+MEDIUM known rule gaps are documented in
+[docs/firebase-realtime.md](firebase-realtime.md).
+
 ## Live end-to-end scripts
 
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:

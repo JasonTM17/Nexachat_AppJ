@@ -25,6 +25,7 @@ import org.springframework.test.context.DynamicPropertySource;
 
 import java.time.Instant;
 import java.time.Clock;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -138,6 +139,26 @@ class FirebaseLeaseRevocationRaceIT {
                 .isEqualTo(ApiErrorCode.TOKEN_INVALID);
         assertThat(admin.customTokenCount()).isEqualTo(1);
         assertThat(rtdb.leaseWriteCount()).isEqualTo(1);
+    }
+
+    @Test
+    void alreadyAuthenticatedBridgeRequestCannotMintAfterDeletionAtTheCutoffSecond() {
+        Instant cutoff = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        user.markDeleted(cutoff.plusMillis(1));
+        user.invalidateAccessTokens(cutoff);
+        users.saveAndFlush(user);
+
+        // This principal represents a request that passed JWT authentication before deletion,
+        // then reached the Firebase bridge after the tombstone and its inclusive cutoff committed.
+        JwtPrincipal inFlightPrincipal = new JwtPrincipal(
+                user.getId(), cutoff, cutoff.plusSeconds(900));
+
+        assertThatThrownBy(() -> serviceA.issue(inFlightPrincipal))
+                .isInstanceOf(ApiException.class)
+                .extracting(error -> ((ApiException) error).getCode())
+                .isEqualTo(ApiErrorCode.TOKEN_INVALID);
+        assertThat(admin.customTokenCount()).isZero();
+        assertThat(rtdb.leaseWriteCount()).isZero();
     }
 
     private boolean awaitDatabaseBlocker(int blockerPid) {

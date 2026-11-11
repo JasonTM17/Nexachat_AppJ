@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>NexaChat — Xóa tài khoản</title>
+  <meta name="description" content="Cách xóa tài khoản NexaChat trong ứng dụng và dữ liệu được xóa hoặc giữ lại.">
+  <link rel="canonical" href="https://nexachat.io.vn/delete-account.html">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://nexachat.io.vn/delete-account.html">
+  <meta property="og:title" content="NexaChat — Delete account">
+  <meta property="og:description" content="How to delete a NexaChat account and what is deleted or retained.">
+  <meta property="og:image" content="https://nexachat.io.vn/og-image.svg">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="NexaChat account deletion">
+  <meta name="twitter:image" content="https://nexachat.io.vn/og-image.svg">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="nexachat-api-base" content="">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/delete-account.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
+  <main id="main" class="container">
+    <div class="card card--prose">
+      <h1 class="brand">Xóa tài khoản</h1>
+      <p class="lead" lang="vi">Xóa tài khoản NexaChat trong ứng dụng Android.</p>
+      <p class="lead" lang="en">Delete a NexaChat account in the Android app.</p>
+      <div class="prose" lang="vi">
+        <h2>Trong ứng dụng</h2>
+        <ol>
+          <li>Mở NexaChat và đăng nhập.</li>
+          <li>Mở Hồ sơ (Cài đặt).</li>
+          <li>Chọn Xóa tài khoản.</li>
+          <li>Nhập mật khẩu hiện tại và xác nhận.</li>
+        </ol>
+        <p>Cần mật khẩu hiện tại và phiên đăng nhập hợp lệ. Sau khi xóa, ứng dụng đưa bạn về màn hình đăng nhập. Không thể hoàn tác.</p>
+        <h2>Dữ liệu bị xóa</h2>
+        <ul>
+          <li>Phiên đăng nhập trên mọi thiết bị; access token hiện có bị vô hiệu hóa và kết nối realtime bị đóng.</li>
+          <li>Đăng ký thiết bị nhận thông báo đẩy.</li>
+          <li>Danh bạ của bạn và các mục mà người khác đã thêm bạn vào danh bạ.</li>
+          <li>Tư cách thành viên trong mọi nhóm; nếu bạn là quản trị viên duy nhất, quyền quản trị tự động chuyển cho thành viên còn lại tham gia sớm nhất.</li>
+          <li>Ảnh đại diện.</li>
+          <li>Đồng ý tính năng AI, bộ nhớ đệm câu hỏi AI và các bản tóm tắt AI do bạn yêu cầu.</li>
+          <li>Email khôi phục và trạng thái xác minh email.</li>
+          <li>Số điện thoại và tên hiển thị: số được giải phóng và không còn trong tìm kiếm; tên được đặt về giá trị trung tính.</li>
+          <li>Tài khoản được đánh dấu đã xóa.</li>
+        </ul>
+        <h2>Dữ liệu còn lại và thời gian lưu</h2>
+        <ul>
+          <li>Tin nhắn bạn đã gửi và tệp đính kèm vẫn hiển thị với người còn lại, gắn với “Deleted account”. Không có thời hạn tự động: dữ liệu còn lại chừng nào cuộc trò chuyện còn tồn tại.</li>
+          <li>Cuộc trò chuyện trực tiếp vẫn mở với người còn lại; tin nhắn trong nhóm vẫn ở trong nhóm.</li>
+          <li>Cảm xúc, bình chọn, lời nhắc, lịch sử cuộc gọi và ghim do bạn tạo vẫn nằm trong cuộc trò chuyện và gắn với tài khoản đã xóa.</li>
+          <li>Liên kết mời nhóm do bạn tạo vẫn có hiệu lực cho đến khi bị thu hồi, hết hạn hoặc hết lượt dùng.</li>
+          <li>Bản ghi tài khoản đã xóa được giữ để tin nhắn còn lại vẫn có người gửi; bản ghi này không có số điện thoại, email hay tên thật.</li>
+        </ul>
+        <p>Chính sách lưu trữ của nhà vận hành có thể dọn một số bản ghi phụ sau thời hạn mặc định: cuộc gọi đã kết thúc và bình chọn đã đóng sau 365 ngày, lời nhắc một lần đã gửi sau 30 ngày, tệp của tin nhắn đã thu hồi sau 30 ngày. Tin nhắn không tự động hết hạn.</p>
+        <h2>Sau khi xóa</h2>
+        <ul>
+          <li>Đăng nhập bằng số điện thoại cũ được xử lý như người dùng không tồn tại.</li>
+          <li>Tìm kiếm không trả về tài khoản.</li>
+          <li>Trang cá nhân hiển thị trạng thái đã xóa trung tính.</li>
+          <li>Đăng ký lại bằng cùng số điện thoại tạo tài khoản mới, không liên quan đến tài khoản đã xóa.</li>
+        </ul>
+        <h2>Mất thiết bị hoặc không đăng nhập được</h2>
+        <p>Nếu còn thiết bị khác, đăng nhập bằng số điện thoại và mật khẩu rồi làm theo các bước trên. Nếu đã thêm email khôi phục đã xác minh trong ứng dụng, hãy xem mục xóa trên web bên dưới (khi mục này được bật). Nếu không có email khôi phục đã xác minh, hãy dùng thông tin liên hệ của nhà phát triển trên trang Google Play của NexaChat.</p>
+      </div>
+      <div class="prose" lang="en">
+        <h2>In the app</h2>
+        <ol>
+          <li>Open NexaChat and sign in.</li>
+          <li>Open Profile (Settings).</li>
+          <li>Choose Delete account.</li>
+          <li>Enter your current password and confirm.</li>
+        </ol>
+        <p>The current password and a valid session are required. After deletion the app returns you to the sign-in screen. Deletion cannot be undone.</p>
+        <h2>Data that is deleted</h2>
+        <ul>
+          <li>Sessions on every device; existing access tokens are invalidated and realtime connections are closed.</li>
+          <li>Push notification device registrations.</li>
+          <li>Your contacts and the entries where other users listed you as a contact.</li>
+          <li>Membership in every group; if you are the only admin, admin rights pass automatically to the longest-standing remaining member.</li>
+          <li>Avatar image.</li>
+          <li>AI consent, AI ask cache, and AI summaries requested by you.</li>
+          <li>Recovery email and its verification status.</li>
+          <li>Phone number and display name: the number is released and no longer searchable; the name is set to a neutral value.</li>
+          <li>The account is marked deleted.</li>
+        </ul>
+        <h2>Data that remains and how long it is kept</h2>
+        <ul>
+          <li>Messages you sent and their attachments stay visible to the other members, attributed to “Deleted account”. There is no automatic expiry: they remain for as long as the conversation exists.</li>
+          <li>Direct conversations stay open for the other member; group messages stay in the group.</li>
+          <li>Reactions, poll votes, reminders, call history, and pins you created stay with the conversation and remain linked to the deleted account.</li>
+          <li>Group invite links you created stay valid until they are revoked, expire, or reach their use limit.</li>
+          <li>The deleted account record is kept so remaining messages still have a sender; it has no phone number, email, or real name.</li>
+        </ul>
+        <p>The operator's retention policy may remove some derived records after the default periods: ended calls and closed polls after 365 days, fired one-time reminders after 30 days, and attachments of recalled messages after 30 days. Messages themselves do not expire automatically.</p>
+        <h2>After deletion</h2>
+        <ul>
+          <li>Signing in with the old phone number is treated as an unknown user.</li>
+          <li>Search never returns the account.</li>
+          <li>The profile shows a neutral deleted state.</li>
+          <li>Registering again with the same phone number creates a new, unrelated account.</li>
+        </ul>
+        <h2>Lost device or cannot sign in</h2>
+        <p>If you have another device, sign in with your phone number and password, then follow the steps above. If you added a verified recovery email in the app, see web deletion below (when it is enabled). Without a verified recovery email, use the developer contact on the NexaChat Google Play listing.</p>
+      </div>
+      <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-vi web-deletion-heading-en">
+        <h2 id="web-deletion-heading-vi" class="deletion-web__title" lang="vi">Xóa trên web (mất thiết bị)</h2>
+        <h2 id="web-deletion-heading-en" class="deletion-web__title" lang="en">Web deletion (lost device)</h2>
+        <div id="web-deletion-unavailable">
+          <p lang="vi">Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc liên hệ qua Google Play nếu bạn không đăng nhập được.</p>
+          <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact us on Google Play if you cannot sign in.</p>
+        </div>
+        <div id="web-deletion-form-wrap" hidden>
+          <p class="deletion-web__hint" lang="vi">Nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email khôi phục đã xác minh.</p>
+          <p class="deletion-web__hint" lang="en">Enter your registered phone number. A one-time code is sent to your verified recovery email.</p>
+          <form id="web-deletion-form" class="deletion-form" action="#" method="post" novalidate>
+            <div class="form-field">
+              <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
+              <label class="form-label" for="deletion-phone" lang="en">Phone number</label>
+              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" required aria-describedby="deletion-phone-error">
+              <p class="form-error" id="deletion-phone-error" role="alert" hidden>
+                <span lang="vi">Nhập số điện thoại.</span>
+                <span lang="en">Enter your phone number.</span>
+              </p>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn" id="btn-send-code" aria-label="Gửi mã, Send code">Gửi mã · Send code</button>
+            </div>
+            <p class="form-error" id="web-deletion-send-error" role="alert" tabindex="-1" hidden>
+              <span lang="vi">Không gửi được mã. Thử lại sau.</span>
+              <span lang="en">Could not send a code. Try again later.</span>
+            </p>
+            <p class="deletion-web__neutral" id="request-feedback" hidden aria-live="polite">
+              <span lang="vi">Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã.</span>
+              <span lang="en">If this number has a verified recovery email, we sent a code.</span>
+            </p>
+            <div id="post-send-fields" hidden>
+              <div class="form-field">
+                <label class="form-label" for="deletion-code" lang="vi">Mã 6 chữ số</label>
+                <label class="form-label" for="deletion-code" lang="en">6-digit code</label>
+                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" aria-describedby="deletion-code-error">
+                <p class="form-error" id="deletion-code-error" role="alert" hidden>
+                  <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
+                  <span lang="en">Invalid or expired code.</span>
+                </p>
+              </div>
+              <div class="form-field form-field--checkbox">
+                <label class="form-label form-label--checkbox" for="deletion-confirm">
+                  <input type="checkbox" id="deletion-confirm" name="confirm">
+                  <span lang="vi">Tôi hiểu việc xóa là vĩnh viễn và không thể hoàn tác.</span>
+                  <span lang="en">I understand deletion is permanent and cannot be undone.</span>
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn btn-danger" id="btn-delete-account" disabled aria-label="Xóa tài khoản, Delete account">Xóa tài khoản · Delete account</button>
+              </div>
+            </div>
+            <p class="form-error" id="web-deletion-rate-error" role="alert" tabindex="-1" hidden>
+              <span lang="vi">Quá nhiều lần thử. Đợi một phút rồi thử lại.</span>
+              <span lang="en">Too many attempts. Wait a minute and try again.</span>
+            </p>
+            <p class="form-error form-error--global" id="web-deletion-form-error" role="alert" tabindex="-1" hidden>
+              <span lang="vi">Không thực hiện được. Kiểm tra mã hoặc thử lại sau.</span>
+              <span lang="en">Could not complete deletion. Check the code or try again later.</span>
+            </p>
+          </form>
+          <div id="web-deletion-success" hidden aria-live="polite" tabindex="-1">
+            <p class="lead" lang="vi">Tài khoản đã được xóa.</p>
+            <p class="lead" lang="en">Your account has been deleted.</p>
+          </div>
+        </div>
+      </section>
+      <p class="page-actions"><a class="btn btn-secondary" href="/privacy.html">Quyền riêng tư · Privacy</a></p>
+    </div>
+  </main>
+  <footer class="site-footer">
+    <nav aria-label="Pháp lý">
+      <a href="/privacy.html" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html" lang="en">Privacy</a>
+      <a href="/terms.html" lang="vi">Điều khoản</a>
+      <a href="/terms.html" lang="en">Terms</a>
+      <a href="/delete-account.html" aria-current="page" lang="vi">Xóa tài khoản</a>
+      <a href="/delete-account.html" aria-current="page" lang="en">Delete account</a>
+    </nav>
+  </footer>
+</body>
+</html>

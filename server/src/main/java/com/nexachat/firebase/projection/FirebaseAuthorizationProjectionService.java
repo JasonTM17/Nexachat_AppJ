@@ -8,6 +8,7 @@ import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAccountDeletedEvent;
 import com.nexachat.user.UserRepository;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
@@ -40,14 +41,14 @@ public class FirebaseAuthorizationProjectionService {
     }
 
     /** Re-reads and locks the durable account row before updating privacy mirrors. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void refreshAccount(UUID userId) {
         locks.withUserLock(userId, () -> {
             User user = users.findByIdForUpdate(userId).orElse(null);
-            if (user != null) {
-                metrics.write("account", () -> rtdb.applyAuthorizationProjection(Map.of(
-                        accountPath(userId), accountValue(user))));
-            }
+            Object value = user != null && user.getDeletedAt() == null ? accountValue(user) : null;
+            Map<String, Object> updates = new LinkedHashMap<>();
+            updates.put(accountPath(userId), value);
+            metrics.write("account", () -> rtdb.applyAuthorizationProjection(updates));
         });
     }
 
@@ -55,7 +56,7 @@ public class FirebaseAuthorizationProjectionService {
      * Rebuilds both direct-reader edges from current PostgreSQL membership.
      * Group conversations never create peer-visibility edges.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reconcileConversation(UUID conversationId) {
         Conversation conversation = conversations.findByIdForUpdate(conversationId).orElse(null);
         if (conversation == null || conversation.getType() != Conversation.Type.DIRECT) {
@@ -72,9 +73,13 @@ public class FirebaseAuthorizationProjectionService {
             }
             List<UUID> currentMembers = members.findMemberUserIds(conversationId)
                     .stream().distinct().sorted().toList();
-            if (currentMembers.size() != 2
-                    || users.findByIdForUpdate(currentMembers.get(0)).isEmpty()
-                    || users.findByIdForUpdate(currentMembers.get(1)).isEmpty()) {
+            if (currentMembers.size() != 2) {
+                return;
+            }
+            User firstMember = users.findByIdForUpdate(currentMembers.get(0)).orElse(null);
+            User secondMember = users.findByIdForUpdate(currentMembers.get(1)).orElse(null);
+            if (firstMember == null || secondMember == null
+                    || firstMember.getDeletedAt() != null || secondMember.getDeletedAt() != null) {
                 return;
             }
             Map<String, Object> updates = new LinkedHashMap<>();
@@ -85,7 +90,7 @@ public class FirebaseAuthorizationProjectionService {
     }
 
     /** Invalidates stale authorization and typing immediately after a member leaves or is removed. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void revokeMember(UUID conversationId, UUID userId) {
         locks.withUserLock(userId, () -> {
             users.findByIdForUpdate(userId);
@@ -97,7 +102,7 @@ public class FirebaseAuthorizationProjectionService {
     }
 
     /** Removes every known server-owned authorization edge for a deleted account. */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void deleteAccount(UserAccountDeletedEvent event) {
         locks.withUserLock(event.userId(), () -> {
             Map<String, Object> updates = new LinkedHashMap<>();

@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +85,37 @@ class FirebaseAuthorizationProjectionServiceTest {
 
         assertThat(rtdb.patches).containsExactly(Map.of(
                 "accounts/" + USER_ID, Map.of("active", true, "showPresence", false)));
+    }
+
+    @Test
+    void refreshingATombstoneRemovesAnyStaleAccountMirror() {
+        User deleted = mock(User.class);
+        when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(deleted));
+        when(deleted.getDeletedAt()).thenReturn(Instant.parse("2026-11-10T12:00:00Z"));
+
+        service.refreshAccount(USER_ID);
+
+        assertThat(rtdb.patches).hasSize(1);
+        assertThat(rtdb.patches.get(0)).containsKey("accounts/" + USER_ID);
+        assertThat(rtdb.patches.get(0).get("accounts/" + USER_ID)).isNull();
+    }
+
+    @Test
+    void directReaderBackfillSkipsConversationsWithATombstonedMember() {
+        Conversation direct = mock(Conversation.class);
+        User active = mock(User.class);
+        User deleted = mock(User.class);
+        when(conversations.findByIdForUpdate(CONVERSATION_ID)).thenReturn(Optional.of(direct));
+        when(conversations.findById(CONVERSATION_ID)).thenReturn(Optional.of(direct));
+        when(direct.getType()).thenReturn(Conversation.Type.DIRECT);
+        when(members.findMemberUserIds(CONVERSATION_ID)).thenReturn(List.of(PEER_ID, USER_ID));
+        when(users.findByIdForUpdate(PEER_ID)).thenReturn(Optional.of(active));
+        when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(deleted));
+        when(deleted.getDeletedAt()).thenReturn(Instant.parse("2026-11-10T12:00:00Z"));
+
+        service.reconcileConversation(CONVERSATION_ID);
+
+        assertThat(rtdb.patches).isEmpty();
     }
 
     @Test

@@ -16,7 +16,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Lookup by normalized E.164 phone — normalize BEFORE calling this. */
     Optional<User> findByPhone(String phone);
 
+    /** Active (non-deleted) account with this phone, for login/register/search. */
+    Optional<User> findByPhoneAndDeletedAtIsNull(String phone);
+
     boolean existsByPhone(String phone);
+
+    boolean existsByPhoneAndDeletedAtIsNull(String phone);
 
     /**
      * Access-token cutoff for the JWT filter's hot path, plus proof that the
@@ -24,7 +29,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * needs these two values and must not load (or lock) the whole user row.
      */
     @Query("SELECT new com.nexachat.user.UserAuthValidity(u.id, u.tokensValidAfter)"
-            + " FROM User u WHERE u.id = :id")
+            + " FROM User u WHERE u.id = :id AND u.deletedAt IS NULL")
     Optional<UserAuthValidity> findAuthValidityById(@Param("id") UUID id);
 
     /**
@@ -59,6 +64,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("""
             SELECT u FROM User u
             WHERE u.id <> :excludeId
+              AND u.deletedAt IS NULL
               AND LOWER(u.displayName) LIKE LOWER(:prefix) || '%' ESCAPE '\\'
             ORDER BY u.displayName
             """)

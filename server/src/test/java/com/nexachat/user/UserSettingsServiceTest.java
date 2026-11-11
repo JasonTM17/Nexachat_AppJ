@@ -34,6 +34,7 @@ class UserSettingsServiceTest {
         UUID userId = UUID.randomUUID();
         User user = User.create("+84901112233", "hash", "User");
         when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
 
         assertThat(service.get(userId).showPresence()).isTrue();
         assertThat(service.get(userId).showSeen()).isTrue();
@@ -41,7 +42,8 @@ class UserSettingsServiceTest {
         assertThat(service.setShowPresence(userId, false).showPresence()).isFalse();
         assertThat(service.get(userId).aiSummaryConsent()).isFalse();
         assertThat(service.updateSettings(userId, null, false, null).showSeen()).isFalse();
-        verify(repository, org.mockito.Mockito.times(6)).findById(userId);
+        verify(repository, org.mockito.Mockito.times(4)).findById(userId);
+        verify(repository, org.mockito.Mockito.times(2)).findByIdForUpdate(userId);
     }
 
     @Test
@@ -51,7 +53,7 @@ class UserSettingsServiceTest {
                 mock(PresenceSessionState.class), mock(ApplicationEventPublisher.class));
         UUID userId = UUID.randomUUID();
         User user = User.create("+84901112234", "hash", "User");
-        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
 
         assertThat(service.updateSettings(userId, null, null, true))
                 .satisfies(settings -> {
@@ -100,7 +102,7 @@ class UserSettingsServiceTest {
         UUID userId = UUID.randomUUID();
         UUID peerId = UUID.randomUUID();
         User user = User.create("+84901112235", "hash", "User");
-        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
         when(sessionState.isOnline(userId)).thenReturn(true);
         when(memberRepository.findDirectPeerUserIds(userId)).thenReturn(List.of(peerId));
 
@@ -121,7 +123,7 @@ class UserSettingsServiceTest {
         UUID peerId = UUID.randomUUID();
         User user = User.create("+84901112236", "hash", "User");
         user.changeShowPresence(false);
-        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
         when(sessionState.isOnline(userId)).thenReturn(true);
         when(memberRepository.findDirectPeerUserIds(userId)).thenReturn(List.of(peerId));
 
@@ -140,7 +142,7 @@ class UserSettingsServiceTest {
         UserSettingsService service = service(repository, memberRepository, sessionState, eventPublisher);
         UUID userId = UUID.randomUUID();
         User user = User.create("+84901112237", "hash", "User");
-        when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
         when(sessionState.isOnline(userId)).thenReturn(true);
 
         service.updateSettings(userId, true, null, null);
@@ -162,6 +164,7 @@ class UserSettingsServiceTest {
         UUID userId = UUID.randomUUID();
         User user = User.create("+84901112238", "hash", "User");
         when(repository.findById(userId)).thenReturn(Optional.of(user));
+        when(repository.findByIdForUpdate(userId)).thenReturn(Optional.of(user));
         doThrow(new IllegalStateException("provider failure")).doNothing()
                 .when(eventPublisher).publishEvent(any(UserPresenceVisibilityChangedEvent.class));
 

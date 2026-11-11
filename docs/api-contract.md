@@ -430,7 +430,9 @@ account hash (it still pays one dummy bcrypt compare for timing).
 **Access-token claims:** access tokens are HS256 JWTs with `iss=nexachat` and
 `aud=nexachat-api`; a token missing either claim is rejected as `401 TOKEN_INVALID`.
 
-**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, and `PATCH /auth/password` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` is at or before that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+**Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` is at or before that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
+
+**Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, replaces the password hash, removes contacts/device tokens/private labels/pending group-join requests and any linked Google identity plus its account-owned link nonces, scrubs AI consent, per-user request limits and per-conversation ask/summary caches, and deletes unbound uploads and the avatar after commit. It removes the user from every group (if the deleting user is the only admin while other members remain, the earliest remaining member by `joined_at` — tie-break by user id — is promoted to admin in the same transaction before the leave; when they are the last member, the group is left empty like self-leave), keeps direct conversations and sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` omitted, `deleted: true` on `UserResponse` and `ConversationMemberView`). A retry with the same access token after success returns `401 TOKEN_INVALID` (the token is rejected before the handler runs). Self-leave (`POST …/leave`) keeps blocking a sole admin with other members present.
 
 ## Users — `/api/v1/users`
 
@@ -438,6 +440,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 |---|---|---|---|---|
 | `GET /users/me` | Bearer | — | `200` `UserResponse` | `UNAUTHORIZED` 401 |
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected; ≤60 chars | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
+| `DELETE /users/me` | Bearer | `{password}` — current password required | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `TOKEN_INVALID` 401 (retry with the same access token after a successful delete) · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (only when the handler runs for an already-deleted row without a rejected token) |
 | `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 |
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS` (omitted or unrecognized defaults to `ANDROID`), label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
@@ -612,7 +615,9 @@ Inbox entries for DIRECT conversations may include
 Presence changes are described in the WebSocket section and are in-memory on a
 single backend node.
 
-`ConversationResponse` = `{id, type, members: [{userId, displayName, phone}], createdAt, aiOptOut}`.
+`UserResponse` = `{id, phone?, displayName, avatarUrl?, deleted}`; when `deleted` is true, `phone` is omitted and clients should localize the label from the flag instead of matching `displayName` text.
+
+`ConversationResponse` = `{id, type, members: [{userId, displayName, phone?, deleted}], createdAt, aiOptOut}`.
 `LabelResponse` = `{id, name, colorId, createdAt, updatedAt}`.
 `InboxEntry` = `{id, type, title, avatarUrl, members: [{userId, displayName, phone, avatarUrl, role}], lastMessage?{seq, type, contentSnippet, senderId, createdAt, deletedAt}, unreadCount, lastReadSeq, muted, mutedUntil?, archived, pinned, pinnedAt?, labels: [uuid], aiOptOut, peerPresence?{online, lastSeenAt}}`; `unreadCount` counts live messages with `seq > lastReadSeq` and excludes soft-deleted rows; `labels` contains only the authenticated caller's label IDs and is always an array. Null `contentSnippet` marks a deleted last message. `muted`/`archived`/`pinned` are the **caller's own** per-member flags and are always present; `mutedUntil` is the caller's mute expiry (ISO-8601 UTC) and is omitted when the mute is forever or the conversation is not muted; `pinnedAt` is the start of the caller's current pin (ISO-8601 UTC) and is omitted when the conversation is not pinned. Null optional values may be omitted.
 `aiOptOut` is the caller's own per-conversation AI opt-out state; another member's choice is never included. The same state is available directly from `GET /conversations/{id}/ai-opt-out`.

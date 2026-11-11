@@ -466,7 +466,6 @@
     <string name="confirm_remove_contact">Remove this contact?</string>
     <string name="session_expired_sign_in_again">Session expired, sign in again</string>
 
-
     <!-- Cluster B message interactions -->
     <string name="message_actions_title">Message actions</string>
     <string name="reaction_like">Like</string>
@@ -502,6 +501,51 @@
     <string name="system_event_group_renamed">%1$s renamed the group to “%2$s”</string>
     <string name="system_event_group_role_changed">%1$s changed %2$s’s role</string>
 
+    <!-- Forgot password (brief 306 E4) -->
+    <string name="action_forgot_password">Forgot password?</string>
+    <string name="forgot_password_title">Reset password</string>
+    <string name="forgot_password_send_code">Send code</string>
+    <string name="forgot_password_neutral_sent">If this number has a verified recovery email, we sent a code</string>
+    <string name="forgot_password_code_label">Verification code</string>
+    <string name="forgot_password_submit">Reset password</string>
+    <string name="forgot_password_resend">Resend code</string>
+    <string name="forgot_password_resend_countdown">Resend code (%1$d)</string>
+    <string name="forgot_password_code_invalid">Code is wrong or expired</string>
+    <string name="forgot_password_changed">Password changed. Sign in again.</string>
+    <string name="forgot_password_password_too_long">Password must be at most 72 bytes</string>
+    <string name="forgot_password_change_phone">Change number</string>
+    <string name="auth_password_policy_hint">At least 8 characters, max 72 bytes</string>
+    <string name="cd_forgot_phone">Phone number for password reset</string>
+    <string name="cd_forgot_otp">Password reset verification code</string>
+    <!-- Recovery email (brief 306) -->
+    <string name="recovery_email_title">Recovery email</string>
+    <string name="recovery_email_add">Add</string>
+    <string name="recovery_email_change">Change email</string>
+    <string name="recovery_email_remove">Remove email</string>
+    <string name="recovery_email_remove_confirm">Remove this recovery email?</string>
+    <string name="recovery_email_field_label">Email address</string>
+    <string name="recovery_email_send_code">Send code</string>
+    <string name="recovery_email_verify">Verify</string>
+    <string name="recovery_email_resend">Resend code</string>
+    <string name="recovery_email_resend_countdown">Resend code (%1$d)</string>
+    <string name="recovery_email_otp_label">6-digit code</string>
+    <string name="recovery_email_otp_sent_to">Code sent to %1$s</string>
+    <string name="recovery_email_invalid">Enter a valid email address</string>
+    <string name="recovery_email_in_use">This email is already verified on another account</string>
+    <string name="recovery_email_code_invalid">Wrong or expired code</string>
+    <string name="recovery_email_mail_unavailable">Email service unavailable</string>
+    <string name="recovery_email_verified_status">Verified: %1$s</string>
+    <string name="recovery_email_none_status">No recovery email</string>
+    <string name="recovery_email_load_failed">Could not load recovery email status</string>
+    <string name="cd_recovery_email_row">Recovery email settings</string>
+    <string name="cd_recovery_email_input">Recovery email address</string>
+    <string name="cd_recovery_email_otp">Recovery email verification code</string>
+    <string name="action_delete_account">Delete account</string>
+    <string name="delete_account_title">Delete account</string>
+    <string name="delete_account_consequences">Your account will be permanently deleted; your messages stay visible to others as from a deleted account.</string>
+    <string name="delete_account_confirm">Delete my account</string>
+    <string name="login_account_deleted_notice">Your account was deleted.</string>
+    <string name="error_wrong_password">Current password is incorrect</string>
     <!-- Sign in with Google (hidden when the build has no web client ID) -->
     <string name="action_continue_with_google">Continue with Google</string>
     <string name="settings_google_account">Google account</string>

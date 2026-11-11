@@ -95,10 +95,22 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:autofillHints="password"
+                        android:freezesText="false"
                         android:imeOptions="actionDone"
                         android:importantForAutofill="yes"
-                        android:inputType="textPassword" />
+                        android:inputType="textPassword"
+                        android:saveEnabled="false" />
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/forgotPasswordAction"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/action_forgot_password" />
 
                 <!-- Error banner -->
                 <TextView
@@ -109,6 +121,17 @@
                     android:background="@drawable/bg_settings_tile_error"
                     android:padding="12dp"
                     android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/noticeBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:accessibilityLiveRegion="polite"
+                    android:background="@drawable/bg_settings_tile_tint"
+                    android:padding="12dp"
+                    android:textColor="?attr/colorOnSurface"
                     android:visibility="gone" />
 
                 <!-- One full-width primary button -->

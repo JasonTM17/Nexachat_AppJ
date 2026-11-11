@@ -112,7 +112,9 @@ public class FirebaseRealtimeAuthService {
         }
         User user = users.findByIdForUpdate(userId)
                 .orElseThrow(FirebaseRealtimeAuthService::invalidAccessToken);
-        if (user.getTokensValidAfter() != null && principal.issuedAt().isBefore(user.getTokensValidAfter())) {
+        if (user.getDeletedAt() != null
+                || (user.getTokensValidAfter() != null
+                && !principal.issuedAt().isAfter(user.getTokensValidAfter()))) {
             throw invalidAccessToken();
         }
         return now;

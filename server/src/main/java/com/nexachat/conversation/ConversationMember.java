@@ -142,6 +142,10 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
         return role;
     }
 
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
     public Instant getJoinedAt() {
         return joinedAt;
     }

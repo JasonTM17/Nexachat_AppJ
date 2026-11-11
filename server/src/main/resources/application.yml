@@ -2,6 +2,11 @@ server:
   port: 8080
 
 spring:
+  # firebase-admin brings Apache HttpClient 5 onto the classpath; its default strategy silently
+  # re-sends 429/503 responses. Pin auto-configured RestClient/RestTemplate to the JDK client.
+  http:
+    client:
+      factory: jdk
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/nexachat}
     username: ${DATABASE_USER:nexachat}

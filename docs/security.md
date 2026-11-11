@@ -80,7 +80,11 @@ the implementing source file.
   downloaded copy cannot be recalled.
   Firebase remains disabled by default; install and verify the complete RTDB rules and server-side
   account/membership projections before enabling clients. The S1 bridge does not include those
-  projections or Firebase Emulator authorization evidence.
+  projections. The rules candidate has an offline emulator contract suite and a credential-free CI
+  job (`tools/firebase-rules`, `firebase-rules`); review the two MEDIUM rule gaps it records
+  (multi-device last-seen exposure and the DIRECT-only reader-edge invariant) in
+  `docs/firebase-realtime.md`. Projection correctness, real Firebase Auth/IAM exchange and device
+  behavior remain rollout gates.
 
 ## 3. Transport authorization
 
@@ -238,7 +242,30 @@ the implementing source file.
 - Validation errors are structured and stable: field violations become an
   insertion-ordered `details` map (GlobalExceptionHandler.handleValidation).
 
-## 7. Google sign-in (OpenID Connect)
+## 7. Account deletion and data retention
+
+- In-app deletion is `DELETE /api/v1/users/me` with the current password
+  (`AccountDeletionService.java`, Flyway V26 `users.deleted_at`). Success revokes
+  every refresh token, stamps the access-token cutoff, unregisters device tokens,
+  removes contacts (both directions), clears per-user AI opt-outs and rate-limit
+  rows, deletes ask-cache and summary rows for conversations the member belonged to,
+  removes private labels and pending group-join requests, deletes linked Google
+  identities and account-owned link nonces, removes unbound-upload metadata and
+  the avatar file after commit, and replaces the stored password hash. It also
+  removes the user from each group through an account-deletion leave path that
+  auto-promotes a successor admin when needed (in-app self-leave still rejects
+  a sole admin while other members remain).
+- Deleted accounts are not returned from `GET /users/search`, exact phone lookup
+  behaves like an unknown number, and login for the freed E.164 receives the same
+  `INVALID_CREDENTIALS` envelope as a wrong password. Re-registration with that
+  phone creates a new unrelated UUID.
+- **Retained for other members:** direct and group conversation rows, message
+  history, attachments, reactions, and polls already visible in the chat; senders
+  show the server neutral label `Deleted account` with no phone. **Removed from
+  discovery:** phone number, contacts, push tokens, avatar, and AI consent
+  state tied to the deleted user.
+
+## 8. Google sign-in (OpenID Connect)
 
 - Off by default (`nexachat.google.signin.enabled`). While off, every endpoint
   answers `404 NOT_FOUND` (GoogleSignInService.requireEnabled), the decoder bean
@@ -282,9 +309,9 @@ the implementing source file.
   `404 GOOGLE_ACCOUNT_NOT_LINKED` and the message never reveals whether the
   Google account or the NexaChat account exists. Automatic account creation from
   Google and email-based linking are intentionally absent (account-takeover
-  risk). Deleting a user cascades the identity row in the schema; the
-  account-deletion flow must delete identity rows because it tombstones users
-  instead of deleting them.
+  risk). Physical deletion cascades identity rows in V28; account tombstoning
+  deletes linked identities and account-owned link nonces explicitly in the
+  deletion transaction.
 
 ## Known limits & future work
 

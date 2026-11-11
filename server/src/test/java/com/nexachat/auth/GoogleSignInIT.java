@@ -4,13 +4,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.auth.google.GoogleTestKeys;
 import com.nexachat.auth.google.JwksServer;
 import com.nexachat.testutil.TestAccessTokens;
+import com.nexachat.testutil.TestWaits;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import com.zaxxer.hikari.HikariDataSource;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -18,9 +30,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * endpoint; the production Nimbus decoder verifies the signature, issuer,
  * audience and expiry.
  */
+@Import(GoogleSignInIT.DeletionPauseConfiguration.class)
 class GoogleSignInIT extends SecurityITBase {
 
     private static final String PHONE = "+84905556001";
@@ -54,8 +69,12 @@ class GoogleSignInIT extends SecurityITBase {
     @org.springframework.beans.factory.annotation.Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private TestAccountDeletionPause deletionPause;
+
     @BeforeEach
     void cleanNonces() {
+        deletionPause.reset();
         jdbcTemplate.update("DELETE FROM google_signin_nonces");
         jdbcTemplate.update("DELETE FROM user_identities");
     }
@@ -386,6 +405,161 @@ class GoogleSignInIT extends SecurityITBase {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM user_identities WHERE user_id = ?", Integer.class,
                 user.userId())).isZero();
+    }
+
+    @Test
+    void accountDeletionRemovesGoogleDataAndDeletedIdentityCannotSignIn() throws Exception {
+        Registered user = register(PHONE);
+        String linkNonce = issueLinkNonce(user);
+        link(user, GoogleTestKeys.token(linkNonce), linkNonce).andExpect(status().isNoContent());
+        String unusedLinkNonce = issueLinkNonce(user);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM google_signin_nonces
+                WHERE user_id = ? AND nonce_hash = ?
+                """, Integer.class, user.userId(),
+                com.nexachat.auth.google.GoogleNonceService.sha256Hex(unusedLinkNonce))).isEqualTo(1);
+        int refreshRowsBeforeDeletion = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class, user.userId());
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header("Authorization", "Bearer " + user.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "secret123"))))
+                .andExpect(status().isNoContent());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_identities WHERE user_id = ?", Integer.class,
+                user.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM google_signin_nonces WHERE user_id = ?", Integer.class,
+                user.userId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsBeforeDeletion);
+
+        int refreshRowsAfterDeletion = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class, user.userId());
+        assertGoogleSignInFailsWithoutIssuingSession();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsAfterDeletion);
+
+        // Simulate a stale identity row to exercise the deleted-user guard itself.
+        jdbcTemplate.update("""
+                INSERT INTO user_identities (user_id, provider, subject, email_at_link)
+                VALUES (?, 'google', ?, ?)
+                """, user.userId(), GoogleTestKeys.SUBJECT, GoogleTestKeys.EMAIL);
+        assertGoogleSignInFailsWithoutIssuingSession();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?", Integer.class,
+                user.userId())).isEqualTo(refreshRowsAfterDeletion);
+    }
+
+    @Test
+    void linkNonceRequestWaitingBehindDeletionCannotLeaveOwnedNonce() throws Exception {
+        Registered user = register(PHONE);
+        CountDownLatch deletionAtTombstone = new CountDownLatch(1);
+        CountDownLatch resumeDeletion = new CountDownLatch(1);
+        deletionPause.beforeTombstone = () -> {
+            deletionAtTombstone.countDown();
+            try {
+                if (!resumeDeletion.await(30, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Timed out waiting to resume account deletion");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(exception);
+            }
+        };
+
+        HikariDataSource hikari = (HikariDataSource) jdbcTemplate.getDataSource();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (Connection observer = DriverManager.getConnection(
+                hikari.getJdbcUrl(), hikari.getUsername(), hikari.getPassword())) {
+            Future<Integer> deletion = executor.submit(() -> mockMvc.perform(delete("/api/v1/users/me")
+                            .header("Authorization", "Bearer " + user.accessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("password", "secret123"))))
+                    .andReturn().getResponse().getStatus());
+            assertThat(deletionAtTombstone.await(30, TimeUnit.SECONDS)).isTrue();
+
+            Future<org.springframework.test.web.servlet.MvcResult> linkNonce = executor.submit(() -> {
+                try {
+                    return postJson("/api/v1/auth/identities/google/nonce", Map.of(), user.accessToken())
+                            .andReturn();
+                } catch (Exception exception) {
+                    throw new RuntimeException(exception);
+                }
+            });
+            awaitLinkNonceLockWait(observer);
+
+            resumeDeletion.countDown();
+            assertThat(deletion.get(60, TimeUnit.SECONDS)).isEqualTo(204);
+            var result = linkNonce.get(60, TimeUnit.SECONDS);
+            assertThat(result.getResponse().getStatus()).isEqualTo(404);
+            assertThat(objectMapper.readTree(result.getResponse().getContentAsString())
+                    .path("error").path("code").asText()).isEqualTo("USER_NOT_FOUND");
+        } finally {
+            resumeDeletion.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM google_signin_nonces WHERE user_id = ?", Integer.class,
+                user.userId())).isZero();
+    }
+
+    private void assertGoogleSignInFailsWithoutIssuingSession() throws Exception {
+        String signInNonce = issueNonce();
+        postJson("/api/v1/auth/google", Map.of(
+                        "idToken", GoogleTestKeys.token(signInNonce), "nonce", signInNonce))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("GOOGLE_ACCOUNT_NOT_LINKED"));
+    }
+
+    private void awaitLinkNonceLockWait(Connection observer) {
+        try (PreparedStatement query = observer.prepareStatement("""
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_stat_activity
+                    WHERE datname = current_database()
+                      AND pid <> pg_backend_pid()
+                      AND wait_event_type = 'Lock'
+                      AND (query ILIKE '%users%' OR query ILIKE '%google_signin_nonces%')
+                )
+                """)) {
+            TestWaits.until("Google link nonce request to wait behind the account deletion row lock", () -> {
+                try (ResultSet result = query.executeQuery()) {
+                    result.next();
+                    return result.getBoolean(1);
+                } catch (SQLException exception) {
+                    throw new IllegalStateException("Could not observe the planned PostgreSQL lock wait", exception);
+                }
+            });
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Could not observe the planned PostgreSQL lock wait", exception);
+        }
+    }
+
+    @TestConfiguration
+    static class DeletionPauseConfiguration {
+        @Bean
+        @Primary
+        TestAccountDeletionPause testAccountDeletionPause() {
+            return new TestAccountDeletionPause();
+        }
+    }
+
+    static final class TestAccountDeletionPause implements com.nexachat.user.AccountDeletionCoordination {
+        volatile Runnable beforeTombstone = () -> {};
+
+        void reset() {
+            beforeTombstone = () -> {};
+        }
+
+        @Override
+        public void beforeTombstone(java.util.UUID userId) {
+            beforeTombstone.run();
+        }
     }
 
     @Test

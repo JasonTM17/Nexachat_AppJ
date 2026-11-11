@@ -30,12 +30,19 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.ConversationMemberView(
-                       u.id, u.displayName, u.phone)
+                       u.id, u.displayName, u.phone, u.deletedAt IS NOT NULL)
             FROM ConversationMember m JOIN m.user u
             WHERE m.conversation.id = :conversationId
             ORDER BY u.id
             """)
     List<ConversationMemberView> findMemberViews(@Param("conversationId") UUID conversationId);
+
+    @Query("""
+            SELECT m.conversation.id FROM ConversationMember m
+            JOIN m.conversation c
+            WHERE m.user.id = :userId AND c.type = com.nexachat.conversation.Conversation.Type.GROUP
+            """)
+    List<UUID> findGroupConversationIdsForUser(@Param("userId") UUID userId);
 
     /**
      * THE authorization primitive for message traffic (plan §11.3.2): used by
@@ -96,6 +103,21 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     /** Current conversation ids for privacy cleanup after an account's realtime bridges are revoked. */
     @Query("SELECT m.conversation.id FROM ConversationMember m WHERE m.user.id = :userId")
     List<UUID> findConversationIdsByUserId(@Param("userId") UUID userId);
+
+    /** Direct peers whose reverse presence-reader edges must be removed when a user is deleted. */
+    @Query("""
+            SELECT DISTINCT peer.user.id
+            FROM ConversationMember peer
+            WHERE peer.user.id <> :userId
+              AND peer.conversation.id IN (
+                  SELECT own.conversation.id
+                  FROM ConversationMember own
+                  WHERE own.user.id = :userId
+                    AND own.conversation.type = com.nexachat.conversation.Conversation.Type.DIRECT
+              )
+            ORDER BY peer.user.id
+            """)
+    List<UUID> findDirectPeerUserIdsByUserId(@Param("userId") UUID userId);
 
     /**
      * Members whose mute is currently effective: {@code muted = true} and either
@@ -191,6 +213,20 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             ORDER BY u.id
             """)
     List<MemberResponse> findMembers(@Param("conversationId") UUID conversationId);
+
+    /**
+     * Successor pick for account-deletion admin hand-over: earliest
+     * {@code joined_at}, tie-broken by user id (PostgreSQL ordering).
+     */
+    @Query(value = """
+            SELECT user_id FROM conversation_members
+            WHERE conversation_id = :conversationId AND user_id <> :excludeUserId
+            ORDER BY joined_at ASC, user_id ASC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findSuccessorUserIdForAccountDeletion(
+            @Param("conversationId") UUID conversationId,
+            @Param("excludeUserId") UUID excludeUserId);
 
     /**
      * Inbox rows for {@code GET /conversations}: the caller's pinned rows

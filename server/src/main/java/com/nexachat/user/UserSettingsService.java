@@ -46,7 +46,7 @@ public class UserSettingsService {
             Boolean showPresence,
             Boolean showSeen,
             Boolean aiSummaryConsent) {
-        User user = findUser(userId);
+        User user = findUserForUpdate(userId);
         if (showPresence != null) {
             boolean changed = user.isShowPresence() != showPresence;
             user.changeShowPresence(showPresence);
@@ -69,9 +69,14 @@ public class UserSettingsService {
         return toResponse(user);
     }
 
-    private User findUser(UUID userId) {
+    @Transactional(readOnly = true)
+    User findUser(UUID userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+    }
+
+    private User findUserForUpdate(UUID userId) {
+        return ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
     }
 
     private static UserSettingsResponse toResponse(User user) {

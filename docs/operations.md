@@ -208,9 +208,12 @@ Before enabling the bridge in a Firebase project:
 2. Review and install the complete rules candidate at
    `tools/firebase-rules/database.rules.json`. The default rules deny access;
    user accounts, control state, and current conversation memberships must be
-   projected before authorized Firebase reads can succeed. The projection and
-   Firebase Emulator authorization checks are owned by later rollout steps;
-   this S1 bridge alone does not make a client data path ready for production.
+   projected before authorized Firebase reads can succeed. The projection
+   writer and Android transport remain later rollout steps; this S1 bridge
+   alone does not make a client data path ready for production. The rules
+   contract, its offline emulator suite and its known gaps are documented in
+   [firebase-realtime.md](firebase-realtime.md); the `firebase-rules` CI job
+   runs that suite without credentials.
 3. Inject `FIREBASE_REALTIME_ENABLED=true` and the exact region-specific
    `FIREBASE_DATABASE_URL` into the backend runtime. Verify the database URL,
    service-account project, installed rules, and projection before directing
@@ -875,6 +878,16 @@ Direct Gradle builds can set `-PreleaseVersionName` and
    - Session tokens and user authentication state stored in DataStore preferences.
    - Downloaded attachment files and cached media in the application cache directory.
 5. **No sensitive logging**: `HttpLoggingInterceptor` is stripped in release builds (`BuildConfig.DEBUG` guarded), and no tokens, credentials, or payload bodies are logged.
+
+## Static site: web account deletion (lost device)
+
+The public page `site/delete-account.html` can call the unauthenticated account-deletion OTP endpoints when the API origin is configured at deploy time. The repository ships with an empty API base so browsers make no cross-origin requests until an operator enables the flow.
+
+1. **HTML meta** — Set `content` on `<meta name="nexachat-api-base" content="...">` in `site/delete-account.html` to the HTTPS API origin (no trailing slash), e.g. `https://api.nexachat.io.vn`. Rebuild or redeploy the static site after editing.
+2. **Content-Security-Policy** — In `site/vercel.json`, set the global `connect-src` directive to the same API origin (replacing `'none'`). The meta value and the CSP value must change together; an empty meta with a configured origin, or a configured meta with `connect-src 'none'`, fails the site gate.
+3. **Server CORS** — Set `NEXACHAT_CORS_ALLOWED_ORIGINS` on the API to include exactly `https://nexachat.io.vn` (and `https://www.nexachat.io.vn` only if you serve the apex redirect host). No wildcard; omitting the site origin blocks browser `fetch` from the deletion form.
+
+`python site/check.py` gates the meta tag, external `delete-account.js`, the default-or-configured `connect-src` pair, and these operator notes.
 
 ## Run CI checks locally
 

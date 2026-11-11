@@ -182,6 +182,13 @@ public final class DtoWireRoundTripTest {
     }
 
     @Test
+    public void deleteAccountRequestSerializesPasswordField() throws Exception {
+        DeleteAccountRequest request = new DeleteAccountRequest("current-pass");
+        assertEquals("{\"password\":\"current-pass\"}",
+                moshi.adapter(DeleteAccountRequest.class).toJson(request));
+    }
+
+    @Test
     public void stompEnvelopeReencodesPayloadAndReadWatermark() throws Exception {
         WsEnvelope envelope = moshi.adapter(WsEnvelope.class).fromJson(
                 "{\"eventType\":\"MESSAGE_READ\",\"conversationId\":\"c-1\","

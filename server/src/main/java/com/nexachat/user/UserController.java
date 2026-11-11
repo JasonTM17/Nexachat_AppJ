@@ -3,15 +3,19 @@ package com.nexachat.user;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.user.dto.DeleteAccountRequest;
 import com.nexachat.user.dto.UpdateProfileRequest;
 import com.nexachat.user.dto.UserResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -27,9 +31,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final AccountDeletionService accountDeletionService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AccountDeletionService accountDeletionService) {
         this.userService = userService;
+        this.accountDeletionService = accountDeletionService;
     }
 
     @GetMapping("/me")
@@ -41,6 +47,13 @@ public class UserController {
     public UserResponse updateMe(@AuthenticationPrincipal JwtPrincipal principal,
                                  @Valid @RequestBody UpdateProfileRequest request) {
         return UserResponse.from(userService.updateDisplayName(requireUserId(principal), request.displayName()));
+    }
+
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMe(@AuthenticationPrincipal JwtPrincipal principal,
+                         @Valid @RequestBody DeleteAccountRequest request) {
+        accountDeletionService.deleteAccount(requireUserId(principal), request.password());
     }
 
     /**
