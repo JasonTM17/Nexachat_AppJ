@@ -1,6 +1,7 @@
 package com.nexachat.conversation;
 
 import com.nexachat.attachment.StorageService;
+import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.AddMemberRequest;
@@ -69,6 +70,8 @@ class GroupServiceTest {
     private SimpleBrokerMessageHandler simpleBrokerMessageHandler;
     @Mock
     private com.nexachat.attachment.StorageService storageService;
+    @Mock
+    private AvatarReferenceCoordinator avatarReferenceCoordinator;
 
     private GroupService groupService;
 
@@ -82,6 +85,7 @@ class GroupServiceTest {
         groupService = new GroupService(
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService,
+                avatarReferenceCoordinator,
                 simpUserRegistry, simpleBrokerMessageHandler);
     }
 
@@ -658,6 +662,21 @@ class GroupServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
         verify(attachmentRepository).lockStorageKeyForReference(storageKey);
+    }
+
+    @Test
+    void updateGroup_rejectsMissingServerGeneratedAvatarFile() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        String storageKey = "avatars/00000000-0000-0000-0000-000000000001.png";
+        when(storageService.exists(storageKey)).thenReturn(false);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.updateGroup(adminId, conversationId,
+                        new PatchGroupRequest(null, "/api/v1/files/" + storageKey)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
+        verify(avatarReferenceCoordinator).lockForTransaction();
+        verify(storageService).exists(storageKey);
     }
 
     @Test

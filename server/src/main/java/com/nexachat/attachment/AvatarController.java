@@ -32,10 +32,15 @@ public class AvatarController {
 
     private final StorageService storageService;
     private final UserRepository userRepository;
+    private final AvatarReferenceCoordinator referenceCoordinator;
 
-    public AvatarController(StorageService storageService, UserRepository userRepository) {
+    public AvatarController(
+            StorageService storageService,
+            UserRepository userRepository,
+            AvatarReferenceCoordinator referenceCoordinator) {
         this.storageService = storageService;
         this.userRepository = userRepository;
+        this.referenceCoordinator = referenceCoordinator;
     }
 
     @PostMapping("/me/avatar")
@@ -63,6 +68,7 @@ public class AvatarController {
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
+        referenceCoordinator.lockForTransaction();
         String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
         StorageService.StoredFile stored = storageService.store(
                 "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
@@ -70,7 +76,7 @@ public class AvatarController {
         user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
         userRepository.save(user);
         if (!stored.storageKey().equals(oldAvatarKey)) {
-            StorageTransactionCleanup.deleteAfterCommit(storageService, oldAvatarKey);
+            referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
         }
         return new AvatarResponse(user.getAvatarUrl());
     }

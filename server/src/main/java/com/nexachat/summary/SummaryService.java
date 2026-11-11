@@ -82,12 +82,13 @@ public class SummaryService {
         SummaryCacheEntry entry;
         boolean cached;
         if (request.refresh()) {
-            entry = cacheRepository.replace(conversationId, window, contentHash, generated.generatedBy(),
+            entry = cacheRepository.replace(userId, conversationId, window, contentHash, generated.generatedBy(),
                     request.language(), generated);
             cached = false;
         } else {
             SummaryCacheRepository.SavedSummary saved = cacheRepository.saveIfAbsent(
-                    conversationId, window, contentHash, generated.generatedBy(), request.language(), generated);
+                    userId, conversationId, window, contentHash, generated.generatedBy(), request.language(),
+                    generated);
             entry = saved.entry();
             cached = !saved.inserted();
             if (cached && !replayAllowed(entry, window, optedOut)) {
@@ -96,7 +97,7 @@ public class SummaryService {
                 // request's own generation under the same cache key.
                 cacheRepository.delete(conversationId, entry.fromSeq(), entry.toSeq(),
                         entry.contentHash(), entry.cacheProvider(), entry.requestedLanguage());
-                entry = cacheRepository.replace(conversationId, window, contentHash,
+                entry = cacheRepository.replace(userId, conversationId, window, contentHash,
                         generated.generatedBy(), request.language(), generated);
                 cached = false;
             }

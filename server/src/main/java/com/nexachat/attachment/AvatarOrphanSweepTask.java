@@ -6,15 +6,12 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -53,19 +50,19 @@ public class AvatarOrphanSweepTask {
     private final StorageService storageService;
     private final AvatarSweepProperties properties;
     private final ScheduledAdvisoryLock advisoryLock;
-    private final JdbcTemplate jdbcTemplate;
+    private final AvatarReferenceCoordinator referenceCoordinator;
     private final MeterRegistry meterRegistry;
     private final AtomicBoolean running = new AtomicBoolean();
 
     public AvatarOrphanSweepTask(StorageService storageService,
                                  AvatarSweepProperties properties,
                                  ScheduledAdvisoryLock advisoryLock,
-                                 JdbcTemplate jdbcTemplate,
+                                 AvatarReferenceCoordinator referenceCoordinator,
                                  MeterRegistry meterRegistry) {
         this.storageService = storageService;
         this.properties = properties;
         this.advisoryLock = advisoryLock;
-        this.jdbcTemplate = jdbcTemplate;
+        this.referenceCoordinator = referenceCoordinator;
         this.meterRegistry = meterRegistry;
     }
 
@@ -102,7 +99,7 @@ public class AvatarOrphanSweepTask {
 
     private SweepResult execute(boolean dryRun) {
         Instant cutoff = Instant.now().minus(Duration.ofHours(properties.getMinAgeHours()));
-        Set<String> referenced = referencedAvatarKeys();
+        Set<String> referenced = referenceCoordinator.referencedAvatarKeys();
         List<StorageService.StoredFileInfo> candidates = new ArrayList<>();
         int keptReferenced = 0;
         int keptRecent = 0;
@@ -154,62 +151,9 @@ public class AvatarOrphanSweepTask {
         return result;
     }
 
-    /**
-     * Keys referenced by a user or group avatar URL. Both tables store the
-     * relative {@code /api/v1/files/} form, but legacy rows may carry an
-     * absolute origin, a query string, a fragment, or an encoded path; the
-     * URL is normalized before comparison.
-     */
-    private Set<String> referencedAvatarKeys() {
-        List<String> urls = jdbcTemplate.queryForList("""
-                SELECT avatar_url FROM users
-                WHERE avatar_url LIKE '%/api/v1/files/%'
-                UNION
-                SELECT avatar_url FROM conversations
-                WHERE avatar_url LIKE '%/api/v1/files/%'
-                """, String.class);
-        Set<String> keys = new HashSet<>();
-        for (String url : urls) {
-            String key = storageKeyFromUrl(url);
-            if (key != null) {
-                keys.add(key);
-            }
-        }
-        return keys;
-    }
-
+    /** Compatibility helper for tests of legacy and relative avatar URLs. */
     static String storageKeyFromUrl(String avatarUrl) {
-        if (avatarUrl == null) {
-            return null;
-        }
-        String value = avatarUrl.trim();
-        if (value.isEmpty()) {
-            return null;
-        }
-        String path = value;
-        try {
-            String parsedPath = URI.create(value).getPath();
-            if (parsedPath != null && !parsedPath.isEmpty()) {
-                path = parsedPath;
-            }
-        } catch (IllegalArgumentException malformed) {
-            // Legacy row that is not a valid URI: strip the suffix manually.
-            int fragment = value.indexOf('#');
-            if (fragment >= 0) {
-                value = value.substring(0, fragment);
-            }
-            int query = value.indexOf('?');
-            if (query >= 0) {
-                value = value.substring(0, query);
-            }
-            path = value;
-        }
-        int prefix = path.lastIndexOf(AvatarUrlPolicy.FILES_PATH);
-        if (prefix < 0) {
-            return null;
-        }
-        String key = path.substring(prefix + AvatarUrlPolicy.FILES_PATH.length());
-        return key.isBlank() ? null : key;
+        return AvatarUrlPolicy.storageKeyFromUrl(avatarUrl);
     }
 
     private void recordMetrics(SweepResult result) {

@@ -88,7 +88,7 @@ class SummaryServiceTest {
                 .thenReturn(new SummaryReadContext(window, true));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
-        when(cacheRepository.replace(eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
+        when(cacheRepository.replace(eq(userId), eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
                 eq("LLM"), eq(SummaryLanguage.EN), eq(generated))).thenReturn(entry);
 
         SummaryResponse response = service.summarize(conversationId, userId, request);
@@ -137,7 +137,7 @@ class SummaryServiceTest {
                 SummaryService.contentHash(window), "LLM", SummaryLanguage.EN))
                 .thenReturn(Optional.empty());
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
-        when(cacheRepository.saveIfAbsent(eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
                 eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated)))
                 .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
 
@@ -145,7 +145,7 @@ class SummaryServiceTest {
 
         assertThat(response.generatedBy()).isEqualTo("LOCAL");
         assertThat(response.fallbackReason()).isEqualTo("LLM_TIMEOUT");
-        verify(cacheRepository).saveIfAbsent(eq(conversationId), eq(window),
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window),
                 eq(SummaryService.contentHash(window)), eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated));
     }
 
