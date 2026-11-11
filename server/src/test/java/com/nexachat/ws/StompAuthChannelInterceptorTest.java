@@ -16,7 +16,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -25,6 +27,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
+import org.springframework.web.socket.messaging.SubProtocolWebSocketHandler;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -32,10 +35,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -392,6 +398,41 @@ class StompAuthChannelInterceptorTest {
         assertThat(interceptor.preSend(message, channel)).isNull();
         verify(messaging).convertAndSendToUser(userId.toString(), "/queue/errors",
                 new WsErrorResponse("NOT_MEMBER", null));
+    }
+
+    @Test
+    void queuedApplicationErrorCarriesActorAndIsDroppedAfterTokenRevocation() {
+        Instant issuedAt = Instant.now().minusSeconds(30).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        Instant expiresAt = Instant.now().plusSeconds(300);
+        when(userRepository.findAuthValidityById(userId)).thenReturn(
+                Optional.of(new UserAuthValidity(userId, null)),
+                Optional.of(new UserAuthValidity(userId, issuedAt)));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(false);
+        StompUserPrincipal principal = new StompUserPrincipal(userId, issuedAt, expiresAt);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/app/calls/" + conversationId + "/signal");
+        accessor.setUser(principal);
+        Message<?> rejected = message(accessor);
+
+        assertThat(interceptor.preSend(rejected, channel)).isNull();
+
+        WsErrorResponse error = new WsErrorResponse("NOT_MEMBER", null);
+        ArgumentCaptor<Map<String, Object>> headers = ArgumentCaptor.forClass(Map.class);
+        verify(messaging).convertAndSendToUser(eq(userId.toString()), eq("/queue/errors"), eq(error),
+                headers.capture());
+        Map<String, Object> errorHeaders = headers.getValue();
+        assertThat(errorHeaders).containsEntry("nexachat.internal.revocation.actor", userId.toString())
+                .containsEntry("nexachat.internal.revocation.issuedAt", issuedAt.toString())
+                .containsEntry("nexachat.internal.revocation.expiresAt", expiresAt.toString());
+        assertThat(errorHeaders).isInstanceOf(MessageHeaders.class);
+        assertThat(MessageHeaderAccessor.getAccessor((MessageHeaders) errorHeaders,
+                SimpMessageHeaderAccessor.class)).isNotNull();
+
+        Message<?> queuedError = MessageBuilder.createMessage(error, (MessageHeaders) errorHeaders);
+        queuedError = MessageBuilder.fromMessage(queuedError)
+                .setHeader(SimpMessageHeaderAccessor.SESSION_ID_HEADER, "revoked-session")
+                .build();
+        assertThat(interceptor.beforeHandle(queuedError, channel, mock(SubProtocolWebSocketHandler.class))).isNull();
     }
 
     @Test

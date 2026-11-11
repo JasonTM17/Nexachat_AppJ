@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.ws.StompRevocationFence;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,21 +20,25 @@ public class AccessTokenRevocationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
+    private final StompRevocationFence revocationFence;
 
     public AccessTokenRevocationService(UserRepository userRepository,
                                         TokenService tokenService,
                                         ApplicationEventPublisher eventPublisher,
                                         Clock clock,
-                                        RefreshReplayConfiguration.BoundaryHook boundaryHook) {
+                                        RefreshReplayConfiguration.BoundaryHook boundaryHook,
+                                        StompRevocationFence revocationFence) {
         this.userRepository = userRepository;
         this.tokenService = tokenService;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.boundaryHook = boundaryHook;
+        this.revocationFence = revocationFence;
     }
 
     @Transactional
     public void revoke(UUID userId) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = lockUser(userId, RefreshReplayConfiguration.Operation.ACCESS_REVOKE);
         Instant now = databaseTime();
         stampAccessTokenCutoff(user, now);
@@ -49,6 +54,7 @@ public class AccessTokenRevocationService {
     @Transactional
     public void revokeRefreshFamilyAndAccessTokens(UUID userId,
                                                    RefreshReplayConfiguration.Operation operation) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = lockUser(userId, operation);
         Instant now = databaseTime();
         tokenService.revokeAllForUserAt(userId, now, operation);

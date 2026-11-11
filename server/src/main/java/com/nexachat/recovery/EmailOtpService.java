@@ -50,9 +50,17 @@ public class EmailOtpService {
         }
         Instant now = clock.instant();
         requireCooldownElapsed(userId, OtpPurpose.VERIFY_EMAIL, now);
-        user.changeEmail(email);
-        userRepository.saveAndFlush(user);
         return issueLocked(user, OtpPurpose.VERIFY_EMAIL, email, now);
+    }
+
+    public void requireEmailVerificationCooldown(UUID userId) {
+        requireCooldownElapsed(userId, OtpPurpose.VERIFY_EMAIL, clock.instant());
+    }
+
+    public Optional<String> activeVerificationEmail(UUID userId) {
+        lockActiveUser(userId);
+        return otpRepository.findActiveForUser(userId, OtpPurpose.VERIFY_EMAIL)
+                .map(EmailOtpRecord::email);
     }
 
     @Transactional
@@ -72,25 +80,25 @@ public class EmailOtpService {
     @Transactional
     public String verifyEmail(UUID userId, String code) {
         User user = lockActiveUser(userId);
-        String email = user.getEmail();
-        if (email != null) {
-            otpRepository.lockVerifiedEmail(email);
-        }
-        if (email == null || user.getEmailVerifiedAt() != null
-                || userRepository.existsVerifiedEmailForOtherUser(email, userId)
-                || !consume(user, OtpPurpose.VERIFY_EMAIL, code)) {
-            if (email != null && user.getEmailVerifiedAt() == null
-                    && userRepository.existsVerifiedEmailForOtherUser(email, userId)) {
-                throw ApiException.of(ApiErrorCode.EMAIL_ALREADY_IN_USE, "Recovery email is already in use");
-            }
+        EmailOtpRecord candidate = otpRepository.findActiveForUser(userId, OtpPurpose.VERIFY_EMAIL).orElse(null);
+        if (candidate == null) {
+            codeHasher.dummyCompare(OtpPurpose.VERIFY_EMAIL, code);
             throw invalidCode();
         }
+        String email = candidate.email();
+        otpRepository.lockVerifiedEmail(email);
+        boolean emailAlreadyVerified = userRepository.existsVerifiedEmailForOtherUser(email, userId);
+        boolean codeValid = consumeCandidate(user, candidate, code);
+        if (emailAlreadyVerified || !codeValid) {
+            throw invalidCode();
+        }
+        user.changeEmail(email);
         user.verifyEmail(clock.instant());
         try {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
             if (isVerifiedEmailConflict(exception)) {
-                throw ApiException.of(ApiErrorCode.EMAIL_ALREADY_IN_USE, "Recovery email is already in use");
+                throw invalidCode();
             }
             throw exception;
         }
@@ -108,7 +116,7 @@ public class EmailOtpService {
     @Transactional
     public boolean consume(User user, OtpPurpose purpose, String code) {
         String email = switch (purpose) {
-            case VERIFY_EMAIL -> user.getEmailVerifiedAt() == null ? user.getEmail() : null;
+            case VERIFY_EMAIL -> null;
             case DELETE_ACCOUNT, RESET_PASSWORD -> user.hasVerifiedEmail() ? user.getEmail() : null;
         };
         if (email == null) {
@@ -120,12 +128,16 @@ public class EmailOtpService {
             codeHasher.dummyCompare(purpose, code);
             return false;
         }
+        return consumeCandidate(user, candidate, code);
+    }
+
+    private boolean consumeCandidate(User user, EmailOtpRecord candidate, String code) {
         Instant now = clock.instant();
         if (!candidate.expiresAt().isAfter(now) || candidate.attempts() >= 5) {
-            codeHasher.dummyCompare(purpose, code);
+            codeHasher.dummyCompare(candidate.purpose(), code);
             return false;
         }
-        if (!codeHasher.matches(candidate.codeHash(), user.getId(), purpose, code)) {
+        if (!codeHasher.matches(candidate.codeHash(), user.getId(), candidate.purpose(), code)) {
             attemptRecorder.recordWrongAttempt(candidate.id(), now);
             return false;
         }

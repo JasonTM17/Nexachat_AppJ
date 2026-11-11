@@ -18,21 +18,29 @@ import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.support.ExecutorChannelInterceptor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
+import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.messaging.SubProtocolWebSocketHandler;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Two-layer STOMP security on the client-inbound channel (plan §11.3.2 —
+ * STOMP security on client-inbound and client-outbound channels (plan §11.3.2 —
  * authN at CONNECT, authZ at SUBSCRIBE and SEND, never trusting the
  * client-supplied destination).
  *
@@ -54,15 +62,20 @@ import java.util.regex.Pattern;
  *       non-members without invoking business logic.</li>
  * </ul>
  *
- * <p>Denial = returning {@code null}: the frame is silently dropped (clients
- * observe a SUBSCRIBE that never completes, a SEND that never broadcasts).
+ * <p>Revocation is rechecked after executor dequeue, and the shared fair fence
+ * orders handler execution and socket writes against reset/deletion commits.
+ * Server-generated frames carry only internal actor metadata for that check.
+ * Denial = returning {@code null}: the frame is silently dropped.
  */
 @Component
-public class StompAuthChannelInterceptor implements ChannelInterceptor {
+public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(StompAuthChannelInterceptor.class);
 
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String REVOCATION_ACTOR_HEADER = "nexachat.internal.revocation.actor";
+    private static final String REVOCATION_ISSUED_AT_HEADER = "nexachat.internal.revocation.issuedAt";
+    private static final String REVOCATION_EXPIRES_AT_HEADER = "nexachat.internal.revocation.expiresAt";
     private static final String UUID_PATTERN =
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
@@ -85,11 +98,24 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     /** Authenticated sessions may subscribe only to the supported own queues. */
     private static final Pattern USER_QUEUE = Pattern.compile("^/user/queue/(inbox|errors|presence|calls)$");
 
+    private record RevocationActor(UUID userId, Instant issuedAt, Instant expiresAt) {
+    }
+
+    private record ExecutionFrame(StompRevocationFence.ReadLease lease,
+                                  StompRevocationFence.SessionWriteLease sessionWriteLease,
+                                  RevocationActor previousActor,
+                                  boolean actorChanged) {
+    }
+
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final ConversationMemberRepository memberRepository;
     private final RateLimitService rateLimitService;
     private final StompSessionRegistry sessionRegistry;
+    private final StompRevocationFence revocationFence;
+    private final ThreadLocal<RevocationActor> currentActor = new ThreadLocal<>();
+    private final ThreadLocal<Deque<ExecutionFrame>> executionFrames =
+            ThreadLocal.withInitial(ArrayDeque::new);
     private final SimpMessagingTemplate messaging;
     private final ObjectMapper objectMapper;
     private final long messagesPerWindow;
@@ -120,7 +146,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                                        long ackWindowSeconds) {
         this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
                 messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
-                acksPerWindow, ackWindowSeconds, null);
+                acksPerWindow, ackWindowSeconds, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -143,7 +169,8 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                                        long acksPerWindow,
                                        @Value("${nexachat.rate-limit.stomp.ack-window-seconds:10}")
                                        long ackWindowSeconds,
-                                       StompSessionRegistry sessionRegistry) {
+                                       StompSessionRegistry sessionRegistry,
+                                       StompRevocationFence revocationFence) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
@@ -157,6 +184,27 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         this.typingWindowSeconds = typingWindowSeconds;
         this.acksPerWindow = acksPerWindow;
         this.ackWindowSeconds = ackWindowSeconds;
+        this.revocationFence = revocationFence == null
+                ? new StompRevocationFence(userRepository) : revocationFence;
+    }
+
+    /** Compatibility constructor for unit call sites without the shared registry. */
+    public StompAuthChannelInterceptor(JwtService jwtService,
+                                       UserRepository userRepository,
+                                       ConversationMemberRepository memberRepository,
+                                       RateLimitService rateLimitService,
+                                       @Lazy SimpMessagingTemplate messaging,
+                                       ObjectMapper objectMapper,
+                                       long messagesPerWindow,
+                                       long messageWindowSeconds,
+                                       long typingPerWindow,
+                                       long typingWindowSeconds,
+                                       long acksPerWindow,
+                                       long ackWindowSeconds,
+                                       StompSessionRegistry sessionRegistry) {
+        this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
+                messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
+                acksPerWindow, ackWindowSeconds, sessionRegistry, null);
     }
 
     public StompAuthChannelInterceptor(JwtService jwtService,
@@ -176,6 +224,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
 
     @Override
     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+        Message<?> taggedMessage = tagCurrentActor(message);
+        if (taggedMessage != message) {
+            message = taggedMessage;
+        }
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
         if (accessor == null || accessor.getCommand() == null) {
             return message;
@@ -186,6 +238,160 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             case SEND -> onSend(accessor, message) ? message : null;
             default -> message;
         };
+    }
+
+    /**
+     * Runs after the inbound executor dequeues a frame and immediately before
+     * its handler. It closes the preSend-to-handler revocation gap. On the
+     * outbound executor, the same guard covers the actual WebSocket write.
+     */
+    @Override
+    @Nullable
+    public Message<?> beforeHandle(@NonNull Message<?> message,
+                                   @NonNull MessageChannel channel,
+                                   @NonNull MessageHandler handler) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        StompCommand command = accessor.getCommand();
+        StompRevocationFence.ReadLease lease = null;
+        StompRevocationFence.SessionWriteLease sessionWriteLease = null;
+        RevocationActor actorForHandler = null;
+        boolean frameRegistered = false;
+
+        try {
+            // The outbound channel's handler is the point that calls
+            // ConcurrentWebSocketSessionDecorator.sendMessage. Serialize every
+            // session-targeted frame there so an actor frame cannot be buffered
+            // and outlive its revocation read lease.
+            if (handler instanceof SubProtocolWebSocketHandler && accessor.getSessionId() != null) {
+                sessionWriteLease = revocationFence.acquireSessionWrite(accessor.getSessionId());
+            }
+
+            if (command == StompCommand.SEND || command == StompCommand.SUBSCRIBE) {
+                if (accessor.getUser() instanceof StompUserPrincipal principal
+                        && principal.issuedAt() != null) {
+                    lease = revocationFence.acquireRead(principal.userId());
+                    if (!isCurrentAndReleaseOnFailure(lease, principal.userId(), principal.issuedAt(),
+                            principal.expiresAt())) {
+                        closeRevokedSession(accessor.getSessionId());
+                        return null;
+                    }
+                    if (command == StompCommand.SEND) {
+                        actorForHandler = new RevocationActor(
+                                principal.userId(), principal.issuedAt(), principal.expiresAt());
+                    }
+                }
+            } else {
+                RevocationActor outboundActor = outboundActor(message);
+                if (outboundActor != null) {
+                    lease = revocationFence.acquireRead(outboundActor.userId());
+                    if (!isCurrentAndReleaseOnFailure(lease, outboundActor.userId(), outboundActor.issuedAt(),
+                            outboundActor.expiresAt())) {
+                        return null;
+                    }
+                }
+            }
+
+            RevocationActor previousActor = currentActor.get();
+            boolean actorChanged = actorForHandler != null;
+            if (actorChanged) {
+                currentActor.set(actorForHandler);
+            }
+            executionFrames.get().push(new ExecutionFrame(lease, sessionWriteLease, previousActor, actorChanged));
+            frameRegistered = true;
+            return message;
+        } finally {
+            if (!frameRegistered) {
+                if (lease != null) {
+                    lease.close();
+                }
+                if (sessionWriteLease != null) {
+                    sessionWriteLease.close();
+                }
+            }
+        }
+    }
+
+    @Override
+    public void afterMessageHandled(@NonNull Message<?> message,
+                                    @NonNull MessageChannel channel,
+                                    @NonNull MessageHandler handler,
+                                    @Nullable Exception ex) {
+        Deque<ExecutionFrame> frames = executionFrames.get();
+        if (frames.isEmpty()) {
+            executionFrames.remove();
+            return;
+        }
+        ExecutionFrame frame = frames.pop();
+        if (frame.actorChanged()) {
+            if (frame.previousActor() == null) {
+                currentActor.remove();
+            } else {
+                currentActor.set(frame.previousActor());
+            }
+        }
+        try {
+            if (frame.lease() != null) {
+                frame.lease().close();
+            }
+        } finally {
+            if (frame.sessionWriteLease() != null) {
+                frame.sessionWriteLease().close();
+            }
+        }
+        if (frames.isEmpty()) {
+            executionFrames.remove();
+        }
+    }
+
+    private Message<?> tagCurrentActor(Message<?> message) {
+        RevocationActor actor = currentActor.get();
+        if (actor == null) {
+            return message;
+        }
+        return MessageBuilder.fromMessage(message)
+                .setHeader(REVOCATION_ACTOR_HEADER, actor.userId().toString())
+                .setHeader(REVOCATION_ISSUED_AT_HEADER, actor.issuedAt().toString())
+                .setHeader(REVOCATION_EXPIRES_AT_HEADER, actor.expiresAt().toString())
+                .build();
+    }
+
+    @Nullable
+    private static RevocationActor outboundActor(Message<?> message) {
+        Object rawUserId = message.getHeaders().get(REVOCATION_ACTOR_HEADER);
+        Object rawIssuedAt = message.getHeaders().get(REVOCATION_ISSUED_AT_HEADER);
+        Object rawExpiresAt = message.getHeaders().get(REVOCATION_EXPIRES_AT_HEADER);
+        if (!(rawUserId instanceof String userId)
+                || !(rawIssuedAt instanceof String issuedAt)
+                || !(rawExpiresAt instanceof String expiresAt)) {
+            return null;
+        }
+        try {
+            return new RevocationActor(UUID.fromString(userId), Instant.parse(issuedAt), Instant.parse(expiresAt));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private void closeRevokedSession(@Nullable String sessionId) {
+        if (sessionRegistry != null) {
+            sessionRegistry.closeHandshake(sessionId);
+        }
+    }
+
+    private boolean isCurrentAndReleaseOnFailure(StompRevocationFence.ReadLease lease,
+                                                 UUID userId,
+                                                 Instant issuedAt,
+                                                 Instant expiresAt) {
+        try {
+            boolean current = revocationFence.isCurrent(userId, issuedAt, expiresAt);
+            if (!current) {
+                lease.close();
+            }
+            return current;
+        } catch (RuntimeException failure) {
+            lease.close();
+            throw failure;
+        }
     }
 
     // ------------------------------------------------------------ CONNECT authN
@@ -285,10 +491,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         if (!isCurrentSession(accessor)) {
             return false;
         }
-        UUID userId = sessionUser(accessor);
-        if (userId == null) {
+        StompUserPrincipal principal = sessionPrincipal(accessor);
+        if (principal == null) {
             return false;
         }
+        UUID userId = principal.userId();
         String destination = accessor.getDestination();
         if (destination == null) {
             return false;
@@ -302,15 +509,15 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 return false;
             }
             if ("messages".equals(app.group(2))) {
-                return consumeSendAllowance(userId, "messages", messagesPerWindow,
+                return consumeSendAllowance(principal, "messages", messagesPerWindow,
                         messageWindowSeconds, clientMessageId(message.getPayload()));
             }
             if ("typing".equals(app.group(2))) {
-                return consumeSendAllowance(userId, "typing", typingPerWindow,
+                return consumeSendAllowance(principal, "typing", typingPerWindow,
                         typingWindowSeconds, null);
             }
             if ("delivered".equals(app.group(2)) || "read".equals(app.group(2))) {
-                return consumeSendAllowance(userId, "acks", acksPerWindow,
+                return consumeSendAllowance(principal, "acks", acksPerWindow,
                         ackWindowSeconds, null);
             }
             return true;
@@ -323,7 +530,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 log.warn("STOMP ack SEND denied: caller is not a conversation member");
                 return false;
             }
-            return consumeSendAllowance(userId, "acks", acksPerWindow,
+            return consumeSendAllowance(principal, "acks", acksPerWindow,
                     ackWindowSeconds, null);
         }
         Matcher call = APP_CALL.matcher(destination);
@@ -331,8 +538,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             UUID conversationId = UUID.fromString(call.group(1));
             boolean member = memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
             if (!member) {
-                messaging.convertAndSendToUser(userId.toString(), "/queue/errors",
-                        new WsErrorResponse(ApiErrorCode.NOT_MEMBER.getCode(), null));
+                sendUserError(principal, new WsErrorResponse(ApiErrorCode.NOT_MEMBER.getCode(), null));
                 log.warn("STOMP call SEND denied: caller is not a conversation member");
             }
             return member;
@@ -342,8 +548,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         return false;
     }
 
-    private boolean consumeSendAllowance(UUID userId, String action, long capacity,
+    private boolean consumeSendAllowance(StompUserPrincipal principal, String action, long capacity,
                                          long windowSeconds, @Nullable UUID clientMessageId) {
+        UUID userId = principal.userId();
         RateLimitService.Consumption consumption = rateLimitService.tryConsume(
                 "stomp:" + action + ":" + userId,
                 capacity,
@@ -351,10 +558,25 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         if (consumption.allowed()) {
             return true;
         }
-        messaging.convertAndSendToUser(userId.toString(), "/queue/errors",
-                new WsErrorResponse(ApiErrorCode.RATE_LIMITED.getCode(), clientMessageId));
+        sendUserError(principal, new WsErrorResponse(ApiErrorCode.RATE_LIMITED.getCode(), clientMessageId));
         log.warn("STOMP {} SEND rate-limited", action);
         return false;
+    }
+
+    private void sendUserError(StompUserPrincipal principal, WsErrorResponse response) {
+        String userId = principal.userId().toString();
+        if (principal.issuedAt() == null || principal.expiresAt() == null) {
+            messaging.convertAndSendToUser(userId, "/queue/errors", response);
+            return;
+        }
+
+        SimpMessageHeaderAccessor headers = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
+        headers.setHeader(REVOCATION_ACTOR_HEADER, userId);
+        headers.setHeader(REVOCATION_ISSUED_AT_HEADER, principal.issuedAt().toString());
+        headers.setHeader(REVOCATION_EXPIRES_AT_HEADER, principal.expiresAt().toString());
+        headers.setLeaveMutable(true);
+        Map<String, Object> messageHeaders = headers.getMessageHeaders();
+        messaging.convertAndSendToUser(userId, "/queue/errors", response, messageHeaders);
     }
 
     @Nullable
@@ -363,6 +585,11 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             return principal.userId();
         }
         return null;
+    }
+
+    @Nullable
+    private static StompUserPrincipal sessionPrincipal(StompHeaderAccessor accessor) {
+        return accessor.getUser() instanceof StompUserPrincipal principal ? principal : null;
     }
 
     /** Re-checks token expiry and the authoritative cutoff on every client action. */

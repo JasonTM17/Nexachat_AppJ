@@ -11,6 +11,7 @@ import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
+import com.nexachat.ws.StompRevocationFence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.EntityManager;
@@ -60,6 +61,7 @@ public class AuthService {
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
+    private final StompRevocationFence revocationFence;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -78,7 +80,8 @@ public class AuthService {
                        AuthResponseFactory responseFactory,
                        RefreshReplayConfiguration.BoundaryHook boundaryHook,
                        ApplicationEventPublisher eventPublisher,
-                       ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
+                       ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
+                       StompRevocationFence revocationFence) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -90,6 +93,7 @@ public class AuthService {
         this.boundaryHook = boundaryHook;
         this.eventPublisher = eventPublisher;
         this.transactionManagerProvider = transactionManagerProvider;
+        this.revocationFence = revocationFence;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -214,6 +218,7 @@ public class AuthService {
 
     @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request) {
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (user.getDeletedAt() != null) {
@@ -244,6 +249,7 @@ public class AuthService {
     @Transactional
     public void resetPassword(UUID userId, String newPassword) {
         PasswordPolicy.requireRegisterable(newPassword);
+        revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (user.getDeletedAt() != null) {

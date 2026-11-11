@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 @Component
@@ -25,7 +26,21 @@ public class OtpMailDispatcher {
     }
 
     /** Defers phone lookup, OTP issuance, and delivery until after the public request returns. */
-    public void dispatchPublicRequest(OtpPurpose purpose, Supplier<Optional<OtpMail>> prepareRequest) {
+    public void dispatchPublicRequest(OtpPurpose purpose,
+                                      Supplier<Optional<OtpMail>> prepareRequest,
+                                      Consumer<OtpMail> onFailure) {
+        dispatch(purpose, prepareRequest, onFailure);
+    }
+
+    /** Defers email ownership checks and delivery so the response does not reveal address ownership. */
+    public void dispatchEmailVerification(Supplier<Optional<OtpMail>> prepareRequest,
+                                         Consumer<OtpMail> onFailure) {
+        dispatch(OtpPurpose.VERIFY_EMAIL, prepareRequest, onFailure);
+    }
+
+    private void dispatch(OtpPurpose purpose,
+                          Supplier<Optional<OtpMail>> prepareRequest,
+                          Consumer<OtpMail> onFailure) {
         try {
             taskExecutor.execute(() -> {
                 Optional<OtpMail> mail;
@@ -36,21 +51,31 @@ public class OtpMailDispatcher {
                     return;
                 }
                 if (!mailSender.isAvailable()) {
+                    mail.ifPresent(value -> failDelivery(value, onFailure));
                     log.warn("OTP mail delivery is unavailable");
                     return;
                 }
-                mail.ifPresent(this::deliver);
+                mail.ifPresent(value -> deliver(value, onFailure));
             });
         } catch (RejectedExecutionException exception) {
             log.warn("OTP request queue is unavailable");
         }
     }
 
-    private void deliver(OtpMail mail) {
+    private void deliver(OtpMail mail, Consumer<OtpMail> onFailure) {
         try {
             mailSender.sendOtp(mail.recipient(), mail.purpose(), mail.code());
         } catch (RuntimeException exception) {
+            failDelivery(mail, onFailure);
             log.warn("OTP mail delivery failed for purpose {}", mail.purpose());
+        }
+    }
+
+    private void failDelivery(OtpMail mail, Consumer<OtpMail> onFailure) {
+        try {
+            onFailure.accept(mail);
+        } catch (RuntimeException exception) {
+            log.warn("OTP state cleanup failed for purpose {}", mail.purpose());
         }
     }
 }

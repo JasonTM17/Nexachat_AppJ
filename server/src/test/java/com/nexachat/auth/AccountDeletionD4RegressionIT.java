@@ -6,6 +6,9 @@ import com.nexachat.attachment.AvatarController;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.testutil.TestWaits;
+import com.nexachat.recovery.EmailOtpService;
+import com.nexachat.recovery.OtpMail;
+import com.nexachat.recovery.OtpPurpose;
 import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.AccountDeletionCoordination;
 import com.nexachat.user.DeletedAccountPolicy;
@@ -85,6 +88,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Autowired
     private AccountDeletionService accountDeletionService;
+
+    @Autowired
+    private EmailOtpService emailOtpService;
 
     @Autowired
     private UserRepository userRepository;
@@ -233,6 +239,58 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
             executor.shutdownNow();
         }
 
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL
+                """, Integer.class, user.userId())).isZero();
+    }
+
+    @Test
+    void recoveryOtpDeletionWaitingLoginCannotIssueSession() throws Exception {
+        Registered user = register("+84905553120", "secret123");
+        jdbcTemplate.update("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?",
+                "delete-login-race@example.com", Timestamp.from(Instant.now()), user.userId());
+        OtpMail deletionCode = emailOtpService.issueForPublicRequest(user.userId(), OtpPurpose.DELETE_ACCOUNT)
+                .orElseThrow();
+
+        CountDownLatch deletionAtTombstone = new CountDownLatch(1);
+        pause.whenBeforeTombstone = () -> {
+            deletionAtTombstone.countDown();
+            try {
+                pause.awaitResume();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(exception);
+            }
+        };
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> deletion = executor.submit(() -> postJson(
+                    "/api/v1/account-deletion/confirm",
+                    Map.of("phone", "+84905553120", "code", deletionCode.code()))
+                    .andReturn().getResponse().getStatus());
+            assertThat(deletionAtTombstone.await(30, TimeUnit.SECONDS)).isTrue();
+
+            Future<org.springframework.test.web.servlet.MvcResult> login = executor.submit(() -> postJson(
+                    "/api/v1/auth/login", Map.of("phone", "+84905553120", "password", "secret123"))
+                    .andReturn());
+            TestWaits.until("login to wait on the account row held by recovery deletion",
+                    () -> userLockWaiterCount() > 0);
+
+            pause.resume();
+            assertThat(deletion.get(60, TimeUnit.SECONDS)).isEqualTo(204);
+            var loginResult = login.get(60, TimeUnit.SECONDS);
+            assertThat(loginResult.getResponse().getStatus()).isEqualTo(401);
+            assertThat(objectMapper.readTree(loginResult.getResponse().getContentAsString())
+                    .path("error").path("code").asText()).isEqualTo("INVALID_CREDENTIALS");
+        } finally {
+            pause.resume();
+            executor.shutdownNow();
+        }
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT deleted_at IS NOT NULL AND phone IS NULL FROM users WHERE id = ?",
+                Boolean.class, user.userId())).isTrue();
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL
                 """, Integer.class, user.userId())).isZero();

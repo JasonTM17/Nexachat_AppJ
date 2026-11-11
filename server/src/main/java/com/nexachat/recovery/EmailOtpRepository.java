@@ -55,6 +55,13 @@ class EmailOtpRepository {
                 (rs, rowNum) -> map(rs), userId, purpose.name(), email).stream().findFirst();
     }
 
+    Optional<EmailOtpRecord> findActiveForUser(UUID userId, OtpPurpose purpose) {
+        return jdbcTemplate.query("SELECT " + COLUMNS + " FROM email_otps"
+                        + " WHERE user_id = ? AND purpose = ? AND consumed_at IS NULL"
+                        + " ORDER BY created_at DESC LIMIT 1",
+                (rs, rowNum) -> map(rs), userId, purpose.name()).stream().findFirst();
+    }
+
     boolean consume(UUID otpId, Instant now) {
         return jdbcTemplate.update("UPDATE email_otps SET consumed_at = ?"
                         + " WHERE id = ? AND consumed_at IS NULL AND expires_at > ? AND attempts < 5",

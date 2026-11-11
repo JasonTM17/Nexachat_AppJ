@@ -60,6 +60,37 @@ class StompSessionRegistryTest {
     }
 
     @Test
+    void revocationAtIssuedAtCutoffBeforeSessionConnectedDoesNotBindSocket() throws Exception {
+        UserRepository users = mock(UserRepository.class);
+        UUID userId = UUID.randomUUID();
+        String sessionId = "same-second-ws-session";
+        Instant cutoff = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        when(users.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, cutoff)));
+        StompSessionRegistry registry = new StompSessionRegistry(users);
+
+        WebSocketSession socket = mock(WebSocketSession.class);
+        when(socket.getId()).thenReturn(sessionId);
+        when(socket.isOpen()).thenReturn(true);
+        WebSocketHandlerDecorator handler = (WebSocketHandlerDecorator)
+                registry.decorate(mock(WebSocketHandler.class));
+        handler.afterConnectionEstablished(socket);
+
+        registry.onAccessTokensRevoked(new AccessTokensRevokedEvent(userId));
+        StompUserPrincipal principal = new StompUserPrincipal(
+                userId, cutoff, cutoff.plusSeconds(300));
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECTED);
+        accessor.setSessionId(sessionId);
+        accessor.setUser(principal);
+        Message<byte[]> connectedMessage = MessageBuilder.createMessage(
+                new byte[0], accessor.getMessageHeaders());
+        registry.onSessionConnected(new SessionConnectedEvent(this, connectedMessage, principal));
+
+        verify(socket).close(CloseStatus.POLICY_VIOLATION);
+        assertThat(registry.isAuthenticatedSession(sessionId)).isFalse();
+    }
+
+    @Test
     void inboundFrameSizeIsCapped() {
         StompSessionRegistry registry = new StompSessionRegistry(mock(UserRepository.class));
         ReadableRegistration registration = new ReadableRegistration();

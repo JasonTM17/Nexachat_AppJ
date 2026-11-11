@@ -166,7 +166,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         return sessions == null || sessions.size() < MAX_SESSIONS_PER_USER;
     }
 
-    /** Closes a socket whose STOMP CONNECT was rejected. */
+    /** Closes a socket whose handshake or executor-time authentication was rejected. */
     public void closeHandshake(String sessionId) {
         if (sessionId == null) {
             return;
@@ -208,7 +208,7 @@ public class StompSessionRegistry implements WebSocketHandlerDecoratorFactory, W
         return userRepository.findAuthValidityById(principal.userId())
                 .map(validity -> {
                     Instant cutoff = validity.tokensValidAfter();
-                    return cutoff != null && principal.issuedAt().isBefore(cutoff);
+                    return cutoff != null && !principal.issuedAt().isAfter(cutoff);
                 })
                 .orElse(true);
     }
