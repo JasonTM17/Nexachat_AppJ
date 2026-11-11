@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -16,6 +18,9 @@ import software.amazon.awssdk.services.s3.S3Client;
 @EnableConfigurationProperties(S3StorageProperties.class)
 public class S3StorageConfiguration {
 
+    /** Bounded retries: an object-store stall must not hold a request thread indefinitely. */
+    private static final int MAX_RETRIES = 2;
+
     @Bean(destroyMethod = "close")
     S3Client s3StorageClient(S3StorageProperties properties) {
         return S3Client.builder()
@@ -24,7 +29,14 @@ public class S3StorageConfiguration {
                 .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(
                         properties.accessKeyId(), properties.secretAccessKey())))
                 .forcePathStyle(true)
-                .httpClientBuilder(UrlConnectionHttpClient.builder())
+                .httpClientBuilder(UrlConnectionHttpClient.builder()
+                        .connectionTimeout(properties.connectionTimeout())
+                        .socketTimeout(properties.socketTimeout()))
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .apiCallTimeout(properties.apiCallTimeout())
+                        .apiCallAttemptTimeout(properties.apiCallAttemptTimeout())
+                        .retryPolicy(RetryPolicy.builder().numRetries(MAX_RETRIES).build())
+                        .build())
                 .build();
     }
 }

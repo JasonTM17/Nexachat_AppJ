@@ -56,6 +56,13 @@ import java.util.UUID;
  * a server to ignore the rest). A missing range returns {@code 200} with
  * {@code Accept-Ranges: bytes}; an unsatisfiable or malformed range returns
  * {@code 416} with {@code Content-Range: bytes &#42;/size}.</p>
+ *
+ * <p><b>Bounded upstream work:</b> the storage service is asked only for the
+ * windows this class needs — a bounded leading sniff, an optional bounded
+ * trailing sniff, and the exact response slice. A suffix or short range
+ * request is therefore one small backend range read instead of a full-object
+ * traversal. Every handle opened here is closed on the error paths and by the
+ * resource when the response completes or the client disconnects.</p>
  */
 @RestController
 public class FileController {
@@ -83,71 +90,88 @@ public class FileController {
         // Member-check fires only for keys bound to a message attachment row.
         attachmentService.assertStorageKeyReadable(storageKey, principal.userId());
 
+        String rangeHeader = request.getHeader(HttpHeaders.RANGE);
+        if (rangeHeader != null && !rangeHeader.isBlank()) {
+            return serveRange(storageKey, rangeHeader);
+        }
+        return serveWhole(storageKey);
+    }
+
+    /** Streams the whole object through one backend read. */
+    private ResponseEntity<?> serveWhole(String storageKey) {
         StorageService.StreamHandle handle = storageService.open(storageKey);
         final byte[] prefix;
         final byte[] suffix;
         try {
             prefix = handle.content().readNBytes(SNIFF_PREFIX_LENGTH);
-            suffix = MagicBytes.isIsoBmffUndetermined(prefix)
-                    ? readSuffix(storageService, storageKey, handle.sizeBytes(), prefix.length)
-                    : null;
+            suffix = sniffSuffix(storageKey, handle.sizeBytes(), prefix);
         } catch (IOException ex) {
             closeQuietly(handle);
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+        } catch (RuntimeException ex) {
+            closeQuietly(handle);
+            throw ex;
         }
-        String contentType = MagicBytes.sniff(prefix, suffix);
-        if (contentType == null) {
-            contentType = MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        }
+        String contentType = contentType(prefix, suffix);
         InputStream bodyStream = new SequenceInputStream(
                 new ByteArrayInputStream(prefix), handle.content());
         long size = handle.sizeBytes();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .header("X-Content-Type-Options", "nosniff")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
+                .contentLength(size)
+                .body(new SniffedResource(bodyStream, size));
+    }
 
-        long[] range = null;
-        String rangeHeader = request.getHeader(HttpHeaders.RANGE);
-        if (rangeHeader != null && !rangeHeader.isBlank()) {
-            try {
-                range = parseRange(rangeHeader, size);
-            } catch (IllegalArgumentException ex) {
-                closeQuietly(handle);
-                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                        .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
-                        .header(HttpHeaders.CONTENT_RANGE, "bytes */" + size)
-                        .build();
-            }
-        }
-
-        if (range == null) {
-            Resource resource = new SniffedResource(bodyStream, size);
-            return ResponseEntity.ok()
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .header("X-Content-Type-Options", "nosniff")
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                    .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
-                    .contentLength(size)
-                    .body(resource);
-        }
-        long start = range[0];
-        long count = range[1] - start + 1;
-        // The resource itself carries exactly the requested bytes, so the
-        // converter writes the range without buffering the file.
-        final Resource resource;
+    /**
+     * Serves one byte range. The size and the sniff window come from a single
+     * bounded leading read, and the body is one exact backend range read, so
+     * the skipped bytes never cross the network.
+     */
+    private ResponseEntity<?> serveRange(String storageKey, String rangeHeader) {
+        StorageService.PrefixRead prefix = storageService.readPrefix(storageKey, SNIFF_PREFIX_LENGTH);
+        long size = prefix.sizeBytes();
+        final long[] range;
         try {
-            resource = new SniffedResource(
-                    new BoundedInputStream(bodyStream, start, count), count);
-        } catch (IOException ex) {
-            closeQuietly(handle);
-            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to read stored file");
+            range = parseRange(rangeHeader, size);
+        } catch (IllegalArgumentException ex) {
+            // Nothing beyond the bounded sniff was read, and no body handle
+            // was opened: respond 416 without touching the rest of the file.
+            return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                    .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
+                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + size)
+                    .build();
         }
+        byte[] suffix = sniffSuffix(storageKey, size, prefix.bytes());
+        String contentType = contentType(prefix.bytes(), suffix);
+        long start = range[0];
+        long end = range[1];
+        long count = end - start + 1;
+        StorageService.StreamHandle handle = storageService.openRange(storageKey, start, count);
         return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
                 .contentType(MediaType.parseMediaType(contentType))
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
-                .header(HttpHeaders.CONTENT_RANGE,
-                        "bytes " + start + "-" + range[1] + "/" + size)
+                .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + size)
                 .contentLength(count)
-                .body(resource);
+                // The resource carries exactly the requested bytes, so the
+                // converter writes the slice without buffering the file.
+                .body(new SniffedResource(handle.content(), count));
+    }
+
+    private byte[] sniffSuffix(String storageKey, long size, byte[] prefix) {
+        if (!MagicBytes.isIsoBmffUndetermined(prefix) || size <= prefix.length) {
+            return null;
+        }
+        return storageService.readSuffix(storageKey, size, SNIFF_SUFFIX_LENGTH);
+    }
+
+    private static String contentType(byte[] prefix, byte[] suffix) {
+        String contentType = MagicBytes.sniff(prefix, suffix);
+        return contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType;
     }
 
     /**
@@ -229,26 +253,6 @@ public class FileController {
         }
     }
 
-    /**
-     * Reads at most {@value #SNIFF_SUFFIX_LENGTH} trailing bytes of the stored
-     * file through a separate handle, so the serving handle stays positioned
-     * right after the prefix and can still stream the whole body. Returns
-     * {@code null} when the file fits in the prefix already.
-     */
-    private static byte[] readSuffix(StorageService storageService, String storageKey,
-                                     long size, int prefixLength) throws IOException {
-        long remaining = size - prefixLength;
-        if (remaining <= 0) {
-            return null;
-        }
-        int suffixLength = (int) Math.min(remaining, SNIFF_SUFFIX_LENGTH);
-        try (StorageService.StreamHandle suffixHandle = storageService.open(storageKey)) {
-            // The suffix is the last suffixLength bytes of the file.
-            suffixHandle.content().skipNBytes(size - suffixLength);
-            return suffixHandle.content().readNBytes(suffixLength);
-        }
-    }
-
     private static String extractKey(HttpServletRequest request) {
         String path = null;
         Object mapped = request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
@@ -270,57 +274,6 @@ public class FileController {
             throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
         }
         return key;
-    }
-
-    /**
-     * Skips {@code skip} bytes and then yields at most {@code limit} bytes, so
-     * one stored stream can back both the full-file and the range responses.
-     */
-    private static final class BoundedInputStream extends java.io.FilterInputStream {
-
-        private long remaining;
-
-        BoundedInputStream(InputStream in, long skip, long limit) throws IOException {
-            super(in);
-            in.skipNBytes(skip);
-            this.remaining = limit;
-        }
-
-        @Override
-        public int read() throws IOException {
-            if (remaining <= 0) {
-                return -1;
-            }
-            int read = super.read();
-            if (read >= 0) {
-                remaining--;
-            }
-            return read;
-        }
-
-        @Override
-        public int read(byte[] buffer, int offset, int length) throws IOException {
-            if (remaining <= 0) {
-                return -1;
-            }
-            int read = super.read(buffer, offset, (int) Math.min(length, remaining));
-            if (read > 0) {
-                remaining -= read;
-            }
-            return read;
-        }
-
-        @Override
-        public int available() throws IOException {
-            return (int) Math.min(super.available(), remaining);
-        }
-
-        @Override
-        public long skip(long n) throws IOException {
-            long skipped = super.skip(Math.min(n, remaining));
-            remaining -= skipped;
-            return skipped;
-        }
     }
 
     /**

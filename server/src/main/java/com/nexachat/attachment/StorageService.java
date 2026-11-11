@@ -61,6 +61,75 @@ public interface StorageService {
     StreamHandle open(String storageKey);
 
     /**
+     * Reads at most {@code maxBytes} leading bytes of the stored object and
+     * reports its exact total size.
+     *
+     * <p>Remote backends must translate this into one bounded range request
+     * instead of a full-object read, so a large file is never traversed to
+     * serve a short response or a {@code 416}. The returned array is closed
+     * by the implementation before it returns.</p>
+     *
+     * <p>Implementations must apply the same traversal guard as {@link #read}
+     * and accept a zero-byte object (empty prefix, size zero).</p>
+     *
+     * @param storageKey key returned by {@link #store}
+     * @param maxBytes   maximum number of leading bytes to return; must be positive
+     * @return the prefix bytes actually available (never more than {@code maxBytes})
+     *         and the exact object size
+     * @throws com.nexachat.common.error.ApiException {@code FILE_NOT_FOUND}
+     *                                                when the key resolves to
+     *                                                no stored file
+     */
+    PrefixRead readPrefix(String storageKey, int maxBytes);
+
+    /**
+     * Reads at most {@code maxBytes} trailing bytes of a stored object whose
+     * exact size the caller already observed.
+     *
+     * <p>Remote backends must translate this into one bounded range request
+     * positioned near the end of the object; the skipped bytes must not cross
+     * the network.</p>
+     *
+     * <p>Implementations must apply the same traversal guard as {@link #read}
+     * and must return an empty array for an empty object.</p>
+     *
+     * @param storageKey key returned by {@link #store}
+     * @param sizeBytes  exact object size previously reported by this service
+     * @param maxBytes   maximum number of trailing bytes to return; must be positive
+     * @return the trailing bytes actually available (never more than {@code maxBytes})
+     * @throws com.nexachat.common.error.ApiException {@code FILE_NOT_FOUND}
+     *                                                when the key resolves to
+     *                                                no stored file
+     */
+    byte[] readSuffix(String storageKey, long sizeBytes, int maxBytes);
+
+    /**
+     * Opens a stream over exactly {@code length} bytes starting at
+     * {@code start}.
+     *
+     * <p>Remote backends must issue one bounded range request for the slice,
+     * so serving the last kilobyte of a large object does not transfer the
+     * preceding bytes. The caller owns the handle and must close it; closing
+     * the stream releases the underlying resource, including when only part
+     * of the slice was consumed.</p>
+     *
+     * <p>Implementations must apply the same traversal guard as {@link #read}
+     * and must reject a slice outside the object with {@code INTERNAL_ERROR}
+     * (the caller derives the slice from a reported size, so an out-of-range
+     * request means the object changed unexpectedly).</p>
+     *
+     * @param storageKey key returned by {@link #store}
+     * @param start      zero-based offset of the first byte
+     * @param length     exact number of bytes to expose; must be positive
+     * @return the open stream limited to exactly {@code length} bytes plus the
+     *         exact total object size
+     * @throws com.nexachat.common.error.ApiException {@code FILE_NOT_FOUND}
+     *                                                when the key resolves to
+     *                                                no stored file
+     */
+    StreamHandle openRange(String storageKey, long start, long length);
+
+    /**
      * Checks whether a safe stored object exists in the configured backend.
      *
      * <p>Implementations must apply the same key-safety guards as {@link #read};
@@ -100,12 +169,30 @@ public interface StorageService {
 
     /**
      * An open stored file: the stream positioned at offset zero plus its size.
+     *
+     * <p>For {@link #openRange} the stream is limited to exactly the requested
+     * slice while {@code sizeBytes} remains the total object size, so callers
+     * can build a {@code Content-Range} without another lookup.</p>
      */
     record StreamHandle(InputStream content, long sizeBytes) implements AutoCloseable {
 
         @Override
         public void close() throws IOException {
             content.close();
+        }
+    }
+
+    /**
+     * A bounded leading read: the bytes available at the start of the object
+     * and its exact total size.
+     *
+     * @param bytes     leading bytes, at most the requested maximum
+     * @param sizeBytes exact object size in bytes
+     */
+    record PrefixRead(byte[] bytes, long sizeBytes) {
+
+        public PrefixRead {
+            bytes = bytes == null ? new byte[0] : bytes;
         }
     }
 

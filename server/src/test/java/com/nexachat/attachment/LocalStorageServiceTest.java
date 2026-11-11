@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -348,6 +349,145 @@ class LocalStorageServiceTest {
                 () -> newService().open("attachments/never-written.png"));
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
         assertThat(ex.getHttpStatus()).isEqualTo(404);
+    }
+
+    // ------------------------------------------------- bounded range reads
+
+    @Test
+    void readPrefix_returnsAtMostTheRequestedWindowAndTheExactSize() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        StorageService.PrefixRead prefix = newService().readPrefix(stored.storageKey(), 8);
+
+        assertThat(prefix.sizeBytes()).isEqualTo(png.length);
+        assertThat(prefix.bytes()).containsExactly(Arrays.copyOf(png, 8));
+    }
+
+    @Test
+    void readPrefix_windowLargerThanTheFileReturnsTheWholeFile() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        StorageService.PrefixRead prefix = newService().readPrefix(stored.storageKey(), 4096);
+
+        assertThat(prefix.sizeBytes()).isEqualTo(png.length);
+        assertThat(prefix.bytes()).containsExactly(png);
+    }
+
+    @Test
+    void readSuffix_returnsTheLastBytesWithoutReadingThePrefixIntoTheResult() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        byte[] suffix = newService().readSuffix(stored.storageKey(), png.length, 6);
+
+        assertThat(suffix).containsExactly(Arrays.copyOfRange(png, png.length - 6, png.length));
+    }
+
+    @Test
+    void readSuffix_largerThanTheFileReturnsTheWholeFile() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        byte[] suffix = newService().readSuffix(stored.storageKey(), png.length, 4096);
+
+        assertThat(suffix).containsExactly(png);
+    }
+
+    @Test
+    void readSuffix_emptyFileReturnsNoBytes() throws IOException {
+        String key = "attachments/empty.png";
+        Path file = tempDir.resolve(key);
+        Files.createDirectories(file.getParent());
+        Files.write(file, new byte[0]);
+
+        assertThat(newService().readSuffix(key, 0, 64)).isEmpty();
+    }
+
+    @Test
+    void readSuffix_sizeMismatchFailsClosed() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> newService().readSuffix(stored.storageKey(), png.length + 1, 4));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INTERNAL_ERROR);
+    }
+
+    @Test
+    void openRange_returnsExactlyTheRequestedSliceAtTheOffset() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        try (StorageService.StreamHandle handle =
+                     newService().openRange(stored.storageKey(), 4, 6)) {
+            assertThat(handle.sizeBytes()).isEqualTo(png.length);
+            assertThat(handle.content().readAllBytes())
+                    .containsExactly(Arrays.copyOfRange(png, 4, 10));
+        }
+    }
+
+    @Test
+    void openRange_streamStopsAtTheRequestedLengthEvenOnLargerReads() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        try (StorageService.StreamHandle handle =
+                     newService().openRange(stored.storageKey(), 2, 3)) {
+            byte[] buffer = new byte[64];
+            assertThat(handle.content().read(buffer)).isEqualTo(3);
+            assertThat(handle.content().read()).isEqualTo(-1);
+            assertThat(handle.content().read(buffer)).isEqualTo(-1);
+        }
+    }
+
+    @Test
+    void openRange_rejectsSlicesOutsideTheFile() throws IOException {
+        byte[] png = hex("89504E470D0A1A0A0000000D49484452");
+        StorageService.StoredFile stored =
+                newService().store("attachments", "p.png", "image/png", png);
+
+        for (long[] invalid : new long[][] {{-1, 1}, {0, 0}, {0, -1}}) {
+            assertThat(catchThrowableOfType(IllegalArgumentException.class,
+                    () -> newService().openRange(stored.storageKey(), invalid[0], invalid[1])))
+                    .as("slice %s/%s", invalid[0], invalid[1])
+                    .isNotNull();
+        }
+        for (long[] outside : new long[][] {{png.length, 1}, {png.length - 1, 2}}) {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> newService().openRange(stored.storageKey(), outside[0], outside[1]));
+            assertThat(ex.getCode())
+                    .as("slice %s/%s", outside[0], outside[1])
+                    .isEqualTo(ApiErrorCode.INTERNAL_ERROR);
+        }
+    }
+
+    @Test
+    void boundedReads_rejectTraversalAndMissingFilesBeforeTouchingTheFilesystem() {
+        for (String hostile : new String[] {"../outside.png", "a\\b.png", "  "}) {
+            ApiException prefix = catchThrowableOfType(ApiException.class,
+                    () -> newService().readPrefix(hostile, 8));
+            assertThat(prefix.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+            ApiException suffix = catchThrowableOfType(ApiException.class,
+                    () -> newService().readSuffix(hostile, 8, 8));
+            assertThat(suffix.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+            ApiException range = catchThrowableOfType(ApiException.class,
+                    () -> newService().openRange(hostile, 0, 1));
+            assertThat(range.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
+        }
+
+        ApiException missing = catchThrowableOfType(ApiException.class,
+                () -> newService().readPrefix("attachments/never-written.png", 8));
+        assertThat(missing.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
     }
 
     private LocalStorageService newService() {
