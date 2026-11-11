@@ -89,6 +89,20 @@ WIRE_MODELS = (
     "com.nexachat.feature.reminder.ReminderDto",
     "com.nexachat.feature.reminder.ReminderRequest",
 )
+# Firebase RTDB ephemeral state (presence v2, typing) and the optional call
+# status adapter exchange these Moshi beans with the REST/STOMP bridge. Moshi
+# binds fields by their unannotated Java names, so R8 must keep every field and
+# the no-arg constructor; the package keep rule does that today and these
+# entries make a future narrowing of that rule fail loudly.
+FIREBASE_WIRE_MODELS = (
+    "com.nexachat.core.network.dto.FirebaseBridgeResponse",
+    "com.nexachat.core.network.dto.FirebaseLeaseRequest",
+    "com.nexachat.core.network.dto.FirebaseLeaseResponse",
+    "com.nexachat.core.network.dto.PeerPresenceDto",
+    "com.nexachat.core.network.stomp.dto.PresenceEventDto",
+    "com.nexachat.core.network.stomp.dto.TypingSignalDto",
+)
+CALL_STATUS_ADAPTER = "com.nexachat.call.ui.FirebaseCallStatusDisplayAdapter"
 
 
 def fail(message: str) -> int:
@@ -140,7 +154,7 @@ def mapping_members(text: str) -> tuple[dict[str, str], dict[str, list[tuple[str
 def removed_wire_members(usage_text: str) -> list[str]:
     removed: list[str] = []
     current: str | None = None
-    watched = set(WIRE_MODELS)
+    watched = set(WIRE_MODELS) | set(FIREBASE_WIRE_MODELS)
     for line in usage_text.splitlines():
         if line and not line.startswith(" "):
             current = line.rstrip(":")
@@ -188,6 +202,14 @@ def google_web_client_id() -> str | None:
     text = RELEASE_BUILD_CONFIG.read_text(encoding="utf-8")
     match = re.search(r'GOOGLE_WEB_CLIENT_ID\s*=\s*"([^"]*)"', text)
     return match.group(1) if match else None
+
+
+def release_flag(name: str) -> bool | None:
+    if not RELEASE_BUILD_CONFIG.is_file():
+        return None
+    text = RELEASE_BUILD_CONFIG.read_text(encoding="utf-8")
+    match = re.search(rf"\b{name}\s*=\s*(true|false)\s*;", text)
+    return None if match is None else match.group(1) == "true"
 
 
 def release_apk_dex_has_google_id_type() -> bool | None:
@@ -267,6 +289,8 @@ def main() -> int:
     expected.update(runtime_bridges)
     expected.update(WIRE_MODELS)
     group_counts["feature wire models"] = len(WIRE_MODELS)
+    expected.update(FIREBASE_WIRE_MODELS)
+    group_counts["Firebase/presence/typing wire models"] = len(FIREBASE_WIRE_MODELS)
 
     missing = sorted(name for name in expected if name not in mapped)
     renamed = sorted((name, mapped[name]) for name in expected if name in mapped and mapped[name] != name)
@@ -341,6 +365,22 @@ def main() -> int:
                 "Google ID token type constant"
             )
         print("  Google ID token path: type constant present in the release APK")
+
+    call_status = release_flag("FIREBASE_CALL_STATUS_ENABLED")
+    if call_status is None:
+        print("  Firebase call-status adapter: NOT_CHECKED (release BuildConfig is missing)")
+    elif not call_status:
+        print("  Firebase call-status adapter: flag off; R8 removes the unreferenced adapter")
+    elif CALL_STATUS_ADAPTER not in mapped:
+        print(
+            "WARN: FIREBASE_CALL_STATUS_ENABLED=true but "
+            f"{CALL_STATUS_ADAPTER} is absent from mapping.txt; the adapter has no "
+            "production reference, so the flag cannot enable call-status display. "
+            "Integrate the adapter or keep the flag off.",
+            file=sys.stderr,
+        )
+    else:
+        print("  Firebase call-status adapter: present in mapping.txt with the flag on")
 
     print(f"PASS: {len(expected)} release classes retain original names in mapping.txt")
     for label, count in group_counts.items():
