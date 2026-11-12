@@ -78,4 +78,8 @@
     <color name="bubble_mine">@color/brand_indigo_container</color>
     <color name="bubble_other">@color/surface_container_high_light</color>
     <color name="tick_read">#FF34D399</color>
+
+    <color name="nexa_logo_mark">#FFDDA7CC</color>
+    <color name="nexa_logo_on_brand">#FFFFFCFF</color>
+    <color name="nexa_logo_plate">@color/ic_launcher_background</color>
 </resources>

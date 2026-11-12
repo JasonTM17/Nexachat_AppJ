@@ -1,27 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    NexaChat In-App Brand Logo Mark (36dp x 36dp footprint).
-    Matches the 36dp size used on the Login and Splash screens inside the 64dp brand tile.
--->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="36dp"
-    android:height="36dp"
-    android:viewportWidth="36"
-    android:viewportHeight="36">
-    <!-- Left stem with conversation tail -->
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 6.45,8.38 C 6.45,6.72 7.55,5.35 9.20,5.35 C 10.85,5.35 11.95,6.72 11.95,8.38 L 11.95,20.20 C 11.95,21.85 11.12,23.23 9.75,24.32 C 8.38,25.43 7.00,26.80 5.07,28.18 C 4.52,28.56 3.97,28.01 4.25,27.35 C 4.80,25.43 5.90,23.77 6.17,21.85 C 6.45,20.75 6.45,19.93 6.45,18.55 Z" />
-    <!-- Right stem -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 24.05,8.38 C 24.05,6.72 25.15,5.35 26.80,5.35 C 28.45,5.35 29.55,6.72 29.55,8.38 L 29.55,24.88 C 29.55,26.52 28.45,27.90 26.80,27.90 C 25.15,27.90 24.05,26.52 24.05,24.88 Z" />
-    <!-- Diagonal nexus ribbon -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M 7.55,5.90 C 8.65,5.35 10.02,5.90 10.85,7.00 L 27.90,25.70 C 28.73,26.80 28.45,28.18 27.35,28.73 C 26.25,29.27 24.88,28.73 24.05,27.62 L 7.00,8.92 C 6.17,7.82 6.45,6.45 7.55,5.90 Z" />
-    <!-- Central AI Spark (Electric Sky #38BDF8) -->
-    <path
-        android:fillColor="#38BDF8"
-        android:pathData="M 18.00,12.77 Q 18.00,16.90 13.88,16.90 Q 18.00,16.90 18.00,21.02 Q 18.00,16.90 22.12,16.90 Q 18.00,16.90 18.00,12.77 Z" />
+        android:fillColor="@color/nexa_logo_mark"
+        android:pathData="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z" />
 </vector>

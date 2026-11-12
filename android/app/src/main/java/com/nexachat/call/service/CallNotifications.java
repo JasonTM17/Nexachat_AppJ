@@ -82,7 +82,7 @@ public final class CallNotifications {
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.incoming(
                 peerName, appContext.getString(R.string.call_notification_incoming));
         NotificationCompat.Builder builder = new NotificationCompat.Builder(appContext, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.sym_action_call)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(copy.getPrivateTitle())
                 .setContentText(copy.getPrivateText())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -136,7 +136,7 @@ public final class CallNotifications {
                 serviceIntent(appContext, CallNotificationActionRouter.ACTION_HANG_UP, callId),
                 pendingIntentFlags());
         return new NotificationCompat.Builder(appContext, ONGOING_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.sym_action_call)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(copy.getPrivateTitle())
                 .setContentText(copy.getPrivateText())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -267,7 +267,7 @@ public final class CallNotifications {
             String channelId,
             CallNotificationPrivacyPolicy.Content copy) {
         return new NotificationCompat.Builder(context, channelId)
-                .setSmallIcon(android.R.drawable.sym_action_call)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(copy.getPublicTitle())
                 .setContentText(copy.getPublicText())
                 .setCategory(NotificationCompat.CATEGORY_CALL)
