@@ -37,7 +37,7 @@ public class User {
 
     /** bcrypt output is always exactly 60 chars; the column is CHAR(60) not VARCHAR. */
     @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = "password_hash", nullable = false, length = 60)
+    @Column(name = "password_hash", length = 60)
     private String passwordHash;
 
     @Column(name = "display_name", nullable = false, length = 60)
@@ -96,6 +96,15 @@ public class User {
         user.phone = phone;
         user.passwordHash = passwordHash;
         user.displayName = displayName;
+        return user;
+    }
+
+    /** Google sign-up path: no phone, no password; verified email from the ID token. */
+    public static User createGoogleOnly(String displayName, String normalizedEmail, Instant emailVerifiedAt) {
+        User user = new User();
+        user.displayName = displayName;
+        user.email = normalizedEmail;
+        user.emailVerifiedAt = emailVerifiedAt;
         return user;
     }
 
