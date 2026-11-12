@@ -30,6 +30,12 @@ the implementing source file.
 - Recovery addresses are trimmed and lowercased. Only the authenticated owner's
   profile includes `email` and `emailVerified`; `UserResponse` used by search and
   other-user views contains neither field.
+- Contact and discovery lookups by verified email reuse the same anti-enumeration
+  posture as phone: unknown, unverified, deleted, or self addresses yield an empty
+  `GET /users/search?email=` list; `POST /contacts` with email returns the same
+  `USER_NOT_FOUND` envelope as an unknown phone. Requests are rate-limited with the
+  existing user-search and contact-add buckets (30/min per user). Application logs
+  redact explicit `email=` fields (`observability.Redactor`).
 - Verification, account-deletion, and password-reset codes are six-digit
   `SecureRandom` values with a 10-minute lifetime. The database stores an
   HMAC-SHA256 digest bound to user id and purpose, compared in constant time;
@@ -349,12 +355,14 @@ the implementing source file.
   `401 GOOGLE_SIGN_IN_FAILED`.
 - Linking and unlinking require the account password (bcrypt comparison) and are
   rate-limited per user (10/5 min); an unlinked Google account gets the generic
-  `404 GOOGLE_ACCOUNT_NOT_LINKED` and the message never reveals whether the
-  Google account or the NexaChat account exists. Automatic account creation from
-  Google and email-based linking are intentionally absent (account-takeover
-  risk). Physical deletion cascades identity rows in V28; account tombstoning
-  deletes linked identities and account-owned link nonces explicitly in the
-  deletion transaction.
+  `404 GOOGLE_ACCOUNT_NOT_LINKED` while signup is off. When
+  `nexachat.google.signin.signup-enabled` is true, a verified email on an unknown
+  `sub` may create a Google-only account (no phone, no password hash); the email
+  is never used to match an existing row. Conflicts on an already-verified email
+  return `409 GOOGLE_EMAIL_IN_USE`. Google-only users cannot change password
+  (`409 NO_PASSWORD_SET`) and should delete through the email OTP flow. Physical
+  deletion cascades identity rows in V28; account tombstoning deletes linked
+  identities and account-owned link nonces explicitly in the deletion transaction.
 
 ## Known limits & future work
 

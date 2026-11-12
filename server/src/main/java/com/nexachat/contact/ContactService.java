@@ -3,6 +3,7 @@ package com.nexachat.contact;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.contact.dto.ContactResponse;
+import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
@@ -20,8 +21,10 @@ import java.util.UUID;
  * Contacts CRUD (plan §10.2).
  *
  * <p>Add-by-phone always normalizes first — the stored identity is E.164, so
- * {@code 0987…} and {@code +84987…} resolve to the same user. The
- * {@code (owner, contact)} PK is the final arbiter of duplicates (check-then-
+ * {@code 0987…} and {@code +84987…} resolve to the same user. Add-by-email uses
+ * the same normalization and validation as recovery email verification and only
+ * matches active users with a verified address ({@code users_verified_email_active_key}).
+ * The {@code (owner, contact)} PK is the final arbiter of duplicates (check-then-
  * insert can race), mapped to {@code ALREADY_CONTACT} via
  * {@code saveAndFlush} + {@link DataIntegrityViolationException}, exactly like
  * {@code AuthService.register}'s phone-UNIQUE handling.
@@ -34,6 +37,8 @@ public class ContactService {
 
     /** Hard cap on GET /contacts rows returned per caller (defense in depth). */
     static final int LIST_LIMIT = 500;
+
+    private static final String LOOKUP_NOT_FOUND = "No user registered with that phone number";
 
     private static final Logger log = LoggerFactory.getLogger(ContactService.class);
 
@@ -50,31 +55,19 @@ public class ContactService {
     }
 
     @Transactional
-    public ContactResponse add(UUID ownerId, String rawPhone) {
-        final String phone = normalize(rawPhone);
+    public ContactResponse addByPhone(UUID ownerId, String rawPhone) {
+        final String phone = normalizePhone(rawPhone);
         User target = userRepository.findByPhoneAndDeletedAtIsNull(phone)
-                .orElseThrow(() -> ApiException.of(
-                        ApiErrorCode.USER_NOT_FOUND, "No user registered with that phone number"));
+                .orElseThrow(() -> lookupNotFound());
+        return persistNewContact(ownerId, target);
+    }
 
-        if (target.getId().equals(ownerId)) {
-            // Service-level guard ahead of the DB CHECK so the contract is 400, not 500.
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot add yourself as a contact");
-        }
-
-        User owner = userRepository.findById(ownerId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        Contact contact = Contact.add(owner, target);
-        try {
-            // saveAndFlush so the PK violation surfaces HERE — a deferred commit-
-            // time flush would escape the catch (same race guard as register).
-            contact = contactRepository.saveAndFlush(contact);
-        } catch (DataIntegrityViolationException e) {
-            throw ApiException.of(ApiErrorCode.ALREADY_CONTACT, "User is already in contacts");
-        }
-        log.info("Contact added owner={} contact={}", ownerId, target.getId());
-        return new ContactResponse(
-                target.getId(), target.getPhone(), target.getDisplayName(),
-                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
+    @Transactional
+    public ContactResponse addByEmail(UUID ownerId, String rawEmail) {
+        final String email = EmailOtpService.normalizeEmail(rawEmail);
+        User target = userRepository.findActiveByVerifiedEmail(email)
+                .orElseThrow(() -> lookupNotFound());
+        return persistNewContact(ownerId, target);
     }
 
     @Transactional(readOnly = true)
@@ -112,7 +105,30 @@ public class ContactService {
                 .ifPresent(contactRepository::delete);
     }
 
-    private String normalize(String rawPhone) {
+    private ContactResponse persistNewContact(UUID ownerId, User target) {
+        if (target.getId().equals(ownerId)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot add yourself as a contact");
+        }
+
+        User owner = userRepository.findById(ownerId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        Contact contact = Contact.add(owner, target);
+        try {
+            contact = contactRepository.saveAndFlush(contact);
+        } catch (DataIntegrityViolationException e) {
+            throw ApiException.of(ApiErrorCode.ALREADY_CONTACT, "User is already in contacts");
+        }
+        log.info("Contact added owner={} contact={}", ownerId, target.getId());
+        return new ContactResponse(
+                target.getId(), target.getPhone(), target.getDisplayName(),
+                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
+    }
+
+    private static ApiException lookupNotFound() {
+        return ApiException.of(ApiErrorCode.USER_NOT_FOUND, LOOKUP_NOT_FOUND);
+    }
+
+    private String normalizePhone(String rawPhone) {
         try {
             return phoneService.toE164(rawPhone);
         } catch (IllegalArgumentException e) {

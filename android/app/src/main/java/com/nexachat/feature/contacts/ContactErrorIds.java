@@ -24,6 +24,9 @@ public final class ContactErrorIds {
         if (error instanceof ApiError.RateLimited) {
             return R.string.error_rate_limited;
         }
+        if (error instanceof ApiError.RecoveryEmailInvalid) {
+            return R.string.recovery_email_invalid;
+        }
         if (error instanceof ApiError.Network) {
             return R.string.error_network;
         }

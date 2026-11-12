@@ -42,21 +42,44 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.addTextChangedListener(watcher(s -> { confirmation = s; render(viewModel.getUiState().getValue()); }));
         binding.confirmPasswordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.registerButton.setOnClickListener(v -> submit());
+        binding.googleSignIn.setVisibility(
+                viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
+        binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         binding.secondaryAction.setOnClickListener(v -> {
             Bundle args = inviteReturnArgs();
             NavHostFragment.findNavController(this).navigate(
                     R.id.loginFragment, args.isEmpty() ? null : args);
         });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
-        viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
-            if (e == AuthViewModel.Event.LoggedIn) {
-                int destination = returnInviteToken == null
-                        ? R.id.inboxFragment : R.id.inviteJoinFragment;
-                Bundle args = returnInviteToken == null ? null : new Bundle();
-                if (args != null) args.putString("token", returnInviteToken);
-                NavHostFragment.findNavController(this).navigate(destination, args, AuthNav.signedInOptions());
+        viewModel.getEvents().observe(getViewLifecycleOwner(), this::onAuthEvent);
+        if (viewModel.hasPendingCompleteProfile()) {
+            navigateToCompleteProfile();
+        }
+    }
+
+    private void onAuthEvent(AuthViewModel.Event event) {
+        if (event == AuthViewModel.Event.CompleteProfile) {
+            navigateToCompleteProfile();
+            return;
+        }
+        if (event == AuthViewModel.Event.LoggedIn) {
+            int destination = returnInviteToken == null
+                    ? R.id.inboxFragment : R.id.inviteJoinFragment;
+            Bundle args = returnInviteToken == null ? null : new Bundle();
+            if (args != null) {
+                args.putString("token", returnInviteToken);
             }
-        });
+            NavHostFragment.findNavController(this).navigate(
+                    destination, args, AuthNav.signedInOptions());
+        }
+    }
+
+    private void navigateToCompleteProfile() {
+        if (!viewModel.onCompleteProfileNavigationHandled()) {
+            return;
+        }
+        NavHostFragment.findNavController(this).navigate(
+                R.id.completeProfileFragment, null, AuthNav.signedInOptions());
     }
 
     private void submit() {
@@ -90,14 +113,21 @@ public final class RegisterFragment extends Fragment {
         binding.passwordLayout.setError(s.getPasswordError() ? getString(R.string.error_password_short) : null);
         boolean mismatch = confirmChecked && !AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation);
         binding.confirmPasswordLayout.setError(mismatch ? getString(R.string.error_password_mismatch) : null);
-        binding.errorBanner.setVisibility(s.getError() == null ? View.GONE : View.VISIBLE);
-        if (s.getError() != null) binding.errorBanner.setText(ApiErrorText.text(requireContext(), s.getError()));
+        boolean googleEmailInUse = GoogleAuthErrors.isGoogleEmailInUse(s.getError());
+        binding.googleEmailInUseError.getRoot().setVisibility(
+                googleEmailInUse ? View.VISIBLE : View.GONE);
+        boolean showBanner = s.getError() != null && !googleEmailInUse;
+        binding.errorBanner.setVisibility(showBanner ? View.VISIBLE : View.GONE);
+        if (showBanner) {
+            binding.errorBanner.setText(ApiErrorText.text(requireContext(), s.getError()));
+        }
         boolean notLoading = !s.getLoading();
         binding.nameInput.setEnabled(notLoading);
         binding.phoneInput.setEnabled(notLoading);
         binding.passwordInput.setEnabled(notLoading);
         binding.confirmPasswordInput.setEnabled(notLoading);
         binding.registerButton.setEnabled(notLoading);
+        binding.googleSignIn.setEnabled(notLoading);
         binding.secondaryAction.setEnabled(notLoading);
         rendering = false;
     }

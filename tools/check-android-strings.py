@@ -36,6 +36,7 @@ IDENTICAL_LOCALE_ALLOWLIST = frozenset(
         "summary_citation_seq",
         "ui_remove_symbol",
         "time_duration_mm_ss",
+        "complete_profile_google_chip",
     }
 )
 

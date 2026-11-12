@@ -165,6 +165,26 @@ public final class LinkedAccountsViewModelTest {
     }
 
     @Test
+    public void unlinkWithoutPasswordSurfacesLastSignInMethodInline() {
+        when(repository.linkedIdentities()).thenReturn(Single.just(new Result.Success<>(
+                new LinkedIdentitiesResponse(List.of(
+                        new LinkedIdentityDto("google", "user@example.com", "2026-01-01T00:00:00Z"))))));
+        when(repository.unlinkGoogle(anyString())).thenReturn(Single.just(
+                Result.failure(new ApiError.Unknown("LAST_SIGN_IN_METHOD", 409))));
+
+        LinkedAccountsViewModel viewModel = configuredViewModel(
+                new FakeGoogleSignInClient(true, "id-token"));
+
+        viewModel.unlinkWithoutPassword();
+
+        assertEquals("LAST_SIGN_IN_METHOD",
+                ((ApiError.Unknown) viewModel.getUiState().getValue().getInlineError()).getCode());
+        assertNull(viewModel.getUiState().getValue().getError());
+        assertTrue(viewModel.getUiState().getValue().isLinked());
+        verify(repository).unlinkGoogle(LinkedAccountsViewModel.GOOGLE_ONLY_UNLINK_PASSWORD);
+    }
+
+    @Test
     public void emptyPasswordNeverCallsTheServer() {
         when(repository.linkedIdentities()).thenReturn(Single.just(
                 new Result.Success<>(new LinkedIdentitiesResponse(List.of()))));

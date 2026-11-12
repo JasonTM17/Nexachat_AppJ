@@ -23,7 +23,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Contact endpoints (plan §10.2): list, add-by-phone, alias update, delete.
+ * Contact endpoints (plan §10.2): list, add-by-phone or add-by-email, alias update, delete.
  * All require Bearer (SecurityConfig {@code anyRequest().authenticated()}).
  */
 @RestController
@@ -45,7 +45,17 @@ public class ContactController {
     @ResponseStatus(HttpStatus.CREATED)
     public ContactResponse add(@AuthenticationPrincipal JwtPrincipal principal,
                                @Valid @RequestBody AddContactRequest request) {
-        return contactService.add(requireUserId(principal), request.phone());
+        boolean hasPhone = request.phone() != null && !request.phone().isBlank();
+        boolean hasEmail = request.email() != null && !request.email().isBlank();
+        if (hasPhone == hasEmail) {
+            throw ApiException.of(
+                    ApiErrorCode.VALIDATION_FAILED, "Provide exactly one of 'phone' or 'email'");
+        }
+        UUID ownerId = requireUserId(principal);
+        if (hasPhone) {
+            return contactService.addByPhone(ownerId, request.phone());
+        }
+        return contactService.addByEmail(ownerId, request.email());
     }
 
     @PatchMapping("/{userId}")

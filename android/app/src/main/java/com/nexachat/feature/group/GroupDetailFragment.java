@@ -423,7 +423,13 @@ public final class GroupDetailFragment extends Fragment {
             void bind(@NonNull Contact contact, boolean checked, @NonNull ToggleListener listener) {
                 String label = contact.getPrimaryLabel();
                 name.setText(label);
-                subtitle.setText(contact.getPhone());
+                String line = com.nexachat.core.common.PersonContactSubtitle.subtitle(contact);
+                if (line == null || line.isBlank()) {
+                    subtitle.setVisibility(android.view.View.GONE);
+                } else {
+                    subtitle.setVisibility(android.view.View.VISIBLE);
+                    subtitle.setText(line);
+                }
                 avatar.setName(label);
                 avatar.setAvatarUrl(contact.getAvatarUrl());
                 box.setOnCheckedChangeListener(null);

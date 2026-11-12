@@ -13,20 +13,29 @@ public final class AuthResponse {
     private final String refreshToken;
     private final long recallWindowSeconds;
     private final boolean groupAdminMayRecallAfterWindow;
+    private final boolean newAccount;
 
     public AuthResponse() {
         this(null, null, 0L, null,
-                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false);
+                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false, false);
     }
 
     public AuthResponse(@NonNull UserDto user, @NonNull String accessToken, long accessTokenExpiresIn, @NonNull String refreshToken) {
         this(user, accessToken, accessTokenExpiresIn, refreshToken,
-                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false);
+                RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS, false, false);
     }
 
     public AuthResponse(@NonNull UserDto user, @NonNull String accessToken,
             long accessTokenExpiresIn, @NonNull String refreshToken,
             long recallWindowSeconds, boolean groupAdminMayRecallAfterWindow) {
+        this(user, accessToken, accessTokenExpiresIn, refreshToken,
+                recallWindowSeconds, groupAdminMayRecallAfterWindow, false);
+    }
+
+    public AuthResponse(@NonNull UserDto user, @NonNull String accessToken,
+            long accessTokenExpiresIn, @NonNull String refreshToken,
+            long recallWindowSeconds, boolean groupAdminMayRecallAfterWindow,
+            boolean newAccount) {
         this.user = user;
         this.accessToken = accessToken;
         this.accessTokenExpiresIn = accessTokenExpiresIn;
@@ -34,6 +43,7 @@ public final class AuthResponse {
         this.recallWindowSeconds = RecallWindowConfig.isValidWindow(recallWindowSeconds)
                 ? recallWindowSeconds : RecallWindowConfig.DEFAULT_RECALL_WINDOW_SECONDS;
         this.groupAdminMayRecallAfterWindow = groupAdminMayRecallAfterWindow;
+        this.newAccount = newAccount;
     }
 
     @NonNull public UserDto getUser() {
@@ -60,6 +70,10 @@ public final class AuthResponse {
         return groupAdminMayRecallAfterWindow;
     }
 
+    public boolean isNewAccount() {
+        return newAccount;
+    }
+
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof AuthResponse that)) {
@@ -70,12 +84,13 @@ public final class AuthResponse {
                 && accessTokenExpiresIn == that.accessTokenExpiresIn
                 && Objects.equals(refreshToken, that.refreshToken)
                 && recallWindowSeconds == that.recallWindowSeconds
-                && groupAdminMayRecallAfterWindow == that.groupAdminMayRecallAfterWindow;
+                && groupAdminMayRecallAfterWindow == that.groupAdminMayRecallAfterWindow
+                && newAccount == that.newAccount;
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(user, accessToken, accessTokenExpiresIn, refreshToken,
-                recallWindowSeconds, groupAdminMayRecallAfterWindow);
+                recallWindowSeconds, groupAdminMayRecallAfterWindow, newAccount);
     }
 }

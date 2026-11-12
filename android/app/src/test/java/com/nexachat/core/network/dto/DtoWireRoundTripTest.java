@@ -140,6 +140,13 @@ public final class DtoWireRoundTripTest {
                         + "\"recallWindowSeconds\":172800,\"groupAdminMayRecallAfterWindow\":true}");
         assertEquals(172800L, configuredAuth.getRecallWindowSeconds());
         assertTrue(configuredAuth.getGroupAdminMayRecallAfterWindow());
+        AuthResponse created = moshi.adapter(AuthResponse.class).fromJson(
+                "{\"user\":{\"id\":\"u\",\"phone\":null,\"displayName\":\"Google\","
+                        + "\"email\":\"user@gmail.com\",\"emailVerified\":true},"
+                        + "\"accessToken\":\"a\",\"accessTokenExpiresIn\":900,\"refreshToken\":\"r\","
+                        + "\"newAccount\":true}");
+        assertTrue(created.isNewAccount());
+        assertNull(created.getUser().getPhone());
         assertEquals("PHONE_EXISTS", ErrorResponse.errorCodeOf(
                 "{\"error\":{\"code\":\"PHONE_EXISTS\",\"message\":\"Already registered\"}}"));
     }

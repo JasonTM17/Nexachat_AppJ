@@ -4,12 +4,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.data.AuthRepository;
+import com.nexachat.data.AuthSessionResult;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,9 +32,11 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 public final class AuthViewModel extends ViewModel {
 
     public static final int MIN_PASSWORD_LENGTH = 8;
+    static final String KEY_PENDING_COMPLETE_PROFILE = "pendingCompleteProfile";
 
     private final AuthRepository authRepository;
     private final GoogleSignInFlow googleSignInFlow;
+    private final SavedStateHandle savedState;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState = new MutableLiveData<>(new UiState());
     private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
@@ -40,9 +44,13 @@ public final class AuthViewModel extends ViewModel {
     private UiState currentState = mutableUiState.getValue();
 
     @Inject
-    public AuthViewModel(AuthRepository authRepository, GoogleSignInFlow googleSignInFlow) {
+    public AuthViewModel(
+            AuthRepository authRepository,
+            GoogleSignInFlow googleSignInFlow,
+            SavedStateHandle savedState) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.googleSignInFlow = Objects.requireNonNull(googleSignInFlow, "googleSignInFlow");
+        this.savedState = Objects.requireNonNull(savedState, "savedState");
         Flowable<Boolean> wakeState = authRepository.getServerWakeState();
         if (wakeState != null) {
             disposables.add(wakeState.subscribe(
@@ -73,14 +81,47 @@ public final class AuthViewModel extends ViewModel {
                                 false, new ApiError.Network(error.getMessage())))));
     }
 
-    private void finishGoogleSignIn(Result<AuthResponse> result) {
+    private void finishGoogleSignIn(Result<AuthSessionResult> result) {
         if (result instanceof Result.Failure<?> failure
                 && GoogleSignInFlow.CODE_CANCELLED.equals(codeOf(failure.getError()))) {
             // Dismissing the Google sheet is not an error worth a banner.
             updateState(state -> state.withLoading(false, null));
             return;
         }
-        finishSubmit(result);
+        finishGoogleSession(result);
+    }
+
+    private void finishGoogleSession(Result<AuthSessionResult> result) {
+        if (result instanceof Result.Success<?> success) {
+            AuthSessionResult session = (AuthSessionResult) success.getValue();
+            updateState(state -> state.withLoading(false, null));
+            if (session.isNewAccount()) {
+                savedState.set(KEY_PENDING_COMPLETE_PROFILE, Boolean.TRUE);
+                events.postValue(Event.CompleteProfile);
+            } else {
+                events.postValue(Event.LoggedIn);
+            }
+            return;
+        }
+        ApiError error = ((Result.Failure<?>) result).getError();
+        updateState(state -> state.withLoading(false, error));
+    }
+
+    public boolean hasPendingCompleteProfile() {
+        return Boolean.TRUE.equals(savedState.get(KEY_PENDING_COMPLETE_PROFILE));
+    }
+
+    /**
+     * Clears the pending complete-profile navigation. Returns true only for the
+     * first caller, so a restored one-shot event and the saved-state check
+     * cannot both open the screen after rotation.
+     */
+    public boolean onCompleteProfileNavigationHandled() {
+        if (!hasPendingCompleteProfile()) {
+            return false;
+        }
+        savedState.remove(KEY_PENDING_COMPLETE_PROFILE);
+        return true;
     }
 
     @Nullable
@@ -198,9 +239,10 @@ public final class AuthViewModel extends ViewModel {
         return true;
     }
 
-    /** The single navigation event emitted after either login or registration succeeds. */
+    /** One-shot navigation events after authentication succeeds. */
     public enum Event {
-        LoggedIn
+        LoggedIn,
+        CompleteProfile
     }
 
     /** Immutable observable state for both auth destinations. */

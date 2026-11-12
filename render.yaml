@@ -152,10 +152,17 @@ services:
       - key: FIREBASE_DATABASE_URL
         sync: false
 
-      # ---- Google sign-in (optional) ---------------------------------------
+      # ---- Google sign-in / sign-up (optional) ---------------------------
       - key: NEXACHAT_GOOGLE_SIGNIN_ENABLED
+        value: "false"
+      # Account creation via Google (default off until server wiring lands).
+      - key: NEXACHAT_GOOGLE_SIGNUP_ENABLED
         value: "false"
       - key: NEXACHAT_GOOGLE_WEB_CLIENT_ID
         sync: false
       - key: NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS
         sync: false
+      - key: NEXACHAT_GOOGLE_JWKS_URI
+        value: https://www.googleapis.com/oauth2/v3/certs
+      - key: NEXACHAT_GOOGLE_NONCE_TTL_SECONDS
+        value: "300"

@@ -48,7 +48,7 @@ public sealed interface ApiResult<T>
 
     private static <T> ApiResult<T> fromResponse(Response<T> response) throws IOException {
         if (response.isSuccessful()) {
-            return new Success<>(response.body());
+            return new Success<>(response.body(), response.code());
         }
         String raw = response.errorBody() == null ? null : response.errorBody().string();
         return new HttpError<>(response.code(), ErrorResponse.errorCodeOf(raw));
@@ -56,13 +56,23 @@ public sealed interface ApiResult<T>
 
     final class Success<T> implements ApiResult<T> {
         private final T body;
+        private final int statusCode;
 
         public Success(T body) {
+            this(body, 200);
+        }
+
+        public Success(T body, int statusCode) {
             this.body = body;
+            this.statusCode = statusCode;
         }
 
         public T getBody() {
             return body;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
         }
 
         @Override
@@ -70,17 +80,17 @@ public sealed interface ApiResult<T>
             if (!(other instanceof Success<?> success)) {
                 return false;
             }
-            return Objects.equals(body, success.body);
+            return Objects.equals(body, success.body) && statusCode == success.statusCode;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hashCode(body);
+            return Objects.hash(body, statusCode);
         }
 
         @Override
         public String toString() {
-            return "Success(body=" + body + ")";
+            return "Success(body=" + body + ", statusCode=" + statusCode + ")";
         }
     }
 

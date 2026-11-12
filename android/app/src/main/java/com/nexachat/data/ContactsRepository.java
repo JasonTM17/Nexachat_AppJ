@@ -118,12 +118,17 @@ public final class ContactsRepository {
 
     @NonNull
     public Single<Result<List<UserDto>>> searchByPhone(@NonNull String rawPhone) {
-        return call(userApi.searchUsers(PhoneNormalizer.toE164(rawPhone), null));
+        return call(userApi.searchUsers(PhoneNormalizer.toE164(rawPhone), null, null));
+    }
+
+    @NonNull
+    public Single<Result<List<UserDto>>> searchByEmail(@NonNull String email) {
+        return call(userApi.searchUsers(null, null, email.trim().toLowerCase(java.util.Locale.ROOT)));
     }
 
     @NonNull
     public Single<Result<List<UserDto>>> searchByName(@NonNull String prefix) {
-        return call(userApi.searchUsers(null, prefix.trim()));
+        return call(userApi.searchUsers(null, prefix.trim(), null));
     }
 
     @NonNull
@@ -148,11 +153,22 @@ public final class ContactsRepository {
         });
     }
 
-    /** Adds a contact; server duplicate codes are mapped to {@link ApiError.PhoneExists}. */
+    /** Adds a contact by E.164 phone; server duplicate codes are mapped to {@link ApiError.PhoneExists}. */
     @NonNull
     public Single<Result<Contact>> addContact(@NonNull String rawPhone) {
+        return addContact(AddContactRequest.byPhone(PhoneNormalizer.toE164(rawPhone)));
+    }
+
+    /** Adds a contact by verified-account email (lowercased). */
+    @NonNull
+    public Single<Result<Contact>> addContactByEmail(@NonNull String email) {
+        return addContact(AddContactRequest.byEmail(email.trim().toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    @NonNull
+    private Single<Result<Contact>> addContact(@NonNull AddContactRequest body) {
         return call(
-                userApi.addContact(new AddContactRequest(PhoneNormalizer.toE164(rawPhone))),
+                userApi.addContact(body),
                 this::contactWriteError)
                 .map(result -> {
                     if (result instanceof Result.Success<?> success) {
@@ -247,15 +263,19 @@ public final class ContactsRepository {
     @Nullable
     private Contact toContact(@Nullable ContactDto dto) {
         if (dto == null || dto.getResolvedUserId() == null) return null;
-        String phone = dto.getPhone() != null ? dto.getPhone() : "";
-        String displayName = dto.getDisplayName() != null ? dto.getDisplayName() : phone;
+        String phone = dto.getPhone();
+        String displayName = dto.getDisplayName() != null
+                ? dto.getDisplayName()
+                : phone != null ? phone : "?";
         return new Contact(
                 dto.getResolvedUserId(),
                 phone,
                 displayName,
                 dto.getAliasName(),
                 dto.getAvatarUrl(),
-                dto.getCreatedAt());
+                dto.getCreatedAt(),
+                dto.getEmail(),
+                dto.getEmailVerified());
     }
 
     /** Maps contact-write duplicate codes before the generic API error table. */

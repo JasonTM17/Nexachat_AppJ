@@ -26,6 +26,15 @@ class RedactorTest {
     }
 
     @Test
+    void masksExplicitEmailFields() {
+        String redacted = Redactor.redact("email=user@example.com mail=other@example.org");
+
+        assertThat(redacted).doesNotContain("user@example.com");
+        assertThat(redacted).doesNotContain("other@example.org");
+        assertThat(redacted).contains("email=[REDACTED]");
+    }
+
+    @Test
     void masksNamedApiKeysAndSecrets() {
         String redacted = Redactor.redact(
                 "api_key=test-key-123 password=test-pass-456 token=test-token-789");
@@ -62,6 +71,13 @@ class RedactorTest {
         assertThat(redacted).doesNotContain("84912345678");
         assertThat(redacted).doesNotContain("0912345678");
         assertThat(redacted).contains("[REDACTED]");
+    }
+
+    @Test
+    void redactsEmailFields() {
+        String redacted = Redactor.redact("contact lookup email=friend@example.com");
+        assertThat(redacted).doesNotContain("friend@example.com");
+        assertThat(redacted).contains("email=[REDACTED]");
     }
 
     @Test

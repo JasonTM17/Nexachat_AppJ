@@ -151,7 +151,8 @@ public class AuthService {
         }
         // The unlocked read above may already have placed a pre-lock snapshot in this persistence context.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        String hash = user.getPasswordHash();
+        if (hash == null || hash.isBlank() || !passwordEncoder.matches(request.password(), hash)) {
             throw invalidCredentials();
         }
         return issueSession(user, deviceLabel);
@@ -225,7 +226,11 @@ public class AuthService {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
 
-        if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
+        String existingHash = user.getPasswordHash();
+        if (existingHash == null || existingHash.isBlank()) {
+            throw ApiException.of(ApiErrorCode.NO_PASSWORD_SET, "This account does not have a password");
+        }
+        if (!passwordEncoder.matches(request.oldPassword(), existingHash)) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
         PasswordPolicy.requireRegisterable(request.newPassword());

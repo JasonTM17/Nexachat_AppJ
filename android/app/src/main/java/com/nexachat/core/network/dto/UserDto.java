@@ -17,13 +17,13 @@ public final class UserDto {
         this(null, null, null, null, null, null);
     }
 
-    public UserDto(@NonNull String id, @NonNull String phone, @NonNull String displayName, @Nullable String avatarUrl) {
+    public UserDto(@NonNull String id, @Nullable String phone, @NonNull String displayName, @Nullable String avatarUrl) {
         this(id, phone, displayName, avatarUrl, null, null);
     }
 
     public UserDto(
             @NonNull String id,
-            @NonNull String phone,
+            @Nullable String phone,
             @NonNull String displayName,
             @Nullable String avatarUrl,
             @Nullable String email,
@@ -44,7 +44,7 @@ public final class UserDto {
         return id;
     }
 
-    @NonNull public String getPhone() {
+    @Nullable public String getPhone() {
         return phone;
     }
 

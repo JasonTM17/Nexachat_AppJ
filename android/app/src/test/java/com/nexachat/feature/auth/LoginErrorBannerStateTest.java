@@ -42,4 +42,13 @@ public final class LoginErrorBannerStateTest {
         assertTrue(banner.isVisible());
         assertEquals(R.string.server_starting, banner.getMessageRes());
     }
+
+    @Test
+    public void googleEmailInUseUsesDedicatedInlineContainer() {
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(
+                false,
+                new com.nexachat.core.common.ApiError.Unknown(GoogleAuthErrors.GOOGLE_EMAIL_IN_USE));
+
+        assertFalse(banner.isVisible());
+    }
 }

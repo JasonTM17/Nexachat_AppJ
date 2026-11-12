@@ -120,9 +120,11 @@ public final class UserSearchFragment extends Fragment {
             for (Contact c : state.getContacts()) {
                 contactUsers.add(new UserDto(
                         c.getUserId(),
-                        c.getPhone() == null ? "" : c.getPhone(),
+                        c.getPhone(),
                         c.getPrimaryLabel(),
-                        c.getAvatarUrl()));
+                        c.getAvatarUrl(),
+                        c.getEmail(),
+                        c.getEmailVerified()));
             }
             users = contactUsers;
         }

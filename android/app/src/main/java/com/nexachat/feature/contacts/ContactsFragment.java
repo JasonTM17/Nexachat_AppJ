@@ -23,6 +23,7 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.PersonContactSubtitle;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentContactsBinding;
@@ -142,7 +143,7 @@ public final class ContactsFragment extends Fragment {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(requireContext());
-        title.setText(R.string.add_by_phone_title);
+        title.setText(R.string.add_contact_title);
         title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -159,9 +160,11 @@ public final class ContactsFragment extends Fragment {
         phoneLayout.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);
         addPhoneInput = new TextInputEditText(phoneLayout.getContext());
         addPhoneInput.setSingleLine(true);
-        addPhoneInput.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
+        addPhoneInput.setInputType(
+                android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         addPhoneInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        phoneLayout.setHint(getString(R.string.auth_phone_label));
+        phoneLayout.setHint(getString(R.string.add_contact_field_label));
         phoneLayout.addView(addPhoneInput);
         LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -275,10 +278,14 @@ public final class ContactsFragment extends Fragment {
         if (addResultText != null) {
             if (found != null) {
                 addResultText.setVisibility(View.VISIBLE);
+                String second = PersonContactSubtitle.subtitle(found);
+                if (second == null) {
+                    second = "";
+                }
                 addResultText.setText(getString(
                         R.string.a11y_contact_found_lines,
                         found.getDisplayName(),
-                        found.getPhone()));
+                        second));
             } else {
                 addResultText.setVisibility(View.GONE);
             }

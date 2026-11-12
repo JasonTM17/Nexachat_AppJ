@@ -151,9 +151,13 @@ public final class ProfileFragment extends Fragment {
         binding.deleteAccountRow.setContentDescription(getString(R.string.action_delete_account));
         binding.deleteAccountRow.setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigate(R.id.deleteAccountFragment));
-        binding.googleAccountRow.setTitle(getString(R.string.settings_google_account));
-        binding.googleAccountRow.setLeadingIcon(R.drawable.ic_check_circle);
+        binding.googleAccountRow.setTitle(getString(R.string.sign_in_method_google));
+        binding.googleAccountRow.setLeadingIcon(R.drawable.ic_account_circle);
+        binding.googleAccountRow.setShowChevron(false);
         binding.googleAccountRow.setOnClickListener(v -> onGoogleAccountClicked());
+        binding.signInMethodPhoneRow.setTitle(getString(R.string.sign_in_method_phone));
+        binding.signInMethodPhoneRow.setLeadingIcon(R.drawable.ic_call);
+        binding.signInMethodPhoneRow.setShowChevron(false);
         linkedAccountsViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderLinkedAccounts);
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
@@ -198,7 +202,16 @@ public final class ProfileFragment extends Fragment {
             binding.profileAvatar.setName(user.getDisplayName());
             binding.profileAvatar.setAvatarUrl(user.getAvatarUrl());
             binding.profileName.setText(user.getDisplayName());
-            binding.profilePhone.setText(user.getPhone());
+            String headerIdentity = user.getPhone();
+            if (headerIdentity == null || headerIdentity.isBlank()) {
+                headerIdentity = user.hasVerifiedRecoveryEmail() ? user.getEmail() : null;
+            }
+            if (headerIdentity == null || headerIdentity.isBlank()) {
+                binding.profilePhone.setVisibility(View.GONE);
+            } else {
+                binding.profilePhone.setVisibility(View.VISIBLE);
+                binding.profilePhone.setText(headerIdentity);
+            }
             if (user.hasVerifiedRecoveryEmail()) {
                 binding.recoveryEmailRow.setTrailingValue(user.getEmail());
                 binding.recoveryEmailRow.setContentDescription(
@@ -229,20 +242,45 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void renderLinkedAccounts(LinkedAccountsViewModel.UiState state) {
-        boolean visible = state.isConfigured();
-        binding.googleAccountRow.setVisibility(visible ? View.VISIBLE : View.GONE);
-        binding.googleAccountDivider.setVisibility(visible ? View.VISIBLE : View.GONE);
-        if (!visible) {
-            return;
+        boolean googleVisible = state.isConfigured();
+        binding.googleAccountRow.setVisibility(googleVisible ? View.VISIBLE : View.GONE);
+        binding.signInMethodGoogleDivider.setVisibility(
+                googleVisible ? View.VISIBLE : View.GONE);
+
+        UserDto me = viewModel.getUiState().getValue() != null
+                ? viewModel.getUiState().getValue().getUser() : null;
+        String accountPhone = me != null ? me.getPhone() : null;
+        boolean phoneVisible = accountPhone != null && !accountPhone.isBlank();
+        binding.signInMethodPhoneRow.setVisibility(phoneVisible ? View.VISIBLE : View.GONE);
+        binding.signInMethodPhoneDivider.setVisibility(
+                googleVisible && phoneVisible ? View.VISIBLE : View.GONE);
+        if (phoneVisible) {
+            binding.signInMethodPhoneRow.setSubtitle(accountPhone);
+            binding.signInMethodPhoneRow.setContentDescription(
+                    getString(R.string.sign_in_method_phone) + ", " + accountPhone);
         }
-        binding.googleAccountRow.setEnabled(!state.isLoading());
-        String statusText = state.isLinked()
-                ? (state.getEmail() != null ? state.getEmail()
-                        : getString(R.string.settings_google_linked))
-                : getString(R.string.settings_google_not_linked);
-        binding.googleAccountRow.setTrailingValue(statusText);
-        binding.googleAccountRow.setContentDescription(
-                getString(R.string.settings_google_account) + ", " + statusText);
+
+        if (googleVisible) {
+            binding.googleAccountRow.setEnabled(!state.isLoading());
+            String googleEmail = state.isLinked() ? state.getEmail() : null;
+            binding.googleAccountRow.setSubtitle(googleEmail);
+            String action = state.isLinked()
+                    ? getString(R.string.action_unlink_google_short)
+                    : getString(R.string.action_link_google_short);
+            binding.googleAccountRow.setTrailingValue(action);
+            String cdEmail = googleEmail != null ? googleEmail : getString(R.string.settings_google_not_linked);
+            binding.googleAccountRow.setContentDescription(
+                    getString(R.string.cd_sign_in_method_google) + ", " + cdEmail + ", " + action);
+        }
+
+        ApiError inline = state.getInlineError();
+        if (inline != null) {
+            binding.signInMethodsError.setVisibility(View.VISIBLE);
+            binding.signInMethodsError.setText(ApiErrorText.text(requireContext(), inline));
+        } else {
+            binding.signInMethodsError.setVisibility(View.GONE);
+        }
+
         if (state.getError() != null) {
             Toast.makeText(requireContext(),
                     ApiErrorText.text(requireContext(), state.getError()),
@@ -258,9 +296,17 @@ public final class ProfileFragment extends Fragment {
             return;
         }
         if (state.isLinked()) {
-            showGooglePasswordDialog(R.string.action_unlink_google,
-                    R.string.google_unlink_confirm,
-                    password -> linkedAccountsViewModel.unlink(password));
+            linkedAccountsViewModel.consumeInlineError();
+            UserDto me = viewModel.getUiState().getValue() != null
+                    ? viewModel.getUiState().getValue().getUser() : null;
+            boolean hasPhone = me != null && me.getPhone() != null && !me.getPhone().isBlank();
+            if (hasPhone) {
+                showGooglePasswordDialog(R.string.action_unlink_google,
+                        R.string.google_unlink_confirm,
+                        password -> linkedAccountsViewModel.unlink(password));
+            } else {
+                linkedAccountsViewModel.unlinkWithoutPassword();
+            }
         } else {
             showGooglePasswordDialog(R.string.action_link_google,
                     R.string.google_link_password_prompt,

@@ -29,14 +29,14 @@ public final class ContactsRepositoryTest {
     @Test
     public void searchByPhoneNormalizesToE164BeforeCallingTheApi() {
         ContactsRepository repository = new ContactsRepository(userApi, context);
-        when(userApi.searchUsers(eq("+84901234567"), eq(null)))
+        when(userApi.searchUsers(eq("+84901234567"), eq(null), eq(null)))
                 .thenReturn(successCall(List.of()));
 
         Result<List<com.nexachat.core.network.dto.UserDto>> result =
                 repository.searchByPhone("0901234567").blockingGet();
 
         assertTrue(result instanceof Result.Success<?>);
-        verify(userApi, times(1)).searchUsers("+84901234567", null);
+        verify(userApi, times(1)).searchUsers("+84901234567", null, null);
     }
 
     @Test

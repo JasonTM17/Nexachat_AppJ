@@ -86,6 +86,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V26 | `V26__user_account_deletion.sql` | Adds account tombstoning and phone reuse after deletion. |
 | V27 | `V27__account_recovery_email_otp.sql` | Adds owner-only recovery email fields, verified-email uniqueness, and purpose-bound OTP storage. |
 | V28 | `V28__google_signin.sql` | `user_identities` (one external identity per provider per user, `ON DELETE CASCADE`) and hashed single-use `google_signin_nonces`. |
+| V33 | `V33__google_signup.sql` | Nullable `password_hash`; active users must have phone, password, or verified email. |
 
 ## Operational notes
 
@@ -100,6 +101,7 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.google.signin.android-client-ids` (`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) | empty | Required when Google sign-in is enabled; comma-separated Android OAuth client IDs trusted as the ID token's `azp`. |
 | `nexachat.google.signin.jwks-uri` (`NEXACHAT_GOOGLE_JWKS_URI`) | `https://www.googleapis.com/oauth2/v3/certs` | Google's rotating public keys; override only for tests. |
 | `nexachat.google.signin.nonce-ttl-seconds` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS`) | `300` | Single-use nonce lifetime. |
+| `nexachat.google.signin.signup-enabled` (`NEXACHAT_GOOGLE_SIGNUP_ENABLED`) | `false` | When true with Google sign-in enabled, an unknown `sub` on `POST /auth/google` creates a new account (`201` + `newAccount:true`). |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
 | `nexachat.sync.reaction-retention-days` | `30` | Reaction-event purge window; an older `since` forces `reactionsFullRefresh`. |
 | `nexachat.reminders.enabled` | `true` | Enables the due-time reminder poll (`ReminderScheduler`); the purge job is configured separately under `nexachat.retention.jobs`. |
@@ -200,6 +202,8 @@ These keys are Spring properties; override them with the matching
 | `GOOGLE_ACCOUNT_NOT_LINKED` | 404 | The Google account is not linked to a NexaChat account |
 | `GOOGLE_ACCOUNT_ALREADY_LINKED` | 409 | That Google account (or another one for this user) is already linked |
 | `LAST_SIGN_IN_METHOD` | 409 | Unlinking would leave the account with no password to sign in with |
+| `GOOGLE_EMAIL_IN_USE` | 409 | Google sign-up refused because that verified email already belongs to another active account |
+| `NO_PASSWORD_SET` | 409 | Password change refused because the account has no password hash |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
 | `EMAIL_ALREADY_IN_USE` | 409 | Recovery email is already verified on another active account |
@@ -397,11 +401,11 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/refresh` | Public | `{refreshToken}`; optional canonical UUIDv4 `Idempotency-Key` | `200` `AuthResponse` (new token pair or original response replay) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `REFRESH_RECOVERY_UNAVAILABLE` 409 · `REFRESH_SERVICE_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
-| `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `USER_NOT_FOUND` 404 · `RATE_LIMITED` 429 (10/5 min per user, shared with `DELETE /users/me`) |
+| `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `NO_PASSWORD_SET` 409 (Google-only accounts) · `USER_NOT_FOUND` 404 · `RATE_LIMITED` 429 (10/5 min per user, shared with `DELETE /users/me`) |
 | `POST /auth/password-reset/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an account with a verified recovery email | `RATE_LIMITED` 429 |
 | `POST /auth/password-reset/confirm` | Public | `{phone, code, newPassword}` — `newPassword` follows `PasswordPolicy` | `204` empty | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
 | `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled · `RATE_LIMITED` 429 (30/5 min per IP, only while enabled) |
-| `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 · `RATE_LIMITED` 429 |
+| `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` when the `sub` is already linked; `201` `AuthResponse` with `newAccount:true` when signup created the account | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 (unknown `sub` while signup is off) · `GOOGLE_EMAIL_IN_USE` 409 · `RATE_LIMITED` 429 |
 | `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
 | `POST /auth/identities/google/nonce` | Bearer | — | `200` `{nonce, expiresInSeconds}` (link purpose, bound to the caller; a public sign-in nonce or another account's link nonce is rejected) | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled · `RATE_LIMITED` 429 |
 | `POST /auth/identities/google` | Bearer | `{idToken, nonce, password}` — password re-authenticates the owner | `204` empty (idempotent for the same Google account) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_ALREADY_LINKED` 409 · `RATE_LIMITED` 429 |
@@ -417,10 +421,12 @@ JWKS, `iss` (`accounts.google.com` or `https://accounts.google.com`), `aud` (the
 configured web client ID), `exp` (60 s skew) and the single-use nonce; then it
 maps the immutable `sub` claim to `user_identities`. The token must carry exactly
 one audience (the configured web client ID), a trustworthy `azp` when present, and
-an `iat` no more than 60 s in the future. An unlinked Google account
-returns `404 GOOGLE_ACCOUNT_NOT_LINKED` (the generic message never says whether
-the Google account exists); automatic account creation and email-based linking
-are not implemented. Linking requires the account password and refuses to move a
+an `iat` no more than 60 s in the future. An unlinked Google account returns `404 GOOGLE_ACCOUNT_NOT_LINKED` while
+`nexachat.google.signin.signup-enabled` is false. When signup is enabled, an
+unknown `sub` with a verified email may create a phone-less account (`201`,
+`newAccount:true`); if that email already belongs to another active verified
+user the call returns `409 GOOGLE_EMAIL_IN_USE`. Email is never used to match
+an existing account. Linking requires the account password and refuses to move a
 Google account already linked to another user (`409`); unlinking also requires
 the password and is refused with `409 LAST_SIGN_IN_METHOD` when the account has
 no password left. Nonces are stored as SHA-256 hex and bound to their purpose
@@ -432,8 +438,8 @@ requires restarting that flow with a fresh nonce. Nonces are consumed by one
 conditional `UPDATE` in its own transaction, so a failed sign-in cannot release
 a nonce for replay.
 
-`AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow}`.
-`UserResponse` = `{id, phone, displayName, avatarUrl}`. Rate limits: per client
+`AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow, newAccount?}` (`newAccount` only on `201` from Google sign-up).
+`UserResponse` = `{id, phone?, displayName, avatarUrl}` (`phone` omitted when null). Rate limits: per client
 IP, register and login 10 req / 5 min and refresh 30 req / 5 min; the Google
 nonce endpoint allows 30 req / 5 min and Google sign-in 20 req / 5 min; register
 and login are additionally limited per phone number to 20 req / 5 min. Link and
@@ -461,14 +467,14 @@ account hash (it still pays one dummy bcrypt compare for timing).
 | `PUT /users/me/email` | Bearer | `{email}` — normalized to lowercase and trimmed; sends a verification code | `202` empty | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /users/me/email/verify` | Bearer | `{code}` — six-digit code | `200` `{email, verified:true}` | `INVALID_OR_EXPIRED_CODE` 400 · `EMAIL_ALREADY_IN_USE` 409 |
 | `DELETE /users/me/email` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
-| `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
+| `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup), `?email=` (exact verified-email lookup, caller excluded), **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone/email, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (upload admission, shared with attachments and group avatars) |
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS` (omitted or unrecognized defaults to `ANDROID`), label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
 The alias routes `POST /devices/token` and `DELETE /devices/token` run the same handlers as the `/users/device-token` rows above, with identical bodies and responses.
 
-`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts.
+`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
 
 ### Public account deletion recovery
 
@@ -484,7 +490,7 @@ Within their rate-limit allowance, password-reset and account-deletion request r
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /contacts` | Bearer | — | `200` `ContactResponse[]` | `UNAUTHORIZED` 401 |
-| `POST /contacts` | Bearer | `{phone}` | `201` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `ALREADY_CONTACT` 409 · `RATE_LIMITED` 429 (30/min) |
+| `POST /contacts` | Bearer | `{phone}` **or** `{email}` — exactly one; phone accepts local/international format; email is trimmed, lowercased, and must match an active user with verified email | `201` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `ALREADY_CONTACT` 409 · `RATE_LIMITED` 429 (30/min) |
 | `PATCH /contacts/{userId}` | Bearer | `{aliasName?}` — ≤60 chars; JSON `null` clears the alias | `200` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
 | `DELETE /contacts/{userId}` | Bearer | — | `204` empty (idempotent: deleting a non-contact is still 204) | `UNAUTHORIZED` 401 |
 

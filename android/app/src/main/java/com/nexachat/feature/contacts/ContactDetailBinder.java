@@ -17,6 +17,7 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.common.PersonContactSubtitle;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
@@ -146,15 +147,18 @@ final class ContactDetailBinder {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView phone = new TextView(fragment.requireContext());
-        phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
-        phone.setGravity(Gravity.CENTER_HORIZONTAL);
-        phone.setText(content.getPhone());
-        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        phoneLp.bottomMargin = spaceMd;
-        root.addView(phone, phoneLp);
+        String identityLine = content.getIdentityLine();
+        if (identityLine != null && !identityLine.isBlank()) {
+            TextView phone = new TextView(fragment.requireContext());
+            phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+            phone.setGravity(Gravity.CENTER_HORIZONTAL);
+            phone.setText(identityLine);
+            LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            phoneLp.bottomMargin = spaceMd;
+            root.addView(phone, phoneLp);
+        }
 
         if (content.showsError()) {
             TextView err = new TextView(fragment.requireContext());
@@ -270,6 +274,7 @@ final class ContactDetailBinder {
                 title,
                 avatarUrl,
                 user.getPhone(),
+                PersonContactSubtitle.subtitle(user),
                 state.getAliasInput(),
                 state.isDetailBusy(),
                 state.getDetailError());
@@ -297,6 +302,7 @@ final class ContactDetailBinder {
         private final String title;
         @Nullable private final String avatarUrl;
         private final String phone;
+        @Nullable private final String identityLine;
         private final String aliasValue;
         private final boolean busy;
         @Nullable private final ApiError error;
@@ -307,6 +313,7 @@ final class ContactDetailBinder {
                 String title,
                 @Nullable String avatarUrl,
                 String phone,
+                @Nullable String identityLine,
                 String aliasValue,
                 boolean busy,
                 @Nullable ApiError error) {
@@ -315,6 +322,7 @@ final class ContactDetailBinder {
             this.title = title;
             this.avatarUrl = avatarUrl;
             this.phone = phone;
+            this.identityLine = identityLine;
             this.aliasValue = aliasValue;
             this.busy = busy;
             this.error = error;
@@ -339,6 +347,11 @@ final class ContactDetailBinder {
 
         String getPhone() {
             return phone;
+        }
+
+        @Nullable
+        String getIdentityLine() {
+            return identityLine;
         }
 
         String getAliasValue() {

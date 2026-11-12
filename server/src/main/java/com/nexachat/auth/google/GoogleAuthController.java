@@ -12,6 +12,7 @@ import com.nexachat.common.error.ApiException;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -59,9 +60,11 @@ public class GoogleAuthController {
     }
 
     @PostMapping("/google")
-    public AuthResponse signIn(@Valid @RequestBody GoogleSignInRequest request,
-                               @RequestHeader(name = "User-Agent", required = false) String userAgent) {
-        return googleSignInService.signIn(request, userAgent);
+    public ResponseEntity<AuthResponse> signIn(@Valid @RequestBody GoogleSignInRequest request,
+                                               @RequestHeader(name = "User-Agent", required = false) String userAgent) {
+        GoogleSignInResult result = googleSignInService.signIn(request, userAgent);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(result.response());
     }
 
     @GetMapping("/identities")

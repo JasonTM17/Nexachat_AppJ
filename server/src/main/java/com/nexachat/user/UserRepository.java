@@ -17,7 +17,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /** Active (non-deleted) account with this phone, for login/register/search. */
     Optional<User> findByPhoneAndDeletedAtIsNull(String phone);
 
+    /** Active user with a verified recovery email, for exact email search and add-by-email. */
+    @Query("""
+            SELECT u FROM User u
+            WHERE u.email = :email
+              AND u.emailVerifiedAt IS NOT NULL
+              AND u.deletedAt IS NULL
+            """)
+    Optional<User> findActiveByVerifiedEmail(@Param("email") String email);
+
     boolean existsByPhoneAndDeletedAtIsNull(String phone);
+
+    boolean existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(String email);
 
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u"
             + " WHERE u.email = :email AND u.emailVerifiedAt IS NOT NULL"

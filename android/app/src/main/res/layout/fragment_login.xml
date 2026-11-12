@@ -52,6 +52,29 @@
                     android:textColor="?attr/colorOnSurface"
                     android:textStyle="bold" />
 
+                <include
+                    android:id="@+id/googleEmailInUseError"
+                    layout="@layout/include_google_email_in_use_error" />
+
+                <!-- Sign in with Google (hidden when no web client ID was compiled in) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/googleSignIn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/cd_continue_with_google"
+                    android:minHeight="56dp"
+                    android:text="@string/action_continue_with_google"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    app:cornerRadius="12dp"
+                    app:icon="@drawable/ic_google_g"
+                    app:iconGravity="textStart"
+                    app:iconPadding="12dp"
+                    tools:visibility="visible" />
+
+                <include layout="@layout/include_auth_or_divider" />
+
                 <!-- Two input fields -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/phoneLayout"
@@ -145,20 +168,6 @@
                     android:text="@string/action_sign_in"
                     android:textStyle="bold"
                     app:cornerRadius="12dp" />
-
-                <!-- Sign in with Google (hidden when no web client ID was compiled in) -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/googleSignIn"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:minHeight="54dp"
-                    android:text="@string/action_continue_with_google"
-                    android:textStyle="bold"
-                    android:visibility="gone"
-                    app:cornerRadius="12dp"
-                    tools:visibility="visible" />
 
                 <!-- Text link -->
                 <com.google.android.material.button.MaterialButton

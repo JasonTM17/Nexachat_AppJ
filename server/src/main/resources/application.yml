@@ -110,6 +110,7 @@ nexachat:
       android-client-ids: ${NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS:}
       jwks-uri: ${NEXACHAT_GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
       nonce-ttl-seconds: ${NEXACHAT_GOOGLE_NONCE_TTL_SECONDS:300}
+      signup-enabled: ${NEXACHAT_GOOGLE_SIGNUP_ENABLED:false}
   security:
     # Exact browser origins allowed to call the API. Empty admits no
     # cross-origin caller (the native app sends no Origin header); set this in

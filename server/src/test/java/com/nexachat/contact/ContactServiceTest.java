@@ -72,7 +72,7 @@ class ContactServiceTest {
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(target));
         when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner()));
 
-        ContactResponse response = contactService.add(ownerId, "0987776655");
+        ContactResponse response = contactService.addByPhone(ownerId, "0987776655");
 
         assertThat(response.contactUserId()).isEqualTo(target.getId());
         assertThat(response.phone()).isEqualTo("+84987776655");
@@ -93,7 +93,7 @@ class ContactServiceTest {
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> contactService.add(ownerId, "0900000001"));
+                () -> contactService.addByPhone(ownerId, "0900000001"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.USER_NOT_FOUND);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
@@ -110,7 +110,7 @@ class ContactServiceTest {
                 .thenThrow(new DataIntegrityViolationException("contacts_pkey"));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> contactService.add(ownerId, "+84987776655"));
+                () -> contactService.addByPhone(ownerId, "+84987776655"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ALREADY_CONTACT);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.CONFLICT.value());
@@ -123,7 +123,7 @@ class ContactServiceTest {
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84901112233")).thenReturn(Optional.of(self));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> contactService.add(ownerId, "+84901112233"));
+                () -> contactService.addByPhone(ownerId, "+84901112233"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.BAD_REQUEST.value());
@@ -136,11 +136,46 @@ class ContactServiceTest {
         when(phoneService.toE164(anyString())).thenThrow(new IllegalArgumentException("not a phone"));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> contactService.add(ownerId, "abc"));
+                () -> contactService.addByPhone(ownerId, "abc"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
         verify(contactRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void addByEmail_success_normalizesAndPersists() {
+        User target = userWithId("+84987776655", "Lan");
+        target.changeEmail("friend@example.com");
+        when(userRepository.findActiveByVerifiedEmail("friend@example.com")).thenReturn(Optional.of(target));
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner()));
+
+        ContactResponse response = contactService.addByEmail(ownerId, "  Friend@Example.com  ");
+
+        assertThat(response.contactUserId()).isEqualTo(target.getId());
+        verify(userRepository).findActiveByVerifiedEmail("friend@example.com");
+        verify(contactRepository).saveAndFlush(any());
+    }
+
+    @Test
+    void addByEmail_unknownOrUnverified_throwsUserNotFound404() {
+        when(userRepository.findActiveByVerifiedEmail("missing@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> contactService.addByEmail(ownerId, "missing@example.com"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.USER_NOT_FOUND);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.NOT_FOUND.value());
+        verify(contactRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void addByEmail_invalidAddress_throwsValidationFailed() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> contactService.addByEmail(ownerId, "not-an-email"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(userRepository, never()).findActiveByVerifiedEmail(anyString());
     }
 
     // ----------------------------------------------------------------- list

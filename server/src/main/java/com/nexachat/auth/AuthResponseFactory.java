@@ -19,12 +19,17 @@ public class AuthResponseFactory {
     }
 
     public AuthResponse create(User user, String refreshToken) {
+        return create(user, refreshToken, null);
+    }
+
+    public AuthResponse create(User user, String refreshToken, Boolean newAccount) {
         return new AuthResponse(
                 UserResponse.from(user),
                 jwtService.generateAccessToken(user),
                 jwtService.accessTokenExpiresIn(),
                 refreshToken,
                 messageRecallProperties.getRecallWindow().toSeconds(),
-                MessageRecallProperties.GROUP_ADMIN_MAY_RECALL_AFTER_WINDOW);
+                MessageRecallProperties.GROUP_ADMIN_MAY_RECALL_AFTER_WINDOW,
+                newAccount);
     }
 }

@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
+import com.nexachat.core.common.PersonContactSubtitle;
 import com.nexachat.core.network.dto.UserDto;
 
 /**
@@ -67,7 +68,13 @@ public final class UserSearchAdapter extends ListAdapter<UserDto, UserSearchAdap
 
         void bind(@NonNull UserDto user, @NonNull Listener listener) {
             name.setText(user.getDisplayName());
-            subtitle.setText(user.getPhone());
+            String line = PersonContactSubtitle.subtitle(user);
+            if (line == null || line.isBlank()) {
+                subtitle.setVisibility(android.view.View.GONE);
+            } else {
+                subtitle.setVisibility(android.view.View.VISIBLE);
+                subtitle.setText(line);
+            }
             avatar.setName(user.getDisplayName());
             avatar.setAvatarUrl(user.getAvatarUrl());
             itemView.setOnClickListener(v -> listener.onUserClick(user.getId()));

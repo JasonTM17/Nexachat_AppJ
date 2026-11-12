@@ -47,6 +47,9 @@ public final class AuthErrorIds {
             if ("LAST_SIGN_IN_METHOD".equals(code)) {
                 return R.string.error_last_sign_in_method;
             }
+            if ("NO_PASSWORD_SET".equals(code)) {
+                return R.string.error_no_password_set;
+            }
             if (com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT.equals(code)) {
                 return R.string.error_google_no_account;
             }

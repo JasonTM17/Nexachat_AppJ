@@ -1,5 +1,6 @@
 package com.nexachat.auth.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.nexachat.user.dto.UserResponse;
 
 /**
@@ -7,12 +8,14 @@ import com.nexachat.user.dto.UserResponse;
  * additive client policy fields for the effective recall window and group-admin
  * moderation after that window.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AuthResponse(
         UserResponse user,
         String accessToken,
         long accessTokenExpiresIn,
         String refreshToken,
         long recallWindowSeconds,
-        boolean groupAdminMayRecallAfterWindow
+        boolean groupAdminMayRecallAfterWindow,
+        Boolean newAccount
 ) {
 }
