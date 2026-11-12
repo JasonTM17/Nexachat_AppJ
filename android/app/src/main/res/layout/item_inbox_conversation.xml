@@ -6,14 +6,17 @@
     android:background="?attr/selectableItemBackground"
     android:clickable="true"
     android:focusable="true"
-    android:minHeight="72dp"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp">
+    android:minHeight="@dimen/inbox_row_min_height"
+    android:paddingStart="@dimen/space_md"
+    android:paddingTop="@dimen/space_inset"
+    android:paddingEnd="@dimen/space_md"
+    android:paddingBottom="@dimen/space_inset">
 
     <com.nexachat.core.ui.components.AvatarView
         android:id="@+id/avatar"
-        android:layout_width="52dp"
-        android:layout_height="52dp"
+        android:layout_width="@dimen/avatar_inbox_size"
+        android:layout_height="@dimen/avatar_inbox_size"
+        android:importantForAccessibility="no"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -104,8 +107,8 @@
             android:gravity="center"
             android:minWidth="24dp"
             android:minHeight="24dp"
-            android:paddingHorizontal="7dp"
-            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
             android:textColor="?attr/colorOnPrimary"
             android:visibility="gone" />
     </LinearLayout>

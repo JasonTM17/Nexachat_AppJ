@@ -144,6 +144,8 @@
 
     <!-- Chat placeholder -->
     <string name="chat_title">Chat</string>
+    <string name="chat_empty">No messages yet</string>
+    <string name="a11y_open_chat_actions">Message actions</string>
     <string name="chat_placeholder">Chat %1$s</string>
 
     <!-- Chat -->

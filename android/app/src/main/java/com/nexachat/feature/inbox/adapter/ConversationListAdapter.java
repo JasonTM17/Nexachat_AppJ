@@ -140,6 +140,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             boundConversation = conversation;
             String displayTitle = ConversationPreviewHelper.displayTitle(itemView.getContext(), conversation);
             title.setText(displayTitle);
+            float fontScale = itemView.getResources().getConfiguration().fontScale;
+            title.setMaxLines(fontScale >= 1.5f ? 2 : 1);
+            preview.setMaxLines(fontScale >= 1.5f ? 2 : 1);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
             avatar.setOnlineStatus(InboxBadgeRules.resolveOnlineStatus(conversation));
