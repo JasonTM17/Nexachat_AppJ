@@ -82,5 +82,5 @@
     <!-- Logo-only tokens (v1.1.2). Do not alias app palette roles. -->
     <color name="nexa_logo_mark">#FF733F68</color>
     <color name="nexa_logo_on_brand">#FFFFFCFF</color>
-    <color name="nexa_logo_plate">@color/ic_launcher_background</color>
+    <color name="nexa_logo_plate">#FF733F68</color>
 </resources>

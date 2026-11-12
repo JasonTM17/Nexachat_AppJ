@@ -81,5 +81,5 @@
 
     <color name="nexa_logo_mark">#FFDDA7CC</color>
     <color name="nexa_logo_on_brand">#FFFFFCFF</color>
-    <color name="nexa_logo_plate">@color/ic_launcher_background</color>
+    <color name="nexa_logo_plate">#FF733F68</color>
 </resources>
