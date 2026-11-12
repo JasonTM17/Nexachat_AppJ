@@ -299,7 +299,7 @@ public final class ContactsFragment extends Fragment {
             clearAddDialogRefs();
         }
         if (detailBinder != null) {
-            detailBinder.dismiss();
+            detailBinder.releaseForViewDestroy();
             detailBinder = null;
         }
         if (binding != null) {

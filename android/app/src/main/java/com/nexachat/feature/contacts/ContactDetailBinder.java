@@ -20,6 +20,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
+import java.util.Objects;
 
 /**
  * One contact-detail dialog shared by the contacts list and user search.
@@ -36,6 +37,7 @@ final class ContactDetailBinder {
     @Nullable private LinearLayout root;
     @Nullable private TextInputEditText aliasInput;
     @Nullable private String boundUserId;
+    @Nullable private String boundTitle;
     private boolean boundIsContact;
     private boolean renderingAlias;
 
@@ -70,6 +72,7 @@ final class ContactDetailBinder {
                         root = null;
                         aliasInput = null;
                         boundUserId = null;
+                        boundTitle = null;
                     })
                     .show();
         } else if (root != null) {
@@ -86,6 +89,23 @@ final class ContactDetailBinder {
         root = null;
         aliasInput = null;
         boundUserId = null;
+        boundTitle = null;
+    }
+
+    /**
+     * Tears down the dialog when the fragment view is destroyed (for example
+     * on rotation) without clearing the selected contact in the ViewModel.
+     */
+    void releaseForViewDestroy() {
+        if (dialog != null) {
+            dialog.setOnDismissListener(null);
+            dialog.dismiss();
+        }
+        dialog = null;
+        root = null;
+        aliasInput = null;
+        boundUserId = null;
+        boundTitle = null;
     }
 
     private void bindContent(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
@@ -93,7 +113,7 @@ final class ContactDetailBinder {
         if (content == null) {
             return;
         }
-        if (canReuseAliasField(boundUserId, boundIsContact, content, aliasInput != null)) {
+        if (canReuseAliasField(boundUserId, boundIsContact, boundTitle, content, aliasInput != null)) {
             renderingAlias = true;
             if (!aliasInput.getText().toString().equals(content.getAliasValue())) {
                 aliasInput.setText(content.getAliasValue());
@@ -103,6 +123,7 @@ final class ContactDetailBinder {
         }
         boundUserId = content.getUserId();
         boundIsContact = content.isContact();
+        boundTitle = content.getTitle();
         aliasInput = null;
         root.removeAllViews();
         int spaceSm = fragment.getResources().getDimensionPixelSize(R.dimen.space_sm);
@@ -257,12 +278,14 @@ final class ContactDetailBinder {
     static boolean canReuseAliasField(
             @Nullable String boundUserId,
             boolean boundIsContact,
+            @Nullable String boundTitle,
             @NonNull Content content,
             boolean hasAliasField) {
         return hasAliasField
                 && content.showsAliasEditor()
                 && content.getUserId().equals(boundUserId)
                 && content.isContact() == boundIsContact
+                && Objects.equals(boundTitle, content.getTitle())
                 && !content.showsError()
                 && !content.isBusy();
     }

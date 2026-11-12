@@ -31,8 +31,14 @@ public final class ContactDetailBinderWiringTest {
 
         assertTrue(contacts.contains("new ContactDetailBinder(this, viewModel)"));
         assertTrue(contacts.contains("detailBinder.render(state)"));
+        assertTrue(contacts.contains("detailBinder.releaseForViewDestroy()"));
         assertTrue(search.contains("new ContactDetailBinder(this, viewModel)"));
         assertTrue(search.contains("detailBinder.render(state)"));
+        assertTrue(search.contains("detailBinder.releaseForViewDestroy()"));
+        assertFalse("view destroy must not clear detail selection",
+                contacts.contains("detailBinder.dismiss()"));
+        assertFalse("view destroy must not clear detail selection",
+                search.contains("detailBinder.dismiss()"));
     }
 
     @Test
