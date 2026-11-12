@@ -17,7 +17,8 @@ services:
     plan: free
     region: singapore
     branch: main
-    # Deploy only commits pushed to main, never pull-request branches.
+    # autoDeployTrigger applies only to a Blueprint-managed service. Production was
+    # created via Render API with auto-deploy off (see docs/deploy-render.md).
     autoDeployTrigger: commit
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server
