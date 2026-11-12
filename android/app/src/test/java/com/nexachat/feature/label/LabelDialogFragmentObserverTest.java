@@ -25,7 +25,10 @@ import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import java.lang.reflect.Field;
 import java.util.List;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Set;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -57,8 +60,16 @@ public final class LabelDialogFragmentObserverTest {
             org.mockito.ArgumentMatchers.anyBoolean()))
         .thenReturn(false);
 
+    // load() subscribes on the io scheduler. Run it inline so no late publish from another
+    // thread can render into the rows while the observer assertions below run.
+    RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
     viewModel = new LabelViewModel(new StaticLabelRepository());
     viewModel.load();
+  }
+
+  @After
+  public void tearDown() {
+    RxJavaPlugins.reset();
   }
 
   @Test
