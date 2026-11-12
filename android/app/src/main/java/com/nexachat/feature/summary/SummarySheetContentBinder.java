@@ -12,7 +12,6 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import com.google.android.material.chip.Chip;
 import com.nexachat.R;
 import com.nexachat.feature.summary.adapter.SummaryCitationAdapter;
 import com.nexachat.summary.SummaryParticipant;
@@ -77,19 +76,7 @@ public final class SummarySheetContentBinder {
 
         if (!summary.getTopics().isEmpty()) {
             addSectionHeader(container, R.string.summary_section_topics, 0);
-            LinearLayout topicRow = new LinearLayout(context);
-            topicRow.setOrientation(LinearLayout.HORIZONTAL);
-            topicRow.setLayoutParams(new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            for (String topic : summary.getTopics()) {
-                Chip chip = new Chip(context);
-                chip.setText(context.getString(R.string.a11y_summary_topic_chip, topic));
-                chip.setCheckable(false);
-                chip.setClickable(false);
-                topicRow.addView(chip);
-            }
-            container.addView(topicRow);
+            container.addView(SummaryTopicsSection.build(context, summary.getTopics()));
         }
     }
 
