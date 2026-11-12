@@ -360,7 +360,9 @@ the implementing source file.
   `sub` may create a Google-only account (no phone, no password hash); the email
   is never used to match an existing row. Conflicts on an already-verified email
   return `409 GOOGLE_EMAIL_IN_USE`. Google-only users cannot change password
-  (`409 NO_PASSWORD_SET`) and should delete through the email OTP flow. Physical
+  (`409 NO_PASSWORD_SET`). They cannot delete themselves yet: in-app deletion
+  needs a password and the email-code deletion flow looks accounts up by phone,
+  so a Google-only account has no working deletion path. Physical
   deletion cascades identity rows in V28; account tombstoning deletes linked
   identities and account-owned link nonces explicitly in the deletion transaction.
 

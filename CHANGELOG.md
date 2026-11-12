@@ -27,7 +27,7 @@ See [docs/release-notes/v1.2.0.md](docs/release-notes/v1.2.0.md).
   (exact match, verified and active users only).
 - Flyway **V32** and negotiated sync v2 on `POST /sync` (`syncVersion: 2`,
   `changeCursor`, `changes`, `reset`, `generation`); legacy fields stay for v1.1
-  clients. `NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED` (default `true`) disables it.
+  clients. `NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED` (default `true`): set `false` to disable it.
 - Paired PostgreSQL + object capture/restore CLI under `tools/backup/`.
 - Recipient-bound FCM payloads and one push per physical device.
 - Prometheus storage meters (`nexachat.storage.*`) with bounded labels.
@@ -73,7 +73,9 @@ See [docs/release-notes/v1.2.0.md](docs/release-notes/v1.2.0.md).
 
 ### Known limitations
 
-- A Google-only account cannot add a phone or a password in this release.
+- A Google-only account cannot add a phone, set a password, or delete itself in
+  this release: in-app deletion needs a password and the email-code deletion
+  flow looks accounts up by phone.
 - Message summaries are not purged when a message is recalled.
 
 ## [1.1.2] - 2026-11-12
