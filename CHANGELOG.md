@@ -6,7 +6,7 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.1.1] - YYYY-MM-DD (pending tag)
+## [1.1.1] - 2026-11-12
 
 Patch after `v1.1.0` (server deploy on Render plus a signed Android APK).
 See [docs/release-notes/v1.1.1.md](docs/release-notes/v1.1.1.md).
