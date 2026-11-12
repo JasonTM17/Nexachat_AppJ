@@ -126,6 +126,48 @@ class ObservabilityPrometheusMetricsTest {
                 assertThat(keySets).as("tag key sets for %s", name).hasSize(1));
     }
 
+    @Test
+    void storageMetersReachTheScrapeWithFixedLabels() {
+        PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        ObservabilityMetrics metrics = new ObservabilityMetrics(registry);
+
+        metrics.recordStorageOperation("STORE", "local", 12, 2048, true);
+        metrics.recordStorageOperation("OPEN", "s3", 3, 0, false);
+        metrics.recordStorageStream("OPEN", "s3", 40, 1024,
+                ObservabilityMetrics.StreamOutcome.COMPLETE);
+        // A recorded histogram timer must not poison the same scrape.
+        metrics.recordDeltaSync(10, 2048, true);
+
+        String scrape = registry.scrape();
+        assertThat(seriesLines(scrape, "nexachat_storage_operations_total"))
+                .anySatisfy(line -> {
+                    assertThat(line).contains("operation=\"STORE\"");
+                    assertThat(line).contains("provider=\"local\"");
+                    assertThat(line).contains("outcome=\"SUCCESS\"");
+                });
+        assertThat(seriesLines(scrape, "nexachat_storage_operations_total"))
+                .anySatisfy(line -> {
+                    assertThat(line).contains("operation=\"OPEN\"");
+                    assertThat(line).contains("provider=\"s3\"");
+                    assertThat(line).contains("outcome=\"FAILURE\"");
+                });
+        assertThat(seriesLines(scrape, "nexachat_storage_operation_bytes_sum"))
+                .anySatisfy(line -> {
+                    assertThat(line).contains("operation=\"STORE\"");
+                    assertThat(line).contains("outcome=\"SUCCESS\"");
+                });
+        assertThat(seriesLines(scrape, "nexachat_storage_stream_duration_seconds_count"))
+                .anySatisfy(line -> {
+                    assertThat(line).contains("operation=\"OPEN\"");
+                    assertThat(line).contains("outcome=\"COMPLETE\"");
+                });
+        assertThat(seriesLines(scrape, "nexachat_storage_stream_bytes_sum"))
+                .anySatisfy(line -> {
+                    assertThat(line).contains("operation=\"OPEN\"");
+                    assertThat(line).contains("outcome=\"COMPLETE\"");
+                });
+    }
+
     private static List<String> seriesLines(String scrape, String metricName) {
         return scrape.lines()
                 .filter(line -> line.startsWith(metricName))

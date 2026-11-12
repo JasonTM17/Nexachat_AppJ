@@ -864,10 +864,17 @@ addresses, message text or tokens are used as tag values. The names are:
 | `nexachat.ratelimit.rejections` | counter | `reason` (rule prefix) |
 | `nexachat.auth.failures` | counter | `reason` (`TOKEN_EXPIRED`/`TOKEN_INVALID`/`UNAUTHORIZED`/`FORBIDDEN`) |
 | `nexachat.repository.calls` | timer | `method`, `outcome` |
+| `nexachat.storage.operations` | counter | `operation` (`STORE`/`OPEN`/`OPEN_RANGE`/`DELETE`), `provider` (`local`/`s3`), `outcome` (`SUCCESS`/`FAILURE`) |
+| `nexachat.storage.operation.duration` | timer | `operation`, `provider`, `outcome` |
+| `nexachat.storage.operation.bytes` | summary | `operation`, `provider`, `outcome` |
+| `nexachat.storage.stream.duration` | timer | `operation`, `provider`, `outcome` (`COMPLETE`/`CLOSED`/`FAILURE` for streams) |
+| `nexachat.storage.stream.bytes` | summary | `operation`, `provider`, `outcome` |
 | `nexachat.rag.stats.*` | counters | aggregate RAG counts (requests, cache hits, LLM calls/failures, embeddings, indexed messages) |
 
 `http.server.requests`, JVM, HikariCP and process metrics come from
-Spring Boot Actuator automatically.
+Spring Boot Actuator automatically. The storage meters are explained, with the
+manual free-tier checks, in
+[free-tier-observability.md](free-tier-observability.md).
 
 ### Scraping
 

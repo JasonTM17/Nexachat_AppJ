@@ -65,3 +65,38 @@ groups:
         annotations:
           summary: Repository average latency is above 500 ms
           description: "Average repository call latency has been above 500ms for 10 minutes."
+
+  - name: nexachat-storage
+    rules:
+      - alert: NexaChatStorageFailureRate
+        expr: |
+          sum(rate(nexachat_storage_operations_total{outcome="FAILURE"}[15m]))
+            / sum(rate(nexachat_storage_operations_total[15m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Storage operation failure rate is above 5%
+          description: "More than 5% of store, open or delete operations failed for 10 minutes."
+
+      - alert: NexaChatStorageOperationSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nexachat_storage_operation_duration_seconds_bucket[10m])) by (le, operation, provider)) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Storage operation p95 latency is above 5 seconds
+          description: "p95 request-level storage latency has been above 5s for 10 minutes."
+
+      - alert: NexaChatStorageStreamSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(nexachat_storage_stream_duration_seconds_bucket[10m])) by (le, operation, provider)) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Storage stream consumption p95 is above 60 seconds
+          description: "p95 stream consumption has been above 60s for 10 minutes; check for stalled clients or slow object storage."
