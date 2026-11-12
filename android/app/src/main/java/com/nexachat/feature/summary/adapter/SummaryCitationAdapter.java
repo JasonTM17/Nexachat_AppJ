@@ -74,9 +74,13 @@ public final class SummaryCitationAdapter extends ListAdapter<SummaryCitationIte
             int bg = item.isJumpable()
                     ? R.color.brand_indigo_container
                     : R.color.bubble_other;
+            int fg = item.isJumpable()
+                    ? R.color.brand_on_indigo_container
+                    : R.color.colorOnSurfaceVariant;
             chip.setChipBackgroundColor(
                     ContextCompat.getColorStateList(itemView.getContext(), bg)
             );
+            chip.setTextColor(ContextCompat.getColor(itemView.getContext(), fg));
             chip.setOnClickListener(item.isJumpable()
                     ? v -> listener.onCitationClick(item.getMessageId())
                     : null);
