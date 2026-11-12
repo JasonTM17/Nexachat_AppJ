@@ -462,7 +462,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /users/me` | Bearer | — | `200` `MyProfileResponse` = `{id, phone, displayName, avatarUrl, email, emailVerified}` | `UNAUTHORIZED` 401 |
+| `GET /users/me` | Bearer | — | `200` `MyProfileResponse` = `{id, phone, displayName, avatarUrl, email, emailVerified, passwordSet}` | `UNAUTHORIZED` 401 |
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected; ≤60 chars | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/me` | Bearer | `{password?, code?}` — an account with a password hash requires `password` (`code` is ignored); an account without a password hash requires `code` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `INVALID_OR_EXPIRED_CODE` 400 · `TOKEN_INVALID` 401 (retry with the same access token after a successful delete) · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (only when the handler runs for an already-deleted row without a rejected token) |
 | `POST /users/me/deletion-code` | Bearer | no body | `202` empty; sends a `DELETE_ACCOUNT` code to the caller's own verified email | `UNAUTHORIZED` 401 · `PASSWORD_REQUIRED` 409 · `INVALID_OR_EXPIRED_CODE` 400 (no verified email) · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 (60s resend cooldown, 10/5 min per user, 5/5 min per email, 30/5 min per IP) |
@@ -476,7 +476,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 The alias routes `POST /devices/token` and `DELETE /devices/token` run the same handlers as the `/users/device-token` rows above, with identical bodies and responses.
 
-`UserResponse` is `{id, phone, displayName, avatarUrl, deleted, passwordSet}`. `passwordSet` is true when a password hash exists. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/me` stays `MyProfileResponse` and does not include `passwordSet`. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
+`UserResponse` is `{id, phone, displayName, avatarUrl, deleted, passwordSet}`. `passwordSet` is true when a password hash exists. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/me` returns `MyProfileResponse`, which also carries `passwordSet`. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
 
 ### Public account deletion recovery
 

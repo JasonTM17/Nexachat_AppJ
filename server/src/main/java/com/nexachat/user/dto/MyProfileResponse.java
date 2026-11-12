@@ -11,7 +11,8 @@ public record MyProfileResponse(
         String displayName,
         String avatarUrl,
         String email,
-        boolean emailVerified) {
+        boolean emailVerified,
+        boolean passwordSet) {
 
     public static MyProfileResponse from(User user) {
         return new MyProfileResponse(
@@ -20,6 +21,7 @@ public record MyProfileResponse(
                 user.getDisplayName(),
                 user.getAvatarUrl(),
                 user.getEmail(),
-                user.hasVerifiedEmail());
+                user.hasVerifiedEmail(),
+                user.hasPassword());
     }
 }

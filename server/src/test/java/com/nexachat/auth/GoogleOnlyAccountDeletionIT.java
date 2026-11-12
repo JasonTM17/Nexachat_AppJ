@@ -65,6 +65,10 @@ class GoogleOnlyAccountDeletionIT extends SecurityITBase {
         Registered user = signUp("gdel-success", email);
         Registered secondSession = signInAgain("gdel-success", email);
 
+        getWithAuth("/api/v1/users/me", user.accessToken())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passwordSet").value(false));
+
         AccountRecoveryFlowTest.SentOtp code = requestCode(user);
         assertThat(code.recipient()).isEqualTo(email);
         assertThat(code.purpose()).isEqualTo(OtpPurpose.DELETE_ACCOUNT);
