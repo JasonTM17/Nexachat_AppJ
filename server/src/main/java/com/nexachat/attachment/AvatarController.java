@@ -73,12 +73,16 @@ public class AvatarController {
             if (sniffed == null || !sniffed.startsWith("image/")) {
                 throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
             }
+            // The avatar coordination advisory is the outermost lock: a group
+            // rename/avatar change takes it before its user and conversation
+            // rows, so the upload must not hold the user row while it waits for
+            // the same advisory (user -> advisory would invert that order).
+            referenceCoordinator.lockForTransaction();
             User user = userRepository.findByIdForUpdate(principal.userId())
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
             if (user.getDeletedAt() != null) {
                 throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
             }
-            referenceCoordinator.lockForTransaction();
             String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
             StorageService.StoredFile stored = storageService.store(
                     "avatars", file.getOriginalFilename(), file.getContentType(), bytes);

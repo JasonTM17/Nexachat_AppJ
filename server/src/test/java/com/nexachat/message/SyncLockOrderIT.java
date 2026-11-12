@@ -237,6 +237,36 @@ class SyncLockOrderIT {
         }
     }
 
+    // --------------------------------------------------------------- S4
+
+    @Test
+    void avatarUploadVsGroupAvatarRename() throws Exception {
+        TestUser alice = register("avatarVsRename");
+        TestUser bob = register("avatarVsRenamePeer");
+        UUID conversationId = createGroup(alice, bob, "avatar-vs-rename " + System.nanoTime());
+
+        long key = installGate("sync_lock_gate_avatar", "messages", "BEFORE INSERT",
+                "WHEN (NEW.type = 'SYSTEM' AND NEW.content LIKE '%renamed the group%')");
+        try (Gate gate = openGate(key)) {
+            Future<String> rename = submit(() ->
+                    groupService.updateGroup(alice.id(), conversationId,
+                            new PatchGroupRequest("renamed " + System.nanoTime(), "")));
+            int renamePid = awaitBlockedBy(gate.pid());
+
+            Future<String> upload = submit(() -> avatarController.uploadAvatar(
+                    new com.nexachat.common.dto.JwtPrincipal(alice.id()), List.of(pngFile())));
+            int uploadPid = awaitBlockedBy(renamePid);
+            assertThat(rowLockBlockers("users", alice.id()))
+                    .as("avatar upload %s must take the avatar advisory before the user row", uploadPid)
+                    .doesNotContain(uploadPid);
+
+            gate.release();
+            assertThat(failures(rename, upload))
+                    .as("group rename/avatar upload must terminate without a deadlock")
+                    .isEmpty();
+        }
+    }
+
     // ------------------------------------------------------------- helpers
 
     private TestUser register(String tag) {
