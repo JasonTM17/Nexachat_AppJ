@@ -229,17 +229,19 @@ class ContactByEmailIT {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
 
+        TestUser rateLimitUser = registerUser("RateLimitAlice");
         for (int i = 0; i < 30; i++) {
+            String unknownPhone = "+8490" + (1 + (i % 9)) + String.format("%06d", 200000 + i);
             mockMvc.perform(post("/api/v1/contacts")
-                            .header("Authorization", "Bearer " + alice.accessToken())
+                            .header("Authorization", "Bearer " + rateLimitUser.accessToken())
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(Map.of("phone", "+8491888800" + i))))
+                            .content(objectMapper.writeValueAsString(Map.of("phone", unknownPhone))))
                     .andExpect(status().isNotFound());
         }
         mockMvc.perform(post("/api/v1/contacts")
-                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .header("Authorization", "Bearer " + rateLimitUser.accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("phone", "+84918888999"))))
+                        .content(objectMapper.writeValueAsString(Map.of("phone", "+84909999999"))))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
     }
