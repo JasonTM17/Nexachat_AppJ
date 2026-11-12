@@ -31,6 +31,32 @@ Use the SHA-1 fingerprint with the Android OAuth client for package
 app in Firebase Project settings. These fingerprints identify the signing key
 used by distributed APKs.
 
+## Google OAuth clients (sign-in)
+
+NexaChat's **Sign in with Google** flow uses three OAuth client IDs in Google
+Cloud (see [docs/google-signin-setup.md](google-signin-setup.md)):
+
+| Credential type | Where it is used |
+|---|---|
+| **Web application** | Android `GOOGLE_WEB_CLIENT_ID` in `local.properties` or `-PgoogleWebClientId=`; server `NEXACHAT_GOOGLE_WEB_CLIENT_ID` — ID token `aud` |
+| **Android (debug)** | Google Cloud Android client with the **debug keystore** SHA-1 (`~/.android/debug.keystore`, alias `androiddebugkey`) |
+| **Android (release)** | Google Cloud Android client with the **upload keystore** SHA-1 from the keystore section above |
+
+The Android app always passes the **web** client ID to Credential Manager. The
+server trusts the **Android** client IDs as the token's `azp` via
+`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` (comma-separated list of debug and release
+Android client ID strings). Do not put client IDs in the repository.
+
+Release APK builds must pass the same web client ID as production, for example:
+
+```bash
+./gradlew assembleRelease -PapiBaseUrl=https://api.nexachat.io.vn \
+  -PgoogleWebClientId=<your-web-client-id>.apps.googleusercontent.com
+```
+
+If sign-in works on debug but fails on a release APK, compare the APK signing
+certificate SHA-1 with the fingerprints on your **release** Android OAuth client.
+
 ## Configure GitHub Actions secrets
 
 In the repository, open **Settings → Secrets and variables → Actions** and add:

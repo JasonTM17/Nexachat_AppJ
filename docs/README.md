@@ -29,6 +29,7 @@ Every engineering document in the repository, grouped by domain. Start with
 |---|---|
 | [docs/security.md](security.md) | Security architecture — authentication, authorization, storage, rate limits, Google sign-in (OpenID Connect), recovery email OTPs, and account deletion / tombstoning |
 | [docs/operations.md](operations.md) | Operator setup, Docker Compose runtime configuration, environment variables, Mailpit dev mail sink, Google OAuth setup, Firebase rollout gates, and R8 keep rules check |
+| [docs/google-signin-setup.md](google-signin-setup.md) | Google Cloud OAuth clients, env var names (comma-separated Android IDs), Android `GOOGLE_WEB_CLIENT_ID`, local and Render testing |
 | [docs/deploy-render.md](deploy-render.md) | First public release on Render Free + Neon + Supabase Storage (R2 alternative): Blueprint, env vars, custom domain, cold starts |
 | [docs/domain-and-app-links.md](domain-and-app-links.md) | Domain, DNS, Vercel and Android App Links runbook: propagation checks, device testing, signing fingerprint, Vercel build-skip (`ignoreCommand`), and token rotation |
 | [docs/production-runbook.md](production-runbook.md) | Production topology, Render/Neon/Supabase/Firebase/Vercel operations, cold-start handling, secret rotation checklist, and free-tier limits |
