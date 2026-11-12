@@ -8,7 +8,6 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -228,20 +227,40 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> None:
             raise SystemExit(f"pg_dump failed: {proc.stderr.decode(errors='replace')}")
         dest.write_bytes(proc.stdout)
         return
-    with tempfile.NamedTemporaryFile(delete=False) as password_file:
-        password_file.write(db["password"].encode("utf-8"))
-        password_path = password_file.name
-    try:
+    env = os.environ.copy()
+    env["PGPASSWORD"] = db["password"]
+    host = db["host"]
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        "PGPASSWORD",
+        image,
+        "pg_dump",
+        "-h",
+        host,
+        "-p",
+        db["port"],
+        "-U",
+        db["user"],
+        "-d",
+        db["database"],
+        "--no-owner",
+        "--no-privileges",
+    ]
+    if db["host"] in {"localhost", "127.0.0.1"}:
         cmd = [
             "docker",
             "run",
             "--rm",
+            "--network=host",
             "-e",
-            f"PGPASSWORD={db['password']}",
+            "PGPASSWORD",
             image,
             "pg_dump",
             "-h",
-            db["host"],
+            host,
             "-p",
             db["port"],
             "-U",
@@ -251,33 +270,10 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> None:
             "--no-owner",
             "--no-privileges",
         ]
-        if db["host"] in {"localhost", "127.0.0.1"}:
-            cmd = [
-                "docker",
-                "run",
-                "--rm",
-                "--network=host",
-                "-e",
-                f"PGPASSWORD={db['password']}",
-                image,
-                "pg_dump",
-                "-h",
-                db["host"],
-                "-p",
-                db["port"],
-                "-U",
-                db["user"],
-                "-d",
-                db["database"],
-                "--no-owner",
-                "--no-privileges",
-            ]
-        proc = subprocess.run(cmd, capture_output=True, check=False)
-        if proc.returncode != 0:
-            raise SystemExit(f"pg_dump via {image} failed: {proc.stderr.decode(errors='replace')}")
-        dest.write_bytes(proc.stdout)
-    finally:
-        Path(password_path).unlink(missing_ok=True)
+    proc = subprocess.run(cmd, capture_output=True, check=False, env=env)
+    if proc.returncode != 0:
+        raise SystemExit(f"pg_dump via {image} failed: {proc.stderr.decode(errors='replace')}")
+    dest.write_bytes(proc.stdout)
 
 
 def copy_local_object(storage_root: Path, storage_key: str, dest: Path) -> int:

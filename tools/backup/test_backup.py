@@ -106,6 +106,29 @@ class BackupNegativeTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             formatter.format(record)
 
+    def test_pg_dump_argv_never_embeds_password(self) -> None:
+        db = {
+            "host": "127.0.0.1",
+            "port": "5433",
+            "database": "nexachat_v12_backup_src",
+            "user": "nexachat",
+            "password": "never-on-argv-pw",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dump.sql"
+            env = {"BACKUP_PG_CONTAINER": ""}
+            with mock.patch.dict(os.environ, env, clear=False):
+                os.environ.pop("BACKUP_PG_CONTAINER", None)
+                with mock.patch("subprocess.run") as run_mock:
+                    run_mock.return_value = mock.Mock(returncode=0, stdout=b"dump", stderr=b"")
+                    backup.run_pg_dump(db, dest)
+            args, kwargs = run_mock.call_args
+            cmd = args[0]
+            run_env = kwargs.get("env") or {}
+            self.assertEqual(run_env.get("PGPASSWORD"), "never-on-argv-pw")
+            for token in cmd:
+                self.assertNotIn("never-on-argv-pw", token)
+
 
 class BackupCaptureTest(unittest.TestCase):
     def test_successful_capture_writes_complete_last(self) -> None:
