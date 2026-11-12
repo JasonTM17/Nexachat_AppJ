@@ -141,6 +141,13 @@ public final class MessageEntity {
     public long getChangeVersion() { return changeVersion; }
     public long getGeneration() { return generation; }
 
+    @NonNull public MessageEntity withReplyToSnippet(@Nullable String snippet) {
+        return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
+                content, clientMessageId, replyToId, replyToSenderName, snippet, createdAt,
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
+                changeVersion, generation);
+    }
+
     @NonNull public MessageEntity withSyncVersion(long version, long nextGeneration) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,

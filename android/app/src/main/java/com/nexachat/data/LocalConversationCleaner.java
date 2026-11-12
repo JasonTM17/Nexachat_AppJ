@@ -15,6 +15,7 @@ final class LocalConversationCleaner {
 
     static void deleteInTransaction(
             AppDatabase database, String conversationId, String ownerUserId) {
+        if (database.syncCursorDao() != null) database.syncCursorDao().delete(ownerUserId, conversationId);
         database.pinDao().deleteForConversation(conversationId).blockingAwait();
         database.outboxDao().deleteForConversation(conversationId, ownerUserId).blockingAwait();
         database.reactionDao().deleteForConversation(conversationId).blockingAwait();

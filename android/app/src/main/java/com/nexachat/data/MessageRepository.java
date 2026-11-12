@@ -509,6 +509,8 @@ public final class MessageRepository {
     private Completable storeHistoryItems(String conversationId, List<MessageDto> items) {
         List<MessageEntity> deletedEntities = new ArrayList<>();
         Completable writes = Flowable.fromIterable(items).concatMapCompletable(dto -> {
+            if (syncEngine != null) return syncEngine.applyServerHistoryOrEvent(dto, conversationId, false, true);
+            if (hasSyncVersion(dto)) return Completable.complete();
             MessageEntity entity = toEntity(dto, conversationId);
             if (entity == null) return Completable.complete();
             return messageDao.byId(entity.getId()).map(Optional::of).defaultIfEmpty(Optional.empty())
@@ -518,6 +520,7 @@ public final class MessageRepository {
                             write = messageDao.upsert(entity);
                         } else {
                             MessageEntity existing = existingOpt.get();
+                            if (existing.getGeneration() > 0) return Completable.complete();
                             if (existing.getDeletedAtEpochMs() == null && entity.getDeletedAtEpochMs() != null) {
                                 write = messageDao.update(copyMessage(existing, "", null,
                                         existing.getEditedAtEpochMs(), entity.getDeletedAtEpochMs(),
@@ -550,10 +553,11 @@ public final class MessageRepository {
                     List<String> owners = new ArrayList<>();
                     List<MessageReactionEntity> rows = new ArrayList<>();
                     Completable collect = Flowable.fromIterable(items).concatMapMaybe(dto -> {
+                        if (hasSyncVersion(dto)) return Maybe.empty();
                         if (dto.getDeletedAt() != null && !dto.getDeletedAt().isBlank()) return Maybe.empty();
                         List<ReactionSummaryDto> summaries = dto.getReactions();
                         if (summaries == null) return Maybe.empty();
-                        return messageDao.byId(dto.getId()).filter(row -> row.getDeletedAtEpochMs() == null)
+                        return messageDao.byId(dto.getId()).filter(row -> row.getDeletedAtEpochMs() == null && row.getGeneration() == 0)
                                 .map(row -> new HistoryReactions(dto, row));
                     }).doOnNext(entry -> {
                         owners.add(entry.dto.getId());
@@ -995,6 +999,8 @@ public final class MessageRepository {
     }
 
     private Completable acknowledge(String ownerUserId, String conversationId, MessageDto dto) {
+        if (syncEngine != null) return syncEngine.applyServerMessage(dto, conversationId);
+        if (hasSyncVersion(dto)) return Completable.complete();
         MessageEntity entity = toEntity(dto, conversationId);
         if (entity == null) return Completable.complete();
         Completable ack = entity.getClientMessageId() == null ? Completable.complete()
@@ -1143,9 +1149,19 @@ public final class MessageRepository {
             }
             return Completable.complete();
         });
-        return acknowledge.andThen(messageDao.upsert(entity))
-                .andThen(deliveryAck)
-                .andThen(updateInboxProjection(entity));
+        if (syncEngine != null) {
+            return syncEngine.applyServerMessage(dto, conversationId,
+                    !Objects.equals(activeConversation.get(), conversationId)).andThen(deliveryAck)
+                    .andThen(isMine(entity.getSenderId()).flatMapCompletable(mine ->
+                            !mine && Objects.equals(activeConversation.get(), conversationId)
+                                    ? sendRead(conversationId, entity.getSeq()) : Completable.complete()));
+        }
+        if (hasSyncVersion(dto)) return Completable.complete();
+        Completable legacyWrite = acknowledge.andThen(messageDao.upsert(entity))
+                .andThen(deliveryAck).andThen(updateInboxProjection(entity));
+        return messageDao.byId(entity.getId()).map(row -> row.getGeneration() > 0)
+                .defaultIfEmpty(false).flatMapCompletable(versioned -> versioned
+                        ? Completable.complete() : legacyWrite);
     }
 
     private Completable updateInboxProjection(MessageEntity entity) {
@@ -1164,17 +1180,23 @@ public final class MessageRepository {
      * Applies the authoritative MESSAGE_UPDATED content and timestamp. Late or
      * duplicate broadcasts are idempotent; tombstoned rows never resurrect.
      */
+    private static boolean hasSyncVersion(MessageDto dto) {
+        return dto.getChangeVersion() != null || dto.getGeneration() != null;
+    }
+
     private Completable onMessageUpdated(ChatEvent.MessageUpdated event) {
         MessageDto dto = event.getMessage();
         String conversationId = firstNonNull(dto.getConversationId(), event.getConversationId());
         if (conversationId == null) return Completable.complete();
+        if (syncEngine != null) return syncEngine.applyServerMessage(dto, conversationId);
+        if (hasSyncVersion(dto)) return Completable.complete();
         MessageEntity server = toEntity(dto, conversationId);
         if (server == null) return Completable.complete();
         return messageDao.byId(server.getId()).map(Optional::of).defaultIfEmpty(Optional.empty())
                 .flatMapCompletable(rowOpt -> {
                     if (rowOpt.isEmpty()) return messageDao.upsert(server);
                     MessageEntity row = rowOpt.get();
-                    if (row.getDeletedAtEpochMs() != null) return Completable.complete();
+                    if (row.getGeneration() > 0 || row.getDeletedAtEpochMs() != null) return Completable.complete();
                     long editedAt = server.getEditedAtEpochMs() != null
                             ? server.getEditedAtEpochMs() : System.currentTimeMillis();
                     MessageEntity updated = copyMessage(row, server.getContent(), row.getAttachmentsJson(),
@@ -1193,6 +1215,22 @@ public final class MessageRepository {
         String messageId = event.getMessageId();
         String conversationId = event.getConversationId();
         if (messageId == null || conversationId == null) return Completable.complete();
+        if (syncEngine != null) {
+            boolean versioned = event.getChangeVersion() != null || event.getGeneration() != null;
+            if (versioned && (event.getChangeVersion() == null || event.getGeneration() == null)) {
+                return Completable.complete();
+            }
+            return syncEngine.applyServerDelete(messageId, conversationId,
+                    versioned ? event.getChangeVersion() : 0, versioned ? event.getGeneration() : 0,
+                    Optional.ofNullable(TimeAndJwt.isoToEpochMsOrNull(event.getDeletedAt()))
+                            .orElse(System.currentTimeMillis()))
+                    .andThen(messageDao.byId(messageId).doOnSuccess(row -> {
+                        if (row.getDeletedAtEpochMs() != null && pendingDeleteIds.contains(messageId)) {
+                            confirmedDeleteIds.add(messageId);
+                        }
+                    }).ignoreElement());
+        }
+        if (event.getChangeVersion() != null || event.getGeneration() != null) return Completable.complete();
         if (pendingDeleteIds.contains(messageId)) confirmedDeleteIds.add(messageId);
         long deletedAt = Optional.ofNullable(TimeAndJwt.isoToEpochMsOrNull(event.getDeletedAt()))
                 .orElse(System.currentTimeMillis());
@@ -1205,9 +1243,11 @@ public final class MessageRepository {
             return write.andThen(isLastMessage(row).flatMapCompletable(last -> last
                     ? conversationDao.markLastMessageDeleted(conversationId) : Completable.complete()));
         });
-        return update.andThen(reactionDao.deleteForMessage(messageId))
+        Completable legacyDelete = update.andThen(reactionDao.deleteForMessage(messageId))
                 .andThen(pinDao.delete(conversationId, messageId))
                 .andThen(messageDao.clearReplySnippets(messageId));
+        return messageDao.byId(messageId).map(row -> row.getGeneration() > 0).defaultIfEmpty(false)
+                .flatMapCompletable(versioned -> versioned ? Completable.complete() : legacyDelete);
     }
 
     private void scheduleRateLimitRetry() {
@@ -1699,7 +1739,9 @@ public final class MessageRepository {
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()), attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
                 deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
-                !deleted && dto.isMentionAll());
+                !deleted && dto.isMentionAll()).withSyncVersion(
+                        dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(),
+                        dto.getGeneration() == null ? 0 : dto.getGeneration());
     }
 
     /** Parses attachmentsJson; missing, blank, or malformed data becomes an empty list. */
@@ -1863,7 +1905,9 @@ public final class MessageRepository {
                 && Objects.equals(left.getEditedAtEpochMs(), right.getEditedAtEpochMs())
                 && Objects.equals(left.getDeletedAtEpochMs(), right.getDeletedAtEpochMs())
                 && Objects.equals(left.getMentionsJson(), right.getMentionsJson())
-                && left.isMentionAll() == right.isMentionAll();
+                && left.isMentionAll() == right.isMentionAll()
+                && left.getChangeVersion() == right.getChangeVersion()
+                && left.getGeneration() == right.getGeneration();
     }
 
     private static MessageEntity copyMessage(MessageEntity source, @Nullable String content,
@@ -1882,7 +1926,7 @@ public final class MessageRepository {
                 source.getSenderId(), source.getSenderDisplayName(), source.getType(), content,
                 source.getClientMessageId(), source.getReplyToId(), source.getReplyToSenderName(),
                 replyToSnippet, source.getCreatedAt(), attachmentsJson, editedAtEpochMs, deletedAtEpochMs,
-                mentionsJson, mentionAll);
+                mentionsJson, mentionAll, source.getChangeVersion(), source.getGeneration());
     }
 
     private List<MessageEntity> mapEntities(List<MessageDto> dtos, String conversationId) {
