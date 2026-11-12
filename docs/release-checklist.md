@@ -48,11 +48,77 @@ python tools/check-android-strings.py
 find demo tools -name '*.sh' -type f -print0 | xargs -0 -n1 bash -n
 ```
 
-## 2. Production Release Sequence
+## 2. Build, check and sign the Android artifact
+
+Run this local build before §4 tags the release and the GitHub workflow
+publishes the APK.
+
+```bash
+# Optional: confirm the Firebase client file is present for this build
+cd android
+JAVA_HOME='<jdk>' ANDROID_HOME='<sdk>' ./gradlew :app:checkFirebaseConfig
+cd ..
+
+# Build a release APK, align, sign and verify it
+tools/sign-release.sh v<MAJOR.MINOR.PATCH> -PapiBaseUrl='<https-api-base-url>'
+
+# Prove R8 retained the reflective wire models
+python tools/check-release-r8-mapping.py
+```
+
+- The signer rejects a non-HTTPS `API_BASE_URL`; `--allow-http-smoke` is only
+  for a local smoke build and must not be used for a distributed APK
+  (`tools/release-url-guard.sh`).
+- The signer writes `release/nexachat-vX.Y.Z.apk` and runs
+  `apksigner verify --print-certs`; both outputs are gitignored.
+- `check-release-r8-mapping.py` reads
+  `android/app/build/outputs/mapping/release/mapping.txt` and `usage.txt` and
+  fails on renamed/removed reflective DTOs, Room migrations or required keep
+  rules.
+- `versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH`, capped at
+  `2,100,000,000` (`tools/release-version.sh`). Confirm it is greater than the
+  version code of the last published release.
+- If the Play Console requires an AAB, build it separately with the signing
+  credentials and run the same mapping check. The repository's `sign-release.sh`
+  produces an APK, not an AAB (**owner** decides whether an AAB is required).
+
+## 3. Roll out the database migration and server
+
+Flyway runs on application startup and is forward-only: `V1`–`V20`, `V22`, and
+`V24`–`V31` are the current files (`server/src/main/resources/db/migration/`);
+`V21` and `V23` are reserved and have no files. There is no down-migration.
+The manual Render deploy in §4 boots the API from `server/Dockerfile`; Flyway
+applies pending migrations on that boot. There is no separate migration command.
+
+1. **Backup first** (destructive restore is the only rollback):
+   - **Local Compose demo only:** `bash demo/backup.sh` (or PowerShell
+     `demo/backup.ps1`). This script inspects `docker compose ps -q db` and
+     dumps only the local container database to `demo/backups/`. It does
+     **not** connect to hosted Neon Postgres and does **not** back up Supabase
+     S3 object storage.
+   - **Hosted production (Neon + Supabase S3):** `demo/backup.sh` must **not**
+     be used for production releases. Production requires an explicit target
+     identity verification, a hosted database snapshot/dump (e.g. Neon branch
+     or `pg_dump` targeting the Neon endpoint), and paired object storage
+     inventory/backup (Supabase S3 `avatars/` and `attachments/`). Restoring a
+     database snapshot without paired object storage recovery causes dangling
+     references or unrecoverable attachment loss.
+2. Record the commit SHA of the current live deploy so that SHA can be
+   redeployed.
+3. After §4 reports `live`, check the startup log for Flyway success and no
+   `ProductionJwtSecretGuard` failure. Readiness covers the database, Flyway
+   and disk space.
+4. Do not deploy an older commit against a newer schema unless the migration
+   was reviewed as backward-compatible. If a migration fails, restore the
+   pre-upgrade backup (`docs/operations.md` §Upgrade).
+
+## 4. Production Release Sequence
 
 The production service `nexachat-api` on Render was created through the Render API
 with auto-deploy disabled. It is not managed by the `render.yaml` Blueprint; pushing
 to `main` does not deploy. Every release is triggered manually per commit SHA.
+Back up the database (§3) before step 4; Flyway applies pending migrations when
+that deploy boots.
 
 Follow the verified sequence:
 
@@ -64,16 +130,15 @@ Follow the verified sequence:
   (`.github/workflows/ci.yml`): `server-test`, `android-test`, `repo-hygiene`,
   `site-js-test`, `firebase-rules`, `secret-scan`, and `publish-container`.
 - [ ] **3. Env diff against `render.yaml`** — Compare the production service
-  environment variables against `render.yaml`. Apply any added or changed values
-  (e.g. `JAVA_OPTS`, `NEXACHAT_MULTIPART_TEMP_DIR`) through the Render API or
-  Dashboard before deploying (see [docs/deploy-render.md](deploy-render.md)):
+  environment variables against `render.yaml`. Apply each added or changed value
+  (for example `JAVA_OPTS`, `NEXACHAT_MULTIPART_TEMP_DIR`) with one call per key,
+  or edit that key in the Dashboard, before deploying
+  (see [docs/deploy-render.md](deploy-render.md)):
   ```bash
-  curl -fsS -X PUT \
-    -H "Authorization: Bearer <RENDER_API_KEY>" \
-    -H "Content-Type: application/json" \
-    -d '[{"key": "<KEY>", "value": "<VALUE>"}]' \
-    https://api.render.com/v1/services/<service-id>/env-vars
+  curl -fsS -X PUT -H "Authorization: Bearer <RENDER_API_KEY>" -H "Content-Type: application/json" \
+    -d '{"value": "<VALUE>"}' https://api.render.com/v1/services/<service-id>/env-vars/<KEY>
   ```
+  The bulk `PUT .../env-vars` replaces every variable, so never use it for a single change.
 - [ ] **4. Manual deploy of exact SHA** — Trigger a manual deploy of the exact
   commit SHA via the Render API:
   ```bash
@@ -97,7 +162,8 @@ Follow the verified sequence:
   bash tools/prod-smoke.sh https://api.nexachat.io.vn --write
   ```
 - [ ] **8. Scan logs** — Scan Render application logs for new `WARN` or `ERROR` entries.
-- [ ] **9. Tag** — Tag the release commit and push the tag:
+- [ ] **9. Tag** — Tag the release commit and push the tag (the local APK and R8
+  check are §2):
   ```bash
   git tag -a v<MAJOR>.<MINOR>.<PATCH> -m 'NexaChat v<MAJOR>.<MINOR>.<PATCH>'
   git push origin v<MAJOR>.<MINOR>.<PATCH>
@@ -113,11 +179,19 @@ Follow the verified sequence:
   device (`adb install -r app-release.apk`) or proceed through the Google Play
   Console track release.
 
-## 3. Rollback
+## 5. Server image
+
+CI's `publish-container` job still pushes the image
+(`ghcr.io/<owner>/<repo>/nexachat-server:latest` and `:sha-<7>`) after the
+other CI jobs pass on a push to `main` (`.github/workflows/ci.yml`), but
+production does not pull it. Render builds from `server/Dockerfile`.
+
+## 6. Rollback
 
 - **Server**: Redeploy the previous deploy's commit SHA via the Render API or
   Dashboard, and restore the previous environment variable values if any were
-  changed.
+  changed. Use one env-var call per key, as in §4. The bulk
+  `PUT .../env-vars` replaces every variable, so never use it for a single change.
 - **Database**: Migrations are strictly forward-only (`validate-on-migrate: true`).
   Do not attempt a reverse Flyway migration. If a rolled-back commit cannot run
   on the migrated schema, deploy a forward fix commit. Hosted Neon Postgres backups
@@ -126,6 +200,27 @@ Follow the verified sequence:
 - **Android**: Google Play cannot unpublish a version; release a higher
   `versionCode` with the fix. Direct-install users can reinstall the previous APK.
 - **Site**: Redeploy the previous Vercel deployment if static web assets changed.
+
+## 7. Close out
+
+- [ ] Confirm the §4 release tag is pushed
+  (`git tag -a vX.Y.Z -m 'NexaChat vX.Y.Z'`). CI does not create tags.
+- [ ] Publish release notes from `CHANGELOG.md` (factual, no internal plan
+  labels).
+- [ ] **owner** Upload the APK/AAB to Play, complete the Data safety and
+  content-rating forms, and append the Play App Signing SHA-256 to
+  `site/.well-known/assetlinks.json` when it differs from the upload key.
+- [ ] **credential** Deploy the updated site (Vercel) and confirm
+  `/.well-known/assetlinks.json` returns `200 application/json`.
+- [ ] **owner** Decide whether retention jobs, external summary LLM, RAG
+  embeddings or FCM are enabled in this environment; they are off or local by
+  default. Note: data retention cleanup requires three explicit settings:
+  (1) global toggle `NEXACHAT_RETENTION_ENABLED=true`, (2) disabling dry-run
+  `NEXACHAT_RETENTION_DRY_RUN=false` (defaults to `true`, which counts candidates
+  without deleting), and (3) per-job toggles `NEXACHAT_RETENTION_<JOB>_ENABLED=true`
+  (`server/src/main/resources/application.yml:172-227`).
+- [ ] Record the deployed commit SHA, APK/AAB checksum, migration version and
+  smoke results in the release notes or deployment log.
 
 ## Steps that need credentials or owner decisions
 

@@ -100,17 +100,16 @@ Before deploying, diff the service environment variables against `render.yaml`:
    ```
    (or inspect Render Dashboard → `nexachat-api` → **Environment**).
 2. Compare values against the `envVars` block in `render.yaml`.
-3. Set or update any added or modified variables via the Render API:
+3. Set or update any added or modified variable with one call per changed key
+   (or update that key in the Render Dashboard):
    ```sh
-   curl -fsS -X PUT \
-     -H "Authorization: Bearer <RENDER_API_KEY>" \
-     -H "Content-Type: application/json" \
-     -d '[{"key": "<KEY>", "value": "<VALUE>"}]' \
-     https://api.render.com/v1/services/<service-id>/env-vars
+   curl -fsS -X PUT -H "Authorization: Bearer <RENDER_API_KEY>" -H "Content-Type: application/json" \
+     -d '{"value": "<VALUE>"}' https://api.render.com/v1/services/<service-id>/env-vars/<KEY>
    ```
-   (or update them in the Render Dashboard). For example, v1.1.1 required
-   setting `JAVA_OPTS` (with `-XX:SharedArchiveFile=/app/application.jsa`) and
-   `NEXACHAT_MULTIPART_TEMP_DIR=/app/data/multipart`.
+   The bulk `PUT .../env-vars` replaces every variable, so never use it for a single change.
+   For example, v1.1.1 required setting `JAVA_OPTS` (with
+   `-XX:SharedArchiveFile=/app/application.jsa`) and
+   `NEXACHAT_MULTIPART_TEMP_DIR=/app/data/multipart`, each with its own call.
 
 ### Manual deploy of an exact SHA
 
@@ -153,7 +152,9 @@ bash tools/prod-smoke.sh https://api.nexachat.io.vn --write
 
 To roll back:
 1. Redeploy the previous deploy's commit SHA via Render API or Dashboard.
-2. Restore the previous environment variable values if any were changed.
+2. Restore the previous environment variable values if any were changed, one
+   call per key as in the env-var diff above. The bulk `PUT .../env-vars`
+   replaces every variable, so never use it for a single change.
 3. Database migrations are forward-only (`validate-on-migrate: true`). If a
    migration has already run against Neon Postgres, keep the application
    backward-compatible or deploy a forward fix commit.
