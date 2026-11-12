@@ -57,6 +57,55 @@
                 android:saveEnabled="false" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/sendDeletionCode"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="20dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/delete_account_send_code"
+            android:visibility="gone"
+            app:cornerRadius="12dp" />
+
+        <TextView
+            android:id="@+id/deletionCodeSentMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="12dp"
+            android:accessibilityLiveRegion="polite"
+            android:text="@string/delete_account_code_sent"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/deletionCodeLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            android:hint="@string/delete_account_code_label"
+            android:visibility="gone"
+            app:boxCornerRadiusBottomEnd="12dp"
+            app:boxCornerRadiusBottomStart="12dp"
+            app:boxCornerRadiusTopEnd="12dp"
+            app:boxCornerRadiusTopStart="12dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/deletionCodeInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/cd_delete_account_code"
+                android:imeOptions="actionDone"
+                android:inputType="numberPassword"
+                android:maxLength="6"
+                android:saveEnabled="false" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <TextView
             android:id="@+id/inlineError"
             android:layout_width="match_parent"

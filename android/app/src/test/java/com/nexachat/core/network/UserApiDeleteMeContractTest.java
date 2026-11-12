@@ -55,6 +55,19 @@ public final class UserApiDeleteMeContractTest {
     }
 
     @Test
+    public void deleteMeAcceptsCodeOnlyBody() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(204));
+
+        Response<Void> response =
+                userApi.deleteMe(DeleteAccountRequest.withCode("123456")).execute();
+
+        assertEquals(204, response.code());
+        RecordedRequest request = server.takeRequest();
+        assertEquals("DELETE", request.getMethod());
+        assertEquals("{\"code\":\"123456\"}", request.getBody().readUtf8());
+    }
+
+    @Test
     public void legacyDeleteAnnotationCannotCarryBody() {
         interface BadDeleteApi {
             @retrofit2.http.DELETE("api/v1/users/me")

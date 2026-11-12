@@ -553,6 +553,12 @@
     <string name="delete_account_title">Xóa tài khoản</string>
     <string name="delete_account_consequences">Tài khoản của bạn sẽ bị xóa vĩnh viễn; tin nhắn vẫn hiển thị với người khác như từ tài khoản đã xóa.</string>
     <string name="delete_account_confirm">Xóa tài khoản của tôi</string>
+    <string name="delete_account_send_code">Gửi mã</string>
+    <string name="delete_account_code_label">Mã 6 chữ số</string>
+    <string name="delete_account_code_sent">Chúng tôi đã gửi mã xác nhận đến địa chỉ email đã xác minh của bạn</string>
+    <string name="delete_account_code_invalid">Mã không đúng hoặc đã hết hạn</string>
+    <string name="error_deletion_code_required">Nhập mã 6 chữ số</string>
+    <string name="cd_delete_account_code">Mã xác nhận xóa tài khoản</string>
     <string name="login_account_deleted_notice">Tài khoản của bạn đã được xóa.</string>
     <string name="error_wrong_password">Mật khẩu hiện tại không đúng</string>
     <!-- Sign in with Google (hidden when the build has no web client ID) -->
