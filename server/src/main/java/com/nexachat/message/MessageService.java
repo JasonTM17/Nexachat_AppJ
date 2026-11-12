@@ -363,8 +363,7 @@ public class MessageService {
     @Transactional
     public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId,
                                 EditMessageRequest request) {
-        lockConversationForWrite(conversationId);
-        requireMember(conversationId, userId);
+        lockConversationForMemberWrite(conversationId, userId);
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
@@ -434,8 +433,7 @@ public class MessageService {
 
     @Transactional
     public void delete(UUID userId, UUID conversationId, UUID messageId) {
-        Conversation conversation = lockConversationForWrite(conversationId);
-        requireMember(conversationId, userId);
+        Conversation conversation = lockConversationForMemberWrite(conversationId, userId);
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
@@ -936,6 +934,20 @@ public class MessageService {
         return conversationRepository.findByIdForUpdate(conversationId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+    }
+
+    /**
+     * Locks the conversation row before the membership read. A missing row is
+     * {@code NOT_MEMBER}, the same family as a conversation the caller is not in.
+     */
+    private Conversation lockConversationForMemberWrite(UUID conversationId, UUID userId) {
+        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
+                .orElse(null);
+        if (conversation == null) {
+            throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
+        }
+        requireMember(conversationId, userId);
+        return conversation;
     }
 
     /** Caller must already hold the conversation row lock through transaction completion. */

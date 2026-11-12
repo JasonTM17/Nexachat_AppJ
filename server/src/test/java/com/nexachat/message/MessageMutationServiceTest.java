@@ -109,6 +109,17 @@ class MessageMutationServiceTest {
     }
 
     @Test
+    void editMissingConversationIsNotMemberBeforeMessageLookup() {
+        when(conversationRepository.findByIdForUpdate(conversationId)).thenReturn(Optional.empty());
+
+        ApiException error = catchThrowableOfType(ApiException.class,
+                () -> service.edit(userId, conversationId, messageId, "next"));
+
+        assertThat(error.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        verify(messageRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
     void editWrongConversationIsHiddenAsNotFound() {
         UUID wrongConversationId = UUID.randomUUID();
 
@@ -194,6 +205,17 @@ class MessageMutationServiceTest {
         service.delete(userId, conversationId, messageId);
 
         assertThat(message.getDeletedAt()).isEqualTo(boundary.truncatedTo(ChronoUnit.MICROS));
+    }
+
+    @Test
+    void deleteMissingConversationIsNotMemberBeforeMessageLookup() {
+        when(conversationRepository.findByIdForUpdate(conversationId)).thenReturn(Optional.empty());
+
+        ApiException error = catchThrowableOfType(ApiException.class,
+                () -> service.delete(userId, conversationId, messageId));
+
+        assertThat(error.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        verify(messageRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
