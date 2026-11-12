@@ -4,6 +4,7 @@ import com.nexachat.attachment.AvatarController.AvatarResponse;
 import com.nexachat.attachment.AvatarReferenceCoordinator;
 import com.nexachat.attachment.AvatarUrlPolicy;
 import com.nexachat.attachment.StorageService;
+import com.nexachat.attachment.StorageTransactionCleanup;
 import com.nexachat.attachment.UploadAdmission;
 import com.nexachat.common.MagicBytes;
 import com.nexachat.common.error.ApiErrorCode;
@@ -34,6 +35,9 @@ import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
@@ -99,6 +103,7 @@ public class GroupService {
     private final StorageService storageService;
     private final AvatarReferenceCoordinator avatarReferenceCoordinator;
     private final UploadAdmission uploadAdmission;
+    private final TransactionTemplate avatarBindTransaction;
     private final SimpUserRegistry simpUserRegistry;
     private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
 
@@ -112,7 +117,8 @@ public class GroupService {
                         AvatarReferenceCoordinator avatarReferenceCoordinator,
                         UploadAdmission uploadAdmission,
                         SimpUserRegistry simpUserRegistry,
-                        AbstractBrokerMessageHandler simpleBrokerMessageHandler) {
+                        AbstractBrokerMessageHandler simpleBrokerMessageHandler,
+                        PlatformTransactionManager transactionManager) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
@@ -124,6 +130,7 @@ public class GroupService {
         this.uploadAdmission = uploadAdmission;
         this.simpUserRegistry = simpUserRegistry;
         this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
+        this.avatarBindTransaction = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -509,11 +516,16 @@ public class GroupService {
      * {@link UploadAdmission}; a saturated gate answers {@code 429
      * RATE_LIMITED} with a {@code Retry-After} header.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AvatarResponse setGroupAvatar(
             UUID callerId, UUID conversationId, MultipartFile file) throws IOException {
-        Conversation conversation = requireGroup(conversationId);
-        requireAdmin(requireMember(conversationId, callerId));
+        // Bound the derived membership query's EntityManager lifecycle too:
+        // NOT_SUPPORTED still has Spring synchronization, which otherwise can
+        // retain its non-transactional JDBC connection until this method exits.
+        avatarBindTransaction.executeWithoutResult(status -> {
+            requireGroup(conversationId);
+            requireAdmin(requireMember(conversationId, callerId));
+        });
         if (file == null || file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Avatar file is required");
         }
@@ -528,13 +540,27 @@ public class GroupService {
             if (sniffed == null || !sniffed.startsWith("image/")) {
                 throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
             }
-            avatarReferenceCoordinator.lockForTransaction();
             StorageService.StoredFile stored = storageService.store(
                     "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-            conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
-            publishUpdate(conversation, "UPDATED", List.of());
-            log.info("Group {} avatar set by {}", conversationId, callerId);
-            return new AvatarResponse(conversation.getAvatarUrl());
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), avatarBindTransaction, () -> {
+                // No attachment adoption in this route. Keep A -> U -> C,
+                // matching updateGroup and the part A SYSTEM writer order.
+                avatarReferenceCoordinator.lockForTransaction();
+                User caller = userRepository.findByIdForUpdate(callerId)
+                        .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+                if (caller.getDeletedAt() != null) {
+                    throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                }
+                Conversation conversation = lockGroup(conversationId);
+                requireAdmin(requireMember(conversationId, callerId));
+                if (!storageService.exists(stored.storageKey())) {
+                    throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+                }
+                conversation.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
+                publishUpdate(conversation, "UPDATED", List.of());
+                log.info("Group {} avatar set by {}", conversationId, callerId);
+                return new AvatarResponse(conversation.getAvatarUrl());
+            });
         }
     }
 

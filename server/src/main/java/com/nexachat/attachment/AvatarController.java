@@ -9,7 +9,9 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,20 +40,23 @@ public class AvatarController {
     private final UserRepository userRepository;
     private final AvatarReferenceCoordinator referenceCoordinator;
     private final UploadAdmission uploadAdmission;
+    private final TransactionTemplate bindTransaction;
 
     public AvatarController(
             StorageService storageService,
             UserRepository userRepository,
             AvatarReferenceCoordinator referenceCoordinator,
-            UploadAdmission uploadAdmission) {
+            UploadAdmission uploadAdmission,
+            PlatformTransactionManager transactionManager) {
         this.storageService = storageService;
         this.userRepository = userRepository;
         this.referenceCoordinator = referenceCoordinator;
         this.uploadAdmission = uploadAdmission;
+        this.bindTransaction = new TransactionTemplate(transactionManager);
     }
 
     @PostMapping("/me/avatar")
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AvatarResponse uploadAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam("file") List<MultipartFile> files) throws IOException {
@@ -73,26 +78,32 @@ public class AvatarController {
             if (sniffed == null || !sniffed.startsWith("image/")) {
                 throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
             }
-            // The avatar coordination advisory is the outermost lock: a group
-            // rename/avatar change takes it before its user and conversation
-            // rows, so the upload must not hold the user row while it waits for
-            // the same advisory (user -> advisory would invert that order).
-            referenceCoordinator.lockForTransaction();
-            User user = userRepository.findByIdForUpdate(principal.userId())
+            User candidate = userRepository.findById(principal.userId())
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-            if (user.getDeletedAt() != null) {
+            if (candidate.getDeletedAt() != null) {
                 throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
             }
-            String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
             StorageService.StoredFile stored = storageService.store(
                     "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-            StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
-            user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
-            userRepository.save(user);
-            if (!stored.storageKey().equals(oldAvatarKey)) {
-                referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
-            }
-            return new AvatarResponse(user.getAvatarUrl());
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction, () -> {
+                // Part A order: avatar advisory before user, also when bind waits.
+                referenceCoordinator.lockForTransaction();
+                User user = userRepository.findByIdForUpdate(principal.userId())
+                        .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+                if (user.getDeletedAt() != null) {
+                    throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                }
+                if (!storageService.exists(stored.storageKey())) {
+                    throw ApiException.of(ApiErrorCode.FILE_NOT_FOUND);
+                }
+                String oldAvatarKey = ownedAvatarStorageKey(user.getAvatarUrl());
+                user.changeAvatarUrl(storageService.resolveUrl(stored.storageKey()));
+                userRepository.save(user);
+                if (!stored.storageKey().equals(oldAvatarKey)) {
+                    referenceCoordinator.deleteIfUnreferencedAfterCommit(oldAvatarKey);
+                }
+                return new AvatarResponse(user.getAvatarUrl());
+            });
         }
     }
 
