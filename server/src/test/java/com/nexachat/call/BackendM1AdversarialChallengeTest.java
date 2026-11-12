@@ -468,7 +468,8 @@ public class BackendM1AdversarialChallengeTest {
             );
 
             Map<String, String> data = mockGateway.getSentPushes().get(0).data();
-            assertThat(data).containsOnlyKeys("type", "conversationId", "messageId", "seq", "senderName");
+            assertThat(data).containsOnlyKeys(
+                    "type", "recipientId", "conversationId", "messageId", "seq", "senderName");
             assertThat(data.get("senderName")).isEqualTo("");
         }
 

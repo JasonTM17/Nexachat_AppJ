@@ -11,7 +11,6 @@ import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -25,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -77,6 +77,30 @@ class NotificationEventListenerTest {
     }
 
     @Test
+    void multiRecipientFanOutUsesOneRecipientBoundPushPerAccount() {
+        UUID secondRecipientId = UUID.randomUUID();
+        MessageResponse message = message(Message.Type.TEXT, 10L);
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, recipientId, secondRecipientId));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(presenceState.isOnline(recipientId)).thenReturn(false);
+        when(presenceState.isOnline(secondRecipientId)).thenReturn(false);
+        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(device("token-a")));
+        when(tokenRepository.findByUserId(secondRecipientId)).thenReturn(List.of(device("token-b")));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        verify(fcmPushService).sendNewMessageNotification(
+                recipientId, conversationId, message.id(), message.seq(), message.senderDisplayName(), false);
+        verify(fcmPushService).sendNewMessageNotification(
+                secondRecipientId, conversationId, message.id(), message.seq(), message.senderDisplayName(), false);
+        verify(fcmPushService, times(2)).sendNewMessageNotification(
+                any(UUID.class), eq(conversationId), eq(message.id()), eq(message.seq()),
+                eq(message.senderDisplayName()), eq(false));
+    }
+
+    @Test
     void createdSystemEventStillDispatchesPushToRemovedSubject() {
         MessageResponse message = message(Message.Type.SYSTEM, 9L);
         // The removed subject is no longer in the member list at fan-out time.
@@ -101,18 +125,18 @@ class NotificationEventListenerTest {
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
         when(presenceState.isOnline(recipientId)).thenReturn(false);
-        User owner = mock(User.class);
-        UserDeviceToken token = UserDeviceToken.create(
-                owner, "recipient-token", UserDeviceToken.Platform.ANDROID, "Phone");
-        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
+        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(device("recipient-token")));
     }
 
-    @SuppressWarnings("unchecked")
+    private static UserDeviceToken device(String tokenValue) {
+        return UserDeviceToken.create(
+                mock(User.class), tokenValue, UserDeviceToken.Platform.ANDROID, "Phone");
+    }
+
     private void assertSinglePush(MessageResponse message, boolean mentioned) {
-        ArgumentCaptor<List<UserDeviceToken>> tokens = ArgumentCaptor.forClass(List.class);
-        verify(fcmPushService).sendNewMessageNotification(tokens.capture(), eq(conversationId),
-                eq(message.id()), eq(message.seq()), eq(message.senderDisplayName()), eq(mentioned));
-        assertThat(tokens.getValue()).hasSize(1);
+        verify(fcmPushService).sendNewMessageNotification(
+                recipientId, conversationId, message.id(), message.seq(),
+                message.senderDisplayName(), mentioned);
     }
 
     private MessageResponse message(Message.Type type, long seq) {

@@ -13,12 +13,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -86,11 +83,6 @@ public class NotificationEventListener {
         event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
         boolean mentionAll = event.message().mentionAll();
 
-        // One physical device can hold a token row per account; collect the
-        // offline recipients' tokens and de-duplicate by token value so a
-        // shared device receives the message exactly once.
-        Map<String, UserDeviceToken> tokensByValue = new LinkedHashMap<>();
-        Set<String> mentionedTokenValues = new HashSet<>();
         for (UUID memberId : recipientIds) {
             if (memberId.equals(senderId)) {
                 continue;
@@ -101,31 +93,12 @@ public class NotificationEventListener {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
-                for (UserDeviceToken token : tokenRepository.findByUserId(memberId)) {
-                    tokensByValue.putIfAbsent(token.getToken(), token);
-                    if (mentioned) {
-                        mentionedTokenValues.add(token.getToken());
-                    }
+                if (!tokenRepository.findByUserId(memberId).isEmpty()) {
+                    fcmPushService.sendNewMessageNotification(memberId, conversationId,
+                            event.message().id(), event.message().seq(),
+                            event.message().senderDisplayName(), mentioned);
                 }
             }
-        }
-
-        List<UserDeviceToken> mentionedTokens = new ArrayList<>();
-        List<UserDeviceToken> ordinaryTokens = new ArrayList<>();
-        tokensByValue.forEach((tokenValue, token) -> {
-            if (mentionedTokenValues.contains(tokenValue)) {
-                mentionedTokens.add(token);
-            } else {
-                ordinaryTokens.add(token);
-            }
-        });
-        if (!ordinaryTokens.isEmpty()) {
-            fcmPushService.sendNewMessageNotification(ordinaryTokens, conversationId,
-                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), false);
-        }
-        if (!mentionedTokens.isEmpty()) {
-            fcmPushService.sendNewMessageNotification(mentionedTokens, conversationId,
-                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), true);
         }
     }
 

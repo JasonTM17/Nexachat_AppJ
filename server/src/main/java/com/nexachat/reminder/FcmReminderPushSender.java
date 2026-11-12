@@ -64,22 +64,24 @@ public class FcmReminderPushSender implements ReminderPushSender {
             return;
         }
 
-        Map<String, String> data = new HashMap<>();
-        data.put("type", "REMINDER");
-        data.put("reminderId", reminder.reminderId().toString());
-        data.put("conversationId", reminder.conversationId().toString());
-        data.put("repeat", reminder.repeat().name());
-
-        // One physical device can hold a token row per account; the same token
-        // must receive this reminder once.
-        Set<String> dispatched = new HashSet<>();
+        // One physical device can hold a token row per account. Keep one
+        // account-bound payload per recipient; the client rejects inactive accounts.
+        Set<RecipientToken> dispatched = new HashSet<>();
         List<String> tokenValues = new ArrayList<>();
         List<CompletableFuture<PushResult>> futures = new ArrayList<>();
         for (UserDeviceToken device : devices) {
             String token = device.getToken();
-            if (!dispatched.add(token)) {
+            UUID recipientId = device.getUser() == null ? null : device.getUser().getId();
+            if (recipientId == null || !dispatched.add(new RecipientToken(recipientId, token))) {
                 continue;
             }
+            Map<String, String> data = new HashMap<>();
+            data.put("type", "REMINDER");
+            data.put("recipientId", recipientId.toString());
+            data.put("reminderId", reminder.reminderId().toString());
+            data.put("conversationId", reminder.conversationId().toString());
+            data.put("remindAt", reminder.remindAt().toString());
+            data.put("repeat", reminder.repeat().name());
             try {
                 CompletableFuture<PushResult> future =
                         fcmGateway.sendDataPush(token, data, "HIGH", DEFAULT_TTL_SECONDS);
@@ -119,9 +121,11 @@ public class FcmReminderPushSender implements ReminderPushSender {
                         reminder.reminderId(), failure.getClass().getSimpleName());
             }
         }
-        log.info("Reminder {} push attempted for {} device token(s)",
+        log.info("Reminder {} push attempted for {} recipient target(s)",
                 reminder.reminderId(), futures.size());
     }
+
+    private record RecipientToken(UUID recipientId, String token) { }
 
     private void removeUnregisteredToken(String tokenValue) {
         try {

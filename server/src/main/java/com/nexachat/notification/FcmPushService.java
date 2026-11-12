@@ -5,22 +5,27 @@ import java.util.UUID;
 
 public interface FcmPushService {
 
+    default void sendNewMessageNotification(UUID recipientId, UUID conversationId, UUID messageId,
+                                            long seq, String senderName) {
+        sendNewMessageNotification(recipientId, conversationId, messageId, seq, senderName, false);
+    }
+
     void sendNewMessageNotification(UUID recipientId, UUID conversationId, UUID messageId,
-                                   long seq, String senderName);
+                                    long seq, String senderName, boolean mentioned);
 
     /**
-     * Sends the new-message pointer to an explicit token list. The fan-out path
-     * de-duplicates tokens across recipients first, so a token shared by
-     * several accounts on one physical device receives the message once.
+     * Sends account-bound new-message pointers to an explicit token list.
+     * Each recipient receives a separate payload, even when several accounts
+     * share a physical device token.
      */
-    void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
-                                   UUID messageId, long seq, String senderName);
-
     default void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
-                                            UUID messageId, long seq, String senderName,
-                                            boolean mentioned) {
-        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName);
+                                            UUID messageId, long seq, String senderName) {
+        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName, false);
     }
+
+    void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
+                                    UUID messageId, long seq, String senderName,
+                                    boolean mentioned);
 
     void sendCallInviteNotification(UUID recipientId, UUID callId, UUID conversationId,
                                     UUID callerId, String callerName, String callType, long timestamp);

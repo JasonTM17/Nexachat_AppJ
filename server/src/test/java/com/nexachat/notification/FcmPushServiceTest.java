@@ -83,6 +83,7 @@ class FcmPushServiceTest {
         assertThat(push.token()).isEqualTo("fcm-token-abc-123");
         assertThat(push.priority()).isEqualTo("HIGH");
         assertThat(push.data().get("type")).isEqualTo("NEW_MESSAGE");
+        assertThat(push.data().get("recipientId")).isEqualTo(userId.toString());
         assertThat(push.data().get("conversationId")).isEqualTo(conversationId.toString());
         assertThat(push.data().get("messageId")).isEqualTo(messageId.toString());
         assertThat(push.data().get("seq")).isEqualTo("105");
@@ -374,7 +375,7 @@ class FcmPushServiceTest {
     }
 
     @Test
-    void notificationEventListenerDeduplicatesSharedTokenAcrossMembers() {
+    void notificationEventListenerKeepsSharedTokenPayloadsAccountBound() {
         UUID memberA = UUID.randomUUID();
         UUID memberB = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
@@ -400,8 +401,11 @@ class FcmPushServiceTest {
         eventListener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
 
         List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
-        assertThat(sent).hasSize(1);
-        assertThat(sent.get(0).token()).isEqualTo("shared-device-token");
+        assertThat(sent).hasSize(2);
+        assertThat(sent).extracting(MockFcmGateway.SentPush::token)
+                .containsOnly("shared-device-token");
+        assertThat(sent).extracting(push -> push.data().get("recipientId"))
+                .containsExactlyInAnyOrder(memberA.toString(), memberB.toString());
     }
 
     // ------------------------------------------------------------ mute gating
