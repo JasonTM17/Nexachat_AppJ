@@ -6,8 +6,10 @@ import io
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -139,6 +141,94 @@ class BackupNegativeTest(unittest.TestCase):
         self.assertIsNone(dropped)
         kept17 = backup.filter_dump_line(b"SET transaction_timeout = 0;\n", 17)
         self.assertIsNotNone(kept17)
+
+    def test_copy_data_starting_with_transaction_timeout_survives(self) -> None:
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "x",
+            "user": "nexachat",
+            "password": "pw",
+        }
+        dump_lines = [
+            b"SET transaction_timeout = 0;\n",
+            b"COPY public.messages (content) FROM stdin;\n",
+            b"SET transaction_timeout = 0;\n",
+            b"plain row\n",
+            b"\\.\n",
+            b"SET transaction_timeout = 0;\n",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dump.sql"
+            with mock.patch.object(backup, "pg_dump_client_major", return_value=18):
+                with mock.patch.object(backup, "pg_server_major", return_value=16):
+                    with mock.patch("subprocess.Popen") as popen_mock:
+                        proc = mock.Mock()
+                        proc.stdout = iter(dump_lines)
+                        proc.stderr = io.BytesIO(b"")
+                        proc.wait = mock.Mock(return_value=0)
+                        popen_mock.return_value = proc
+                        backup.run_pg_dump(db, dest)
+            written = dest.read_bytes()
+        self.assertEqual(
+            written,
+            b"COPY public.messages (content) FROM stdin;\n"
+            b"SET transaction_timeout = 0;\n"
+            b"plain row\n"
+            b"\\.\n",
+        )
+
+    def test_stderr_is_drained_while_stdout_is_streamed(self) -> None:
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "x",
+            "user": "nexachat",
+            "password": "pw",
+        }
+        child = (
+            "import sys\n"
+            "sys.stderr.write('e' * (2 * 1024 * 1024))\n"
+            "sys.stderr.flush()\n"
+            "sys.stdout.buffer.write(b'-- dump complete\\n')\n"
+            "sys.stdout.buffer.flush()\n"
+        )
+        created: list[subprocess.Popen] = []
+        real_popen = subprocess.Popen
+
+        def _real_popen(*args: object, **kwargs: object) -> subprocess.Popen:
+            proc = real_popen(*args, **kwargs)
+            created.append(proc)
+            return proc
+
+        result: dict[str, object] = {}
+
+        def _run() -> None:
+            try:
+                result["value"] = backup.run_pg_dump(db, dest)
+            except BaseException as err:
+                result["error"] = err
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dump.sql"
+            with mock.patch.object(backup, "pg_dump_client_major", return_value=18):
+                with mock.patch.object(backup, "pg_server_major", return_value=16):
+                    with mock.patch.object(
+                        backup, "build_pg_dump_command", return_value=[sys.executable, "-c", child]
+                    ):
+                        with mock.patch.object(backup.subprocess, "Popen", side_effect=_real_popen):
+                            worker = threading.Thread(target=_run, daemon=True)
+                            worker.start()
+                            worker.join(30)
+                            stalled = worker.is_alive()
+                            if stalled:
+                                for proc in created:
+                                    proc.kill()
+                                worker.join(10)
+            if stalled:
+                self.fail("pg_dump stalled: stderr was not drained while stdout stayed open")
+            self.assertNotIn("error", result, result.get("error"))
+            self.assertEqual(dest.read_bytes(), b"-- dump complete\n")
 
     def test_pg_dump_fails_when_client_older_than_server(self) -> None:
         db = {
