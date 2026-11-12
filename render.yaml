@@ -35,10 +35,12 @@ services:
         value: "8080"
       - key: SPRING_PROFILES_ACTIVE
         value: prod,render,json-logs
-      # Replaces the image default (server/Dockerfile:42). MaxRAMPercentage=60
+      # Replaces the image default (server/Dockerfile:80). MaxRAMPercentage=60
       # leaves room for metaspace, code cache, thread stacks and direct buffers
       # inside the 512 MB cgroup; SerialGC and C1-only compilation avoid
-      # competing GC/JIT threads on 0.1 CPU.
+      # competing GC/JIT threads on 0.1 CPU. The AppCDS archive is built into
+      # the image by server/Dockerfile; -Xshare stays on its "auto" default, so
+      # a missing or stale archive only logs a warning and falls back.
       - key: JAVA_OPTS
         value: >-
           -XX:MaxRAMPercentage=60.0
@@ -48,6 +50,7 @@ services:
           -XX:ActiveProcessorCount=1
           -XX:TieredStopAtLevel=1
           -XX:+ExitOnOutOfMemoryError
+          -XX:SharedArchiveFile=/app/application.jsa
           -Djava.security.egd=file:/dev/./urandom
 
       # ---- Database (Neon Postgres) ----------------------------------------
