@@ -118,16 +118,27 @@ class BackupNegativeTest(unittest.TestCase):
             dest = Path(tmp) / "dump.sql"
             with mock.patch.object(backup, "pg_dump_client_major", return_value=18):
                 with mock.patch.object(backup, "pg_server_major", return_value=16):
-                    with mock.patch("subprocess.run") as run_mock:
-                        run_mock.return_value = mock.Mock(returncode=0, stderr=b"")
+                    with mock.patch("subprocess.Popen") as popen_mock:
+                        proc = mock.Mock()
+                        proc.stdout = iter([b"-- dump\n"])
+                        proc.stderr = mock.Mock(read=mock.Mock(return_value=b""))
+                        proc.wait = mock.Mock(return_value=0)
+                        popen_mock.return_value = proc
                         backup.run_pg_dump(db, dest)
-            args, kwargs = run_mock.call_args
-            cmd = args[0]
-            env = kwargs.get("env") or {}
+            cmd = popen_mock.call_args[0][0]
+            env = popen_mock.call_args[1].get("env") or {}
             self.assertEqual(env.get("PGPASSWORD"), "never-on-argv-pw")
             for token in cmd:
                 self.assertNotIn("never-on-argv-pw", token)
             self.assertIn("PGPASSWORD", cmd)
+
+    def test_strips_transaction_timeout_for_pg16_server(self) -> None:
+        kept = backup.filter_dump_line(b"SELECT 1;\n", 16)
+        self.assertEqual(kept, b"SELECT 1;\n")
+        dropped = backup.filter_dump_line(b"SET transaction_timeout = 0;\n", 16)
+        self.assertIsNone(dropped)
+        kept17 = backup.filter_dump_line(b"SET transaction_timeout = 0;\n", 17)
+        self.assertIsNotNone(kept17)
 
     def test_pg_dump_fails_when_client_older_than_server(self) -> None:
         db = {

@@ -172,6 +172,20 @@ def pg_server_major(db: dict[str, str], image: str, env: dict[str, str], host: s
     return int(raw) // 10000
 
 
+def filter_dump_line(line: bytes, server_major: int) -> bytes | None:
+    """Drop GUC sets that newer pg_dump emits but older servers reject on restore."""
+    if server_major >= 17:
+        return line
+    try:
+        text = line.decode("utf-8")
+    except UnicodeDecodeError:
+        return line
+    stripped = text.lstrip()
+    if stripped.startswith("SET transaction_timeout"):
+        return None
+    return line
+
+
 def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
     image = os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18")
     host = docker_db_host(db)
@@ -185,10 +199,18 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
         )
     cmd = build_pg_dump_command(db, image)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    assert proc.stdout is not None
+    assert proc.stderr is not None
     with dest.open("wb") as out:
-        proc = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, env=env, check=False)
-    if proc.returncode != 0:
-        raise SystemExit(f"pg_dump via {image} failed: {proc.stderr.decode(errors='replace')}")
+        for line in proc.stdout:
+            filtered = filter_dump_line(line, server_major)
+            if filtered is not None:
+                out.write(filtered)
+    stderr = proc.stderr.read()
+    rc = proc.wait()
+    if rc != 0:
+        raise SystemExit(f"pg_dump via {image} failed: {stderr.decode(errors='replace')}")
     return {"pg_dump_client_major": client_major, "pg_server_major": server_major}
 
 
