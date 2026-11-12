@@ -155,7 +155,7 @@ public final class UserSearchFragment extends Fragment {
     @Override
     public void onDestroyView() {
         if (detailBinder != null) {
-            detailBinder.dismiss();
+            detailBinder.releaseForViewDestroy();
             detailBinder = null;
         }
         if (binding != null) {

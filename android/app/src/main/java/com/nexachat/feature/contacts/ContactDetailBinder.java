@@ -92,6 +92,26 @@ final class ContactDetailBinder {
         boundTitle = null;
     }
 
+    /**
+     * Tears down the dialog when the fragment view is destroyed (for example
+     * on rotation) without clearing the selected contact in the ViewModel.
+     */
+    void releaseForViewDestroy() {
+        if (dialog != null) {
+            dialog.setOnDismissListener(null);
+            dialog.dismiss();
+        }
+        dialog = null;
+        root = null;
+        aliasInput = null;
+        boundUserId = null;
+        boundTitle = null;
+    }
+
+    static boolean closesViewModelOnDismiss(boolean dismissFromViewTeardown) {
+        return !dismissFromViewTeardown;
+    }
+
     private void bindContent(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
         Content content = contentFor(state);
         if (content == null) {
