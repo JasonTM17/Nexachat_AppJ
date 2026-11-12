@@ -31,6 +31,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.ui.GroupDetailListRules;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
 import com.nexachat.data.GroupMember;
@@ -110,6 +111,9 @@ public final class GroupDetailFragment extends Fragment {
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
         binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
         binding.leaveGroupButton.setOnClickListener(v -> viewModel.requestLeave());
+        binding.errorState.setOnRetry(viewModel::loadMembers);
+        binding.emptyState.setMessage(getString(R.string.group_members_empty));
+        binding.emptyState.setIcon(R.drawable.ic_person_outline);
         binding.groupAvatar.setOnClickListener(v -> {
             if (viewModel.getUiState().getValue().isIAmAdmin()) {
                 avatarPicker.launch("image/*");
@@ -166,8 +170,20 @@ public final class GroupDetailFragment extends Fragment {
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());
         binding.leaveGroupButton.setEnabled(!state.isBusy());
 
+        boolean showLoadError = GroupDetailListRules.showLoadError(
+                state.isLoading(), state.getMembers().isEmpty(), state.getError() != null);
+        boolean showEmpty = !state.isLoading() && !showLoadError && state.getMembers().isEmpty();
+        binding.detailColumn.setVisibility(showLoadError || showEmpty ? View.GONE : View.VISIBLE);
+        binding.errorState.setVisibility(showLoadError ? View.VISIBLE : View.GONE);
+        binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
+        if (showLoadError) {
+            ApiError loadError = state.getError();
+            binding.errorState.setMessage(getString(
+                    loadError == null ? R.string.error_generic : GroupErrorText.resource(loadError)));
+        }
+
         ApiError error = state.getError();
-        if (error != null && !Objects.equals(error, lastSnackbarError)) {
+        if (error != null && !showLoadError && !Objects.equals(error, lastSnackbarError)) {
             lastSnackbarError = error;
             Snackbar.make(binding.getRoot(), getString(GroupErrorText.resource(error)), Snackbar.LENGTH_SHORT)
                     .addCallback(new Snackbar.Callback() {

@@ -187,6 +187,7 @@
     <string name="group_create_title">New group</string>
     <string name="group_name_label">Group name</string>
     <string name="group_detail_title">Group info</string>
+    <string name="group_members_empty">No members to show</string>
     <string name="group_role_admin">Admin</string>
     <string name="group_member_self">%1$s (you)</string>
     <string name="group_remove_member_confirm">Remove %1$s from this group?</string>

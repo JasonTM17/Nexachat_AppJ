@@ -185,6 +185,7 @@
     <string name="group_create_title">Nhóm mới</string>
     <string name="group_name_label">Tên nhóm</string>
     <string name="group_detail_title">Thông tin nhóm</string>
+    <string name="group_members_empty">Không có thành viên</string>
     <string name="group_role_admin">Quản trị viên</string>
     <string name="group_member_self">%1$s (bạn)</string>
     <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm này?</string>
