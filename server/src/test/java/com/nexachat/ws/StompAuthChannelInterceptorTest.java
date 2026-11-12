@@ -45,6 +45,7 @@ import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -701,6 +702,104 @@ class StompAuthChannelInterceptorTest {
 
         assertThat(gated.preSend(message(accessor), channel)).isNull();
         verify(socket).close(CloseStatus.POLICY_VIOLATION);
+    }
+
+    @Test
+    void conversationScopedStompDestinationsApplyTheSameMembershipMatrix() {
+        UUID directConversationId = UUID.randomUUID();
+        UUID unknownConversationId = UUID.randomUUID();
+        UUID removedUser = UUID.randomUUID();
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        // Current member: every conversation-scoped destination is admitted.
+        assertThat(interceptor.preSend(
+                subscribeMessage("/topic/conversations." + conversationId, true), channel))
+                .isNotNull();
+        for (String action : List.of("messages", "typing", "read", "delivered")) {
+            Message<?> send = sendMessage(
+                    "/app/conversations/" + conversationId + "/" + action, true);
+            assertThat(interceptor.preSend(send, channel))
+                    .as("member SEND /app/conversations/{id}/%s", action).isNotNull();
+        }
+        // The read and delivered SEND frames already consumed two of the three
+        // ack slots; clear the shared bucket so the two payload-scoped ACK
+        // routes are probed on the same admission contract.
+        rateLimitService.reset();
+        assertThat(interceptor.preSend(
+                sendAckMessage("/app/chat.delivery.ack", userId, conversationId), channel))
+                .isNotNull();
+        assertThat(interceptor.preSend(
+                sendAckMessage("/app/chat.read.ack", userId, conversationId), channel))
+                .isNotNull();
+        assertThat(interceptor.preSend(
+                sendMessage("/app/calls/" + conversationId + "/signal", true), channel))
+                .isNotNull();
+
+        // The interceptor never loads the conversation type: a DIRECT
+        // membership passes the same gate as a GROUP one.
+        when(memberRepository.existsByConversation_IdAndUser_Id(directConversationId, userId))
+                .thenReturn(true);
+        assertThat(interceptor.preSend(
+                subscribeMessage("/topic/conversations." + directConversationId, true), channel))
+                .as("DIRECT conversation topic membership").isNotNull();
+        Message<?> directTyping = sendMessage(
+                "/app/conversations/" + directConversationId + "/typing", true);
+        assertThat(interceptor.preSend(directTyping, channel))
+                .as("DIRECT conversation SEND membership").isNotNull();
+
+        // Unknown conversation and removed member: both look like a missing
+        // membership row, so every destination of the same shape is denied.
+        assertConversationSurfaceDenied(unknownConversationId, userId);
+        assertConversationSurfaceDenied(conversationId, removedUser);
+
+        // Unauthenticated caller: the send channel drops the frame before any
+        // principal exists.
+        for (String action : List.of("messages", "typing", "read", "delivered")) {
+            Message<?> send = sendMessage(
+                    "/app/conversations/" + conversationId + "/" + action, false);
+            assertThat(interceptor.preSend(send, channel))
+                    .as("anonymous SEND /app/conversations/{id}/%s", action).isNull();
+        }
+        assertThat(interceptor.preSend(
+                sendMessage("/app/calls/" + conversationId + "/signal", false), channel)).isNull();
+
+        // These denials are silent drops, not STOMP error frames.
+        verifyNoInteractions(messaging);
+
+        // The call-signal branch is the one exception: it reports NOT_MEMBER on
+        // the caller's own error queue for both an unknown conversation and a
+        // removed member.
+        assertThat(interceptor.preSend(
+                sendMessage("/app/calls/" + unknownConversationId + "/signal", userId, UUID.randomUUID()), channel))
+                .isNull();
+        assertThat(interceptor.preSend(
+                sendMessage("/app/calls/" + conversationId + "/signal", removedUser, UUID.randomUUID()), channel))
+                .isNull();
+        verify(messaging).convertAndSendToUser(userId.toString(), "/queue/errors",
+                new WsErrorResponse("NOT_MEMBER", null));
+        verify(messaging).convertAndSendToUser(removedUser.toString(), "/queue/errors",
+                new WsErrorResponse("NOT_MEMBER", null));
+    }
+
+    private void assertConversationSurfaceDenied(UUID conversation, UUID principal) {
+        Message<?> topic = subscribeMessage("/topic/conversations." + conversation, principal);
+        assertThat(interceptor.preSend(topic, channel))
+                .as("SUBSCRIBE denied for %s", conversation).isNull();
+        for (String action : List.of("messages", "typing", "read", "delivered")) {
+            Message<?> send = sendMessage(
+                    "/app/conversations/" + conversation + "/" + action, principal,
+                    UUID.randomUUID());
+            assertThat(interceptor.preSend(send, channel))
+                    .as("SEND /app/conversations/{id}/%s denied for %s", action, conversation)
+                    .isNull();
+        }
+        assertThat(interceptor.preSend(
+                sendAckMessage("/app/chat.delivery.ack", principal, conversation), channel))
+                .as("delivery ACK denied for %s", conversation).isNull();
+        assertThat(interceptor.preSend(
+                sendAckMessage("/app/chat.read.ack", principal, conversation), channel))
+                .as("read ACK denied for %s", conversation).isNull();
     }
 
     @Test

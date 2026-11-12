@@ -525,6 +525,51 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                 .containsExactlyInAnyOrderElementsOf(expectedProbeIds);
     }
 
+    @Test
+    void unknownConversationScopedRoutesReturnTheCharacterizedFamilyError() throws Exception {
+        RoleFixtures fixtures = createRoleFixtures();
+        UUID unknownConversationId = UUID.randomUUID();
+        int probed = 0;
+
+        for (Route route : readMatrix()) {
+            if (!route.path().startsWith("/api/v1/conversations/{")) {
+                continue;
+            }
+            String unknownPath = rolePath(route, fixtures, fixtures.member())
+                    .replace(fixtures.groupId().toString(), unknownConversationId.toString())
+                    .replace(fixtures.directId().toString(), unknownConversationId.toString());
+            var result = mockMvc.perform(
+                    roleRequest(route, fixtures, fixtures.member(), unknownPath)).andReturn();
+            probed++;
+
+            // Existence is the first check for every conversation-scoped route
+            // except the message-send/edit/delete and pin routes, which check
+            // the membership row first and therefore mask an unknown id as
+            // NOT_MEMBER.
+            boolean membershipFirst =
+                    (route.method().equals("POST") && route.path().endsWith("/messages"))
+                            || ((route.method().equals("PATCH") || route.method().equals("DELETE"))
+                                    && route.path().contains("/messages/{messageId}"))
+                            || (route.method().equals("POST") && route.path().endsWith("/pins"))
+                            || (route.method().equals("DELETE")
+                                    && route.path().contains("/pins/{messageId}"));
+            int expectedStatus = membershipFirst ? 403 : 404;
+            ApiErrorCode expectedCode = membershipFirst
+                    ? ApiErrorCode.NOT_MEMBER : ApiErrorCode.CONVERSATION_NOT_FOUND;
+
+            assertThat(result.getResponse().getStatus())
+                    .as("unknown conversation outcome for %s %s", route.method(), route.path())
+                    .isEqualTo(expectedStatus);
+            assertThat(objectMapper.readTree(result.getResponse().getContentAsString())
+                    .path("error").path("code").asText())
+                    .as("unknown conversation code for %s %s", route.method(), route.path())
+                    .isEqualTo(expectedCode.getCode());
+        }
+
+        assertThat(probed).as("conversation-scoped routes probed with an unknown id")
+                .isGreaterThan(40);
+    }
+
     private RoleFixtures createRoleFixtures() throws Exception {
         Registered owner = register("+84905551901");
         Registered member = register("+84905551902");
@@ -779,7 +824,12 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     private MockHttpServletRequestBuilder roleRequest(Route route, RoleFixtures fixtures, Registered actor)
             throws Exception {
-        String path = rolePath(route, fixtures, actor);
+        return roleRequest(route, fixtures, actor, rolePath(route, fixtures, actor));
+    }
+
+    private MockHttpServletRequestBuilder roleRequest(Route route, RoleFixtures fixtures,
+                                                      Registered actor, String path)
+            throws Exception {
         HttpMethod method = HttpMethod.valueOf(route.method());
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders.request(method, path)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + actor.accessToken());
