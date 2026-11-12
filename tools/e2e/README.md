@@ -127,6 +127,35 @@ python tools/e2e/final/final_live.py --phase retention-observe --expect deleted 
   that are still bound to a live message stay. The script refuses any database
   container whose name is not the `nexachat_e2e_grok2` project.
 
+## Stable journeys
+
+`device/stable_journeys.py` coordinates the phase 08 matrix using the existing
+adb UI, REST and STOMP helpers. It pins every adb call to `emulator-5554`,
+refuses production for these mutating journeys, and requires an evidence
+directory outside the repository for a real run. Account deletion is always
+ordered last and is limited to a disposable account.
+
+```bash
+python tools/e2e/device/stable_journeys.py --list
+python tools/e2e/device/stable_journeys.py --dry-run --rows auth-login,chat-send-receive
+python tools/e2e/device/stable_journeys.py --rows auth-login,chat-send-receive \
+    --evidence-dir <external-evidence-directory>
+python -m unittest discover -s tools/e2e/device -p "test_*.py"
+```
+
+The dry run prints structured adb argv and REST/STOMP requests without
+contacting a device or server. Each evidence row contains a JSON summary,
+sanitized REST/STOMP transcripts, screenshots and filtered logcat where the
+device is available. Unsupported rows carry an explicit capability reason.
+
+Results use `PASS`, `FAIL_PRODUCT` (an observed app assertion failed with
+evidence), `FAIL_HARNESS_OR_ENVIRONMENT` (for example readiness, APK or device
+failure), `BLOCKED_CAPABILITY` (the row cannot be asserted with the available
+approved tooling), and `NOT_RUN`. A failed row may be retried once; the final
+status and retry are recorded. The matrix and offline coordinator tests are in
+[`device/stable_journeys.py`](device/stable_journeys.py) and
+[`device/test_stable_journeys.py`](device/test_stable_journeys.py).
+
 ## Cleanup / side effects
 
 - `smoke_api.py` and `stomp_e2e.py` soft-delete every message they created (run
