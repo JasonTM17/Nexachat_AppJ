@@ -39,7 +39,7 @@
     <string name="inbox_empty">No conversations yet</string>
     <string name="inbox_empty_unread">No unread chats</string>
     <string name="inbox_empty_groups">No group chats</string>
-    <string name="inbox_search_hint">Search chats</string>
+    <string name="inbox_search_hint">Find people</string>
     <string name="inbox_active_now_header">ACTIVE NOW</string>
     <string name="inbox_view_all">View all</string>
     <string name="inbox_filter_all">All</string>
