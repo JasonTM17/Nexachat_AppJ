@@ -71,6 +71,11 @@ find demo tools -name '*.sh' -type f -print0 | xargs -0 -n1 bash -n
 
 CI also runs a committed-secret scan (`.github/workflows/ci.yml`). The server
 and Android jobs are the required gates; do not release on a red or skipped job.
+A green JVM unit test or an HTML screenshot is not a device pass. Capture
+inbox, chat, settings, group detail, summary, and calls in English and
+Vietnamese, light and dark, at 100% and 200% font before calling the visual
+refresh verified on a phone. The launcher logo choice is still pending and is
+not part of the token rollout.
 
 ## 3. Build, check and sign the Android artifact
 
