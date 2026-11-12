@@ -260,8 +260,17 @@ def main() -> int:
                 )
             else:
                 retrofit_interfaces.update(f"{package}.{name}" for name in interfaces)
-        if re.search(r"@(InstallIn|EntryPoint|HiltAndroidApp)\b", source):
-            hilt_source_types.add(f"{package}.{java_file.stem}")
+        # The annotated declaration may be nested (a Worker with an inner
+        # @EntryPoint interface). R8 must keep that declaration's name, not the
+        # enclosing class's fields.
+        for declared in re.findall(
+            r"@(?:InstallIn|EntryPoint|HiltAndroidApp)\b[^{;]*?\b(?:class|interface)\s+([A-Za-z_$][\w$]*)",
+            source,
+        ):
+            if declared == java_file.stem:
+                hilt_source_types.add(f"{package}.{declared}")
+            else:
+                hilt_source_types.add(f"{package}.{java_file.stem}${declared}")
 
     group_counts["Retrofit interfaces"] = len(retrofit_interfaces)
     group_counts["Hilt source types"] = len(hilt_source_types)
@@ -386,16 +395,27 @@ def main() -> int:
     for label, count in group_counts.items():
         print(f"  {label}: {count}")
     app_database = APP_SOURCE / "com" / "nexachat" / "core" / "database" / "AppDatabase.java"
-    migration_count = len(re.findall(r"\bnew\s+Migration\s*\(", app_database.read_text(encoding="utf-8")))
+    database_source = app_database.read_text(encoding="utf-8")
+    migration_count = len(re.findall(r"\bnew\s+Migration\s*\(", database_source))
+    # Other anonymous bodies in AppDatabase (a RoomDatabase.Callback) also get an
+    # AppDatabase$N name; they are expected in mapping.txt next to the migrations.
+    other_anonymous = len(
+        re.findall(r"\bnew\s+(?!Migration\b)[A-Za-z_$][\w$.]*\s*\([^)]*\)\s*\{", database_source)
+    )
+    migration_count += other_anonymous
     migration_classes = {
         name for name in expected
         if re.fullmatch(r"com\.nexachat\.core\.database\.AppDatabase\$\d+", name)
     }
     if len(migration_classes) != migration_count:
         return fail(
-            f"expected {migration_count} Room migrations but found {len(migration_classes)} named migration classes"
+            f"expected {migration_count} Room migration/callback classes but found "
+            f"{len(migration_classes)} named classes"
         )
-    print(f"  Room AppDatabase migration classes: {migration_count} verified in mapping.txt")
+    print(
+        f"  Room AppDatabase anonymous classes: {migration_count} verified in mapping.txt "
+        f"({migration_count - other_anonymous} migrations, {other_anonymous} callbacks)"
+    )
     print("  Gson models: not used by current Android sources; current models use Moshi")
     print("  Parcelable implementations: none in current Android sources; keep rule checked")
     return 0
