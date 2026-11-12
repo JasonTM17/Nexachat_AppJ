@@ -349,12 +349,14 @@ the implementing source file.
   `401 GOOGLE_SIGN_IN_FAILED`.
 - Linking and unlinking require the account password (bcrypt comparison) and are
   rate-limited per user (10/5 min); an unlinked Google account gets the generic
-  `404 GOOGLE_ACCOUNT_NOT_LINKED` and the message never reveals whether the
-  Google account or the NexaChat account exists. Automatic account creation from
-  Google and email-based linking are intentionally absent (account-takeover
-  risk). Physical deletion cascades identity rows in V28; account tombstoning
-  deletes linked identities and account-owned link nonces explicitly in the
-  deletion transaction.
+  `404 GOOGLE_ACCOUNT_NOT_LINKED` while signup is off. When
+  `nexachat.google.signin.signup-enabled` is true, a verified email on an unknown
+  `sub` may create a Google-only account (no phone, no password hash); the email
+  is never used to match an existing row. Conflicts on an already-verified email
+  return `409 GOOGLE_EMAIL_IN_USE`. Google-only users cannot change password
+  (`409 NO_PASSWORD_SET`) and should delete through the email OTP flow. Physical
+  deletion cascades identity rows in V28; account tombstoning deletes linked
+  identities and account-owned link nonces explicitly in the deletion transaction.
 
 ## Known limits & future work
 
