@@ -86,6 +86,12 @@ public class MessageService {
     static final int MAX_PAGE_LIMIT = 100;
     static final int DEFAULT_PAGE_LIMIT = 30;
 
+    /** Legacy {@code POST /sync} per-conversation row ceiling (new/edited/deleted paths). */
+    public static final int SYNC_LIMIT_PER_CONV_MAX = 100;
+    public static final int SYNC_LIMIT_PER_CONV_DEFAULT = 50;
+    /** V2 negotiated change feed page ceiling (matches the shipped Android decoder). */
+    public static final int SYNC_V2_CHANGE_PAGE_MAX = 50;
+
     /** Cap on {@code attachmentIds} per send (phase-09) — bounds the bind work per message. */
     static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;
     static final int MAX_CONTENT_LENGTH = 10_000;
@@ -625,7 +631,7 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermarks list must not be empty");
         }
         validateSyncVersionFields(request);
-        int limit = request.limitPerConv() != null ? Math.max(1, Math.min(request.limitPerConv(), 100)) : 50;
+        int limit = resolveSyncLimitPerConv(request.limitPerConv(), SYNC_LIMIT_PER_CONV_MAX);
         java.time.Instant since = request.since();
         // Captured BEFORE the queries: a row committed after its query ran but
         // before a later timestamp would be skipped by the next delta request.
@@ -664,7 +670,8 @@ public class MessageService {
         }
 
         if (isVersion2Request(request, watermarks)) {
-            return syncDeltaV2(userId, watermarks, limit, since, requestTime,
+            int v2Limit = resolveSyncLimitPerConv(request.limitPerConv(), SYNC_V2_CHANGE_PAGE_MAX);
+            return syncDeltaV2(userId, watermarks, v2Limit, since, requestTime,
                     reactionRetentionCutoff, flagsByConversation);
         }
 
@@ -756,6 +763,12 @@ public class MessageService {
         }
 
         return new SyncResponse(deltas, requestTime);
+    }
+
+    private static int resolveSyncLimitPerConv(Integer requested, int max) {
+        return requested != null
+                ? Math.max(1, Math.min(requested, max))
+                : SYNC_LIMIT_PER_CONV_DEFAULT;
     }
 
     private static void validateSyncVersionFields(SyncRequest request) {
