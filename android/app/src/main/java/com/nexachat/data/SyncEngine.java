@@ -143,8 +143,8 @@ public final class SyncEngine {
                 }
                 flightEpoch = expectedEpoch;
                 AtomicReference<Completable> identity = new AtomicReference<>();
-                Completable shared = operationTracker.track(syncAttempt(expectedEpoch))
-                    .subscribeOn(Schedulers.io())
+                Completable shared = operationTracker.track(Completable.defer(() -> syncAttempt(expectedEpoch))
+                    .subscribeOn(Schedulers.io()))
                     .onErrorResumeNext(error -> error instanceof CancellationException
                             ? Completable.complete()
                             : Completable.error(error))
@@ -167,9 +167,20 @@ public final class SyncEngine {
             // without it continue to exercise the unchanged legacy lane.
             if (cursor.userId == null) return Completable.complete();
             return conversationDao.getAllWatermarks().flatMapCompletable(watermarks ->
-                    Completable.fromAction(() -> hasPendingContinuation.set(
-                            new SyncV2Consumer(pageStore, tokenRefresher, this::fetchDeltaResponse)
-                                    .sync(cursor.userId, expectedEpoch, watermarks)))
+                    Completable.create(emitter -> {
+                        try {
+                            boolean pending = new SyncV2Consumer(pageStore, tokenRefresher, this::fetchDeltaResponse)
+                                    .sync(cursor.userId, expectedEpoch, watermarks);
+                            if (!emitter.isDisposed()) {
+                                tokenRefresher.runIfSessionCurrent(expectedEpoch,
+                                        () -> hasPendingContinuation.set(pending));
+                                emitter.onComplete();
+                            }
+                        } catch (Throwable failure) {
+                            io.reactivex.rxjava3.exceptions.Exceptions.throwIfFatal(failure);
+                            emitter.tryOnError(failure);
+                        }
+                    })
                     .onErrorResumeNext(error -> error instanceof SyncPageStore.LegacyRequired
                             ? Completable.fromAction(() -> pageStore.legacyFallback(
                                     cursor.userId, expectedEpoch, watermarks))
