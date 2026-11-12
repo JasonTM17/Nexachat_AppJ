@@ -315,10 +315,11 @@ public final class GroupDetailFragment extends Fragment {
 
         BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
         dialog.setContentView(sheet.getRoot());
+        final int baseBottom = sheet.getRoot().getPaddingBottom();
         ViewCompat.setOnApplyWindowInsetsListener(sheet.getRoot(), (view, windowInsets) -> {
             Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
             Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
-            int bottom = Math.max(bars.bottom, ime.bottom);
+            int bottom = baseBottom + Math.max(bars.bottom, ime.bottom);
             view.setPadding(view.getPaddingLeft(), view.getPaddingTop(), view.getPaddingRight(), bottom);
             return windowInsets;
         });

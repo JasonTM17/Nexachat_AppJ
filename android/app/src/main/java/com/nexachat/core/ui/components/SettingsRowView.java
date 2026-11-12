@@ -41,6 +41,7 @@ public class SettingsRowView extends LinearLayout {
         iconView = findViewById(R.id.rowIcon);
         titleView = findViewById(R.id.rowTitle);
         subtitleView = findViewById(R.id.rowSubtitle);
+        applyTypeGrowth();
         valueView = findViewById(R.id.rowValue);
         chevronView = findViewById(R.id.rowChevron);
 
@@ -63,7 +64,22 @@ public class SettingsRowView extends LinearLayout {
                 subtitleView.setText(subtitle);
                 subtitleView.setVisibility(VISIBLE);
             }
+            applyTypeGrowth();
         }
+    }
+
+    private void applyTypeGrowth() {
+        boolean large = getResources().getConfiguration().fontScale >= 1.5f;
+        if (titleView != null) {
+            titleView.setMaxLines(large ? Integer.MAX_VALUE : 2);
+            titleView.setEllipsize(large ? null : android.text.TextUtils.TruncateAt.END);
+        }
+        if (subtitleView != null) {
+            subtitleView.setMaxLines(large ? Integer.MAX_VALUE : 2);
+            subtitleView.setEllipsize(large ? null : android.text.TextUtils.TruncateAt.END);
+        }
+        int minDp = subtitleView != null && subtitleView.getVisibility() == VISIBLE ? 80 : 64;
+        setMinimumHeight(Math.round(minDp * getResources().getDisplayMetrics().density));
     }
 
     public void setTrailingValue(@Nullable CharSequence value) {

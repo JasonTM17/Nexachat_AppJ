@@ -16,8 +16,8 @@
 
         <com.nexachat.core.ui.components.AvatarView
             android:id="@+id/avatar"
-            android:layout_width="48dp"
-            android:layout_height="48dp" />
+            android:layout_width="40dp"
+            android:layout_height="40dp" />
 
         <TextView
             android:id="@+id/memberName"
@@ -47,7 +47,7 @@
             app:checkedIconVisible="false"
             app:chipBackgroundColor="?attr/colorSecondaryContainer"
             app:chipCornerRadius="8dp"
-            app:chipMinHeight="24dp"
+            app:chipMinHeight="32dp"
             app:chipStrokeWidth="0dp"
             app:ensureMinTouchTargetSize="false" />
 
