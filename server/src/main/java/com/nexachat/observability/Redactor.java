@@ -59,6 +59,10 @@ public final class Redactor {
     private static final Pattern PHONE_FIELD = Pattern.compile(
             "(?i)(phone|mobile|telephone|tel)\\s*[:=]\\s*['\"]?(\\+?[0-9\\s().-]{7,20})['\"]?");
 
+    /** Named email fields in structured logs. */
+    private static final Pattern EMAIL_FIELD = Pattern.compile(
+            "(?i)(email|e-mail|mail)\\s*[:=]\\s*['\"]?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})['\"]?");
+
     /** JSON message/content fields. */
     private static final Pattern CONTENT_JSON = Pattern.compile(
             "(?i)(\"content\"|\"body\"|\"text\"|\"message\")\\s*:\\s*\"[^\"]*\"");
@@ -85,6 +89,7 @@ public final class Redactor {
         result = replaceAll(GOOGLE_KEY, result, REDACTED);
         result = replaceAll(OPENAI_KEY, result, REDACTED);
         result = replaceAll(PHONE_FIELD, result, "$1=" + REDACTED);
+        result = replaceAll(EMAIL_FIELD, result, "$1=" + REDACTED);
         result = replaceAll(PHONE, result, REDACTED);
         result = replaceAll(CONTENT_JSON, result, "$1:\"" + REDACTED + "\"");
         result = replaceAll(CONTENT_PARAM, result, "$1=" + REDACTED);

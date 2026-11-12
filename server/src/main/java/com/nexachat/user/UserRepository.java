@@ -19,6 +19,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByPhoneAndDeletedAtIsNull(String phone);
 
+    boolean existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(String email);
+
     @Query("SELECT CASE WHEN COUNT(u) > 0 THEN true ELSE false END FROM User u"
             + " WHERE u.email = :email AND u.emailVerifiedAt IS NOT NULL"
             + " AND u.deletedAt IS NULL AND u.id <> :userId")

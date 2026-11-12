@@ -97,7 +97,8 @@ public class AccountDeletionService {
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
-        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+        String hash = user.getPasswordHash();
+        if (hash == null || hash.isBlank() || !passwordEncoder.matches(password, hash)) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
 

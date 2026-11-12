@@ -61,7 +61,11 @@ public class GoogleIdTokenVerifier {
         Object verified = jwt.getClaim("email_verified");
         boolean emailVerified = Boolean.TRUE.equals(verified)
                 || "true".equals(String.valueOf(verified).toLowerCase(Locale.ROOT));
-        return new GoogleIdTokenClaims(subject, email, emailVerified);
+        String name = jwt.getClaimAsString("name");
+        if (name != null && name.length() > 60) {
+            name = name.substring(0, 60);
+        }
+        return new GoogleIdTokenClaims(subject, email, emailVerified, name);
     }
 
     private static ApiException failed() {

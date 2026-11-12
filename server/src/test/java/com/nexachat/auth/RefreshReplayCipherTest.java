@@ -37,7 +37,7 @@ class RefreshReplayCipherTest {
         Instant replayUntil = rotatedAt.plusSeconds(30);
         AuthResponse response = new AuthResponse(
                 new UserResponse(userId, "+84900000001", "Synthetic", null, false),
-                "synthetic-access-token", 900, "synthetic-refresh-token", 86_400, true);
+                "synthetic-access-token", 900, "synthetic-refresh-token", 86_400, true, null);
 
         RefreshReplayCipher.EncryptedPayload first = cipher.encrypt(
                 response, userId, predecessorId, successorId, digest, rotatedAt, replayUntil);
@@ -85,7 +85,7 @@ class RefreshReplayCipherTest {
         String digest = "b".repeat(64);
         RefreshReplayCipher.EncryptedPayload payload = cipher.encrypt(
                 new AuthResponse(new UserResponse(userId, "+84900000001", "Synthetic", null, false),
-                        "a", 900, "r", 86_400, true), userId, predecessorId, successorId, digest,
+                        "a", 900, "r", 86_400, true, null), userId, predecessorId, successorId, digest,
                 rotatedAt, rotatedAt.plusSeconds(30));
         properties.setKey(Base64.getEncoder().encodeToString(new byte[32]));
         assertThat(cipher.decrypt(payload.ciphertext(), payload.nonce(), userId,

@@ -12,17 +12,24 @@ import com.nexachat.auth.google.dto.LinkedIdentityResponse;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
+import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -30,12 +37,15 @@ import java.util.UUID;
  * Link, unlink and sign-in flows for Google identities.
  *
  * <p>Sign-in only succeeds for a Google {@code sub} that is already linked to a
- * NexaChat account; automatic account creation and email-based linking are
- * deliberately out of scope (account-takeover risk). Errors are generic so a
- * caller cannot probe which Google accounts exist.
+ * NexaChat account. Email is never used to match an existing account
+ * (account-takeover risk). Optional sign-up creates a row from the immutable
+ * {@code sub} when {@code signupEnabled} is on. Errors are generic where a
+ * third party could probe account existence.
  */
 @Service
 public class GoogleSignInService {
+
+    private static final Logger log = LoggerFactory.getLogger(GoogleSignInService.class);
 
     /** Password re-authentication on link/unlink is bounded per account. */
     private static final long LINK_RATE_CAPACITY = 10;
@@ -51,6 +61,7 @@ public class GoogleSignInService {
     private final AuthResponseFactory responseFactory;
     private final RateLimitService rateLimitService;
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public GoogleSignInService(GoogleSignInProperties properties,
                                GoogleIdTokenVerifier verifier,
@@ -61,7 +72,8 @@ public class GoogleSignInService {
                                TokenService tokenService,
                                AuthResponseFactory responseFactory,
                                RateLimitService rateLimitService,
-                               ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
+                               ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
+                               ApplicationEventPublisher eventPublisher) {
         this.properties = properties;
         this.verifier = verifier;
         this.nonceService = nonceService;
@@ -72,6 +84,7 @@ public class GoogleSignInService {
         this.responseFactory = responseFactory;
         this.rateLimitService = rateLimitService;
         this.transactionManagerProvider = transactionManagerProvider;
+        this.eventPublisher = eventPublisher;
     }
 
     /** Every endpoint of a disabled feature answers 404 — existence is not disclosed. */
@@ -81,7 +94,7 @@ public class GoogleSignInService {
         }
     }
 
-    public AuthResponse signIn(GoogleSignInRequest request, String deviceLabel) {
+    public GoogleSignInResult signIn(GoogleSignInRequest request, String deviceLabel) {
         requireEnabled();
         GoogleIdTokenClaims claims = verifier.verify(request.idToken(), request.nonce());
         consumeNonce(request.nonce(), GoogleNonceService.PURPOSE_SIGNIN, null, null);
@@ -89,19 +102,86 @@ public class GoogleSignInService {
         // Keep remote JWKS access and the independently committed nonce update
         // outside this transaction. Otherwise concurrent requests can each hold
         // one pool connection while waiting for a REQUIRES_NEW connection.
-        return transactionTemplate().execute(status -> {
-            UserIdentity identity = identityRepository
-                    .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
-                    .orElseThrow(GoogleSignInService::notLinked);
-            User user = userRepository.findByIdForUpdate(identity.getUserId())
-                    .orElseThrow(GoogleSignInService::notLinked);
-            if (user.getDeletedAt() != null) {
-                throw notLinked();
-            }
+        UserIdentity linked = identityRepository
+                .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
+                .orElse(null);
+        if (linked != null) {
+            return transactionTemplate().execute(status -> signInExisting(linked, deviceLabel));
+        }
+        if (!properties.signupEnabled()) {
+            throw notLinked();
+        }
+        try {
+            return isolatedCreateTransaction().execute(status -> createAccountFromGoogle(claims, deviceLabel));
+        } catch (DataIntegrityViolationException exception) {
+            return transactionTemplate().execute(status ->
+                    signInExisting(identityRepository
+                                    .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
+                                    .orElseThrow(() -> rethrowAfterDuplicateEmail(claims, exception)),
+                            deviceLabel));
+        }
+    }
 
-            String refreshToken = tokenService.issue(user, deviceLabel);
-            return responseFactory.create(user, refreshToken);
-        });
+    private GoogleSignInResult signInExisting(UserIdentity identity, String deviceLabel) {
+        User user = userRepository.findByIdForUpdate(identity.getUserId())
+                .orElseThrow(GoogleSignInService::notLinked);
+        if (user.getDeletedAt() != null) {
+            throw notLinked();
+        }
+        String refreshToken = tokenService.issue(user, deviceLabel);
+        return new GoogleSignInResult(responseFactory.create(user, refreshToken), false);
+    }
+
+    private GoogleSignInResult createAccountFromGoogle(GoogleIdTokenClaims claims, String deviceLabel) {
+        requireVerifiedEmailForCreation(claims);
+        String normalizedEmail = claims.email().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(normalizedEmail)) {
+            throw ApiException.of(ApiErrorCode.GOOGLE_EMAIL_IN_USE,
+                    "That email is already registered to another account");
+        }
+        Instant verifiedAt = Instant.now();
+        User user = User.createGoogleOnly(
+                displayNameFromGoogleClaims(claims), normalizedEmail, verifiedAt);
+        user = userRepository.saveAndFlush(user);
+        identityRepository.saveAndFlush(
+                UserIdentity.link(user, UserIdentity.PROVIDER_GOOGLE, claims.subject(),
+                        normalizedEmail));
+        eventPublisher.publishEvent(new UserAccountCreatedEvent(user.getId()));
+        log.info("Registered new account from Google sign-in");
+        String refreshToken = tokenService.issue(user, deviceLabel);
+        return new GoogleSignInResult(responseFactory.create(user, refreshToken, true), true);
+    }
+
+    private RuntimeException rethrowAfterDuplicateEmail(
+            GoogleIdTokenClaims claims, DataIntegrityViolationException cause) {
+        String normalizedEmail = claims.email().trim().toLowerCase(Locale.ROOT);
+        if (userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(normalizedEmail)) {
+            return ApiException.of(ApiErrorCode.GOOGLE_EMAIL_IN_USE,
+                    "That email is already registered to another account");
+        }
+        return cause;
+    }
+
+    private static void requireVerifiedEmailForCreation(GoogleIdTokenClaims claims) {
+        if (claims.email() == null || claims.email().isBlank() || !claims.emailVerified()) {
+            throw ApiException.of(ApiErrorCode.GOOGLE_SIGN_IN_FAILED,
+                    "Google sign-in could not be completed");
+        }
+    }
+
+    private static String displayNameFromGoogleClaims(GoogleIdTokenClaims claims) {
+        if (claims.name() != null && !claims.name().isBlank()) {
+            String trimmed = claims.name().trim();
+            return trimmed.length() > 60 ? trimmed.substring(0, 60) : trimmed;
+        }
+        String email = claims.email();
+        if (email != null && email.contains("@")) {
+            String local = email.substring(0, email.indexOf('@')).trim();
+            if (!local.isEmpty()) {
+                return local.length() > 60 ? local.substring(0, 60) : local;
+            }
+        }
+        return "User";
     }
 
     public void link(UUID userId, String accessTokenId, GoogleLinkRequest request) {
@@ -109,7 +189,7 @@ public class GoogleSignInService {
         enforceAccountRateLimit(userId, "google-link");
         User initialUser = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        if (!passwordEncoder.matches(request.password(), initialUser.getPasswordHash())) {
+        if (!hasPassword(initialUser) || !passwordEncoder.matches(request.password(), initialUser.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
 
@@ -125,7 +205,7 @@ public class GoogleSignInService {
     private void linkInTransaction(UUID userId, GoogleLinkRequest request, GoogleIdTokenClaims claims) {
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        if (!hasPassword(user) || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
         }
 
@@ -207,6 +287,12 @@ public class GoogleSignInService {
         return new TransactionTemplate(transactionManagerProvider.getObject());
     }
 
+    private TransactionTemplate isolatedCreateTransaction() {
+        TransactionTemplate isolated = new TransactionTemplate(transactionManagerProvider.getObject());
+        isolated.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return isolated;
+    }
+
     private void enforceAccountRateLimit(UUID userId, String action) {
         RateLimitService.Consumption consumption = rateLimitService.tryConsume(
                 action + "|user|" + userId, LINK_RATE_CAPACITY, LINK_RATE_PERIOD);
@@ -224,5 +310,10 @@ public class GoogleSignInService {
     private static ApiException alreadyLinked() {
         return ApiException.of(ApiErrorCode.GOOGLE_ACCOUNT_ALREADY_LINKED,
                 "This Google account cannot be linked");
+    }
+
+    private static boolean hasPassword(User user) {
+        String hash = user.getPasswordHash();
+        return hash != null && !hash.isBlank();
     }
 }

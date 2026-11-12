@@ -82,7 +82,8 @@ public final class GoogleTestKeys {
                     .issueTime(Date.from(issuedAt))
                     .expirationTime(Date.from(expiresAt))
                     .claim("email", email)
-                    .claim("email_verified", emailVerified);
+                    .claim("email_verified", emailVerified)
+                    .claim("name", "Test User");
             if (nonce != null) {
                 builder.claim("nonce", nonce);
             }

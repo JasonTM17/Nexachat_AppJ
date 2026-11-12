@@ -17,6 +17,8 @@ import java.util.List;
  * @param nonceTtlSeconds  lifetime of an issued sign-in nonce
  * @param androidClientIds required while enabled; Android OAuth client IDs
  *                         trusted as the token's {@code azp} when Google sets it
+ * @param signupEnabled    when true with {@code enabled}, an unknown Google {@code sub}
+ *                         may create a new NexaChat account on {@code POST /auth/google}
  */
 @ConfigurationProperties(prefix = "nexachat.google.signin")
 public record GoogleSignInProperties(
@@ -24,7 +26,8 @@ public record GoogleSignInProperties(
         String webClientId,
         String jwksUri,
         long nonceTtlSeconds,
-        List<String> androidClientIds) {
+        List<String> androidClientIds,
+        boolean signupEnabled) {
 
     public GoogleSignInProperties {
         if (jwksUri == null || jwksUri.isBlank()) {
