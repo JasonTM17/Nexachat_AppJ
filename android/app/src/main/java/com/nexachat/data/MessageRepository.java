@@ -156,17 +156,13 @@ public final class MessageRepository {
     private final FlowableProcessor<ApiError> interactionEvents = PublishProcessor.<ApiError>create().toSerialized();
     @Nullable private volatile Disposable rateLimitRetry;
     @Nullable private volatile TokenUser tokenToUser;
-    @Nullable private volatile SyncEngine syncEngine;
-
-    public void setSyncEngine(@Nullable SyncEngine syncEngine) {
-        this.syncEngine = syncEngine;
-    }
+    @Nullable private final SyncEngine syncEngine;
 
     @Inject
     public MessageRepository(MessageApi messageApi, MessageDao messageDao,
             ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
             PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
-            SessionEvents sessionEvents, Moshi moshi, AppDatabase appDatabase,
+            SessionEvents sessionEvents, SyncEngine syncEngine, Moshi moshi, AppDatabase appDatabase,
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
@@ -174,7 +170,7 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -185,6 +181,17 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler,
                 null, null, null, null, new SessionOperationTracker(), null);
+    }
+
+    /** Test constructor for the reconnect pipeline's engine and account-session boundary. */
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, SyncEngine syncEngine, Moshi moshi,
+            Scheduler timerScheduler, SessionOperationTracker operationTracker) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler,
+                null, null, null, null, operationTracker, null, null, syncEngine);
     }
 
     /** Local persistence test constructor with the production timer default. */
@@ -245,6 +252,20 @@ public final class MessageRepository {
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
             @Nullable EphemeralStateRouter ephemeralRouter) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                operationTracker, networkMonitor, ephemeralRouter, null);
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
+            @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine) {
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -260,6 +281,7 @@ public final class MessageRepository {
         this.sessionEvents = sessionEvents;
         this.ephemeralRouter = ephemeralRouter;
         this.operationTracker = operationTracker;
+        this.syncEngine = syncEngine;
         this.moshi = moshi;
         this.timerScheduler = timerScheduler;
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
