@@ -234,6 +234,9 @@ class UploadAdmissionFlowIT {
     void avatarUploadAndAttachmentUploadShareTheSameGate() throws Exception {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        // This fixture stores no real file: expose the returned avatar key to
+        // the bind's existence check while keeping the shared-permit oracle.
+        when(storageService.exists(anyString())).thenReturn(true);
         when(storageService.store(eq("avatars"), any(), any(), any(byte[].class)))
                 .thenAnswer(invocation -> {
                     entered.countDown();
