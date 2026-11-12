@@ -187,8 +187,12 @@ public final class LabelDialogFragment extends DialogFragment {
 
     @VisibleForTesting
     void bindUiStateObserverIfNeeded() {
-        if (viewModel == null) return;
-        viewModel.getUiState().observe(this, this::render);
+        if (viewModel == null || uiStateObserverRegistered) return;
+        if (uiStateObserver == null) {
+            uiStateObserver = this::render;
+        }
+        viewModel.getUiState().observe(this, uiStateObserver);
+        uiStateObserverRegistered = true;
     }
 
     @VisibleForTesting
