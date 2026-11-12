@@ -53,7 +53,7 @@ public final class LabelDialogFragment extends DialogFragment {
     private long renderedErrorVersion = -1;
     private Observer<LabelUiState> uiStateObserver;
     private boolean uiStateObserverRegistered;
-  @VisibleForTesting private int renderPassCountForTests;
+    @VisibleForTesting private int renderPassCountForTests;
 
     @Override
     public void onAttach(@NonNull Context context) {
