@@ -158,7 +158,7 @@ Inbox keeps its filter chips, the active-now strip, and the new-chat action. The
 
 Copy, Share, and Regenerate on the summary sheet sit in a footer outside the scrolling body. Settings rows and group member names grow with large type. The add-member sheet adds `max(IME, system bars)` once on top of its base padding.
 
-P1 surfaces that received layout changes are inbox, chat and composer, settings rows, group detail and add-member, and the summary sheet. Other screens inherit the tokens. The launcher mark is unchanged; a replacement logo has not been chosen.
+P1 surfaces that received layout changes are inbox, chat and composer, settings rows, group detail and add-member, and the summary sheet. Other screens inherit the tokens. The launcher and in-app mark are the Note monogram: `#733F68` in light and `#DDA7CC` in dark. The adaptive plate stays `#733F68`.
 
 Manrope and Inter are already bundled. API 26–27 type styles use the AppCompat line height and a bold fallback for weights 600 and 700. API 28 and newer set `android:lineHeight` and `android:textFontWeight` from `values-v28/type.xml`. Contrast pairs are checked on the JVM from `design-v2-contrast-pairs.json` against the resource XML. That check does not measure a device, TalkBack, or a font cmap.
 

@@ -74,8 +74,9 @@ and Android jobs are the required gates; do not release on a red or skipped job.
 A green JVM unit test or an HTML screenshot is not a device pass. Capture
 inbox, chat, settings, group detail, summary, and calls in English and
 Vietnamese, light and dark, at 100% and 200% font before calling the visual
-refresh verified on a phone. The launcher logo choice is still pending and is
-not part of the token rollout.
+refresh verified on a phone. The launcher mark is the Note monogram. On a
+phone, confirm the round and squircle masks, the API 33 themed icon, the splash
+mark, and the notification icon.
 
 ## 3. Build, check and sign the Android artifact
 

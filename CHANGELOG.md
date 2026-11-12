@@ -12,8 +12,8 @@ All notable changes to NexaChat are documented here. The format follows
   including pressed, disabled, media-metadata, and call-surface roles.
 - Shared bubble, composer, and state components follow those tokens. Inbox,
   chat, settings, group detail, and the summary sheet use the P1 hierarchy.
-  Other screens inherit the tokens. The launcher logo is unchanged pending a
-  choice. No versionCode change in this notes update.
+  Other screens inherit the tokens. The launcher and in-app mark are the Note
+  monogram. No versionCode change in this notes update.
 
 ## [1.1.0] - 2026-11-11
 
