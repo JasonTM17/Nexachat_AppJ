@@ -241,8 +241,9 @@ public final class AuthViewModelTest {
 
         assertEquals(List.of(AuthViewModel.Event.CompleteProfile), events);
         assertTrue(viewModel.hasPendingCompleteProfile());
-        viewModel.onCompleteProfileNavigationHandled();
+        assertTrue(viewModel.onCompleteProfileNavigationHandled());
         assertFalse(viewModel.hasPendingCompleteProfile());
+        assertFalse(viewModel.onCompleteProfileNavigationHandled());
         List<AuthViewModel.Event> afterRotation = observeEvents();
         assertTrue(afterRotation.isEmpty());
     }

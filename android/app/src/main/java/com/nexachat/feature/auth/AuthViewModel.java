@@ -111,8 +111,17 @@ public final class AuthViewModel extends ViewModel {
         return Boolean.TRUE.equals(savedState.get(KEY_PENDING_COMPLETE_PROFILE));
     }
 
-    public void onCompleteProfileNavigationHandled() {
+    /**
+     * Clears the pending complete-profile navigation. Returns true only for the
+     * first caller, so a restored one-shot event and the saved-state check
+     * cannot both open the screen after rotation.
+     */
+    public boolean onCompleteProfileNavigationHandled() {
+        if (!hasPendingCompleteProfile()) {
+            return false;
+        }
         savedState.remove(KEY_PENDING_COMPLETE_PROFILE);
+        return true;
     }
 
     @Nullable

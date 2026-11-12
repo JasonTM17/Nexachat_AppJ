@@ -109,7 +109,9 @@ public final class LoginFragment extends Fragment {
     }
 
     private void navigateToCompleteProfile() {
-        viewModel.onCompleteProfileNavigationHandled();
+        if (!viewModel.onCompleteProfileNavigationHandled()) {
+            return;
+        }
         NavHostFragment.findNavController(this).navigate(
                 R.id.completeProfileFragment, null, AuthNav.signedInOptions());
     }
