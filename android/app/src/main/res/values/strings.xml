@@ -560,6 +560,12 @@
     <string name="delete_account_title">Delete account</string>
     <string name="delete_account_consequences">Your account will be permanently deleted; your messages stay visible to others as from a deleted account.</string>
     <string name="delete_account_confirm">Delete my account</string>
+    <string name="delete_account_send_code">Send code</string>
+    <string name="delete_account_code_label">6-digit code</string>
+    <string name="delete_account_code_sent">We sent a confirmation code to your verified email address</string>
+    <string name="delete_account_code_invalid">Wrong or expired code</string>
+    <string name="error_deletion_code_required">Enter the 6-digit code</string>
+    <string name="cd_delete_account_code">Account deletion confirmation code</string>
     <string name="login_account_deleted_notice">Your account was deleted.</string>
     <string name="error_wrong_password">Current password is incorrect</string>
     <!-- Sign in with Google (hidden when the build has no web client ID) -->

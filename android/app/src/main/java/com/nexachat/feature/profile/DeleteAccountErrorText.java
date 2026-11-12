@@ -14,6 +14,9 @@ public final class DeleteAccountErrorText {
         if (error instanceof ApiError.WrongPassword) {
             return context.getText(R.string.error_wrong_password);
         }
+        if (error instanceof ApiError.InvalidOrExpiredCode) {
+            return context.getText(R.string.delete_account_code_invalid);
+        }
         return ApiErrorText.text(context, error);
     }
 }

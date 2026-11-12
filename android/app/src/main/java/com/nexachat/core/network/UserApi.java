@@ -64,6 +64,9 @@ public interface UserApi {
     @HTTP(method = "DELETE", path = "api/v1/users/me", hasBody = true)
     Call<Void> deleteMe(@Body DeleteAccountRequest body);
 
+    @POST("api/v1/users/me/deletion-code")
+    Call<Void> requestAccountDeletionCode();
+
     @Multipart
     @POST("api/v1/users/me/avatar")
     Call<AvatarResponse> uploadAvatar(@Part MultipartBody.Part file);

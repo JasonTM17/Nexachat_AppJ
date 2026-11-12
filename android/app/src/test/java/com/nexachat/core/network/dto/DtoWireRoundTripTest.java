@@ -196,6 +196,13 @@ public final class DtoWireRoundTripTest {
     }
 
     @Test
+    public void deleteAccountRequestSerializesCodeField() throws Exception {
+        DeleteAccountRequest request = DeleteAccountRequest.withCode("123456");
+        assertEquals("{\"code\":\"123456\"}",
+                moshi.adapter(DeleteAccountRequest.class).toJson(request));
+    }
+
+    @Test
     public void stompEnvelopeReencodesPayloadAndReadWatermark() throws Exception {
         WsEnvelope envelope = moshi.adapter(WsEnvelope.class).fromJson(
                 "{\"eventType\":\"MESSAGE_READ\",\"conversationId\":\"c-1\","

@@ -48,7 +48,8 @@ public final class AuthSensitiveStateContractTest {
             {"fragment_forgot_password.xml", "forgotNewPasswordInput"},
             {"fragment_forgot_password.xml", "forgotConfirmPasswordInput"},
             {"fragment_recovery_email_otp.xml", "recoveryOtpInput"},
-            {"fragment_delete_account.xml", "passwordInput"}
+            {"fragment_delete_account.xml", "passwordInput"},
+            {"fragment_delete_account.xml", "deletionCodeInput"}
         };
 
         for (String[] secretInput : secretInputs) {

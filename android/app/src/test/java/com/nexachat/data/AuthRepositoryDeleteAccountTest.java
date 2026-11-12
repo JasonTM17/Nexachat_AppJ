@@ -141,4 +141,38 @@ public final class AuthRepositoryDeleteAccountTest {
         verify(sessionEvents, never()).emitLoggedOut();
         assertNull(loginNotice.consume());
     }
+
+    @Test
+    public void deleteAccountWithCodeCallsApiWithCodeBody() throws Exception {
+        AuthApi authApi = mock(AuthApi.class);
+        UserApi userApi = mock(UserApi.class);
+        TokenStore tokenStore = mock(TokenStore.class);
+        SessionEvents sessionEvents = mock(SessionEvents.class);
+        TokenRefresher tokenRefresher = mock(TokenRefresher.class);
+        DeviceTokenRegistrationManager tokenManager = mock(DeviceTokenRegistrationManager.class);
+        AppDatabase database = mock(AppDatabase.class);
+        LoginNotice loginNotice = new LoginNotice();
+        AccountDataCleaner cleaner = new AccountDataCleaner(
+                database, new SessionOperationTracker(), Completable::complete);
+
+        Call<Void> call = mock(Call.class);
+        when(userApi.deleteMe(any())).thenReturn(call);
+        when(call.execute()).thenReturn(Response.success(204, null));
+        when(tokenManager.onLogout()).thenReturn(Completable.complete());
+        when(tokenStore.clear()).thenReturn(Completable.complete());
+        when(tokenStore.readPendingDeviceTokenUnregister()).thenReturn(Maybe.empty());
+
+        AuthRepository repository = new AuthRepository(
+                authApi, userApi, tokenStore, sessionEvents, tokenRefresher,
+                tokenManager, cleaner, loginNotice);
+
+        Result<com.nexachat.core.common.Unit> result =
+                repository.deleteAccountWithCode("123456").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        ArgumentCaptor<DeleteAccountRequest> body = ArgumentCaptor.forClass(DeleteAccountRequest.class);
+        verify(userApi).deleteMe(body.capture());
+        assertEquals("123456", body.getValue().getCode());
+        assertNull(body.getValue().getPassword());
+    }
 }

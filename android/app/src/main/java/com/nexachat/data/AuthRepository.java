@@ -341,6 +341,26 @@ public final class AuthRepository {
     }
 
     @NonNull
+    public Single<Result<Unit>> requestAccountDeletionCode() {
+        if (userApi == null) {
+            return Single.just(Result.failure(new ApiError.Unknown("NO_USER_API")));
+        }
+        return authCallUnit(userApi.requestAccountDeletionCode());
+    }
+
+    @NonNull
+    public Single<Result<Unit>> deleteAccountWithCode(@NonNull String code) {
+        if (userApi == null) {
+            return Single.just(Result.failure(new ApiError.Unknown("NO_USER_API")));
+        }
+        return Single.defer(() -> authCallUnit(userApi.deleteMe(DeleteAccountRequest.withCode(code)))
+                .flatMap(result -> result instanceof Result.Success<?>
+                        ? finalizeAccountDeletion()
+                        : Single.just(result)))
+                .subscribeOn(Schedulers.io());
+    }
+
+    @NonNull
     private Single<Result<Unit>> finalizeAccountDeletion() {
         return clearPendingDeviceUnregisterResidue()
                 .andThen(Completable.fromAction(tokenRefresher::onLogout))

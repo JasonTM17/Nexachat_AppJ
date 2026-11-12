@@ -4,7 +4,9 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.common.Unit;
+import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
+import com.nexachat.data.ContactsRepository;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -29,17 +31,19 @@ public final class DeleteAccountViewModelTest {
     @Rule public final InstantTaskExecutorRule taskExecutorRule = new InstantTaskExecutorRule();
 
     private AuthRepository authRepository;
+    private ContactsRepository contactsRepository;
     private AccountDeletionCoordinator coordinator;
 
     @Before
     public void setUp() {
         RxJavaPlugins.setIoSchedulerHandler(scheduler -> Schedulers.trampoline());
         authRepository = mock(AuthRepository.class);
+        contactsRepository = mock(ContactsRepository.class);
         coordinator = new AccountDeletionCoordinator();
     }
 
     private DeleteAccountViewModel viewModel() {
-        return new DeleteAccountViewModel(authRepository, coordinator);
+        return new DeleteAccountViewModel(authRepository, contactsRepository, coordinator, true);
     }
 
     @After
@@ -48,8 +52,25 @@ public final class DeleteAccountViewModelTest {
     }
 
     @Test
+    public void missingPasswordSetDefaultsToPasswordFlow() {
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, null, null, null));
+
+        assertTrue(viewModel.getUiState().getValue().usesPasswordFlow());
+    }
+
+    @Test
+    public void passwordSetFalseSwitchesToCodeFlow() {
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+
+        assertFalse(viewModel.getUiState().getValue().usesPasswordFlow());
+    }
+
+    @Test
     public void emptyPasswordIsBlockedBeforeRepository() {
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.submit();
 
         DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
@@ -63,6 +84,7 @@ public final class DeleteAccountViewModelTest {
                 .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
 
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.onPasswordChange("secret-pass");
         viewModel.submit();
 
@@ -79,6 +101,7 @@ public final class DeleteAccountViewModelTest {
                 .thenReturn(Single.just(Result.failure(ApiError.WrongPassword.INSTANCE)));
 
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.onPasswordChange("bad");
         viewModel.submit();
 
@@ -93,6 +116,7 @@ public final class DeleteAccountViewModelTest {
         when(authRepository.deleteAccount("secret-pass")).thenReturn(pending.firstOrError());
 
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.onPasswordChange("secret-pass");
         viewModel.submit();
         viewModel.onCleared();
@@ -109,6 +133,7 @@ public final class DeleteAccountViewModelTest {
                 .thenReturn(Single.just(Result.failure(ApiError.RateLimited.INSTANCE)));
 
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.onPasswordChange("secret-pass");
         viewModel.submit();
 
@@ -121,10 +146,90 @@ public final class DeleteAccountViewModelTest {
                 .thenReturn(Single.never());
 
         DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", "+1", "Demo", null, null, null, true));
         viewModel.onPasswordChange("secret-pass");
         viewModel.submit();
         viewModel.submit();
 
         verify(authRepository, times(1)).deleteAccount("secret-pass");
+    }
+
+    @Test
+    public void sendCodeSuccessOpensCodeStep() {
+        when(authRepository.requestAccountDeletionCode())
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+        viewModel.sendDeletionCode();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isCodeRequested());
+        assertFalse(state.isSendingCode());
+        assertNull(state.getError());
+    }
+
+    @Test
+    public void sendCodeRateLimitSurfacesInlineError() {
+        when(authRepository.requestAccountDeletionCode())
+                .thenReturn(Single.just(Result.failure(ApiError.RateLimited.INSTANCE)));
+
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+        viewModel.sendDeletionCode();
+
+        assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void emptyCodeIsBlockedBeforeRepository() {
+        when(authRepository.requestAccountDeletionCode())
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+        viewModel.sendDeletionCode();
+        viewModel.submit();
+
+        assertTrue(viewModel.getUiState().getValue().isCodeMissing());
+        verify(authRepository, never()).deleteAccountWithCode(anyString());
+    }
+
+    @Test
+    public void wrongCodeSurfacesCodeInputError() {
+        when(authRepository.deleteAccountWithCode("123456"))
+                .thenReturn(Single.just(Result.failure(ApiError.InvalidOrExpiredCode.INSTANCE)));
+
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+        when(authRepository.requestAccountDeletionCode())
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        viewModel.sendDeletionCode();
+        viewModel.onCodeChange("123456");
+        viewModel.submit();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isDeleting());
+        assertTrue(state.isCodeInputError());
+        assertEquals(ApiError.InvalidOrExpiredCode.INSTANCE, state.getError());
+    }
+
+    @Test
+    public void codeDeletionSuccessKeepsDeletingUntilSessionEnds() {
+        when(authRepository.requestAccountDeletionCode())
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(authRepository.deleteAccountWithCode("654321"))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+
+        DeleteAccountViewModel viewModel = viewModel();
+        viewModel.bindProfile(new UserDto("u1", null, "Demo", null, "a@b.c", true, false));
+        viewModel.sendDeletionCode();
+        viewModel.onCodeChange("654321");
+        viewModel.submit();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isDeleting());
+        assertNull(state.getError());
+        verify(authRepository).deleteAccountWithCode("654321");
     }
 }
