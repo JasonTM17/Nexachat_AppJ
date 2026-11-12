@@ -105,7 +105,7 @@ if [ "$BUILD" = 1 ]; then
 fi
 
 docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET" >/dev/null
-docker rm -f "$DB" >/dev/null 2>&1 || true
+docker rm -fv "$DB" >/dev/null 2>&1 || true
 docker run -d --name "$DB" --network "$NET" \
   -e POSTGRES_DB=postgres -e POSTGRES_USER=nexachat -e POSTGRES_PASSWORD=nexachat \
   -p "$DB_PORT:5432" postgres:16-alpine >/dev/null
@@ -302,6 +302,6 @@ cat "$OUT/summary.txt"
 echo "[$LABEL] results in $OUT"
 
 if [ "$TEARDOWN" = 1 ]; then
-  docker rm -f "$DB" >/dev/null 2>&1 || true
+  docker rm -fv "$DB" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
 fi
