@@ -1,5 +1,9 @@
 :root {
   color-scheme: dark light;
+  --logo-mark: #dda7cc;
+  --logo-ink: #f6dff0;
+  --logo-plate: #733f68;
+  --logo-on-brand: #fffcff;
   --bg-color: #0f172a;
   --card-bg: #1e293b;
   --text-main: #f8fafc;
@@ -19,6 +23,8 @@
 
 @media (prefers-color-scheme: light) {
   :root {
+    --logo-mark: #733f68;
+    --logo-ink: #35142f;
     --bg-color: #f8fafc;
     --card-bg: #ffffff;
     --text-main: #0f172a;
@@ -113,6 +119,21 @@ body {
   letter-spacing: -0.025em;
   margin-bottom: 0.75rem;
   text-wrap: balance;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  color: var(--logo-ink);
+}
+
+.brand-mark {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  fill: var(--logo-mark);
 }
 
 .error-code {
