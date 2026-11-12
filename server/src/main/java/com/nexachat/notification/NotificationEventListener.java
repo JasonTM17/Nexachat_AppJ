@@ -14,8 +14,10 @@ import org.springframework.transaction.event.TransactionPhase;
 
 import java.time.Clock;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -83,6 +85,10 @@ public class NotificationEventListener {
         event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
         boolean mentionAll = event.message().mentionAll();
 
+        // One physical device can hold a token row per account; it must receive
+        // the message once, addressed to the account signed in there.
+        Map<UUID, List<UserDeviceToken>> offlineRows = new LinkedHashMap<>();
+        Set<UUID> mentionedRecipients = new HashSet<>();
         for (UUID memberId : recipientIds) {
             if (memberId.equals(senderId)) {
                 continue;
@@ -93,13 +99,17 @@ public class NotificationEventListener {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
-                if (!tokenRepository.findByUserId(memberId).isEmpty()) {
-                    fcmPushService.sendNewMessageNotification(memberId, conversationId,
-                            event.message().id(), event.message().seq(),
-                            event.message().senderDisplayName(), mentioned);
+                offlineRows.put(memberId, tokenRepository.findByUserId(memberId));
+                if (mentioned) {
+                    mentionedRecipients.add(memberId);
                 }
             }
         }
+
+        DeviceTokenOwners.byCurrentOwner(offlineRows).forEach((recipientId, tokens) ->
+                fcmPushService.sendNewMessageNotification(recipientId, tokens, conversationId,
+                        event.message().id(), event.message().seq(),
+                        event.message().senderDisplayName(), mentionedRecipients.contains(recipientId)));
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

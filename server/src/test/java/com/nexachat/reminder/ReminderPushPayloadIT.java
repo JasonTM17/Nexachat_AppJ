@@ -36,6 +36,9 @@ class ReminderPushPayloadIT {
         FcmGateway fcmGateway = mock(FcmGateway.class);
         UserDeviceToken device = mock(UserDeviceToken.class);
         when(device.getToken()).thenReturn("token-1");
+        com.nexachat.user.User owner = mock(com.nexachat.user.User.class);
+        when(owner.getId()).thenReturn(UUID.randomUUID());
+        when(device.getUser()).thenReturn(owner);
         when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(device));
 
         ArgumentCaptor<Map<String, String>> payloadCaptor = ArgumentCaptor.forClass(Map.class);

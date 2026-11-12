@@ -22,7 +22,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import java.time.Instant;
 import java.util.function.LongSupplier;
 import java.util.Map.Entry;
 import java.util.Map;
@@ -333,14 +332,12 @@ public final class FcmMessageProcessor {
         String reminderId = data.get("reminderId");
         String conversationId = data.get("conversationId");
         String recipientId = data.get("recipientId");
-        String remindAt = data.get("remindAt");
+        String occurrence = data.get("occurrence");
         if (!hasText(reminderId) || !hasText(conversationId)
-                || !hasText(recipientId) || !hasText(remindAt)) {
+                || !hasText(recipientId) || !hasText(occurrence)) {
             return;
         }
-        try {
-            Instant.parse(remindAt);
-        } catch (RuntimeException malformedOccurrence) {
+        if (!NotificationWorkRequest.isOccurrenceKey(occurrence)) {
             return;
         }
         notificationAdmission.admitPush(recipientId, conversationId)
@@ -352,7 +349,7 @@ public final class FcmMessageProcessor {
                         if (foregroundConversationTracker.isForegroundConversation(conversationId)) return;
                         notificationWorkScheduler.enqueue(NotificationWorkRequest.reminder(
                                 recipientId, session.sessionEpoch(), conversationId,
-                                reminderId, remindAt));
+                                reminderId, occurrence));
                     });
                 }, ignored -> { });
     }

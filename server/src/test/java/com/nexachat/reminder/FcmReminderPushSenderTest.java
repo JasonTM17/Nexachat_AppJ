@@ -6,7 +6,9 @@ import com.nexachat.notification.PushResult;
 import com.nexachat.notification.UserDeviceToken;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.observability.ObservabilityMetrics;
+import com.nexachat.user.User;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.List;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -50,10 +53,8 @@ class FcmReminderPushSenderTest {
 
     @Test
     void aSynchronousGatewayFailureDoesNotMisalignLaterTokens() {
-        UUID firstRecipient = UUID.randomUUID();
-        UUID secondRecipient = UUID.randomUUID();
-        UserDeviceToken first = device("token-1", firstRecipient);
-        UserDeviceToken second = device("token-2", secondRecipient);
+        UserDeviceToken first = device("token-1");
+        UserDeviceToken second = device("token-2");
         when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(first, second));
         when(fcmGateway.sendDataPush(eq("token-1"), anyMap(), anyString(), anyLong()))
                 .thenThrow(new RuntimeException("synchronous failure"));
@@ -61,7 +62,7 @@ class FcmReminderPushSenderTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         PushResult.unregistered("UNREGISTERED")));
 
-        sender.send(delivery, List.of(firstRecipient, secondRecipient));
+        sender.send(delivery, List.of(UUID.randomUUID(), UUID.randomUUID()));
 
         // The unregistered token is token-2; the failed synchronous call for
         // token-1 must not shift the token/future pairing.
@@ -72,61 +73,82 @@ class FcmReminderPushSenderTest {
     }
 
     @Test
-    void aSharedDeviceReceivesAnAccountBoundPushForEachRecipient() {
-        UUID firstRecipient = UUID.randomUUID();
-        UUID secondRecipient = UUID.randomUUID();
-        UserDeviceToken first = device("shared-token", firstRecipient);
-        UserDeviceToken second = device("shared-token", secondRecipient);
+    void aSharedDeviceTokenReceivesOnePush() {
+        UserDeviceToken first = device("shared-token");
+        UserDeviceToken second = device("shared-token");
         when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(first, second));
         when(fcmGateway.sendDataPush(eq("shared-token"), anyMap(), anyString(), anyLong()))
                 .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
 
-        sender.send(delivery, List.of(firstRecipient, secondRecipient));
+        sender.send(delivery, List.of(UUID.randomUUID(), UUID.randomUUID()));
 
-        org.mockito.ArgumentCaptor<Map<String, String>> payloads =
-                org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(fcmGateway, times(2)).sendDataPush(
-                eq("shared-token"), payloads.capture(), eq("HIGH"), anyLong());
-        verify(metrics, times(2)).recordPushSend("SUCCESS");
-        org.assertj.core.api.Assertions.assertThat(payloads.getAllValues())
-                .extracting(payload -> payload.get("recipientId"))
-                .containsExactlyInAnyOrder(firstRecipient.toString(), secondRecipient.toString());
+        verify(fcmGateway, times(1))
+                .sendDataPush(eq("shared-token"), anyMap(), eq("HIGH"), anyLong());
+        verify(metrics, times(1)).recordPushSend("SUCCESS");
     }
 
     @Test
-    void reminderFanOutCarriesRecipientAndOccurrenceForEachAccount() {
-        UUID firstRecipient = UUID.randomUUID();
-        UUID secondRecipient = UUID.randomUUID();
-        UserDeviceToken first = device("token-a", firstRecipient);
-        UserDeviceToken second = device("token-b", secondRecipient);
-        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(first, second));
+    @SuppressWarnings("unchecked")
+    void aSharedDeviceTokenIsAddressedToTheAccountSignedInLast() {
+        UUID earlier = UUID.randomUUID();
+        UUID latest = UUID.randomUUID();
+        UserDeviceToken older = device("shared-token", earlier, Instant.parse("2026-11-10T08:00:00Z"));
+        UserDeviceToken newer = device("shared-token", latest, Instant.parse("2026-11-11T08:00:00Z"));
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(older, newer));
+        when(fcmGateway.sendDataPush(eq("shared-token"), anyMap(), anyString(), anyLong()))
+                .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
+
+        sender.send(delivery, List.of(earlier, latest));
+
+        ArgumentCaptor<Map<String, String>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(fcmGateway, times(1))
+                .sendDataPush(eq("shared-token"), payload.capture(), eq("HIGH"), anyLong());
+        assertThat(payload.getValue()).containsEntry("recipientId", latest.toString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void payloadCarriesAnOpaqueOccurrenceKeyInsteadOfTheSchedule() {
+        UUID recipient = UUID.randomUUID();
+        UserDeviceToken device = device("token-a", recipient, null);
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(device));
         when(fcmGateway.sendDataPush(anyString(), anyMap(), anyString(), anyLong()))
                 .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
 
-        sender.send(delivery, List.of(firstRecipient, secondRecipient));
+        sender.send(delivery, List.of(recipient));
 
-        org.mockito.ArgumentCaptor<Map<String, String>> firstPayload =
-                org.mockito.ArgumentCaptor.forClass(Map.class);
-        org.mockito.ArgumentCaptor<Map<String, String>> secondPayload =
-                org.mockito.ArgumentCaptor.forClass(Map.class);
-        verify(fcmGateway).sendDataPush(eq("token-a"), firstPayload.capture(), eq("HIGH"), anyLong());
-        verify(fcmGateway).sendDataPush(eq("token-b"), secondPayload.capture(), eq("HIGH"), anyLong());
-        org.assertj.core.api.Assertions.assertThat(firstPayload.getValue())
-                .containsEntry("recipientId", firstRecipient.toString())
+        ArgumentCaptor<Map<String, String>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(fcmGateway).sendDataPush(eq("token-a"), payload.capture(), eq("HIGH"), anyLong());
+        Map<String, String> data = payload.getValue();
+        assertThat(data)
+                .containsEntry("recipientId", recipient.toString())
                 .containsEntry("reminderId", delivery.reminderId().toString())
-                .containsEntry("remindAt", delivery.remindAt().toString());
-        org.assertj.core.api.Assertions.assertThat(secondPayload.getValue())
-                .containsEntry("recipientId", secondRecipient.toString())
-                .containsEntry("reminderId", delivery.reminderId().toString())
-                .containsEntry("remindAt", delivery.remindAt().toString());
+                .containsEntry("occurrence", FcmReminderPushSender.occurrenceKey(delivery))
+                .doesNotContainKey("remindAt");
+        assertThat(data.get("occurrence")).matches("[0-9a-f]{32}");
+        assertThat(data.values()).noneMatch(value -> value.contains("2026-12-01"));
+
+        ReminderDelivery nextWeek = new ReminderDelivery(
+                delivery.reminderId(), delivery.conversationId(), delivery.title(),
+                delivery.remindAt().plusSeconds(7 * 24 * 3_600L), delivery.anchorAt(),
+                delivery.repeat(), delivery.claimToken());
+        assertThat(FcmReminderPushSender.occurrenceKey(nextWeek))
+                .isNotEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
+        assertThat(FcmReminderPushSender.occurrenceKey(delivery))
+                .isEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
     }
 
-    private static UserDeviceToken device(String token, UUID userId) {
+    private static UserDeviceToken device(String token) {
+        return device(token, UUID.randomUUID(), null);
+    }
+
+    private static UserDeviceToken device(String token, UUID ownerId, Instant updatedAt) {
         UserDeviceToken device = mock(UserDeviceToken.class);
+        User owner = mock(User.class);
+        when(owner.getId()).thenReturn(ownerId);
         when(device.getToken()).thenReturn(token);
-        com.nexachat.user.User user = mock(com.nexachat.user.User.class);
-        when(user.getId()).thenReturn(userId);
-        when(device.getUser()).thenReturn(user);
+        when(device.getUser()).thenReturn(owner);
+        when(device.getUpdatedAt()).thenReturn(updatedAt);
         return device;
     }
 }

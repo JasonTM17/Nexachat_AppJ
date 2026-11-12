@@ -301,7 +301,7 @@ public final class FcmMessageProcessorTest {
                 "type", FcmMessageProcessor.TYPE_REMINDER,
                 "reminderId", "reminder-1",
                 "conversationId", "conversation-1",
-                "remindAt", "2026-12-01T02:00:00Z",
+                "occurrence", "0123456789abcdef0123456789abcdef",
                 "repeat", "WEEKLY"));
 
         org.junit.Assert.assertEquals(java.util.List.of(), refreshed);
@@ -336,7 +336,7 @@ public final class FcmMessageProcessorTest {
                 "reminderId", "reminder-1",
                 "conversationId", "conversation-1",
                 "recipientId", RECIPIENT_ID,
-                "remindAt", "2026-12-01T02:00:00Z",
+                "occurrence", "0123456789abcdef0123456789abcdef",
                 "repeat", "WEEKLY"));
         org.junit.Assert.assertEquals(java.util.List.of("conversation-1"), refreshed);
         org.mockito.ArgumentCaptor<NotificationWorkRequest> request =
@@ -344,7 +344,7 @@ public final class FcmMessageProcessorTest {
         verify(notificationWorkScheduler).enqueue(request.capture());
         org.junit.Assert.assertEquals(
                 "rem:" + RECIPIENT_ID + ":" + SESSION_EPOCH
-                        + ":reminder-1:2026-12-01T02:00:00Z",
+                        + ":reminder-1:0123456789abcdef0123456789abcdef",
                 request.getValue().uniqueWorkName());
         subscription.dispose();
     }

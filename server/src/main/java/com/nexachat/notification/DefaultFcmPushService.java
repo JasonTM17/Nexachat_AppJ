@@ -64,7 +64,7 @@ public class DefaultFcmPushService implements FcmPushService {
         if (tokens.isEmpty()) {
             return;
         }
-        sendNewMessageNotificationForRecipient(
+        sendNewMessageNotification(
                 recipientId, tokens, conversationId, messageId, seq, senderName, mentioned);
     }
 
@@ -87,11 +87,13 @@ public class DefaultFcmPushService implements FcmPushService {
             byRecipient.computeIfAbsent(token.getUser().getId(), ignored -> new ArrayList<>())
                     .add(token);
         }
-        byRecipient.forEach((recipientId, recipientTokens) -> sendNewMessageNotificationForRecipient(
+        byRecipient.forEach((recipientId, recipientTokens) -> sendNewMessageNotification(
                 recipientId, recipientTokens, conversationId, messageId, seq, senderName, mentioned));
     }
 
-    private void sendNewMessageNotificationForRecipient(
+    @Override
+    @Transactional
+    public void sendNewMessageNotification(
             UUID recipientId,
             List<UserDeviceToken> tokens,
             UUID conversationId,
@@ -99,7 +101,7 @@ public class DefaultFcmPushService implements FcmPushService {
             long seq,
             String senderName,
             boolean mentioned) {
-        if (tokens == null || tokens.isEmpty()) {
+        if (recipientId == null || tokens == null || tokens.isEmpty()) {
             return;
         }
 

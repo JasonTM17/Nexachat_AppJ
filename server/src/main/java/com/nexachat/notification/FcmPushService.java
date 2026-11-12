@@ -27,6 +27,14 @@ public interface FcmPushService {
                                     UUID messageId, long seq, String senderName,
                                     boolean mentioned);
 
+    /**
+     * Sends one account-bound new-message pointer to the given tokens of one
+     * recipient. The caller has already chosen which tokens that account owns.
+     */
+    void sendNewMessageNotification(UUID recipientId, List<UserDeviceToken> tokens,
+                                    UUID conversationId, UUID messageId, long seq,
+                                    String senderName, boolean mentioned);
+
     void sendCallInviteNotification(UUID recipientId, UUID callId, UUID conversationId,
                                     UUID callerId, String callerName, String callType, long timestamp);
 }

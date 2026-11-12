@@ -25,11 +25,11 @@ public final class NotificationWorkRequestTest {
     @Test
     public void reminderRescheduleCreatesANewOccurrence() {
         NotificationWorkRequest first = NotificationWorkRequest.reminder(
-                "account-a", 4L, "conversation-1", "reminder-2", "2026-12-01T02:00:00Z");
+                "account-a", 4L, "conversation-1", "reminder-2", "0123456789abcdef0123456789abcdef");
         NotificationWorkRequest rescheduled = NotificationWorkRequest.reminder(
                 "account-a", 4L, "conversation-1", "reminder-2", "2026-12-08T02:00:00Z");
 
-        assertEquals("rem:account-a:4:reminder-2:2026-12-01T02:00:00Z", first.uniqueWorkName());
+        assertEquals("rem:account-a:4:reminder-2:0123456789abcdef0123456789abcdef", first.uniqueWorkName());
         assertNotEquals(first.uniqueWorkName(), rescheduled.uniqueWorkName());
         assertEquals(rescheduled.uniqueWorkName(),
                 NotificationWorkRequest.fromData(rescheduled.toData()).occurrenceKey());
@@ -48,6 +48,6 @@ public final class NotificationWorkRequestTest {
         assertTrue(NotificationWorkRequest.message(
                 "account-a", 4L, "conversation-1", "message-9", 9L).isValid());
         assertNotNull(NotificationWorkRequest.reminder(
-                "account-a", 4L, "conversation-1", "reminder-2", "2026-12-01T02:00:00Z"));
+                "account-a", 4L, "conversation-1", "reminder-2", "0123456789abcdef0123456789abcdef"));
     }
 }

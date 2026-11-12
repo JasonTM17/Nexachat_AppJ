@@ -6,7 +6,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.work.Data;
 import androidx.work.WorkerParameters;
-import java.time.Instant;
 
 /** Immutable, validated input for one account-bound notification occurrence. */
 public final class NotificationWorkRequest {
@@ -20,7 +19,7 @@ public final class NotificationWorkRequest {
     private static final String KEY_MESSAGE = "messageId";
     private static final String KEY_SEQUENCE = "seq";
     private static final String KEY_REMINDER = "reminderId";
-    private static final String KEY_REMIND_AT = "remindAt";
+    private static final String KEY_OCCURRENCE = "occurrence";
 
     private final String type;
     private final String recipientId;
@@ -29,7 +28,7 @@ public final class NotificationWorkRequest {
     @Nullable private final String messageId;
     private final long sequence;
     @Nullable private final String reminderId;
-    @Nullable private final String remindAt;
+    @Nullable private final String occurrence;
 
     private NotificationWorkRequest(
             String type,
@@ -39,7 +38,7 @@ public final class NotificationWorkRequest {
             @Nullable String messageId,
             long sequence,
             @Nullable String reminderId,
-            @Nullable String remindAt) {
+            @Nullable String occurrence) {
         this.type = type;
         this.recipientId = recipientId;
         this.sessionEpoch = sessionEpoch;
@@ -47,7 +46,7 @@ public final class NotificationWorkRequest {
         this.messageId = messageId;
         this.sequence = sequence;
         this.reminderId = reminderId;
-        this.remindAt = remindAt;
+        this.occurrence = occurrence;
     }
 
     @NonNull
@@ -67,9 +66,9 @@ public final class NotificationWorkRequest {
             long sessionEpoch,
             @NonNull String conversationId,
             @NonNull String reminderId,
-            @NonNull String remindAt) {
+            @NonNull String occurrence) {
         return new NotificationWorkRequest(TYPE_REMINDER, recipientId, sessionEpoch,
-                conversationId, null, 0L, reminderId, remindAt);
+                conversationId, null, 0L, reminderId, occurrence);
     }
 
     @Nullable
@@ -83,7 +82,7 @@ public final class NotificationWorkRequest {
                 data.getString(KEY_MESSAGE),
                 data.getLong(KEY_SEQUENCE, 0L),
                 data.getString(KEY_REMINDER),
-                data.getString(KEY_REMIND_AT));
+                data.getString(KEY_OCCURRENCE));
         return request.isValid() ? request : null;
     }
 
@@ -100,7 +99,7 @@ public final class NotificationWorkRequest {
                 extras.getString(KEY_MESSAGE),
                 extras.getLong(KEY_SEQUENCE, 0L),
                 extras.getString(KEY_REMINDER),
-                extras.getString(KEY_REMIND_AT));
+                extras.getString(KEY_OCCURRENCE));
         return request.isValid() ? request : null;
     }
 
@@ -112,13 +111,7 @@ public final class NotificationWorkRequest {
             return hasText(messageId) && sequence > 0L;
         }
         if (TYPE_REMINDER.equals(type)) {
-            if (!hasText(reminderId) || !hasText(remindAt)) return false;
-            try {
-                Instant.parse(remindAt);
-                return true;
-            } catch (RuntimeException malformed) {
-                return false;
-            }
+            return hasText(reminderId) && isOccurrenceKey(occurrence);
         }
         return false;
     }
@@ -134,7 +127,7 @@ public final class NotificationWorkRequest {
             builder.putString(KEY_MESSAGE, messageId).putLong(KEY_SEQUENCE, sequence);
         }
         if (reminderId != null) {
-            builder.putString(KEY_REMINDER, reminderId).putString(KEY_REMIND_AT, remindAt);
+            builder.putString(KEY_REMINDER, reminderId).putString(KEY_OCCURRENCE, occurrence);
         }
         return builder.build();
     }
@@ -148,7 +141,7 @@ public final class NotificationWorkRequest {
             intent.putExtra(KEY_MESSAGE, messageId).putExtra(KEY_SEQUENCE, sequence);
         }
         if (reminderId != null) {
-            intent.putExtra(KEY_REMINDER, reminderId).putExtra(KEY_REMIND_AT, remindAt);
+            intent.putExtra(KEY_REMINDER, reminderId).putExtra(KEY_OCCURRENCE, occurrence);
         }
     }
 
@@ -156,7 +149,7 @@ public final class NotificationWorkRequest {
     public String uniqueWorkName() {
         return TYPE_MESSAGE.equals(type)
                 ? "msg:" + recipientId + ":" + sessionEpoch + ":" + messageId
-                : "rem:" + recipientId + ":" + sessionEpoch + ":" + reminderId + ":" + remindAt;
+                : "rem:" + recipientId + ":" + sessionEpoch + ":" + reminderId + ":" + occurrence;
     }
 
     @NonNull
@@ -171,7 +164,12 @@ public final class NotificationWorkRequest {
     @Nullable public String getMessageId() { return messageId; }
     public long getSequence() { return sequence; }
     @Nullable public String getReminderId() { return reminderId; }
-    @Nullable public String getRemindAt() { return remindAt; }
+    @Nullable public String getOccurrence() { return occurrence; }
+
+    /** Server-issued opaque key for one reminder firing: 32 lowercase hex characters. */
+    static boolean isOccurrenceKey(@Nullable String value) {
+        return value != null && value.matches("[0-9a-f]{32}");
+    }
 
     private static boolean hasText(@Nullable String value) {
         return value != null && !value.isBlank();

@@ -108,7 +108,7 @@ public final class NotificationWorkExecutorTest {
         assertEquals(NotificationWorkExecutor.Outcome.SUCCESS,
                 executor.execute(messageRequest()).blockingGet());
         assertEquals(NotificationWorkExecutor.Outcome.SUCCESS,
-                executor.execute(reminderRequest("2026-12-01T02:00:00Z")).blockingGet());
+                executor.execute(reminderRequest("0123456789abcdef0123456789abcdef")).blockingGet());
 
         verify(messageNotifications, never()).show(any());
         verify(reminderNotifications, never()).show(any());
@@ -165,8 +165,8 @@ public final class NotificationWorkExecutorTest {
 
     @Test
     public void rescheduledReminderOccurrenceNotifiesAgain() {
-        NotificationWorkRequest first = reminderRequest("2026-12-01T02:00:00Z");
-        NotificationWorkRequest rescheduled = reminderRequest("2026-12-08T02:00:00Z");
+        NotificationWorkRequest first = reminderRequest("0123456789abcdef0123456789abcdef");
+        NotificationWorkRequest rescheduled = reminderRequest("fedcba9876543210fedcba9876543210");
 
         assertEquals(NotificationWorkExecutor.Outcome.SUCCESS, executor.execute(first).blockingGet());
         assertEquals(NotificationWorkExecutor.Outcome.SUCCESS,
@@ -203,9 +203,9 @@ public final class NotificationWorkExecutorTest {
         return NotificationWorkRequest.message(ACCOUNT, EPOCH, CONVERSATION, MESSAGE, 9L);
     }
 
-    private static NotificationWorkRequest reminderRequest(String remindAt) {
+    private static NotificationWorkRequest reminderRequest(String occurrence) {
         return NotificationWorkRequest.reminder(
-                ACCOUNT, EPOCH, CONVERSATION, "reminder-2", remindAt);
+                ACCOUNT, EPOCH, CONVERSATION, "reminder-2", occurrence);
     }
 
     private static final class FakeOccurrenceLedger implements NotificationOccurrenceLedger {
