@@ -46,6 +46,8 @@ public final class ContrastUnitTest {
             "stitch_chip_bg_tint.xml",
             "stitch_chip_text_color.xml",
             "stitch_chip_stroke_color.xml",
+            "nexa_filter_chip_bg.xml",
+            "nexa_filter_chip_text.xml",
             "nexa_filled_button_bg.xml",
             "nexa_filled_button_text.xml",
             "nexa_outlined_button_text.xml"

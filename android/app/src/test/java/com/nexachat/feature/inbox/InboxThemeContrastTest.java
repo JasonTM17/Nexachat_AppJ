@@ -12,6 +12,7 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -64,6 +65,40 @@ public final class InboxThemeContrastTest {
         assertPair(colors, "colorOnSurface", "bubble_other", 4.5);
     }
 
+    /**
+     * Checked inbox filter chips fill with {@code colorPrimary}. In dark mode that
+     * primary is the pale mark {@code #DDA7CC}, so the checked label has to be
+     * {@code colorOnPrimary}.
+     */
+    @Test
+    public void checkedFilterChipTextOnPrimaryMeetsContrast() throws Exception {
+        Document styles = DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder()
+                .parse(new File(resDir, "values/styles_nexachat.xml"));
+        Element filterStyle = null;
+        NodeList styleNodes = styles.getElementsByTagName("style");
+        for (int i = 0; i < styleNodes.getLength(); i++) {
+            Element style = (Element) styleNodes.item(i);
+            if ("Widget.NexaChat.Chip.Filter".equals(style.getAttribute("name"))) {
+                filterStyle = style;
+                break;
+            }
+        }
+        assertNotNull("Widget.NexaChat.Chip.Filter", filterStyle);
+        String textName = selectorColor(
+                filterStyle, "android:textColor", true, false);
+        String pressedFillName = selectorColor(
+                filterStyle, "chipBackgroundColor", true, true);
+        Map<String, String> light = loadColors(new File(resDir, "values/colors_nexachat.xml"));
+        Map<String, String> dark = loadColors(new File(resDir, "values-night/colors_nexachat.xml"));
+        assertPair(dark, textName, "colorPrimary", 4.5);
+        assertPair(light, textName, "colorPrimary", 4.5);
+        assertEquals("checked filter label must use the on-primary token",
+                "colorOnPrimary", textName);
+        assertPair(light, textName, pressedFillName, 4.5);
+        assertPair(dark, textName, pressedFillName, 4.5);
+    }
+
     private static Map<String, String> loadColors(File file) throws Exception {
         Map<String, String> raw = new HashMap<>();
         Document document = DocumentBuilderFactory.newInstance()
@@ -86,6 +121,48 @@ public final class InboxThemeContrastTest {
             resolved.put(name, value);
         }
         return resolved;
+    }
+
+    private String selectorColor(Element style, String itemName, boolean checked, boolean pressed)
+            throws Exception {
+        String reference = null;
+        NodeList items = style.getElementsByTagName("item");
+        for (int i = 0; i < items.getLength(); i++) {
+            Element item = (Element) items.item(i);
+            if (itemName.equals(item.getAttribute("name"))) {
+                reference = item.getTextContent().trim();
+                break;
+            }
+        }
+        assertNotNull(itemName, reference);
+        assertTrue(itemName + " must be a color resource, was " + reference,
+                reference.startsWith("@color/"));
+        File selector = new File(resDir, "color/" + reference.substring("@color/".length()) + ".xml");
+        Document document = DocumentBuilderFactory.newInstance()
+                .newDocumentBuilder()
+                .parse(selector);
+        NodeList states = document.getElementsByTagName("item");
+        Element match = null;
+        for (int i = 0; i < states.getLength(); i++) {
+            Element state = (Element) states.item(i);
+            if (stateMatches(state, "android:state_enabled", true)
+                    && stateMatches(state, "android:state_checked", checked)
+                    && stateMatches(state, "android:state_pressed", pressed)) {
+                match = state;
+                break;
+            }
+        }
+        assertNotNull(reference + " missing checked=" + checked + " pressed=" + pressed, match);
+        String color = match.getAttribute("android:color");
+        assertTrue(color, color.startsWith("@color/"));
+        return color.substring("@color/".length());
+    }
+
+    private static boolean stateMatches(Element item, String attribute, boolean actual) {
+        if (!item.hasAttribute(attribute)) {
+            return true;
+        }
+        return Boolean.parseBoolean(item.getAttribute(attribute)) == actual;
     }
 
     private static void assertPair(
