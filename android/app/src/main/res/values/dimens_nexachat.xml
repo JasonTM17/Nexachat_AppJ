@@ -11,7 +11,7 @@
     <dimen name="corner_sm">8dp</dimen>
     <dimen name="corner_md">12dp</dimen>
     <dimen name="corner_lg">16dp</dimen>
-    <dimen name="corner_xl">28dp</dimen>
+    <dimen name="corner_xl">24dp</dimen>
     <dimen name="corner_full">999dp</dimen>
     <dimen name="elevation_level1">1dp</dimen>
     <dimen name="elevation_level2">3dp</dimen>
@@ -22,4 +22,22 @@
     <dimen name="attachment_chip_max_width">240dp</dimen>
     <dimen name="media_dismiss_distance">96dp</dimen>
     <dimen name="inbox_swipe_text_size">14sp</dimen>
+    <dimen name="space_inset">12dp</dimen>
+    <dimen name="app_bar_min_height">64dp</dimen>
+    <dimen name="inbox_row_min_height">80dp</dimen>
+    <dimen name="avatar_inbox_size">52dp</dimen>
+    <dimen name="avatar_chat_size">36dp</dimen>
+    <dimen name="icon_size">24dp</dimen>
+    <dimen name="metadata_icon_size">16dp</dimen>
+    <dimen name="bubble_content_inset">12dp</dimen>
+    <dimen name="bubble_group_gap">4dp</dimen>
+    <dimen name="bubble_turn_gap">8dp</dimen>
+    <dimen name="composer_min_height">64dp</dimen>
+    <dimen name="sheet_handle_width">32dp</dimen>
+    <dimen name="sheet_handle_height">4dp</dimen>
+    <dimen name="sheet_max_width">640dp</dimen>
+    <dimen name="control_stroke_width">1dp</dimen>
+    <dimen name="focus_stroke_width">2dp</dimen>
+    <dimen name="call_control_size">64dp</dimen>
+    <dimen name="call_avatar_size">112dp</dimen>
 </resources>

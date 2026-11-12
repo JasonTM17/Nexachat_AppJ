@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Color, type, shape, and control styles live on Theme.NexaChat.Views. -->
     <style name="Theme.NexaChat" parent="Theme.NexaChat.Views" />
 
     <style name="Theme.NexaChat.Material" parent="Theme.NexaChat.Views" />

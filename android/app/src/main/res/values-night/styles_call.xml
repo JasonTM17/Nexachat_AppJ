@@ -7,5 +7,13 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorBackground">@color/nexa_call_surface</item>
+        <item name="colorSurface">@color/nexa_call_surface</item>
+        <item name="colorOnSurface">@color/call_text_primary</item>
+        <item name="colorOnSurfaceVariant">@color/call_text_secondary</item>
+        <item name="colorPrimary">@color/call_avatar_background</item>
+        <item name="colorOnPrimary">@color/call_avatar_foreground</item>
+        <item name="colorError">@color/call_end_background</item>
+        <item name="colorOnError">@color/call_text_primary</item>
     </style>
 </resources>

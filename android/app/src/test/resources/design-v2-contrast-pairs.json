@@ -1,0 +1,1894 @@
+{
+  "rows": [
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorOnSurface",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorPrimary",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorError",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorBackground",
+      "foreground": "colorOutline",
+      "background": "colorBackground",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorOnSurface",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorPrimary",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorError",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurface",
+      "foreground": "colorOutline",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorError",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceVariant",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceVariant",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceContainerLowest",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceContainerLow",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceContainer",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceContainerHigh",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: colorSurfaceContainerHighest",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorOnSurface",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorError",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Required control boundary / focus: nexa_pressed_surface",
+      "foreground": "colorOutline",
+      "background": "nexa_pressed_surface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Button / unread badge / send / FAB",
+      "foreground": "colorOnPrimary",
+      "background": "colorPrimary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed button",
+      "foreground": "colorOnPrimary",
+      "background": "nexa_pressed_primary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Selected chip / citation / reaction / quote / selected row",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "colorPrimaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed selected chip / quote",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "nexa_pressed_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Secondary filled control",
+      "foreground": "colorOnSecondary",
+      "background": "colorSecondary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pinned / mentioned / highlight body and meta",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "colorSecondaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Success filled control",
+      "foreground": "colorOnTertiary",
+      "background": "colorTertiary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Jump-to-message pulse: all bubble labels",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "colorTertiaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Destructive button",
+      "foreground": "colorOnError",
+      "background": "colorError",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Error / failed bubble: body, metadata, quote and links",
+      "foreground": "colorOnErrorContainer",
+      "background": "colorErrorContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Disabled label and icon",
+      "foreground": "nexa_on_disabled",
+      "background": "nexa_disabled_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Outgoing body / time / quote fallback / pending tick",
+      "foreground": "chat_bubble_outgoing_text",
+      "background": "bubble_mine",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed outgoing body / time",
+      "foreground": "chat_bubble_outgoing_text",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Outgoing underlined link",
+      "foreground": "nexa_link_outgoing",
+      "background": "bubble_mine",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed outgoing link",
+      "foreground": "nexa_link_outgoing",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Outgoing read tick",
+      "foreground": "chat_bubble_read_tick",
+      "background": "bubble_mine",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Pressed outgoing read tick",
+      "foreground": "chat_bubble_read_tick",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Incoming body / file name",
+      "foreground": "colorOnSurface",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Incoming time / pending state",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed incoming body",
+      "foreground": "colorOnSurface",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed incoming metadata",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Incoming underlined link",
+      "foreground": "colorPrimary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed incoming link",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Image / video timestamp / viewer controls",
+      "foreground": "nexa_on_media_meta",
+      "background": "nexa_media_meta_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing AI badge",
+      "foreground": "stitch_ai_badge_text",
+      "background": "stitch_ai_badge_bg",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorPrimary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorTertiary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorTertiary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "slate_muted",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "slate_muted",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorError",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorError",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnErrorContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnErrorContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_indigo_on",
+      "background": "avatar_indigo_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_indigo_on_dark",
+      "background": "avatar_indigo_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_blue_on",
+      "background": "avatar_blue_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_blue_on_dark",
+      "background": "avatar_blue_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_cyan_on",
+      "background": "avatar_cyan_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_cyan_on_dark",
+      "background": "avatar_cyan_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_teal_on",
+      "background": "avatar_teal_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_teal_on_dark",
+      "background": "avatar_teal_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_emerald_on",
+      "background": "avatar_emerald_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_emerald_on_dark",
+      "background": "avatar_emerald_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_amber_on",
+      "background": "avatar_amber_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_amber_on_dark",
+      "background": "avatar_amber_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_rose_on",
+      "background": "avatar_rose_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_rose_on_dark",
+      "background": "avatar_rose_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_purple_on",
+      "background": "avatar_purple_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_purple_on_dark",
+      "background": "avatar_purple_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_primary",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_secondary",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_decline_text",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_accept_text",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_primary",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_secondary",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_decline_text",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_accept_text",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_control_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_accept_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_decline_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_end_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_avatar_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_0",
+      "background": "call_avatar_bg_0",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_1",
+      "background": "call_avatar_bg_1",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_2",
+      "background": "call_avatar_bg_2",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_3",
+      "background": "call_avatar_bg_3",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_4",
+      "background": "call_avatar_bg_4",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_5",
+      "background": "call_avatar_bg_5",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_6",
+      "background": "call_avatar_bg_6",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_7",
+      "background": "call_avatar_bg_7",
+      "minimum": 4.5
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "light",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorOnSurface",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorPrimary",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorBackground",
+      "foreground": "colorError",
+      "background": "colorBackground",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorBackground",
+      "foreground": "colorOutline",
+      "background": "colorBackground",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorOnSurface",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorPrimary",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurface",
+      "foreground": "colorError",
+      "background": "colorSurface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurface",
+      "foreground": "colorOutline",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceVariant",
+      "foreground": "colorError",
+      "background": "colorSurfaceVariant",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceVariant",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceVariant",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLowest",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceContainerLowest",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerLowest",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerLow",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceContainerLow",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerLow",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainer",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceContainer",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHigh",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceContainerHigh",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorOnSurface",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorPrimary",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: colorSurfaceContainerHighest",
+      "foreground": "colorError",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: colorSurfaceContainerHighest",
+      "foreground": "colorOutline",
+      "background": "colorSurfaceContainerHighest",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorOnSurface",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Inbox / app bar / fields / settings / sheets: nexa_pressed_surface",
+      "foreground": "colorError",
+      "background": "nexa_pressed_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Required control boundary / focus: nexa_pressed_surface",
+      "foreground": "colorOutline",
+      "background": "nexa_pressed_surface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Button / unread badge / send / FAB",
+      "foreground": "colorOnPrimary",
+      "background": "colorPrimary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed button",
+      "foreground": "colorOnPrimary",
+      "background": "nexa_pressed_primary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Selected chip / citation / reaction / quote / selected row",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "colorPrimaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed selected chip / quote",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "nexa_pressed_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Secondary filled control",
+      "foreground": "colorOnSecondary",
+      "background": "colorSecondary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pinned / mentioned / highlight body and meta",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "colorSecondaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Success filled control",
+      "foreground": "colorOnTertiary",
+      "background": "colorTertiary",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Jump-to-message pulse: all bubble labels",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "colorTertiaryContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Destructive button",
+      "foreground": "colorOnError",
+      "background": "colorError",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Error / failed bubble: body, metadata, quote and links",
+      "foreground": "colorOnErrorContainer",
+      "background": "colorErrorContainer",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Disabled label and icon",
+      "foreground": "nexa_on_disabled",
+      "background": "nexa_disabled_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Outgoing body / time / quote fallback / pending tick",
+      "foreground": "chat_bubble_outgoing_text",
+      "background": "bubble_mine",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed outgoing body / time",
+      "foreground": "chat_bubble_outgoing_text",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Outgoing underlined link",
+      "foreground": "nexa_link_outgoing",
+      "background": "bubble_mine",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed outgoing link",
+      "foreground": "nexa_link_outgoing",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Outgoing read tick",
+      "foreground": "chat_bubble_read_tick",
+      "background": "bubble_mine",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed outgoing read tick",
+      "foreground": "chat_bubble_read_tick",
+      "background": "nexa_pressed_outgoing",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Incoming body / file name",
+      "foreground": "colorOnSurface",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Incoming time / pending state",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed incoming body",
+      "foreground": "colorOnSurface",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed incoming metadata",
+      "foreground": "colorOnSurfaceVariant",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Incoming underlined link",
+      "foreground": "colorPrimary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed incoming link",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Image / video timestamp / viewer controls",
+      "foreground": "nexa_on_media_meta",
+      "background": "nexa_media_meta_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing AI badge",
+      "foreground": "stitch_ai_badge_text",
+      "background": "stitch_ai_badge_bg",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorPrimary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorPrimary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorTertiary",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorTertiary",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "slate_muted",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "slate_muted",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorError",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorError",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnPrimaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnSecondaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnTertiaryContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Existing eight sender-name colors",
+      "foreground": "colorOnErrorContainer",
+      "background": "bubble_other",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Pressed sender-name colors",
+      "foreground": "colorOnErrorContainer",
+      "background": "nexa_pressed_incoming",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_indigo_on",
+      "background": "avatar_indigo_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_indigo_on_dark",
+      "background": "avatar_indigo_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_blue_on",
+      "background": "avatar_blue_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_blue_on_dark",
+      "background": "avatar_blue_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_cyan_on",
+      "background": "avatar_cyan_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_cyan_on_dark",
+      "background": "avatar_cyan_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_teal_on",
+      "background": "avatar_teal_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_teal_on_dark",
+      "background": "avatar_teal_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_emerald_on",
+      "background": "avatar_emerald_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_emerald_on_dark",
+      "background": "avatar_emerald_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_amber_on",
+      "background": "avatar_amber_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_amber_on_dark",
+      "background": "avatar_amber_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_rose_on",
+      "background": "avatar_rose_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_rose_on_dark",
+      "background": "avatar_rose_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar light / fixed resource",
+      "foreground": "avatar_purple_on",
+      "background": "avatar_purple_container",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Avatar dark / explicit resource",
+      "foreground": "avatar_purple_on_dark",
+      "background": "avatar_purple_container_dark",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_primary",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_secondary",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_decline_text",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_accept_text",
+      "background": "nexa_call_surface",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_primary",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_text_secondary",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_decline_text",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call title / status / action labels, gradient endpoint",
+      "foreground": "call_action_accept_text",
+      "background": "nexa_call_surface_end",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_control_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_accept_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_decline_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_end_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call icon / initial",
+      "foreground": "call_icon_on_control",
+      "background": "call_avatar_background",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_0",
+      "background": "call_avatar_bg_0",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_1",
+      "background": "call_avatar_bg_1",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_2",
+      "background": "call_avatar_bg_2",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_3",
+      "background": "call_avatar_bg_3",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_4",
+      "background": "call_avatar_bg_4",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_5",
+      "background": "call_avatar_bg_5",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_6",
+      "background": "call_avatar_bg_6",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Call avatar initial",
+      "foreground": "call_avatar_fg_7",
+      "background": "call_avatar_bg_7",
+      "minimum": 4.5
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurface",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurfaceContainer",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_online_dot",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_offline_dot",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "tick_read",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    },
+    {
+      "theme": "dark",
+      "use": "Icon / presence / AI outline",
+      "foreground": "stitch_ai_badge_stroke",
+      "background": "colorSurfaceContainerHigh",
+      "minimum": 3
+    }
+  ]
+}

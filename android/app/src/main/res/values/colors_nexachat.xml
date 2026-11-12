@@ -1,64 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light design tokens. Dark counterparts live in values-night. -->
-    <color name="brand_indigo">#FF4F46E5</color>
-    <color name="brand_indigo_dark">#FF3730A3</color>
-    <color name="brand_indigo_light">#FF818CF8</color>
-    <color name="brand_indigo_container">#FFE0E7FF</color>
-    <color name="brand_on_indigo_container">#FF1E1B4B</color>
-
-    <color name="slate_secondary">#FF64748B</color>
-    <color name="slate_secondary_container">#FFE2E8F0</color>
-    <color name="slate_on_secondary_container">#FF1E293B</color>
-    <color name="slate_muted">#FF475569</color>
-    <color name="slate_border">#FF94A3B8</color>
-    <color name="slate_divider">#FFE2E8F0</color>
-
-    <color name="tertiary_emerald">#FF047857</color>
-    <color name="tertiary_emerald_container">#FFD1FAE5</color>
-    <color name="tertiary_on_emerald_container">#FF064E3B</color>
+    <!-- v2 semantic colors. Night values overlay values-night. -->
+    <color name="brand_indigo">#FF733F68</color>
+    <color name="brand_indigo_dark">#FF562C4D</color>
+    <color name="brand_indigo_light">#FFA87699</color>
+    <color name="brand_indigo_container">#FFF1DFED</color>
+    <color name="brand_on_indigo_container">#FF35142F</color>
+    <color name="slate_secondary">#FF605763</color>
+    <color name="slate_secondary_container">#FFEAE3ED</color>
+    <color name="slate_on_secondary_container">#FF2C2530</color>
+    <color name="slate_muted">#FF605763</color>
+    <color name="slate_border">#FF817585</color>
+    <color name="slate_divider">#FFDDD4DF</color>
+    <color name="tertiary_emerald">#FF246B57</color>
+    <color name="tertiary_emerald_container">#FFC5EEDC</color>
+    <color name="tertiary_on_emerald_container">#FF103B2E</color>
     <color name="tertiary_sky">@color/tertiary_emerald</color>
     <color name="tertiary_sky_container">@color/tertiary_emerald_container</color>
     <color name="tertiary_on_sky_container">@color/tertiary_on_emerald_container</color>
-
-    <color name="background_light">#FFF8FAFC</color>
-    <color name="surface_light">#FFFFFFFF</color>
-    <color name="surface_container_lowest_light">#FFFFFFFF</color>
-    <color name="surface_container_low_light">#FFF8FAFC</color>
-    <color name="surface_container_light">#FFF1F5F9</color>
-    <color name="surface_container_high_light">#FFE2E8F0</color>
-    <color name="surface_container_highest_light">#FFE2E8F0</color>
-    <color name="surface_variant_light">#FFF1F5F9</color>
-    <color name="text_primary_light">#FF0F172A</color>
-    <color name="text_secondary_light">#FF475569</color>
-
-    <color name="error_red">#FFBA1A1A</color>
-    <color name="error_container_light">#FFFEE2E2</color>
-    <color name="on_error_container_light">#FF7F1D1D</color>
+    <color name="background_light">#FFFAF8FA</color>
+    <color name="surface_light">#FFFFFCFF</color>
+    <color name="surface_container_lowest_light">#FFFFFCFF</color>
+    <color name="surface_container_low_light">#FFF7F3F8</color>
+    <color name="surface_container_light">#FFF0EBF2</color>
+    <color name="surface_container_high_light">#FFEAE3ED</color>
+    <color name="surface_container_highest_light">#FFE4DBE7</color>
+    <color name="surface_variant_light">#FFF0EBF2</color>
+    <color name="text_primary_light">#FF211E25</color>
+    <color name="text_secondary_light">#FF605763</color>
+    <color name="error_red">#FFB3261E</color>
+    <color name="error_container_light">#FFF9DEDC</color>
+    <color name="on_error_container_light">#FF410E0B</color>
     <color name="success_emerald">@color/tertiary_emerald</color>
-
     <color name="stitch_online_dot">@color/success_emerald</color>
-    <color name="stitch_offline_dot">#FF64748B</color>
+    <color name="stitch_offline_dot">#FF817585</color>
     <color name="stitch_fab_fill">@color/brand_indigo</color>
     <color name="stitch_ai_badge_bg">@color/brand_indigo_container</color>
-    <color name="stitch_ai_badge_stroke">@color/brand_indigo_light</color>
+    <color name="stitch_ai_badge_stroke">@color/brand_indigo</color>
     <color name="stitch_ai_badge_text">@color/brand_on_indigo_container</color>
-
-    <!-- Material 3 semantic roles. -->
     <color name="colorPrimary">@color/brand_indigo</color>
-    <color name="colorOnPrimary">#FFFFFFFF</color>
+    <color name="colorOnPrimary">#FFFFFCFF</color>
     <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
     <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
     <color name="colorSecondary">@color/slate_secondary</color>
-    <color name="colorOnSecondary">#FFFFFFFF</color>
+    <color name="colorOnSecondary">#FFFFFCFF</color>
     <color name="colorSecondaryContainer">@color/slate_secondary_container</color>
     <color name="colorOnSecondaryContainer">@color/slate_on_secondary_container</color>
     <color name="colorTertiary">@color/tertiary_emerald</color>
-    <color name="colorOnTertiary">#FFFFFFFF</color>
+    <color name="colorOnTertiary">#FFFFFCFF</color>
     <color name="colorTertiaryContainer">@color/tertiary_emerald_container</color>
     <color name="colorOnTertiaryContainer">@color/tertiary_on_emerald_container</color>
     <color name="colorError">@color/error_red</color>
-    <color name="colorOnError">#FFFFFFFF</color>
+    <color name="colorOnError">#FFFFFCFF</color>
     <color name="colorErrorContainer">@color/error_container_light</color>
     <color name="colorOnErrorContainer">@color/on_error_container_light</color>
     <color name="colorBackground">@color/background_light</color>
@@ -74,8 +67,19 @@
     <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
     <color name="colorOutline">@color/slate_border</color>
     <color name="colorOutlineVariant">@color/slate_divider</color>
-
-    <color name="bubble_mine">@color/colorPrimary</color>
-    <color name="bubble_other">@color/surface_container_light</color>
-    <color name="tick_read">@color/tertiary_emerald</color>
+    <color name="bubble_mine">#FF733F68</color>
+    <color name="bubble_other">#FFF0EBF2</color>
+    <color name="tick_read">#FF246B57</color>
+    <color name="nexa_pressed_surface">#FFE8E0E7</color>
+    <color name="nexa_pressed_container">#FFE4CEDF</color>
+    <color name="nexa_pressed_primary">#FF5E3154</color>
+    <color name="nexa_pressed_incoming">#FFE4DBE7</color>
+    <color name="nexa_pressed_outgoing">#FF5E3154</color>
+    <color name="nexa_disabled_container">#FFE9E3EB</color>
+    <color name="nexa_on_disabled">#FF635A67</color>
+    <color name="nexa_link_outgoing">#FFFFFCFF</color>
+    <color name="nexa_media_meta_surface">#FF211E25</color>
+    <color name="nexa_on_media_meta">#FFFFFCFF</color>
+    <color name="nexa_call_surface">#FF1D1920</color>
+    <color name="nexa_call_surface_end">#FF302333</color>
 </resources>
