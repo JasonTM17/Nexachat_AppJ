@@ -6,11 +6,13 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.message.dto.MessageDeletedPayload;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.user.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -172,7 +174,12 @@ class MessageMutationServiceTest {
         assertThat(message.getChangeVersion()).isEqualTo(1L);
         verify(conversationRepository, times(1)).incrementChangeVersion(conversationId);
         verify(reactionRepository).deleteByMessageId(messageId);
-        verify(eventPublisher, times(1)).publishEvent(any(MessageDeletedEvent.class));
+        ArgumentCaptor<MessageDeletedEvent> deleted = ArgumentCaptor.forClass(MessageDeletedEvent.class);
+        verify(eventPublisher, times(1)).publishEvent(deleted.capture());
+        MessageDeletedPayload payload = deleted.getValue().payload();
+        assertThat(payload.changeVersion()).isEqualTo(1L);
+        assertThat(payload.generation()).isEqualTo(1L);
+        assertThat(payload.deletedAt()).isEqualTo(deletedAt);
         verify(eventPublisher, never()).publishEvent(any(MessageUpdatedEvent.class));
     }
 
@@ -240,7 +247,8 @@ class MessageMutationServiceTest {
     private MessageRow row(Message value) {
         return new MessageRow(messageId, conversationId, 17L, value.getSender().getId(), "Author",
                 value.getType(), value.getContent(), value.getClientMessageId(), null,
-                value.getCreatedAt(), value.getEditedAt(), value.getDeletedAt());
+                value.getCreatedAt(), value.getEditedAt(), value.getDeletedAt(),
+                false, value.getChangeVersion(), 1L);
     }
 
     private static User user(UUID id, String name) {

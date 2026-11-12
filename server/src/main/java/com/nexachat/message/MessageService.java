@@ -465,7 +465,8 @@ public class MessageService {
         MessageRow row = messageRepository.findRowById(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         eventPublisher.publishEvent(new MessageDeletedEvent(conversationId,
-                new MessageDeletedPayload(messageId, row.deletedAt())));
+                new MessageDeletedPayload(messageId, row.deletedAt(),
+                        row.changeVersion(), row.generation())));
         if (wasLastMessage) {
             publishLastMessageChanged(conversationId, "MESSAGE_DELETED");
         }
