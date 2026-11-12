@@ -9,7 +9,9 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import urlparse
 
 from manifest import (
@@ -211,6 +213,29 @@ def filter_dump_line(line: bytes, server_major: int) -> bytes | None:
     return DumpLineFilter(server_major).feed(line)
 
 
+class StderrCollector:
+    """Read a child's stderr on its own thread so a full pipe cannot stall the child."""
+
+    def __init__(self, stream: BinaryIO) -> None:
+        self._stream = stream
+        self._chunks: list[bytes] = []
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+
+    def _drain(self) -> None:
+        while True:
+            chunk = self._stream.read(65536)
+            if not chunk:
+                return
+            self._chunks.append(chunk)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def finish(self) -> bytes:
+        self._thread.join()
+        return b"".join(self._chunks)
+
+
 def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
     image = os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18")
     host = docker_db_host(db)
@@ -227,14 +252,16 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     assert proc.stdout is not None
     assert proc.stderr is not None
+    stderr_collector = StderrCollector(proc.stderr)
+    stderr_collector.start()
     line_filter = DumpLineFilter(server_major)
     with dest.open("wb") as out:
         for line in proc.stdout:
             filtered = line_filter.feed(line)
             if filtered is not None:
                 out.write(filtered)
-    stderr = proc.stderr.read()
     rc = proc.wait()
+    stderr = stderr_collector.finish()
     if rc != 0:
         raise SystemExit(f"pg_dump via {image} failed: {stderr.decode(errors='replace')}")
     return {"pg_dump_client_major": client_major, "pg_server_major": server_major}
