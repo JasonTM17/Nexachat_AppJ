@@ -69,6 +69,11 @@ public final class SyncEngine {
     /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
     @Nullable
     private volatile String lastServerTime;
+    private final Object flightLock = new Object();
+    @Nullable private Completable inFlight;
+    private long flightEpoch = Long.MIN_VALUE;
+    private final SyncPageStore pageStore;
+    @VisibleForTesting Runnable onFlightJoined = () -> {};
 
     @Inject
     public SyncEngine(
@@ -91,6 +96,7 @@ public final class SyncEngine {
         this.tokenRefresher = tokenRefresher;
         this.operationTracker = operationTracker;
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
+        this.pageStore = new SyncPageStore(appDatabase, tokenRefresher, tokenStore, moshi);
     }
 
     /** Compatibility constructor for existing package-local sync tests. */
@@ -130,14 +136,93 @@ public final class SyncEngine {
             if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
                 return Completable.complete();
             }
-            return operationTracker.track(syncAttempt(0, expectedEpoch))
+            synchronized (flightLock) {
+                if (inFlight != null && flightEpoch == expectedEpoch) {
+                    onFlightJoined.run();
+                    return inFlight;
+                }
+                flightEpoch = expectedEpoch;
+                AtomicReference<Completable> identity = new AtomicReference<>();
+                Completable shared = operationTracker.track(Completable.defer(() -> syncAttempt(expectedEpoch))
+                    .subscribeOn(Schedulers.io()))
                     .onErrorResumeNext(error -> error instanceof CancellationException
                             ? Completable.complete()
-                            : Completable.error(error));
-        }).subscribeOn(Schedulers.io());
+                            : Completable.error(error))
+                    .doOnTerminate(() -> {
+                        synchronized (flightLock) {
+                            if (inFlight == identity.get()) inFlight = null;
+                        }
+                    }).cache();
+                identity.set(shared);
+                inFlight = shared;
+                return shared;
+            }
+        });
     }
 
-    private Completable syncAttempt(int retryCount, long expectedEpoch) {
+    private Completable syncAttempt(long expectedEpoch) {
+        if (appDatabase.syncCursorDao() == null) return legacySyncAttempt(0, expectedEpoch);
+        return loadCursorState(expectedEpoch).flatMapCompletable(cursor -> {
+            // A real Room14 database always supplies this DAO. Old package-local fixtures
+            // without it continue to exercise the unchanged legacy lane.
+            if (cursor.userId == null) return Completable.complete();
+            return conversationDao.getAllWatermarks().flatMapCompletable(watermarks ->
+                    Completable.create(emitter -> {
+                        try {
+                            boolean pending = new SyncV2Consumer(pageStore, tokenRefresher, this::fetchDeltaResponse)
+                                    .sync(cursor.userId, expectedEpoch, watermarks);
+                            if (!emitter.isDisposed()) {
+                                tokenRefresher.runIfSessionCurrent(expectedEpoch,
+                                        () -> hasPendingContinuation.set(pending));
+                                emitter.onComplete();
+                            }
+                        } catch (Throwable failure) {
+                            io.reactivex.rxjava3.exceptions.Exceptions.throwIfFatal(failure);
+                            emitter.tryOnError(failure);
+                        }
+                    })
+                    .onErrorResumeNext(error -> error instanceof SyncPageStore.LegacyRequired
+                            ? Completable.fromAction(() -> pageStore.legacyFallback(
+                                    cursor.userId, expectedEpoch, watermarks))
+                                    .andThen(legacySyncAttempt(0, expectedEpoch))
+                            : Completable.error(error)));
+        });
+    }
+
+    @VisibleForTesting void setSyncFaultPoints(Runnable beforeCommit, Runnable afterCommit) {
+        pageStore.beforeCommit = beforeCommit;
+        pageStore.afterCommit = afterCommit;
+    }
+
+    /** Lifecycle events share the same revision comparison, Room transaction and P01 write fence. */
+    Completable applyServerMessage(MessageDto dto, String conversation) {
+        return applyServerMessage(dto, conversation, false);
+    }
+
+    Completable applyServerMessage(MessageDto dto, String conversation, boolean countUnread) {
+        return applyServerHistoryOrEvent(dto, conversation, countUnread, false);
+    }
+
+    Completable applyServerHistoryOrEvent(MessageDto dto, String conversation, boolean countUnread,
+            boolean historyReactions) {
+        long epoch = tokenRefresher.sessionEpoch();
+        return loadCursorState(epoch).flatMapCompletable(cursor -> Completable.fromAction(() -> {
+            if (cursor.userId != null && appDatabase.syncCursorDao() != null) {
+                pageStore.lifecycle(cursor.userId, epoch, dto, conversation, countUnread, historyReactions);
+            }
+        }));
+    }
+
+    Completable applyServerDelete(String id, String conversation, long version, long generation, Long at) {
+        long epoch = tokenRefresher.sessionEpoch();
+        return loadCursorState(epoch).flatMapCompletable(cursor -> Completable.fromAction(() -> {
+            if (cursor.userId != null && appDatabase.syncCursorDao() != null) {
+                pageStore.deleteLifecycle(cursor.userId, epoch, id, conversation, version, generation, at);
+            }
+        }));
+    }
+
+    private Completable legacySyncAttempt(int retryCount, long expectedEpoch) {
         if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
             return Completable.error(new CancellationException("Sync session changed"));
         }
@@ -180,7 +265,7 @@ public final class SyncEngine {
                                             if (batchHasMore.get()) {
                                                 hasPendingContinuation.set(true);
                                                 if (retryCount < MAX_BOUNDED_RETRIES) {
-                                                    return syncAttempt(retryCount + 1, expectedEpoch);
+                                                    return legacySyncAttempt(retryCount + 1, expectedEpoch);
                                                 }
                                             } else {
                                                 hasPendingContinuation.set(false);

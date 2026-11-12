@@ -213,7 +213,7 @@ public final class RoomMigrationInstrumentedTest {
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 13, db.getVersion());
+            assertEquals("full chain reaches the current schema", 14, db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
@@ -252,7 +252,8 @@ public final class RoomMigrationInstrumentedTest {
             AppDatabase.MIGRATION_9_10,
             AppDatabase.MIGRATION_10_11,
             AppDatabase.MIGRATION_11_12,
-            AppDatabase.MIGRATION_12_13
+            AppDatabase.MIGRATION_12_13,
+            AppDatabase.MIGRATION_13_14
         };
     }
 

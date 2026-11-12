@@ -43,6 +43,9 @@ public final class MessageEntity {
     @NonNull @ColumnInfo(defaultValue = "'[]'") private final String mentionsJson;
     @ColumnInfo(defaultValue = "0") private final boolean mentionAll;
 
+    @ColumnInfo(defaultValue = "0") private final long changeVersion;
+    @ColumnInfo(defaultValue = "0") private final long generation;
+
     @Ignore
     public MessageEntity(
             @NonNull String id,
@@ -65,6 +68,7 @@ public final class MessageEntity {
                 attachmentsJson, editedAtEpochMs, deletedAtEpochMs, "[]", false);
     }
 
+    @Ignore
     public MessageEntity(
             @NonNull String id,
             @NonNull String conversationId,
@@ -83,6 +87,20 @@ public final class MessageEntity {
             @Nullable Long deletedAtEpochMs,
             @NonNull String mentionsJson,
             boolean mentionAll) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll, 0L, 0L);
+    }
+
+    public MessageEntity(@NonNull String id, @NonNull String conversationId, long seq,
+            @NonNull String senderId, @Nullable String senderDisplayName, @NonNull String type,
+            @Nullable String content, @Nullable String clientMessageId, @Nullable String replyToId,
+            @Nullable String replyToSenderName, @Nullable String replyToSnippet, long createdAt,
+            @Nullable String attachmentsJson, @Nullable Long editedAtEpochMs,
+            @Nullable Long deletedAtEpochMs, @NonNull String mentionsJson, boolean mentionAll,
+            long changeVersion, long generation) {
+        this.changeVersion = changeVersion;
+        this.generation = generation;
         this.id = id;
         this.conversationId = conversationId;
         this.seq = seq;
@@ -120,27 +138,44 @@ public final class MessageEntity {
     @NonNull public String getMentionsJson() { return mentionsJson; }
     public boolean isMentionAll() { return mentionAll; }
 
+    public long getChangeVersion() { return changeVersion; }
+    public long getGeneration() { return generation; }
+
+    @NonNull public MessageEntity withReplyToSnippet(@Nullable String snippet) {
+        return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
+                content, clientMessageId, replyToId, replyToSenderName, snippet, createdAt,
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
+                changeVersion, generation);
+    }
+
+    @NonNull public MessageEntity withSyncVersion(long version, long nextGeneration) {
+        return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
+                content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
+                version, nextGeneration);
+    }
+
     /** Returns this row with the edited text and edit time replaced. */
     @NonNull public MessageEntity withContentAndEditedAt(
             @Nullable String newContent, @Nullable Long newEditedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 newContent, clientMessageId, replyToId, replyToSenderName, replyToSnippet,
                 createdAt, attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs,
-                mentionsJson, mentionAll);
+                mentionsJson, mentionAll, changeVersion, generation);
     }
 
     /** Returns the neutral tombstone form while retaining message identity and ordering. */
     @NonNull public MessageEntity asDeleted(@Nullable Long newDeletedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 "", clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                null, editedAtEpochMs, newDeletedAtEpochMs, "[]", false);
+                null, editedAtEpochMs, newDeletedAtEpochMs, "[]", false, changeVersion, generation);
     }
 
     /** Returns this row with only its edit timestamp replaced. */
     @NonNull public MessageEntity withEditedAtEpochMs(@Nullable Long newEditedAtEpochMs) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll);
+                attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll, changeVersion, generation);
     }
 
     @Override public boolean equals(Object other) {
@@ -148,6 +183,7 @@ public final class MessageEntity {
         if (!(other instanceof MessageEntity)) return false;
         MessageEntity that = (MessageEntity) other;
         return seq == that.seq && createdAt == that.createdAt
+                && changeVersion == that.changeVersion && generation == that.generation
                 && Objects.equals(id, that.id)
                 && Objects.equals(conversationId, that.conversationId)
                 && Objects.equals(senderId, that.senderId)
@@ -168,7 +204,7 @@ public final class MessageEntity {
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll);
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll, changeVersion, generation);
     }
 
     @NonNull @Override public String toString() {

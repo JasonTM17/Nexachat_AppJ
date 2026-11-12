@@ -11,8 +11,12 @@ public final class SyncResponse {
     @Nullable private final List<ConversationDeltaDto> deltas;
     @Nullable private final String serverTime;
 
+    @Nullable private Integer syncVersion;
+    @Nullable public Integer getSyncVersion() { return syncVersion; }
+
     public SyncResponse() {
-        this(List.of(), null);
+        this.deltas = null;
+        this.serverTime = null;
     }
 
     public SyncResponse(@Nullable List<ConversationDeltaDto> deltas, @Nullable String serverTime) {
@@ -20,6 +24,7 @@ public final class SyncResponse {
         this.serverTime = serverTime;
     }
 
+    @Nullable public List<ConversationDeltaDto> getDeltasField() { return deltas; }
     @NonNull public List<ConversationDeltaDto> getDeltas() {
         return deltas == null ? List.of() : deltas;
     }
@@ -35,7 +40,7 @@ public final class SyncResponse {
         @Nullable private final List<String> deletedMessageIds;
         @Nullable private final List<ReactionUpdateDto> reactionUpdates;
         @Nullable private final Long maxSeq;
-        private final boolean hasMore;
+        @Nullable private Boolean hasMore;
         /** Last reaction event id consumed for this conversation. */
         @Nullable private final Long reactionCursor;
         /** The reaction event log was purged; local reaction state needs a reload. */
@@ -49,9 +54,23 @@ public final class SyncResponse {
         @Nullable private final Boolean pinned;
         @Nullable private final String pinnedAt;
 
+        @Nullable private List<MessageDto> changes;
+        @Nullable private Long changeCursor;
+        @Nullable private Long changeUpperBound;
+        @Nullable private Long generation;
+        @Nullable private Boolean changeHasMore;
+        @Nullable private Boolean reset;
+        @Nullable public List<MessageDto> getChanges() { return changes; }
+        @Nullable public Long getChangeCursor() { return changeCursor; }
+        @Nullable public Long getChangeUpperBound() { return changeUpperBound; }
+        @Nullable public Long getGeneration() { return generation; }
+        @Nullable public Boolean getChangeHasMore() { return changeHasMore; }
+        @Nullable public Boolean getReset() { return reset; }
+
         public ConversationDeltaDto() {
             this(null, List.of(), List.of(), List.of(), List.of(), 0L, false,
                     null, false, null, null, null, null, null);
+            hasMore = null;
         }
 
         public ConversationDeltaDto(
@@ -168,7 +187,8 @@ public final class SyncResponse {
         @NonNull public List<String> getDeletedMessageIds() { return deletedMessageIds == null ? List.of() : deletedMessageIds; }
         @NonNull public List<ReactionUpdateDto> getReactionUpdates() { return reactionUpdates == null ? List.of() : reactionUpdates; }
         public long getMaxSeq() { return maxSeq == null ? 0L : maxSeq; }
-        public boolean isHasMore() { return hasMore; }
+        public boolean isHasMore() { return Boolean.TRUE.equals(hasMore); }
+        @Nullable public Boolean getHasMoreField() { return hasMore; }
         @Nullable public Long getReactionCursor() { return reactionCursor; }
         public boolean isReactionsFullRefresh() { return reactionsFullRefresh; }
         @Nullable public Boolean getMuted() { return muted; }

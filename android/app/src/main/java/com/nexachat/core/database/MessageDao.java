@@ -60,4 +60,8 @@ public interface MessageDao {
     /** Drops cached history when the conversation is no longer accessible. */
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     Completable deleteForConversation(String conversationId);
+
+    /** Explicit server downgrade invalidates revision authority without deleting cached history. */
+    @Query("UPDATE messages SET changeVersion = 0, generation = 0 WHERE conversationId = :conversationId")
+    void clearSyncVersionsForConversation(String conversationId);
 }

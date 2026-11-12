@@ -22,9 +22,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             PinnedMessageEntity.class,
             UserEntity.class,
             CallLogEntity.class,
-            OfflineOutboxEntity.class
+            OfflineOutboxEntity.class,
+            SyncCursorEntity.class
         },
-        version = 13,
+        version = 14,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -35,6 +36,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract UserDao userDao();
     public abstract CallLogDao callLogDao();
     public abstract OfflineOutboxDao offlineOutboxDao();
+    public abstract SyncCursorDao syncCursorDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -47,6 +49,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `users`");
             db.execSQL("DELETE FROM `call_logs`");
             db.execSQL("DELETE FROM `offline_outbox`");
+            db.execSQL("DELETE FROM `sync_cursors`");
         });
     }
 
@@ -241,4 +244,33 @@ public abstract class AppDatabase extends RoomDatabase {
                                     + "ON `outbox` (`ownerUserId`, `state`, `createdAt`)");
                 }
             };
+    /** No history/outbox rebuild: old rows retain identity and start unversioned. */
+    public static final Migration MIGRATION_13_14 = new Migration(13, 14) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `changeVersion` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `generation` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("CREATE TABLE IF NOT EXISTS `sync_cursors` ("
+                    + "`ownerUserId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                    + "`generation` INTEGER NOT NULL, `changeCursor` INTEGER NOT NULL, "
+                    + "`reactionSince` TEXT, `reactionCursor` INTEGER, `reactionBaseline` TEXT, "
+                    + "`rebuildingReactions` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`ownerUserId`, `conversationId`, `generation`))");
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_cursors_ownerUserId_conversationId` "
+                    + "ON `sync_cursors` (`ownerUserId`, `conversationId`)");
+            installSyncCacheTriggers(db);
+        }
+    };
+
+    /** Cache deletion must invalidate even a numerically plausible cursor, including partial loss. */
+    static void installSyncCacheTriggers(SupportSQLiteDatabase db) {
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS `sync_messages_cache_loss` AFTER DELETE ON `messages` "
+                + "BEGIN DELETE FROM `sync_cursors` WHERE `conversationId` = OLD.`conversationId`; END");
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS `sync_conversation_cache_loss` AFTER DELETE ON `conversations` "
+                + "BEGIN DELETE FROM `sync_cursors` WHERE `conversationId` = OLD.`id`; END");
+    }
+
+    public static final Callback SYNC_CACHE_CALLBACK = new Callback() {
+        @Override public void onCreate(SupportSQLiteDatabase db) { installSyncCacheTriggers(db); }
+        @Override public void onOpen(SupportSQLiteDatabase db) { installSyncCacheTriggers(db); }
+    };
 }

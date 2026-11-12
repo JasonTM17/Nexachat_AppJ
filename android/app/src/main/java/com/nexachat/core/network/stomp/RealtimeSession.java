@@ -30,9 +30,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.core.Scheduler;
 import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
-import com.squareup.moshi.Types;
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -106,7 +104,6 @@ public final class RealtimeSession {
     private final JsonAdapter<MessageDeletedDto> messageDeletedAdapter;
     private final JsonAdapter<PresenceEventDto> presenceAdapter;
     private final JsonAdapter<ConversationUpdateDto> conversationUpdateAdapter;
-    private final JsonAdapter<Map<String, Object>> mapAdapter;
 
     private final FlowableProcessor<EpochPublication<StompClient.State>> state =
             BehaviorProcessor.<EpochPublication<StompClient.State>>createDefault(
@@ -207,9 +204,6 @@ public final class RealtimeSession {
         messageDeletedAdapter = moshi.adapter(MessageDeletedDto.class);
         presenceAdapter = moshi.adapter(PresenceEventDto.class);
         conversationUpdateAdapter = moshi.adapter(ConversationUpdateDto.class);
-        Type mapType = Types.newParameterizedType(
-                Map.class, String.class, Object.class);
-        mapAdapter = moshi.adapter(mapType);
 
         wantedSubscriptions.add(USER_INBOX_DESTINATION);
         wantedSubscriptions.add(USER_ERRORS_DESTINATION);
@@ -758,7 +752,7 @@ public final class RealtimeSession {
         if (envelope == null) {
             return;
         }
-        publishEvent(attemptEpoch, attemptId, toChatEvent(envelope));
+        publishEvent(attemptEpoch, attemptId, toChatEvent(envelope, payloadJson(frame.getBody())));
     }
 
     private void publishEvent(long sessionEpoch, long attemptId, @NonNull ChatEvent event) {
@@ -766,12 +760,12 @@ public final class RealtimeSession {
     }
 
     @NonNull
-    private ChatEvent toChatEvent(@NonNull WsEnvelope envelope) {
+    private ChatEvent toChatEvent(@NonNull WsEnvelope envelope, @Nullable String payload) {
         String eventType = envelope.getEventType();
         String conversationId = envelope.getConversationId();
         switch (eventType == null ? "" : eventType) {
             case EVENT_MESSAGE_CREATED: {
-                MessageDto message = parse(messageAdapter, payloadJson(envelope));
+                MessageDto message = parse(messageAdapter, payload);
                 if (message == null) {
                     return new ChatEvent.Unknown(eventType, conversationId);
                 }
@@ -782,14 +776,14 @@ public final class RealtimeSession {
                         message, resolvedConversationId, envelope.getServerTs());
             }
             case EVENT_USER_TYPING: {
-                TypingSignalDto signal = parse(typingAdapter, payloadJson(envelope));
+                TypingSignalDto signal = parse(typingAdapter, payload);
                 return new ChatEvent.UserTyping(
                         conversationId,
                         signal == null ? null : signal.getUserId(),
                         signal == null ? null : signal.getDisplayName());
             }
             case EVENT_MESSAGE_UPDATED: {
-                MessageDto message = parse(messageAdapter, payloadJson(envelope));
+                MessageDto message = parse(messageAdapter, payload);
                 if (message == null) {
                     return new ChatEvent.Unknown(eventType, conversationId);
                 }
@@ -800,15 +794,17 @@ public final class RealtimeSession {
                         message, resolvedConversationId, envelope.getServerTs());
             }
             case EVENT_MESSAGE_DELETED: {
-                MessageDeletedDto update = parse(messageDeletedAdapter, payloadJson(envelope));
+                MessageDeletedDto update = parse(messageDeletedAdapter, payload);
                 return new ChatEvent.MessageDeleted(
                         conversationId,
                         update == null ? null : update.getMessageId(),
-                        update == null ? null : update.getDeletedAt());
+                        update == null ? null : update.getDeletedAt(),
+                        update == null ? null : update.getChangeVersion(),
+                        update == null ? null : update.getGeneration());
             }
             case EVENT_USER_ONLINE:
             case EVENT_USER_OFFLINE: {
-                PresenceEventDto presence = parse(presenceAdapter, payloadJson(envelope));
+                PresenceEventDto presence = parse(presenceAdapter, payload);
                 Boolean payloadOnline = presence == null ? null : presence.getOnline();
                 boolean online = payloadOnline != null
                         ? payloadOnline
@@ -820,14 +816,14 @@ public final class RealtimeSession {
                         envelope.getServerTs());
             }
             case EVENT_MESSAGE_READ: {
-                ReadUpdateDto update = parse(readAdapter, payloadJson(envelope));
+                ReadUpdateDto update = parse(readAdapter, payload);
                 return new ChatEvent.MessageRead(
                         conversationId,
                         update == null ? null : update.getResolvedUserId(),
                         update == null ? null : update.getResolvedSeq());
             }
             case EVENT_MESSAGE_DELIVERED: {
-                ReadUpdateDto update = parse(readAdapter, payloadJson(envelope));
+                ReadUpdateDto update = parse(readAdapter, payload);
                 return new ChatEvent.MessageDelivered(
                         conversationId,
                         update == null ? null : update.getResolvedUserId(),
@@ -835,7 +831,7 @@ public final class RealtimeSession {
             }
             case EVENT_CONVERSATION_UPDATED:
                 ConversationUpdateDto conversationUpdate =
-                        parse(conversationUpdateAdapter, payloadJson(envelope));
+                        parse(conversationUpdateAdapter, payload);
                 return new ChatEvent.ConversationUpdated(
                         conversationId,
                         conversationUpdate == null ? null : conversationUpdate.getChange(),
@@ -843,14 +839,14 @@ public final class RealtimeSession {
                                 ? Collections.emptyList()
                                 : conversationUpdate.getMemberIds());
             case EVENT_REACTION_UPDATED: {
-                ReactionUpdateDto update = parse(reactionAdapter, payloadJson(envelope));
+                ReactionUpdateDto update = parse(reactionAdapter, payload);
                 return new ChatEvent.ReactionUpdated(
                         conversationId,
                         update == null ? null : update.getMessageId(),
                         update == null ? Collections.emptyList() : update.getReactions());
             }
             case EVENT_PIN_UPDATED: {
-                PinUpdateDto update = parse(pinAdapter, payloadJson(envelope));
+                PinUpdateDto update = parse(pinAdapter, payload);
                 return new ChatEvent.PinUpdated(
                         conversationId,
                         update == null ? null : update.getMessageId(),
@@ -861,18 +857,23 @@ public final class RealtimeSession {
         }
     }
 
-    /** Re-encodes map payloads so typed adapters receive JSON numbers, not Double values. */
+    /** Keep the original numeric tokens: Map<String,Object> rounds signed-64-bit revisions to Double. */
     @Nullable
-    private String payloadJson(@NonNull WsEnvelope envelope) {
-        Map<String, Object> payload = envelope.getPayload();
-        if (payload == null) {
+    private static String payloadJson(@Nullable String body) {
+        if (body == null) return null;
+        try (com.squareup.moshi.JsonReader reader = com.squareup.moshi.JsonReader.of(
+                new okio.Buffer().writeUtf8(body))) {
+            reader.beginObject();
+            while (reader.hasNext()) {
+                if ("payload".equals(reader.nextName())) {
+                    try (okio.BufferedSource payload = reader.nextSource()) { return payload.readUtf8(); }
+                }
+                reader.skipValue();
+            }
+        } catch (IOException | RuntimeException malformedPayload) {
             return null;
         }
-        try {
-            return mapAdapter.toJson(payload);
-        } catch (RuntimeException malformedPayload) {
-            return null;
-        }
+        return null;
     }
 
     @Nullable

@@ -120,6 +120,8 @@ public final class RoomMigrationTest {
         }
 
         AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+                .addMigrations(AppDatabase.MIGRATION_13_14)
+                .addMigrations(AppDatabase.MIGRATION_13_14)
                 .allowMainThreadQueries()
                 .build();
         try {
@@ -151,6 +153,8 @@ public final class RoomMigrationTest {
         migratedSchema.close();
 
         AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+                .addMigrations(AppDatabase.MIGRATION_13_14)
+                .addMigrations(AppDatabase.MIGRATION_13_14)
                 .allowMainThreadQueries()
                 .build();
         try {
@@ -412,7 +416,7 @@ public final class RoomMigrationTest {
                         AppDatabase.MIGRATION_9_10,
                         AppDatabase.MIGRATION_10_11,
                         AppDatabase.MIGRATION_11_12,
-                        AppDatabase.MIGRATION_12_13)
+                        AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()
