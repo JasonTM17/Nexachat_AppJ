@@ -149,8 +149,10 @@ final class SyncPageStore {
                     for (ReactionUpdateDto update : delta.getReactionUpdates()) {
                         if (update.getMessageId() == null) continue;
                         MessageEntity row = db.messageDao().byId(update.getMessageId()).blockingGet();
-                        if (row != null && conversation.equals(row.getConversationId())
-                                && row.getDeletedAtEpochMs() == null) {
+                        // Reaction and message pages have independent orderings. Preserve
+                        // unknown-message aggregates before acknowledging the reaction cursor.
+                        if (row == null || (conversation.equals(row.getConversationId())
+                                && row.getDeletedAtEpochMs() == null)) {
                             db.reactionDao().replaceForMessageInTransaction(update.getMessageId(),
                                     MessageStateApplier.reactions(update.getReactions(), update.getMessageId(),
                                             conversation, owner));
