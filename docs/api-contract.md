@@ -202,6 +202,8 @@ These keys are Spring properties; override them with the matching
 | `GOOGLE_ACCOUNT_NOT_LINKED` | 404 | The Google account is not linked to a NexaChat account |
 | `GOOGLE_ACCOUNT_ALREADY_LINKED` | 409 | That Google account (or another one for this user) is already linked |
 | `LAST_SIGN_IN_METHOD` | 409 | Unlinking would leave the account with no password to sign in with |
+| `GOOGLE_EMAIL_IN_USE` | 409 | Google sign-up refused because that verified email already belongs to another active account |
+| `NO_PASSWORD_SET` | 409 | Password change refused because the account has no password hash |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
 | `EMAIL_ALREADY_IN_USE` | 409 | Recovery email is already verified on another active account |
