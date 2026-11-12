@@ -155,14 +155,14 @@ here. Resend uses HTTPS and is the configured provider.
 
 - Render spins a Free service down after **15 minutes without traffic** unless
   an uptime monitor keeps it awake. Spring Boot adds its own boot time on top of
-  container provisioning: in local runs capped at 512 MB / 0.1 CPU on the same
-  host, readiness took **120–185 s** with the AppCDS archive and **167–328 s**
-  without it (Spring reported started in 109–171 s and 157–311 s respectively;
-  the spread is host load, so compare pairs measured back to back). Readiness
-  reported `db`, `flyway`, `diskSpace` and `refreshReplay` UP. The first live
-  deploy (Singapore, Free) measured **123 s** from container start to a healthy
-  check; Spring Boot itself reported started in 106.6 s, including the first
-  Flyway run on Neon. The Android client waits up to 150 s for health before an
+  container provisioning: in local runs capped at 512 MB / 0.1 CPU, readiness
+  took **168 s without** the AppCDS archive and **130 s with** it on the same
+  host (Spring reported started in 157 s and 120 s); a busier host measured the
+  same pair at **330 s** and **216 s**. The spread is host load, so compare runs
+  made back to back. Readiness reported `db`, `flyway`, `diskSpace` and
+  `refreshReplay` UP. The first live deploy (Singapore, Free) measured **123 s**
+  from container start to a healthy check; Spring Boot itself reported started
+  in 106.6 s, including the first Flyway run on Neon. The Android client waits up to 150 s for health before an
   auth request. Render allows 15 minutes for a new deploy to pass its health
   check. `tools/perf/jvm-footprint.sh` reproduces the local measurement (it
   builds the image, caps the container at 0.1 CPU / 512 MB, starts a throw-away
