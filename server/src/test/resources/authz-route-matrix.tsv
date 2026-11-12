@@ -104,3 +104,4 @@ POST	/api/v1/auth/password-reset/confirm	PUBLIC_AUTH	public_auth	rest-102
 POST	/api/v1/auth/password-reset/request	PUBLIC_AUTH	public_auth	rest-103
 POST	/api/v1/users/me/email/verify	AUTHENTICATED	authenticated_self	rest-104
 PUT	/api/v1/users/me/email	AUTHENTICATED	authenticated_self	rest-105
+POST	/api/v1/users/me/deletion-code	AUTHENTICATED	authenticated_self	rest-106
