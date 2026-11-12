@@ -6,7 +6,7 @@
     android:layout_height="wrap_content"
     android:background="@drawable/bg_chat_composer"
     android:gravity="bottom"
-    android:minHeight="@dimen/min_touch_target"
+    android:minHeight="@dimen/composer_min_height"
     android:orientation="horizontal"
     android:paddingHorizontal="@dimen/space_xs"
     android:paddingVertical="@dimen/space_xs">
@@ -28,7 +28,7 @@
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/space_xs"
         android:layout_weight="1"
-        android:background="@null"
+        android:background="@drawable/bg_composer_field"
         android:hint="@string/chat_input_hint"
         android:inputType="textCapSentences|textMultiLine"
         android:imeOptions="actionNone"

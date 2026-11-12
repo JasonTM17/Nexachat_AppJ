@@ -32,7 +32,7 @@ Token values live in `res/values/colors_nexachat.xml`, `res/values/themes.xml`, 
 
 ### 2.1 Spacing (`dimens_nexachat.xml`)
 Strict 8pt grid baseline:
-- `space_xs`: `4dp` (message-row spacing; grouped rows use `1dp` at each adjoining edge for `2dp` total, while separate runs use `4dp` at each edge for `8dp` total)
+- `space_xs`: `4dp` (grouped message rows use `2dp` at each adjoining edge; separate turns use `4dp` at each edge)
 - `space_sm`: `8dp` (icon paddings, standard list item vertical separation)
 - `space_md`: `16dp` (screen horizontal margins, standard content padding)
 - `space_lg`: `24dp` (section spacing, dialog padding)
@@ -135,9 +135,7 @@ Presentation rules and helpers are pure Java throughout: `PresenceFormatter`, `S
 
 ## 10. Chat Screen Refresh Wave
 
-The refreshed chat screen reuses the shared light/dark theme roles and Manrope/Inter type styles. Message rows are constrained to 78% of available width with RTL-aware anchors; bubbles use 18dp main corners and a 4dp sender-side tail on the final row of each run. The row mapper starts new visual runs at date separators and call-log rows. Grouped row edges contribute 2dp between messages, while separate runs contribute 8dp. Group sender labels use a stable eight-color palette checked against the incoming bubble in both themes.
-
-Image and video rows keep timestamps inside a compact surface scrim. Reply quotes use a 3dp accent edge, reaction chips overlap slightly, and file rows use a surface tile. The composer is a floating 28dp surface with a six-line input limit; send and microphone actions cross-fade over 150ms and follow the system animation setting. Existing attachment, recording, search, group-info, summary, and overflow actions remain wired through their existing controls.
+The refreshed chat screen uses the v2 semantic roles and the bundled Manrope/Inter type styles. Normal bubbles are capped at `min(280dp, 80% of the row)`; at font scale 1.5 or larger the cap becomes `min(480dp, row width - 32dp)`. Bubbles use 16dp corners, with a 4dp lower-directional tail only on a single message or the last message of a run. Grouped row edges contribute 2dp each (4dp between messages); separate turns contribute 4dp each. Media timestamps use the opaque media-meta pair. Reply quotes sit on the primary container. The composer field uses the 24dp extra-large radius and a six-line input. Send and microphone actions cross-fade over 150ms with the standard easing and follow the system reduced-motion setting. Search, group info, and summary stay in the existing overflow menu; call stays on the bar for direct chats.
 
 ---
 
@@ -152,22 +150,16 @@ Image and video rows keep timestamps inside a compact surface scrim. Reply quote
 
 ---
 
-## 9. Phase 7 — Midnight Obsidian & Electric Violet UI Overhaul (Dark & Light Parity)
+## 9. Current visual system
 
-To achieve 1:1 visual parity with the **Midnight Obsidian & Electric Violet** reference across both Dark Mode and Light Mode, the Android resource layer and presentation components were upgraded:
+The shipped Android palette is the v2 semantic system in `android/app/src/main/res/values/colors_nexachat.xml` and `values-night/colors_nexachat.xml`. Night mode is a color overlay on `Theme.NexaChat.Views`; there is no separate night theme, type, or shape file. Historical Midnight Obsidian / Electric Violet hex values are not the current palette.
 
-- **Color Palette (`values-night/colors_nexachat.xml` & `values/colors_nexachat.xml`)**:
-  - Dark Mode: `#0B0E17` Midnight Obsidian canvas, `#151B2B` elevated navy cards (`1dp` `#232C43` stroke), `#7C3AED` Electric Violet primary accent, `#5B21B6` outgoing bubble, `#182034` incoming bubble, and `#10B981` emerald online indicator dot.
-  - Light Mode: `#F8FAFC` light canvas, `#FFFFFF` elevated cards (`1dp` `#E2E8F0` stroke), `#6D28D9` / `#7C3AED` primary accent, and `#EDE9FE` outgoing bubble.
-- **Avatar Presence & Story Ring (`AvatarView.java`, `colors_avatar.xml`)**:
-  - Vibrant jewel-tone avatar backgrounds with bold `#FFFFFFFF` initials in both themes.
-  - Built-in bottom-right online/offline presence dot (`setOnlineStatus(@Nullable Boolean)`) with `2dp` surface ring and `setShowStoryRing(boolean)` (`2dp` `#7C3AED` ring).
-- **Inbox Overhaul (`fragment_inbox.xml`, `InboxFragment.java`, `ConversationListAdapter.java`)**:
-  - Top bar with `36dp` user avatar + green dot, bold `NexaChat` title, and `✦ AI` pill badge (`@drawable/bg_stitch_ai_badge`).
-  - `26dp` rounded search pill (`Search chats, people, tags...`) with trailing AI sparkle icon.
-  - Horizontal `ACTIVE NOW` strip (`item_active_now_peer.xml`) prioritizing direct (1-on-1) peers first and deduplicating conversation titles.
-  - 4 filter chips (`All`, `Unread (N)`, `Direct`, `Groups`) + 4-tab bottom navigation bar (`Chats`, `Call`, `Contacts`, `Profile`) + squircle compose FAB (`@drawable/ic_edit_compose`).
-- **Unified Chat Header, Profile, Contacts & Summary Chips**:
-  - Unified `?attr/colorSurface` background across `chatToolbar` and `chatToolbarActions` with a `36dp` `chatHeaderAvatar` next to the back arrow.
-  - Shared `@color/stitch_chip_bg_tint`, `@color/stitch_chip_stroke_color`, and `@color/stitch_chip_text_color` selectors applied to Inbox filter chips, Profile theme chips (`System default`, `Light`, `Dark`), and Summary bottom sheet mode/scope chips (`Local`, `AI`, `Unread`, `Last 50`, `Today`).
-  - Contacts rendered inside `18dp` rounded `MaterialCardView` cards with online status dots and phone subtitles.
+Inbox keeps its filter chips, the active-now strip, and the new-chat action. There is no four-tab bottom navigation bar. Directory search stays “Find people” / “Tìm người”. In-chat search, conversation info, and summary are overflow actions on the chat toolbar. The chat header avatar is 36dp and hides at font scale 1.5 or when the window is narrower than 360dp.
+
+Copy, Share, and Regenerate on the summary sheet sit in a footer outside the scrolling body. Settings rows and group member names grow with large type. The add-member sheet adds `max(IME, system bars)` once on top of its base padding.
+
+P1 surfaces that received layout changes are inbox, chat and composer, settings rows, group detail and add-member, and the summary sheet. Other screens inherit the tokens. The launcher and in-app mark are the Note monogram: `#733F68` in light and `#DDA7CC` in dark. The adaptive plate stays `#733F68`.
+
+Manrope and Inter are already bundled. API 26–27 type styles use the AppCompat line height and a bold fallback for weights 600 and 700. API 28 and newer set `android:lineHeight` and `android:textFontWeight` from `values-v28/type.xml`. Contrast pairs are checked on the JVM from `design-v2-contrast-pairs.json` against the resource XML. That check does not measure a device, TalkBack, or a font cmap.
+
+Maintained notes for this system live in this file. Token names and roles are the Android resources above, not an external research checkout.

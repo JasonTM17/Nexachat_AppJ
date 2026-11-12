@@ -99,6 +99,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private static final int MENU_GROUP_BOARD = 7;
     private static final int MENU_PIN = 8;
     private static final int MENU_ASSIGN_LABEL = 9;
+    private static final int MENU_SEARCH = 10;
+    private static final int MENU_INFO = 11;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -243,11 +245,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName());
         });
         binding.searchInChatButton.setOnClickListener(v -> setSearchOpen(true));
-        binding.infoButton.setOnClickListener(v -> {
-            Bundle args = new Bundle(); args.putString(ARG_CONVERSATION_ID, conversationId);
-            try { NavHostFragment.findNavController(this).navigate(R.id.groupDetailFragment, args); }
-            catch (IllegalStateException ignored) { Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show(); }
-        });
+        binding.infoButton.setOnClickListener(v -> openGroupInfo());
         binding.summaryButton.setOnClickListener(v -> showSummary());
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
@@ -673,8 +671,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             binding.chatHeaderAvatar.setOnlineStatus(peerOnline);
         }
         renderSubtitle();
-        binding.callButton.setVisibility(state.isGroup() ? View.GONE : View.VISIBLE);
-        binding.infoButton.setVisibility(state.isGroup() ? View.VISIBLE : View.GONE);
+        binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
+        binding.searchInChatButton.setVisibility(View.GONE);
+        binding.infoButton.setVisibility(View.GONE);
+        binding.summaryButton.setVisibility(View.GONE);
+        applyLargeTypeToolbar();
+        renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
         if (state.getError() != null) binding.chatError.setText(ChatErrorText.messageId(state.getError()));
         renderPinned();
@@ -694,6 +696,43 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
         boolean hasText = input != null && !input.isBlank();
         updateComposerButtons(hasText || editingMessage != null);
+    }
+
+    private void applyLargeTypeToolbar() {
+        float scale = getResources().getConfiguration().fontScale;
+        int widthDp = getResources().getConfiguration().screenWidthDp;
+        boolean hideAvatar = scale >= 1.5f || widthDp < 360;
+        binding.chatHeaderAvatar.setVisibility(hideAvatar ? View.GONE : View.VISIBLE);
+        binding.chatToolbar.setTitleMarginStart(hideAvatar ? 16 : 48);
+    }
+
+    private void renderConversationState() {
+        boolean hasMessages = !state.getMessages().isEmpty() || !state.getSending().isEmpty();
+        boolean hasError = state.getError() != null;
+        binding.emptyState.setVisibility(ChatEmptyPolicy.showEmpty(state.isLoading(), hasError, hasMessages)
+                ? View.VISIBLE : View.GONE);
+        binding.loadingState.setVisibility(ChatEmptyPolicy.showLoading(state.isLoading(), hasError, hasMessages)
+                ? View.VISIBLE : View.GONE);
+        binding.errorState.setVisibility(ChatEmptyPolicy.showError(hasError, hasMessages)
+                ? View.VISIBLE : View.GONE);
+        if (ChatEmptyPolicy.showEmpty(state.isLoading(), hasError, hasMessages)) {
+            binding.emptyState.setMessage(getString(R.string.chat_empty));
+            binding.emptyState.clearAction();
+        }
+        if (ChatEmptyPolicy.showError(hasError, hasMessages)) {
+            binding.errorState.setMessage(getString(ChatErrorText.messageId(state.getError())));
+            binding.errorState.setOnRetry(null);
+        }
+    }
+
+    private void openGroupInfo() {
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.groupDetailFragment, args);
+        } catch (IllegalStateException ignored) {
+            Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+        }
     }
 
     private void renderSubtitle() {
@@ -1003,8 +1042,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         List<Integer> actions = new ArrayList<>();
         labels.add(getString(R.string.ask_action));
         actions.add(MENU_ASK);
-        labels.add(getString(R.string.summary_overflow_action));
-        actions.add(MENU_SUMMARY);
+        if (ChatToolbarPolicy.searchAvailable()) {
+            labels.add(getString(R.string.cd_search_in_chat));
+            actions.add(MENU_SEARCH);
+        }
+        if (ChatToolbarPolicy.summaryAvailable()) {
+            labels.add(getString(R.string.summary_overflow_action));
+            actions.add(MENU_SUMMARY);
+        }
+        if (state != null && ChatToolbarPolicy.infoAvailable(state.isGroup())) {
+            labels.add(getString(R.string.cd_group_info));
+            actions.add(MENU_INFO);
+        }
         labels.add(getString(muted ? R.string.unmute : R.string.mute_menu_title));
         actions.add(MENU_MUTE);
         labels.add(getString(archived ? R.string.conversation_unarchive : R.string.conversation_archive));
@@ -1031,6 +1080,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private void onChatMenuItemSelected(int action, boolean muted, boolean archived) {
         if (action == MENU_ASK) {
             showAsk();
+        } else if (action == MENU_SEARCH) {
+            setSearchOpen(true);
+        } else if (action == MENU_INFO) {
+            openGroupInfo();
         } else if (action == MENU_SUMMARY) {
             showSummary();
         } else if (action == MENU_MUTE) {
@@ -1334,5 +1387,45 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         cachedUnreadDividerAdapterPos = -1;
         cachedFirstUnreadAdapterPos = -1;
         super.onDestroyView();
+    }
+
+    /** Role rules for the chat toolbar. Call stays on the bar; search, info, and summary stay in overflow. */
+    static final class ChatToolbarPolicy {
+        private ChatToolbarPolicy() {
+        }
+
+        static boolean callAvailable(boolean group) {
+            return !group;
+        }
+
+        static boolean infoAvailable(boolean group) {
+            return group;
+        }
+
+        static boolean searchAvailable() {
+            return true;
+        }
+
+        static boolean summaryAvailable() {
+            return true;
+        }
+    }
+
+    /** Empty, loading, and error are mutually exclusive and never cover cached messages. */
+    static final class ChatEmptyPolicy {
+        private ChatEmptyPolicy() {
+        }
+
+        static boolean showEmpty(boolean loading, boolean hasError, boolean hasMessages) {
+            return !loading && !hasError && !hasMessages;
+        }
+
+        static boolean showLoading(boolean loading, boolean hasError, boolean hasMessages) {
+            return loading && !hasError && !hasMessages;
+        }
+
+        static boolean showError(boolean hasError, boolean hasMessages) {
+            return hasError && !hasMessages;
+        }
     }
 }

@@ -17,7 +17,7 @@
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="72dp"
+            android:minHeight="@dimen/app_bar_min_height"
             android:background="?attr/colorSurface"
             app:contentInsetStart="16dp"
             app:contentInsetEnd="8dp"
@@ -46,7 +46,7 @@
                     android:layout_marginStart="12dp"
                     android:accessibilityHeading="true"
                     android:text="@string/inbox_title"
-                    android:textAppearance="?attr/textAppearanceHeadlineLarge"
+                    android:textAppearance="?attr/textAppearanceTitleLarge"
                     android:textColor="?attr/colorOnSurface"
                     tools:targetApi="p" />
             </LinearLayout>

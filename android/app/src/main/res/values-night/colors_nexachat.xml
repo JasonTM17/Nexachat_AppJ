@@ -1,64 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark design tokens. -->
-    <color name="brand_indigo">#FF818CF8</color>
-    <color name="brand_indigo_dark">#FF4338CA</color>
-    <color name="brand_indigo_light">#FFA5B4FC</color>
-    <color name="brand_indigo_container">#FF3730A3</color>
-    <color name="brand_on_indigo_container">#FFE0E7FF</color>
-
-    <color name="slate_secondary">#FF94A3B8</color>
-    <color name="slate_secondary_container">#FF24324A</color>
-    <color name="slate_on_secondary_container">#FFE2E8F0</color>
-    <color name="slate_muted">#FFCBD5E1</color>
-    <color name="slate_border">#FF475569</color>
-    <color name="slate_divider">#FF2A3650</color>
-
-    <color name="tertiary_emerald">#FF10B981</color>
-    <color name="tertiary_emerald_container">#FF064E3B</color>
-    <color name="tertiary_on_emerald_container">#FFA7F3D0</color>
+    <!-- v2 semantic colors for night. -->
+    <color name="brand_indigo">#FFDDA7CC</color>
+    <color name="brand_indigo_dark">#FFA87699</color>
+    <color name="brand_indigo_light">#FFF0C9E3</color>
+    <color name="brand_indigo_container">#FF4A2943</color>
+    <color name="brand_on_indigo_container">#FFF6DFF0</color>
+    <color name="slate_secondary">#FFC9BCCB</color>
+    <color name="slate_secondary_container">#FF3B3340</color>
+    <color name="slate_on_secondary_container">#FFF0E8F2</color>
+    <color name="slate_muted">#FFC9BCCB</color>
+    <color name="slate_border">#FFA091A4</color>
+    <color name="slate_divider">#FF514655</color>
+    <color name="tertiary_emerald">#FF8CD6B7</color>
+    <color name="tertiary_emerald_container">#FF184F3D</color>
+    <color name="tertiary_on_emerald_container">#FFC5EEDC</color>
     <color name="tertiary_sky">@color/tertiary_emerald</color>
     <color name="tertiary_sky_container">@color/tertiary_emerald_container</color>
     <color name="tertiary_on_sky_container">@color/tertiary_on_emerald_container</color>
-
-    <color name="background_light">#FF0B1220</color>
-    <color name="surface_light">#FF111A2E</color>
-    <color name="surface_container_lowest_light">#FF0B1220</color>
-    <color name="surface_container_low_light">#FF0F172A</color>
-    <color name="surface_container_light">#FF111A2E</color>
-    <color name="surface_container_high_light">#FF1B2640</color>
-    <color name="surface_container_highest_light">#FF24324A</color>
-    <color name="surface_variant_light">#FF1B2640</color>
-    <color name="text_primary_light">#FFE2E8F0</color>
-    <color name="text_secondary_light">#FFB6C2D6</color>
-
-    <color name="error_red">#FFFCA5A5</color>
-    <color name="error_container_light">#FF7F1D1D</color>
-    <color name="on_error_container_light">#FFFEE2E2</color>
+    <color name="background_light">#FF151218</color>
+    <color name="surface_light">#FF1D1920</color>
+    <color name="surface_container_lowest_light">#FF100E13</color>
+    <color name="surface_container_low_light">#FF211C25</color>
+    <color name="surface_container_light">#FF27212B</color>
+    <color name="surface_container_high_light">#FF302A34</color>
+    <color name="surface_container_highest_light">#FF3B3340</color>
+    <color name="surface_variant_light">#FF302A34</color>
+    <color name="text_primary_light">#FFF1EAF2</color>
+    <color name="text_secondary_light">#FFC9BECC</color>
+    <color name="error_red">#FFFFB4AB</color>
+    <color name="error_container_light">#FF6B211C</color>
+    <color name="on_error_container_light">#FFFFDAD6</color>
     <color name="success_emerald">@color/tertiary_emerald</color>
-
     <color name="stitch_online_dot">@color/success_emerald</color>
-    <color name="stitch_offline_dot">#FF64748B</color>
+    <color name="stitch_offline_dot">#FFA091A4</color>
     <color name="stitch_fab_fill">@color/brand_indigo</color>
-    <color name="stitch_ai_badge_bg">#FF282657</color>
-    <color name="stitch_ai_badge_stroke">#FF4338CA</color>
-    <color name="stitch_ai_badge_text">#FFE0E7FF</color>
-
-    <!-- Material 3 semantic roles. -->
+    <color name="stitch_ai_badge_bg">@color/brand_indigo_container</color>
+    <color name="stitch_ai_badge_stroke">@color/brand_indigo</color>
+    <color name="stitch_ai_badge_text">@color/brand_on_indigo_container</color>
     <color name="colorPrimary">@color/brand_indigo</color>
-    <color name="colorOnPrimary">#FF0B1220</color>
+    <color name="colorOnPrimary">#FF35142F</color>
     <color name="colorPrimaryContainer">@color/brand_indigo_container</color>
     <color name="colorOnPrimaryContainer">@color/brand_on_indigo_container</color>
     <color name="colorSecondary">@color/slate_secondary</color>
-    <color name="colorOnSecondary">#FF0B1220</color>
+    <color name="colorOnSecondary">#FF2C2530</color>
     <color name="colorSecondaryContainer">@color/slate_secondary_container</color>
     <color name="colorOnSecondaryContainer">@color/slate_on_secondary_container</color>
     <color name="colorTertiary">@color/tertiary_emerald</color>
-    <color name="colorOnTertiary">#FF052E20</color>
+    <color name="colorOnTertiary">#FF103B2E</color>
     <color name="colorTertiaryContainer">@color/tertiary_emerald_container</color>
     <color name="colorOnTertiaryContainer">@color/tertiary_on_emerald_container</color>
     <color name="colorError">@color/error_red</color>
-    <color name="colorOnError">#FF450A0A</color>
+    <color name="colorOnError">#FF410E0B</color>
     <color name="colorErrorContainer">@color/error_container_light</color>
     <color name="colorOnErrorContainer">@color/on_error_container_light</color>
     <color name="colorBackground">@color/background_light</color>
@@ -74,12 +67,19 @@
     <color name="colorOnSurfaceVariant">@color/text_secondary_light</color>
     <color name="colorOutline">@color/slate_border</color>
     <color name="colorOutlineVariant">@color/slate_divider</color>
-
-    <color name="bubble_mine">@color/brand_indigo_container</color>
-    <color name="bubble_other">@color/surface_container_high_light</color>
-    <color name="tick_read">#FF34D399</color>
-
-    <color name="nexa_logo_mark">#FFDDA7CC</color>
-    <color name="nexa_logo_on_brand">#FFFFFCFF</color>
-    <color name="nexa_logo_plate">#FF733F68</color>
+    <color name="bubble_mine">#FF4A2943</color>
+    <color name="bubble_other">#FF302A34</color>
+    <color name="tick_read">#FF8CD6B7</color>
+    <color name="nexa_pressed_surface">#FF3B3340</color>
+    <color name="nexa_pressed_container">#FF5B3A54</color>
+    <color name="nexa_pressed_primary">#FFC894B8</color>
+    <color name="nexa_pressed_incoming">#FF3B3340</color>
+    <color name="nexa_pressed_outgoing">#FF5B3A54</color>
+    <color name="nexa_disabled_container">#FF3B3340</color>
+    <color name="nexa_on_disabled">#FFC9BECC</color>
+    <color name="nexa_link_outgoing">#FFFFE1F1</color>
+    <color name="nexa_media_meta_surface">#FF211E25</color>
+    <color name="nexa_on_media_meta">#FFFFFCFF</color>
+    <color name="nexa_call_surface">#FF1D1920</color>
+    <color name="nexa_call_surface_end">#FF302333</color>
 </resources>

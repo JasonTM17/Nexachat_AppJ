@@ -63,31 +63,15 @@ public final class ChatUiRules {
     ) {
         float large = RADIUS_LARGE_DP;
         float small = RADIUS_SMALL_DP;
-        if (mine) {
-            switch (position) {
-                case SINGLE:
-                case FIRST:
-                    return new BubbleCornerRadii(large, large, large, small);
-                case MIDDLE:
-                    return new BubbleCornerRadii(large, small, large, small);
-                case LAST:
-                    return new BubbleCornerRadii(large, small, large, large);
-                default:
-                    throw new AssertionError("Unknown message group position: " + position);
-            }
-        } else {
-            switch (position) {
-                case SINGLE:
-                case FIRST:
-                    return new BubbleCornerRadii(large, large, small, large);
-                case MIDDLE:
-                    return new BubbleCornerRadii(small, large, small, large);
-                case LAST:
-                    return new BubbleCornerRadii(small, large, large, large);
-                default:
-                    throw new AssertionError("Unknown message group position: " + position);
-            }
+        boolean directionalTail = position == MessageGroupPosition.SINGLE
+                || position == MessageGroupPosition.LAST;
+        if (!directionalTail) {
+            return new BubbleCornerRadii(large, large, large, large);
         }
+        if (mine) {
+            return new BubbleCornerRadii(large, large, large, small);
+        }
+        return new BubbleCornerRadii(large, large, small, large);
     }
 
     /**

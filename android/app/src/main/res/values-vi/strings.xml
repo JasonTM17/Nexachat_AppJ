@@ -142,6 +142,8 @@
 
     <!-- Chat placeholder -->
     <string name="chat_title">Trò chuyện</string>
+    <string name="chat_empty">Chưa có tin nhắn</string>
+    <string name="a11y_open_chat_actions">Tùy chọn tin nhắn</string>
     <string name="chat_placeholder">Trò chuyện với %1$s</string>
 
     <!-- Chat -->
@@ -244,10 +246,10 @@
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Tìm trong trò chuyện…</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
-    <string name="search_in_chat_error">Không Tìm người được. Hãy thử lại.</string>
+    <string name="search_in_chat_error">Không tìm kiếm được. Hãy thử lại.</string>
     <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
     <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
-    <string name="cd_clear_search">Xóa Tìm người</string>
+    <string name="cd_clear_search">Xóa tìm kiếm</string>
     <string name="cd_call">Gọi thoại</string>
 
     <!-- Forward Picker -->

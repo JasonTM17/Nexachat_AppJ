@@ -2,7 +2,8 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingVertical="@dimen/space_sm">
+    android:paddingTop="@dimen/space_md"
+    android:paddingBottom="@dimen/space_sm">
 
     <TextView
         android:id="@+id/dateSeparatorLabel"
@@ -10,10 +11,10 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:background="@drawable/bg_date_separator"
-        android:backgroundTint="?attr/colorSurfaceVariant"
         android:gravity="center"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="6dp"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:minHeight="24dp"
+        android:paddingHorizontal="@dimen/space_inset"
+        android:paddingVertical="@dimen/space_xs"
+        android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 </FrameLayout>

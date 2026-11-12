@@ -36,11 +36,11 @@ public final class ChatBubbleRules {
     }
 
     public static int bubbleRowPaddingTopDp(MessageGroupPosition position) {
-        return position == MessageGroupPosition.MIDDLE || position == MessageGroupPosition.LAST ? 1 : 4;
+        return position == MessageGroupPosition.MIDDLE || position == MessageGroupPosition.LAST ? 2 : 4;
     }
 
     public static int bubbleRowPaddingBottomDp(MessageGroupPosition position) {
-        return position == MessageGroupPosition.FIRST || position == MessageGroupPosition.MIDDLE ? 1 : 4;
+        return position == MessageGroupPosition.FIRST || position == MessageGroupPosition.MIDDLE ? 2 : 4;
     }
 
     public static boolean isSeenReceiptVisible(

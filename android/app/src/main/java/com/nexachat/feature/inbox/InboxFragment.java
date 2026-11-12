@@ -545,8 +545,6 @@ public final class InboxFragment extends Fragment {
             binding.filterUnreadChip.setText(R.string.inbox_filter_unread);
         }
 
-        int primaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorPrimary);
-        int onPrimaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnPrimary);
         int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainer);
         int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
@@ -561,8 +559,10 @@ public final class InboxFragment extends Fragment {
         for (Chip chip : chips) {
             boolean isSelected = chip.getId() == binding.inboxFilterChips.getCheckedChipId();
             if (isSelected) {
-                chip.setChipBackgroundColor(ColorStateList.valueOf(primaryColor));
-                chip.setTextColor(onPrimaryColor);
+                chip.setChipBackgroundColor(ContextCompat.getColorStateList(
+                        requireContext(), R.color.nexa_filter_chip_bg));
+                chip.setTextColor(ContextCompat.getColorStateList(
+                        requireContext(), R.color.nexa_filter_chip_text));
                 chip.setChipStrokeColor(ColorStateList.valueOf(Color.TRANSPARENT));
                 chip.setChipStrokeWidth(0f);
             } else {

@@ -123,6 +123,19 @@ that ProGuard/R8 did not rename or remove reflection-dependent wire models
 (Retrofit APIs, Moshi/Gson DTOs, Room DAOs/migrations, Google ID token credentials,
 and WorkManager workers). See [docs/release-checklist.md](release-checklist.md).
 
+String parity:
+
+```bash
+python tools/check-android-strings.py --self-test
+python tools/check-android-strings.py
+```
+
+The JVM suite, including `ContrastUnitTest`, checks resource XML and computed
+contrast. It does not pass a device, TalkBack, 200% font, or light/dark
+capture matrix. Saved HTML screenshots are references, not a native pass.
+Release R8 mapping stays a separate command and is not implied by
+`testDebugUnitTest`.
+
 ## Static site validation & JavaScript unit tests
 
 ```bash

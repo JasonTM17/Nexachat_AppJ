@@ -86,7 +86,7 @@ public class DesignSystemUiRulesTest {
 
     @Test
     public void resolveBubbleShapeMineCorners() {
-        // Outgoing (mine = true): tail is at bottomEnd (4dp) on SINGLE/FIRST/MIDDLE, rounded (16dp) on LAST
+        // Outgoing: lower end corner is 4dp only for SINGLE and LAST.
         ChatUiRules.BubbleCornerRadii single =
                 ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, true);
         ChatUiRules.BubbleCornerRadii first =
@@ -102,14 +102,14 @@ public class DesignSystemUiRulesTest {
         assertNotNull(last);
 
         assertRadii(single, 16f, 16f, 16f, 4f);
-        assertRadii(first, 16f, 16f, 16f, 4f);
-        assertRadii(middle, 16f, 4f, 16f, 4f);
-        assertRadii(last, 16f, 4f, 16f, 16f);
+        assertRadii(first, 16f, 16f, 16f, 16f);
+        assertRadii(middle, 16f, 16f, 16f, 16f);
+        assertRadii(last, 16f, 16f, 16f, 4f);
     }
 
     @Test
     public void resolveBubbleShapePeerCorners() {
-        // Incoming (mine = false): tail is at bottomStart (4dp) on SINGLE/FIRST/MIDDLE, rounded (16dp) on LAST
+        // Incoming: lower start corner is 4dp only for SINGLE and LAST.
         ChatUiRules.BubbleCornerRadii single =
                 ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, false);
         ChatUiRules.BubbleCornerRadii first =
@@ -125,9 +125,9 @@ public class DesignSystemUiRulesTest {
         assertNotNull(last);
 
         assertRadii(single, 16f, 16f, 4f, 16f);
-        assertRadii(first, 16f, 16f, 4f, 16f);
-        assertRadii(middle, 4f, 16f, 4f, 16f);
-        assertRadii(last, 4f, 16f, 16f, 16f);
+        assertRadii(first, 16f, 16f, 16f, 16f);
+        assertRadii(middle, 16f, 16f, 16f, 16f);
+        assertRadii(last, 16f, 16f, 4f, 16f);
     }
 
     // --- Date Separator Rules ---

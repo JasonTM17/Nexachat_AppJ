@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="chat_bubble_outgoing_text">@color/colorOnPrimaryContainer</color>
-    <color name="chat_bubble_read_tick">@color/tick_read</color>
+    <!-- Outgoing bubble foregrounds for night. -->
+    <color name="chat_bubble_outgoing_text">#FFF6DFF0</color>
+    <color name="chat_bubble_read_tick">#FF8CD6B7</color>
 </resources>

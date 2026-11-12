@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="chat_bubble_outgoing_text">@color/colorOnPrimary</color>
-    <color name="chat_bubble_read_tick">@color/tertiary_emerald_container</color>
+    <!-- Outgoing bubble foregrounds. Explicit, not generic onPrimary. -->
+    <color name="chat_bubble_outgoing_text">#FFFFFCFF</color>
+    <color name="chat_bubble_read_tick">#FFC5EEDC</color>
 </resources>

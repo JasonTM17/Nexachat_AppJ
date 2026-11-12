@@ -48,6 +48,13 @@ python tools/check-android-strings.py
 find demo tools -name '*.sh' -type f -print0 | xargs -0 -n1 bash -n
 ```
 
+A green JVM unit test or an HTML screenshot is not a device pass. Capture
+inbox, chat, settings, group detail, summary, and calls in English and
+Vietnamese, light and dark, at 100% and 200% font before calling the visual
+refresh verified on a phone. The launcher mark is the Note monogram. On a
+phone, confirm the round and squircle masks, the API 33 themed icon, the splash
+mark, and the notification icon.
+
 ## 2. Build, check and sign the Android artifact
 
 Run this local build before §4 tags the release and the GitHub workflow

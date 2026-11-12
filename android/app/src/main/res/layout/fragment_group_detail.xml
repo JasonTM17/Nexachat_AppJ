@@ -52,8 +52,8 @@
 
                     <com.nexachat.core.ui.components.AvatarView
                         android:id="@+id/groupAvatar"
-                        android:layout_width="96dp"
-                        android:layout_height="96dp" />
+                        android:layout_width="80dp"
+                        android:layout_height="80dp" />
 
                     <TextView
                         android:id="@+id/groupTitle"

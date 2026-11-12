@@ -78,6 +78,9 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
 
         void bind(@NonNull GroupMember member, @NonNull Listener listener, boolean showRemove) {
             memberName.setText(member.getDisplayName());
+            boolean largeType = itemView.getResources().getConfiguration().fontScale >= 1.5f;
+            memberName.setMaxLines(largeType ? Integer.MAX_VALUE : 1);
+            memberName.setEllipsize(largeType ? null : android.text.TextUtils.TruncateAt.END);
             avatar.setName(member.getDisplayName());
             avatar.setAvatarUrl(member.getAvatarUrl());
             memberRole.setVisibility(member.isAdmin() ? View.VISIBLE : View.GONE);

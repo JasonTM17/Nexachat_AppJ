@@ -3,8 +3,8 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <ImageView
         android:id="@+id/errorIcon"
-        android:layout_width="64dp"
-        android:layout_height="64dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="@dimen/space_md"
         android:importantForAccessibility="no"
@@ -15,7 +15,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:lineSpacingExtra="2dp"
         android:textAppearance="?attr/textAppearanceBodyLarge"
         android:textColor="?attr/colorOnSurfaceVariant" />
     <com.google.android.material.button.MaterialButton
@@ -27,5 +26,5 @@
         android:minHeight="@dimen/min_touch_target"
         android:text="@string/action_retry"
         android:visibility="gone"
-        app:cornerRadius="12dp" />
+        app:cornerRadius="@dimen/corner_md" />
 </merge>
