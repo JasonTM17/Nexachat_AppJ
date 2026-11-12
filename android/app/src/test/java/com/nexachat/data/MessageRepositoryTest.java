@@ -51,6 +51,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.observers.TestObserver;
+import io.reactivex.rxjava3.subjects.CompletableSubject;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
@@ -757,6 +758,110 @@ public class MessageRepositoryTest {
         await(repository.resyncForward(CONVERSATION_ID));
         assertEquals(105, messages.size());
         verify(messageApi).getMessages(CONVERSATION_ID, null, 103L, MessageApi.DEFAULT_PAGE_SIZE);
+    }
+
+    @Test public void reconnectSyncRunsBeforeOutboxAndActiveConversationResync() {
+        SyncEngine syncEngine = mock(SyncEngine.class);
+        List<String> order = new ArrayList<>();
+        SessionOperationTracker tracker = new SessionOperationTracker();
+        useReconnectRepository(syncEngine, tracker);
+        when(messageApi.getPins(CONVERSATION_ID)).thenReturn(responseCall(Response.success(body("[]"))));
+        await(repository.openConversation(CONVERSATION_ID));
+
+        order.clear();
+        when(syncEngine.sync()).thenReturn(Completable.fromAction(() -> order.add("sync")));
+        when(outboxDao.pendingList("me-1")).thenAnswer(call -> {
+            order.add("outbox");
+            return Single.just(List.of());
+        });
+        when(messageApi.getMessages(anyString(), nullable(Long.class), nullable(Long.class), anyInt()))
+                .thenAnswer(call -> {
+                    order.add("forward-resync");
+                    return responseCall(Response.success(new MessagePageDto()));
+                });
+
+        resyncRequests.onNext(new Object());
+
+        assertEquals(List.of("sync", "outbox", "forward-resync"), order);
+        verify(syncEngine, times(1)).sync();
+    }
+
+    @Test public void reconnectSyncFailureStillFlushesOutboxAndResyncsActiveConversation() {
+        SyncEngine syncEngine = mock(SyncEngine.class);
+        List<String> order = new ArrayList<>();
+        useReconnectRepository(syncEngine, new SessionOperationTracker());
+        when(messageApi.getPins(CONVERSATION_ID)).thenReturn(responseCall(Response.success(body("[]"))));
+        await(repository.openConversation(CONVERSATION_ID));
+
+        when(syncEngine.sync()).thenReturn(Completable.fromAction(() -> order.add("sync"))
+                .andThen(Completable.error(new IllegalStateException("sync failed"))));
+        when(outboxDao.pendingList("me-1")).thenAnswer(call -> {
+            order.add("outbox");
+            return Single.just(List.of());
+        });
+        when(messageApi.getMessages(anyString(), nullable(Long.class), nullable(Long.class), anyInt()))
+                .thenAnswer(call -> {
+                    order.add("forward-resync");
+                    return responseCall(Response.success(new MessagePageDto()));
+                });
+
+        resyncRequests.onNext(new Object());
+
+        assertEquals(List.of("sync", "outbox", "forward-resync"), order);
+        verify(syncEngine, times(1)).sync();
+    }
+
+    @Test public void reconnectBurstsSerializeFullSyncs() {
+        SyncEngine syncEngine = mock(SyncEngine.class);
+        List<CompletableSubject> syncs = new ArrayList<>();
+        AtomicInteger running = new AtomicInteger();
+        AtomicInteger maximumRunning = new AtomicInteger();
+        useReconnectRepository(syncEngine, new SessionOperationTracker());
+        when(syncEngine.sync()).thenAnswer(call -> {
+            CompletableSubject subject = CompletableSubject.create();
+            syncs.add(subject);
+            int active = running.incrementAndGet();
+            maximumRunning.accumulateAndGet(active, Math::max);
+            return subject.doOnEvent(ignored -> running.decrementAndGet());
+        });
+
+        resyncRequests.onNext(new Object());
+        resyncRequests.onNext(new Object());
+        assertEquals(1, syncs.size());
+
+        syncs.get(0).onComplete();
+        assertEquals(2, syncs.size());
+        syncs.get(1).onComplete();
+
+        assertEquals(1, maximumRunning.get());
+        verify(syncEngine, times(2)).sync();
+    }
+
+    @Test public void accountSwitchDuringReconnectSyncCancelsLaterStages() {
+        SyncEngine syncEngine = mock(SyncEngine.class);
+        SessionOperationTracker tracker = new SessionOperationTracker();
+        CompletableSubject pendingSync = CompletableSubject.create();
+        useReconnectRepository(syncEngine, tracker);
+        when(messageApi.getPins(CONVERSATION_ID)).thenReturn(responseCall(Response.success(body("[]"))));
+        await(repository.openConversation(CONVERSATION_ID));
+        org.mockito.Mockito.clearInvocations(outboxDao, messageApi);
+        when(syncEngine.sync()).thenReturn(pendingSync);
+
+        resyncRequests.onNext(new Object());
+        verify(syncEngine, times(1)).sync();
+        tracker.invalidate();
+        pendingSync.onComplete();
+
+        verify(outboxDao, times(0)).pendingList(anyString());
+        verify(messageApi, times(0)).getMessages(anyString(), nullable(Long.class),
+                nullable(Long.class), anyInt());
+    }
+
+    private void useReconnectRepository(SyncEngine syncEngine, SessionOperationTracker tracker) {
+        repository.dispose();
+        repository = new MessageRepository(messageApi, messageDao, conversationDao, outboxDao,
+                reactionDao, pinDao, session, tokenStore, sessionEvents, syncEngine,
+                new Moshi.Builder().build(), timer, tracker);
     }
 
     @Test public void openingConversationForwardFillsMissedMessages() {
