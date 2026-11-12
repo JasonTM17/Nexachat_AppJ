@@ -4,11 +4,14 @@ import org.junit.Before;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
+import java.io.StringReader;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
@@ -17,6 +20,7 @@ import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -145,6 +149,80 @@ public final class QuantityStringsPluralsTest {
         for (String pluralName : REQUIRED_PLURALS) {
             assertFalse("Still a <string> named " + pluralName, forbidden.contains(pluralName));
         }
+    }
+
+    @Test
+    public void pluralsAreDirectChildrenAndDoNotNest() throws Exception {
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        for (String valuesFolder : new String[]{"values", "values-vi"}) {
+            File folder = new File(resDir, valuesFolder);
+            File[] files = folder.listFiles((dir, name) -> name.startsWith("strings") && name.endsWith(".xml"));
+            assertNotNull(valuesFolder, files);
+            for (File file : files) {
+                Document doc = builder.parse(file);
+                assertTrue(file.getName() + " parses as resources",
+                        "resources".equals(doc.getDocumentElement().getNodeName()));
+                NodeList pluralNodes = doc.getElementsByTagName("plurals");
+                for (int i = 0; i < pluralNodes.getLength(); i++) {
+                    Element plural = (Element) pluralNodes.item(i);
+                    assertEquals(file.getName() + " plurals must be a direct child of resources",
+                            "resources", plural.getParentNode().getNodeName());
+                    assertEquals(file.getName() + " plurals must not nest another plurals",
+                            0, plural.getElementsByTagName("plurals").getLength());
+                }
+            }
+        }
+    }
+
+    @Test
+    public void nestedPluralsFixtureFailsTheDirectChildRule() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="utf-8"?>
+                <resources>
+                    <plurals name="chat_unread_divider">
+                        <item quantity="other">%d unread messages</item>
+                        <plurals name="inbox_unread_messages">
+                            <item quantity="other">%d unread messages</item>
+                        </plurals>
+                    </plurals>
+                </resources>
+                """;
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        Document doc = builder.parse(new InputSource(new StringReader(xml)));
+        assertFalse(allPluralsAreDirectUnnestedChildren(doc));
+    }
+
+    @Test
+    public void vietnameseInChatSearchCopyStaysContextual() throws Exception {
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        Document doc = builder.parse(new File(resDir, "values-vi/strings.xml"));
+        Map<String, String> strings = new HashMap<>();
+        NodeList nodes = doc.getDocumentElement().getElementsByTagName("string");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element element = (Element) nodes.item(i);
+            strings.put(element.getAttribute("name"), element.getTextContent());
+        }
+        assertEquals("Không tìm kiếm được. Hãy thử lại.", strings.get("search_in_chat_error"));
+        assertEquals("Xóa tìm kiếm", strings.get("cd_clear_search"));
+        assertEquals("Tìm người", strings.get("search_title"));
+        assertEquals("Tìm trong trò chuyện", strings.get("cd_search_in_chat"));
+    }
+
+    private static boolean allPluralsAreDirectUnnestedChildren(Document doc) {
+        NodeList pluralNodes = doc.getElementsByTagName("plurals");
+        if (pluralNodes.getLength() == 0) {
+            return false;
+        }
+        for (int i = 0; i < pluralNodes.getLength(); i++) {
+            Node plural = pluralNodes.item(i);
+            if (!"resources".equals(plural.getParentNode().getNodeName())) {
+                return false;
+            }
+            if (((Element) plural).getElementsByTagName("plurals").getLength() != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void assertFormattedCount(
