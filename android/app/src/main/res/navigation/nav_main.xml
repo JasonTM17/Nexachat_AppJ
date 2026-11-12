@@ -36,6 +36,11 @@
     </fragment>
 
     <fragment
+        android:id="@+id/completeProfileFragment"
+        android:name="com.nexachat.feature.auth.CompleteProfileFragment"
+        android:label="@string/complete_profile_title" />
+
+    <fragment
         android:id="@+id/forgotPasswordFragment"
         android:name="com.nexachat.feature.auth.ForgotPasswordFragment"
         android:label="@string/forgot_password_title">

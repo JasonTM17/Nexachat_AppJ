@@ -52,6 +52,28 @@
                     android:textColor="?attr/colorOnSurface"
                     android:textStyle="bold" />
 
+                <include
+                    android:id="@+id/googleEmailInUseError"
+                    layout="@layout/include_google_email_in_use_error" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/googleSignIn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/cd_continue_with_google"
+                    android:minHeight="56dp"
+                    android:text="@string/action_continue_with_google"
+                    android:textStyle="bold"
+                    android:visibility="gone"
+                    app:cornerRadius="12dp"
+                    app:icon="@drawable/ic_google_g"
+                    app:iconGravity="textStart"
+                    app:iconPadding="12dp"
+                    tools:visibility="visible" />
+
+                <include layout="@layout/include_auth_or_divider" />
+
                 <!-- Fields -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/nameLayout"

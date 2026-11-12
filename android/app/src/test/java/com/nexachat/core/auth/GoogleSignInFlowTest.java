@@ -7,6 +7,7 @@ import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
+import com.nexachat.data.AuthSessionResult;
 
 import org.junit.Test;
 
@@ -37,11 +38,11 @@ public final class GoogleSignInFlowTest {
         when(repository.requestGoogleNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
         when(repository.googleSignIn("id-token", "nonce-1")).thenReturn(
-                Single.just(new Result.Success<>(session)));
+                Single.just(new Result.Success<>(AuthSessionResult.existing(session))));
         FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertTrue(result instanceof Result.Success<?>);
         assertEquals("nonce-1", client.lastNonce);
@@ -54,7 +55,7 @@ public final class GoogleSignInFlowTest {
         FakeGoogleSignInClient client = new FakeGoogleSignInClient(false, "id-token");
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertTrue(result instanceof Result.Failure<?>);
         assertEquals(GoogleSignInFlow.CODE_UNAVAILABLE,
@@ -70,7 +71,7 @@ public final class GoogleSignInFlowTest {
         FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertTrue(result instanceof Result.Failure<?>);
         assertTrue(((Result.Failure<?>) result).getError() instanceof ApiError.Network);
@@ -85,7 +86,7 @@ public final class GoogleSignInFlowTest {
         FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertTrue(result instanceof Result.Failure<?>);
         assertEquals(0, client.calls);
@@ -99,7 +100,7 @@ public final class GoogleSignInFlowTest {
                 new GoogleSignInException(GoogleSignInException.Reason.CANCELLED));
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertEquals(GoogleSignInFlow.CODE_CANCELLED,
                 ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
@@ -114,7 +115,7 @@ public final class GoogleSignInFlowTest {
                 new GoogleSignInException(GoogleSignInException.Reason.NO_ACCOUNT));
         GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
 
-        Result<AuthResponse> result = flow.signIn(null).blockingGet();
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
 
         assertEquals(GoogleSignInFlow.CODE_NO_ACCOUNT,
                 ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());

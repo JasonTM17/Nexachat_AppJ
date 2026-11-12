@@ -85,15 +85,33 @@ public final class LoginFragment extends Fragment {
             binding.noticeBanner.setText(persistedNoticeResId);
             binding.noticeBanner.setVisibility(View.VISIBLE);
         }
-        viewModel.getEvents().observe(getViewLifecycleOwner(), e -> {
-            if (e == AuthViewModel.Event.LoggedIn) {
-                int destination = returnInviteToken == null
-                        ? R.id.inboxFragment : R.id.inviteJoinFragment;
-                Bundle args = returnInviteToken == null ? null : new Bundle();
-                if (args != null) args.putString("token", returnInviteToken);
-                NavHostFragment.findNavController(this).navigate(destination, args, AuthNav.signedInOptions());
+        viewModel.getEvents().observe(getViewLifecycleOwner(), this::onAuthEvent);
+        if (viewModel.hasPendingCompleteProfile()) {
+            navigateToCompleteProfile();
+        }
+    }
+
+    private void onAuthEvent(AuthViewModel.Event event) {
+        if (event == AuthViewModel.Event.CompleteProfile) {
+            navigateToCompleteProfile();
+            return;
+        }
+        if (event == AuthViewModel.Event.LoggedIn) {
+            int destination = returnInviteToken == null
+                    ? R.id.inboxFragment : R.id.inviteJoinFragment;
+            Bundle args = returnInviteToken == null ? null : new Bundle();
+            if (args != null) {
+                args.putString("token", returnInviteToken);
             }
-        });
+            NavHostFragment.findNavController(this).navigate(
+                    destination, args, AuthNav.signedInOptions());
+        }
+    }
+
+    private void navigateToCompleteProfile() {
+        viewModel.onCompleteProfileNavigationHandled();
+        NavHostFragment.findNavController(this).navigate(
+                R.id.completeProfileFragment, null, AuthNav.signedInOptions());
     }
 
     private TextWatcher watcher(java.util.function.Consumer<String> change) { return new TextWatcher() {
@@ -122,10 +140,15 @@ public final class LoginFragment extends Fragment {
         if (!binding.passwordInput.getText().toString().equals(state.getPassword())) binding.passwordInput.setText(state.getPassword());
         binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
+        boolean googleEmailInUse = GoogleAuthErrors.isGoogleEmailInUse(state.getError());
+        binding.googleEmailInUseError.getRoot().setVisibility(
+                googleEmailInUse ? View.VISIBLE : View.GONE);
         LoginErrorBannerState banner = LoginErrorBannerState.resolve(
                 sessionExpired, state.getError(), serverStarting);
         binding.errorBanner.setVisibility(banner.isVisible() ? View.VISIBLE : View.GONE);
-        if (banner.isVisible()) binding.errorBanner.setText(banner.getMessageRes());
+        if (banner.isVisible()) {
+            binding.errorBanner.setText(banner.getMessageRes());
+        }
         if (persistedNoticeResId != null) {
             binding.noticeBanner.setText(persistedNoticeResId);
             binding.noticeBanner.setVisibility(View.VISIBLE);
