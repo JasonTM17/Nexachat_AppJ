@@ -21,7 +21,7 @@ if (Test-Path -LiteralPath $V31WorktreeFull) {
 $EnvironmentNames = @(
     'IT_DB_URL', 'IT_DB_USER', 'IT_DB_PASSWORD',
     'FCM_ENABLED', 'FCM_PROJECT_ID', 'FCM_SERVICE_ACCOUNT_JSON',
-    'V31_SERVER_JAR', 'V31_SOURCE_SHA'
+    'NEXACHAT_ROLLBACK_DRILL', 'V31_SERVER_JAR', 'V31_SOURCE_SHA'
 )
 $SavedEnvironment = @{}
 foreach ($Name in $EnvironmentNames) {
@@ -68,6 +68,7 @@ try {
         throw 'The frozen V31 package did not produce the expected server jar.'
     }
 
+    $env:NEXACHAT_ROLLBACK_DRILL = '1'
     $env:V31_SERVER_JAR = (Resolve-Path -LiteralPath $V31Jar).Path
     $env:V31_SOURCE_SHA = $V31SourceSha
     Write-Host "Running focused sync integration selection ($TestSelection) on the configured local PostgreSQL server."

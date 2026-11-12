@@ -53,7 +53,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         assertKeys(message, Set.of("id", "conversationId", "seq", "senderId", "senderDisplayName", "type",
                 "content", "clientMessageId", "replyToId", "replyTo", "attachments", "reactions",
-                "createdAt", "editedAt", "deletedAt", "mentions", "mentionAll"));
+                "createdAt", "editedAt", "deletedAt", "mentions", "mentionAll", "changeVersion", "generation"));
         assertNoSensitiveOtherUserFields(message);
 
         JsonNode inbox = objectMapper.readTree(getWithAuth("/api/v1/conversations", owner.accessToken())

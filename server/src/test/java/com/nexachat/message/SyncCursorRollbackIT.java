@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.PostgresTestDatabase;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
@@ -45,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * switches to the frozen V31 server artifact, and rebuilds cursor generations
  * transactionally on one uniquely named disposable PostgreSQL database.
  */
+@EnabledIfEnvironmentVariable(named = "NEXACHAT_ROLLBACK_DRILL", matches = "1")
 class SyncCursorRollbackIT {
 
     private static final String V31_SOURCE_SHA = "9216773920fc59684564170eebde13b33ca7fbc1";
