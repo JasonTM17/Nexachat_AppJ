@@ -9,8 +9,8 @@
 
     <ImageButton
         android:id="@+id/voicePlayButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/voice_play"
         android:padding="12dp"
@@ -37,8 +37,8 @@
 
     <ImageButton
         android:id="@+id/playButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_open_attachment"
         android:src="@drawable/ic_play_arrow"

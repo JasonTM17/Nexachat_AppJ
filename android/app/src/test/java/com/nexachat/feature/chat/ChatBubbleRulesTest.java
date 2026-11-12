@@ -31,10 +31,10 @@ public final class ChatBubbleRulesTest {
         assertEquals(4, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.SINGLE));
         assertEquals(4, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.SINGLE));
         assertEquals(4, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.FIRST));
-        assertEquals(1, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.FIRST));
-        assertEquals(1, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.MIDDLE));
-        assertEquals(1, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.MIDDLE));
-        assertEquals(1, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.LAST));
+        assertEquals(2, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.FIRST));
+        assertEquals(2, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.MIDDLE));
+        assertEquals(2, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.MIDDLE));
+        assertEquals(2, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.LAST));
         assertEquals(4, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.LAST));
     }
 

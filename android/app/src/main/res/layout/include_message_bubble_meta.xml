@@ -5,7 +5,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_gravity="end"
-    android:layout_marginTop="2dp"
+    android:layout_marginTop="@dimen/bubble_group_gap"
     android:gravity="center_vertical"
     android:orientation="horizontal">
 
@@ -14,7 +14,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="@dimen/space_xs"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:textStyle="italic"
         android:visibility="gone" />
@@ -23,21 +23,21 @@
         android:id="@+id/timeLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
     <ProgressBar
         android:id="@+id/sendingProgress"
         style="?android:attr/progressBarStyleSmall"
-        android:layout_width="14dp"
-        android:layout_height="14dp"
+        android:layout_width="@dimen/metadata_icon_size"
+        android:layout_height="@dimen/metadata_icon_size"
         android:layout_marginStart="@dimen/space_xs"
         android:visibility="gone" />
 
     <ImageView
         android:id="@+id/deliveryIcon"
-        android:layout_width="14dp"
-        android:layout_height="14dp"
+        android:layout_width="@dimen/metadata_icon_size"
+        android:layout_height="@dimen/metadata_icon_size"
         android:layout_marginStart="@dimen/space_xs"
         android:contentDescription="@string/cd_delivered"
         android:visibility="gone"
@@ -48,7 +48,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_xs"
-        android:textAppearance="?attr/textAppearanceLabelSmall"
+        android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
 </LinearLayout>

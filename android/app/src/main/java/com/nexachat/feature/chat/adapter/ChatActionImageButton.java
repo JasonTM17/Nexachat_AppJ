@@ -4,6 +4,7 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.animation.PathInterpolator;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.AppCompatImageButton;
@@ -12,6 +13,7 @@ import androidx.appcompat.widget.AppCompatImageButton;
 public final class ChatActionImageButton extends AppCompatImageButton {
 
     private static final long CROSS_FADE_DURATION_MS = 150L;
+    private static final PathInterpolator CROSS_FADE_INTERPOLATOR = new PathInterpolator(0.2f, 0f, 0f, 1f);
     private static final int NO_PENDING_VISIBILITY = -1;
 
     private int pendingVisibility = NO_PENDING_VISIBILITY;
@@ -75,6 +77,7 @@ public final class ChatActionImageButton extends AppCompatImageButton {
         }
         animate()
                 .alpha(1.0f)
+                .setInterpolator(CROSS_FADE_INTERPOLATOR)
                 .setDuration(CROSS_FADE_DURATION_MS)
                 .withEndAction(() -> {
                     if (pendingVisibility == View.VISIBLE) {
@@ -95,6 +98,7 @@ public final class ChatActionImageButton extends AppCompatImageButton {
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         animate()
                 .alpha(0.0f)
+                .setInterpolator(CROSS_FADE_INTERPOLATOR)
                 .setDuration(CROSS_FADE_DURATION_MS)
                 .withEndAction(() -> {
                     if (pendingVisibility == View.GONE) {
@@ -104,5 +108,12 @@ public final class ChatActionImageButton extends AppCompatImageButton {
                     }
                 })
                 .start();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        animate().cancel();
+        pendingVisibility = NO_PENDING_VISIBILITY;
+        super.onDetachedFromWindow();
     }
 }

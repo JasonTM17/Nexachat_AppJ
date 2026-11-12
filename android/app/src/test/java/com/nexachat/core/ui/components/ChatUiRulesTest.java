@@ -31,6 +31,24 @@ public final class ChatUiRulesTest {
     }
 
     @Test
+    public void bubbleTailIsOnlyTheLowerDirectionalCornerOfSingleAndLast() {
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, true), 16f, 16f, 16f, 4f);
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.FIRST, true), 16f, 16f, 16f, 16f);
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.MIDDLE, true), 16f, 16f, 16f, 16f);
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.LAST, true), 16f, 16f, 16f, 4f);
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, false), 16f, 16f, 4f, 16f);
+        assertRadii(ChatUiRules.resolveBubbleShape(MessageGroupPosition.LAST, false), 16f, 16f, 4f, 16f);
+    }
+
+    private static void assertRadii(ChatUiRules.BubbleCornerRadii radii,
+            float topStart, float topEnd, float bottomStart, float bottomEnd) {
+        assertEquals(topStart, radii.topStartDp, 0.001f);
+        assertEquals(topEnd, radii.topEndDp, 0.001f);
+        assertEquals(bottomStart, radii.bottomStartDp, 0.001f);
+        assertEquals(bottomEnd, radii.bottomEndDp, 0.001f);
+    }
+
+    @Test
     public void groupsConsecutiveMessagesIncludingExactFiveMinuteBoundary() {
         List<ChatMessage> messages = Arrays.asList(
                 message("u1", true, 0L),

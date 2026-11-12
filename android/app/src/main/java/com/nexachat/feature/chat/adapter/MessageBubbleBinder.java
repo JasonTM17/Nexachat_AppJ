@@ -86,6 +86,7 @@ public final class MessageBubbleBinder {
     private final LifecycleOwner voiceLifecycleOwner;
     @Nullable
     private final ViewModelStoreOwner voiceStoreOwner;
+    private final MessageBubbleLayoutBinder layoutBinder = new MessageBubbleLayoutBinder();
 
     public MessageBubbleBinder(
             @NonNull DateFormat timeFormat,
@@ -120,8 +121,18 @@ public final class MessageBubbleBinder {
         if (bubble == null) {
             return;
         }
+        layoutBinder.bind(root);
         applyRowSpacing(root, item.getGroupPosition());
-        if (MessageViewTypeMapper.isSystemMessage(message)) {
+        boolean systemMessage = MessageViewTypeMapper.isSystemMessage(message);
+        if (!systemMessage) {
+            root.setMinimumHeight(root.getResources().getDimensionPixelSize(R.dimen.min_touch_target));
+            int horizontal = root.getResources().getDimensionPixelSize(R.dimen.bubble_content_inset);
+            int vertical = root.getResources().getDimensionPixelSize(R.dimen.space_sm);
+            bubble.setPadding(horizontal, vertical, horizontal, vertical);
+        } else {
+            root.setMinimumHeight(0);
+        }
+        if (systemMessage) {
             bubble.setBackgroundResource(R.drawable.bg_date_separator);
         } else {
             applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
@@ -131,7 +142,7 @@ public final class MessageBubbleBinder {
         if (mentionedMe) {
             int rowHighlight = resolveThemeColor(root.getContext(),
                     com.google.android.material.R.attr.colorSecondaryContainer);
-            root.setBackgroundColor(ColorUtils.setAlphaComponent(rowHighlight, 42));
+            root.setBackgroundColor(rowHighlight);
             bubble.setBackgroundTintList(ColorStateList.valueOf(rowHighlight));
         } else {
             root.setBackground(null);
@@ -429,6 +440,9 @@ public final class MessageBubbleBinder {
             String label = attachment != null && attachment.getOriginalName() != null
                     ? attachment.getOriginalName()
                     : root.getContext().getString(R.string.cd_open_attachment);
+            fileName.setSingleLine(false);
+            fileName.setMaxLines(8);
+            fileName.setEllipsize(null);
             fileName.setText(label);
             fileName.setOnClickListener(v -> {
                 if (attachment != null) {
@@ -518,7 +532,7 @@ public final class MessageBubbleBinder {
         } else if (pulsing) {
             color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
-            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+            color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         } else if (message.getStatus() == DeliveryStatus.FAILED) {
             color = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnErrorContainer);
         } else if (message.getMine()) {
@@ -712,11 +726,11 @@ public final class MessageBubbleBinder {
         boolean isMine = message.getMine();
         int metaColor;
         if (mediaMeta) {
-            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+            metaColor = ContextCompat.getColor(root.getContext(), R.color.nexa_on_media_meta);
         } else if (pulsing) {
             metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
-            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurface);
+            metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         } else if (message.getStatus() == DeliveryStatus.FAILED) {
             metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnErrorContainer);
         } else if (isMine) {
@@ -786,9 +800,7 @@ public final class MessageBubbleBinder {
                 deliveredIcon.setVisibility(View.VISIBLE);
                 deliveredIcon.setImageResource(R.drawable.ic_check_double);
                 deliveredIcon.setImageTintList(ColorStateList.valueOf(
-                        mediaMeta
-                                ? resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorTertiary)
-                                : ContextCompat.getColor(root.getContext(), R.color.chat_bubble_read_tick)
+                        ContextCompat.getColor(root.getContext(), R.color.chat_bubble_read_tick)
                 ));
                 deliveredIcon.setContentDescription(
                         root.getContext().getString(R.string.cd_read)
@@ -849,13 +861,20 @@ public final class MessageBubbleBinder {
             int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
             view.setChipMinHeight(minTouchPx);
             view.setEnsureMinTouchTargetSize(true);
+            boolean mineReaction = chip.getReactedByMe();
             view.setTextColor(resolveThemeColor(
-                    root.getContext(), com.google.android.material.R.attr.colorOnSurface));
+                    root.getContext(),
+                    mineReaction
+                            ? com.google.android.material.R.attr.colorOnPrimaryContainer
+                            : com.google.android.material.R.attr.colorOnSurfaceVariant));
             view.setChipStrokeWidth(root.getResources().getDisplayMetrics().density);
             view.setChipStrokeColor(ColorStateList.valueOf(resolveThemeColor(
-                    root.getContext(), com.google.android.material.R.attr.colorOutlineVariant)));
+                    root.getContext(),
+                    mineReaction
+                            ? com.google.android.material.R.attr.colorPrimary
+                            : com.google.android.material.R.attr.colorOutline)));
             view.setChipBackgroundColorResource(
-                    chip.getReactedByMe() ? R.color.brand_indigo_container : R.color.bubble_other
+                    mineReaction ? R.color.colorPrimaryContainer : R.color.colorSurfaceContainer
             );
             view.setOnClickListener(v -> {
                 if (actionListener != null) {
