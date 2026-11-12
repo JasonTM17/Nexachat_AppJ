@@ -69,6 +69,7 @@ In the repository, open **Settings → Secrets and variables → Actions** and a
 | `RELEASE_KEY_ALIAS` | `nexachat` |
 | `RELEASE_KEY_PASSWORD` | Key password |
 | `RELEASE_API_BASE_URL` | Production API base URL using HTTPS |
+| `RELEASE_GOOGLE_WEB_CLIENT_ID` | Google OAuth Web client ID passed as `-PgoogleWebClientId`; when unset the APK hides every Google entry point |
 
 Before adding these secrets, protect the `v*` tag pattern so only release
 maintainers can create tags, require review for release-workflow changes on

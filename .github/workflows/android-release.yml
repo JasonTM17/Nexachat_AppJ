@@ -133,15 +133,23 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           RELEASE_API_BASE_URL: ${{ secrets.RELEASE_API_BASE_URL }}
+          RELEASE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.RELEASE_GOOGLE_WEB_CLIENT_ID }}
         shell: bash
         run: |
           set -euo pipefail
           export RELEASE_STORE_FILE="$RELEASE_STORE_FILE_PATH"
+          google_args=()
+          if [[ -n "${RELEASE_GOOGLE_WEB_CLIENT_ID:-}" ]]; then
+            google_args+=("-PgoogleWebClientId=$RELEASE_GOOGLE_WEB_CLIENT_ID")
+          else
+            echo '::warning::RELEASE_GOOGLE_WEB_CLIENT_ID is not set: this APK hides every Google entry point.'
+          fi
           ./gradlew :app:assembleRelease \
             --no-daemon --no-build-cache --no-configuration-cache --no-parallel --max-workers=2 \
             "-PapiBaseUrl=$RELEASE_API_BASE_URL" \
             "-PreleaseVersionName=${{ steps.release_version.outputs.version_name }}" \
-            "-PreleaseVersionCode=${{ steps.release_version.outputs.version_code }}"
+            "-PreleaseVersionCode=${{ steps.release_version.outputs.version_code }}" \
+            ${google_args[@]+"${google_args[@]}"}
 
       - name: Check R8 mapping
         shell: bash
