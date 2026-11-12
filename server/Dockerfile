@@ -37,9 +37,47 @@ RUN mkdir -p /app/data/uploads && chown -R nexachat:nexachat /app
 
 USER nexachat
 
+# AppCDS training (build-time only). It is derived from the runtime stage so the
+# archive is produced by the exact JRE and /app layout that will load it. The
+# context exits right after refresh; the database connection pool is never
+# opened and Flyway/schedulers are disabled, so no DB or network is needed.
+# The JVM flags mirror the Render profile: the archive is more useful when it
+# records the same GC and JIT configuration the runtime will use.
+FROM runtime AS cds
+RUN java \
+      -Dspring.context.exit=onRefresh \
+      -XX:ArchiveClassesAtExit=/app/application.jsa \
+      -XX:MaxRAMPercentage=60.0 \
+      -XX:+UseSerialGC \
+      -Xss512k \
+      -XX:MaxMetaspaceSize=128m \
+      -XX:ActiveProcessorCount=1 \
+      -XX:TieredStopAtLevel=1 \
+      -Dspring.profiles.active=prod,render,json-logs \
+      -Dspring.datasource.url=jdbc:postgresql://127.0.0.1:1/nexachat \
+      -Dspring.datasource.username=nexachat \
+      -Dspring.datasource.password=cds-training-only \
+      -Dnexachat.jwt.secret=cds-training-only-secret-cds-training-only-secret-cds-training-only-secret \
+      -Dnexachat.auth.refresh-replay.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc= \
+      -DSTORAGE_ROOT=/app/data/uploads \
+      -Dspring.flyway.enabled=false \
+      -Dspring.jpa.hibernate.ddl-auto=none \
+      -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
+      -Dspring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
+      -Dspring.datasource.hikari.initialization-fail-timeout=-1 \
+      -Dspring.datasource.hikari.connection-timeout=1000 \
+      -Dnexachat.reminders.enabled=false \
+      -Dserver.port=0 \
+      -jar /app/application.jar
+
+FROM runtime AS final
+COPY --from=cds /app/application.jsa /app/application.jsa
+
 EXPOSE 8080
 
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+# -Xshare stays on "auto": if the archive is ever unusable the JVM logs a
+# warning and falls back instead of refusing to start.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -XX:SharedArchiveFile=/app/application.jsa"
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -fsS http://localhost:8080/actuator/health/liveness || exit 1
