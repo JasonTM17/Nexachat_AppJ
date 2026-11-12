@@ -252,6 +252,13 @@ refuses production for these mutating journeys, and requires an evidence
 directory outside the repository for a real run. Account deletion is always
 ordered last and is limited to a disposable account.
 
+Runnable rows are `auth-login`, `chat-send-receive`, `calls-injected-notification`,
+and `injected-notifications`. The two push rows call `device/inject_push.py`
+rather than assembling a broadcast. OTP, account deletion, both upgrade rows,
+and `auth-session-lifecycle` stay `BLOCKED_CAPABILITY`; `--list` names the
+remaining gap (server restart and OTP expiry, in-app deletion, the missing
+Room 14 build, and STOMP through the REST-only barrier).
+
 ```bash
 python tools/e2e/device/stable_journeys.py --list
 python tools/e2e/device/stable_journeys.py --dry-run --rows auth-login,chat-send-receive

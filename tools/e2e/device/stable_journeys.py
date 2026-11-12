@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
-The coordinator reuses the existing adb UI, patch-window, REST and STOMP
-helpers. It deliberately runs only journeys whose complete assertions are
-available in those helpers; the remaining matrix rows are reported as
-BLOCKED_CAPABILITY with their exact missing capability.
+Runnable rows are seeded login, send/receive, and the two injected-push
+journeys. Every other matrix row stays BLOCKED_CAPABILITY with the gap that
+still prevents that row from producing its evidence.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import urlsplit
@@ -127,9 +126,12 @@ ROWS: tuple[JourneyRow, ...] = (
         rest_plan=(("POST", "/api/v1/auth/register"), ("POST", "/api/v1/auth/login"),
                    ("POST", "/api/v1/auth/refresh"), ("POST", "/api/v1/auth/logout-all"),
                    ("GET", "/api/v1/users/me")),
-        capability_gap=("The existing device helpers cover one seeded login only; the required deterministic "
-                        "paused-response account-switch barrier and full registration/logout lifecycle are not "
-                        "implemented. Do not report the login slice as this full row."),
+        capability_gap=("response_barrier can hold account A's REST response for GET /api/v1/conversations and "
+                        "release it after the switch. STOMP stays unproven: the barrier refuses WebSocket upgrades "
+                        "with HTTP 501, so an in-flight STOMP frame during A→B is not paused and B's socket "
+                        "isolation is not evidence. Registration, invalid-credential UI, refresh, logout, "
+                        "logout-all, password change, and saved-session restart are still not driven. Do not "
+                        "report the login slice as this full row."),
     ),
     JourneyRow(
         id="otp-forgot-password",
@@ -143,8 +145,11 @@ ROWS: tuple[JourneyRow, ...] = (
         rest_plan=(("PUT", "/api/v1/users/me/email"), ("POST", "/api/v1/users/me/email/verify"),
                    ("POST", "/api/v1/auth/password-reset/request"),
                    ("POST", "/api/v1/auth/password-reset/confirm")),
-        capability_gap=("No existing helper reads or verifies the local Mailpit inbox, and this coordinator does "
-                        "not provision the mail sink. OTP delivery and expiry therefore cannot be asserted."),
+        capability_gap=("mail_sink can start Mailpit and server_env() names the SMTP settings, but this "
+                        "coordinator does not restart the already-running local server, so those settings are "
+                        "not applied. EmailOtpService.CODE_TTL is 10 minutes with no test clock, so an expired "
+                        "code cannot be asserted. Wrong, reused, and resend therefore have no delivered-mail "
+                        "evidence yet."),
     ),
     JourneyRow(
         id="chat-send-receive",
@@ -275,8 +280,6 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("notification-shade and call screenshots", "redacted transcripts", "logcat.txt", "summary.json"),
         cleanup=("Cancel the injected call and clear only its notification"),
         rest_plan=(("GET", "/api/v1/conversations/{id}/calls"),),
-        capability_gap=("MockFcmGateway is test-scope only and there is no runtime push hook in the existing "
-                        "device tools. STOMP notification survival after am kill is not a substitute for injected FCM."),
     ),
     JourneyRow(
         id="summary-ask",
@@ -315,8 +318,6 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("notification shade/screens", "redacted transcripts", "logcat.txt", "summary.json"),
         cleanup=("Clear only notifications emitted by these fixture events"),
         rest_plan=(("GET", "/api/v1/conversations"),),
-        capability_gap=("There is no runtime push injection endpoint; MockFcmGateway is test-scope only. A local "
-                        "service log or live provider receipt cannot substitute for the requested INJECTED evidence."),
     ),
     JourneyRow(
         id="room-13-14-upgrade",
@@ -328,8 +329,9 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("before/after screenshots", "APK/data identity manifest", "logcat.txt", "summary.json"),
         cleanup=("Remove only disposable app data/accounts after evidence is saved"),
         rest_plan=(("POST", "/api/v1/sync"), ("GET", "/api/v1/conversations/{id}/messages")),
-        capability_gap=("The Room 13 fixture APK and Room 14 RC APK identities are not supplied by this brief; "
-                        "the current base is the v1.1.1 candidate."),
+        capability_gap=("fixture_apks can fetch verified v1.1.0 and v1.1.1 release APKs that share a signer, "
+                        "but AppDatabase is still version 13 and no Room 14 build exists. Those release APKs are "
+                        "not a Room 13→14 migration pair, so queued-send survival cannot be asserted."),
     ),
     JourneyRow(
         id="v111-rc-upgrade",
@@ -341,8 +343,10 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("APK SHA256/certificate manifest", "upgrade screenshots", "logcat.txt", "summary.json"),
         cleanup=("Remove only disposable app data/accounts after evidence is saved"),
         rest_plan=(("GET", "/actuator/health/readiness"),),
-        capability_gap=("Neither pair of release artifacts nor their approved fixture target is supplied; never "
-                        "use a production base for this destructive upgrade journey."),
+        capability_gap=("fixture_apks verifies the signed v1.1.1 APK (package com.nexachat, versionCode "
+                        "1001001). The v1.2 RC and Room 14 build do not exist, and com.nexachat.debug cannot "
+                        "replace that release package in place. A v1.1.0 to v1.1.1 install is not this row. "
+                        "Never use a production base."),
     ),
     JourneyRow(
         id="accessibility-sweep",
@@ -369,8 +373,11 @@ ROWS: tuple[JourneyRow, ...] = (
         cleanup=("Deletion itself is the cleanup; never use seed/owner accounts"),
         rest_plan=(("DELETE", "/api/v1/users/me"), ("POST", "/api/v1/account-deletion/request"),
                    ("POST", "/api/v1/account-deletion/confirm")),
-        capability_gap=("The current device tools do not provision and bind a disposable account to the UI, and "
-                        "the OTP deletion path also needs Mailpit. The row is deliberately last and never targets seed users."),
+        capability_gap=("mail_sink can read a deletion OTP, but this coordinator does not restart the local "
+                        "server with server_env(), and no helper binds a disposable account into the debug UI. "
+                        "Wrong-password refusal on device, in-app confirmation, the deleted-account cache, "
+                        "peer-neutral history, and phone reuse on device stay unproven. The row stays last and "
+                        "must never target a seed user."),
     ),
 )
 
@@ -389,6 +396,52 @@ HELPER_CALLS = {
         {"helper": "adb_ui.Device.tap_node", "target": "resource-id sendButton"},
         {"helper": "e2e_common.history", "actor": "Binh", "assert": "exactly one matching row"},
         {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "device renders peer message"},
+    ),
+    "auth-session-lifecycle": (
+        {"helper": "response_barrier.Barrier.hold", "method": "GET",
+         "path": "^/api/v1/conversations$", "token_contains": "account A access token"},
+        {"helper": "response_barrier.Barrier.release", "when": "after the device session is account B"},
+        {"helper": "unproven", "transport": "STOMP", "reason": "WebSocket upgrade returns HTTP 501"},
+    ),
+    "otp-forgot-password": (
+        {"helper": "mail_sink.start"},
+        {"helper": "mail_sink.server_env"},
+        {"helper": "mail_sink.wait_for_message"},
+        {"helper": "mail_sink.extract_otp"},
+        {"helper": "mail_sink.stop", "when": "finally"},
+    ),
+    "account-deletion": (
+        {"helper": "mail_sink.start"},
+        {"helper": "mail_sink.server_env"},
+        {"helper": "mail_sink.wait_for_message"},
+        {"helper": "mail_sink.extract_otp"},
+        {"helper": "mail_sink.stop", "when": "finally"},
+    ),
+    "calls-injected-notification": (
+        {"helper": "adb", "args": ["shell", "input", "keyevent", "KEYCODE_HOME"]},
+        {"helper": "adb", "args": ["shell", "am", "kill", PACKAGE]},
+        {"helper": "inject_push.main", "kind": "call", "serial": SERIAL},
+        {"helper": "adb_ui.Device.tap_node", "target": "text Decline or Từ chối"},
+    ),
+    "injected-notifications": (
+        {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "real message id and seq"},
+        {"helper": "inject_push.main", "kind": "message", "serial": SERIAL},
+        {"helper": "inject_push.main", "kind": "reminder", "serial": SERIAL},
+        {"helper": "adb", "args": ["shell", "dumpsys", "notification", "--noredact"]},
+    ),
+    "room-13-14-upgrade": (
+        {"helper": "fixture_apks.fetch", "tag": "v1.1.0"},
+        {"helper": "fixture_apks.fetch", "tag": "v1.1.1"},
+        {"helper": "fixture_apks.assert_shared_signer"},
+        {"helper": "adb", "args": ["adb", "-s", SERIAL, "install", "-r", "<room14-apk>"],
+         "blocked": "Room 14 build does not exist"},
+    ),
+    "v111-rc-upgrade": (
+        {"helper": "fixture_apks.fetch", "tag": "v1.1.1"},
+        {"helper": "fixture_apks.describe"},
+        {"helper": "adb", "args": ["adb", "-s", SERIAL, "install", "-r", "<v1.1.1-apk>"],
+         "then": ["adb", "-s", SERIAL, "install", "-r", "<v1.2-rc-apk>"],
+         "blocked": "v1.2 RC and Room 14 build do not exist"},
     ),
 }
 
@@ -409,7 +462,10 @@ UI_MARKERS = {
     "calls-injected-notification": ("text:Incoming voice call", "text:Accept", "text:Decline"),
     "summary-ask": ("text:summary heading", "text:citation source message"),
     "offline-sync": ("text:unique offline message", "text:converged message order"),
-    "injected-notifications": ("text:notification payload marker", "text:refreshed board state"),
+    "injected-notifications": (
+        "text:You have a new message", "text:Tin nhắn mới",
+        "text:A reminder is due", "text:Nhắc nhở", "label:INJECTED",
+    ),
     "room-13-14-upgrade": ("text:queued message before and after migration"),
     "v111-rc-upgrade": ("text:Sign in", "text:Binh"),
     "accessibility-sweep": ("ui-tree marker for each of 8 locale/theme/font variants",),
@@ -880,6 +936,569 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     return result
 
 
+SEED_PHONES = frozenset({
+    "+84900000001", "+84900000002", "+84900000003",
+    "+84900000101", "+84900000102",
+})
+DISPOSABLE_PASSWORD = "password123"
+REPLACEMENT_PASSWORD = "password123-reset"
+CALL_MARKER_SETS = (
+    ("Incoming voice call", "Accept", "Decline"),
+    ("Cuộc gọi thoại đến", "Trả lời", "Từ chối"),
+)
+MESSAGE_SHADE = ("You have a new message", "Tin nhắn mới", "Bạn có tin nhắn mới")
+REMINDER_SHADE = ("A reminder is due", "Nhắc nhở", "Đến giờ nhắc")
+_SHADE_MARKERS = MESSAGE_SHADE + REMINDER_SHADE + ("Incoming voice call", "Cuộc gọi thoại đến")
+INCOMING_ACTIVITY = "com.nexachat.call.ui.IncomingCallActivity"
+
+
+def _campaign_serial(context: dict[str, Any]) -> str:
+    serial = context.get("serial")
+    if serial is None and context.get("adb") is not None:
+        serial = getattr(context["adb"], "serial", None)
+    if not isinstance(serial, str) or not serial:
+        raise HarnessError("serial is required")
+    return validate_serial(serial)
+
+
+def _campaign_base_url(context: dict[str, Any]) -> str:
+    base_url = context.get("base_url")
+    if not isinstance(base_url, str) or not base_url:
+        raise HarnessError("local base URL is required")
+    row = context.get("row")
+    selected = (row,) if isinstance(row, JourneyRow) else ()
+    validate_base_url(base_url, selected, False)
+    return base_url.rstrip("/")
+
+
+def _require_disposable_phone(phone: str) -> str:
+    if phone in SEED_PHONES:
+        raise HarnessError("refusing seed user; this journey uses a disposable account only")
+    if not phone.startswith("+") or not phone[1:].isdigit():
+        raise HarnessError("disposable phone is not an E.164 number")
+    return phone
+
+
+def _new_disposable_phone() -> str:
+    return _require_disposable_phone(f"+8499{uuid.uuid4().int % 10_000_000:07d}")
+
+
+def _new_disposable_email() -> str:
+    return f"sj-{uuid.uuid4().hex[:12]}@example.test"
+
+
+def _import_inject_push():
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    return importlib.import_module("inject_push")
+
+
+def _import_mail_sink():
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    return importlib.import_module("mail_sink")
+
+
+def _invoke_inject_push(serial: str, kind_args: list[str]) -> None:
+    """Deliver a payload through inject_push.main. Never assemble the broadcast here."""
+    inject_push = _import_inject_push()
+    validated = inject_push.require_serial(serial)
+    try:
+        code = inject_push.main(["--serial", validated, *kind_args])
+    except inject_push.InjectPushError as error:
+        raise HarnessError(str(error)) from error
+    if code != 0:
+        raise EnvironmentFailure(f"inject_push exited {code}")
+
+
+def _mark_injected(context: dict[str, Any]) -> None:
+    row_dir = context.get("row_dir")
+    if row_dir is None:
+        return
+    path = Path(row_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "injection-label.txt").write_text("INJECTED\n", encoding="utf-8")
+
+
+def _node_texts(nodes: Iterable[Any]) -> set[str]:
+    return {str(getattr(node, "text", "")).strip() for node in nodes}
+
+
+def _ui_nodes(context: dict[str, Any]) -> list[Any]:
+    patch = context["helpers"][2]
+    return list(patch.ui_nodes(context["device"], timeout=8))
+
+
+def _ui_timeout(context: dict[str, Any]) -> float:
+    return float(context.get("ui_timeout", 20))
+
+
+def _wait_for_marker_set(context: dict[str, Any],
+                         options: tuple[tuple[str, ...], ...]) -> tuple[str, ...]:
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        texts = _node_texts(_ui_nodes(context))
+        for labels in options:
+            if set(labels).issubset(texts):
+                return labels
+        if time.monotonic() >= deadline:
+            raise ProductFailure("injected call markers were absent")
+        time.sleep(0.4)
+
+
+def _wait_until_absent(context: dict[str, Any], labels: tuple[str, ...]) -> None:
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        if not (set(labels) & _node_texts(_ui_nodes(context))):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure("injected call UI remained after decline")
+        time.sleep(0.4)
+
+
+def _tap_text(context: dict[str, Any], labels: tuple[str, ...]) -> bool:
+    for node in _ui_nodes(context):
+        if str(getattr(node, "text", "")).strip() in labels:
+            context["device"].tap_node(node)
+            return True
+    return False
+
+
+def _prepare_seeded_an(context: dict[str, Any]) -> None:
+    if context.get("reset_app_data"):
+        context["adb"].command("shell", "pm", "clear", PACKAGE, timeout=30)
+    _assert_device_account_an(
+        context["device"], context["helpers"][2], context.get("row_dir"),
+        bool(context.get("reset_app_data")),
+    )
+
+
+def _seed_pair(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], str, str, str]:
+    api = context["helpers"][0]
+    recorder = context["client"]
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    _, conversation = api.direct_conversation(recorder, an["accessToken"], api.USER_C["phone"])
+    conversation_id = str(conversation.get("id") or "")
+    recipient_id = str((an.get("user") or {}).get("id") or "")
+    caller_id = str((binh.get("user") or {}).get("id") or "")
+    if not conversation_id or not recipient_id or not caller_id:
+        raise EnvironmentFailure("seed An/Binh fixture did not return ids")
+    return an, binh, conversation_id, recipient_id, caller_id
+
+
+def _cancel_injected_notifications(adb: Adb, dump: str) -> None:
+    cancelled = False
+    chunks = dump.split("NotificationRecord")
+    searchable = chunks if len(chunks) > 1 else [dump]
+    for chunk in searchable:
+        if not any(marker in chunk for marker in _SHADE_MARKERS):
+            continue
+        match = re.search(r"key=(\S+)", chunk)
+        if match is None or PACKAGE not in chunk:
+            raise HarnessError("injected notification key could not be read")
+        adb.command("shell", "cmd", "notification", "cancel", match.group(1), timeout=20)
+        cancelled = True
+    if any(marker in dump for marker in _SHADE_MARKERS) and not cancelled:
+        raise HarnessError("injected notification was still posted and its key could not be read")
+
+
+def _notification_dump(adb: Adb) -> str:
+    return adb.command("shell", "dumpsys", "notification", "--noredact", timeout=30, check=False)
+
+
+def run_calls_injected_notification(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """F4: dead process, inject_push call, incoming-call markers, then decline.
+
+    One incoming call cannot be both accepted and declined. The executor shows
+    both controls and declines so the injected UI does not remain. Server call
+    history is read only to reject a phantom row for this local call id.
+    """
+    serial = _campaign_serial(context)
+    _campaign_base_url(context)
+    adb = context["adb"]
+    _prepare_seeded_an(context)
+    an, _binh, conversation_id, recipient_id, caller_id = _seed_pair(context)
+    call_id = "sj-call-" + uuid.uuid4().hex[:8]
+    cleanup_errors: list[str] = []
+    primary_error: Exception | None = None
+    try:
+        adb.command("shell", "input", "keyevent", "KEYCODE_HOME", timeout=20)
+        adb.command("shell", "am", "kill", PACKAGE, timeout=20, check=False)
+        if adb.command("shell", "pidof", PACKAGE, timeout=15, check=False).strip():
+            raise EnvironmentFailure("process still alive after am kill; refusing force-stop")
+        _invoke_inject_push(serial, [
+            "call",
+            "--recipient-id", recipient_id,
+            "--conversation-id", conversation_id,
+            "--call-id", call_id,
+            "--caller-id", caller_id,
+            "--caller-name", "Binh",
+        ])
+        _mark_injected(context)
+        labels = _wait_for_marker_set(context, CALL_MARKER_SETS)
+        activities = adb.command("shell", "dumpsys", "activity", "activities", timeout=30, check=False)
+        if INCOMING_ACTIVITY not in activities:
+            raise ProductFailure("injected call did not open IncomingCallActivity")
+        row_dir = context.get("row_dir")
+        if row_dir is not None and hasattr(context.get("device"), "screenshot"):
+            context["device"].screenshot(str(Path(row_dir) / "call-incoming.png"))
+        if not _tap_text(context, ("Decline", "Từ chối")):
+            raise ProductFailure("decline action was not on screen")
+        _wait_until_absent(context, labels)
+        history = context["client"].get(
+            f"/api/v1/conversations/{conversation_id}/calls",
+            token=an["accessToken"], params={"limit": 20},
+        )
+        if history.status != 200:
+            raise ProductFailure(f"call history returned HTTP {history.status}")
+        body = history.json() or {}
+        items = body.get("items") if isinstance(body, dict) else body
+        for item in items or []:
+            if str(item.get("callId") or "") == call_id:
+                raise ProductFailure("injected call appeared in server call history")
+        return {"label": "INJECTED", "declined": True, "phantom_call": False}
+    except Exception as error:
+        primary_error = error
+        raise
+    finally:
+        try:
+            _tap_text(context, ("Decline", "Từ chối"))
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__)
+        try:
+            _cancel_injected_notifications(adb, _notification_dump(adb))
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+            if primary_error is None:
+                raise HarnessError("injected call cleanup failed")
+
+
+def _wait_for_generic_shade(adb: Adb, forbidden: tuple[str, ...], timeout: float) -> str:
+    deadline = time.monotonic() + timeout
+    while True:
+        dump = _notification_dump(adb)
+        message_ok = any(marker in dump for marker in MESSAGE_SHADE)
+        reminder_ok = any(marker in dump for marker in REMINDER_SHADE)
+        if message_ok and reminder_ok:
+            if any(secret and secret in dump for secret in forbidden):
+                raise ProductFailure("notification shade contained the payload body")
+            return dump
+        if time.monotonic() >= deadline:
+            raise ProductFailure("notification shade did not show the injected generic text")
+        time.sleep(0.4)
+
+
+def run_injected_notifications(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Inject NEW_MESSAGE and REMINDER through inject_push and read the generic shade.
+
+    The notification copy is the generic string, not the message or reminder
+    body. Evidence is labeled INJECTED. This does not claim a live provider push.
+    """
+    serial = _campaign_serial(context)
+    _campaign_base_url(context)
+    adb = context["adb"]
+    _prepare_seeded_an(context)
+    an, binh, conversation_id, recipient_id, _caller_id = _seed_pair(context)
+    api = context["helpers"][0]
+    recorder = context["client"]
+    body = "sj-msg-" + uuid.uuid4().hex[:12]
+    title = "sj-rem-" + uuid.uuid4().hex[:12]
+    message_id = ""
+    reminder_id = ""
+    cleanup_errors: list[str] = []
+    primary_error: Exception | None = None
+    try:
+        message = api.send_text(recorder, binh["accessToken"], conversation_id, body)
+        message_id = str(message.get("id") or "")
+        seq = str(int(message.get("seq")))
+        if not message_id:
+            raise EnvironmentFailure("peer send did not return a message id")
+        adb.command("shell", "input", "keyevent", "KEYCODE_HOME", timeout=20)
+        _invoke_inject_push(serial, [
+            "message",
+            "--recipient-id", recipient_id,
+            "--conversation-id", conversation_id,
+            "--message-id", message_id,
+            "--seq", seq,
+        ])
+        remind_at = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        created = recorder.post(
+            f"/api/v1/conversations/{conversation_id}/reminders",
+            token=an["accessToken"],
+            body={"title": title, "remindAt": remind_at, "repeat": "NONE"},
+        )
+        if created.status not in (200, 201):
+            raise ProductFailure(f"reminder create returned HTTP {created.status}")
+        reminder_id = str((created.json() or {}).get("id") or "")
+        if not reminder_id:
+            raise EnvironmentFailure("reminder create did not return an id")
+        occurrence = uuid.uuid4().hex
+        _invoke_inject_push(serial, [
+            "reminder",
+            "--recipient-id", recipient_id,
+            "--conversation-id", conversation_id,
+            "--reminder-id", reminder_id,
+            "--occurrence", occurrence,
+        ])
+        _wait_for_generic_shade(adb, (body, title), _ui_timeout(context))
+        _mark_injected(context)
+        return {
+            "label": "INJECTED",
+            "message_shade": True,
+            "reminder_shade": True,
+            "payload_body_in_shade": False,
+        }
+    except Exception as error:
+        primary_error = error
+        raise
+    finally:
+        try:
+            _cancel_injected_notifications(adb, _notification_dump(adb))
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__)
+        if message_id:
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+                    token=binh["accessToken"],
+                )
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"message HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if reminder_id:
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/reminders/{reminder_id}",
+                    token=an["accessToken"],
+                )
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"reminder HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+            if primary_error is None:
+                raise HarnessError("injected notification cleanup failed")
+
+
+def _expect_status(response: Any, allowed: set[int], what: str) -> None:
+    if response.status not in allowed:
+        raise ProductFailure(f"{what} returned HTTP {response.status}")
+
+
+def _read_otp(mail: Any, email: str) -> str:
+    message = mail.wait_for_message(email, timeout=60)
+    code = mail.extract_otp(message)
+    if not isinstance(code, str) or len(code) != 6 or not code.isdigit():
+        raise EnvironmentFailure("mail sink did not return a 6-digit code")
+    return code
+
+
+def _register_disposable(client: Any, phone: str, name: str) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/auth/register",
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD, "displayName": name},
+    )
+    _expect_status(response, {200, 201}, "disposable registration")
+    data = response.json() or {}
+    user = data.get("user") or {}
+    if not data.get("accessToken") or user.get("phone") != phone:
+        raise EnvironmentFailure("disposable registration did not return the requested account")
+    return data
+
+
+def _verify_recovery_email(client: Any, mail: Any, token: str, email: str) -> None:
+    requested = client.put("/api/v1/users/me/email", token=token, body={"email": email})
+    _expect_status(requested, {202}, "recovery email request")
+    code = _read_otp(mail, email)
+    verified = client.post("/api/v1/users/me/email/verify", token=token, body={"code": code})
+    _expect_status(verified, {200}, "recovery email verify")
+    mail.clear()
+
+
+def _confirm_reset(client: Any, phone: str, code: str, new_password: str) -> Any:
+    return client.post(
+        "/api/v1/auth/password-reset/confirm",
+        body={"phone": phone, "code": code, "newPassword": new_password},
+    )
+
+
+def _complete_password_reset(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+    """Request, read, and consume a reset code. Expiry is intentionally not claimed."""
+    client = context["client"]
+    registered = _register_disposable(client, phone, "Journey Disposable")
+    token = registered["accessToken"]
+    _verify_recovery_email(client, mail, token, email)
+    requested = client.post("/api/v1/auth/password-reset/request", body={"phone": phone})
+    _expect_status(requested, {202}, "password reset request")
+    code = _read_otp(mail, email)
+    wrong = _confirm_reset(client, phone, "111111" if code == "000000" else "000000", REPLACEMENT_PASSWORD)
+    _expect_status(wrong, {400}, "wrong reset code")
+    changed = _confirm_reset(client, phone, code, REPLACEMENT_PASSWORD)
+    _expect_status(changed, {204}, "password reset confirm")
+    reused = _confirm_reset(client, phone, code, REPLACEMENT_PASSWORD)
+    _expect_status(reused, {400}, "reused reset code")
+    me = client.get("/api/v1/users/me", token=token)
+    _expect_status(me, {401}, "old session after password reset")
+    old_login = client.post(
+        "/api/v1/auth/login", body={"phone": phone, "password": DISPOSABLE_PASSWORD},
+    )
+    if old_login.status == 200:
+        raise ProductFailure("old password was still accepted")
+    if old_login.status not in {400, 401, 403}:
+        raise EnvironmentFailure(f"old password login returned HTTP {old_login.status}")
+    replacement = client.post(
+        "/api/v1/auth/login", body={"phone": phone, "password": REPLACEMENT_PASSWORD},
+    )
+    _expect_status(replacement, {200}, "login with the replacement password")
+    context.get("sleep", time.sleep)(61)
+    mail.clear()
+    resent = client.post("/api/v1/auth/password-reset/request", body={"phone": phone})
+    _expect_status(resent, {202}, "password reset resend")
+    resent_code = _read_otp(mail, email)
+    stale = _confirm_reset(client, phone, code, REPLACEMENT_PASSWORD + "-2")
+    _expect_status(stale, {400}, "previous reset code after resend")
+    fresh = _confirm_reset(client, phone, resent_code, REPLACEMENT_PASSWORD + "-2")
+    _expect_status(fresh, {204}, "resent reset code")
+
+
+def _with_mail_sink(context: dict[str, Any], row: JourneyRow, action: Callable[[Any], None]) -> None:
+    mail = context.get("mail_sink") or _import_mail_sink()
+    started = False
+    try:
+        mail.start()
+        started = True
+        env = mail.server_env()
+        host = str(env.get("MAIL_SMTP_HOST", ""))
+        if env.get("NEXACHAT_MAIL_PROVIDER") != "smtp" or not host:
+            raise HarnessError("mail sink server_env() did not point at an SMTP sink")
+        if PRODUCTION_HOST.casefold() in host.casefold():
+            raise HarnessError("mail sink host looks like production")
+        apply_env = context.get("apply_server_env")
+        if apply_env is None:
+            raise CapabilityBlocked(row.capability_gap or "mail sink is not applied to the local server")
+        apply_env(env)
+        action(mail)
+    finally:
+        if started:
+            mail.stop()
+
+
+def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Start the mail sink and reset a disposable password when the server can be pointed at it.
+
+    The campaign does not restart an already-running server, and OTP expiry has
+    no test clock, so this executor always ends BLOCKED_CAPABILITY. It is not
+    registered for a device run.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    phone = _require_disposable_phone(str(context.get("disposable_phone") or _new_disposable_phone()))
+    email = str(context.get("disposable_email") or _new_disposable_email())
+
+    def action(mail: Any) -> None:
+        _complete_password_reset(context, mail, phone, email)
+        raise CapabilityBlocked(row.capability_gap)
+
+    _with_mail_sink(context, row, action)
+    raise CapabilityBlocked(row.capability_gap)
+
+
+def _require_deletion_last(context: dict[str, Any]) -> None:
+    selected = tuple(context.get("selected_ids") or ())
+    if not selected or selected[-1] != "account-deletion":
+        raise HarnessError("account deletion must run last")
+
+
+def _complete_account_deletion(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+    client = context["client"]
+    registered = _register_disposable(client, phone, "Journey Delete")
+    token = registered["accessToken"]
+    _verify_recovery_email(client, mail, token, email)
+    denied = client.request(
+        "DELETE", "/api/v1/users/me", token=token, body={"password": "not-the-account-password"},
+    )
+    _expect_status(denied, {401}, "wrong password deletion")
+    still_there = client.get("/api/v1/users/me", token=token)
+    _expect_status(still_there, {200}, "account after wrong password")
+    requested = client.post("/api/v1/account-deletion/request", body={"phone": phone})
+    _expect_status(requested, {202}, "deletion code request")
+    code = _read_otp(mail, email)
+    confirmed = client.post(
+        "/api/v1/account-deletion/confirm", body={"phone": phone, "code": code},
+    )
+    _expect_status(confirmed, {204}, "deletion confirm")
+    rejected = client.get("/api/v1/users/me", token=token)
+    _expect_status(rejected, {401}, "token after account deletion")
+    reused = client.post(
+        "/api/v1/auth/register",
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD, "displayName": "Journey Reused"},
+    )
+    _expect_status(reused, {200, 201}, "phone reuse after deletion")
+
+
+def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """OTP-delete a disposable account only. In-app cache and peer UI stay blocked.
+
+    Not registered for a device run: the local server is not restarted with
+    server_env(), and no helper signs the disposable account into the debug UI.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _require_deletion_last(context)
+    phone = _require_disposable_phone(str(context.get("disposable_phone") or _new_disposable_phone()))
+    email = str(context.get("disposable_email") or _new_disposable_email())
+
+    def action(mail: Any) -> None:
+        _complete_account_deletion(context, mail, phone, email)
+        raise CapabilityBlocked(row.capability_gap)
+
+    _with_mail_sink(context, row, action)
+    raise CapabilityBlocked(row.capability_gap)
+
+
+def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Hold account A's REST conversations response, then stop.
+
+    STOMP cannot pass the barrier, and the registration/logout UI is not driven,
+    so the row stays blocked even when a barrier is supplied. Not registered.
+    """
+    _campaign_serial(context)
+    base_url = _campaign_base_url(context)
+    factory = context.get("barrier_factory")
+    if factory is None:
+        raise CapabilityBlocked(row.capability_gap)
+    barrier = factory(base_url)
+    try:
+        barrier.hold(
+            method="GET", path=r"^/api/v1/conversations$",
+            token_contains=context.get("account_a_token"),
+        )
+        raise CapabilityBlocked(row.capability_gap)
+    finally:
+        close = getattr(barrier, "close", None)
+        if close is not None:
+            close()
+
+
+def run_room_13_14_upgrade(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Refuse to install or migrate. Room 14 does not exist, so no APK is fetched."""
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    raise CapabilityBlocked(row.capability_gap)
+
+
+def run_v111_rc_upgrade(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Refuse to install. The v1.2 RC / Room 14 destination does not exist."""
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    raise CapabilityBlocked(row.capability_gap)
+
+
 def _capability_runner(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
     if row.capability_gap:
         raise CapabilityBlocked(row.capability_gap)
@@ -892,6 +1511,8 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
     executors = {
         "auth-login": run_auth_login,
         "chat-send-receive": run_chat_send_receive,
+        "calls-injected-notification": run_calls_injected_notification,
+        "injected-notifications": run_injected_notifications,
     }
     executor = executors.get(row.id)
     if executor is None:
@@ -914,9 +1535,11 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
                  *, max_attempts: int = ATTEMPTS_PER_ROW) -> list[dict[str, Any]]:
     if max_attempts != ATTEMPTS_PER_ROW:
         raise ValueError("the campaign allows exactly one rerun per row")
+    selected = tuple(rows)
+    context["selected_ids"] = tuple(row.id for row in selected)
     run_row = runner or _capability_runner
     results: list[dict[str, Any]] = []
-    for row in rows:
+    for row in selected:
         row_dir: Path = context["evidence_root"] / row.id
         row_dir.mkdir(parents=True, exist_ok=True)
         attempts: list[dict[str, Any]] = []
@@ -1089,7 +1712,8 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
     }
     context: dict[str, Any] = {"evidence_root": run_root, "client": recorder, "adb": adb,
                                "reset_app_data": reset_app_data, "helpers": helpers,
-                               "frame_reader": None, "stomp_events": []}
+                               "frame_reader": None, "stomp_events": [],
+                               "serial": serial, "base_url": base_url.rstrip("/")}
     before: dict[str, str] | None = None
     device = helpers[1].Device(serial)
     context["device"] = device

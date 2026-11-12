@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import stable_journeys as journeys
 
@@ -52,7 +55,10 @@ class MatrixAndDryRunTest(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
-        self.assertEqual(runnable, {"auth-login", "chat-send-receive"})
+        self.assertEqual(runnable, {
+            "auth-login", "chat-send-receive",
+            "calls-injected-notification", "injected-notifications",
+        })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
         self.assertEqual(len(journeys.ACCESSIBILITY_VARIANTS), 8)
         for row in journeys.ROWS:
@@ -267,6 +273,507 @@ class RedactionTest(unittest.TestCase):
             self.assertNotIn(secret, transcript)
         self.assertEqual(client.records[0]["headers"]["Authorization"], "[REDACTED]")
         self.assertEqual(client.records[0]["response"]["accessToken"], "[REDACTED]")
+
+
+class WiringDecisionTest(unittest.TestCase):
+    def test_list_shows_runnable_rows_and_remaining_gaps(self):
+        output = __import__("io").StringIO()
+        with mock.patch("sys.stdout", output):
+            self.assertEqual(journeys.main(["--list"]), 0)
+        runnable = []
+        blocked = {}
+        for line in output.getvalue().splitlines():
+            if line.startswith("ID "):
+                continue
+            row_id, _title, _refs, disposition = [part.strip() for part in line.split(" | ")]
+            if disposition.startswith("BLOCKED_CAPABILITY:"):
+                blocked[row_id] = disposition
+            else:
+                runnable.append(row_id)
+        self.assertEqual(runnable, [
+            "auth-login", "chat-send-receive",
+            "calls-injected-notification", "injected-notifications",
+        ])
+        self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
+        self.assertIn("STOMP", blocked["auth-session-lifecycle"])
+        self.assertIn("501", blocked["auth-session-lifecycle"])
+        self.assertIn("expired", blocked["otp-forgot-password"])
+        self.assertIn("server_env()", blocked["otp-forgot-password"])
+        self.assertIn("Room 14", blocked["room-13-14-upgrade"])
+        self.assertIn("Room 14", blocked["v111-rc-upgrade"])
+        self.assertIn("seed user", blocked["account-deletion"])
+        self.assertNotIn("calls-injected-notification", blocked)
+        self.assertNotIn("injected-notifications", blocked)
+        for row_id in (
+            "chat-interactions", "media", "groups-contacts", "polls-reminders",
+            "archive-preferences", "labels-lifecycle", "calls-signaling",
+            "summary-ask", "offline-sync", "accessibility-sweep",
+        ):
+            self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
+
+    def test_upgrade_plan_names_install_and_stays_blocked(self):
+        output = __import__("io").StringIO()
+        with mock.patch("sys.stdout", output), mock.patch.object(journeys.subprocess, "run") as run:
+            code = journeys.main(["--dry-run", "--rows", "room-13-14-upgrade,v111-rc-upgrade"])
+        self.assertEqual(code, 0)
+        run.assert_not_called()
+        plan = json.loads(output.getvalue())
+        for row in plan["rows"]:
+            text = json.dumps(row["helper_calls"])
+            self.assertIn("fixture_apks.fetch", text)
+            self.assertIn("install", text)
+            self.assertIn("-r", text)
+            self.assertIn("Room 14", row["capability_gap"])
+        self.assertIn("response_barrier.Barrier.hold", json.dumps(
+            [dict(call) for call in journeys.HELPER_CALLS["auth-session-lifecycle"]]
+        ))
+
+    def test_registered_run_does_not_start_blocked_helpers(self):
+        class Boom:
+            def start(self):
+                raise AssertionError("blocked row started a helper")
+
+        for row_id in ("otp-forgot-password", "account-deletion", "auth-session-lifecycle",
+                       "room-13-14-upgrade", "v111-rc-upgrade"):
+            with self.subTest(row_id=row_id):
+                with self.assertRaises(journeys.CapabilityBlocked):
+                    journeys.run_registered_row(journeys.ROW_BY_ID[row_id], {"mail_sink": Boom()})
+
+    def test_executors_refuse_a_non_reserved_serial(self):
+        cases = (
+            journeys.run_calls_injected_notification,
+            journeys.run_injected_notifications,
+            journeys.run_otp_forgot_password,
+            journeys.run_account_deletion,
+            journeys.run_auth_session_lifecycle,
+            journeys.run_room_13_14_upgrade,
+            journeys.run_v111_rc_upgrade,
+        )
+        for executor in cases:
+            with self.subTest(executor=executor.__name__):
+                with self.assertRaisesRegex(journeys.HarnessError, "never touch another device"):
+                    executor(journeys.ROWS[0], {"serial": "emulator-5570"})
+
+    def test_push_executor_refuses_production_and_calls_inject_push(self):
+        row = journeys.ROW_BY_ID["calls-injected-notification"]
+        with self.assertRaisesRegex(journeys.HarnessError, "refusing production"):
+            journeys.run_calls_injected_notification(row, {
+                "serial": "emulator-5554",
+                "base_url": "https://api.nexachat.io.vn",
+                "row": row,
+            })
+
+        adb_calls = []
+        state = {"declined": False}
+
+        class Node:
+            def __init__(self, text):
+                self.text = text
+
+        class Adb:
+            serial = "emulator-5554"
+
+            def command(self, *args, **kwargs):
+                adb_calls.append(args)
+                if "pidof" in args:
+                    return ""
+                if len(args) >= 3 and args[2] == "activity":
+                    return "com.nexachat.call.ui.IncomingCallActivity"
+                return ""
+
+        class Patch:
+            @staticmethod
+            def ui_nodes(device, timeout=8):
+                if state["declined"]:
+                    return []
+                return [Node("Incoming voice call"), Node("Accept"), Node("Decline")]
+
+        class Device:
+            def tap_node(self, node):
+                if node.text in {"Decline", "Từ chối"}:
+                    state["declined"] = True
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client, token, phone):
+                return 200, {"id": "conv-200"}
+
+        class Response:
+            def __init__(self, body):
+                self.status = 200
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class Client:
+            def get(self, path, token=None, params=None, headers=None):
+                return Response({"items": []})
+
+        injected = []
+
+        def fake_main(argv):
+            injected.append(list(argv))
+            return 0
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        import inject_push
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session), \
+                mock.patch.object(inject_push, "main", side_effect=fake_main):
+            result = journeys.run_calls_injected_notification(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "adb": Adb(),
+                "device": Device(),
+                "helpers": (Api(), None, Patch()),
+                "client": Client(),
+                "ui_timeout": 1,
+            })
+        self.assertEqual(result["label"], "INJECTED")
+        self.assertEqual(injected[0][1], "emulator-5554")
+        self.assertIn("call", injected[0])
+        self.assertNotIn("broadcast", injected[0])
+        flat = [" ".join(args) for args in adb_calls]
+        self.assertFalse(any("broadcast" in command or "force-stop" in command for command in flat))
+        self.assertTrue(any("am kill" in command for command in flat))
+
+    def test_message_executor_uses_inject_push_for_both_kinds(self):
+        row = journeys.ROW_BY_ID["injected-notifications"]
+        adb_calls = []
+
+        class Adb:
+            serial = "emulator-5554"
+
+            def command(self, *args, **kwargs):
+                adb_calls.append(args)
+                if "notification" in args:
+                    return (
+                        "NotificationRecord key=0|com.nexachat.debug|7|null|1000\n"
+                        "You have a new message\nA reminder is due\n"
+                    )
+                return ""
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client, token, phone):
+                return 200, {"id": "conv-200"}
+
+            @staticmethod
+            def send_text(client, token, conversation_id, content):
+                return {"id": "message-1", "seq": 8, "content": content}
+
+        class Response:
+            def __init__(self, status, body=None):
+                self.status = status
+                self._body = body or {}
+
+            def json(self):
+                return self._body
+
+        class Client:
+            def __init__(self):
+                self.deletes = []
+
+            def post(self, path, token=None, body=None, headers=None):
+                return Response(201, {"id": "reminder-1"})
+
+            def delete(self, path, token=None, params=None, headers=None):
+                self.deletes.append(path)
+                return Response(204)
+
+            def get(self, path, token=None, params=None, headers=None):
+                return Response(200, {"items": []})
+
+        injected = []
+
+        def fake_main(argv):
+            injected.append(list(argv))
+            return 0
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        import inject_push
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session), \
+                mock.patch.object(inject_push, "main", side_effect=fake_main):
+            result = journeys.run_injected_notifications(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "adb": Adb(),
+                "device": object(),
+                "helpers": (Api(), None, object()),
+                "client": Client(),
+                "ui_timeout": 1,
+            })
+        self.assertEqual(result["label"], "INJECTED")
+        self.assertFalse(result["payload_body_in_shade"])
+        kinds = [argv[argv.index(kind)] for argv in injected for kind in ("message", "reminder") if kind in argv]
+        self.assertEqual(kinds, ["message", "reminder"])
+        self.assertTrue(all(argv[1] == "emulator-5554" for argv in injected))
+        self.assertFalse(any("broadcast" in args for args in adb_calls))
+
+    def test_otp_flow_blocks_on_expiry_and_stops_the_sink(self):
+        row = journeys.ROW_BY_ID["otp-forgot-password"]
+        phone = "+84991112233"
+
+        class Mail:
+            def __init__(self):
+                self.codes = ["482910", "193847", "550012"]
+                self.n = 0
+                self.started = False
+                self.stopped = False
+
+            def start(self):
+                self.started = True
+
+            def stop(self):
+                self.stopped = True
+
+            def server_env(self):
+                return {
+                    "NEXACHAT_MAIL_PROVIDER": "smtp",
+                    "MAIL_SMTP_HOST": "127.0.0.1",
+                    "MAIL_SMTP_PORT": "1025",
+                    "MAIL_SMTP_USERNAME": "",
+                    "MAIL_SMTP_PASSWORD": "",
+                    "MAIL_FROM": "noreply@nexachat.io.vn",
+                }
+
+            def wait_for_message(self, to, subject_contains=None, timeout=60):
+                code = self.codes[self.n]
+                self.n += 1
+                return {"Text": code}
+
+            def extract_otp(self, message):
+                return message["Text"]
+
+            def clear(self):
+                return None
+
+        class Response:
+            def __init__(self, status, body=None):
+                self.status = status
+                self._body = body
+
+            def json(self):
+                return {} if self._body is None else self._body
+
+        class Client:
+            def __init__(self):
+                self.used = set()
+
+            def post(self, path, token=None, body=None, headers=None):
+                body = body or {}
+                if path.endswith("/register"):
+                    return Response(201, {"accessToken": "old-token", "user": {"id": "u1", "phone": body["phone"]}})
+                if path.endswith("/email/verify"):
+                    return Response(200, {"verified": True})
+                if path.endswith("/password-reset/request"):
+                    return Response(202, {})
+                if path.endswith("/password-reset/confirm"):
+                    code = body["code"]
+                    if code in {"000000", "111111"} or code in self.used:
+                        return Response(400, {})
+                    self.used.add(code)
+                    return Response(204, None)
+                if path.endswith("/login"):
+                    if body["password"] == journeys.DISPOSABLE_PASSWORD:
+                        return Response(401, {})
+                    return Response(200, {"accessToken": "new-token"})
+                raise AssertionError(path)
+
+            def put(self, path, token=None, body=None, headers=None):
+                return Response(202, {})
+
+            def get(self, path, token=None, params=None, headers=None):
+                return Response(401, {})
+
+        mail = Mail()
+        applied = []
+        with self.assertRaises(journeys.CapabilityBlocked) as caught:
+            journeys.run_otp_forgot_password(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "disposable_phone": phone,
+                "disposable_email": "otp@example.test",
+                "mail_sink": mail,
+                "client": Client(),
+                "sleep": lambda seconds: None,
+                "apply_server_env": applied.append,
+            })
+        self.assertTrue(mail.started)
+        self.assertTrue(mail.stopped)
+        self.assertEqual(mail.n, 3)
+        self.assertEqual(applied[0]["NEXACHAT_MAIL_PROVIDER"], "smtp")
+        text = str(caught.exception)
+        self.assertIn("expired", text)
+        for code in mail.codes:
+            self.assertNotIn(code, text)
+
+    def test_account_deletion_refuses_seed_users_and_blocks_after_otp(self):
+        row = journeys.ROW_BY_ID["account-deletion"]
+        with self.assertRaisesRegex(journeys.HarnessError, "seed user"):
+            journeys.run_account_deletion(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "selected_ids": ("auth-login", "account-deletion"),
+                "disposable_phone": "+84900000001",
+            })
+        with self.assertRaisesRegex(journeys.HarnessError, "must run last"):
+            journeys.run_account_deletion(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "selected_ids": ("account-deletion", "auth-login"),
+                "disposable_phone": "+84991112233",
+            })
+
+        class Mail:
+            def __init__(self):
+                self.codes = ["246810", "135790"]
+                self.n = 0
+                self.stopped = False
+
+            def start(self):
+                return None
+
+            def stop(self):
+                self.stopped = True
+
+            def server_env(self):
+                return {"NEXACHAT_MAIL_PROVIDER": "smtp", "MAIL_SMTP_HOST": "127.0.0.1",
+                        "MAIL_SMTP_PORT": "1025", "MAIL_SMTP_USERNAME": "",
+                        "MAIL_SMTP_PASSWORD": "", "MAIL_FROM": "noreply@nexachat.io.vn"}
+
+            def wait_for_message(self, to, subject_contains=None, timeout=60):
+                code = self.codes[self.n]
+                self.n += 1
+                return {"Text": code}
+
+            def extract_otp(self, message):
+                return message["Text"]
+
+            def clear(self):
+                return None
+
+        class Response:
+            def __init__(self, status, body=None):
+                self.status = status
+                self._body = body
+
+            def json(self):
+                return {} if self._body is None else self._body
+
+        class Client:
+            def __init__(self):
+                self.gets = 0
+                self.deleted = False
+
+            def post(self, path, token=None, body=None, headers=None):
+                body = body or {}
+                if path.endswith("/register"):
+                    return Response(201, {"accessToken": "tok", "user": {"id": "u", "phone": body["phone"]}})
+                if path.endswith("/email/verify"):
+                    return Response(200, {})
+                if path.endswith("/account-deletion/request"):
+                    return Response(202, {})
+                if path.endswith("/account-deletion/confirm"):
+                    return Response(204, None)
+                raise AssertionError(path)
+
+            def put(self, path, token=None, body=None, headers=None):
+                return Response(202, {})
+
+            def get(self, path, token=None, params=None, headers=None):
+                self.gets += 1
+                return Response(200 if self.gets == 1 else 401, {"phone": "+84991112233"} if self.gets == 1 else {})
+
+            def request(self, method, path, token=None, body=None, headers=None):
+                self.deleted = method == "DELETE"
+                return Response(401, {})
+
+        mail = Mail()
+        client = Client()
+        with self.assertRaises(journeys.CapabilityBlocked) as caught:
+            journeys.run_account_deletion(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "selected_ids": ("auth-login", "account-deletion"),
+                "disposable_phone": "+84991112233",
+                "disposable_email": "delete@example.test",
+                "mail_sink": mail,
+                "client": client,
+                "apply_server_env": lambda env: None,
+            })
+        self.assertTrue(client.deleted)
+        self.assertTrue(mail.stopped)
+        self.assertEqual(mail.n, 2)
+        self.assertIn("cache", str(caught.exception))
+        for code in mail.codes:
+            self.assertNotIn(code, str(caught.exception))
+
+    def test_barrier_hold_still_leaves_stomp_blocked(self):
+        row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+
+        class Barrier:
+            def __init__(self):
+                self.held = None
+                self.closed = False
+
+            def hold(self, **kwargs):
+                self.held = kwargs
+
+            def close(self):
+                self.closed = True
+
+        barrier = Barrier()
+        with self.assertRaises(journeys.CapabilityBlocked) as caught:
+            journeys.run_auth_session_lifecycle(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "account_a_token": "token-a",
+                "barrier_factory": lambda url: barrier,
+            })
+        self.assertEqual(barrier.held["path"], r"^/api/v1/conversations$")
+        self.assertTrue(barrier.closed)
+        self.assertIn("STOMP", str(caught.exception))
+        self.assertIn("501", str(caught.exception))
+
+    def test_upgrade_executors_do_not_fetch_or_install(self):
+        for row_id, executor in (
+            ("room-13-14-upgrade", journeys.run_room_13_14_upgrade),
+            ("v111-rc-upgrade", journeys.run_v111_rc_upgrade),
+        ):
+            row = journeys.ROW_BY_ID[row_id]
+            with mock.patch.object(journeys.subprocess, "run") as run:
+                with self.assertRaises(journeys.CapabilityBlocked) as caught:
+                    executor(row, {
+                        "serial": "emulator-5554",
+                        "base_url": "http://127.0.0.1:18093",
+                        "row": row,
+                    })
+            run.assert_not_called()
+            self.assertIn("Room 14", str(caught.exception))
 
 
 if __name__ == "__main__":
