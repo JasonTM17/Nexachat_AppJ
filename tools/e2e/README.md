@@ -152,3 +152,7 @@ python tools/e2e/final/final_live.py --phase retention-observe --expect deleted 
 - `perf_e2e.py` **leaves** its `e2e-bulk-<timestamp>` rows in place (≈550 deleted
   or edited rows would exceed the 30 writes/min/user budget to clean up); run it
   against a demo database you can reseed.
+
+## Release APK fixtures
+
+`tools/e2e/fixture_apks.py` downloads verified release APKs (`nexachat-v1.1.0.apk`, `nexachat-v1.1.1.apk`) and their SHA-256 checksums from GitHub Releases into `tools/e2e/.fixtures/` for upgrade journey tests. It verifies checksums atomically, reuses existing verified files without re-downloading, and inspects package metadata and signer certificates via Android SDK build-tools (`aapt` and `apksigner`). Run `python tools/e2e/fixture_apks.py fetch v1.1.0 v1.1.1` to fetch fixtures, `python tools/e2e/fixture_apks.py describe <apk>...` to inspect and assert shared signers, or `python -m unittest tools/e2e/test_fixture_apks.py` to run offline tests.
