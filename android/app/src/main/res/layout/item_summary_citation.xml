@@ -8,7 +8,8 @@
     android:layout_marginEnd="@dimen/space_xs"
     android:layout_marginBottom="@dimen/space_xs"
     android:checkable="false"
-    android:textColor="?attr/colorPrimary"
-    app:chipBackgroundColor="?attr/colorSurfaceVariant"
+    android:textColor="?attr/colorOnPrimaryContainer"
+    app:chipBackgroundColor="?attr/colorPrimaryContainer"
     app:chipCornerRadius="14dp"
-    app:chipMinHeight="28dp" />
+    app:chipMinHeight="@dimen/min_touch_target"
+    app:ensureMinTouchTargetSize="true" />

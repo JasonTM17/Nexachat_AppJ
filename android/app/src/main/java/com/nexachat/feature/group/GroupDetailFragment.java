@@ -17,6 +17,9 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -31,6 +34,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.ui.GroupDetailListRules;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
 import com.nexachat.data.GroupMember;
@@ -110,6 +114,9 @@ public final class GroupDetailFragment extends Fragment {
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
         binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
         binding.leaveGroupButton.setOnClickListener(v -> viewModel.requestLeave());
+        binding.errorState.setOnRetry(viewModel::loadMembers);
+        binding.emptyState.setMessage(getString(R.string.group_members_empty));
+        binding.emptyState.setIcon(R.drawable.ic_person_outline);
         binding.groupAvatar.setOnClickListener(v -> {
             if (viewModel.getUiState().getValue().isIAmAdmin()) {
                 avatarPicker.launch("image/*");
@@ -166,8 +173,20 @@ public final class GroupDetailFragment extends Fragment {
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());
         binding.leaveGroupButton.setEnabled(!state.isBusy());
 
+        boolean showLoadError = GroupDetailListRules.showLoadError(
+                state.isLoading(), state.getMembers().isEmpty(), state.getError() != null);
+        boolean showEmpty = !state.isLoading() && !showLoadError && state.getMembers().isEmpty();
+        binding.detailColumn.setVisibility(showLoadError || showEmpty ? View.GONE : View.VISIBLE);
+        binding.errorState.setVisibility(showLoadError ? View.VISIBLE : View.GONE);
+        binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
+        if (showLoadError) {
+            ApiError loadError = state.getError();
+            binding.errorState.setMessage(getString(
+                    loadError == null ? R.string.error_generic : GroupErrorText.resource(loadError)));
+        }
+
         ApiError error = state.getError();
-        if (error != null && !Objects.equals(error, lastSnackbarError)) {
+        if (error != null && !showLoadError && !Objects.equals(error, lastSnackbarError)) {
             lastSnackbarError = error;
             Snackbar.make(binding.getRoot(), getString(GroupErrorText.resource(error)), Snackbar.LENGTH_SHORT)
                     .addCallback(new Snackbar.Callback() {
@@ -296,6 +315,13 @@ public final class GroupDetailFragment extends Fragment {
 
         BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
         dialog.setContentView(sheet.getRoot());
+        ViewCompat.setOnApplyWindowInsetsListener(sheet.getRoot(), (view, windowInsets) -> {
+            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            int bottom = Math.max(bars.bottom, ime.bottom);
+            view.setPadding(view.getPaddingLeft(), view.getPaddingTop(), view.getPaddingRight(), bottom);
+            return windowInsets;
+        });
         dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
         dialog.getBehavior().setSkipCollapsed(true);
         dialog.setOnDismissListener(d -> {

@@ -31,7 +31,8 @@ public final class QuantityStringsPluralsTest {
             "poll_voter_count",
             "poll_option_count",
             "unread_banner_format",
-            "ask_rate_limited_retry"
+            "ask_rate_limited_retry",
+            "inbox_unread_messages"
     );
 
     private File resDir;

@@ -39,7 +39,7 @@
     <string name="inbox_empty">No conversations yet</string>
     <string name="inbox_empty_unread">No unread chats</string>
     <string name="inbox_empty_groups">No group chats</string>
-    <string name="inbox_search_hint">Search chats</string>
+    <string name="inbox_search_hint">Find people</string>
     <string name="inbox_active_now_header">ACTIVE NOW</string>
     <string name="inbox_view_all">View all</string>
     <string name="inbox_filter_all">All</string>
@@ -114,6 +114,7 @@
     <string name="action_remove_contact">Remove contact</string>
     <string name="action_message">Message</string>
     <string name="action_save">Save</string>
+    <string name="action_save_changes">Save changes</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_close">Close</string>
     <string name="action_logout">Sign out</string>
@@ -187,6 +188,7 @@
     <string name="group_create_title">New group</string>
     <string name="group_name_label">Group name</string>
     <string name="group_detail_title">Group info</string>
+    <string name="group_members_empty">No members to show</string>
     <string name="group_role_admin">Admin</string>
     <string name="group_member_self">%1$s (you)</string>
     <string name="group_remove_member_confirm">Remove %1$s from this group?</string>
@@ -496,6 +498,10 @@
     <string name="media_save_failed">Could not save file</string>
 
     <plurals name="chat_unread_divider">
+        <item quantity="one">%d unread message</item>
+        <item quantity="other">%d unread messages</item>
+    </plurals>
+    <plurals name="inbox_unread_messages">
         <item quantity="one">%d unread message</item>
         <item quantity="other">%d unread messages</item>
     </plurals>

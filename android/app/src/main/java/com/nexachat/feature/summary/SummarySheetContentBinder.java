@@ -12,9 +12,9 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import com.google.android.material.chip.Chip;
 import com.nexachat.R;
 import com.nexachat.feature.summary.adapter.SummaryCitationAdapter;
+import com.nexachat.summary.SummaryParticipant;
 import com.nexachat.feature.summary.adapter.SummaryCitationItem;
 import com.nexachat.feature.summary.adapter.SummaryCitationLabels;
 import com.nexachat.summary.SummaryActionItem;
@@ -70,25 +70,13 @@ public final class SummarySheetContentBinder {
                 R.drawable.ic_format_list_bulleted, summary.getKeyPoints());
         appendItems(container, inflater, R.string.summary_section_decisions,
                 R.drawable.ic_check_circle, summary.getDecisions());
-        appendActionItems(container, inflater, summary.getActionItems());
+        appendActionItems(container, inflater, summary.getActionItems(), summary.getParticipants());
         appendItems(container, inflater, R.string.summary_section_questions,
                 R.drawable.ic_help_outline, summary.getQuestions());
 
         if (!summary.getTopics().isEmpty()) {
             addSectionHeader(container, R.string.summary_section_topics, 0);
-            LinearLayout topicRow = new LinearLayout(context);
-            topicRow.setOrientation(LinearLayout.HORIZONTAL);
-            topicRow.setLayoutParams(new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            for (String topic : summary.getTopics()) {
-                Chip chip = new Chip(context);
-                chip.setText(context.getString(R.string.a11y_summary_topic_chip, topic));
-                chip.setCheckable(false);
-                chip.setClickable(false);
-                topicRow.addView(chip);
-            }
-            container.addView(topicRow);
+            container.addView(SummaryTopicsSection.build(context, summary.getTopics()));
         }
     }
 
@@ -116,7 +104,8 @@ public final class SummarySheetContentBinder {
     private void appendActionItems(
             LinearLayout container,
             LayoutInflater inflater,
-            List<SummaryActionItem> items
+            List<SummaryActionItem> items,
+            List<SummaryParticipant> participants
     ) {
         if (items == null || items.isEmpty()) {
             return;
@@ -152,7 +141,7 @@ public final class SummarySheetContentBinder {
                         ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                         : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
             });
-            String tag = buildActionTag(action);
+            String tag = SummaryOwnerLabel.actionMeta(action, participants);
             if (!TextUtils.isEmpty(tag)) {
                 meta.setText(tag);
                 meta.setVisibility(View.VISIBLE);
@@ -161,21 +150,6 @@ public final class SummarySheetContentBinder {
             bindCitations(citations, action.getMessageIds());
             container.addView(row);
         }
-    }
-
-    private static String buildActionTag(SummaryActionItem action) {
-        StringBuilder builder = new StringBuilder();
-        if (!TextUtils.isEmpty(action.getOwnerUserId())) {
-            String owner = action.getOwnerUserId().trim();
-            builder.append('@').append(owner.substring(0, Math.min(6, owner.length())));
-        }
-        if (!TextUtils.isEmpty(action.getDueHint())) {
-            if (builder.length() > 0) {
-                builder.append(" · ");
-            }
-            builder.append(action.getDueHint().trim());
-        }
-        return builder.toString();
     }
 
     private void addSectionHeader(LinearLayout container, int titleRes, int iconRes) {

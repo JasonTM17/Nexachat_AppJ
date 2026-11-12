@@ -39,7 +39,7 @@
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
     <string name="inbox_empty_unread">Không có tin chưa đọc</string>
     <string name="inbox_empty_groups">Chưa có nhóm nào</string>
-    <string name="inbox_search_hint">Tìm kiếm</string>
+    <string name="inbox_search_hint">Tìm người</string>
     <string name="inbox_active_now_header">ĐANG HOẠT ĐỘNG</string>
     <string name="inbox_view_all">Xem tất cả</string>
     <string name="inbox_filter_all">Tất cả</string>
@@ -102,18 +102,19 @@
     <!-- Contacts & user search -->
     <string name="contacts_title">Danh bạ</string>
     <string name="contacts_empty">Chưa có liên hệ nào</string>
-    <string name="search_title">Tìm kiếm</string>
+    <string name="search_title">Tìm người</string>
     <string name="search_label">SĐT hoặc tên</string>
     <string name="search_no_results">Không tìm thấy người dùng</string>
     <string name="add_by_phone_title">Thêm theo SĐT</string>
     <string name="contact_added">Đã thêm vào danh bạ</string>
     <string name="contact_alias_label">Biệt danh</string>
-    <string name="action_search">Tìm kiếm</string>
+    <string name="action_search">Tìm người</string>
     <string name="action_add_contact">Thêm liên hệ</string>
     <string name="action_add">Thêm</string>
     <string name="action_remove_contact">Xóa liên hệ</string>
     <string name="action_message">Nhắn tin</string>
     <string name="action_save">Lưu</string>
+    <string name="action_save_changes">Lưu thay đổi</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_close">Đóng</string>
     <string name="action_logout">Đăng xuất</string>
@@ -185,6 +186,7 @@
     <string name="group_create_title">Nhóm mới</string>
     <string name="group_name_label">Tên nhóm</string>
     <string name="group_detail_title">Thông tin nhóm</string>
+    <string name="group_members_empty">Không có thành viên</string>
     <string name="group_role_admin">Quản trị viên</string>
     <string name="group_member_self">%1$s (bạn)</string>
     <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm này?</string>
@@ -242,10 +244,10 @@
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Tìm trong trò chuyện…</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
-    <string name="search_in_chat_error">Không tìm kiếm được. Hãy thử lại.</string>
+    <string name="search_in_chat_error">Không Tìm người được. Hãy thử lại.</string>
     <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
     <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
-    <string name="cd_clear_search">Xóa tìm kiếm</string>
+    <string name="cd_clear_search">Xóa Tìm người</string>
     <string name="cd_call">Gọi thoại</string>
 
     <!-- Forward Picker -->
@@ -491,6 +493,9 @@
     <string name="media_save_failed">Không thể lưu tệp</string>
 
     <plurals name="chat_unread_divider">
+        <item quantity="other">%d tin nhắn chưa đọc</item>
+    </plurals>
+    <plurals name="inbox_unread_messages">
         <item quantity="other">%d tin nhắn chưa đọc</item>
     </plurals>
     <!-- System events (group membership, title) -->
