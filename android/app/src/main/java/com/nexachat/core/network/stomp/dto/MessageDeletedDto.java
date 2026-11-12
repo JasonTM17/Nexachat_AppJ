@@ -7,6 +7,10 @@ import java.util.Objects;
 public final class MessageDeletedDto {
     @Nullable private final String messageId;
     @Nullable private final String deletedAt;
+    @Nullable private Long changeVersion;
+    @Nullable private Long generation;
+    @Nullable public Long getChangeVersion() { return changeVersion; }
+    @Nullable public Long getGeneration() { return generation; }
 
     public MessageDeletedDto() {
         this(null, null);
@@ -31,11 +35,13 @@ public final class MessageDeletedDto {
             return false;
         }
         return Objects.equals(messageId, that.messageId)
-                && Objects.equals(deletedAt, that.deletedAt);
+                && Objects.equals(deletedAt, that.deletedAt)
+                && Objects.equals(changeVersion, that.changeVersion)
+                && Objects.equals(generation, that.generation);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(messageId, deletedAt);
+        return Objects.hash(messageId, deletedAt, changeVersion, generation);
     }
 }

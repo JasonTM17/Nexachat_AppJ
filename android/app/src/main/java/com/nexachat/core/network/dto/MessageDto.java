@@ -32,6 +32,11 @@ public final class MessageDto {
     @Nullable private final String deletedAt;
     @Nullable private final List<MessageMention> mentions;
     private final boolean mentionAll;
+    @Nullable private Long changeVersion;
+    @Nullable private Long generation;
+
+    @Nullable public Long getChangeVersion() { return changeVersion; }
+    @Nullable public Long getGeneration() { return generation; }
 
     public MessageDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null,
@@ -185,34 +190,40 @@ public final class MessageDto {
         return type != null ? type : TYPE_TEXT;
     }
 
+    private MessageDto copyVersion(MessageDto copy) {
+        copy.changeVersion = changeVersion;
+        copy.generation = generation;
+        return copy;
+    }
+
     public MessageDto withContent(String content) {
-        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+        return copyVersion(new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, mentions, mentionAll);
+                createdAt, editedAt, deletedAt, mentions, mentionAll));
     }
 
     public MessageDto withContent(String content, String editedAt) {
-        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+        return copyVersion(new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, mentions, mentionAll);
+                createdAt, editedAt, deletedAt, mentions, mentionAll));
     }
 
     public MessageDto withReactions(java.util.List<ReactionSummaryDto> reactions) {
-        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+        return copyVersion(new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, mentions, mentionAll);
+                createdAt, editedAt, deletedAt, mentions, mentionAll));
     }
 
     public MessageDto withMentionMetadata(List<MessageMention> nextMentions, boolean nextMentionAll) {
-        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+        return copyVersion(new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, nextMentions, nextMentionAll);
+                createdAt, editedAt, deletedAt, nextMentions, nextMentionAll));
     }
 
     public MessageDto withDeletedAt(String deletedAt, java.util.List<ReactionSummaryDto> reactions) {
-        return new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
+        return copyVersion(new MessageDto(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, List.of(), false);
+                createdAt, editedAt, deletedAt, List.of(), false));
     }
 
     @Override
@@ -237,13 +248,15 @@ public final class MessageDto {
                 && Objects.equals(editedAt, that.editedAt)
                 && Objects.equals(deletedAt, that.deletedAt)
                 && Objects.equals(mentions, that.mentions)
-                && mentionAll == that.mentionAll;
+                && mentionAll == that.mentionAll
+                && Objects.equals(changeVersion, that.changeVersion)
+                && Objects.equals(generation, that.generation);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(id, seq, conversationId, senderId, senderDisplayName, sender,
                 clientMessageId, type, content, replyTo, replyToId, reactions, attachments,
-                createdAt, editedAt, deletedAt, mentions, mentionAll);
+                createdAt, editedAt, deletedAt, mentions, mentionAll, changeVersion, generation);
     }
 }

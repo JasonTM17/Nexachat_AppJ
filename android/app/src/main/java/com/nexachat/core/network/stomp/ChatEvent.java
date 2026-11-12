@@ -67,7 +67,16 @@ public sealed interface ChatEvent
     record MessageDeleted(
             @Nullable String conversationId,
             @Nullable String messageId,
-            @Nullable String deletedAt) implements ChatEvent {
+            @Nullable String deletedAt,
+            @Nullable Long changeVersion,
+            @Nullable Long generation) implements ChatEvent {
+
+        public MessageDeleted(String conversationId, String messageId, String deletedAt) {
+            this(conversationId, messageId, deletedAt, null, null);
+        }
+
+        @Nullable public Long getChangeVersion() { return changeVersion; }
+        @Nullable public Long getGeneration() { return generation; }
 
         @Nullable
         public String getMessageId() {

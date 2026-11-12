@@ -804,7 +804,9 @@ public final class RealtimeSession {
                 return new ChatEvent.MessageDeleted(
                         conversationId,
                         update == null ? null : update.getMessageId(),
-                        update == null ? null : update.getDeletedAt());
+                        update == null ? null : update.getDeletedAt(),
+                        update == null ? null : update.getChangeVersion(),
+                        update == null ? null : update.getGeneration());
             }
             case EVENT_USER_ONLINE:
             case EVENT_USER_OFFLINE: {

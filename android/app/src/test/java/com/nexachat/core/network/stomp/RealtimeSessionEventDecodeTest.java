@@ -30,6 +30,25 @@ public final class RealtimeSessionEventDecodeTest {
     private final FlowableProcessor<StompFrame> frames = PublishProcessor.<StompFrame>create().toSerialized();
 
     @Test
+    public void lifecycleRevisionsSurviveTheActualStompDecoder() {
+        RealtimeSession session = session(true, null);
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
+        frames.onNext(message("{\"eventType\":\"MESSAGE_UPDATED\",\"conversationId\":\"c-1\","
+                + "\"payload\":{\"id\":\"m-1\",\"seq\":1,\"content\":\"new\","
+                + "\"changeVersion\":9007199254740993,\"generation\":2}}"));
+        frames.onNext(message("{\"eventType\":\"MESSAGE_DELETED\",\"conversationId\":\"c-1\","
+                + "\"payload\":{\"messageId\":\"m-1\",\"deletedAt\":\"2026-11-12T00:00:00Z\","
+                + "\"changeVersion\":9007199254740994,\"generation\":2}}"));
+        observer.awaitCount(2).assertNoErrors();
+        ChatEvent.MessageUpdated updated = (ChatEvent.MessageUpdated) observer.values().get(0);
+        ChatEvent.MessageDeleted deleted = (ChatEvent.MessageDeleted) observer.values().get(1);
+        assertEquals(Long.valueOf(9_007_199_254_740_993L), updated.getMessage().getChangeVersion());
+        assertEquals(Long.valueOf(2), updated.getMessage().getGeneration());
+        assertEquals(Long.valueOf(9_007_199_254_740_994L), deleted.getChangeVersion());
+        assertEquals(Long.valueOf(2), deleted.getGeneration());
+    }
+
+    @Test
     public void messageCreatedDecodesFullPayload() {
         RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
