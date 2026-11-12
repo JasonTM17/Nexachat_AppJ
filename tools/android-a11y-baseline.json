@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "total_findings": 27,
+  "findings": [
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/activity_call.xml",
+      "line": 52,
+      "element_id": "@+id/call_peer_name",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/activity_incoming_call.xml",
+      "line": 52,
+      "element_id": "@+id/incoming_peer_name",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A1",
+      "severity": "ERROR",
+      "file": "layout/include_chat_composer_bar.xml",
+      "line": 57,
+      "element_id": "@+id/recordingDot",
+      "tag": "ImageView",
+      "message": "ImageView without contentDescription and importantForAccessibility is not \"no\""
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/include_chat_pinned_banner.xml",
+      "line": 21,
+      "element_id": "@+id/pinnedText",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/include_chat_reply_edit_banner.xml",
+      "line": 21,
+      "element_id": "@+id/replyPreview",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/include_message_reply_quote.xml",
+      "line": 14,
+      "element_id": "@+id/replySnippet",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A1",
+      "severity": "ERROR",
+      "file": "layout/include_summary_error.xml",
+      "line": 10,
+      "element_id": "@+id/summaryErrorIcon",
+      "tag": "ImageView",
+      "message": "ImageView without contentDescription and importantForAccessibility is not \"no\""
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_active_now_peer.xml",
+      "line": 39,
+      "element_id": "@+id/activePeerName",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_archive_media.xml",
+      "line": 59,
+      "element_id": "@+id/archiveMediaTitle",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_archive_media.xml",
+      "line": 81,
+      "element_id": "@+id/archiveMediaDetails",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_archive_row.xml",
+      "line": 46,
+      "element_id": "@+id/archiveRowTitle",
+      "tag": "TextView",
+      "message": "maxLines=3 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_archive_row.xml",
+      "line": 56,
+      "element_id": "@+id/archiveRowDetails",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_contact.xml",
+      "line": 28,
+      "element_id": "@+id/name",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_forward_target.xml",
+      "line": 22,
+      "element_id": "@+id/title",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_group_member.xml",
+      "line": 22,
+      "element_id": "@+id/memberName",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_inbox_conversation.xml",
+      "line": 21,
+      "element_id": "@+id/title",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_inbox_conversation.xml",
+      "line": 56,
+      "element_id": "@+id/preview",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_poll.xml",
+      "line": 26,
+      "element_id": "@+id/pollQuestion",
+      "tag": "TextView",
+      "message": "maxLines=4 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A5",
+      "severity": "WARN",
+      "file": "layout/item_poll_option_input.xml",
+      "line": 16,
+      "element_id": "@+id/optionInput",
+      "tag": "com.google.android.material.textfield.TextInputEditText",
+      "message": "EditText missing hint, labelFor, autofillHints, or TextInputLayout parent label"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_reminder.xml",
+      "line": 31,
+      "element_id": "@+id/reminderTitle",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_reminder.xml",
+      "line": 48,
+      "element_id": "@+id/reminderDetails",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_unread_divider.xml",
+      "line": 22,
+      "element_id": "@+id/unreadDividerLabel",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_user_search.xml",
+      "line": 30,
+      "element_id": "@+id/name",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/item_user_search.xml",
+      "line": 40,
+      "element_id": "@+id/subtitle",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/view_settings_row.xml",
+      "line": 35,
+      "element_id": "@+id/rowTitle",
+      "tag": "TextView",
+      "message": "maxLines=2 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/view_settings_row.xml",
+      "line": 44,
+      "element_id": "@+id/rowSubtitle",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout-land/activity_call.xml",
+      "line": 52,
+      "element_id": "@+id/call_peer_name",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    }
+  ]
+}
