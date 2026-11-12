@@ -61,7 +61,7 @@ class TokenServiceTest {
         lenient().when(responseFactory.create(any(), anyString())).thenAnswer(invocation -> {
             User user = invocation.getArgument(0);
             String refresh = invocation.getArgument(1);
-            return new AuthResponse(UserResponse.from(user), "access", 900, refresh, 86_400, true);
+            return new AuthResponse(UserResponse.from(user), "access", 900, refresh, 86_400, true, null);
         });
     }
 

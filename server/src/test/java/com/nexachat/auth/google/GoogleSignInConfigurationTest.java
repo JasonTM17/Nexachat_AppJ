@@ -27,14 +27,14 @@ class GoogleSignInConfigurationTest {
     @Test
     void disabledFeatureDoesNotRequireAClientId() {
         assertThatCode(() -> GoogleSignInConfiguration.decoderFor(
-                new GoogleSignInProperties(false, "", null, 300, java.util.List.of())))
+                new GoogleSignInProperties(false, "", null, 300, java.util.List.of(), false)))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void enabledFeatureWithoutAClientIdFailsStartup() {
         assertThatThrownBy(() -> GoogleSignInConfiguration.decoderFor(
-                new GoogleSignInProperties(true, " ", "https://example.invalid/certs", 300, java.util.List.of())))
+                new GoogleSignInProperties(true, " ", "https://example.invalid/certs", 300, java.util.List.of(), false)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("web-client-id");
     }
@@ -43,7 +43,7 @@ class GoogleSignInConfigurationTest {
     void enabledFeatureWithoutTrustedAndroidClientIdsFailsStartup() {
         assertThatThrownBy(() -> GoogleSignInConfiguration.decoderFor(
                 new GoogleSignInProperties(true, GoogleTestKeys.AUDIENCE,
-                        "https://example.invalid/certs", 300, java.util.List.of())))
+                        "https://example.invalid/certs", 300, java.util.List.of(), false)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("android-client-ids");
     }
@@ -53,7 +53,7 @@ class GoogleSignInConfigurationTest {
         JwtDecoder decoder = GoogleSignInConfiguration.decoderFor(
                 new GoogleSignInProperties(true, GoogleTestKeys.AUDIENCE,
                         "http://127.0.0.1:1/certs", 300,
-                        java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID)));
+                        java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID), false));
 
         assertThat(decoder).isNotNull();
     }
@@ -126,7 +126,7 @@ class GoogleSignInConfigurationTest {
 
     @Test
     void defaultsApplyWhenPropertiesAreOmitted() {
-        GoogleSignInProperties properties = new GoogleSignInProperties(false, "", "", 0, java.util.List.of());
+        GoogleSignInProperties properties = new GoogleSignInProperties(false, "", "", 0, java.util.List.of(), false);
 
         assertThat(properties.jwksUri()).isEqualTo("https://www.googleapis.com/oauth2/v3/certs");
         assertThat(properties.nonceTtlSeconds()).isEqualTo(300);

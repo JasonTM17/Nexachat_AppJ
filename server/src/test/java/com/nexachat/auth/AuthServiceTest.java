@@ -242,7 +242,7 @@ class AuthServiceTest {
     void refresh_success_returnsRotatedTokenAndNewAccess() {
         User user = userWithId("+84912345678", "stored-hash", "Minh");
         AuthResponse original = new AuthResponse(UserResponse.from(user), "access-jwt", 900,
-                "rt-2", 86_400, true);
+                "rt-2", 86_400, true, null);
         UUID predecessorId = UUID.randomUUID();
         when(tokenService.rotate("rt-1", null, "JUnit"))
                 .thenReturn(new TokenService.RotationResult(user.getId(), predecessorId, original));
@@ -326,6 +326,33 @@ class AuthServiceTest {
         verify(tokenService).revokeAllForUserExcept(user.getId(), "rt-current");
         verify(tokenService, never()).revokeAllForUser(any());
         verify(accessTokenRevocationService).revoke(user.getId());
+    }
+
+    @Test
+    void changePassword_withoutStoredHash_returnsNoPasswordSet() {
+        User user = userWithId("+84912345678", null, "Google Only");
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "passwordHash", null);
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.changePassword(user.getId(), new ChangePasswordRequest("old", "newpass123", null)));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NO_PASSWORD_SET);
+        verify(passwordEncoder, never()).matches(anyString(), anyString());
+    }
+
+    @Test
+    void login_withoutPasswordHash_returnsInvalidCredentials() {
+        User user = userWithId("+84912345678", null, "Google Only");
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "passwordHash", null);
+        when(phoneService.toE164("+84912345678")).thenReturn("+84912345678");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("+84912345678", "anypass9"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
     }
 
     @Test
