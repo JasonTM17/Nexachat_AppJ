@@ -29,7 +29,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_STORAGE_S3_API_CALL_ATTEMPT_TIMEOUT` | No (one S3 attempt; must not exceed the call deadline) | `30s` | `30s` |
 | `NEXACHAT_STORAGE_S3_CONNECTION_TIMEOUT` | No (S3 TCP connect deadline) | `5s` | `5s` |
 | `NEXACHAT_STORAGE_S3_SOCKET_TIMEOUT` | No (S3 socket read-inactivity deadline) | `30s` | `30s` |
-| `NEXACHAT_MULTIPART_TEMP_DIR` | No (multipart scratch directory; empty keeps the servlet-container temp directory) | Empty | `/tmp/nexachat-multipart` |
+| `NEXACHAT_MULTIPART_TEMP_DIR` | No (multipart scratch directory; empty keeps the servlet-container temp directory) | Empty | `/app/data/multipart` |
 | `MANAGEMENT_SERVER_PORT` | No (opt-in loopback isolation; shares API port 8080 by default) | Empty | `8081` |
 | `MANAGEMENT_SERVER_ADDRESS` | No (bind address for management server) | Empty | `127.0.0.1` |
 | `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
