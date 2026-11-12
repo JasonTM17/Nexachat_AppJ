@@ -414,11 +414,12 @@ check_otp_request() {
 }
 
 check_websocket_handshake() {
-    local ws_url status upgrade accept rc ws_key
+    local ws_url probe_url status upgrade accept rc ws_key
     case "$BASE_URL" in
         https://*) ws_url="wss://${BASE_URL#https://}/ws" ;;
         *) ws_url="ws://${BASE_URL#http://}/ws" ;;
     esac
+    probe_url="${BASE_URL%/}/ws"
     # A fresh 16-byte RFC 6455 nonce; no literal key material in the script.
     if command -v openssl >/dev/null 2>&1; then
         ws_key="$(openssl rand -base64 16 | tr -d '\r\n')"
@@ -437,7 +438,7 @@ check_websocket_handshake() {
         -H "Sec-WebSocket-Version: 13" \
         -H "Sec-WebSocket-Key: $ws_key" \
         -H "Sec-WebSocket-Protocol: v12.stomp" \
-        "$ws_url" 2>"$CURL_ERR" || rc=$?
+        "$probe_url" 2>"$CURL_ERR" || rc=$?
     status="$(head -n 1 "$HDR" 2>/dev/null | tr -d '\r')"
     upgrade="$(header_value "$HDR" "Upgrade")"
     accept="$(header_value "$HDR" "Sec-WebSocket-Accept")"

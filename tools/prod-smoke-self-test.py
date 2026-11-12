@@ -19,6 +19,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -411,6 +412,34 @@ def run_case(name: str, mode: str, extra_args: list[str], expect_success: bool,
     return False
 
 
+def verify_websocket_probe_uses_http_scheme() -> bool:
+    """curl 8.11+ treats ws(s):// as native WebSocket; manual Upgrade must use http(s)."""
+    text = SMOKE_SCRIPT.read_text(encoding="utf-8")
+    match = re.search(
+        r"check_websocket_handshake\(\) \{(.*?)^\}",
+        text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if match is None:
+        print("FAIL  self-test: check_websocket_handshake not found in prod-smoke.sh")
+        return False
+    block = match.group(1)
+    if '"$probe_url"' not in block:
+        print(
+            "FAIL  self-test: WebSocket upgrade probe must curl the http(s) /ws URL "
+            "(probe_url), not ws(s)://"
+        )
+        return False
+    curl_block = block[block.find("curl") :]
+    if re.search(r'"\$ws_url"\s*2>"\$CURL_ERR"', curl_block):
+        print(
+            "FAIL  self-test: WebSocket curl target must not be ws(s):// "
+            "(incompatible with curl 8.11+ manual handshake headers)"
+        )
+        return False
+    return True
+
+
 def main() -> int:
     global BASH_BIN
     if not SMOKE_SCRIPT.is_file():
@@ -419,6 +448,8 @@ def main() -> int:
     BASH_BIN = find_bash()
     if BASH_BIN is None:
         print("FAIL  self-test: a host bash (Git Bash on Windows, not WSL) is required")
+        return 1
+    if not verify_websocket_probe_uses_http_scheme():
         return 1
 
     failures = 0
