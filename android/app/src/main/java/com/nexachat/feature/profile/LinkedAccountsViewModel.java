@@ -42,7 +42,8 @@ public final class LinkedAccountsViewModel extends ViewModel {
                                    GoogleSignInFlow googleSignInFlow) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.googleSignInFlow = Objects.requireNonNull(googleSignInFlow, "googleSignInFlow");
-        this.currentState = new UiState(googleSignInFlow.isConfigured(), false, null, false, null);
+        this.currentState = new UiState(
+                googleSignInFlow.isConfigured(), false, null, false, null, null);
         this.mutableUiState = new MutableLiveData<>(currentState);
         if (googleSignInFlow.isConfigured()) {
             load();
@@ -85,16 +86,32 @@ public final class LinkedAccountsViewModel extends ViewModel {
         if (currentState().isWorking() || password == null || password.isEmpty()) {
             return;
         }
-        update(state -> state.withLoading(true).withError(null));
+        requestUnlink(password);
+    }
+
+    /** Google-only accounts: server rejects unlink with {@code LAST_SIGN_IN_METHOD}. */
+    public void unlinkWithoutPassword() {
+        if (currentState().isWorking()) {
+            return;
+        }
+        requestUnlink(" ");
+    }
+
+    public void consumeError() {
+        update(state -> state.withError(null));
+    }
+
+    public void consumeInlineError() {
+        update(state -> state.withInlineError(null));
+    }
+
+    private void requestUnlink(String password) {
+        update(state -> state.withLoading(true).withError(null).withInlineError(null));
         disposables.add(authRepository.unlinkGoogle(password)
                 .subscribeOn(Schedulers.io())
                 .subscribe(this::onUnlinkResult, error -> update(state -> state
                         .withLoading(false)
                         .withError(new ApiError.Network(error.getMessage())))));
-    }
-
-    public void consumeError() {
-        update(state -> state.withError(null));
     }
 
     private void onIdentities(Result<LinkedIdentitiesResponse> result) {
@@ -125,10 +142,28 @@ public final class LinkedAccountsViewModel extends ViewModel {
 
     private void onUnlinkResult(Result<Unit> result) {
         if (result instanceof Result.Failure<?> failure) {
-            update(state -> state.withLoading(false).withError(failure.getError()));
+            ApiError error = failure.getError();
+            if (shouldShowInlineSignInError(error)) {
+                update(state -> state.withLoading(false)
+                        .withInlineError(error)
+                        .withError(null));
+                return;
+            }
+            update(state -> state.withLoading(false).withError(error).withInlineError(null));
             return;
         }
-        update(state -> state.withLoading(false).withLinked(false, null).withError(null));
+        update(state -> state.withLoading(false)
+                .withLinked(false, null)
+                .withError(null)
+                .withInlineError(null));
+    }
+
+    private static boolean shouldShowInlineSignInError(ApiError error) {
+        if (error instanceof ApiError.WrongPassword) {
+            return true;
+        }
+        return error instanceof ApiError.Unknown unknown
+                && "LAST_SIGN_IN_METHOD".equals(unknown.getCode());
     }
 
     private static boolean isFeatureDisabled(ApiError error) {
@@ -158,18 +193,21 @@ public final class LinkedAccountsViewModel extends ViewModel {
         @Nullable private final String email;
         private final boolean loading;
         @Nullable private final ApiError error;
+        @Nullable private final ApiError inlineError;
 
         public UiState() {
-            this(false, false, null, false, null);
+            this(false, false, null, false, null, null);
         }
 
         public UiState(boolean configured, boolean linked, @Nullable String email,
-                       boolean loading, @Nullable ApiError error) {
+                       boolean loading, @Nullable ApiError error,
+                       @Nullable ApiError inlineError) {
             this.configured = configured;
             this.linked = linked;
             this.email = email;
             this.loading = loading;
             this.error = error;
+            this.inlineError = inlineError;
         }
 
         public boolean isConfigured() {
@@ -198,20 +236,29 @@ public final class LinkedAccountsViewModel extends ViewModel {
             return error;
         }
 
+        @Nullable
+        public ApiError getInlineError() {
+            return inlineError;
+        }
+
         public UiState withConfigured(boolean value) {
-            return new UiState(value, linked, email, loading, error);
+            return new UiState(value, linked, email, loading, error, inlineError);
         }
 
         public UiState withLinked(boolean value, @Nullable String newEmail) {
-            return new UiState(configured, value, newEmail, loading, error);
+            return new UiState(configured, value, newEmail, loading, error, inlineError);
         }
 
         public UiState withLoading(boolean value) {
-            return new UiState(configured, linked, email, value, error);
+            return new UiState(configured, linked, email, value, error, inlineError);
         }
 
         public UiState withError(@Nullable ApiError newError) {
-            return new UiState(configured, linked, email, loading, newError);
+            return new UiState(configured, linked, email, loading, newError, inlineError);
+        }
+
+        public UiState withInlineError(@Nullable ApiError newError) {
+            return new UiState(configured, linked, email, loading, error, newError);
         }
     }
 }
