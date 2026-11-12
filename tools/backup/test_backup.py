@@ -108,7 +108,7 @@ class BackupNegativeTest(unittest.TestCase):
 
     def test_pg_dump_argv_never_embeds_password(self) -> None:
         db = {
-            "host": "127.0.0.1",
+            "host": "localhost",
             "port": "5433",
             "database": "nexachat_v12_backup_src",
             "user": "nexachat",
@@ -116,18 +116,34 @@ class BackupNegativeTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as tmp:
             dest = Path(tmp) / "dump.sql"
-            env = {"BACKUP_PG_CONTAINER": ""}
-            with mock.patch.dict(os.environ, env, clear=False):
-                os.environ.pop("BACKUP_PG_CONTAINER", None)
-                with mock.patch("subprocess.run") as run_mock:
-                    run_mock.return_value = mock.Mock(returncode=0, stdout=b"dump", stderr=b"")
-                    backup.run_pg_dump(db, dest)
+            with mock.patch.object(backup, "pg_dump_client_major", return_value=18):
+                with mock.patch.object(backup, "pg_server_major", return_value=16):
+                    with mock.patch("subprocess.run") as run_mock:
+                        run_mock.return_value = mock.Mock(returncode=0, stderr=b"")
+                        backup.run_pg_dump(db, dest)
             args, kwargs = run_mock.call_args
             cmd = args[0]
-            run_env = kwargs.get("env") or {}
-            self.assertEqual(run_env.get("PGPASSWORD"), "never-on-argv-pw")
+            env = kwargs.get("env") or {}
+            self.assertEqual(env.get("PGPASSWORD"), "never-on-argv-pw")
             for token in cmd:
                 self.assertNotIn("never-on-argv-pw", token)
+            self.assertIn("PGPASSWORD", cmd)
+
+    def test_pg_dump_fails_when_client_older_than_server(self) -> None:
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "x",
+            "user": "nexachat",
+            "password": "pw",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dump.sql"
+            with mock.patch.object(backup, "pg_dump_client_major", return_value=15):
+                with mock.patch.object(backup, "pg_server_major", return_value=16):
+                    with self.assertRaises(SystemExit) as ctx:
+                        backup.run_pg_dump(db, dest)
+            self.assertIn("older than server", str(ctx.exception))
 
 
 class BackupCaptureTest(unittest.TestCase):
@@ -152,7 +168,11 @@ class BackupCaptureTest(unittest.TestCase):
             with mock.patch.dict(os.environ, env, clear=False):
                 with mock.patch.object(backup, "active_writers", return_value=0):
                     with mock.patch.object(backup, "query_referenced_keys_psql", return_value={key}):
-                        with mock.patch.object(backup, "run_pg_dump", side_effect=lambda _db, dest: dest.write_bytes(dump)):
+                        def _fake_dump(_db: dict[str, str], dest: Path) -> dict[str, int]:
+                            dest.write_bytes(dump)
+                            return {"pg_dump_client_major": 18, "pg_server_major": 16}
+
+                        with mock.patch.object(backup, "run_pg_dump", side_effect=_fake_dump):
                             with mock.patch("subprocess.run") as run_mock:
                                 run_mock.return_value = mock.Mock(returncode=0, stdout="", stderr="")
                                 backup.run_backup("fixture", output, quiesced=True)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -103,6 +104,94 @@ def detect_partial_output(output_dir: Path) -> None:
         raise SystemExit("Partial output: manifest without complete marker (interrupted capture).")
 
 
+def docker_db_host(db: dict[str, str]) -> str:
+    if db["host"] in {"localhost", "127.0.0.1"}:
+        return os.environ.get("BACKUP_DOCKER_DB_HOST", "host.docker.internal")
+    return db["host"]
+
+
+def docker_pg_env(password: str) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PGPASSWORD"] = password
+    return env
+
+
+def build_docker_pg_tool_command(image: str, tool: str, db: dict[str, str], host: str) -> list[str]:
+    """Build docker argv for pg client tools; password is supplied via subprocess env only."""
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        "PGPASSWORD",
+        image,
+        tool,
+        "-h",
+        host,
+        "-p",
+        db["port"],
+        "-U",
+        db["user"],
+        "-d",
+        db["database"],
+    ]
+
+
+def build_pg_dump_command(db: dict[str, str], image: str | None = None) -> list[str]:
+    image = image or os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18")
+    host = docker_db_host(db)
+    return build_docker_pg_tool_command(image, "pg_dump", db, host) + [
+        "--no-owner",
+        "--no-privileges",
+    ]
+
+
+def pg_dump_client_major(image: str, env: dict[str, str]) -> int:
+    proc = subprocess.run(
+        ["docker", "run", "--rm", image, "pg_dump", "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(f"pg_dump --version failed: {proc.stderr.strip()}")
+    match = re.search(r"(\d+)\.", proc.stdout or proc.stderr)
+    if not match:
+        raise SystemExit(f"cannot parse pg_dump version from {proc.stdout!r}")
+    return int(match.group(1))
+
+
+def pg_server_major(db: dict[str, str], image: str, env: dict[str, str], host: str) -> int:
+    cmd = build_docker_pg_tool_command(image, "psql", db, host) + ["-At", "-c", "SHOW server_version_num;"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
+    if proc.returncode != 0:
+        raise SystemExit(f"server version query failed: {proc.stderr.strip()}")
+    raw = (proc.stdout or "").strip()
+    if not raw.isdigit():
+        raise SystemExit(f"unexpected server_version_num {raw!r}")
+    return int(raw) // 10000
+
+
+def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
+    image = os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18")
+    host = docker_db_host(db)
+    env = docker_pg_env(db["password"])
+    client_major = pg_dump_client_major(image, env)
+    server_major = pg_server_major(db, image, env, host)
+    if client_major < server_major:
+        raise SystemExit(
+            f"pg_dump client major {client_major} is older than server major {server_major}; "
+            f"raise BACKUP_PGDOCKER_IMAGE"
+        )
+    cmd = build_pg_dump_command(db, image)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("wb") as out:
+        proc = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, env=env, check=False)
+    if proc.returncode != 0:
+        raise SystemExit(f"pg_dump via {image} failed: {proc.stderr.decode(errors='replace')}")
+    return {"pg_dump_client_major": client_major, "pg_server_major": server_major}
+
+
 def query_referenced_keys_psql(db: dict[str, str]) -> set[str]:
     """Collect keys using only docker/psql (stdlib rehearsal path)."""
     sql = """
@@ -127,23 +216,15 @@ COPY (
             check=False,
         )
     else:
-        env = os.environ.copy()
-        env["PGPASSWORD"] = db["password"]
+        env = docker_pg_env(db["password"])
         proc = subprocess.run(
-            [
+            build_docker_pg_tool_command(
+                os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18"),
                 "psql",
-                "-h",
-                db["host"],
-                "-p",
-                db["port"],
-                "-U",
-                db["user"],
-                "-d",
-                db["database"],
-                "-At",
-                "-c",
-                sql,
-            ],
+                db,
+                docker_db_host(db),
+            )
+            + ["-At", "-c", sql],
             capture_output=True,
             text=True,
             check=False,
@@ -175,23 +256,15 @@ WHERE datname = current_database()
             check=False,
         )
     else:
-        env = os.environ.copy()
-        env["PGPASSWORD"] = db["password"]
+        env = docker_pg_env(db["password"])
         proc = subprocess.run(
-            [
+            build_docker_pg_tool_command(
+                os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18"),
                 "psql",
-                "-h",
-                db["host"],
-                "-p",
-                db["port"],
-                "-U",
-                db["user"],
-                "-d",
-                db["database"],
-                "-At",
-                "-c",
-                sql,
-            ],
+                db,
+                docker_db_host(db),
+            )
+            + ["-At", "-c", sql],
             capture_output=True,
             text=True,
             check=False,
@@ -202,85 +275,12 @@ WHERE datname = current_database()
     return int((proc.stdout or "0").strip() or "0")
 
 
-def run_pg_dump(db: dict[str, str], dest: Path) -> None:
-    image = os.environ.get("BACKUP_PGDOCKER_IMAGE", "postgres:18")
-    container = os.environ.get("BACKUP_PG_CONTAINER")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if container:
-        proc = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container,
-                "pg_dump",
-                "-U",
-                db["user"],
-                "-d",
-                db["database"],
-                "--no-owner",
-                "--no-privileges",
-            ],
-            capture_output=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            raise SystemExit(f"pg_dump failed: {proc.stderr.decode(errors='replace')}")
-        dest.write_bytes(proc.stdout)
-        return
-    env = os.environ.copy()
-    env["PGPASSWORD"] = db["password"]
-    host = db["host"]
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "-e",
-        "PGPASSWORD",
-        image,
-        "pg_dump",
-        "-h",
-        host,
-        "-p",
-        db["port"],
-        "-U",
-        db["user"],
-        "-d",
-        db["database"],
-        "--no-owner",
-        "--no-privileges",
-    ]
-    if db["host"] in {"localhost", "127.0.0.1"}:
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "--network=host",
-            "-e",
-            "PGPASSWORD",
-            image,
-            "pg_dump",
-            "-h",
-            host,
-            "-p",
-            db["port"],
-            "-U",
-            db["user"],
-            "-d",
-            db["database"],
-            "--no-owner",
-            "--no-privileges",
-        ]
-    proc = subprocess.run(cmd, capture_output=True, check=False, env=env)
-    if proc.returncode != 0:
-        raise SystemExit(f"pg_dump via {image} failed: {proc.stderr.decode(errors='replace')}")
-    dest.write_bytes(proc.stdout)
-
-
 def copy_local_object(storage_root: Path, storage_key: str, dest: Path) -> int:
     if not is_canonical_storage_key(storage_key):
         raise ValueError(f"refusing unsafe storage key {storage_key!r}")
-    source = (storage_root / storage_key).resolve()
-    if not str(source).startswith(str(storage_root)):
+    root = storage_root.resolve()
+    source = (root / storage_key).resolve()
+    if not source.is_relative_to(root):
         raise ValueError(f"traversal blocked for key {storage_key!r}")
     if not source.is_file():
         raise FileNotFoundError(storage_key)
@@ -364,7 +364,7 @@ def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, objec
         release_lock(output_dir)
         raise SystemExit(f"Referenced objects missing from storage: {missing}")
     dump_path = output_dir / DUMP_NAME
-    run_pg_dump(db, dump_path)
+    pg_versions = run_pg_dump(db, dump_path)
     payload: dict[str, object] = {
         "format_version": FORMAT_VERSION,
         "target": target,
@@ -376,6 +376,7 @@ def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, objec
             "port": db["port"],
             "dump_file": DUMP_NAME,
             "sha256": sha256_file(dump_path),
+            **pg_versions,
         },
         "objects": object_entries,
         "reconciliation": reconciliation.as_dict(),
