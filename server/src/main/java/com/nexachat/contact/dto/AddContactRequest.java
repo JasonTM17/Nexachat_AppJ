@@ -1,13 +1,16 @@
 package com.nexachat.contact.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 /**
- * POST /contacts body. {@code phone} accepts local or international format —
- * strict E.164 validation happens in {@code PhoneService.toE164}, same rule as
- * register (do not reject local formats with a regex here).
+ * POST /contacts body. Exactly one of {@code phone} or {@code email} must be
+ * supplied — XOR is enforced in {@link com.nexachat.contact.ContactController}.
+ * {@code phone} accepts local or international format (E.164 in
+ * {@code PhoneService}); {@code email} is trimmed, lowercased, and validated
+ * like recovery email ({@code EmailOtpService.normalizeEmail}).
  */
 public record AddContactRequest(
-        @NotBlank String phone
+        @Size(max = 32) String phone,
+        @Size(max = 254) String email
 ) {
 }

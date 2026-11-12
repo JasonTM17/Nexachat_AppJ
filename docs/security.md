@@ -30,6 +30,12 @@ the implementing source file.
 - Recovery addresses are trimmed and lowercased. Only the authenticated owner's
   profile includes `email` and `emailVerified`; `UserResponse` used by search and
   other-user views contains neither field.
+- Contact and discovery lookups by verified email reuse the same anti-enumeration
+  posture as phone: unknown, unverified, deleted, or self addresses yield an empty
+  `GET /users/search?email=` list; `POST /contacts` with email returns the same
+  `USER_NOT_FOUND` envelope as an unknown phone. Requests are rate-limited with the
+  existing user-search and contact-add buckets (30/min per user). Application logs
+  redact explicit `email=` fields (`observability.Redactor`).
 - Verification, account-deletion, and password-reset codes are six-digit
   `SecureRandom` values with a 10-minute lifetime. The database stores an
   HMAC-SHA256 digest bound to user id and purpose, compared in constant time;

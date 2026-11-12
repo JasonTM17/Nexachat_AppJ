@@ -101,7 +101,7 @@ class UserServiceTest {
         when(phoneService.toE164("0987776655")).thenReturn("+84987776655");
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84987776655")).thenReturn(Optional.of(found));
 
-        List<UserResponse> results = userService.search(callerId, "0987776655", null);
+        List<UserResponse> results = userService.search(callerId, "0987776655", null, null);
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).id()).isEqualTo(found.getId());
@@ -114,7 +114,7 @@ class UserServiceTest {
         when(phoneService.toE164(anyString())).thenReturn("+84900000001");
         when(userRepository.findByPhoneAndDeletedAtIsNull("+84900000001")).thenReturn(Optional.empty());
 
-        List<UserResponse> results = userService.search(UUID.randomUUID(), "0900000001", null);
+        List<UserResponse> results = userService.search(UUID.randomUUID(), "0900000001", null, null);
 
         assertThat(results).isEmpty();
     }
@@ -124,7 +124,7 @@ class UserServiceTest {
         when(phoneService.toE164(anyString())).thenThrow(new IllegalArgumentException("bad"));
 
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> userService.search(UUID.randomUUID(), "not-a-phone", null));
+                () -> userService.search(UUID.randomUUID(), "not-a-phone", null, null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
@@ -140,7 +140,7 @@ class UserServiceTest {
         when(contactRepository.findContactUserIdsAmong(eq(callerId), any()))
                 .thenReturn(List.of());
 
-        List<UserResponse> results = userService.search(callerId, null, " Lan ");
+        List<UserResponse> results = userService.search(callerId, null, null, " Lan ");
 
         assertThat(results).hasSize(2);
         assertThat(results).extracting(UserResponse::phone).containsOnlyNulls();
@@ -160,7 +160,7 @@ class UserServiceTest {
         when(contactRepository.findContactUserIdsAmong(eq(callerId), any()))
                 .thenReturn(List.of(contact.getId()));
 
-        List<UserResponse> results = userService.search(callerId, null, "Lan");
+        List<UserResponse> results = userService.search(callerId, null, null, "Lan");
 
         assertThat(results).hasSize(2);
         assertThat(results.get(0).id()).isEqualTo(contact.getId());
@@ -175,7 +175,7 @@ class UserServiceTest {
         when(userRepository.searchByDisplayNamePrefix(anyString(), eq(callerId), any(Pageable.class)))
                 .thenReturn(List.of());
 
-        userService.search(callerId, null, "10%_off");
+        userService.search(callerId, null, null, "10%_off");
 
         // % and _ reach the query as escaped literals, not LIKE wildcards.
         verify(userRepository).searchByDisplayNamePrefix(
@@ -185,7 +185,7 @@ class UserServiceTest {
     @Test
     void search_bothParams_throwsValidationFailed() {
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> userService.search(UUID.randomUUID(), "+84912345678", "Lan"));
+                () -> userService.search(UUID.randomUUID(), "+84912345678", null, "Lan"));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
@@ -194,9 +194,52 @@ class UserServiceTest {
     @Test
     void search_neitherParam_throwsValidationFailed() {
         ApiException ex = catchThrowableOfType(ApiException.class,
-                () -> userService.search(UUID.randomUUID(), null, "  "));
+                () -> userService.search(UUID.randomUUID(), null, null, "  "));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(userRepository, never()).findByPhoneAndDeletedAtIsNull(anyString());
+    }
+
+    @Test
+    void search_emailExact_trimsCaseAndReturnsSingleUser() {
+        UUID callerId = UUID.randomUUID();
+        User found = userWithId("Lan");
+        found.changeEmail("verified@example.com");
+        when(userRepository.findActiveByVerifiedEmail("verified@example.com")).thenReturn(Optional.of(found));
+
+        List<UserResponse> results = userService.search(callerId, null, "  Verified@Example.com ", null);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).id()).isEqualTo(found.getId());
+    }
+
+    @Test
+    void search_emailUnknown_returnsEmptyList() {
+        when(userRepository.findActiveByVerifiedEmail("missing@example.com")).thenReturn(Optional.empty());
+
+        List<UserResponse> results = userService.search(UUID.randomUUID(), null, "missing@example.com", null);
+
+        assertThat(results).isEmpty();
+    }
+
+    @Test
+    void search_emailSelf_returnsEmptyList() {
+        UUID callerId = UUID.randomUUID();
+        User self = userWithId("Me");
+        ReflectionTestUtils.setField(self, "id", callerId);
+        self.changeEmail("me@example.com");
+        when(userRepository.findActiveByVerifiedEmail("me@example.com")).thenReturn(Optional.of(self));
+
+        List<UserResponse> results = userService.search(callerId, null, "me@example.com", null);
+
+        assertThat(results).isEmpty();
+    }
+
+    @Test
+    void search_threeParams_throwsValidationFailed() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> userService.search(UUID.randomUUID(), "+84912345678", "x@example.com", "Lan"));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
     }
 }
