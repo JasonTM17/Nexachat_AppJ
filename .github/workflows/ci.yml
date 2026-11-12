@@ -103,6 +103,8 @@ jobs:
         run: |
           python tools/check-android-strings.py --self-test
           python tools/check-android-strings.py
+      - name: Test release R8 mapping checker
+        run: python -m unittest tools/test_check_release_r8_mapping.py
       - name: Test API contract checker
         run: python tools/check-api-contract.py --self-test
       - name: Check API contract routes
