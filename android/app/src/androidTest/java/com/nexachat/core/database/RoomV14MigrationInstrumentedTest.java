@@ -65,12 +65,13 @@ public final class RoomV14MigrationInstrumentedTest {
             try { page(db); db.setTransactionSuccessful(); }
             finally { db.endTransaction(); }
         } finally { db.close(); }
-        try (AppDatabase reopened = Room.databaseBuilder(ApplicationProvider.getApplicationContext(),
-                AppDatabase.class, "room14-fault.db").addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build()) {
+        AppDatabase reopened = Room.databaseBuilder(ApplicationProvider.getApplicationContext(),
+                AppDatabase.class, "room14-fault.db").addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build();
+        try {
             assertNotNull("committed row survives reopen", reopened.messageDao().byId("m").blockingGet());
             assertEquals("committed cursor survives reopen", 1,
                     reopened.syncCursorDao().find("A", "c").changeCursor);
-        }
+        } finally { reopened.close(); }
     }
 
     private static void page(SupportSQLiteDatabase db) {
