@@ -116,6 +116,7 @@ public class PollService {
     @Transactional
     public PollResponse create(UUID userId, UUID conversationId, CreatePollRequest request) {
         rateLimiter.checkCreate(userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         Conversation conversation = lockGroupConversation(conversationId, userId);
 
         String question = normalizeQuestion(request == null ? null : request.question());
@@ -189,6 +190,7 @@ public class PollService {
     @Transactional
     public PollResponse vote(UUID userId, UUID conversationId, UUID pollId, VoteRequest request) {
         rateLimiter.checkVote(userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
         Poll poll = lockVisiblePoll(pollId, conversationId);
 
@@ -219,6 +221,7 @@ public class PollService {
     @Transactional
     public PollResponse retractVote(UUID userId, UUID conversationId, UUID pollId) {
         rateLimiter.checkVote(userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
         Poll poll = lockVisiblePoll(pollId, conversationId);
 
@@ -244,6 +247,7 @@ public class PollService {
     @Transactional
     public PollResponse close(UUID userId, UUID conversationId, UUID pollId) {
         rateLimiter.checkManage(userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
         Poll poll = lockVisiblePoll(pollId, conversationId);
         ConversationMember member = requireMember(conversationId, userId);
