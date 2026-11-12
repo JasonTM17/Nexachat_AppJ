@@ -1,45 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <!-- Background Brand Gradient -->
-    <linearGradient id="nexaBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#4F46E5"/>
-      <stop offset="45%" stop-color="#4338CA"/>
-      <stop offset="100%" stop-color="#312E81"/>
-    </linearGradient>
-    <!-- Top Rim Highlight -->
-    <linearGradient id="rimGlow" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.25"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0"/>
-    </linearGradient>
-    <!-- Glyph Surface Gradient -->
-    <linearGradient id="glyphSurface" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#EEF2FF"/>
-    </linearGradient>
-    <!-- AI Spark Radiant Gradient -->
-    <linearGradient id="sparkRadiance" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="100%" stop-color="#0284C7"/>
-    </linearGradient>
-    <!-- Soft Ambient Shadow for Depth -->
-    <filter id="glyphShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1E1B4B" flood-opacity="0.35"/>
-    </filter>
-  </defs>
-
-  <!-- Squircle Base Canvas -->
-  <rect x="40" y="40" width="432" height="432" rx="104" fill="url(#nexaBg)"/>
-  <rect x="40" y="40" width="432" height="432" rx="104" fill="none" stroke="url(#rimGlow)" stroke-width="2.5"/>
-
-  <!-- Nexus 'N' Monogram with Ambient Depth -->
-  <g filter="url(#glyphShadow)">
-    <!-- Left Stem with Conversation Tail -->
-    <path d="M 180.40 193.00 C 180.40 182.20 187.60 173.20 198.40 173.20 C 209.20 173.20 216.40 182.20 216.40 193.00 L 216.40 270.40 C 216.40 281.20 211.00 290.20 202.00 297.40 C 193.00 304.60 184.00 313.60 171.40 322.60 C 167.80 325.12 164.20 321.52 166.00 317.20 C 169.60 304.60 176.80 293.80 178.60 281.20 C 180.40 274.00 180.40 268.60 180.40 259.60 Z" fill="url(#glyphSurface)"/>
-    <!-- Right Stem -->
-    <path d="M 295.60 193.00 C 295.60 182.20 302.80 173.20 313.60 173.20 C 324.40 173.20 331.60 182.20 331.60 193.00 L 331.60 301.00 C 331.60 311.80 324.40 320.80 313.60 320.80 C 302.80 320.80 295.60 311.80 295.60 301.00 Z" fill="url(#glyphSurface)"/>
-    <!-- Diagonal Nexus Ribbon -->
-    <path d="M 187.60 176.80 C 194.80 173.20 203.80 176.80 209.20 184.00 L 320.80 306.40 C 326.20 313.60 324.40 322.60 317.20 326.20 C 310.00 329.80 301.00 326.20 295.60 319.00 L 184.00 196.60 C 178.60 189.40 180.40 180.40 187.60 176.80 Z" fill="url(#glyphSurface)"/>
-    <!-- Central Nexus AI Spark -->
-    <path d="M 256.00 221.80 Q 256.00 248.80 229.00 248.80 Q 256.00 248.80 256.00 275.80 Q 256.00 248.80 283.00 248.80 Q 256.00 248.80 256.00 221.80 Z" fill="url(#sparkRadiance)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="NexaChat Note">
+  <rect x="40" y="40" width="432" height="432" rx="104" fill="#733F68"/>
+  <g transform="translate(40 40) scale(4)">
+    <path fill="#FFFCFF" d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/>
   </g>
 </svg>
