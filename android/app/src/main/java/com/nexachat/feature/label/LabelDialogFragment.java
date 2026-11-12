@@ -5,6 +5,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -20,7 +21,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.fragment.app.DialogFragment;
+import androidx.lifecycle.Observer;
 import androidx.fragment.app.FragmentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.button.MaterialButton;
@@ -48,6 +51,27 @@ public final class LabelDialogFragment extends DialogFragment {
     private Button modeButton;
     private Button createButton;
     private long renderedErrorVersion = -1;
+    private Observer<LabelUiState> uiStateObserver;
+    private boolean uiStateObserverRegistered;
+  @VisibleForTesting private int renderPassCountForTests;
+
+    @Override
+    public void onAttach(@NonNull Context context) {
+        super.onAttach(context);
+        if (uiStateObserver == null) {
+            uiStateObserver = this::render;
+        }
+    }
+
+    @VisibleForTesting
+    final Observer<LabelUiState> uiStateObserverForTests() {
+        return uiStateObserver;
+    }
+
+    @VisibleForTesting
+    int renderInvocationCountForTests() {
+        return renderPassCountForTests;
+    }
 
     @NonNull
     public static LabelDialogFragment create(@Nullable String conversationId) {
@@ -65,6 +89,8 @@ public final class LabelDialogFragment extends DialogFragment {
     @NonNull
     @Override
     public android.app.Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
+        detachUiStateObserver();
+        discardDialogContent();
         conversationId = getArguments() == null
                 ? null : getArguments().getString(ARG_CONVERSATION_ID);
         manageMode = conversationId == null;
@@ -145,11 +171,51 @@ public final class LabelDialogFragment extends DialogFragment {
     @Override
     public void onStart() {
         super.onStart();
+        bindUiStateObserverIfNeeded();
+    }
+
+    @Override
+    public void onDismiss(@NonNull DialogInterface dialog) {
+        releaseDialogBinding();
+        super.onDismiss(dialog);
+    }
+
+    @VisibleForTesting
+    void releaseDialogBindingForTests() {
+        releaseDialogBinding();
+    }
+
+    @VisibleForTesting
+    void bindUiStateObserverIfNeeded() {
+        if (viewModel == null) return;
         viewModel.getUiState().observe(this, this::render);
+    }
+
+    @VisibleForTesting
+    void detachUiStateObserver() {
+        if (viewModel == null || !uiStateObserverRegistered) return;
+        viewModel.getUiState().removeObserver(uiStateObserver);
+        uiStateObserverRegistered = false;
+    }
+
+    private void releaseDialogBinding() {
+        detachUiStateObserver();
+        discardDialogContent();
+    }
+
+    private void discardDialogContent() {
+        content = null;
+        rows = null;
+        status = null;
+        progress = null;
+        retryButton = null;
+        modeButton = null;
+        createButton = null;
     }
 
     private void render(@Nullable LabelUiState state) {
         if (state == null || content == null || !isAdded()) return;
+        renderPassCountForTests++;
         android.app.Dialog dialog = getDialog();
         if (dialog instanceof androidx.appcompat.app.AlertDialog alert) {
             alert.setTitle(manageMode ? R.string.label_manage_title : R.string.label_assign_title);
