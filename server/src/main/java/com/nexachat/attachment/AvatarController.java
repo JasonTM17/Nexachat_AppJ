@@ -7,6 +7,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -40,19 +41,23 @@ public class AvatarController {
     private final UserRepository userRepository;
     private final AvatarReferenceCoordinator referenceCoordinator;
     private final UploadAdmission uploadAdmission;
-    private final TransactionTemplate bindTransaction;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     public AvatarController(
             StorageService storageService,
             UserRepository userRepository,
             AvatarReferenceCoordinator referenceCoordinator,
             UploadAdmission uploadAdmission,
-            PlatformTransactionManager transactionManager) {
+            ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.storageService = storageService;
         this.userRepository = userRepository;
         this.referenceCoordinator = referenceCoordinator;
         this.uploadAdmission = uploadAdmission;
-        this.bindTransaction = new TransactionTemplate(transactionManager);
+        this.transactionManagerProvider = transactionManagerProvider;
+    }
+
+    private TransactionTemplate bindTransaction() {
+        return new TransactionTemplate(transactionManagerProvider.getObject());
     }
 
     @PostMapping("/me/avatar")
@@ -85,7 +90,7 @@ public class AvatarController {
             }
             StorageService.StoredFile stored = storageService.store(
                     "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction, () -> {
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction(), () -> {
                 // Part A order: avatar advisory before user, also when bind waits.
                 referenceCoordinator.lockForTransaction();
                 User user = userRepository.findByIdForUpdate(principal.userId())

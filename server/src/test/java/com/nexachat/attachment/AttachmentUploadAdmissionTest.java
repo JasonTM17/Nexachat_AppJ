@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -62,13 +64,22 @@ class AttachmentUploadAdmissionTest {
         admission = new UploadAdmission(2, 200);
         attachmentService = new AttachmentService(
                 attachmentRepository, memberRepository, storageService, userRepository, admission,
-                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
-                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
+                transactionManagerProvider());
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findByIdForUpdate(ownerId))
                 .thenReturn(Optional.of(user(ownerId)));
         lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<PlatformTransactionManager> transactionManagerProvider() {
+        PlatformTransactionManager transactionManager =
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
+        ObjectProvider<PlatformTransactionManager> provider = mock(ObjectProvider.class);
+        lenient().when(provider.getObject()).thenReturn(transactionManager);
+        return provider;
     }
 
     private static User user(UUID id) {
@@ -186,8 +197,7 @@ class AttachmentUploadAdmissionTest {
         UploadAdmission singleSlot = new UploadAdmission(1, 0);
         AttachmentService service = new AttachmentService(
                 attachmentRepository, memberRepository, storageService, userRepository, singleSlot,
-                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
-                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
+                transactionManagerProvider());
         when(storageService.store(anyString(), anyString(), anyString(), any(byte[].class)))
                 .thenReturn(storedFile());
 

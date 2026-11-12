@@ -16,7 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -60,12 +62,21 @@ class AttachmentServiceTest {
                 attachmentRepository, memberRepository, storageService, userRepository,
                 new UploadAdmission(UploadAdmission.DEFAULT_MAX_CONCURRENT,
                         UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS),
-                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
-                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
+                transactionManagerProvider());
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findByIdForUpdate(ownerId)).thenReturn(Optional.of(user(ownerId)));
         lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ObjectProvider<PlatformTransactionManager> transactionManagerProvider() {
+        PlatformTransactionManager transactionManager =
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
+        ObjectProvider<PlatformTransactionManager> provider = mock(ObjectProvider.class);
+        lenient().when(provider.getObject()).thenReturn(transactionManager);
+        return provider;
     }
 
     private static StorageService.StreamHandle handle(byte[] content) {

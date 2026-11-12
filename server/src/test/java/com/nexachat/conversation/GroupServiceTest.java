@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler;
@@ -94,7 +95,7 @@ class GroupServiceTest {
                 messageService, eventPublisher, storageService,
                 avatarReferenceCoordinator,
                 new UploadAdmission(16, 1000),
-                simpUserRegistry, simpleBrokerMessageHandler, transactionManager());
+                simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider());
         lenient().when(userRepository.findByIdForUpdate(adminId)).thenReturn(Optional.of(admin()));
         lenient().when(storageService.exists(anyString())).thenReturn(true);
         // Group writers now take the conversation row at entry; the unit
@@ -106,9 +107,15 @@ class GroupServiceTest {
 
     // ------------------------------------------------------------- fixtures
 
-    private org.springframework.transaction.PlatformTransactionManager transactionManager() {
-        return new org.springframework.jdbc.datasource.DataSourceTransactionManager(
-                mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<org.springframework.transaction.PlatformTransactionManager> transactionManagerProvider() {
+        org.springframework.transaction.PlatformTransactionManager transactionManager =
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
+        ObjectProvider<org.springframework.transaction.PlatformTransactionManager> provider =
+                mock(ObjectProvider.class);
+        lenient().when(provider.getObject()).thenReturn(transactionManager);
+        return provider;
     }
 
     private User userWithId(UUID id, String phone, String displayName) {
@@ -899,7 +906,7 @@ class GroupServiceTest {
         GroupService limited = new GroupService(
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService, avatarReferenceCoordinator,
-                admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManager());
+                admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider());
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

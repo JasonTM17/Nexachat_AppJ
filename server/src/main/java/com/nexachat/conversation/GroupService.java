@@ -22,6 +22,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.broker.AbstractBrokerMessageHandler;
@@ -103,7 +104,7 @@ public class GroupService {
     private final StorageService storageService;
     private final AvatarReferenceCoordinator avatarReferenceCoordinator;
     private final UploadAdmission uploadAdmission;
-    private final TransactionTemplate avatarBindTransaction;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     private final SimpUserRegistry simpUserRegistry;
     private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
 
@@ -118,7 +119,7 @@ public class GroupService {
                         UploadAdmission uploadAdmission,
                         SimpUserRegistry simpUserRegistry,
                         AbstractBrokerMessageHandler simpleBrokerMessageHandler,
-                        PlatformTransactionManager transactionManager) {
+                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
@@ -130,7 +131,11 @@ public class GroupService {
         this.uploadAdmission = uploadAdmission;
         this.simpUserRegistry = simpUserRegistry;
         this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
-        this.avatarBindTransaction = new TransactionTemplate(transactionManager);
+        this.transactionManagerProvider = transactionManagerProvider;
+    }
+
+    private TransactionTemplate avatarBindTransaction() {
+        return new TransactionTemplate(transactionManagerProvider.getObject());
     }
 
     /**
@@ -522,7 +527,7 @@ public class GroupService {
         // Bound the derived membership query's EntityManager lifecycle too:
         // NOT_SUPPORTED still has Spring synchronization, which otherwise can
         // retain its non-transactional JDBC connection until this method exits.
-        avatarBindTransaction.executeWithoutResult(status -> {
+        avatarBindTransaction().executeWithoutResult(status -> {
             requireGroup(conversationId);
             requireAdmin(requireMember(conversationId, callerId));
         });
@@ -542,7 +547,7 @@ public class GroupService {
             }
             StorageService.StoredFile stored = storageService.store(
                     "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
-            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), avatarBindTransaction, () -> {
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), avatarBindTransaction(), () -> {
                 // No attachment adoption in this route. Keep A -> U -> C,
                 // matching updateGroup and the part A SYSTEM writer order.
                 avatarReferenceCoordinator.lockForTransaction();

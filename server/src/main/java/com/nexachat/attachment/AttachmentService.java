@@ -10,6 +10,7 @@ import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -67,20 +68,24 @@ public class AttachmentService {
     private final StorageService storageService;
     private final UserRepository userRepository;
     private final UploadAdmission uploadAdmission;
-    private final TransactionTemplate bindTransaction;
+    private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
 
     public AttachmentService(MessageAttachmentRepository attachmentRepository,
                              ConversationMemberRepository memberRepository,
                              StorageService storageService,
                              UserRepository userRepository,
                              UploadAdmission uploadAdmission,
-                             PlatformTransactionManager transactionManager) {
+                             ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
         this.attachmentRepository = attachmentRepository;
         this.memberRepository = memberRepository;
         this.storageService = storageService;
         this.userRepository = userRepository;
         this.uploadAdmission = uploadAdmission;
-        this.bindTransaction = new TransactionTemplate(transactionManager);
+        this.transactionManagerProvider = transactionManagerProvider;
+    }
+
+    private TransactionTemplate bindTransaction() {
+        return new TransactionTemplate(transactionManagerProvider.getObject());
     }
 
     /**
@@ -162,7 +167,7 @@ public class AttachmentService {
             // a disguised executable dies there with MIME_NOT_ALLOWED.
             StorageService.StoredFile stored = storageService.store(
                     STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
-            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction, () -> {
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction(), () -> {
                 User owner = userRepository.findByIdForUpdate(ownerId)
                         .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
                 if (owner.getDeletedAt() != null) {
