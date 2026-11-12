@@ -172,18 +172,43 @@ def pg_server_major(db: dict[str, str], image: str, env: dict[str, str], host: s
     return int(raw) // 10000
 
 
+COPY_FROM_STDIN_RE = re.compile(r"^\s*COPY\b.*\bFROM\s+stdin\s*;\s*$", re.IGNORECASE)
+
+
+class DumpLineFilter:
+    """Rewrite pg_dump statements without touching COPY data rows.
+
+    A line-based filter is unsafe on its own: a table row can begin with the same
+    text as a GUC statement. Only strip while outside a ``COPY ... FROM stdin;``
+    block, which ends at the ``\\.`` terminator line.
+    """
+
+    def __init__(self, server_major: int) -> None:
+        self._server_major = server_major
+        self._in_copy_data = False
+
+    def feed(self, line: bytes) -> bytes | None:
+        if self._server_major >= 17:
+            return line
+        try:
+            text = line.decode("utf-8")
+        except UnicodeDecodeError:
+            return line
+        if self._in_copy_data:
+            if text.rstrip("\r\n") == "\\.":
+                self._in_copy_data = False
+            return line
+        if COPY_FROM_STDIN_RE.match(text):
+            self._in_copy_data = True
+            return line
+        if text.lstrip().startswith("SET transaction_timeout"):
+            return None
+        return line
+
+
 def filter_dump_line(line: bytes, server_major: int) -> bytes | None:
-    """Drop GUC sets that newer pg_dump emits but older servers reject on restore."""
-    if server_major >= 17:
-        return line
-    try:
-        text = line.decode("utf-8")
-    except UnicodeDecodeError:
-        return line
-    stripped = text.lstrip()
-    if stripped.startswith("SET transaction_timeout"):
-        return None
-    return line
+    """Filter one isolated statement line; complete dumps must use ``DumpLineFilter``."""
+    return DumpLineFilter(server_major).feed(line)
 
 
 def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
@@ -202,9 +227,10 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     assert proc.stdout is not None
     assert proc.stderr is not None
+    line_filter = DumpLineFilter(server_major)
     with dest.open("wb") as out:
         for line in proc.stdout:
-            filtered = filter_dump_line(line, server_major)
+            filtered = line_filter.feed(line)
             if filtered is not None:
                 out.write(filtered)
     stderr = proc.stderr.read()

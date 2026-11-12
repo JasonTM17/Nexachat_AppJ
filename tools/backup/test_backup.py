@@ -140,6 +140,42 @@ class BackupNegativeTest(unittest.TestCase):
         kept17 = backup.filter_dump_line(b"SET transaction_timeout = 0;\n", 17)
         self.assertIsNotNone(kept17)
 
+    def test_copy_data_starting_with_transaction_timeout_survives(self) -> None:
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "x",
+            "user": "nexachat",
+            "password": "pw",
+        }
+        dump_lines = [
+            b"SET transaction_timeout = 0;\n",
+            b"COPY public.messages (content) FROM stdin;\n",
+            b"SET transaction_timeout = 0;\n",
+            b"plain row\n",
+            b"\\.\n",
+            b"SET transaction_timeout = 0;\n",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "dump.sql"
+            with mock.patch.object(backup, "pg_dump_client_major", return_value=18):
+                with mock.patch.object(backup, "pg_server_major", return_value=16):
+                    with mock.patch("subprocess.Popen") as popen_mock:
+                        proc = mock.Mock()
+                        proc.stdout = iter(dump_lines)
+                        proc.stderr = io.BytesIO(b"")
+                        proc.wait = mock.Mock(return_value=0)
+                        popen_mock.return_value = proc
+                        backup.run_pg_dump(db, dest)
+            written = dest.read_bytes()
+        self.assertEqual(
+            written,
+            b"COPY public.messages (content) FROM stdin;\n"
+            b"SET transaction_timeout = 0;\n"
+            b"plain row\n"
+            b"\\.\n",
+        )
+
     def test_pg_dump_fails_when_client_older_than_server(self) -> None:
         db = {
             "host": "localhost",
