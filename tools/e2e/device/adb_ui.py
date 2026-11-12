@@ -27,6 +27,23 @@ import xml.etree.ElementTree as ET
 
 DEFAULT_SERIAL = os.environ.get("ANDROID_SERIAL", "emulator-5558")
 BOUNDS_RE = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+# Characters that `adb shell input text` treats as metacharacters (AOSP Input.java).
+# ``+`` is intentionally omitted: the manual login probe sends it unescaped and
+# ``\+`` is dropped on the nexachat-audit image used for patch window runs.
+_ADB_INPUT_METACHAR_RE = re.compile(r"[\\&;|`*{}[\]()#%'\",.:<>^$!=~\-_/]")
+
+
+def escape_adb_input_text(value: str) -> str:
+    """Escape a string for `adb shell input text` (spaces become ``%s``)."""
+    parts: list[str] = []
+    for character in value:
+        if character == " ":
+            parts.append("%s")
+        elif _ADB_INPUT_METACHAR_RE.match(character):
+            parts.append("\\" + character)
+        else:
+            parts.append(character)
+    return "".join(parts)
 
 
 def adb(serial: str, *args: str, binary: bool = False, timeout: float = 60.0):
@@ -153,8 +170,7 @@ class Device:
     def type_text(self, value: str) -> None:
         # `input text` only accepts ASCII; Vietnamese input comes from seeded
         # data, never from typing in this helper.
-        escaped = value.replace(" ", "%s")
-        self.shell("input", "text", escaped)
+        self.shell("input", "text", escape_adb_input_text(value))
 
     def screenshot(self, path: str) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

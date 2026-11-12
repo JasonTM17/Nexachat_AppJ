@@ -2,6 +2,7 @@
 
 import unittest
 
+from adb_ui import escape_adb_input_text
 from patch_window import E2EFailure, parse_permission_state
 
 
@@ -52,6 +53,13 @@ class PermissionDumpParserTest(unittest.TestCase):
             parse_permission_state(
                 SCRUBBED_PACKAGE_DUMP, "0", "android.permission.UNKNOWN"
             )
+
+
+class AdbInputEscapeTest(unittest.TestCase):
+    def test_phone_account_and_password_are_shell_safe(self) -> None:
+        self.assertEqual(escape_adb_input_text("+84900000001"), "+84900000001")
+        self.assertEqual(escape_adb_input_text("password123"), "password123")
+        self.assertEqual(escape_adb_input_text("line one line two"), "line%sone%sline%stwo")
 
 
 if __name__ == "__main__":

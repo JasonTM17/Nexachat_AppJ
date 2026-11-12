@@ -247,6 +247,15 @@ def grant_test_permissions() -> dict[str, str]:
     return original
 
 
+def ensure_runtime_grants() -> None:
+    """Re-assert runtime grants after the app process has started at least once."""
+    for permission in PERMISSIONS:
+        if permission_state(permission) != "granted":
+            adb("shell", "pm", "grant", PACKAGE, permission, timeout=15)
+        check(permission_state(permission) == "granted",
+              f"{permission} was not granted on {SERIAL}")
+
+
 def restore_permissions(original: dict[str, str]) -> None:
     for permission, state in original.items():
         current = permission_state(permission)
@@ -292,50 +301,84 @@ def node_by_id(nodes: list[Node], suffix: str) -> Node | None:
                  if node.attrs.get("resource-id", "").endswith("/" + suffix)), None)
 
 
-def ensure_device_account(ui: Device, evidence_dir: Path) -> None:
+def inbox_visible(nodes: list[Node]) -> bool:
+    """True when the inbox list is drawn, not merely bottom-nav chrome."""
+    return any(text_matches(node, ("Binh", "NexaChat Team")) for node in nodes)
+
+
+def login_form_visible(nodes: list[Node]) -> bool:
+    phone = node_by_id(nodes, "phoneInput")
+    password = node_by_id(nodes, "passwordInput")
+    if phone is None or password is None:
+        return False
+    return any(text_matches(node, ("Sign in", "Đăng nhập")) for node in nodes)
+
+
+def ensure_server_readiness(client: Client, base_url: str) -> None:
+    response = client.get("/actuator/health/readiness")
+    check(response.status == 200,
+          f"{base_url}/actuator/health/readiness returned HTTP {response.status}")
+
+
+def sign_in_as_device_account(ui: Device, evidence_dir: Path) -> None:
+    """Drive the manual login probe: tap ids, hide keyboard, tap primaryAction."""
     adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
-    # Cold start passes through the splash; wait until the sign-in form or a
-    # signed-in screen is drawn instead of reading the first frame.
-    sign_in = None
+    # Match the working manual probe: let cold start finish before touching the form.
+    time.sleep(8)
+    nodes = ui_nodes(ui, timeout=15)
+    check(login_form_visible(nodes), "login form was not visible after cold start")
+    phone = node_by_id(nodes, "phoneInput")
+    password = node_by_id(nodes, "passwordInput")
+    check(phone is not None and password is not None,
+          "login screen did not expose phone/password inputs")
+    ui.tap_node(phone)
+    time.sleep(0.3)
+    ui.type_text(DEVICE_ACCOUNT)
+    ui.tap_node(password)
+    time.sleep(0.3)
+    ui.type_text(PASSWORD)
+    # Hide the keyboard so it cannot cover the button, then target the button by id.
+    adb("shell", "input", "keyevent", "4", check_result=False, timeout=15)
+    time.sleep(1)
+    current = ui_nodes(ui)
+    phone_field = node_by_id(current, "phoneInput")
+    if phone_field is not None and DEVICE_ACCOUNT not in phone_field.text:
+        raise E2EFailure(
+            f"phone field did not accept {DEVICE_ACCOUNT!r}; got {phone_field.text!r}"
+        )
+    action = node_by_id(current, "primaryAction") or next(
+        (node for node in current if text_matches(node, ("Sign in", "Đăng nhập"))), None)
+    check(action is not None, "login action was not visible")
+    ui.tap_node(action)
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        nodes = ui_nodes(ui, timeout=10)
+        if inbox_visible(nodes):
+            ui.screenshot(str(evidence_dir / "f4-device-home.png"))
+            return
+        time.sleep(1)
+    raise E2EFailure("An did not reach the inbox after local sign-in")
+
+
+def ensure_device_account(ui: Device, evidence_dir: Path, *, fresh_login: bool) -> None:
+    if fresh_login:
+        sign_in_as_device_account(ui, evidence_dir)
+        return
+
+    adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
+    # Cold start passes through the splash; wait until the sign-in form or inbox is drawn.
     nodes: list[Node] = []
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         nodes = ui_nodes(ui, timeout=10)
-        sign_in = next((node for node in nodes
-                        if text_matches(node, ("Sign in", "Đăng nhập"))), None)
-        if sign_in is not None or any(
-                text_matches(node, ("Profile", "Hồ sơ", "Chats", "Tin nhắn")) for node in nodes):
-            break
+        if inbox_visible(nodes):
+            ui.screenshot(str(evidence_dir / "f4-device-home.png"))
+            return
+        if login_form_visible(nodes):
+            sign_in_as_device_account(ui, evidence_dir)
+            return
         time.sleep(1)
-    if sign_in is not None:
-        phone = node_by_id(nodes, "phoneInput")
-        password = node_by_id(nodes, "passwordInput")
-        if phone is None or password is None:
-            fields = [node for node in nodes if "EditText" in node.cls]
-            check(len(fields) >= 2, "login screen did not expose phone/password inputs")
-            phone, password = fields[0], fields[1]
-        ui.tap_node(phone)
-        ui.type_text(DEVICE_ACCOUNT)
-        ui.tap_node(password)
-        ui.type_text(PASSWORD)
-        # Hide the keyboard so it cannot cover the button, then target the
-        # button by id: the form title can carry the same "Sign in" text.
-        adb("shell", "input", "keyevent", "4", check_result=False, timeout=15)
-        time.sleep(1)
-        current = ui_nodes(ui)
-        action = node_by_id(current, "primaryAction") or next(
-            (node for node in current if text_matches(node, ("Sign in", "Đăng nhập"))), None)
-        check(action is not None, "login action was not visible")
-        ui.tap_node(action)
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            nodes = ui_nodes(ui, timeout=10)
-            if any(text_matches(node, ("Binh", "NexaChat Team", "Chats", "Tin nhắn"))
-                   for node in nodes):
-                ui.screenshot(str(evidence_dir / "f4-device-home.png"))
-                return
-            time.sleep(1)
-        raise ProductDefect("An did not reach the inbox after local sign-in")
+    # No login form and no inbox markers yet; fall through to profile verification.
 
     # Preserve an existing session only when the visible profile identifies it as An.
     profile = next((node for node in nodes if text_matches(node, ("Profile", "Hồ sơ"))), None)
@@ -353,12 +396,14 @@ def ensure_device_account(ui: Device, evidence_dir: Path) -> None:
     ui.screenshot(str(evidence_dir / "f4-device-home.png"))
 
 
-def wait_for_notification(ui: Device, timeout: float = 15) -> list[Node]:
+def wait_for_notification(ui: Device, timeout: float = 30) -> list[Node]:
     adb("shell", "cmd", "statusbar", "expand-notifications", check_result=False, timeout=15)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         nodes = ui_nodes(ui, timeout=8)
         if any(text_matches(node, ("Incoming voice call", "Cuộc gọi thoại đến")) for node in nodes):
+            return nodes
+        if any(text_matches(node, ("Accept", "Trả lời", "Decline", "Từ chối")) for node in nodes):
             return nodes
         # A full-screen call activity may cover the shade; move Home, then expand again.
         ui.key("KEYCODE_HOME")
@@ -711,10 +756,12 @@ def main() -> int:
         original_permissions = grant_test_permissions()
         report["permissions_before_test"] = original_permissions
         ui = Device(SERIAL)  # Never inherit adb_ui.py's default 5558 serial.
-        ensure_device_account(ui, evidence_dir)
-        report["screenshots"].append("f4-device-home.png")
-
         client = Client(args.base_url, timeout=30)
+        ensure_server_readiness(client, args.base_url)
+        ensure_device_account(ui, evidence_dir, fresh_login=bool(args.reset_app_data))
+        report["screenshots"].append("f4-device-home.png")
+        ensure_runtime_grants()
+
         health = client.get("/actuator/health/liveness")
         check(health.status == 200, f"local app liveness returned HTTP {health.status}")
         actor = login_local(client, CALLER_ACCOUNT)
