@@ -13,6 +13,7 @@ import android.content.Context;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
@@ -29,6 +30,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.Before;
 import org.junit.Test;
@@ -47,6 +49,7 @@ public final class FcmMessageProcessorTest {
     private TokenStore tokenStore;
     private Moshi moshi;
     private AtomicLong clock;
+    private AtomicReference<IncomingCallPushData> lastAdmittedPush;
     private FcmMessageProcessor processor;
 
     @Before
@@ -60,6 +63,7 @@ public final class FcmMessageProcessorTest {
         tokenStore = mock(TokenStore.class);
         moshi = new Moshi.Builder().build();
         clock = new AtomicLong(1_800_000_000_000L);
+        lastAdmittedPush = new AtomicReference<>();
         when(context.getApplicationContext()).thenReturn(context);
         when(tokenRefresher.sessionSignals()).thenReturn(Flowable.empty());
         when(tokenRefresher.sessionEpoch()).thenReturn(SESSION_EPOCH);
@@ -74,10 +78,27 @@ public final class FcmMessageProcessorTest {
         when(callManager.admitIncomingPush(
                         anyString(), anyString(), anyString(), anyString(), anyLong(),
                         anyString(), anyLong(), anyLong(), any(BooleanSupplier.class)))
-                .thenAnswer(invocation -> Maybe.just(incomingSession(
-                        invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2),
-                        invocation.getArgument(3), invocation.getArgument(4))));
+                .thenAnswer(invocation -> {
+                    lastAdmittedPush.set(new IncomingCallPushData(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2),
+                            invocation.getArgument(3),
+                            invocation.getArgument(4),
+                            invocation.getArgument(5),
+                            invocation.getArgument(7),
+                            invocation.getArgument(6)));
+                    return Maybe.just(incomingSession(
+                            invocation.getArgument(0), invocation.getArgument(1),
+                            invocation.getArgument(2), invocation.getArgument(3),
+                            invocation.getArgument(4)));
+                });
         when(callManager.isIncomingPushAdmissionCurrent(anyString())).thenReturn(true);
+        when(callManager.currentIncomingPushData(anyString())).thenAnswer(invocation -> {
+            IncomingCallPushData data = lastAdmittedPush.get();
+            return data != null && invocation.getArgument(0).equals(data.getCallId())
+                    ? data : null;
+        });
 
         processor = new FcmMessageProcessor(
                 callManager,

@@ -163,6 +163,26 @@ public final class CallManagerTest {
     }
 
     @Test
+    public void admittedPushCanRebuildItsSelfContainedNotificationPayload() {
+        long deadline = nowMs + 20L;
+        TestObserver<CallSession> admission = admitPush("call-notification", deadline, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+
+        IncomingCallPushData payload = manager.currentIncomingPushData("call-notification");
+
+        assertEquals("call-notification", payload.getCallId());
+        assertEquals("conversation-1", payload.getConversationId());
+        assertEquals("peer-1", payload.getCallerId());
+        assertEquals("Peer", payload.getCallerName());
+        assertEquals(nowMs, payload.getServerTs());
+        assertEquals("user-me", payload.getRecipientId());
+        assertEquals(1L, payload.getSessionEpoch());
+        assertEquals(deadline, payload.getRingExpiresAtMs());
+        assertTrue(payload.isValidAt(nowMs));
+    }
+
+    @Test
     public void duplicatePushDoesNotResetTheAbsoluteRingDeadline() {
         long deadline = nowMs + 20L;
         TestObserver<CallSession> first = admitPush("call-duplicate", deadline, () -> true);

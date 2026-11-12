@@ -7,6 +7,7 @@ import androidx.lifecycle.ProcessLifecycleOwner;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.ui.CallNotificationActionRouter;
 import com.nexachat.call.ui.CallNotificationFallbackPolicy;
 
@@ -43,7 +44,8 @@ public final class CallNotificationObserver implements CallManager.CallListener 
                 CallNotifications.clearIncoming(appContext);
                 openIncomingActivityOnce(session);
             } else {
-                boolean posted = CallNotifications.showIncoming(appContext, session);
+                IncomingCallPushData pushData = callManager.currentIncomingPushData(session.getCallId());
+                boolean posted = CallNotifications.showIncoming(appContext, session, pushData);
                 if (posted) {
                     activityFallbackCallId = null;
                 } else if (CallNotificationFallbackPolicy.shouldAttemptActivityFallback(posted)) {
@@ -69,7 +71,10 @@ public final class CallNotificationObserver implements CallManager.CallListener 
         if (callId != null && callId.equals(activityFallbackCallId)) return;
         activityFallbackCallId = callId;
         Intent intent = CallNotifications.incomingActivityIntent(
-                appContext, session, CallNotificationActionRouter.ACTION_OPEN)
+                appContext,
+                session,
+                CallNotificationActionRouter.ACTION_OPEN,
+                callManager.currentIncomingPushData(callId))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                         | Intent.FLAG_ACTIVITY_CLEAR_TOP
                         | Intent.FLAG_ACTIVITY_SINGLE_TOP);

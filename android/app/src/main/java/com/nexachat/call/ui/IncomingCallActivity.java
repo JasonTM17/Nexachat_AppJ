@@ -25,6 +25,8 @@ import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.call.core.CallError;
 import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.IncomingCallPushAdmission;
+import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.media.CallMediaEngineProvider;
@@ -32,16 +34,11 @@ import com.nexachat.call.media.CallRingtonePlayer;
 import com.nexachat.call.service.CallForegroundService;
 import com.nexachat.call.service.CallNotifications;
 import com.nexachat.core.common.AppLocaleManager;
-import com.nexachat.core.network.TokenRefresher;
-import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.ui.MessageUiRules;
-import com.nexachat.data.TimeAndJwt;
-import com.squareup.moshi.Moshi;
 import dagger.hilt.android.AndroidEntryPoint;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
-import io.reactivex.rxjava3.core.Maybe;
-import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.disposables.Disposable;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
 
 /** Lock-screen incoming call view; call state remains owned by the process CallManager. */
@@ -59,9 +56,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private static final long ENDED_SCREEN_MS = 1600L;
 
     @Inject CallManager callManager;
-    @Inject TokenRefresher tokenRefresher;
-    @Inject TokenStore tokenStore;
-    @Inject Moshi moshi;
+    @Inject IncomingCallPushAdmission incomingCallPushAdmission;
 
     private TextView initials;
     private TextView peerName;
@@ -103,16 +98,19 @@ public class IncomingCallActivity extends ComponentActivity {
         currentSession = callManager.currentSessionSnapshot();
         if (currentSession == null || currentSession.getState() == CallState.IDLE) {
             if (beginFallbackAdmission()) return;
+            CallNotifications.clearIncoming(this);
             finish();
             return;
         }
         if (callManager.hasIncomingPushAdmission(currentSession.getCallId())
                 && !isCurrentPushIntent(currentSession.getCallId())) {
             resolving = true;
+            CallNotifications.clearIncoming(this);
             finish();
             return;
         }
         if (!matchesTargetCall(currentSession)) {
+            CallNotifications.clearIncoming(this);
             finish();
             return;
         }
@@ -232,6 +230,8 @@ public class IncomingCallActivity extends ComponentActivity {
                     && callManager.hasIncomingPushAdmission(currentSession.getCallId())
                     && !isCurrentPushIntent(currentSession.getCallId()))) {
             resolving = true;
+            ringtonePlayer.stop();
+            CallNotifications.clearIncoming(this);
             finish();
             return;
         }
@@ -482,80 +482,42 @@ public class IncomingCallActivity extends ComponentActivity {
     }
 
     private boolean beginFallbackAdmission() {
-        String callId = getIntent().getStringExtra(EXTRA_CALL_ID);
-        String conversationId = getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID);
-        String callerId = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID);
-        String callerName = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME);
-        String recipientId = getIntent().getStringExtra(EXTRA_RECIPIENT_ID);
-        long serverTs = getIntent().getLongExtra(EXTRA_SERVER_TS, 0L);
-        long ringExpiresAtMs = getIntent().getLongExtra(EXTRA_RING_EXPIRES_AT, 0L);
-        long sessionEpoch = getIntent().getLongExtra(EXTRA_SESSION_EPOCH, -1L);
-        if (blank(callId)
-                || blank(conversationId)
-                || blank(callerId)
-                || blank(recipientId)
-                || serverTs <= 0L
-                || ringExpiresAtMs <= serverTs
-                || ringExpiresAtMs <= System.currentTimeMillis()
-                || sessionEpoch < 0L) {
+        IncomingCallPushData pushData = IncomingCallIntentCodec.readPushData(getIntent());
+        if (pushData == null || !pushData.isValidAt(System.currentTimeMillis())) {
             return false;
         }
 
         resolving = true;
-        fallbackAdmission = currentSessionCredential(sessionEpoch)
-                .subscribeOn(Schedulers.io())
-                .flatMap(accessToken -> {
-                    String userId = TimeAndJwt.userIdFromJwt(accessToken, moshi);
-                    if (!recipientId.equals(userId)
-                            || !tokenRefresher.isSessionCurrent(sessionEpoch)) {
-                        return Maybe.empty();
-                    }
-                    return callManager.admitIncomingPush(
-                            callId,
-                            conversationId,
-                            callerId,
-                            callerName,
-                            serverTs,
-                            recipientId,
-                            sessionEpoch,
-                            ringExpiresAtMs,
-                            () -> tokenRefresher.isSessionCurrent(sessionEpoch));
-                })
+        fallbackAdmission = incomingCallPushAdmission.admit(pushData)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(session -> {
-                    boolean current = tokenRefresher.runIfSessionCurrent(sessionEpoch, () -> {
-                        if (System.currentTimeMillis() >= ringExpiresAtMs
-                                || !callManager.isIncomingPushAdmissionCurrent(
-                                        callId, recipientId, sessionEpoch, ringExpiresAtMs)) {
-                            return;
-                        }
+                    AtomicBoolean restored = new AtomicBoolean();
+                    boolean current = incomingCallPushAdmission.runIfCurrent(pushData, () -> {
                         currentSession = session;
                         resolving = false;
                         render(session);
                         if (!isFinishing()) ringtonePlayer.start();
+                        restored.set(true);
                     });
-                    if (!current || resolving) {
-                        resolving = true;
-                        finish();
+                    if (!current || !restored.get()) {
+                        dismissAfterFailedAdmission();
+                        return;
                     }
-                }, ignored -> finish(), () -> finish());
+                    if (CallNotificationActionRouter.ACTION_ACCEPT.equals(getIntent().getAction())) {
+                        requestAccept();
+                    } else if (CallNotificationActionRouter.ACTION_DECLINE.equals(
+                            getIntent().getAction())) {
+                        decline();
+                    }
+                }, ignored -> dismissAfterFailedAdmission(), this::dismissAfterFailedAdmission);
         return true;
     }
 
-    private Maybe<String> currentSessionCredential(long expectedEpoch) {
-        if (tokenRefresher.isSessionCurrent(expectedEpoch)) {
-            return tokenStore.readTokens()
-                    .filter(ignored -> tokenRefresher.isSessionCurrent(expectedEpoch))
-                    .map(com.nexachat.core.storage.Tokens::getAccessToken);
-        }
-        return tokenRefresher.refreshIfNeeded(null).flatMapMaybe(accessToken -> {
-            if (accessToken.isEmpty()
-                    || tokenRefresher.sessionEpoch() != expectedEpoch
-                    || !tokenRefresher.isSessionCurrent(expectedEpoch)) {
-                return Maybe.empty();
-            }
-            return Maybe.just(accessToken.get());
-        });
+    private void dismissAfterFailedAdmission() {
+        resolving = true;
+        if (ringtonePlayer != null) ringtonePlayer.stop();
+        CallNotifications.clearIncoming(this);
+        finish();
     }
 
     private boolean isCurrentPushSession(CallSession session) {
@@ -565,19 +527,10 @@ public class IncomingCallActivity extends ComponentActivity {
     }
 
     private boolean isCurrentPushIntent(String callId) {
-        String recipientId = getIntent().getStringExtra(EXTRA_RECIPIENT_ID);
-        if (recipientId == null) {
-            return callManager.isIncomingPushAdmissionCurrent(callId);
-        }
-        return callManager.isIncomingPushAdmissionCurrent(
-                callId,
-                recipientId,
-                getIntent().getLongExtra(EXTRA_SESSION_EPOCH, -1L),
-                getIntent().getLongExtra(EXTRA_RING_EXPIRES_AT, 0L));
-    }
-
-    private static boolean blank(String value) {
-        return value == null || value.isBlank();
+        IncomingCallPushData pushData = IncomingCallIntentCodec.readPushData(getIntent());
+        if (pushData == null) return callManager.isIncomingPushAdmissionCurrent(callId);
+        return callId.equals(pushData.getCallId())
+                && incomingCallPushAdmission.runIfCurrent(pushData, () -> { });
     }
 
 }

@@ -337,6 +337,32 @@ public final class CallManager implements AutoCloseable {
                 && isIncomingPushAdmissionCurrent(callId);
     }
 
+    /** Returns the complete current push identity used to rebuild notification actions. */
+    @Nullable
+    public IncomingCallPushData currentIncomingPushData(String callId) {
+        PushAdmission admission = pushAdmission;
+        CallSession active = currentSession;
+        if (admission == null
+                || callId == null
+                || !admission.callId.equals(callId)
+                || !callId.equals(active.getCallId())
+                || active.getDirection() != CallSession.Direction.INCOMING
+                || (active.getState() != CallState.INCOMING_RINGING
+                    && active.getState() != CallState.PENDING_INCOMING)
+                || !isIncomingPushAdmissionCurrent(callId)) {
+            return null;
+        }
+        return new IncomingCallPushData(
+                active.getCallId(),
+                active.getConversationId(),
+                active.getPeerUserId(),
+                active.getPeerDisplayName(),
+                active.getStartedAtMs(),
+                admission.recipientId,
+                admission.ringExpiresAtMs,
+                admission.sessionEpoch);
+    }
+
     /** Rechecks the active push session after a TokenRefresher epoch/admission signal. */
     public void onSessionStateChanged() {
         scheduler.execute(() -> {
