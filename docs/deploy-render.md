@@ -199,7 +199,7 @@ here. Resend uses HTTPS and is the configured provider.
 - RSS was **348–358 MiB** after startup with the AppCDS archive (**397–400 MiB**
   without it), and the anonymous-memory peak during eight concurrent 20 MB
   uploads (`nexachat.uploads.max-concurrent: 2`, so most attempts get `429`) was
-  **439–466 MiB** with the archive (**502 MiB** without it). 512 MB holds the
+  **416–444 MiB** with the archive (**479 MiB** without it). 512 MB holds the
   app, but leaves little room for attachments buffered in memory
   (`AttachmentService.java:122` reads a 25 MB upload into a byte array). Compare
   pairs measured back to back: the host's load moves both numbers.
