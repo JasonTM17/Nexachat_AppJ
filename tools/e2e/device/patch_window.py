@@ -706,6 +706,8 @@ def main() -> int:
     parser.add_argument("--evidence-dir", required=True)
     parser.add_argument("--reset-app-data", action="store_true",
                         help="clear the debug app's data first so the run signs in as An")
+    parser.add_argument("--skip-f4", action="store_true",
+                        help="run only F6; F4 needs an FCM call push, which a local stack lacks")
     args = parser.parse_args()
 
     evidence_dir = Path(args.evidence_dir).expanduser().resolve()
@@ -773,7 +775,10 @@ def main() -> int:
         caller = StompConnection(ws_url, caller_token, "l1-device-caller")
 
         # F4: verify process-death notification Open, Accept and Decline in order.
-        for action in ("open", "accept", "decline"):
+        # The F4 fix covers an FCM call push reaching a dead process; a local
+        # stack has no FCM, so --skip-f4 lets F6 run on its own.
+        report["f4_skipped"] = bool(args.skip_f4)
+        for action in (() if args.skip_f4 else ("open", "accept", "decline")):
             try:
                 call_id = invite_call(caller, conversation_id)
                 active_call = (conversation_id, call_id)
@@ -798,7 +803,7 @@ def main() -> int:
                 raise
 
         # F6: ensure a background STOMP delivery, an offline sync gap, and two real offline outbox sends.
-        device.key("KEYCODE_HOME")
+        ui.key("KEYCODE_HOME")
         adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
         time.sleep(1.5)
         inbox_nodes = ui_nodes(ui)
