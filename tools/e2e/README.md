@@ -127,6 +127,23 @@ python tools/e2e/final/final_live.py --phase retention-observe --expect deleted 
   that are still bound to a live message stay. The script refuses any database
   container whose name is not the `nexachat_e2e_grok2` project.
 
+## Controlled reminder clock helper
+
+`tools/e2e/reminder_clock.py` adjusts reminder due times in the local PostgreSQL database (`docker exec <container> psql`) so occurrences come due deterministically during E2E verification (`polls-reminders` harness row) without waiting minutes for wall-clock sweeps or modifying production code:
+
+```bash
+python tools/e2e/reminder_clock.py make-due <reminder-id> [--minutes-ago 1]
+python tools/e2e/reminder_clock.py wait-fired <reminder-id> [--timeout 10]
+python tools/e2e/reminder_clock.py show <reminder-id>
+python tools/e2e/reminder_clock.py occurrence <reminder-id>
+```
+
+- `make-due`: moves `remind_at` into the past while resetting `claimed_at = NULL`, `claim_token = NULL`, and `fired_at = NULL` so the row is immediately claimable by the scheduler's due sweep while preserving the `reminders_claim_pair` constraint.
+- `wait-fired`: bounded poll until the occurrence is marked claimed or completed/fired; raises a clear error on timeout.
+- `show`: prints reminder ID, due time, and status (`DUE`, `CLAIMED`, `FIRED`, or `SCHEDULED`) without printing message title/content.
+- `occurrence`: derives the 32-hex occurrence identifier carried by push payloads (`SHA-256(reminderId + '|' + remindAt.toEpochMilli())[:16].hex()`) matching `FcmReminderPushSender.occurrenceKey`.
+- Safety: refuses any database whose name does not contain `nexachat`, refuses non-local targets, and validates all IDs as UUIDs.
+
 ## Cleanup / side effects
 
 - `smoke_api.py` and `stomp_e2e.py` soft-delete every message they created (run
