@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug source set only. Release and localSmoke do not merge src/debug.
+  No intent-filter: the receiver accepts only an explicit component.
+  android:permission requires the sender to hold android.permission.DUMP,
+  which the adb shell uid has and third-party apps cannot obtain.
+  onReceive also rejects every sender other than the shell or root uid.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name="com.nexachat.debug.DebugPushInjectionReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
+</manifest>
