@@ -3,30 +3,19 @@ package com.nexachat.feature.contacts;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import com.google.android.material.button.MaterialButton;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.textfield.TextInputEditText;
-import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
-import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentUserSearchBinding;
 import com.nexachat.feature.contacts.adapter.UserSearchAdapter;
@@ -42,11 +31,7 @@ public final class UserSearchFragment extends Fragment {
     private ContactsViewModel viewModel;
     private UserSearchAdapter adapter;
     private boolean rendering;
-    private boolean renderingDetailAlias;
-    @Nullable private androidx.appcompat.app.AlertDialog detailDialog;
-    @Nullable private EditText detailAliasInput;
-    @Nullable private String detailBoundUserId;
-    private boolean detailBoundIsContact;
+    @Nullable private ContactDetailBinder detailBinder;
 
     @Nullable
     @Override
@@ -61,6 +46,7 @@ public final class UserSearchFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(ContactsViewModel.class);
+        detailBinder = new ContactDetailBinder(this, viewModel);
         binding.toolbar.setTitle(R.string.search_title);
         adapter = new UserSearchAdapter(userId -> {
             ContactsViewModel.UiState ui = viewModel.getUiState().getValue();
@@ -161,208 +147,16 @@ public final class UserSearchFragment extends Fragment {
             binding.errorState.setMessage(getString(ContactErrorIds.messageId(error)));
         }
 
-        if (state.getDetailUser() != null) {
-            showOrUpdateDetailDialog(state);
-        } else if (detailDialog != null) {
-            detailDialog.dismiss();
-            detailDialog = null;
-        }
-    }
-
-    private void showOrUpdateDetailDialog(@NonNull ContactsViewModel.UiState state) {
-        if (detailDialog == null) {
-            LinearLayout root = buildDetailContent(state);
-            ScrollView scroll = new ScrollView(requireContext());
-            scroll.addView(root, new ScrollView.LayoutParams(
-                    ScrollView.LayoutParams.MATCH_PARENT,
-                    ScrollView.LayoutParams.WRAP_CONTENT));
-            detailDialog = new MaterialAlertDialogBuilder(requireContext())
-                    .setView(scroll)
-                    .setOnDismissListener(d -> {
-                        viewModel.closeDetail();
-                        detailDialog = null;
-                        detailAliasInput = null;
-                        detailBoundUserId = null;
-                    })
-                    .show();
-        } else {
-            View pane = detailDialog.getWindow() == null
-                    ? null
-                    : detailDialog.getWindow().getDecorView().findViewWithTag("detail_root");
-            if (pane instanceof LinearLayout root) {
-                bindDetailContent(root, state);
-            }
-        }
-    }
-
-    private LinearLayout buildDetailContent(@NonNull ContactsViewModel.UiState state) {
-        LinearLayout root = new LinearLayout(requireContext());
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setTag("detail_root");
-        int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
-        root.setPadding(pad, pad, pad, pad);
-        bindDetailContent(root, state);
-        return root;
-    }
-
-    private void bindDetailContent(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
-        UserDto user = state.getDetailUser();
-        if (user == null) {
-            return;
-        }
-        var contact = state.getDetailContact();
-        boolean isContact = contact != null;
-        if (detailAliasInput != null
-                && user.getId().equals(detailBoundUserId)
-                && isContact == detailBoundIsContact
-                && state.getDetailError() == null
-                && !state.isDetailBusy()) {
-            renderingDetailAlias = true;
-            if (!detailAliasInput.getText().toString().equals(state.getAliasInput())) {
-                detailAliasInput.setText(state.getAliasInput());
-            }
-            renderingDetailAlias = false;
-            return;
-        }
-        detailBoundUserId = user.getId();
-        detailBoundIsContact = isContact;
-        detailAliasInput = null;
-        root.removeAllViews();
-        int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
-        int spaceMd = getResources().getDimensionPixelSize(R.dimen.space_md);
-
-        String displayTitle = contact != null ? contact.getPrimaryLabel() : user.getDisplayName();
-        AvatarView avatar = new AvatarView(requireContext());
-        avatar.setName(displayTitle);
-        avatar.setAvatarUrl(contact != null ? contact.getAvatarUrl() : user.getAvatarUrl());
-        int avatarSize = Math.round(64 * getResources().getDisplayMetrics().density);
-        LinearLayout.LayoutParams avatarLp = new LinearLayout.LayoutParams(avatarSize, avatarSize);
-        avatarLp.gravity = Gravity.CENTER_HORIZONTAL;
-        avatarLp.bottomMargin = spaceSm;
-        root.addView(avatar, avatarLp);
-
-        TextView name = new TextView(requireContext());
-        name.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
-        name.setGravity(Gravity.CENTER_HORIZONTAL);
-        name.setText(displayTitle);
-        root.addView(name, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView phone = new TextView(requireContext());
-        phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
-        phone.setGravity(Gravity.CENTER_HORIZONTAL);
-        phone.setText(user.getPhone());
-        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        phoneLp.bottomMargin = spaceMd;
-        root.addView(phone, phoneLp);
-
-        ApiError detailError = state.getDetailError();
-        if (detailError != null) {
-            TextView err = new TextView(requireContext());
-            err.setText(getString(ContactErrorIds.messageId(detailError)));
-            LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            errLp.bottomMargin = spaceSm;
-            root.addView(err, errLp);
-        }
-
-        if (contact != null) {
-            TextInputLayout aliasLayout = new TextInputLayout(
-                    requireContext(),
-                    null,
-                    com.google.android.material.R.attr.textInputOutlinedStyle);
-            aliasLayout.setHint(getString(R.string.contact_alias_label));
-            float radius = getResources().getDimension(R.dimen.corner_md);
-            aliasLayout.setBoxCornerRadii(radius, radius, radius, radius);
-            TextInputEditText alias = new TextInputEditText(aliasLayout.getContext());
-            alias.setSingleLine(true);
-            renderingDetailAlias = true;
-            alias.setText(state.getAliasInput());
-            renderingDetailAlias = false;
-            alias.addTextChangedListener(new TextWatcher() {
-                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    if (!renderingDetailAlias && !s.toString().equals(state.getAliasInput())) {
-                        viewModel.onAliasChange(s.toString());
-                    }
-                }
-                @Override public void afterTextChanged(Editable s) {}
-            });
-            detailAliasInput = alias;
-            aliasLayout.addView(alias);
-            LinearLayout.LayoutParams aliasLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            aliasLp.bottomMargin = spaceSm;
-            root.addView(aliasLayout, aliasLp);
-
-            MaterialButton saveAlias = new MaterialButton(
-                    requireContext(),
-                    null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
-            saveAlias.setText(R.string.action_save);
-            saveAlias.setOnClickListener(v -> viewModel.saveAlias());
-            LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            saveLp.bottomMargin = spaceSm;
-            root.addView(saveAlias, saveLp);
-        }
-
-        MaterialButton message = new MaterialButton(requireContext());
-        message.setText(R.string.action_message);
-        message.setEnabled(!state.isDetailBusy());
-        message.setOnClickListener(v -> viewModel.messageSelected());
-        LinearLayout.LayoutParams messageLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        messageLp.bottomMargin = spaceSm;
-        root.addView(message, messageLp);
-
-        MaterialButton secondary = new MaterialButton(
-                requireContext(),
-                null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle);
-        secondary.setEnabled(!state.isDetailBusy());
-        if (contact == null) {
-            secondary.setText(R.string.action_add_contact);
-            secondary.setOnClickListener(v -> viewModel.addDetailContact());
-        } else {
-            secondary.setText(R.string.action_remove_contact);
-            secondary.setOnClickListener(v -> {
-                new MaterialAlertDialogBuilder(requireContext())
-                        .setMessage(R.string.confirm_remove_contact)
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton(R.string.action_remove_contact, (d, w) -> viewModel.removeSelectedContact())
-                        .show();
-            });
-        }
-        root.addView(secondary, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        if (state.isDetailBusy()) {
-            ProgressBar bar = new ProgressBar(requireContext());
-            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            barLp.gravity = Gravity.CENTER_HORIZONTAL;
-            barLp.topMargin = spaceSm;
-            root.addView(bar, barLp);
+        if (detailBinder != null) {
+            detailBinder.render(state);
         }
     }
 
     @Override
     public void onDestroyView() {
-        if (detailDialog != null) {
-            detailDialog.dismiss();
-            detailDialog = null;
-            detailAliasInput = null;
-            detailBoundUserId = null;
+        if (detailBinder != null) {
+            detailBinder.dismiss();
+            detailBinder = null;
         }
         if (binding != null) {
             binding.resultsList.setAdapter(null);
