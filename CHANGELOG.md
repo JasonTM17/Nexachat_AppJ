@@ -6,6 +6,27 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-12 (pending tag)
+
+Logo-only release: the Note mark replaces the legacy logo on the Android
+launcher, splash, sign-in, notifications, and the public website. No in-app
+palette, typography, or layout refresh.
+See [docs/release-notes/v1.1.2.md](docs/release-notes/v1.1.2.md).
+
+### Android
+
+**Changed**
+
+- Adaptive launcher layers, in-app auth/splash mark, and call notification
+  silhouette use the Note vector geometry with dedicated logo color tokens.
+
+### Website
+
+**Changed**
+
+- Favicon, Open Graph image, and `docs/media/logo/` masters carry the Note
+  mark; static site accents align with the web Note palette.
+
 ## [1.1.1] - 2026-11-12
 
 Patch after `v1.1.0` (server deploy on Render plus a signed Android APK).
