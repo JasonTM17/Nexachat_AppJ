@@ -142,6 +142,91 @@ python tools/e2e/final/final_live.py --phase retention-observe --expect deleted 
   that are still bound to a live message stay. The script refuses any database
   container whose name is not the `nexachat_e2e_grok2` project.
 
+## Deterministic REST response barrier (offline utility)
+
+`response_barrier.py` is a standard-library HTTP reverse proxy for the
+`auth-session-lifecycle` paused-response account-switch scenario. It forwards
+the request immediately, buffers the complete upstream response, then holds
+**all response headers and body** until release. A `/held` entry therefore
+means the upstream has completed; switch the client to account B before
+releasing account A's response. This utility alone does not prove Android's
+account isolation; the app journey must assert that separately.
+
+```bash
+python tools/e2e/response_barrier.py --upstream http://127.0.0.1:8080 \
+    --port 18090 --control-port 18091 --max-hold-time 30
+python -m unittest tools.e2e.test_response_barrier -v
+```
+
+For an Android emulator debug build, build from `android/` with
+`./gradlew -PapiBaseUrl=http://10.0.2.2:18090 assembleDebug` (Windows:
+`./gradlew.bat -PapiBaseUrl=http://10.0.2.2:18090 assembleDebug`). This overrides
+`API_BASE_URL` in `local.properties` and the default `http://10.0.2.2:8080`.
+The emulator host-loopback alias reaches the proxy; the proxy reaches the
+backend on host port 8080. Changing the port requires rebuilding the APK.
+The commands above only build; device installation and the account-switch
+journey belong to the device owner. Debug permits cleartext HTTP.
+
+Python scripts can import `Barrier` from `tools.e2e.response_barrier`:
+
+```python
+with Barrier("http://127.0.0.1:8080") as b:
+    b.hold(method="GET", path=r"^/api/v1/conversations$", token_contains=account_a_token)
+    # Start account A's request to b.url asynchronously (or trigger it in the app).
+    held = b.wait_held(1, timeout=5)
+    # Switch to B and assert B's independent request/state before releasing A.
+    b.release(held[0]["id"])
+    # Assert B still owns the visible UI and persisted state after A arrives late.
+```
+
+The control API is on `http://127.0.0.1:18091` (ephemeral ports by default in
+the Python API), independent of proxy request capacity:
+
+| Endpoint | JSON input / output |
+| --- | --- |
+| `POST /rules` | `{"method":"GET","path":"^/api/v1/conversations$","action":"hold","token_contains":"fixture-A"}` returns `201 {"id":...}`. Omit `token_contains` to match any Authorization value. |
+| `POST /rules` | `{"path":"^/api/v1/conversations$","action":"delay_ms","delay_ms":500}` delays the response; `method` defaults to `GET`. |
+| `GET /held` | `{"held":[{"id":...,"path":...,"age":...,"rule_id":...}]}`; age is seconds since buffering completed. Query strings and Authorization values are excluded. |
+| `POST /release/<id>` | `{}` releases that response id; returns `{"released":[...]}`. |
+| `POST /release/all` | `{}` releases the current queue in arrival order. |
+| `POST /reset` | `{}` removes rules, releases held responses and invalidates matches whose upstream response is still in flight. |
+
+Rules are persistent and first-match wins, matching the HTTP method and a
+Python regex search on the URL path (without query). Rule ids and held-response
+ids are distinct; release uses the latter. Python `b.release(count=1)` releases
+the oldest response, while `b.release()` releases the current queue. Release
+order describes unblocking order; operating-system scheduling can reorder
+completion across independent client sockets. A reset does not cancel requests
+or undo upstream writes. Install rules before triggering account A's request.
+
+Limits: REST over **plain HTTP only** on both legs, with no TLS termination,
+HTTPS upstream or CONNECT tunneling. WebSocket upgrades return **501** with a
+REST-only explanation and a warning; the proxy **does not carry STOMP**, whose
+URL is also derived from Android's API base URL. Use it for isolated REST race
+testing, not a complete realtime journey. Request chunking and `Expect:
+100-continue` are rejected; upstream chunked responses are decoded and buffered.
+HEAD, duplicate response headers, HTTP error status/body and ordinary binary
+request/response bodies are preserved. Bodies default to at most 32 MiB each;
+oversized requests return 400 and invalid/oversized/unreachable upstream
+responses return a generic 502. Streaming/SSE is unsupported.
+
+Bounds default to 32 held responses, 128 rules, 64 active connections per
+listener and 5 seconds per blocking I/O operation; Python constructor options
+can lower them. At held capacity, an additional response passes with an explicit
+warning. At connection capacity, an additional client gets 503. Holds and delays
+are capped by `max_hold_time` (30 seconds); timed-out holds auto-release with an
+id-only warning. A test must observe its `/held` entry and finish the account
+switch before that deadline. Context exit/Ctrl+C stops listeners, interrupts
+clients/upstream reads and joins all workers; other in-progress socket I/O can
+take up to its I/O timeout to unwind. Hostname lookup uses the OS resolver; use
+a numeric loopback upstream for deterministic offline runs.
+
+The unauthenticated control listener always binds to loopback; the proxy also
+defaults to loopback. Rules/regexes and upstream are trusted local test inputs.
+Do not expose the control API or use real production tokens. Access logging is
+disabled and warnings contain no tokens or request targets; rule creation never
+echoes its Authorization matcher. No device is needed for the offline tests.
+
 ## Cleanup / side effects
 
 - `smoke_api.py` and `stomp_e2e.py` soft-delete every message they created (run
