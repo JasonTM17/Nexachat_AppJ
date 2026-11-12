@@ -4,10 +4,12 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.ReactRequest;
 import com.nexachat.message.dto.ReactionRow;
 import com.nexachat.message.dto.ReactionSlice;
 import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +48,10 @@ class ReactionServiceTest {
     @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
+    private ConversationRepository conversationRepository;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private ReactionService reactionService;
@@ -59,7 +65,7 @@ class ReactionServiceTest {
     void setUp() {
         reactionService = new ReactionService(
                 messageRepository, reactionRepository, reactionEventRepository,
-                memberRepository, eventPublisher);
+                memberRepository, conversationRepository, userRepository, eventPublisher);
     }
 
     private Message messageInConversation() {
@@ -86,8 +92,12 @@ class ReactionServiceTest {
     }
 
     private void memberMessage() {
+        when(messageRepository.findConversationIdById(messageId))
+                .thenReturn(Optional.of(conversationId));
         when(messageRepository.findByIdForUpdate(messageId))
                 .thenReturn(Optional.of(messageInConversation()));
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(messageInConversation().getConversation()));
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(true);
     }
@@ -133,6 +143,7 @@ class ReactionServiceTest {
 
     @Test
     void toggle_messageMissing_throwsMessageNotFound() {
+        when(messageRepository.findConversationIdById(messageId)).thenReturn(Optional.empty());
         when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.empty());
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -145,8 +156,12 @@ class ReactionServiceTest {
 
     @Test
     void toggle_notMember_throwsNotMember() {
+        when(messageRepository.findConversationIdById(messageId))
+                .thenReturn(Optional.of(conversationId));
         when(messageRepository.findByIdForUpdate(messageId))
                 .thenReturn(Optional.of(messageInConversation()));
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(messageInConversation().getConversation()));
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
                 .thenReturn(false);
 

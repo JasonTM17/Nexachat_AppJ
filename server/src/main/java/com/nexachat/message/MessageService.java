@@ -619,6 +619,22 @@ public class MessageService {
             flagsByConversation.put(flags.conversationId(), flags);
         }
 
+        if (since != null) {
+            Instant reactionRetentionCutoff = clock.instant().minus(
+                    syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS);
+            if (!since.isBefore(reactionRetentionCutoff)) {
+                List<UUID> reactionConversations = watermarks.stream()
+                        .map(SyncRequest.ConversationWatermark::conversationId)
+                        .filter(flagsByConversation::containsKey)
+                        .distinct()
+                        .sorted()
+                        .toList();
+                for (UUID conversationId : reactionConversations) {
+                    reactionEventRepository.lockConversationEvents(conversationId);
+                }
+            }
+        }
+
         List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
         for (SyncRequest.ConversationWatermark wm : watermarks) {
             UUID conversationId = wm.conversationId();

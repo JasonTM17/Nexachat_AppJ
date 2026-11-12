@@ -88,6 +88,7 @@ class CallTimeoutSchedulerGraceTest {
                 mock(com.nexachat.conversation.ConversationMemberRepository.class),
                 mock(com.nexachat.auth.RateLimitService.class),
                 mock(CallSystemMessageWriter.class),
+                mock(com.nexachat.user.UserRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class),
                 "stun:stun.l.google.com:19302"
         );
@@ -124,6 +125,7 @@ class CallTimeoutSchedulerGraceTest {
                 mock(com.nexachat.conversation.ConversationMemberRepository.class),
                 mock(com.nexachat.auth.RateLimitService.class),
                 mock(CallSystemMessageWriter.class),
+                mock(com.nexachat.user.UserRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class),
                 "stun:stun.l.google.com:19302"
         );

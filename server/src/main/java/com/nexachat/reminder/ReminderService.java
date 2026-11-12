@@ -8,6 +8,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.RequestIdempotency;
 import com.nexachat.message.RequestIdempotencyRepository;
+import com.nexachat.user.UserRepository;
 import com.nexachat.reminder.dto.CreateReminderRequest;
 import com.nexachat.reminder.dto.ReminderResponse;
 import com.nexachat.reminder.dto.UpdateReminderRequest;
@@ -63,17 +64,20 @@ public class ReminderService {
     private final ConversationReminderRepository reminderRepository;
     private final RequestIdempotencyRepository idempotencyRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final UserRepository userRepository;
 
     public ReminderService(ConversationRepository conversationRepository,
                            ConversationMemberRepository memberRepository,
                            ConversationReminderRepository reminderRepository,
                            RequestIdempotencyRepository idempotencyRepository,
-                           ApplicationEventPublisher eventPublisher) {
+                           ApplicationEventPublisher eventPublisher,
+                           UserRepository userRepository) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.reminderRepository = reminderRepository;
         this.idempotencyRepository = idempotencyRepository;
         this.eventPublisher = eventPublisher;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -108,6 +112,7 @@ public class ReminderService {
     @Transactional
     public ReminderCreateResult create(UUID userId, UUID conversationId,
                                        CreateReminderRequest request, String idempotencyKey) {
+        userRepository.lockForKeyShareSorted(List.of(userId));
         Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));

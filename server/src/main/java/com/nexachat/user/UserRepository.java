@@ -55,6 +55,21 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<UUID> findIdsAfter(@Param("afterId") UUID afterId, Pageable pageable);
 
     /**
+     * Locks the given user rows {@code FOR KEY SHARE} in UUID order. This is the
+     * same lock mode the FK checks of a message, call record, poll, reminder or
+     * pin insert take on their user parents, taken explicitly and sorted so a
+     * caller can establish the canonical user -&gt; conversation -&gt; message
+     * order before it takes a conversation or message row lock.
+     */
+    @Query(value = """
+            SELECT u.id FROM users u
+            WHERE u.id IN (:ids)
+            ORDER BY u.id
+            FOR KEY SHARE
+            """, nativeQuery = true)
+    List<UUID> lockForKeyShareSorted(@Param("ids") List<UUID> ids);
+
+    /**
      * Locks a set of user rows in a stable order before creating relationships
      * that refer to them. Callers must pass a non-empty id list.
      */

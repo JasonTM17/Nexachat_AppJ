@@ -54,6 +54,8 @@ class PinServiceTest {
     @Mock
     private MessageService messageService;
     @Mock
+    private com.nexachat.user.UserRepository userRepository;
+    @Mock
     private ApplicationEventPublisher eventPublisher;
 
     private PinService pinService;
@@ -66,7 +68,7 @@ class PinServiceTest {
     void setUp() {
         pinService = new PinService(
                 conversationRepository, memberRepository, messageRepository,
-                pinRepository, messageService, eventPublisher);
+                pinRepository, messageService, userRepository, eventPublisher);
     }
 
     // ------------------------------------------------------------ fixtures
