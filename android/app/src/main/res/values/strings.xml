@@ -493,6 +493,9 @@
     <plurals name="chat_unread_divider">
         <item quantity="one">%d unread message</item>
         <item quantity="other">%d unread messages</item>
+        <plurals name="inbox_unread_messages">
+        <item quantity="one">%d unread message</item>
+        <item quantity="other">%d unread messages</item>
     </plurals>
     <!-- System events (group membership, title) -->
     <string name="system_event_group_created">%1$s created the group</string>

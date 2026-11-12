@@ -197,10 +197,14 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             }
 
             if (unread) {
+                int count = conversation.getUnreadCount();
                 unreadBadge.setVisibility(View.VISIBLE);
-                unreadBadge.setText(InboxBadgeRules.formatUnreadCount(conversation.getUnreadCount()));
+                unreadBadge.setText(InboxBadgeRules.formatUnreadCount(count));
+                unreadBadge.setContentDescription(itemView.getResources().getQuantityString(
+                        R.plurals.inbox_unread_messages, count, count));
             } else {
                 unreadBadge.setVisibility(View.GONE);
+                unreadBadge.setContentDescription(null);
             }
 
             if (pinIndicator != null) {
