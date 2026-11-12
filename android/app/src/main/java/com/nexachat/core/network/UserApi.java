@@ -43,8 +43,11 @@ public interface UserApi {
      * User discovery (rate-limited on the server). Exactly one of phone/q is
      * sent — Retrofit drops null query params.
      */
-    @GET("api/v1/users/search")
-    Call<List<UserDto>> searchUsers(@Nullable @Query("phone") String phone, @Nullable @Query("q") String q);
+  @GET("api/v1/users/search")
+    Call<List<UserDto>> searchUsers(
+            @Nullable @Query("phone") String phone,
+            @Nullable @Query("q") String q,
+            @Nullable @Query("email") String email);
 
     @GET("api/v1/users/me")
     Call<UserDto> getMe();

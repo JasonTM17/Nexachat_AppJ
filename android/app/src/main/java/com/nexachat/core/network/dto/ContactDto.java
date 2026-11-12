@@ -13,12 +13,18 @@ public final class ContactDto {
     @Nullable private final String aliasName;
     @Nullable private final String avatarUrl;
     @Nullable private final String createdAt;
+    @Nullable private final String email;
+    @Nullable private final Boolean emailVerified;
 
     public ContactDto() {
-        this(null, null, null, null, null, null, null);
+        this(null, null, null, null, null, null, null, null, null);
     }
 
     public ContactDto(@Nullable String contactUserId, @Nullable String userId, @Nullable String phone, @Nullable String displayName, @Nullable String aliasName, @Nullable String avatarUrl, @Nullable String createdAt) {
+        this(contactUserId, userId, phone, displayName, aliasName, avatarUrl, createdAt, null, null);
+    }
+
+    public ContactDto(@Nullable String contactUserId, @Nullable String userId, @Nullable String phone, @Nullable String displayName, @Nullable String aliasName, @Nullable String avatarUrl, @Nullable String createdAt, @Nullable String email, @Nullable Boolean emailVerified) {
         this.contactUserId = contactUserId;
         this.userId = userId;
         this.phone = phone;
@@ -26,6 +32,8 @@ public final class ContactDto {
         this.aliasName = aliasName;
         this.avatarUrl = avatarUrl;
         this.createdAt = createdAt;
+        this.email = email;
+        this.emailVerified = emailVerified;
     }
 
     @Nullable public String getContactUserId() {
@@ -56,6 +64,13 @@ public final class ContactDto {
         return createdAt;
     }
 
+    @Nullable public String getEmail() {
+        return email;
+    }
+
+    @Nullable public Boolean getEmailVerified() {
+        return emailVerified;
+    }
 
     @Nullable
     public String getResolvedUserId() {
@@ -73,11 +88,15 @@ public final class ContactDto {
                 && Objects.equals(displayName, that.displayName)
                 && Objects.equals(aliasName, that.aliasName)
                 && Objects.equals(avatarUrl, that.avatarUrl)
-                && Objects.equals(createdAt, that.createdAt);
+                && Objects.equals(createdAt, that.createdAt)
+                && Objects.equals(email, that.email)
+                && Objects.equals(emailVerified, that.emailVerified);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(contactUserId, userId, phone, displayName, aliasName, avatarUrl, createdAt);
+        return Objects.hash(
+                contactUserId, userId, phone, displayName, aliasName, avatarUrl, createdAt, email,
+                emailVerified);
     }
 }

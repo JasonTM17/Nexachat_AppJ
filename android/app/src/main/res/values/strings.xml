@@ -561,4 +561,12 @@
     <string name="error_google_already_linked">That Google account is already linked to another account.</string>
     <string name="error_google_no_account">No Google account found on this device.</string>
     <string name="error_last_sign_in_method">Set a password before removing this sign-in method.</string>
+    <!-- profile + contacts (394) -->
+    <string name="sign_in_method_google">Google</string>
+    <string name="sign_in_method_phone">Phone</string>
+    <string name="action_link_google_short">Link</string>
+    <string name="action_unlink_google_short">Unlink</string>
+    <string name="cd_sign_in_method_google">Google sign-in method</string>
+    <string name="add_contact_title">Add contact</string>
+    <string name="add_contact_field_label">Phone or email</string>
 </resources>

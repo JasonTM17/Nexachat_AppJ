@@ -1,23 +1,36 @@
 package com.nexachat.core.network.dto;
 
 import androidx.annotation.Nullable;
-import androidx.annotation.NonNull;
 import java.util.Objects;
 
-/** Reflective Moshi bean. Absent JSON keeps the no-arg defaults. */
+/** Reflective Moshi bean: send exactly one of {@code phone} or {@code email}. */
 public final class AddContactRequest {
-    private final String phone;
+    @Nullable private final String phone;
+    @Nullable private final String email;
 
     public AddContactRequest() {
-        this(null);
+        this(null, null);
     }
 
-    public AddContactRequest(@NonNull String phone) {
+    private AddContactRequest(@Nullable String phone, @Nullable String email) {
         this.phone = phone;
+        this.email = email;
     }
 
-    @NonNull public String getPhone() {
+    public static AddContactRequest byPhone(@Nullable String phone) {
+        return new AddContactRequest(phone, null);
+    }
+
+    public static AddContactRequest byEmail(@Nullable String email) {
+        return new AddContactRequest(null, email);
+    }
+
+    @Nullable public String getPhone() {
         return phone;
+    }
+
+    @Nullable public String getEmail() {
+        return email;
     }
 
     @Override
@@ -25,11 +38,11 @@ public final class AddContactRequest {
         if (!(other instanceof AddContactRequest that)) {
             return false;
         }
-        return Objects.equals(phone, that.phone);
+        return Objects.equals(phone, that.phone) && Objects.equals(email, that.email);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(phone);
+        return Objects.hash(phone, email);
     }
 }

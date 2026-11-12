@@ -10,31 +10,48 @@ import java.util.Objects;
 public final class Contact {
 
     private final String userId;
-    private final String phone;
+    @Nullable private final String phone;
     private final String displayName;
     @Nullable private final String aliasName;
     @Nullable private final String avatarUrl;
     @Nullable private final String createdAt;
+    @Nullable private final String email;
+    @Nullable private final Boolean emailVerified;
 
     public Contact(
             String userId,
-            String phone,
+            @Nullable String phone,
             String displayName,
             @Nullable String aliasName,
             @Nullable String avatarUrl,
             @Nullable String createdAt) {
+        this(userId, phone, displayName, aliasName, avatarUrl, createdAt, null, null);
+    }
+
+    public Contact(
+            String userId,
+            @Nullable String phone,
+            String displayName,
+            @Nullable String aliasName,
+            @Nullable String avatarUrl,
+            @Nullable String createdAt,
+            @Nullable String email,
+            @Nullable Boolean emailVerified) {
         this.userId = Objects.requireNonNull(userId, "userId");
-        this.phone = Objects.requireNonNull(phone, "phone");
+        this.phone = phone;
         this.displayName = Objects.requireNonNull(displayName, "displayName");
         this.aliasName = aliasName;
         this.avatarUrl = avatarUrl;
         this.createdAt = createdAt;
+        this.email = email;
+        this.emailVerified = emailVerified;
     }
 
     public String getUserId() {
         return userId;
     }
 
+    @Nullable
     public String getPhone() {
         return phone;
     }
@@ -58,6 +75,16 @@ public final class Contact {
         return createdAt;
     }
 
+    @Nullable
+    public String getEmail() {
+        return email;
+    }
+
+    @Nullable
+    public Boolean getEmailVerified() {
+        return emailVerified;
+    }
+
     /** Label shown in lists: the owner alias beats the profile name when non-blank. */
     public String getPrimaryLabel() {
         return aliasName != null && !isBlank(aliasName) ? aliasName : displayName;
@@ -76,22 +103,26 @@ public final class Contact {
         if (this == other) return true;
         if (!(other instanceof Contact contact)) return false;
         return userId.equals(contact.userId)
-                && phone.equals(contact.phone)
+                && Objects.equals(phone, contact.phone)
                 && displayName.equals(contact.displayName)
                 && Objects.equals(aliasName, contact.aliasName)
                 && Objects.equals(avatarUrl, contact.avatarUrl)
-                && Objects.equals(createdAt, contact.createdAt);
+                && Objects.equals(createdAt, contact.createdAt)
+                && Objects.equals(email, contact.email)
+                && Objects.equals(emailVerified, contact.emailVerified);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(userId, phone, displayName, aliasName, avatarUrl, createdAt);
+        return Objects.hash(
+                userId, phone, displayName, aliasName, avatarUrl, createdAt, email, emailVerified);
     }
 
     @Override
     public String toString() {
         return "Contact(userId=" + userId + ", phone=" + phone + ", displayName=" + displayName
                 + ", aliasName=" + aliasName + ", avatarUrl=" + avatarUrl
-                + ", createdAt=" + createdAt + ")";
+                + ", createdAt=" + createdAt + ", email=" + email + ", emailVerified="
+                + emailVerified + ")";
     }
 }

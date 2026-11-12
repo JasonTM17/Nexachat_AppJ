@@ -205,7 +205,13 @@ public final class CreateGroupFragment extends Fragment {
             void bind(@NonNull Contact contact, boolean selected, @NonNull ToggleListener listener) {
                 String label = contact.getPrimaryLabel();
                 name.setText(label);
-                subtitle.setText(contact.getPhone());
+                String line = com.nexachat.core.common.PersonContactSubtitle.subtitle(contact);
+                if (line == null || line.isBlank()) {
+                    subtitle.setVisibility(android.view.View.GONE);
+                } else {
+                    subtitle.setVisibility(android.view.View.VISIBLE);
+                    subtitle.setText(line);
+                }
                 avatar.setName(label);
                 avatar.setAvatarUrl(contact.getAvatarUrl());
                 checkBox.setOnCheckedChangeListener(null);

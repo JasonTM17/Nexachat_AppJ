@@ -555,4 +555,12 @@
     <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
     <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
     <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
+    <!-- profile + contacts (394) -->
+    <string name="sign_in_method_google">Đăng nhập Google</string>
+    <string name="sign_in_method_phone">Số điện thoại</string>
+    <string name="action_link_google_short">Liên kết</string>
+    <string name="action_unlink_google_short">Hủy liên kết</string>
+    <string name="cd_sign_in_method_google">Phương thức đăng nhập Google</string>
+    <string name="add_contact_title">Thêm liên hệ</string>
+    <string name="add_contact_field_label">Số điện thoại hoặc email</string>
 </resources>

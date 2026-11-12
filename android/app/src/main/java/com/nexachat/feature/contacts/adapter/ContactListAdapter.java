@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
+import com.nexachat.core.common.PersonContactSubtitle;
 import com.nexachat.data.Contact;
 
 /**
@@ -68,9 +69,9 @@ public final class ContactListAdapter extends ListAdapter<Contact, ContactListAd
             String label = contact.getPrimaryLabel();
             name.setText(label);
             if (phone != null) {
-                String phoneText = contact.getPhone();
-                if (phoneText != null && !phoneText.isBlank()) {
-                    phone.setText(phoneText);
+                String subtitle = PersonContactSubtitle.subtitle(contact);
+                if (subtitle != null && !subtitle.isBlank()) {
+                    phone.setText(subtitle);
                     phone.setVisibility(View.VISIBLE);
                 } else {
                     phone.setVisibility(View.GONE);
