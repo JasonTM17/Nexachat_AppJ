@@ -121,13 +121,34 @@ public final class ContactDetailBinderTest {
         ContactDetailBinder.Content searchUser =
                 ContactDetailBinder.contentFor(detailState(user(), null, ""));
 
-        assertTrue(ContactDetailBinder.canReuseAliasField(USER_ID, true, contact, true));
-        assertFalse("other user", ContactDetailBinder.canReuseAliasField("u-2", true, contact, true));
-        assertFalse("no field", ContactDetailBinder.canReuseAliasField(USER_ID, true, contact, false));
+        assertTrue(ContactDetailBinder.canReuseAliasField(
+                USER_ID, true, contact.getTitle(), contact, true));
+        assertFalse("other user",
+                ContactDetailBinder.canReuseAliasField("u-2", true, contact.getTitle(), contact, true));
+        assertFalse("no field",
+                ContactDetailBinder.canReuseAliasField(USER_ID, true, contact.getTitle(), contact, false));
         assertFalse("contact became a search result",
-                ContactDetailBinder.canReuseAliasField(USER_ID, false, contact, true));
+                ContactDetailBinder.canReuseAliasField(USER_ID, false, contact.getTitle(), contact, true));
         assertFalse("search result has no alias editor",
-                ContactDetailBinder.canReuseAliasField(USER_ID, false, searchUser, true));
+                ContactDetailBinder.canReuseAliasField(USER_ID, false, searchUser.getTitle(), searchUser, true));
+    }
+
+    @Test
+    public void savedAliasUpdatesTitleSoDialogMustRebind() {
+        Contact beforeSave = new Contact(USER_ID, PHONE, "Lan", "Old nick", CONTACT_AVATAR, null);
+        Contact afterSave = new Contact(USER_ID, PHONE, "Lan", "New nick", CONTACT_AVATAR, null);
+        ContactDetailBinder.Content beforeContent = ContactDetailBinder.contentFor(
+                detailState(contactUser(), beforeSave, "Old nick"));
+        ContactDetailBinder.Content afterContent = ContactDetailBinder.contentFor(
+                detailState(contactUser(), afterSave, "New nick"));
+
+        assertEquals("Old nick", beforeContent.getTitle());
+        assertEquals("New nick", afterContent.getTitle());
+        assertTrue(ContactDetailBinder.canReuseAliasField(
+                USER_ID, true, beforeContent.getTitle(), beforeContent, true));
+        assertFalse("title changed after alias save",
+                ContactDetailBinder.canReuseAliasField(
+                        USER_ID, true, beforeContent.getTitle(), afterContent, true));
     }
 
     @Test
@@ -139,8 +160,10 @@ public final class ContactDetailBinderTest {
                 ContactDetailBinder.contentFor(detailState(contactUser(), savedContact(), "Be Na")
                         .withDetailBusy(true));
 
-        assertFalse(ContactDetailBinder.canReuseAliasField(USER_ID, true, error, true));
-        assertFalse(ContactDetailBinder.canReuseAliasField(USER_ID, true, busy, true));
+        assertFalse(ContactDetailBinder.canReuseAliasField(
+                USER_ID, true, error.getTitle(), error, true));
+        assertFalse(ContactDetailBinder.canReuseAliasField(
+                USER_ID, true, busy.getTitle(), busy, true));
     }
 
     private static ContactsViewModel.UiState detailState(
