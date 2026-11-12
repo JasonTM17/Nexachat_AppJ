@@ -83,8 +83,18 @@ class SyncCursorMigrationIT {
         flyway.migrate();
         JdbcTemplate jdbc = new JdbcTemplate(database.dataSource());
         Fixture fixture = seedV31(jdbc);
+        long started = System.nanoTime();
         flyway(database).migrate();
+        long v32ElapsedMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - started);
         flyway(database).validate();
+        String postgresVersion = jdbc.queryForObject("SHOW server_version", String.class);
+        int backfilledMessages = jdbc.queryForObject("""
+                SELECT count(*) FROM messages
+                WHERE conversation_id IN (?, ?)
+                """, Integer.class, fixture.populatedConversationId(), fixture.secondConversationId());
+        System.out.printf("SYNC_CURSOR_V32_MIGRATION pg=%s messages=%d elapsed_ms=%d scope=local-fixture%n",
+                postgresVersion, backfilledMessages, v32ElapsedMillis);
 
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT id, conversation_id, seq, content, edited_at, deleted_at, change_version
