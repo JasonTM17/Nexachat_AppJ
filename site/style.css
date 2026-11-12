@@ -8,16 +8,16 @@
   --card-bg: #1e293b;
   --text-main: #f8fafc;
   --text-muted: #cbd5e1;
-  --primary: #60a5fa;
-  --primary-hover: #3b82f6;
-  --btn-bg: #1d4ed8;
-  --btn-bg-hover: #1e40af;
+  --primary: #dda7cc;
+  --primary-hover: #f0c9e3;
+  --btn-bg: #733f68;
+  --btn-bg-hover: #5e3154;
   --secondary-bg: #334155;
   --secondary-hover: #475569;
   --border-color: #334155;
   --input-border: #94a3b8;
   --error: #fca5a5;
-  --focus-ring: #60a5fa;
+  --focus-ring: #dda7cc;
   --radius: 12px;
 }
 
@@ -29,16 +29,16 @@
     --card-bg: #ffffff;
     --text-main: #0f172a;
     --text-muted: #475569;
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --btn-bg: #2563eb;
-    --btn-bg-hover: #1d4ed8;
+    --primary: #733f68;
+    --primary-hover: #562c4d;
+    --btn-bg: #733f68;
+    --btn-bg-hover: #5e3154;
     --secondary-bg: #e2e8f0;
     --secondary-hover: #cbd5e1;
     --border-color: #e2e8f0;
     --input-border: #64748b;
     --error: #b91c1c;
-    --focus-ring: #2563eb;
+    --focus-ring: #562c4d;
   }
 }
 
@@ -180,7 +180,7 @@ body {
   min-width: 2.75rem;
   padding: 0.625rem 1.25rem;
   background-color: var(--btn-bg);
-  color: #ffffff;
+  color: var(--logo-on-brand);
   text-decoration: none;
   font-weight: 600;
   font-size: 1rem;
