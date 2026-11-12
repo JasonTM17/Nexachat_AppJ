@@ -37,11 +37,27 @@ public class ObservabilityMetrics {
     public static final String RATE_LIMIT_REJECTIONS = "nexachat.ratelimit.rejections";
     public static final String AUTH_FAILURES = "nexachat.auth.failures";
     public static final String REPOSITORY_CALLS = "nexachat.repository.calls";
+    public static final String STORAGE_OPERATIONS = "nexachat.storage.operations";
+    public static final String STORAGE_OPERATION_DURATION = "nexachat.storage.operation.duration";
+    public static final String STORAGE_OPERATION_BYTES = "nexachat.storage.operation.bytes";
+    public static final String STORAGE_STREAM_DURATION = "nexachat.storage.stream.duration";
+    public static final String STORAGE_STREAM_BYTES = "nexachat.storage.stream.bytes";
 
     /** Every tag key this class is allowed to emit. */
     public static final Set<String> ALLOWED_TAG_KEYS = Set.of(
             "type", "outcome", "event", "size_bucket", "result", "action",
-            "to", "reason", "mode", "provider", "fallback", "source", "method");
+            "to", "reason", "mode", "provider", "fallback", "source", "method",
+            "operation");
+
+    /** Terminal state of consuming a storage stream. */
+    public enum StreamOutcome {
+        /** The caller read to end of stream. */
+        COMPLETE,
+        /** The caller closed the stream before end of stream. */
+        CLOSED,
+        /** A read, skip or close raised an I/O error. */
+        FAILURE
+    }
 
     /**
      * Tag value of the zero-valued warm-up series of a tagged meter.
@@ -114,6 +130,28 @@ public class ObservabilityMetrics {
                 .description("Repository call duration by method")
                 .tags("method", UNRECORDED, "outcome", UNRECORDED)
                 .register(registry);
+        Counter.builder(STORAGE_OPERATIONS)
+                .description("Storage operations by operation, provider and outcome")
+                .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
+                .register(registry);
+        Timer.builder(STORAGE_OPERATION_DURATION)
+                .description("Storage operation duration up to the point the operation returns")
+                .publishPercentileHistogram()
+                .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
+                .register(registry);
+        DistributionSummary.builder(STORAGE_OPERATION_BYTES)
+                .description("Bytes moved by the storage operation itself")
+                .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
+                .register(registry);
+        Timer.builder(STORAGE_STREAM_DURATION)
+                .description("Time spent consuming a storage stream after it was opened")
+                .publishPercentileHistogram()
+                .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
+                .register(registry);
+        DistributionSummary.builder(STORAGE_STREAM_BYTES)
+                .description("Bytes consumed from a storage stream")
+                .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
+                .register(registry);
     }
 
     public void recordMessageSent(String type, boolean created) {
@@ -138,7 +176,7 @@ public class ObservabilityMetrics {
     }
 
     public void recordDeltaSync(long durationMillis, long responseBytes, boolean success) {
-        registry.timer(DELTA_SYNC_DURATION, "outcome", success ? "SUCCESS" : "ERROR")
+        histogramTimer(DELTA_SYNC_DURATION, "outcome", success ? "SUCCESS" : "ERROR")
                 .record(durationMillis, TimeUnit.MILLISECONDS);
         registry.summary(DELTA_SYNC_BYTES, "size_bucket", sizeBucket(responseBytes))
                 .record(Math.max(0L, responseBytes));
@@ -182,6 +220,55 @@ public class ObservabilityMetrics {
         registry.timer(REPOSITORY_CALLS, "method", safe(method, "UNKNOWN"),
                 "outcome", success ? "SUCCESS" : "FAILURE")
                 .record(durationMillis, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Records one storage operation at request level. For {@code OPEN} and
+     * {@code OPEN_RANGE} this ends when the stream handle is returned; byte
+     * consumption is recorded separately by
+     * {@link #recordStorageStream(String, String, long, long, StreamOutcome)}.
+     */
+    public void recordStorageOperation(String operation, String provider, long durationMillis,
+                                       long bytes, boolean success) {
+        String outcome = success ? "SUCCESS" : "FAILURE";
+        String operationTag = safe(operation, "UNKNOWN");
+        String providerTag = safe(provider, "UNKNOWN");
+        registry.counter(STORAGE_OPERATIONS, "operation", operationTag,
+                "provider", providerTag, "outcome", outcome).increment();
+        histogramTimer(STORAGE_OPERATION_DURATION, "operation", operationTag,
+                "provider", providerTag, "outcome", outcome)
+                .record(durationMillis, TimeUnit.MILLISECONDS);
+        registry.summary(STORAGE_OPERATION_BYTES, "operation", operationTag,
+                "provider", providerTag, "outcome", outcome)
+                .record(Math.max(0L, bytes));
+    }
+
+    /** Records stream consumption, kept separate from the open operation. */
+    public void recordStorageStream(String operation, String provider, long durationMillis,
+                                    long bytes, StreamOutcome outcome) {
+        String operationTag = safe(operation, "UNKNOWN");
+        String providerTag = safe(provider, "UNKNOWN");
+        String outcomeTag = outcome == null ? StreamOutcome.FAILURE.name() : outcome.name();
+        histogramTimer(STORAGE_STREAM_DURATION, "operation", operationTag,
+                "provider", providerTag, "outcome", outcomeTag)
+                .record(durationMillis, TimeUnit.MILLISECONDS);
+        registry.summary(STORAGE_STREAM_BYTES, "operation", operationTag,
+                "provider", providerTag, "outcome", outcomeTag)
+                .record(Math.max(0L, bytes));
+    }
+
+    /**
+     * Returns a timer with the percentile histogram config used by every
+     * tagged series of a timer name. Registering a tagged series through
+     * {@code registry.timer(name, tags)} without this config would mix summary
+     * and histogram data points under one Prometheus name and make the scrape
+     * fail, because the first registered meter fixes the exposition family.
+     */
+    private Timer histogramTimer(String name, String... tags) {
+        return Timer.builder(name)
+                .tags(tags)
+                .publishPercentileHistogram()
+                .register(registry);
     }
 
     /** Bounded size buckets for the delta-sync response summary. */
