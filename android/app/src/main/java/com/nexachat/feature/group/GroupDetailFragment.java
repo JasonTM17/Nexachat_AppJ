@@ -17,6 +17,9 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -312,6 +315,13 @@ public final class GroupDetailFragment extends Fragment {
 
         BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
         dialog.setContentView(sheet.getRoot());
+        ViewCompat.setOnApplyWindowInsetsListener(sheet.getRoot(), (view, windowInsets) -> {
+            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            int bottom = Math.max(bars.bottom, ime.bottom);
+            view.setPadding(view.getPaddingLeft(), view.getPaddingTop(), view.getPaddingRight(), bottom);
+            return windowInsets;
+        });
         dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
         dialog.getBehavior().setSkipCollapsed(true);
         dialog.setOnDismissListener(d -> {
