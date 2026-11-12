@@ -30,6 +30,16 @@ class StorageTransactionCleanupTest {
     }
 
     @Test
+    void callerRollbackDeletesObjectBoundInsideIt() {
+        TransactionTemplate caller = new TransactionTemplate(transaction.getTransactionManager());
+        assertThatThrownBy(() -> caller.execute(status -> {
+            StorageTransactionCleanup.bind(storage, KEY, transaction, () -> "bound");
+            throw new IllegalStateException("planned rollback");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("planned rollback");
+        verify(storage).deleteIfExists(KEY);
+    }
+
+    @Test
     void rollbackOnlyDoesNotReturnSuccess() {
         assertThatThrownBy(() -> StorageTransactionCleanup.bind(storage, KEY, transaction, () -> {
             new TransactionTemplate(transaction.getTransactionManager()).executeWithoutResult(status -> status.setRollbackOnly());

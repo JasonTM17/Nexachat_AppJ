@@ -12,7 +12,6 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -117,7 +116,6 @@ public class AttachmentService {
      *                      upload admission gate is saturated),
      *                      {@code USER_NOT_FOUND}
      */
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AttachmentResponse upload(UUID ownerId, MultipartFile file,
                                      Integer width, Integer height, Integer duration,
                                      String blurHash) {
@@ -156,17 +154,21 @@ public class AttachmentService {
             }
 
             // Preserve owner-before-storage error precedence without holding a
-            // transaction/row lock across external I/O. Bind revalidates below.
-            User candidate = userRepository.findById(ownerId)
-                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-            if (candidate.getDeletedAt() != null) {
-                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
-            }
-
-            // store() re-sniffs the bytes and applies the magic-byte whitelist —
-            // a disguised executable dies there with MIME_NOT_ALLOWED.
-            StorageService.StoredFile stored = storageService.store(
-                    STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
+            // transaction/row lock across external I/O. The caller transaction,
+            // if any, resumes before bind so its rollback deletes this object.
+            StorageService.StoredFile stored = StorageTransactionCleanup.outsideCallerTransaction(
+                    transactionManagerProvider.getObject(), () -> {
+                        User candidate = userRepository.findById(ownerId)
+                                .orElseThrow(() -> ApiException.of(
+                                        ApiErrorCode.USER_NOT_FOUND, "User not found"));
+                        if (candidate.getDeletedAt() != null) {
+                            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                        }
+                        // store() re-sniffs the bytes and applies the magic-byte whitelist —
+                        // a disguised executable dies there with MIME_NOT_ALLOWED.
+                        return storageService.store(
+                                STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
+                    });
             return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction(), () -> {
                 User owner = userRepository.findByIdForUpdate(ownerId)
                         .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));

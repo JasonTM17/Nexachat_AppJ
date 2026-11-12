@@ -2,6 +2,8 @@ package com.nexachat.attachment;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -15,6 +17,17 @@ public final class StorageTransactionCleanup {
     private static final Logger log = LoggerFactory.getLogger(StorageTransactionCleanup.class);
 
     private StorageTransactionCleanup() {
+    }
+
+    /**
+     * Runs storage I/O with a caller transaction suspended. {@link #bind} runs
+     * after this returns so that transaction can still delete the object on rollback.
+     */
+    public static <T> T outsideCallerTransaction(PlatformTransactionManager transactionManager,
+                                                 Supplier<T> work) {
+        TransactionTemplate suspended = new TransactionTemplate(transactionManager);
+        suspended.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
+        return suspended.execute(status -> work.get());
     }
 
     /** Bind a newly stored object, including transaction-start and commit failures. */

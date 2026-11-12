@@ -9,9 +9,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -61,7 +59,6 @@ public class AvatarController {
     }
 
     @PostMapping("/me/avatar")
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AvatarResponse uploadAvatar(
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam("file") List<MultipartFile> files) throws IOException {
@@ -83,13 +80,17 @@ public class AvatarController {
             if (sniffed == null || !sniffed.startsWith("image/")) {
                 throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
             }
-            User candidate = userRepository.findById(principal.userId())
-                    .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-            if (candidate.getDeletedAt() != null) {
-                throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
-            }
-            StorageService.StoredFile stored = storageService.store(
-                    "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+            StorageService.StoredFile stored = StorageTransactionCleanup.outsideCallerTransaction(
+                    transactionManagerProvider.getObject(), () -> {
+                        User candidate = userRepository.findById(principal.userId())
+                                .orElseThrow(() -> ApiException.of(
+                                        ApiErrorCode.USER_NOT_FOUND, "User not found"));
+                        if (candidate.getDeletedAt() != null) {
+                            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                        }
+                        return storageService.store(
+                                "avatars", file.getOriginalFilename(), file.getContentType(), bytes);
+                    });
             return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction(), () -> {
                 // Part A order: avatar advisory before user, also when bind waits.
                 referenceCoordinator.lockForTransaction();
