@@ -260,13 +260,149 @@ tasks.configureEach { task ->
     }
 }
 
+tasks.register('checkReleaseExcludesDebugPushHook') {
+    group = 'verification'
+    description = 'Fails when the debug push injection hook is present in release sources or the merged release manifest.'
+    def mainSources = file('src/main')
+    def releaseSources = file('src/release')
+    def manifestDirs = [
+            layout.buildDirectory.dir('intermediates/merged_manifest/release'),
+            layout.buildDirectory.dir('intermediates/merged_manifests/release'),
+    ]
+    doLast {
+        def markers = ['DebugPushInjectionReceiver', 'com.nexachat.debug.INJECT_PUSH']
+        def offenders = []
+        [mainSources, releaseSources].each { root ->
+            if (!root.isDirectory()) {
+                return
+            }
+            root.eachFileRecurse { candidate ->
+                if (!candidate.isFile()) {
+                    return
+                }
+                def name = candidate.name.toLowerCase(Locale.ROOT)
+                if (!(name.endsWith('.java') || name.endsWith('.kt') || name.endsWith('.xml')
+                        || name.endsWith('.gradle') || name.endsWith('.pro')
+                        || name.endsWith('.txt') || name.endsWith('.json')
+                        || name.endsWith('.properties'))) {
+                    return
+                }
+                def text = candidate.getText('UTF-8')
+                markers.each { marker ->
+                    if (text.contains(marker)) {
+                        offenders.add("${root.toPath().relativize(candidate.toPath())} contains ${marker}")
+                    }
+                }
+            }
+        }
+        def manifests = []
+        manifestDirs.each { dir ->
+            def root = dir.get().asFile
+            if (!root.isDirectory()) {
+                return
+            }
+            root.eachFileRecurse { candidate ->
+                if (candidate.isFile() && candidate.name == 'AndroidManifest.xml') {
+                    manifests.add(candidate)
+                }
+            }
+        }
+        if (manifests.isEmpty()) {
+            throw new GradleException(
+                    'checkReleaseExcludesDebugPushHook: no merged release AndroidManifest.xml was produced')
+        }
+        manifests.each { manifest ->
+            def text = manifest.getText('UTF-8')
+            markers.each { marker ->
+                if (text.contains(marker)) {
+                    offenders.add("merged release manifest contains ${marker}")
+                }
+            }
+        }
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                    'Debug push injection hook leaked into release:\n' + offenders.join('\n'))
+        }
+        logger.lifecycle(
+                'checkReleaseExcludesDebugPushHook: release sources and '
+                        + manifests.size()
+                        + ' merged release manifest(s) do not contain the debug push hook')
+    }
+}
+
+tasks.register('checkDebugManifestContainsPushHook') {
+    group = 'verification'
+    description = 'Fails when the merged debug manifest does not register the shell-only push injection receiver.'
+    def manifestDirs = [
+            layout.buildDirectory.dir('intermediates/merged_manifest/debug'),
+            layout.buildDirectory.dir('intermediates/merged_manifests/debug'),
+    ]
+    doLast {
+        def manifests = []
+        manifestDirs.each { dir ->
+            def root = dir.get().asFile
+            if (!root.isDirectory()) {
+                return
+            }
+            root.eachFileRecurse { candidate ->
+                if (candidate.isFile() && candidate.name == 'AndroidManifest.xml') {
+                    manifests.add(candidate)
+                }
+            }
+        }
+        if (manifests.isEmpty()) {
+            throw new GradleException(
+                    'checkDebugManifestContainsPushHook: no merged debug AndroidManifest.xml was produced')
+        }
+        def receiver = java.util.regex.Pattern.compile(
+                '<receiver\\b[^>]*DebugPushInjectionReceiver[^>]*/>')
+        manifests.each { manifest ->
+            def text = manifest.getText('UTF-8')
+            def matcher = receiver.matcher(text)
+            if (!matcher.find()) {
+                throw new GradleException(
+                        'checkDebugManifestContainsPushHook: debug manifest has no self-closing DebugPushInjectionReceiver')
+            }
+            def tag = matcher.group()
+            if (!tag.contains('android:exported="true"')
+                    || !tag.contains('android:permission="android.permission.DUMP"')
+                    || tag.contains('intent-filter')) {
+                throw new GradleException(
+                        'checkDebugManifestContainsPushHook: receiver must be explicit, exported, and guarded by DUMP')
+            }
+        }
+        logger.lifecycle(
+                'checkDebugManifestContainsPushHook: '
+                        + manifests.size()
+                        + ' merged debug manifest(s) register the DUMP-guarded push injection receiver')
+    }
+}
+
+tasks.named('checkReleaseExcludesDebugPushHook').configure {
+    dependsOn('processReleaseManifest')
+}
+
+tasks.named('checkDebugManifestContainsPushHook').configure {
+    dependsOn('processDebugManifest')
+}
+
 tasks.matching { it.name == 'testDebugUnitTest' }.configureEach {
     dependsOn(
             'processReleaseManifest',
+            'checkReleaseExcludesDebugPushHook',
+            'checkDebugManifestContainsPushHook',
             'generateDebugResValues',
             'generateDebugAndroidTestResValues',
             'generateLocalSmokeResValues',
             'generateReleaseResValues')
+}
+
+tasks.matching { it.name == 'assembleDebug' }.configureEach {
+    dependsOn('checkDebugManifestContainsPushHook')
+}
+
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    dependsOn('checkReleaseExcludesDebugPushHook')
 }
 
 gradle.taskGraph.whenReady { graph ->
