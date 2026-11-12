@@ -209,8 +209,16 @@ final class SyncPageStore {
                     && dto.getDeletedAt() == null) {
                 db.conversationDao().incrementUnread(conversation, 1).blockingAwait();
             }
-            if (accepted && owner.equals(dto.getResolvedSenderId()) && dto.getClientMessageId() != null) {
-                db.outboxDao().delete(dto.getClientMessageId(), owner).blockingAwait();
+            // A retry acknowledgement proves delivery even when its content was already cached
+            // by sync/history or superseded by a later edit. Never tie queue progress to repainting.
+            if (owner.equals(dto.getResolvedSenderId()) && dto.getClientMessageId() != null) {
+                MessageEntity committed = db.messageDao().byId(dto.getId()).blockingGet();
+                if (committed != null && owner.equals(committed.getSenderId())
+                        && conversation.equals(committed.getConversationId())
+                        && (committed.getClientMessageId() == null
+                        || dto.getClientMessageId().equals(committed.getClientMessageId()))) {
+                    db.outboxDao().delete(dto.getClientMessageId(), owner).blockingAwait();
+                }
             }
         }));
     }
