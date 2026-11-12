@@ -29,6 +29,7 @@ public final class SyncEngineV2Test {
     private final List<SyncRequest> requests = new ArrayList<>();
     private final Map<String, SyncCursorEntity> cursors = new LinkedHashMap<>();
     private final Map<String, List<MessageReactionEntity>> reactionRows = new LinkedHashMap<>();
+    private final Set<String> queued = new HashSet<>();
     private AppDatabase db;
     private MessageDao messages;
     private ConversationDao inbox;
@@ -37,6 +38,7 @@ public final class SyncEngineV2Test {
     private TokenStore tokens;
     private TokenRefresher refresher;
     private SyncEngine engine;
+    private SessionOperationTracker tracker;
     private java.util.function.Function<SyncRequest, String> server;
 
     @Before public void setUp() throws Exception {
@@ -70,6 +72,8 @@ public final class SyncEngineV2Test {
         when(pins.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(pins.delete(anyString(), anyString())).thenReturn(Completable.complete());
         when(outbox.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());
+        when(outbox.delete(anyString(), anyString())).thenAnswer(i -> Completable.fromAction(() ->
+                queued.remove(i.getArgument(1) + ":" + i.getArgument(0))));
         when(inbox.getAllWatermarks()).thenAnswer(i -> Single.just(new ArrayList<>(conversations)));
         when(messages.getAllMaxSeqs()).thenReturn(Single.just(List.of()));
         when(messages.byId(anyString())).thenAnswer(i -> Maybe.fromCallable(() -> rows.get(i.getArgument(0))));
@@ -599,6 +603,98 @@ public final class SyncEngineV2Test {
         assertTrue(moshi.adapter(SyncRequest.Watermark.class).toJson(watermark).contains(Long.toString(value)));
     }
 
+    @Test public void duplicateOwnAcknowledgementsClearOutboxEvenWhenContentIsNotApplied() {
+        for (int scenario : new int[] {0, 1, 2}) {
+            boolean versioned = scenario != 2;
+            conversations.clear(); rows.clear(); cursors.clear(); queued.clear(); restart();
+            conversations.add(new ConversationWatermark("c0", 900));
+            MessageEntity cached = new MessageEntity("m-c0", "c0", 1, "A", "me", "TEXT",
+                    versioned ? "newer edit" : "v1", "queued", null, null, null, 0, null,
+                    versioned ? 3L : null, null);
+            if (versioned) {
+                cached = cached.withSyncVersion(3, 1);
+                cursors.put("A:c0", new SyncCursorEntity("A", "c0", 1, 3,
+                        "2026-11-12T00:00:00Z", null, null, false));
+            }
+            rows.put("m-c0", cached); // reconnect/history already cached the committed send
+            queued.add("A:queued"); queued.add("B:queued");
+            String wire = message("c0", scenario == 1 ? 3 : 1)
+                    .replace("\"senderId\":\"peer\"", "\"senderId\":\"A\",\"clientMessageId\":\"queued\"");
+            if (scenario == 1) wire = wire.replace("\"content\":\"v3\"", "\"content\":\"newer edit\"");
+            if (!versioned) wire = wire.replace("\"changeVersion\":1,", "").replace("\"generation\":1,", "");
+            engine.applyServerMessage(parseMessage(wire), "c0").blockingAwait();
+            assertFalse("ack must clear its account queue even for an already-cached row", queued.contains("A:queued"));
+            assertTrue("another account keeps its queued send", queued.contains("B:queued"));
+            assertEquals(versioned ? "newer edit" : "v1", rows.get("m-c0").getContent());
+        }
+    }
+
+    @Test public void trackerInvalidationCancelsHeldHttpWithoutWaitingForItsResponse() throws Exception {
+        seed(1, 1);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch cancelled = new CountDownLatch(1);
+        CountDownLatch invalidatorStarted = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean ownerReleased = new java.util.concurrent.atomic.AtomicBoolean();
+        @SuppressWarnings("unchecked") Call<SyncResponse> held = mock(Call.class);
+        when(held.execute()).thenAnswer(i -> {
+            entered.countDown();
+            try { if (!release.await(10, TimeUnit.SECONDS)) throw new java.io.IOException("fixture HTTP timeout"); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new java.io.IOException("fixture HTTP cancelled"); }
+            return Response.success(parseResponse(envelope(List.of(delta("c0", 2, false, message("c0", 2))), 2)));
+        });
+        doAnswer(i -> { if (!ownerReleased.get()) cancelled.countDown(); release.countDown(); return null; }).when(held).cancel();
+        doReturn(held).when(api).syncDeltas(any());
+        java.util.concurrent.ExecutorService invalidator = java.util.concurrent.Executors.newSingleThreadExecutor();
+        List<Throwable> undeliverable = new java.util.concurrent.CopyOnWriteArrayList<>();
+        io.reactivex.rxjava3.plugins.RxJavaPlugins.setErrorHandler(undeliverable::add);
+        TestObserver<Void> running = engine.sync().test();
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            java.util.concurrent.Future<?> invalidation = invalidator.submit(() -> {
+                invalidatorStarted.countDown(); tracker.invalidate();
+            });
+            assertTrue(invalidatorStarted.await(5, TimeUnit.SECONDS));
+            try { invalidation.get(2, TimeUnit.SECONDS); }
+            catch (java.util.concurrent.TimeoutException blocked) {
+                fail("tracker invalidation is blocked behind held sync HTTP");
+            }
+            assertTrue("invalidation must cancel HTTP before the test releases it", cancelled.await(2, TimeUnit.SECONDS));
+            assertEquals("v1", rows.get("m-c0").getContent());
+        } finally {
+            ownerReleased.set(true); release.countDown(); running.dispose();
+            invalidator.shutdownNow(); invalidator.awaitTermination(5, TimeUnit.SECONDS);
+            io.reactivex.rxjava3.plugins.RxJavaPlugins.setErrorHandler(null);
+        }
+        assertTrue("cancellation must not emit undeliverable failures", undeliverable.isEmpty());
+    }
+
+    @Test public void reversedIndependentReactionPagesSurviveLaterMessagesAndRestart() {
+        conversations.add(new ConversationWatermark("c0", 900));
+        cursors.put("A:c0", new SyncCursorEntity("A", "c0", 1, 0,
+                "2026-11-12T00:00:00Z", null, null, false));
+        AtomicInteger responses = new AtomicInteger();
+        server = request -> {
+            long after = cursor(request.getWatermarks().get(0));
+            List<String> changes = new ArrayList<>();
+            List<String> updates = new ArrayList<>();
+            for (int n = (int) after + 1; n <= Math.min(100, after + 50); n++) {
+                changes.add(message("c0", n).replace("m-c0", "m-" + n).replace("\"seq\":1,", "\"seq\":" + n + ","));
+                int reactionMessage = 101 - n;
+                updates.add("{\"messageId\":\"m-" + reactionMessage + "\",\"reactions\":[{\"emoji\":\"x\",\"count\":1,\"reactedByMe\":false}]}");
+            }
+            long next = Math.min(100, after + 50);
+            return envelope(List.of(page("c0", next, 100, next < 100, next < 100, 1, String.join(",", changes))
+                    .replace("\"reset\":false", "\"reset\":false,\"reactionCursor\":" + (next < 100 ? "50" : "null")
+                            + ",\"reactionUpdates\":[" + String.join(",", updates) + "]")), responses.incrementAndGet() * 10);
+        };
+        engine.sync().blockingAwait();
+        restart(); engine.sync().blockingAwait(); // no old events are returned after checkpoint completion
+        assertEquals(100, rows.size());
+        assertEquals("no aggregate may be dropped before its message arrives", 100, reactionRows.size());
+        for (int n = 1; n <= 100; n++) assertEquals(1, reactionRows.get("m-" + n).get(0).getCount());
+    }
+
     @SuppressWarnings("unchecked") private String omitDeltaField(String json, String field) {
         try {
             Map<String, Object> root = moshi.adapter(Map.class).fromJson(json);
@@ -641,8 +737,9 @@ public final class SyncEngineV2Test {
     private static final class SimulatedCrash extends RuntimeException { }
 
     private void restart() {
+        tracker = new SessionOperationTracker();
         engine = new SyncEngine(db, api, messages, inbox, reactions, tokens, moshi,
-                refresher, new SessionOperationTracker());
+                refresher, tracker);
     }
 
     private static ConversationEntity conversation(String id) {
