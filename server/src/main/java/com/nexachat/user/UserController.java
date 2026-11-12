@@ -87,15 +87,16 @@ public class UserController {
     }
 
     /**
-     * User discovery: {@code ?phone=} does an exact E.164 lookup (list of
-     * 0..1), {@code ?q=} does a displayName prefix search (≤20, caller
-     * excluded). Exactly one param is required — enforced in the service.
+     * User discovery: {@code ?phone=} exact E.164, {@code ?email=} exact verified
+     * email (caller excluded), or {@code ?q=} displayName prefix (≤20, caller
+     * excluded). Exactly one query param is required — enforced in the service.
      */
     @GetMapping("/search")
     public List<UserResponse> search(@AuthenticationPrincipal JwtPrincipal principal,
                                      @RequestParam(name = "phone", required = false) String phone,
+                                     @RequestParam(name = "email", required = false) String email,
                                      @RequestParam(name = "q", required = false) String q) {
-        return userService.search(requireUserId(principal), phone, q);
+        return userService.search(requireUserId(principal), phone, email, q);
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

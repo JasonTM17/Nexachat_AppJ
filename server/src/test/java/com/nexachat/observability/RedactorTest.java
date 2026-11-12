@@ -74,6 +74,13 @@ class RedactorTest {
     }
 
     @Test
+    void redactsEmailFields() {
+        String redacted = Redactor.redact("contact lookup email=friend@example.com");
+        assertThat(redacted).doesNotContain("friend@example.com");
+        assertThat(redacted).contains("email=[REDACTED]");
+    }
+
+    @Test
     void masksMessageAndContentFields() {
         String redacted = Redactor.redact(
                 "{\"content\":\"secret message body\",\"body\":\"另一个秘密\",\"text\":\"hidden\"}");

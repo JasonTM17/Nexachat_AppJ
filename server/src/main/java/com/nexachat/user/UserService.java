@@ -3,6 +3,7 @@ package com.nexachat.user;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.contact.ContactRepository;
+import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.dto.UserResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -64,25 +65,31 @@ public class UserService {
     }
 
     /**
-     * GET /users/search: exactly one of {@code phone} or {@code q} must be
-     * supplied (both or neither → 400 VALIDATION_FAILED).
+     * GET /users/search: exactly one of {@code phone}, {@code email}, or {@code q}
+     * must be supplied (any other combination → 400 VALIDATION_FAILED).
      *
      * <ul>
      *   <li>{@code phone}: normalized to E.164 then exact match — returns a
      *       list of 0..1 users; an unknown number is an EMPTY list, not a 404
      *       (search semantics), while an unparseable number is a 400.</li>
+     *   <li>{@code email}: normalized like recovery email, exact match on verified
+     *       active users — 0..1 rows, caller excluded; unknown, unverified, or
+     *       deleted addresses yield an empty list.</li>
      *   <li>{@code q}: case-insensitive displayName prefix, capped at
      *       {@value #SEARCH_LIMIT} rows, caller excluded. A blank {@code q}
      *       counts as "not supplied".</li>
      * </ul>
      */
     @Transactional(readOnly = true)
-    public List<UserResponse> search(UUID callerId, String phone, String q) {
+    public List<UserResponse> search(UUID callerId, String phone, String email, String q) {
         boolean hasPhone = phone != null && !phone.isBlank();
+        boolean hasEmail = email != null && !email.isBlank();
         boolean hasQ = q != null && !q.isBlank();
-        if (hasPhone == hasQ) {
+        int supplied = (hasPhone ? 1 : 0) + (hasEmail ? 1 : 0) + (hasQ ? 1 : 0);
+        if (supplied != 1) {
             throw ApiException.of(
-                    ApiErrorCode.VALIDATION_FAILED, "Provide exactly one of 'phone' or 'q'");
+                    ApiErrorCode.VALIDATION_FAILED,
+                    "Provide exactly one of 'phone', 'email', or 'q'");
         }
 
         if (hasPhone) {
@@ -93,6 +100,14 @@ public class UserService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
             }
             return userRepository.findByPhoneAndDeletedAtIsNull(e164)
+                    .map(user -> List.of(UserResponse.from(user)))
+                    .orElseGet(List::of);
+        }
+
+        if (hasEmail) {
+            String normalized = EmailOtpService.normalizeEmail(email);
+            return userRepository.findActiveByVerifiedEmail(normalized)
+                    .filter(user -> !user.getId().equals(callerId))
                     .map(user -> List.of(UserResponse.from(user)))
                     .orElseGet(List::of);
         }

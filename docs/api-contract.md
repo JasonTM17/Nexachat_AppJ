@@ -465,14 +465,14 @@ account hash (it still pays one dummy bcrypt compare for timing).
 | `PUT /users/me/email` | Bearer | `{email}` — normalized to lowercase and trimmed; sends a verification code | `202` empty | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /users/me/email/verify` | Bearer | `{code}` — six-digit code | `200` `{email, verified:true}` | `INVALID_OR_EXPIRED_CODE` 400 · `EMAIL_ALREADY_IN_USE` 409 |
 | `DELETE /users/me/email` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
-| `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup) **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
+| `GET /users/search` | Bearer | Query `?phone=` (exact E.164 lookup), `?email=` (exact verified-email lookup, caller excluded), **or** `?q=` (displayName prefix, caller excluded) — exactly one required | `200` `UserResponse[]` — 0–1 for phone/email, ≤20 for `q` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `RATE_LIMITED` 429 (30/min per user) |
 | `POST /users/me/avatar` | Bearer | `multipart/form-data` field `file`; image magic bytes only | `200` `{avatarUrl}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (upload admission, shared with attachments and group avatars) |
 | `POST /users/device-token` | Bearer | `{token, platform?, deviceLabel?}` (alias: `/devices/token`) — token ≤512 chars, platform `ANDROID` or `IOS` (omitted or unrecognized defaults to `ANDROID`), label ≤100 chars; uniqueness is `(user, token)`, so one physical device may hold a row per account | `200` `DeviceTokenResponse` `{id, token, platform, deviceLabel, updatedAt}` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/device-token` | Bearer | Query `?token=` or body `{token}` (alias: `/devices/token`) | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 
 The alias routes `POST /devices/token` and `DELETE /devices/token` run the same handlers as the `/users/device-token` rows above, with identical bodies and responses.
 
-`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts.
+`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
 
 ### Public account deletion recovery
 
@@ -488,7 +488,7 @@ Within their rate-limit allowance, password-reset and account-deletion request r
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /contacts` | Bearer | — | `200` `ContactResponse[]` | `UNAUTHORIZED` 401 |
-| `POST /contacts` | Bearer | `{phone}` | `201` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `ALREADY_CONTACT` 409 · `RATE_LIMITED` 429 (30/min) |
+| `POST /contacts` | Bearer | `{phone}` **or** `{email}` — exactly one; phone accepts local/international format; email is trimmed, lowercased, and must match an active user with verified email | `201` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `ALREADY_CONTACT` 409 · `RATE_LIMITED` 429 (30/min) |
 | `PATCH /contacts/{userId}` | Bearer | `{aliasName?}` — ≤60 chars; JSON `null` clears the alias | `200` `ContactResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 |
 | `DELETE /contacts/{userId}` | Bearer | — | `204` empty (idempotent: deleting a non-contact is still 204) | `UNAUTHORIZED` 401 |
 

@@ -59,9 +59,10 @@ public final class Redactor {
     private static final Pattern PHONE_FIELD = Pattern.compile(
             "(?i)(phone|mobile|telephone|tel)\\s*[:=]\\s*['\"]?(\\+?[0-9\\s().-]{7,20})['\"]?");
 
-    /** Named email fields in structured logs. */
+    /** Named email fields in structured logs and query strings. */
     private static final Pattern EMAIL_FIELD = Pattern.compile(
-            "(?i)(email|e-mail|mail)\\s*[:=]\\s*['\"]?([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})['\"]?");
+            "(?i)(email|e-?mail|mail)\\s*[:=]\\s*['\"]?"
+                    + "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})['\"]?");
 
     /** JSON message/content fields. */
     private static final Pattern CONTENT_JSON = Pattern.compile(
