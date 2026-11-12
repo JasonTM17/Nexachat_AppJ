@@ -31,6 +31,7 @@ import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
+import com.nexachat.message.dto.SyncFence;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -622,11 +623,14 @@ public class MessageService {
         if (request == null || request.watermarks() == null || request.watermarks().isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermarks list must not be empty");
         }
+        validateSyncVersionFields(request);
         int limit = request.limitPerConv() != null ? Math.max(1, Math.min(request.limitPerConv(), 100)) : 50;
         java.time.Instant since = request.since();
         // Captured BEFORE the queries: a row committed after its query ran but
         // before a later timestamp would be skipped by the next delta request.
         java.time.Instant requestTime = clock.instant();
+        Instant reactionRetentionCutoff = requestTime
+                .minus(syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS);
 
         List<SyncRequest.ConversationWatermark> watermarks = request.watermarks();
         if (watermarks.size() > 100) {
@@ -645,8 +649,6 @@ public class MessageService {
         }
 
         if (since != null) {
-            Instant reactionRetentionCutoff = clock.instant().minus(
-                    syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS);
             if (!since.isBefore(reactionRetentionCutoff)) {
                 List<UUID> reactionConversations = watermarks.stream()
                         .map(SyncRequest.ConversationWatermark::conversationId)
@@ -658,6 +660,11 @@ public class MessageService {
                     reactionEventRepository.lockConversationEvents(conversationId);
                 }
             }
+        }
+
+        if (isVersion2Request(request, watermarks)) {
+            return syncDeltaV2(userId, watermarks, limit, since, requestTime,
+                    reactionRetentionCutoff, flagsByConversation);
         }
 
         List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
@@ -748,6 +755,115 @@ public class MessageService {
         }
 
         return new SyncResponse(deltas, requestTime);
+    }
+
+    private static void validateSyncVersionFields(SyncRequest request) {
+        if (request.syncVersion() != null && request.syncVersion() != 1 && request.syncVersion() != 2) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "syncVersion must be 1 or 2");
+        }
+        for (SyncRequest.ConversationWatermark watermark : request.watermarks()) {
+            if (watermark != null && watermark.changeCursor() != null && watermark.changeCursor() < 0) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "changeCursor must be a non-negative signed 64-bit integer");
+            }
+            if (watermark != null && watermark.generation() != null && watermark.generation() < 1) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "generation must be a positive signed 64-bit integer");
+            }
+        }
+    }
+
+    private boolean isVersion2Request(SyncRequest request,
+                                      List<SyncRequest.ConversationWatermark> watermarks) {
+        return syncProperties.isChangeCursorsEnabled()
+                && Integer.valueOf(2).equals(request.syncVersion())
+                && watermarks.stream().allMatch(watermark -> watermark.changeCursor() != null);
+    }
+
+    private SyncResponse syncDeltaV2(UUID userId,
+                                     List<SyncRequest.ConversationWatermark> watermarks,
+                                     int limit,
+                                     Instant since,
+                                     Instant requestTime,
+                                     Instant reactionRetentionCutoff,
+                                     Map<UUID, MemberFlagsRow> flagsByConversation) {
+        List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
+        for (SyncRequest.ConversationWatermark watermark : watermarks) {
+            UUID conversationId = watermark.conversationId();
+            MemberFlagsRow flags = flagsByConversation.get(conversationId);
+            if (flags == null) {
+                continue;
+            }
+
+            // This single plain projection both rechecks membership and captures
+            // H/G. It takes no conversation/message row lock after advisory locks.
+            SyncFence fence = messageRepository.findSyncFence(userId, conversationId).orElse(null);
+            if (fence == null) {
+                continue;
+            }
+
+            long requestedCursor = watermark.changeCursor();
+            Long requestedGeneration = watermark.generation();
+            boolean reset = requestedCursor > fence.changeUpperBound()
+                    || (requestedGeneration != null && requestedGeneration != fence.generation())
+                    || (requestedCursor > 0 && requestedGeneration == null);
+
+            List<MessageResponse> changes = List.of();
+            long nextCursor = 0;
+            boolean changeHasMore = false;
+            List<ReactionUpdatedPayload> reactionUpdates = List.of();
+            Long reactionCursor = null;
+            boolean reactionsFullRefresh = false;
+
+            if (!reset) {
+                List<MessageRow> rows = messageRepository.findChangesBetween(
+                        conversationId, requestedCursor, fence.changeUpperBound(),
+                        PageRequest.of(0, limit + 1));
+                changeHasMore = rows.size() > limit;
+                List<MessageRow> page = changeHasMore ? rows.subList(0, limit) : rows;
+                changes = hydrateResponses(page, userId);
+                nextCursor = changeHasMore
+                        ? page.get(page.size() - 1).changeVersion()
+                        : fence.changeUpperBound();
+
+                if (since != null) {
+                    if (since.isBefore(reactionRetentionCutoff)) {
+                        reactionsFullRefresh = true;
+                    } else {
+                        ReactionDelta reactionDelta = reactionUpdates(
+                                conversationId, since, watermark.reactionCursor());
+                        reactionUpdates = reactionDelta.updates();
+                        reactionCursor = reactionDelta.cursor();
+                    }
+                }
+            }
+
+            boolean hasMore = !reset && (changeHasMore || reactionCursor != null);
+            boolean muted = flags.isMutedAt(requestTime);
+            boolean pinned = flags.pinned();
+            deltas.add(new SyncResponse.ConversationDelta(
+                    conversationId,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    reactionUpdates,
+                    messageRepository.findMaxSeqByConversationId(conversationId),
+                    hasMore,
+                    reactionCursor,
+                    reactionsFullRefresh,
+                    muted,
+                    flags.effectiveMutedUntil(requestTime),
+                    flags.archived(),
+                    pinned,
+                    pinned ? flags.pinnedAt() : null,
+                    changes,
+                    reset ? 0L : nextCursor,
+                    reset ? false : changeHasMore,
+                    fence.changeUpperBound(),
+                    reset,
+                    fence.generation()));
+        }
+        return new SyncResponse(deltas, requestTime, 2);
     }
 
     /**

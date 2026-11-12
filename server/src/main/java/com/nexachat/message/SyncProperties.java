@@ -21,6 +21,9 @@ public class SyncProperties {
     /** Default 200 — matches the delta payload ceiling for one conversation. */
     private int maxReactionUpdates = 200;
 
+    /** Real rollback switch for clients that have negotiated change-cursor v2. */
+    private boolean changeCursorsEnabled = true;
+
     /** Reaction events older than this are purged and cannot serve a delta. */
     @Min(1)
     @Max(3_650)
@@ -32,6 +35,14 @@ public class SyncProperties {
 
     public void setMaxReactionUpdates(int maxReactionUpdates) {
         this.maxReactionUpdates = maxReactionUpdates;
+    }
+
+    public boolean isChangeCursorsEnabled() {
+        return changeCursorsEnabled;
+    }
+
+    public void setChangeCursorsEnabled(boolean changeCursorsEnabled) {
+        this.changeCursorsEnabled = changeCursorsEnabled;
     }
 
     public int getReactionRetentionDays() {

@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,8 +19,16 @@ public record SyncRequest(
 
         Integer limitPerConv,
 
-        Instant since
+        Instant since,
+
+        @Min(1)
+        @Max(2)
+        Integer syncVersion
 ) {
+    public SyncRequest(List<ConversationWatermark> watermarks, Integer limitPerConv, Instant since) {
+        this(watermarks, limitPerConv, since, null);
+    }
+
     public record ConversationWatermark(
             @NotNull(message = "conversationId is required")
             UUID conversationId,
@@ -33,11 +43,21 @@ public record SyncRequest(
              * the first sync. It only matters when the previous response set
              * {@code hasMore} because the reaction page was truncated.
              */
-            Long reactionCursor
+            Long reactionCursor,
+
+            @Min(0)
+            Long changeCursor,
+
+            @Min(1)
+            Long generation
     ) {
+        public ConversationWatermark(UUID conversationId, Long lastSeq, Long reactionCursor) {
+            this(conversationId, lastSeq, reactionCursor, null, null);
+        }
+
         /** Convenience for callers that do not page reaction deltas. */
         public ConversationWatermark(UUID conversationId, Long lastSeq) {
-            this(conversationId, lastSeq, null);
+            this(conversationId, lastSeq, null, null, null);
         }
     }
 }

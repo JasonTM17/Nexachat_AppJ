@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.message.dto.SendMessageRequest;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,11 +45,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * final response time after the drain. The assertion is convergence, not
  * event-count equality: every message must reach its final state.
  *
- * <p>Today {@link MessageService#syncDelta} truncates the edited/deleted feeds
- * to {@code limitPerConv} without raising {@code hasMore} or returning a
- * continuation cursor, so the client stops after the first page and the tail
- * of the burst is lost. These cases are the red contract for the change-cursor
- * repair and are intentionally disabled until that repair lands.
+ * <p>The cursor-zero baseline is fully reconciled before edits or recalls are
+ * made, then the v2 message page is drained with the saved cursor and
+ * generation. These cases retain the historical final-state convergence
+ * oracle while proving the negotiated continuation contract.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -89,7 +87,8 @@ class SyncMutationPagingIT {
     private record ClientState(String content, boolean deleted) {
     }
 
-    private record DrainResult(int pages, boolean lastHasMore) {
+    private record DrainResult(int pages, boolean lastHasMore, long changeCursor,
+                               long generation, Instant firstServerTime) {
     }
 
     private TestUser alice;
@@ -110,26 +109,22 @@ class SyncMutationPagingIT {
 
     @ParameterizedTest
     @ValueSource(ints = {1, 49, 50, 51, 60, 101})
-    @Disabled("red: sync mutation overflow, fixed by change cursors")
     void editsBehindTheClientCursorReachEveryFinalState(int editCount) throws Exception {
         assertMutationsConverge(editCount, MutationKind.EDIT, false);
     }
 
     @ParameterizedTest
     @ValueSource(ints = {1, 49, 50, 51, 60, 101})
-    @Disabled("red: sync mutation overflow, fixed by change cursors")
     void recallsBehindTheClientCursorReachEveryFinalState(int recallCount) throws Exception {
         assertMutationsConverge(recallCount, MutationKind.RECALL, false);
     }
 
     @Test
-    @Disabled("red: sync mutation overflow, fixed by change cursors")
     void equalTimestampEditsReachEveryFinalState() throws Exception {
         assertMutationsConverge(60, MutationKind.EDIT, true);
     }
 
     @Test
-    @Disabled("red: sync mutation overflow, fixed by change cursors")
     void equalTimestampRecallsReachEveryFinalState() throws Exception {
         assertMutationsConverge(60, MutationKind.RECALL, true);
     }
@@ -150,6 +145,7 @@ class SyncMutationPagingIT {
         int messageCount = Math.max(1, mutationCount);
 
         Map<UUID, ClientState> cached = new LinkedHashMap<>();
+        Map<UUID, ClientState> expected = new LinkedHashMap<>();
         List<UUID> messageIds = new ArrayList<>(messageCount);
         for (int i = 0; i < messageCount; i++) {
             String content = "original-" + i;
@@ -157,14 +153,18 @@ class SyncMutationPagingIT {
                             new SendMessageRequest(UUID.randomUUID(), "TEXT", content, null, List.of()))
                     .message().id();
             messageIds.add(messageId);
-            cached.put(messageId, new ClientState(content, false));
+            expected.put(messageId, new ClientState(content, false));
         }
-        Map<UUID, ClientState> expected = new LinkedHashMap<>(cached);
 
-        JsonNode baseline = sync(bob, conversationId, 0L, null, PAGE_LIMIT);
-        JsonNode baselineDelta = singleDelta(baseline);
-        long clientCursor = baselineDelta.get("maxSeq").asLong();
-        Instant clientSince = Instant.parse(baseline.get("serverTime").asText());
+        // Build the client cache by fully draining a genuine cursor-zero v2
+        // reconciliation. The group-created SYSTEM row is part of that state.
+        DrainResult baseline = drain(bob, conversationId, 0L, null, null, cached);
+        assertThat(baseline.lastHasMore()).isFalse();
+        assertThat(cached.keySet()).containsAll(messageIds);
+        assertThat(cached).hasSize(messageCount + 1);
+        long clientCursor = baseline.changeCursor();
+        long clientGeneration = baseline.generation();
+        Instant clientSince = baseline.firstServerTime();
 
         for (int i = 0; i < mutationCount; i++) {
             UUID messageId = messageIds.get(i);
@@ -192,7 +192,9 @@ class SyncMutationPagingIT {
         }
 
         Map<UUID, ClientState> applied = new LinkedHashMap<>(cached);
-        DrainResult drain = drain(bob, conversationId, clientCursor, clientSince, applied);
+        DrainResult drain = drain(bob, conversationId, clientCursor, clientGeneration,
+                clientSince, applied);
+        assertThat(drain.lastHasMore()).isFalse();
 
         List<UUID> unreached = expected.entrySet().stream()
                 .filter(entry -> !entry.getValue().equals(applied.get(entry.getKey())))
@@ -210,44 +212,53 @@ class SyncMutationPagingIT {
     }
 
     /**
-     * Follows the documented continuation rules: same {@code since} on every
-     * page, advance {@code lastSeq} only from {@code newMessages}, and (once
-     * additive change cursors exist) echo the response cursor. A page that
-     * claims more work without a usable continuation is where the drain stops.
+     * Follows the documented v2 continuation rules: first reconciliation starts
+     * at zero without a generation; each page echoes its cursor/generation and
+     * applies current rows, including tombstones. The same reaction checkpoint
+     * remains in force across the bounded message pages.
      */
-    private DrainResult drain(TestUser reader, UUID conversationId, long lastSeq, Instant since,
+    private DrainResult drain(TestUser reader, UUID conversationId, long initialCursor,
+                              Long initialGeneration, Instant since,
                               Map<UUID, ClientState> applied) throws Exception {
-        long cursor = lastSeq;
-        Long changeCursor = null;
+        long cursor = initialCursor;
+        Long generation = initialGeneration;
         int pages = 0;
         boolean hasMore = false;
+        Instant firstServerTime = null;
         while (pages < MAX_DRAIN_PAGES) {
-            JsonNode response = sync(reader, conversationId, cursor, since, PAGE_LIMIT, changeCursor);
+            JsonNode response = syncV2(reader, conversationId, cursor, generation, since, PAGE_LIMIT);
+            assertThat(response.path("syncVersion").asInt()).isEqualTo(2);
+            if (firstServerTime == null) {
+                firstServerTime = Instant.parse(response.get("serverTime").asText());
+            }
             JsonNode delta = singleDelta(response);
+            assertThat(delta.path("reset").asBoolean()).isFalse();
+            assertThat(delta.withArray("changes").size()).isLessThanOrEqualTo(PAGE_LIMIT);
+            assertThat(delta.path("changeUpperBound").asLong()).isGreaterThanOrEqualTo(cursor);
             apply(delta, applied);
             pages++;
             hasMore = delta.path("hasMore").asBoolean(false);
-            if (!hasMore) {
+            boolean changeHasMore = delta.path("changeHasMore").asBoolean(false);
+            long nextCursor = delta.path("changeCursor").asLong();
+            long nextGeneration = delta.path("generation").asLong();
+            if (!changeHasMore && !hasMore) {
+                assertThat(nextCursor).isEqualTo(delta.path("changeUpperBound").asLong());
+                cursor = nextCursor;
+                generation = nextGeneration;
                 break;
             }
-
-            Long nextChangeCursor = delta.hasNonNull("changeCursor") ? delta.get("changeCursor").asLong() : null;
-            if (nextChangeCursor != null && !nextChangeCursor.equals(changeCursor)) {
-                changeCursor = nextChangeCursor;
-                continue;
+            assertThat(delta.get("reactionCursor").isNull())
+                    .as("B1 fixtures must not introduce a second, unrelated reaction continuation")
+                    .isTrue();
+            assertThat(nextCursor).isGreaterThan(cursor);
+            cursor = nextCursor;
+            generation = nextGeneration;
+            if (!changeHasMore) {
+                break;
             }
-
-            long nextSeq = cursor;
-            for (JsonNode message : delta.withArray("newMessages")) {
-                nextSeq = Math.max(nextSeq, message.get("seq").asLong());
-            }
-            if (nextSeq > cursor) {
-                cursor = nextSeq;
-                continue;
-            }
-            break;
         }
-        return new DrainResult(pages, hasMore);
+        return new DrainResult(pages, hasMore, cursor,
+                generation == null ? 0 : generation, firstServerTime);
     }
 
     private static void apply(JsonNode delta, Map<UUID, ClientState> applied) {
@@ -267,20 +278,17 @@ class SyncMutationPagingIT {
         }
     }
 
-    private JsonNode sync(TestUser user, UUID conversationId, long lastSeq, Instant since, int limit)
-            throws Exception {
-        return sync(user, conversationId, lastSeq, since, limit, null);
-    }
-
-    private JsonNode sync(TestUser user, UUID conversationId, long lastSeq, Instant since, int limit,
-                          Long changeCursor) throws Exception {
+    private JsonNode syncV2(TestUser user, UUID conversationId, long changeCursor,
+                            Long generation, Instant since, int limit) throws Exception {
         Map<String, Object> watermark = new LinkedHashMap<>();
         watermark.put("conversationId", conversationId.toString());
-        watermark.put("lastSeq", lastSeq);
-        if (changeCursor != null) {
-            watermark.put("changeCursor", changeCursor);
+        watermark.put("lastSeq", 0L);
+        watermark.put("changeCursor", changeCursor);
+        if (generation != null) {
+            watermark.put("generation", generation);
         }
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("syncVersion", 2);
         body.put("watermarks", List.of(watermark));
         body.put("limitPerConv", limit);
         if (since != null) {

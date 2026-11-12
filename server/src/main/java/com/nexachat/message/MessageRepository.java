@@ -3,6 +3,7 @@ package com.nexachat.message;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.ReplyRefRow;
+import com.nexachat.message.dto.SyncFence;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -154,6 +155,34 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<MessageRow> findRowsAfter(@Param("conversationId") UUID conversationId,
                                    @Param("afterSeq") long afterSeq,
                                    Pageable pageable);
+
+    /** Capture H/G and prove current membership in one plain scalar projection. */
+    @Query("""
+            SELECT new com.nexachat.message.dto.SyncFence(c.changeVersion, c.syncGeneration)
+            FROM Conversation c, ConversationMember member
+            WHERE c.id = :conversationId
+              AND member.conversation.id = c.id
+              AND member.user.id = :userId
+            """)
+    Optional<SyncFence> findSyncFence(@Param("userId") UUID userId,
+                                      @Param("conversationId") UUID conversationId);
+
+    /** Bounded current-state page through an immutable H captured by findSyncFence. */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.conversation.id = :conversationId
+              AND m.changeVersion > :changeCursor
+              AND m.changeVersion <= :changeUpperBound
+            ORDER BY m.changeVersion ASC, m.id ASC
+            """)
+    List<MessageRow> findChangesBetween(@Param("conversationId") UUID conversationId,
+                                        @Param("changeCursor") long changeCursor,
+                                        @Param("changeUpperBound") long changeUpperBound,
+                                        Pageable pageable);
 
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(

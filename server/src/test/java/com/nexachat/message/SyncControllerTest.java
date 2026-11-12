@@ -16,6 +16,7 @@ import com.nexachat.message.dto.ReactionRow;
 import com.nexachat.message.dto.ReactionUpdatedPayload;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
+import com.nexachat.message.dto.SyncFence;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,14 +32,18 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -103,6 +108,7 @@ class SyncControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().deltas()).hasSize(1);
+        assertThat(response.getBody().syncVersion()).isNull();
 
         SyncResponse.ConversationDelta delta = response.getBody().deltas().get(0);
         assertThat(delta.conversationId()).isEqualTo(conversationId);
@@ -110,6 +116,99 @@ class SyncControllerTest {
         assertThat(delta.newMessages().get(0).seq()).isEqualTo(101L);
         assertThat(delta.maxSeq()).isEqualTo(105L);
         assertThat(delta.hasMore()).isFalse();
+        assertThat(delta.changes()).isNull();
+        assertThat(delta.changeCursor()).isNull();
+        assertThat(delta.changeUpperBound()).isNull();
+        assertThat(delta.reset()).isNull();
+    }
+
+    @Test
+    void v2MessagePageUsesLimitPlusOneAndReturnsRevisionContinuation() {
+        stubMembership();
+        when(messageRepository.findSyncFence(userId, conversationId))
+                .thenReturn(Optional.of(new SyncFence(12L, 4L)));
+
+        List<MessageRow> rows = List.of(
+                v2Row(UUID.randomUUID(), 1L, 4L),
+                v2Row(UUID.randomUUID(), 2L, 4L),
+                v2Row(UUID.randomUUID(), 3L, 4L));
+        when(messageRepository.findChangesBetween(eq(conversationId), eq(0L), eq(12L), any(Pageable.class)))
+                .thenAnswer(invocation -> {
+                    Pageable pageable = invocation.getArgument(3);
+                    assertThat(pageable.getPageSize()).isEqualTo(3);
+                    return rows;
+                });
+
+        SyncRequest request = new SyncRequest(
+                List.of(new SyncRequest.ConversationWatermark(conversationId, 0L, null, 0L, null)),
+                2, null, 2);
+        SyncResponse response = syncController.syncDelta(principal, request).getBody();
+
+        assertThat(response).isNotNull();
+        assertThat(response.syncVersion()).isEqualTo(2);
+        SyncResponse.ConversationDelta delta = response.deltas().get(0);
+        assertThat(delta.changes()).hasSize(2);
+        assertThat(delta.changes()).extracting(MessageResponse::changeVersion).containsExactly(1L, 2L);
+        assertThat(delta.changes()).allSatisfy(message -> assertThat(message.generation()).isEqualTo(4L));
+        assertThat(delta.changeCursor()).isEqualTo(2L);
+        assertThat(delta.changeUpperBound()).isEqualTo(12L);
+        assertThat(delta.changeHasMore()).isTrue();
+        assertThat(delta.reset()).isFalse();
+        assertThat(delta.hasMore()).isTrue();
+        assertThat(delta.newMessages()).isEmpty();
+        assertThat(delta.editedMessages()).isEmpty();
+        assertThat(delta.deletedMessageIds()).isEmpty();
+    }
+
+    @Test
+    void v2AheadOrMismatchedGenerationReturnsResetOnly() {
+        stubMembership();
+        when(messageRepository.findSyncFence(userId, conversationId))
+                .thenReturn(Optional.of(new SyncFence(10L, 3L)));
+
+        SyncResponse ahead = syncController.syncDelta(principal, v2Request(11L, 3L)).getBody();
+        SyncResponse mismatched = syncController.syncDelta(principal, v2Request(7L, 2L)).getBody();
+
+        assertResetOnly(ahead.deltas().get(0), 10L, 3L);
+        assertResetOnly(mismatched.deltas().get(0), 10L, 3L);
+        verify(messageRepository, never()).findChangesBetween(eq(conversationId), anyLong(),
+                anyLong(), any(Pageable.class));
+        verify(reactionEventRepository, never()).lockConversationEvents(any());
+    }
+
+    @Test
+    void disabledV2SwitchFallsBackToLegacyWireFields() throws Exception {
+        stubMembership();
+        SyncProperties disabled = new SyncProperties();
+        disabled.setChangeCursorsEnabled(false);
+        MessageService disabledService = new MessageService(
+                messageRepository,
+                mock(MessageAttachmentRepository.class),
+                reactionRepository,
+                reactionEventRepository,
+                conversationRepository,
+                memberRepository,
+                mock(PinnedMessageRepository.class),
+                mock(com.nexachat.attachment.StorageService.class),
+                mock(ApplicationEventPublisher.class),
+                disabled);
+        when(messageRepository.findRowsAfter(eq(conversationId), eq(0L), any(Pageable.class)))
+                .thenReturn(List.of());
+        SyncRequest request = v2Request(0L, null);
+
+        SyncResponse response = disabledService.syncDelta(userId, request);
+        JsonNode json = mapper().valueToTree(response);
+
+        assertThat(response.syncVersion()).isNull();
+        assertThat(json.has("syncVersion")).isFalse();
+        JsonNode delta = json.get("deltas").get(0);
+        assertThat(delta.has("changes")).isFalse();
+        assertThat(delta.has("changeCursor")).isFalse();
+        assertThat(delta.has("changeHasMore")).isFalse();
+        assertThat(delta.has("changeUpperBound")).isFalse();
+        assertThat(delta.has("reset")).isFalse();
+        assertThat(delta.has("generation")).isFalse();
+        verify(messageRepository, never()).findSyncFence(userId, conversationId);
     }
 
     @Test
@@ -358,6 +457,34 @@ class SyncControllerTest {
     private void stubMembership() {
         when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
                 List.of(new MemberFlagsRow(conversationId, false, null, false, false, null)));
+    }
+
+    private SyncRequest v2Request(long changeCursor, Long generation) {
+        return new SyncRequest(
+                List.of(new SyncRequest.ConversationWatermark(
+                        conversationId, 0L, null, changeCursor, generation)),
+                50, null, 2);
+    }
+
+    private MessageRow v2Row(UUID id, long changeVersion, long generation) {
+        return new MessageRow(id, conversationId, changeVersion, userId, "Test User",
+                Message.Type.TEXT, "page-row-" + changeVersion, UUID.randomUUID(), null,
+                Instant.parse("2026-11-12T00:00:00Z"), null, null, false,
+                changeVersion, generation);
+    }
+
+    private static void assertResetOnly(SyncResponse.ConversationDelta delta,
+                                        long upperBound, long generation) {
+        assertThat(delta.reset()).isTrue();
+        assertThat(delta.changes()).isEmpty();
+        assertThat(delta.changeCursor()).isZero();
+        assertThat(delta.changeUpperBound()).isEqualTo(upperBound);
+        assertThat(delta.changeHasMore()).isFalse();
+        assertThat(delta.generation()).isEqualTo(generation);
+        assertThat(delta.reactionUpdates()).isEmpty();
+        assertThat(delta.reactionCursor()).isNull();
+        assertThat(delta.hasMore()).isFalse();
+        assertThat(delta.reactionsFullRefresh()).isFalse();
     }
 
     private static ObjectMapper mapper() {

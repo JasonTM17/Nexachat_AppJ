@@ -7,7 +7,6 @@ import com.nexachat.message.dto.SendMessageRequest;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,26 +42,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * H1 latch schedule: can a row that allocated {@code seq} first commit after a
- * later row, and be skipped by a delta sync that runs between the two commits?
+ * H1 latch schedule: does a later send wait for the conversation writer, and
+ * can a v2 sync between commits safely leave its cursor before both rows?
  *
  * <p>The schedule is deterministic and uses only test-owned DB objects:
  * <ol>
- *   <li>a transaction (A) inserts {@code h1-first} and its {@code AFTER INSERT}
- *       trigger blocks on a transaction-scoped advisory lock, so A holds an
- *       allocated {@code seq} but cannot reach its conversation-row update;</li>
- *   <li>transaction B inserts {@code h1-second} with a larger {@code seq} and
- *       commits;</li>
- *   <li>the client syncs: it sees B, advances {@code maxSeq} to B's seq, and
- *       cannot see uncommitted A;</li>
- *   <li>the lock is released, A commits with a smaller {@code seq}.</li>
+ *   <li>A locks the conversation, inserts {@code h1-first}, and pauses in its
+ *       {@code AFTER INSERT} trigger on a transaction-scoped advisory lock;</li>
+ *   <li>B is observed blocked on A's conversation write lock;</li>
+ *   <li>a v2 sync sees neither uncommitted row and leaves its cursor unchanged;</li>
+ *   <li>after releasing A, both writes commit and the next page returns both.</li>
  * </ol>
  *
- * <p>If the next sync from the returned {@code maxSeq} never reaches A, the
- * delta feed skipped a committed message: allocation order is not commit order
- * and {@code maxSeq} is not a completion proof. The fix is to allocate the
- * conversation change version (and, if chosen, serialize sends) under the
- * conversation row lock <em>before</em> the message insert.
+ * <p>The lock observation uses PostgreSQL's blocker graph, not a sleep-only
+ * assertion. The final check preserves the client-side convergence oracle.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -126,12 +119,15 @@ class MessageCommitOrderIT {
     }
 
     @Test
-    @Disabled("red: sync commit-order skip, fixed by change cursors allocated under the conversation lock")
     void smallerSequenceCommittedAfterALaterOneIsStillReachable() throws Exception {
         UUID conversationId = createGroup("commit-order-" + System.nanoTime());
-        JsonNode baseline = sync(conversationId, 0L, null);
+        JsonNode baseline = syncV2(conversationId, 0L, null, null);
         JsonNode baselineDelta = singleDelta(baseline);
-        long baselineMax = baselineDelta.get("maxSeq").asLong();
+        assertThat(baselineDelta.path("reset").asBoolean()).isFalse();
+        assertThat(baselineDelta.path("changeHasMore").asBoolean()).isFalse();
+        long baselineCursor = baselineDelta.get("changeCursor").asLong();
+        long baselineGeneration = baselineDelta.get("generation").asLong();
+        assertThat(baselineDelta.get("changeUpperBound").asLong()).isEqualTo(baselineCursor);
         Instant baselineSince = Instant.parse(baseline.get("serverTime").asText());
 
         installGateTrigger();
@@ -141,34 +137,43 @@ class MessageCommitOrderIT {
                 alice.id(), conversationId,
                 new SendMessageRequest(UUID.randomUUID(), "TEXT", "h1-first", null, List.of())).message());
 
-        awaitBlockedOnGate();
+        Future<MessageResponse> second = null;
+        try {
+            awaitBlockedOnGate();
 
-        Future<MessageResponse> second = executor.submit(() -> messageService.send(
-                bob.id(), conversationId,
-                new SendMessageRequest(UUID.randomUUID(), "TEXT", "h1-second", null, List.of())).message());
-        MessageResponse secondMessage = second.get(15, TimeUnit.SECONDS);
-        assertThat(secondMessage.seq()).isGreaterThan(baselineMax);
+            second = executor.submit(() -> messageService.send(
+                    bob.id(), conversationId,
+                    new SendMessageRequest(UUID.randomUUID(), "TEXT", "h1-second", null, List.of())).message());
+            awaitBlockedOnConversation();
+            assertThat(second.isDone())
+                    .as("B must remain blocked while A owns the conversation write lock")
+                    .isFalse();
 
-        JsonNode betweenCommits = sync(conversationId, baselineMax, baselineSince);
-        JsonNode betweenDelta = singleDelta(betweenCommits);
-        assertThat(contents(betweenDelta.get("newMessages"))).containsExactly("h1-second");
-        assertThat(betweenDelta.get("maxSeq").asLong()).isEqualTo(secondMessage.seq());
+            JsonNode betweenCommits = syncV2(conversationId, baselineCursor, baselineGeneration, baselineSince);
+            JsonNode betweenDelta = singleDelta(betweenCommits);
+            assertThat(betweenDelta.withArray("changes").size()).isZero();
+            assertThat(betweenDelta.get("changeCursor").asLong()).isEqualTo(baselineCursor);
+            assertThat(betweenDelta.get("changeUpperBound").asLong()).isEqualTo(baselineCursor);
+            assertThat(betweenDelta.get("hasMore").asBoolean()).isFalse();
+        } finally {
+            releaseGate();
+        }
 
-        releaseGate();
         MessageResponse firstMessage = first.get(20, TimeUnit.SECONDS);
+        MessageResponse secondMessage = second.get(20, TimeUnit.SECONDS);
         assertThat(firstMessage.seq()).isLessThan(secondMessage.seq());
 
-        Map<String, Long> applied = new LinkedHashMap<>();
-        applyNewMessages(betweenDelta, applied);
+        JsonNode afterCommit = syncV2(conversationId, baselineCursor, baselineGeneration, baselineSince);
+        JsonNode afterDelta = singleDelta(afterCommit);
+        assertThat(contents(afterDelta.withArray("changes")))
+                .containsExactly("h1-first", "h1-second");
 
-        JsonNode afterCommit = sync(conversationId,
-                betweenDelta.get("maxSeq").asLong(),
-                Instant.parse(betweenCommits.get("serverTime").asText()));
-        applyNewMessages(singleDelta(afterCommit), applied);
+        Map<String, Long> applied = new LinkedHashMap<>();
+        applyChanges(afterDelta, applied);
 
         assertThat(applied)
-                .as("a client that advanced maxSeq to %d must still reach the earlier-allocated message",
-                        secondMessage.seq())
+                .as("a client whose saved change cursor was %d must reach both committed messages",
+                        baselineCursor)
                 .containsKeys("h1-first", "h1-second");
     }
 
@@ -234,6 +239,28 @@ class MessageCommitOrderIT {
         });
     }
 
+    private void awaitBlockedOnConversation() {
+        Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> {
+            Integer waiting = jdbcTemplate.queryForObject("""
+                    SELECT count(*)
+                    FROM pg_stat_activity waiter
+                    WHERE waiter.datname = current_database()
+                      AND waiter.pid <> pg_backend_pid()
+                      AND waiter.query ILIKE '%conversations%'
+                      AND cardinality(pg_blocking_pids(waiter.pid)) > 0
+                      AND EXISTS (
+                          SELECT 1
+                          FROM pg_stat_activity blocker
+                          WHERE blocker.pid = ANY(pg_blocking_pids(waiter.pid))
+                            AND blocker.query ILIKE '%insert%messages%'
+                      )
+                    """, Integer.class);
+            assertThat(waiting)
+                    .as("B's conversation query must have a PostgreSQL lock blocker")
+                    .isGreaterThanOrEqualTo(1);
+        });
+    }
+
     private static List<String> contents(JsonNode messages) {
         List<String> values = new ArrayList<>();
         for (JsonNode message : messages) {
@@ -242,17 +269,24 @@ class MessageCommitOrderIT {
         return values;
     }
 
-    private static void applyNewMessages(JsonNode delta, Map<String, Long> applied) {
-        for (JsonNode message : delta.get("newMessages")) {
+    private static void applyChanges(JsonNode delta, Map<String, Long> applied) {
+        for (JsonNode message : delta.withArray("changes")) {
             applied.put(message.get("content").asText(), message.get("seq").asLong());
         }
     }
 
-    private JsonNode sync(UUID conversationId, long lastSeq, Instant since) throws Exception {
+    private JsonNode syncV2(UUID conversationId, long changeCursor, Long generation, Instant since)
+            throws Exception {
+        Map<String, Object> watermark = new LinkedHashMap<>();
+        watermark.put("conversationId", conversationId.toString());
+        watermark.put("lastSeq", 0L);
+        watermark.put("changeCursor", changeCursor);
+        if (generation != null) {
+            watermark.put("generation", generation);
+        }
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("watermarks", List.of(Map.of(
-                "conversationId", conversationId.toString(),
-                "lastSeq", lastSeq)));
+        body.put("syncVersion", 2);
+        body.put("watermarks", List.of(watermark));
         body.put("limitPerConv", PAGE_LIMIT);
         if (since != null) {
             body.put("since", since.toString());
