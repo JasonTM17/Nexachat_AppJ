@@ -27,7 +27,7 @@ public final class NotificationWorkRequestTest {
         NotificationWorkRequest first = NotificationWorkRequest.reminder(
                 "account-a", 4L, "conversation-1", "reminder-2", "0123456789abcdef0123456789abcdef");
         NotificationWorkRequest rescheduled = NotificationWorkRequest.reminder(
-                "account-a", 4L, "conversation-1", "reminder-2", "2026-12-08T02:00:00Z");
+                "account-a", 4L, "conversation-1", "reminder-2", "fedcba9876543210fedcba9876543210");
 
         assertEquals("rem:account-a:4:reminder-2:0123456789abcdef0123456789abcdef", first.uniqueWorkName());
         assertNotEquals(first.uniqueWorkName(), rescheduled.uniqueWorkName());
