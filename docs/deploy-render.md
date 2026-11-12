@@ -1,14 +1,14 @@
-# Deploy the API on Render + Neon + R2
+# Deploy the API on Render + Neon + Supabase Storage
 
 The first public release runs the API on Render Free, Postgres on Neon Free and
-uploads on Cloudflare R2. The site stays on Vercel at `nexachat.io.vn`; the API
+uploads on Supabase Storage (with Cloudflare R2 as a supported alternative). The site stays on Vercel at `nexachat.io.vn`; the API
 is `https://api.nexachat.io.vn`.
 
 | Piece | Where | Notes |
 |---|---|---|
 | API | Render web service `nexachat-api` (`render.yaml`) | 0.1 CPU / 512 MB, sleeps after 15 idle minutes, ephemeral disk |
 | Database | Neon Postgres | persistent, free compute, region Singapore |
-| Uploads | Cloudflare R2 | private S3-compatible bucket |
+| Uploads | Supabase Storage (or Cloudflare R2) | private S3-compatible bucket, region `ap-southeast-1` (path-style) |
 | Site | Vercel | unchanged |
 
 References: [Render Blueprint spec](https://render.com/docs/blueprint-spec),
@@ -41,20 +41,31 @@ Flyway runs on every boot (`application.yml:33`, validation at
 `application-prod.yml:46-47`), so the first start applies all migrations; there
 is no separate migration command.
 
-## 2. Create the R2 bucket
+## 2. Create the storage bucket (Supabase Storage or Cloudflare R2)
+
+The deployed topology uses **Supabase Storage** (S3 protocol, region `ap-southeast-1`,
+private bucket, path-style). **Cloudflare R2** remains a supported alternative.
+
+### Supabase Storage (deployed)
+
+1. Supabase dashboard → **Storage** → create a private bucket named
+   `nexachat-uploads` (public access disabled).
+2. Project Settings → **Storage** (or API) → S3 Access Keys → generate S3 Access Keys.
+3. Note the Access Key ID (`NEXACHAT_STORAGE_S3_ACCESS_KEY_ID`), Secret Access Key
+   (`NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY`), region `ap-southeast-1` (`NEXACHAT_STORAGE_S3_REGION`),
+   and the endpoint `https://<project-ref>.storage.supabase.co/storage/v1/s3`
+   (`NEXACHAT_STORAGE_S3_ENDPOINT`).
+4. Path-style addressing is enforced automatically by `S3StorageConfiguration`
+   (`server/src/main/java/com/nexachat/attachment/S3StorageConfiguration.java:31`).
+
+### Cloudflare R2 (supported alternative)
 
 1. Cloudflare dashboard → **R2** → create a private bucket named
    `nexachat-uploads` (no public access, no custom domain).
 2. **Manage R2 API Tokens** → create a token with **Object Read & Write**,
    limited to that bucket.
-3. Note the Access Key ID, Secret Access Key and the endpoint
+3. Note the Access Key ID, Secret Access Key, region `auto`, and the endpoint
    `https://<account-id>.r2.cloudflarestorage.com`.
-
-This depends on brief 336 S1 (`feat/server-s3-storage`), which adds
-`NEXACHAT_STORAGE_PROVIDER=s3` and the `NEXACHAT_STORAGE_S3_*` settings. **Do
-not deploy before that branch is merged**: until then the server ignores these
-variables and uploads land on Render's ephemeral disk, where they are lost on
-the next restart or sleep.
 
 ## 3. Create the Render service
 
@@ -105,31 +116,30 @@ storage provider is `local` (S1). The Blueprint declares:
 | `DATABASE_USER` | `application-prod.yml:56` | |
 | `DATABASE_PASSWORD` | `application-prod.yml:57` | secret |
 | `JWT_SECRET` | `application-prod.yml:79` | generated; ≥ 32 bytes (`JwtService.java:37-49`) |
-| `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:92` | generated; base64 of exactly 32 bytes |
-| `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:108` | `https://nexachat.io.vn` for web account deletion |
-| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:117` | `10.0.0.0/8`; Render private-network peer range, see §8 |
-| `NEXACHAT_CLIENT_IP_HEADER` | `application.yml:121` | `CF-Connecting-IP`; Cloudflare overwrites it, see §8 |
-| `STORAGE_ROOT` | `application-prod.yml:83` | `/app/data/uploads`; also the `diskSpace` health path |
-| `NEXACHAT_STORAGE_PROVIDER` | 336 S1 `application.yml:133` | `s3` |
-| `NEXACHAT_STORAGE_S3_ENDPOINT` | 336 S1 `application.yml:136` | R2 endpoint |
-| `NEXACHAT_STORAGE_S3_REGION` | 336 S1 `application.yml:137` | `auto` |
-| `NEXACHAT_STORAGE_S3_BUCKET` | 336 S1 `application.yml:138` | `nexachat-uploads` |
-| `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | 336 S1 `application.yml:139` | secret |
-| `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | 336 S1 `application.yml:140` | secret |
-| `NEXACHAT_MAIL_PROVIDER` | `application.yml:80` | `resend`; SMTP ports are blocked on Render Free |
-| `RESEND_API_KEY` | `application.yml:89` | secret |
-| `RESEND_FROM` | `application.yml:81` | sender on a domain verified in Resend |
-| `FCM_ENABLED` | `application.yml:268` | `false` until credentials exist |
-| `FCM_PROJECT_ID` | `application.yml:269` | |
-| `FCM_SERVICE_ACCOUNT_JSON` | `application.yml:271` | full JSON inline, no file needed (`GoogleServiceAccountCredentialsFactory.java:58-101`) |
-| `FIREBASE_REALTIME_ENABLED` | `application.yml:280` | `false` |
-| `FIREBASE_DATABASE_URL` | `application.yml:283` | only when the bridge is enabled |
-| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:98` | `false` |
-| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:99` | when Google sign-in is enabled |
-| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:101` | when Google sign-in is enabled |
+| `NEXACHAT_REFRESH_REPLAY_KEY` | `application.yml:101` | generated; base64 of exactly 32 bytes |
+| `NEXACHAT_CORS_ALLOWED_ORIGINS` | `application.yml:117` | `https://nexachat.io.vn` for web account deletion |
+| `NEXACHAT_TRUSTED_PROXY_CIDRS` | `application.yml:126` | `10.0.0.0/8`; Render private-network peer range, see §8 |
+| `NEXACHAT_CLIENT_IP_HEADER` | `application.yml:130` | `CF-Connecting-IP`; Cloudflare overwrites it, see §8 |
+| `STORAGE_ROOT` | `application-prod.yml:84` | `/app/data/uploads`; also the `diskSpace` health path |
+| `NEXACHAT_STORAGE_PROVIDER` | `application.yml:146` | `s3` |
+| `NEXACHAT_STORAGE_S3_ENDPOINT` | `application.yml:149` | Supabase S3 endpoint `https://<project-ref>.storage.supabase.co/storage/v1/s3` (or R2 endpoint) |
+| `NEXACHAT_STORAGE_S3_REGION` | `application.yml:150` | `ap-southeast-1` for Supabase (`auto` for R2) |
+| `NEXACHAT_STORAGE_S3_BUCKET` | `application.yml:151` | `nexachat-uploads` |
+| `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID` | `application.yml:152` | secret |
+| `NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY` | `application.yml:153` | secret |
+| `NEXACHAT_MAIL_PROVIDER` | `application.yml:89` | `resend`; SMTP ports are blocked on Render Free |
+| `RESEND_API_KEY` | `application.yml:98` | secret |
+| `RESEND_FROM` | `application.yml:90` | sender on a domain verified in Resend |
+| `FCM_ENABLED` | `application.yml:294` | `false` until credentials exist |
+| `FCM_PROJECT_ID` | `application.yml:295` | |
+| `FCM_SERVICE_ACCOUNT_JSON` | `application.yml:297` | full JSON inline, no file needed (`GoogleServiceAccountCredentialsFactory.java:58-101`) |
+| `FIREBASE_REALTIME_ENABLED` | `application.yml:307` | `false` |
+| `FIREBASE_DATABASE_URL` | `application.yml:309` | only when the bridge is enabled |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:104` | `false` |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:105` | when Google sign-in is enabled |
+| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:107` | when Google sign-in is enabled |
 
-Line numbers are from base `b99949a`; S1 inserts lines in the storage block of
-`application.yml`, so the FCM/Firebase citations shift after it merges.
+Line numbers reflect the current server codebase on main.
 
 To turn push on, set `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`, then
 change `FCM_ENABLED` to `true` and redeploy. Enabling FCM with empty
@@ -183,14 +193,14 @@ here. Resend uses HTTPS and is the configured provider.
     (`application-render.yml:30`), so idle database connections are closed after 1
     minute rather than held open;
   - 30-minute background job intervals for RAG backfill (`nexachat.rag.index.backfill-interval-ms: 1800000`,
-    `application-render.yml:42`) and refresh-replay token cleanup (`nexachat.auth.refresh-replay.cleanup-interval-ms: 1800000`,
-    `application-render.yml:45`), ensuring scheduled tasks do not wake Neon every minute.
-- **Reminder scheduler and Neon idle:** The reminder poll currently still runs
-  every second (`ReminderScheduler.poll()` queries the DB every 1 s,
-  `server/src/main/java/com/nexachat/reminder/ReminderScheduler.java:100-101`), which
-  keeps Neon awake. After the reminder wake-up change in flight is merged, reminders
-  will wake the DB only when one is due (or on a 30-minute safety idle tick),
-  allowing Neon to suspend during periods without user activity.
+    `application-render.yml:45`) and refresh-replay token cleanup (`nexachat.auth.refresh-replay.cleanup-interval-ms: 1800000`,
+    `application-render.yml:48`), ensuring scheduled tasks do not wake Neon every minute.
+- **Reminder scheduler and Neon idle:** `ReminderScheduler` arms an in-memory
+  timer for the next due moment (`server/src/main/java/com/nexachat/reminder/ReminderScheduler.java:166-205`)
+  and re-arms after commit (`onScheduleChanged`, lines 144–149), with a 30-minute idle fallback
+  configured on Render (`nexachat.reminders.max-idle-ms: 1800000` at `server/src/main/resources/application-render.yml:40-42`).
+  Reminders wake the database only when one is due or on the 30-minute safety idle tick,
+  allowing Neon to suspend its compute during periods without user activity.
 - The Android client times out at 10 s connect / 15 s read
   (`android/app/src/main/java/com/nexachat/core/network/NetworkModule.java:45-46`).
   If a request arrives during a cold start or redeploy, the client displays a
@@ -203,8 +213,8 @@ here. Resend uses HTTPS and is the configured provider.
   app, but leaves little room for attachments buffered in memory
   (`AttachmentService.java:122` reads a 25 MB upload into a byte array). Compare
   pairs measured back to back: the host's load moves both numbers.
-- The filesystem is ephemeral: without R2, uploads disappear on every restart
-  and sleep.
+- The filesystem is ephemeral: without persistent object storage (Supabase Storage
+  or Cloudflare R2), uploads disappear on every restart and sleep.
 - 0.1 CPU is shared by HTTP, WebSocket, Flyway and scheduled jobs; keep
   retention jobs and the avatar sweep off until the plan is raised. With the
   supported keep-alive setup keeping Render awake 24/7, scheduled work runs

@@ -105,7 +105,7 @@ the verification and confirmation flows.
 ## Android testing & Release R8 verification
 
 ```bash
-# JVM unit tests (Robolectric and pure unit tests)
+# JVM unit tests (JUnit 4, Mockito, XML parsing)
 cd android && ./gradlew testDebugUnitTest
 
 # Lint check
