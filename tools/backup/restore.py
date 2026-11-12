@@ -106,12 +106,13 @@ def verify_manifest_hashes(backup_dir: Path, payload: dict) -> None:
 def restore_database(db_name: str, backup_dir: Path, payload: dict, user: str, password: str) -> None:
     container = os.environ.get("BACKUP_PG_CONTAINER", "nexachat-db-1")
     dump = backup_dir / payload["database"]["dump_file"]
-    proc = subprocess.run(
-        ["docker", "exec", "-i", container, "psql", "-U", user, "-d", db_name, "-v", "ON_ERROR_STOP=1"],
-        input=dump.read_bytes(),
-        capture_output=True,
-        check=False,
-    )
+    with dump.open("rb") as dump_handle:
+        proc = subprocess.run(
+            ["docker", "exec", "-i", container, "psql", "-U", user, "-d", db_name, "-v", "ON_ERROR_STOP=1"],
+            stdin=dump_handle,
+            capture_output=True,
+            check=False,
+        )
     if proc.returncode != 0:
         raise SystemExit(f"Database restore failed: {proc.stderr.decode(errors='replace')}")
 
