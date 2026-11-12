@@ -6,6 +6,50 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.1] - YYYY-MM-DD (pending tag)
+
+Patch after `v1.1.0` (server deploy on Render plus a signed Android APK).
+See [docs/release-notes/v1.1.1.md](docs/release-notes/v1.1.1.md).
+
+### Server
+
+**Changed**
+
+- Runtime image builds and ships an AppCDS archive; production `JAVA_OPTS`
+  on Render load it via `-XX:SharedArchiveFile=/app/application.jsa`
+  (`fa6864e9`).
+
+**Fixed**
+
+- Prometheus meters keep tag keys consistent across registrations
+  (`6da7a292`).
+- Logback defines appenders only inside active Spring profiles, removing
+  duplicate-appender warnings at startup (`1acc4135`).
+- Multipart upload scratch is created and probed at boot when
+  `NEXACHAT_MULTIPART_TEMP_DIR` is set (`fff743ea`).
+- S3 storage client call, attempt, connection and socket deadlines are read
+  from configuration with validated defaults (`fbcacae5`).
+
+### Android
+
+**Fixed**
+
+- Delta sync runs on realtime reconnect so messages missed in non-active
+  conversations appear after network recovery (`09de3ccb`).
+- Incoming WebRTC calls restore from the notification after process death
+  (`cac1ddd3`).
+
+### Documentation
+
+**Changed**
+
+- Operations and deploy guides describe the live Supabase storage topology,
+  direct Neon endpoint, multipart scratch path, JVM/AppCDS measurements and
+  S3 timeout configuration (`50e73120`, `ad063364`, `846e5431`, `d72396d6`,
+  `fa85c8ec`, `b4729b67`, `b4e113c3`).
+- Known-limitations retention wording matches shipped configuration
+  (`cab7a54c`).
+
 ## [1.1.0] - 2026-11-11
 
 First public Android release (`v1.1.0`), distributed as a signed APK via
@@ -346,6 +390,7 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JasonTM17/Nexachat_AppJ/releases/tag/v1.0.0
