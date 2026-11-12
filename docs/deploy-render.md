@@ -135,11 +135,25 @@ storage provider is `local` (S1). The Blueprint declares:
 | `FCM_SERVICE_ACCOUNT_JSON` | `application.yml:297` | full JSON inline, no file needed (`GoogleServiceAccountCredentialsFactory.java:58-101`) |
 | `FIREBASE_REALTIME_ENABLED` | `application.yml:307` | `false` |
 | `FIREBASE_DATABASE_URL` | `application.yml:309` | only when the bridge is enabled |
-| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:104` | `false` |
-| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:105` | when Google sign-in is enabled |
-| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:107` | when Google sign-in is enabled |
+| `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:107` | `false`; all `/api/v1/auth/google/*` answer 404 while off |
+| `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | (planned server property) | `false`; Google **account creation** — document now, wire in server separately |
+| `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:108` | secret when sign-in is enabled; expected ID token `aud` |
+| `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:110` | secret when sign-in is enabled; comma-separated Android OAuth IDs trusted as `azp` |
+| `NEXACHAT_GOOGLE_JWKS_URI` | `application.yml:111` | public Google JWKS URL; override only in tests |
+| `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | `application.yml:112` | `300` |
 
 Line numbers reflect the current server codebase on main.
+
+OAuth client IDs are **not** stored in git. After the Blueprint creates the
+service, set production values by hand: Render Dashboard → **Environment**, or
+the Render REST API with **one `PUT` per key** (same pattern as other secrets in
+[docs/production-runbook.md](production-runbook.md)). Keys declared with
+`sync: false` in [render.yaml](../render.yaml) (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`,
+`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) must be filled before enabling sign-in.
+Combine debug and release Android OAuth client IDs into a single
+`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` value (comma-separated); the server does
+not read separate debug/release env var names. Step-by-step console setup:
+[docs/google-signin-setup.md](google-signin-setup.md).
 
 To turn push on, set `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`, then
 change `FCM_ENABLED` to `true` and redeploy. Enabling FCM with empty
